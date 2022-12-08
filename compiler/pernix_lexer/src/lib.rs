@@ -67,9 +67,9 @@ impl<'a> Lexer<'a> {
     /// the next token.
     pub fn lex(&mut self) -> Result<Token<'a>, Error<'a>> {
         // the current source file position
-        let begin_position = self.current_position;
+        let first_position = self.current_position;
 
-        let begin_char;
+        let first_char;
         let begin_index;
         let token_kind;
 
@@ -77,18 +77,18 @@ impl<'a> Lexer<'a> {
             None => {
                 return Ok(Token::new(
                     TokenKind::EndOfFile,
-                    begin_position..self.current_position,
+                    first_position..self.current_position,
                     "",
                 ))
             }
             Some((index, char)) => {
-                begin_char = char;
+                first_char = char;
                 begin_index = index;
             }
         }
 
         // found space token
-        if begin_char.is_whitespace() {
+        if first_char.is_whitespace() {
             // loop until non-space character is found
             while {
                 match self.chars.peek() {
@@ -102,7 +102,7 @@ impl<'a> Lexer<'a> {
             token_kind = TokenKind::Space;
         }
         // might found a comment
-        else if begin_char == '/' {
+        else if first_char == '/' {
             match self.chars.peek() {
                 // found a single line comment
                 Some((_, '/')) => {
@@ -149,7 +149,7 @@ impl<'a> Lexer<'a> {
                                 return Err(
                                     Error::UnterminatedMultilineComment {
                                         multiline_comment_position:
-                                            begin_position,
+                                            first_position,
                                         source_refernece: self.source_code,
                                     },
                                 );
@@ -166,10 +166,10 @@ impl<'a> Lexer<'a> {
             }
         }
         // found identifier
-        else if Self::is_first_identifier_character(begin_char) {
+        else if Self::is_first_identifier_character(first_char) {
             // string for the identifier
             let mut identifier_string = String::new();
-            identifier_string.push(begin_char);
+            identifier_string.push(first_char);
 
             // loop until non-identifier character is found
             while {
@@ -194,14 +194,14 @@ impl<'a> Lexer<'a> {
             }
         }
         // found punctuator
-        else if begin_char.is_ascii_punctuation() {
-            token_kind = TokenKind::Punctuator(begin_char);
+        else if first_char.is_ascii_punctuation() {
+            token_kind = TokenKind::Punctuator(first_char);
         }
         // found a number literal
-        else if begin_char.is_digit(10) {
+        else if first_char.is_digit(10) {
             // string for the number literal
             let mut number_literal_string = String::new();
-            number_literal_string.push(begin_char);
+            number_literal_string.push(first_char);
 
             // loop until non-digit character is found
             while {
@@ -218,8 +218,8 @@ impl<'a> Lexer<'a> {
         // this character can't be categorized under any token kinds
         else {
             return Err(Error::InvalidCharacter {
-                position: begin_position,
-                character: begin_char,
+                position: first_position,
+                character: first_char,
                 source_refernece: self.source_code,
             });
         }
@@ -227,7 +227,7 @@ impl<'a> Lexer<'a> {
         // return the token
         return Ok(Token::new(
             token_kind,
-            begin_position..self.current_position,
+            first_position..self.current_position,
             {
                 match self.chars.peek() {
                     Some((index, _)) => {
