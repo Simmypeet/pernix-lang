@@ -90,16 +90,13 @@ impl<'a> Lexer<'a> {
         // found space token
         if begin_char.is_whitespace() {
             // loop until non-space character is found
-            loop {
+            while {
                 match self.chars.peek() {
-                    Some((_, char)) => {
-                        if !char.is_whitespace() {
-                            break;
-                        }
-                        self.next();
-                    }
-                    None => break,
+                    None => false,
+                    Some((_, char)) => char.is_whitespace(),
                 }
+            } {
+                self.next();
             }
 
             token_kind = TokenKind::Space;
@@ -175,17 +172,14 @@ impl<'a> Lexer<'a> {
             identifier_string.push(begin_char);
 
             // loop until non-identifier character is found
-            loop {
+            while {
                 match self.chars.peek() {
-                    Some((_, char)) => {
-                        if !Self::is_identifier_character(*char) {
-                            break;
-                        }
-                        identifier_string.push(*char);
-                        self.next();
-                    }
-                    None => break,
+                    None => false,
+                    Some((_, char)) => Self::is_identifier_character(*char),
                 }
+            } {
+                identifier_string.push(self.chars.peek().unwrap().1);
+                self.next();
             }
 
             // check if the identifier_string matches to any keywords
@@ -210,17 +204,14 @@ impl<'a> Lexer<'a> {
             number_literal_string.push(begin_char);
 
             // loop until non-digit character is found
-            loop {
+            while {
                 match self.chars.peek() {
-                    Some((_, char)) => {
-                        if !char.is_digit(10) {
-                            break;
-                        }
-                        number_literal_string.push(*char);
-                        self.next();
-                    }
-                    None => break,
+                    None => false,
+                    Some((_, char)) => char.is_digit(10),
                 }
+            } {
+                number_literal_string.push(self.chars.peek().unwrap().1);
+                self.next();
             }
             token_kind = TokenKind::LiteralConstant;
         }
