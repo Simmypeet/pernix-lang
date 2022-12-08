@@ -1,0 +1,477 @@
+pub mod error;
+pub mod token;
+
+use error::Error;
+use lazy_static::lazy_static;
+use pernix_project::source_code::{SourceCode, SourcePosition};
+use std::{collections::HashMap, iter::Peekable, str::CharIndices};
+use token::{Keyword, Pattern, Token};
+
+lazy_static! {
+    static ref KEYWORD: HashMap<&'static str, Keyword> = {
+        let mut map = HashMap::new();
+        map.insert("return", Keyword::Return);
+        map
+    };
+}
+
+/// Represents a lexer in lexical analysis which transforms source code into a
+/// token stream
+pub struct Lexer<'a> {
+    source_code: &'a SourceCode,
+    chars: Peekable<CharIndices<'a>>,
+    current_position: SourcePosition,
+}
+
+impl<'a> Lexer<'a> {
+    /// Creates a new lexer targeting to the given `source_code` char slice
+    pub fn new(source_code: &'a SourceCode) -> Lexer<'a> {
+        Lexer {
+            source_code,
+            chars: source_code.source_code().char_indices().peekable(),
+            current_position: SourcePosition { column: 1, line: 1 },
+        }
+    }
+
+    // returns the current character and the its byte index , and moves to the
+    // next character
+    fn next(&mut self) -> Option<(usize, char)> {
+        let next = self.chars.next();
+
+        // increment to the next position
+        match next {
+            Some(char) => {
+                if char.1 == '\n' {
+                    self.current_position.line += 1;
+                    self.current_position.column = 1;
+                } else {
+                    self.current_position.column += 1;
+                }
+            }
+            _ => {}
+        }
+        next
+    }
+
+    // checks if the character can be an identifier character
+    fn is_identifier_character(char: char) -> bool {
+        return char == '_' || char.is_alphanumeric();
+    }
+
+    // the first character in identifier can't be a number
+    fn is_first_identifier_character(char: char) -> bool {
+        return char == '_' || char.is_alphabetic();
+    }
+
+    /// Lexes the current word; returns the corresponding token and moves to
+    /// the next token.
+    pub fn lex(&mut self) -> Result<Token<'a>, Error<'a>> {
+        // the current source file position
+        let begin_position = self.current_position;
+
+        let begin_char;
+        let begin_index;
+        let pattern;
+
+        match self.next() {
+            None => {
+                return Ok(Token::new(
+                    Pattern::EndOfFile,
+                    begin_position..self.current_position,
+                    "",
+                ))
+            }
+            Some((index, char)) => {
+                begin_char = char;
+                begin_index = index;
+            }
+        }
+
+        // found space token
+        if begin_char.is_whitespace() {
+            // loop until non-space character is found
+            loop {
+                match self.chars.peek() {
+                    Some((_, char)) => {
+                        if !char.is_whitespace() {
+                            break;
+                        }
+                        self.next();
+                    }
+                    None => break,
+                }
+            }
+
+            pattern = Pattern::Space;
+        }
+        // might found a comment
+        else if begin_char == '/' {
+            match self.chars.peek() {
+                // found a single line comment
+                Some((_, '/')) => {
+                    // eat the another '/'
+                    self.next();
+
+                    loop {
+                        match self.chars.peek() {
+                            Some((_, '\n')) => {
+                                self.next();
+                                pattern = Pattern::Comment;
+                                break;
+                            }
+                            None => {
+                                pattern = Pattern::Comment;
+                                break;
+                            }
+                            _ => {
+                                self.next();
+                            }
+                        }
+                    }
+                }
+                // found a multi-line comment
+                Some((_, '*')) => {
+                    // eat the '*'
+                    self.next();
+
+                    loop {
+                        match self.chars.peek() {
+                            Some((_, '*')) => {
+                                self.next();
+                                match self.chars.peek() {
+                                    Some((_, '/')) => {
+                                        self.next();
+                                        pattern = Pattern::Comment;
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            None => {
+                                // error: multi-line comment is not closed
+                                return Err(
+                                    Error::UnterminatedMultilineComment {
+                                        multiline_comment_position:
+                                            begin_position,
+                                        source_refernece: self.source_code,
+                                    },
+                                );
+                            }
+                            _ => {
+                                self.next();
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    pattern = Pattern::Punctuator('/');
+                }
+            }
+        }
+        // found identifier
+        else if Self::is_first_identifier_character(begin_char) {
+            // string for the identifier
+            let mut identifier_string = String::new();
+            identifier_string.push(begin_char);
+
+            // loop until non-identifier character is found
+            loop {
+                match self.chars.peek() {
+                    Some((_, char)) => {
+                        if !Self::is_identifier_character(*char) {
+                            break;
+                        }
+                        identifier_string.push(*char);
+                        self.next();
+                    }
+                    None => break,
+                }
+            }
+
+            // check if the identifier_string matches to any keywords
+            match KEYWORD.get(identifier_string.as_str()) {
+                // is identifier
+                None => pattern = Pattern::Identifier,
+
+                // is keyword
+                Some(keyword) => {
+                    pattern = Pattern::Keyword(*keyword);
+                }
+            }
+        }
+        // found punctuator
+        else if begin_char.is_ascii_punctuation() {
+            pattern = Pattern::Punctuator(begin_char);
+        }
+        // found a number literal
+        else if begin_char.is_digit(10) {
+            // string for the number literal
+            let mut number_literal_string = String::new();
+            number_literal_string.push(begin_char);
+
+            // loop until non-digit character is found
+            loop {
+                match self.chars.peek() {
+                    Some((_, char)) => {
+                        if !char.is_digit(10) {
+                            break;
+                        }
+                        number_literal_string.push(*char);
+                        self.next();
+                    }
+                    None => break,
+                }
+            }
+            pattern = Pattern::LiteralConstant;
+        }
+        // this character can't be categorized under any token kinds
+        else {
+            return Err(Error::InvalidCharacter {
+                position: begin_position,
+                character: begin_char,
+                source_refernece: self.source_code,
+            });
+        }
+
+        // return the token
+        return Ok(Token::new(
+            pattern,
+            begin_position..self.current_position,
+            {
+                match self.chars.peek() {
+                    Some((index, _)) => {
+                        &self.source_code.source_code()[begin_index..*index]
+                    }
+                    None => &self.source_code.source_code()[begin_index..],
+                }
+            },
+        ));
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use pernix_project::source_code::{SourceCode, SourcePosition};
+
+    use crate::{
+        error::Error,
+        token::{Keyword, Pattern},
+        Lexer,
+    };
+
+    #[test]
+    // Tests for the space token gap correctness
+    fn space_test() {
+        let source =
+            SourceCode::new("  | |\n ".to_string(), "test".to_string());
+        let mut lexer = Lexer::new(&source);
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+
+            matches!(token.pattern(), Pattern::Space)
+                && token.position_range().start
+                    == SourcePosition { line: 1, column: 1 }
+                && token.position_range().end
+                    == SourcePosition { line: 1, column: 3 }
+        });
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+
+            matches!(token.pattern(), Pattern::Punctuator('|'))
+                && token.position_range().start
+                    == SourcePosition { line: 1, column: 3 }
+                && token.position_range().end
+                    == SourcePosition { line: 1, column: 4 }
+        });
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+
+            matches!(token.pattern(), Pattern::Space)
+                && token.position_range().start
+                    == SourcePosition { line: 1, column: 4 }
+                && token.position_range().end
+                    == SourcePosition { line: 1, column: 5 }
+        });
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+
+            matches!(token.pattern(), Pattern::Punctuator('|'))
+                && token.position_range().start
+                    == SourcePosition { line: 1, column: 5 }
+                && token.position_range().end
+                    == SourcePosition { line: 1, column: 6 }
+        });
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+
+            matches!(token.pattern(), Pattern::Space)
+                && token.position_range().start
+                    == SourcePosition { line: 1, column: 6 }
+                && token.position_range().end
+                    == SourcePosition { line: 2, column: 2 }
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::EndOfFile
+        ));
+    }
+
+    #[test]
+    // Tests whether the lexer can differentiate between identifiers and keywords
+    fn identifier_and_keyword_test() {
+        let source = SourceCode::new(
+            "return some_name _name 23name".to_string(),
+            "test".to_string(),
+        );
+        let mut lexer = Lexer::new(&source);
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Keyword(Keyword::Return)
+        ));
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Space
+        ));
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+            token.lexeme() == "some_name"
+                && matches!(token.pattern(), Pattern::Identifier)
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Space
+        ));
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+            token.lexeme() == "_name"
+                && matches!(token.pattern(), Pattern::Identifier)
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Space
+        ));
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+            token.lexeme() == "23"
+                && matches!(token.pattern(), Pattern::LiteralConstant)
+        });
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+            token.lexeme() == "name"
+                && matches!(token.pattern(), Pattern::Identifier)
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::EndOfFile
+        ));
+    }
+
+    #[test]
+    // Test whether the lexer can correctly lex comment or not
+    fn comment_test() {
+        let source = SourceCode::new(
+            "// Hello\n return// Another".to_string(),
+            "test".to_string(),
+        );
+        let mut lexer = Lexer::new(&source);
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+            token.lexeme() == "// Hello\n"
+                && matches!(token.pattern(), Pattern::Comment)
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Space
+        ));
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Keyword(Keyword::Return)
+        ));
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+            token.lexeme() == "// Another"
+                && matches!(token.pattern(), Pattern::Comment)
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::EndOfFile
+        ));
+    }
+
+    #[test]
+    // Test whether the lexer can correctly lex multiline comment or not
+    fn multiline_comment_test() {
+        let source = SourceCode::new(
+            "/* Hello */ return/* Another */ /* Hello".to_string(),
+            "test".to_string(),
+        );
+        let mut lexer = Lexer::new(&source);
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+            token.lexeme() == "/* Hello */"
+                && matches!(token.pattern(), Pattern::Comment)
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Space
+        ));
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Keyword(Keyword::Return)
+        ));
+
+        assert!({
+            let token = lexer.lex().ok().unwrap();
+            token.lexeme() == "/* Another */"
+                && matches!(token.pattern(), Pattern::Comment)
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::Space
+        ));
+
+        assert!({
+            let err = lexer.lex().err().unwrap();
+
+            match err {
+                Error::UnterminatedMultilineComment {
+                    multiline_comment_position,
+                    source_refernece: _,
+                } => {
+                    multiline_comment_position.line == 1
+                        && multiline_comment_position.column == 33
+                }
+                _ => false,
+            }
+        });
+
+        assert!(matches!(
+            lexer.lex().ok().unwrap().pattern(),
+            Pattern::EndOfFile
+        ));
+    }
+}

@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "compiler/pernix_lexer",
+    "compiler/pernix_project",
+]
