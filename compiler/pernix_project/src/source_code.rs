@@ -1,6 +1,5 @@
 use std::{cmp::Ordering, ops::Range};
 
-
 /// Represents a source code
 pub struct SourceCode {
     source_code: String,

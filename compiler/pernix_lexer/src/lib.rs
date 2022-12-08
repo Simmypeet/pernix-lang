@@ -5,7 +5,7 @@ use error::Error;
 use lazy_static::lazy_static;
 use pernix_project::source_code::{SourceCode, SourcePosition};
 use std::{collections::HashMap, iter::Peekable, str::CharIndices};
-use token::{Keyword, Pattern, Token};
+use token::{Keyword, Token, TokenKind};
 
 lazy_static! {
     static ref KEYWORD: HashMap<&'static str, Keyword> = {
@@ -71,12 +71,12 @@ impl<'a> Lexer<'a> {
 
         let begin_char;
         let begin_index;
-        let pattern;
+        let token_kind;
 
         match self.next() {
             None => {
                 return Ok(Token::new(
-                    Pattern::EndOfFile,
+                    TokenKind::EndOfFile,
                     begin_position..self.current_position,
                     "",
                 ))
@@ -102,7 +102,7 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            pattern = Pattern::Space;
+            token_kind = TokenKind::Space;
         }
         // might found a comment
         else if begin_char == '/' {
@@ -116,11 +116,11 @@ impl<'a> Lexer<'a> {
                         match self.chars.peek() {
                             Some((_, '\n')) => {
                                 self.next();
-                                pattern = Pattern::Comment;
+                                token_kind = TokenKind::Comment;
                                 break;
                             }
                             None => {
-                                pattern = Pattern::Comment;
+                                token_kind = TokenKind::Comment;
                                 break;
                             }
                             _ => {
@@ -141,7 +141,7 @@ impl<'a> Lexer<'a> {
                                 match self.chars.peek() {
                                     Some((_, '/')) => {
                                         self.next();
-                                        pattern = Pattern::Comment;
+                                        token_kind = TokenKind::Comment;
                                         break;
                                     }
                                     _ => {}
@@ -164,7 +164,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 _ => {
-                    pattern = Pattern::Punctuator('/');
+                    token_kind = TokenKind::Punctuator('/');
                 }
             }
         }
@@ -191,17 +191,17 @@ impl<'a> Lexer<'a> {
             // check if the identifier_string matches to any keywords
             match KEYWORD.get(identifier_string.as_str()) {
                 // is identifier
-                None => pattern = Pattern::Identifier,
+                None => token_kind = TokenKind::Identifier,
 
                 // is keyword
                 Some(keyword) => {
-                    pattern = Pattern::Keyword(*keyword);
+                    token_kind = TokenKind::Keyword(*keyword);
                 }
             }
         }
         // found punctuator
         else if begin_char.is_ascii_punctuation() {
-            pattern = Pattern::Punctuator(begin_char);
+            token_kind = TokenKind::Punctuator(begin_char);
         }
         // found a number literal
         else if begin_char.is_digit(10) {
@@ -222,7 +222,7 @@ impl<'a> Lexer<'a> {
                     None => break,
                 }
             }
-            pattern = Pattern::LiteralConstant;
+            token_kind = TokenKind::LiteralConstant;
         }
         // this character can't be categorized under any token kinds
         else {
@@ -235,7 +235,7 @@ impl<'a> Lexer<'a> {
 
         // return the token
         return Ok(Token::new(
-            pattern,
+            token_kind,
             begin_position..self.current_position,
             {
                 match self.chars.peek() {
@@ -255,7 +255,7 @@ mod test {
 
     use crate::{
         error::Error,
-        token::{Keyword, Pattern},
+        token::{Keyword, TokenKind},
         Lexer,
     };
 
@@ -269,7 +269,7 @@ mod test {
         assert!({
             let token = lexer.lex().ok().unwrap();
 
-            matches!(token.pattern(), Pattern::Space)
+            matches!(token.token_kind(), TokenKind::Space)
                 && token.position_range().start
                     == SourcePosition { line: 1, column: 1 }
                 && token.position_range().end
@@ -279,7 +279,7 @@ mod test {
         assert!({
             let token = lexer.lex().ok().unwrap();
 
-            matches!(token.pattern(), Pattern::Punctuator('|'))
+            matches!(token.token_kind(), TokenKind::Punctuator('|'))
                 && token.position_range().start
                     == SourcePosition { line: 1, column: 3 }
                 && token.position_range().end
@@ -289,7 +289,7 @@ mod test {
         assert!({
             let token = lexer.lex().ok().unwrap();
 
-            matches!(token.pattern(), Pattern::Space)
+            matches!(token.token_kind(), TokenKind::Space)
                 && token.position_range().start
                     == SourcePosition { line: 1, column: 4 }
                 && token.position_range().end
@@ -299,7 +299,7 @@ mod test {
         assert!({
             let token = lexer.lex().ok().unwrap();
 
-            matches!(token.pattern(), Pattern::Punctuator('|'))
+            matches!(token.token_kind(), TokenKind::Punctuator('|'))
                 && token.position_range().start
                     == SourcePosition { line: 1, column: 5 }
                 && token.position_range().end
@@ -309,7 +309,7 @@ mod test {
         assert!({
             let token = lexer.lex().ok().unwrap();
 
-            matches!(token.pattern(), Pattern::Space)
+            matches!(token.token_kind(), TokenKind::Space)
                 && token.position_range().start
                     == SourcePosition { line: 1, column: 6 }
                 && token.position_range().end
@@ -317,8 +317,8 @@ mod test {
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::EndOfFile
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::EndOfFile
         ));
     }
 
@@ -332,52 +332,52 @@ mod test {
         let mut lexer = Lexer::new(&source);
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Keyword(Keyword::Return)
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Keyword(Keyword::Return)
         ));
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Space
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Space
         ));
 
         assert!({
             let token = lexer.lex().ok().unwrap();
             token.lexeme() == "some_name"
-                && matches!(token.pattern(), Pattern::Identifier)
+                && matches!(token.token_kind(), TokenKind::Identifier)
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Space
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Space
         ));
 
         assert!({
             let token = lexer.lex().ok().unwrap();
             token.lexeme() == "_name"
-                && matches!(token.pattern(), Pattern::Identifier)
+                && matches!(token.token_kind(), TokenKind::Identifier)
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Space
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Space
         ));
 
         assert!({
             let token = lexer.lex().ok().unwrap();
             token.lexeme() == "23"
-                && matches!(token.pattern(), Pattern::LiteralConstant)
+                && matches!(token.token_kind(), TokenKind::LiteralConstant)
         });
 
         assert!({
             let token = lexer.lex().ok().unwrap();
             token.lexeme() == "name"
-                && matches!(token.pattern(), Pattern::Identifier)
+                && matches!(token.token_kind(), TokenKind::Identifier)
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::EndOfFile
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::EndOfFile
         ));
     }
 
@@ -393,28 +393,28 @@ mod test {
         assert!({
             let token = lexer.lex().ok().unwrap();
             token.lexeme() == "// Hello\n"
-                && matches!(token.pattern(), Pattern::Comment)
+                && matches!(token.token_kind(), TokenKind::Comment)
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Space
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Space
         ));
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Keyword(Keyword::Return)
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Keyword(Keyword::Return)
         ));
 
         assert!({
             let token = lexer.lex().ok().unwrap();
             token.lexeme() == "// Another"
-                && matches!(token.pattern(), Pattern::Comment)
+                && matches!(token.token_kind(), TokenKind::Comment)
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::EndOfFile
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::EndOfFile
         ));
     }
 
@@ -430,28 +430,28 @@ mod test {
         assert!({
             let token = lexer.lex().ok().unwrap();
             token.lexeme() == "/* Hello */"
-                && matches!(token.pattern(), Pattern::Comment)
+                && matches!(token.token_kind(), TokenKind::Comment)
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Space
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Space
         ));
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Keyword(Keyword::Return)
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Keyword(Keyword::Return)
         ));
 
         assert!({
             let token = lexer.lex().ok().unwrap();
             token.lexeme() == "/* Another */"
-                && matches!(token.pattern(), Pattern::Comment)
+                && matches!(token.token_kind(), TokenKind::Comment)
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::Space
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::Space
         ));
 
         assert!({
@@ -470,8 +470,8 @@ mod test {
         });
 
         assert!(matches!(
-            lexer.lex().ok().unwrap().pattern(),
-            Pattern::EndOfFile
+            lexer.lex().ok().unwrap().token_kind(),
+            TokenKind::EndOfFile
         ));
     }
 }

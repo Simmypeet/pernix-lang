@@ -10,7 +10,7 @@ pub enum Keyword {
 
 /// Enumeration containing all patterns of token
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Pattern {
+pub enum TokenKind {
     Identifier,
     Space,
     Comment,
@@ -23,7 +23,7 @@ pub enum Pattern {
 /// Represents a single token word; containing type of the token and its lexeme
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'a> {
-    pattern: Pattern,
+    token_kind: TokenKind,
     position_range: Range<SourcePosition>,
     lexeme: &'a str,
 }
@@ -31,20 +31,20 @@ pub struct Token<'a> {
 impl<'a> Token<'a> {
     /// Creates a new [`Token`].
     pub(crate) fn new(
-        pattern: Pattern,
+        token_kind: TokenKind,
         position_range: Range<SourcePosition>,
         lexeme: &'a str,
     ) -> Self {
         Self {
-            pattern,
+            token_kind,
             position_range,
             lexeme,
         }
     }
 
-    /// Returns a reference to the pattern of this [`Token`].
-    pub fn pattern(&self) -> &Pattern {
-        &self.pattern
+    /// Returns a reference to the token kind of this [`Token`].
+    pub fn token_kind(&self) -> &TokenKind {
+        &self.token_kind
     }
 
     /// Returns a reference to the position range of this [`Token`].
