@@ -29,11 +29,6 @@ pub enum Expression {
         function_name: PositiionWrapper<String>,
         arguments: Vec<PositiionWrapper<Expression>>,
     },
-
-    /// Represents an expression of the form `(expression)`
-    ParenthesizedExpression {
-        expression: Box<PositiionWrapper<Expression>>,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
