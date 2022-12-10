@@ -62,8 +62,8 @@ pub enum Statement<'a> {
     /// else else_statement`
     IfStatement {
         condition: PositiionWrapper<Expression<'a>>,
-        then_statement: Box<PositiionWrapper<Statement<'a>>>,
-        else_statement: Option<Box<PositiionWrapper<Statement<'a>>>>,
+        then_statement: Box<PositiionWrapper<ScopeStatement<'a>>>,
+        else_statement: Option<Box<PositiionWrapper<ScopeStatement<'a>>>>,
     },
 
     ScopeStatement(ScopeStatement<'a>),
