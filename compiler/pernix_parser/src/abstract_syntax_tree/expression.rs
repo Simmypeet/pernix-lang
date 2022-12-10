@@ -38,7 +38,7 @@ pub enum Expression<'a> {
 pub enum Statement<'a> {
     /// Represents a statement of the form `return expression;`
     ReturnStatement {
-        expression: PositiionWrapper<Expression<'a>>,
+        expression: Option<PositiionWrapper<Expression<'a>>>,
     },
 
     /// Represents a statement of the form `expression;`
