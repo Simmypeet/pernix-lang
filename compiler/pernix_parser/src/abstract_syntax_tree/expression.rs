@@ -59,6 +59,4 @@ pub enum Statement<'a> {
         then_statement: Vec<PositiionWrapper<Statement<'a>>>,
         else_statement: Option<Vec<PositiionWrapper<Statement<'a>>>>,
     },
-
-    ScopeStatement(Vec<Statement<'a>>),
 }
