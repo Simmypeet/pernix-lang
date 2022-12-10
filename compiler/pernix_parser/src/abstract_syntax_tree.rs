@@ -29,23 +29,13 @@ pub enum BinaryOperator {
     NotEqual,
     And,
     Or,
-    Xor,
-    LeftShift,
-    RightShift,
-    LogicalAnd,
-    LogicalOr,
-    LogicalXor,
-    LogicalLeftShift,
-    LogicalRightShift,
 }
 
 /// List of all available unary operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOperator {
-    Plus,
     Minus,
     LogicalNot,
-    BitwiseNot,
 }
 
 /// An enumeration containing all kinds of types referenced in the program

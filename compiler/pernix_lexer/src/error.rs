@@ -2,7 +2,7 @@ use console::Style;
 use pernix_project::source_code::{SourceCode, SourcePosition};
 
 /// An enumeration containing all lexical errors
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Error<'a> {
     InvalidCharacter {
         position: SourcePosition,
