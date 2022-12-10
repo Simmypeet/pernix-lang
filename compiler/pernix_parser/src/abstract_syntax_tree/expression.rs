@@ -1,4 +1,4 @@
-use pernix_lexer::token::{LiteralConstantType, TokenKind};
+use pernix_lexer::token::LiteralConstantType;
 
 use super::{BinaryOperator, PositiionWrapper, UnaryOperator};
 
