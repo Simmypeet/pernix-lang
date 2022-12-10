@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, ops::Range};
 
 /// Represents a source code
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceCode {
     source_code: String,
     source_name: String,

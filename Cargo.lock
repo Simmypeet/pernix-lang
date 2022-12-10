@@ -44,6 +44,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernix_parser"
+version = "0.1.0"
+dependencies = [
+ "pernix_lexer",
+ "pernix_project",
+]
+
+[[package]]
 name = "pernix_project"
 version = "0.1.0"
 
