@@ -2,11 +2,11 @@ use super::{expression::ScopeStatement, PositiionWrapper, Type};
 
 /// A declaration is a statement that declares a new name in the current scope.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Declaration {
+pub enum Declaration<'a> {
     /// Represents a namespace declaration of the form `namespace namespace_name { declarations* }`
     NamespaceDeclaration {
         namespace_name: PositiionWrapper<String>,
-        declarations: Vec<PositiionWrapper<Declaration>>,
+        declarations: Vec<PositiionWrapper<Declaration<'a>>>,
     },
 
     /// Represents a function declaration of the form `type function_name(parameters) { statements* }`
@@ -14,7 +14,7 @@ pub enum Declaration {
         function_name: PositiionWrapper<String>,
         parameters: Vec<PositiionWrapper<String>>,
         return_type: PositiionWrapper<Type>,
-        body: Vec<PositiionWrapper<ScopeStatement>>,
+        body: Vec<PositiionWrapper<ScopeStatement<'a>>>,
     },
 
     /// Represents a namespace using declaration of the form `using namespace_name;`

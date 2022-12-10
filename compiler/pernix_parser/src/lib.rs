@@ -26,11 +26,11 @@ pub struct Parser<'a> {
 }
 
 /// A struct representation of a Pernix source code program.
-pub struct Program {
-    declarations: Vec<PositiionWrapper<Declaration>>,
+pub struct Program<'a> {
+    declarations: Vec<PositiionWrapper<Declaration<'a>>>,
 }
 
-impl Program {
+impl<'a> Program<'a> {
     /// Returns a reference to the declarations of this [`Program`].
     pub fn declarations(&self) -> &[PositiionWrapper<Declaration>] {
         self.declarations.as_ref()
@@ -240,7 +240,7 @@ impl<'a> Parser<'a> {
     ///   `using` Qualifier `;`
     pub fn parse_using_declaration(
         &mut self,
-    ) -> Option<PositiionWrapper<Declaration>> {
+    ) -> Option<PositiionWrapper<Declaration<'a>>> {
         // move to the first significant token
         self.move_to_significant();
         let starting_position = self.peek().position_range().start;
@@ -285,7 +285,7 @@ impl<'a> Parser<'a> {
     ///    `namespace` Qualifier `{` Declaration* `}`
     pub fn parse_namespace_declaration(
         &mut self,
-    ) -> Option<PositiionWrapper<Declaration>> {
+    ) -> Option<PositiionWrapper<Declaration<'a>>> {
         // move to the first significant token
         self.move_to_significant();
         let starting_position = self.peek().position_range().start;
@@ -385,7 +385,7 @@ impl<'a> Parser<'a> {
     ///
     /// Program:
     ///  Declaration*
-    pub fn parse_program(&mut self) -> Option<Program> {
+    pub fn parse_program(&mut self) -> Option<Program<'a>> {
         let mut program = Program {
             declarations: Vec::new(),
         };
