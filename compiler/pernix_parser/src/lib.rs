@@ -234,11 +234,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parses the current token stream as a using declaration
+    /// Parses the current token stream as a using_statement
     ///
-    /// Using_Declaration:
+    /// Using_Statement:
     ///   `using` Qualified_Name `;`
-    pub fn parse_using_declaration(
+    pub fn parse_using_statement(
         &mut self,
     ) -> Option<PositiionWrapper<Declaration<'a>>> {
         // move to the first significant token
@@ -273,7 +273,7 @@ impl<'a> Parser<'a> {
 
         Some(PositiionWrapper {
             position: starting_position..self.peek_back().position_range().end,
-            value: Declaration::UsingDeclaration {
+            value: Declaration::UsingStatement {
                 namespace_name: qualified_name,
             },
         })
@@ -333,7 +333,7 @@ impl<'a> Parser<'a> {
                     self.parse_namespace_declaration()
                 }
                 TokenKind::Keyword(Keyword::Using) => {
-                    self.parse_using_declaration()
+                    self.parse_using_statement()
                 }
                 _ => self.append_error(Error::UnexpectedToken {
                     context: Context::Namespace,
@@ -399,7 +399,7 @@ impl<'a> Parser<'a> {
                     self.parse_namespace_declaration()
                 }
                 TokenKind::Keyword(Keyword::Using) => {
-                    self.parse_using_declaration()
+                    self.parse_using_statement()
                 }
                 _ => self.append_error(Error::UnexpectedToken {
                     context: Context::Program,
@@ -456,10 +456,10 @@ mod test {
         assert_eq!(program.declarations.len(), 2);
 
         match &program.declarations[0].value {
-            Declaration::UsingDeclaration { namespace_name } => {
+            Declaration::UsingStatement { namespace_name } => {
                 assert_eq!(namespace_name.value, "Math");
             }
-            _ => panic!("Expected using declaration"),
+            _ => panic!("Expected using_statement"),
         }
 
         match &program.declarations[1].value {
@@ -513,7 +513,7 @@ mod test {
                 // is invalid
 
                 match &declarations[0].value {
-                    Declaration::UsingDeclaration { namespace_name } => {
+                    Declaration::UsingStatement { namespace_name } => {
                         assert_eq!(namespace_name.value, "bar");
                     }
                     _ => panic!("Unexpected declaration"),
@@ -576,13 +576,13 @@ mod test {
                 assert_eq!(namespace_name.value, "foo");
                 assert_eq!(declarations.len(), 1);
 
-                let using_declaration = declarations.get(0).unwrap();
+                let using_statement = declarations.get(0).unwrap();
 
-                match &using_declaration.value {
-                    Declaration::UsingDeclaration { namespace_name } => {
+                match &using_statement.value {
+                    Declaration::UsingStatement { namespace_name } => {
                         assert_eq!(namespace_name.value, "bar");
                     }
-                    _ => panic!("Expected a using declaration"),
+                    _ => panic!("Expected a using statement"),
                 }
             }
             _ => panic!("Expected a namespace declaration"),
@@ -644,9 +644,9 @@ mod test {
         );
     }
 
-    // Checks if the parser can parse a using declaration
+    // Checks if the parser can parse a using_statement
     #[test]
-    fn parse_using_declaration_test() {
+    fn parse_using_statement_test() {
         let source_code = SourceCode::new(
             "using Simmypeet.Program;\nusing Another;\nusing Missing.SemiColon"
                 .to_string(),
@@ -655,13 +655,13 @@ mod test {
 
         let mut parser = Parser::new(&source_code);
 
-        // parse the first using declaration
+        // parse the first using_statement
         {
-            let using_declaration = parser.parse_using_declaration().unwrap();
+            let using_statement = parser.parse_using_statement().unwrap();
 
             assert_eq!(
-                using_declaration.value,
-                Declaration::UsingDeclaration {
+                using_statement.value,
+                Declaration::UsingStatement {
                     namespace_name: PositiionWrapper {
                         position: SourcePosition { line: 1, column: 7 }
                             ..SourcePosition {
@@ -674,12 +674,12 @@ mod test {
             );
 
             assert_eq!(
-                using_declaration.position.start,
+                using_statement.position.start,
                 SourcePosition { line: 1, column: 1 }
             );
 
             assert_eq!(
-                using_declaration.position.end,
+                using_statement.position.end,
                 SourcePosition {
                     line: 1,
                     column: 25
@@ -687,13 +687,13 @@ mod test {
             );
         }
 
-        // parse the second using declaration
+        // parse the second using_statement
         {
-            let using_declaration = parser.parse_using_declaration().unwrap();
+            let using_statement = parser.parse_using_statement().unwrap();
 
             assert_eq!(
-                using_declaration.value,
-                Declaration::UsingDeclaration {
+                using_statement.value,
+                Declaration::UsingStatement {
                     namespace_name: PositiionWrapper {
                         position: SourcePosition { line: 2, column: 7 }
                             ..SourcePosition {
@@ -706,12 +706,12 @@ mod test {
             );
 
             assert_eq!(
-                using_declaration.position.start,
+                using_statement.position.start,
                 SourcePosition { line: 2, column: 1 }
             );
 
             assert_eq!(
-                using_declaration.position.end,
+                using_statement.position.end,
                 SourcePosition {
                     line: 2,
                     column: 15
@@ -719,11 +719,11 @@ mod test {
             );
         }
 
-        // the last using declaration is missing a semicolon
+        // the last using_statement is missing a semicolon
         {
-            let using_declaration = parser.parse_using_declaration();
+            let using_statement = parser.parse_using_statement();
 
-            assert!(using_declaration.is_none());
+            assert!(using_statement.is_none());
 
             // eject the error
             let errors = parser.pop_errors();

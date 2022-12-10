@@ -17,8 +17,8 @@ pub enum Declaration<'a> {
         body: Vec<PositiionWrapper<Statement<'a>>>,
     },
 
-    /// Represents a namespace using declaration of the form `using namespace_name;`
-    UsingDeclaration {
+    /// Represents a namespace using statement of the form `using namespace_name;`
+    UsingStatement {
         namespace_name: PositiionWrapper<String>,
     },
 }
