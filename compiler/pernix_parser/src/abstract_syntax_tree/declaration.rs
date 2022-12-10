@@ -1,4 +1,4 @@
-use super::{expression::ScopeStatement, PositiionWrapper, Type};
+use super::{expression::Statement, PositiionWrapper, Type};
 
 /// A declaration is a statement that declares a new name in the current scope.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub enum Declaration<'a> {
         function_name: PositiionWrapper<String>,
         parameters: Vec<PositiionWrapper<String>>,
         return_type: PositiionWrapper<Type>,
-        body: Vec<PositiionWrapper<ScopeStatement<'a>>>,
+        body: Vec<PositiionWrapper<Statement<'a>>>,
     },
 
     /// Represents a namespace using declaration of the form `using namespace_name;`

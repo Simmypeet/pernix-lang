@@ -33,12 +33,6 @@ pub enum Expression<'a> {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// Represents a scope statement of the form `{ statements* }`
-pub struct ScopeStatement<'a> {
-    pub statements: Vec<PositiionWrapper<Statement<'a>>>,
-}
-
 /// Enumeration containing all kinds of statements
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement<'a> {
@@ -62,9 +56,9 @@ pub enum Statement<'a> {
     /// else else_statement`
     IfStatement {
         condition: PositiionWrapper<Expression<'a>>,
-        then_statement: Box<PositiionWrapper<ScopeStatement<'a>>>,
-        else_statement: Option<Box<PositiionWrapper<ScopeStatement<'a>>>>,
+        then_statement: Vec<PositiionWrapper<Statement<'a>>>,
+        else_statement: Option<Vec<PositiionWrapper<Statement<'a>>>>,
     },
 
-    ScopeStatement(ScopeStatement<'a>),
+    ScopeStatement(Vec<Statement<'a>>),
 }
