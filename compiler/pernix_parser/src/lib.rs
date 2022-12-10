@@ -188,12 +188,12 @@ impl<'a> Parser<'a> {
         None
     }
 
-    /// Parses the current token stream as a qualifier string
+    /// Parses the current token stream as a qualified name string
     ///
-    /// Qualifier:
+    /// Qualified_Name:
     ///     `IDENTIFIER` |
-    ///     `IDENTIFIER` `.` Qualifier
-    pub fn parse_qualifier(&mut self) -> Option<PositiionWrapper<String>> {
+    ///     `IDENTIFIER` `.` Qualified_Name
+    pub fn parse_qualified_name(&mut self) -> Option<PositiionWrapper<String>> {
         self.move_to_significant();
         let starting_position = self.peek().position_range().start;
 
@@ -237,7 +237,7 @@ impl<'a> Parser<'a> {
     /// Parses the current token stream as a using declaration
     ///
     /// Using_Declaration:
-    ///   `using` Qualifier `;`
+    ///   `using` Qualified_Name `;`
     pub fn parse_using_declaration(
         &mut self,
     ) -> Option<PositiionWrapper<Declaration<'a>>> {
@@ -257,7 +257,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        let qualifier = self.parse_qualifier()?;
+        let qualified_name = self.parse_qualified_name()?;
 
         // expect the semicolon
         if !matches!(
@@ -274,7 +274,7 @@ impl<'a> Parser<'a> {
         Some(PositiionWrapper {
             position: starting_position..self.peek_back().position_range().end,
             value: Declaration::UsingDeclaration {
-                namespace_name: qualifier,
+                namespace_name: qualified_name,
             },
         })
     }
@@ -282,7 +282,7 @@ impl<'a> Parser<'a> {
     /// Parses the current token stream as a namespace declaration
     ///
     /// Namespace_Declaration:
-    ///    `namespace` Qualifier `{` Declaration* `}`
+    ///    `namespace` Qualified_Name `{` Declaration* `}`
     pub fn parse_namespace_declaration(
         &mut self,
     ) -> Option<PositiionWrapper<Declaration<'a>>> {
@@ -302,7 +302,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        let namespace_name = self.parse_qualifier()?;
+        let namespace_name = self.parse_qualified_name()?;
 
         // expect the opening curly bracket
         if !matches!(
@@ -756,9 +756,9 @@ mod test {
         }
     }
 
-    // Checks if the parser can parse a qualifier
+    // Checks if the parser can parse a qualified name
     #[test]
-    fn parse_qualifier_test() {
+    fn parse_qualified_name_test() {
         let source_code = SourceCode::new(
             "Simmypeet.Program  Another.Simmypeet.Program  Error.Qualifier. Last.Error.Qualifier.".to_string(),
             String::new(),
@@ -768,7 +768,7 @@ mod test {
 
         // parse first qualifier
         {
-            let qualifier = parser.parse_qualifier().unwrap();
+            let qualifier = parser.parse_qualified_name().unwrap();
 
             assert_eq!(qualifier.value, "Simmypeet.Program");
 
@@ -787,7 +787,7 @@ mod test {
 
         // parse second qualifier
         {
-            let qualifier = parser.parse_qualifier().unwrap();
+            let qualifier = parser.parse_qualified_name().unwrap();
 
             assert_eq!(qualifier.value, "Another.Simmypeet.Program");
 
@@ -809,7 +809,7 @@ mod test {
 
         // the next qualifier is incomplete and should be rejected
         {
-            assert!(parser.parse_qualifier().is_none());
+            assert!(parser.parse_qualified_name().is_none());
 
             // eject the parser's accumulated errors
             let errors = parser.pop_errors();
@@ -842,7 +842,7 @@ mod test {
 
         // the last qualifier is also incomplete found eof first
         {
-            assert!(parser.parse_qualifier().is_none());
+            assert!(parser.parse_qualified_name().is_none());
 
             // eject the parser's accumulated errors
             let errors = parser.pop_errors();

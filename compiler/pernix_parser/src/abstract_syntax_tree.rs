@@ -28,7 +28,7 @@ pub enum BinaryOperator {
     Equal,
     NotEqual,
     And,
-    Or,
+    Or, 
 }
 
 /// List of all available unary operators
