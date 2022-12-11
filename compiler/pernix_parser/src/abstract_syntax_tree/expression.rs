@@ -22,7 +22,7 @@ pub enum Expression<'a> {
     LiteralExpression(LiteralConstantType<'a>),
 
     /// Represents an expression of the form `identifier`
-    IdentifierExpression(PositiionWrapper<&'a str>),
+    IdentifierExpression(&'a str),
 
     /// Represents an expression of the form `function_name(arguments)`
     FunctionCallExpression {
