@@ -6,7 +6,7 @@ use abstract_syntax_tree::{
 };
 use error::{Context, Error};
 use pernix_lexer::{
-    token::{self, Keyword, Token, TokenKind},
+    token::{Keyword, Token, TokenKind},
     Lexer,
 };
 use pernix_project::source_code::SourceCode;
@@ -197,17 +197,14 @@ impl<'a> Parser<'a> {
     /// Qualified_Name:
     ///     `IDENTIFIER` |
     ///     `IDENTIFIER` `.` Qualified_Name
-    pub fn parse_qualified_name(&mut self) -> Option<PositiionWrapper<String>> {
+    pub fn parse_qualified_name(
+        &mut self,
+    ) -> Option<PositiionWrapper<&'a str>> {
         self.move_to_significant();
         let starting_position = self.peek().position_range().start;
 
-        // the string to return
-        let mut string = String::new();
-
         // expect the first identifier
-        if let TokenKind::Identifier = self.next().token_kind() {
-            string.push_str(self.peek_back().lexeme());
-        } else {
+        if !matches!(self.next().token_kind(), TokenKind::Identifier) {
             return self.append_error(Error::IdentifierExpected {
                 found_token: self.peek_back().clone(),
                 source_reference: self.source_code(),
@@ -219,12 +216,8 @@ impl<'a> Parser<'a> {
             // eat the dot
             self.next();
 
-            string.push('.');
-
             // expect the next identifier
-            if let TokenKind::Identifier = self.next().token_kind() {
-                string.push_str(self.peek_back().lexeme());
-            } else {
+            if !matches!(self.next().token_kind(), TokenKind::Identifier) {
                 return self.append_error(Error::IdentifierExpected {
                     found_token: self.peek_back().clone(),
                     source_reference: self.source_code(),
@@ -234,7 +227,9 @@ impl<'a> Parser<'a> {
 
         Some(PositiionWrapper {
             position: starting_position..self.peek_back().position_range().end,
-            value: string,
+            value: &self.source_code().source_code()[starting_position
+                .byte_index
+                ..self.peek_back().position_range().end.byte_index],
         })
     }
 
@@ -562,13 +557,18 @@ mod test {
 
         assert_eq!(
             namespace_declaration.position.start,
-            SourcePosition { line: 1, column: 1 }
+            SourcePosition {
+                line: 1,
+                column: 1,
+                byte_index: 0
+            }
         );
         assert_eq!(
             namespace_declaration.position.end,
             SourcePosition {
                 line: 1,
-                column: 36
+                column: 36,
+                byte_index: 35
             }
         );
 
@@ -629,13 +629,18 @@ mod test {
 
         assert_eq!(
             namespace_declaration.position.start,
-            SourcePosition { line: 1, column: 1 }
+            SourcePosition {
+                line: 1,
+                column: 1,
+                byte_index: 0
+            }
         );
         assert_eq!(
             namespace_declaration.position.end,
             SourcePosition {
                 line: 1,
-                column: 29
+                column: 29,
+                byte_index: 28
             }
         );
 
@@ -682,14 +687,16 @@ mod test {
             parser.peek().position_range().start,
             SourcePosition {
                 line: 1,
-                column: 14
+                column: 14,
+                byte_index: 13
             }
         );
         assert_eq!(
             parser.peek().position_range().end,
             SourcePosition {
                 line: 1,
-                column: 15
+                column: 15,
+                byte_index: 14
             }
         );
 
@@ -703,14 +710,16 @@ mod test {
             parser.peek().position_range().start,
             SourcePosition {
                 line: 1,
-                column: 15
+                column: 15,
+                byte_index: 14
             }
         );
         assert_eq!(
             parser.peek().position_range().end,
             SourcePosition {
                 line: 1,
-                column: 16
+                column: 15,
+                byte_index: 14
             }
         );
     }
@@ -734,26 +743,35 @@ mod test {
                 using_statement.value,
                 Declaration::UsingStatement {
                     namespace_name: PositiionWrapper {
-                        position: SourcePosition { line: 1, column: 7 }
-                            ..SourcePosition {
-                                line: 1,
-                                column: 24
-                            },
-                        value: "Simmypeet.Program".to_string(),
+                        position: SourcePosition {
+                            line: 1,
+                            column: 7,
+                            byte_index: 6
+                        }..SourcePosition {
+                            line: 1,
+                            column: 24,
+                            byte_index: 23
+                        },
+                        value: "Simmypeet.Program",
                     }
                 }
             );
 
             assert_eq!(
                 using_statement.position.start,
-                SourcePosition { line: 1, column: 1 }
+                SourcePosition {
+                    line: 1,
+                    column: 1,
+                    byte_index: 0
+                }
             );
 
             assert_eq!(
                 using_statement.position.end,
                 SourcePosition {
                     line: 1,
-                    column: 25
+                    column: 25,
+                    byte_index: 24
                 }
             );
         }
@@ -766,26 +784,35 @@ mod test {
                 using_statement.value,
                 Declaration::UsingStatement {
                     namespace_name: PositiionWrapper {
-                        position: SourcePosition { line: 2, column: 7 }
-                            ..SourcePosition {
-                                line: 2,
-                                column: 14
-                            },
-                        value: "Another".to_string(),
+                        position: SourcePosition {
+                            line: 2,
+                            column: 7,
+                            byte_index: 31
+                        }..SourcePosition {
+                            line: 2,
+                            column: 14,
+                            byte_index: 38
+                        },
+                        value: "Another",
                     }
                 }
             );
 
             assert_eq!(
                 using_statement.position.start,
-                SourcePosition { line: 2, column: 1 }
+                SourcePosition {
+                    line: 2,
+                    column: 1,
+                    byte_index: 25
+                }
             );
 
             assert_eq!(
                 using_statement.position.end,
                 SourcePosition {
                     line: 2,
-                    column: 15
+                    column: 15,
+                    byte_index: 39
                 }
             );
         }
@@ -811,15 +838,7 @@ mod test {
                         found_token,
                         source_reference: _
                     } if found_token.lexeme() == ""
-                    && found_token.position_range().start == SourcePosition {
-                        line: 3,
-                        column: 24
-                    }
-                    && found_token.position_range().end == SourcePosition {
-                        line: 3,
-                        column: 25
-                    }
-                    && *found_token.token_kind() == TokenKind::EndOfFile
+                   && *found_token.token_kind() == TokenKind::EndOfFile
                 ),
                 "Unexpected error: {:?}",
                 error
@@ -845,13 +864,18 @@ mod test {
 
             assert_eq!(
                 qualifier.position.start,
-                SourcePosition { line: 1, column: 1 }
+                SourcePosition {
+                    line: 1,
+                    column: 1,
+                    byte_index: 0
+                }
             );
             assert_eq!(
                 qualifier.position.end,
                 SourcePosition {
                     line: 1,
-                    column: 18
+                    column: 18,
+                    byte_index: 17
                 }
             );
         }
@@ -866,14 +890,16 @@ mod test {
                 qualifier.position.start,
                 SourcePosition {
                     line: 1,
-                    column: 20
+                    column: 20,
+                    byte_index: 19
                 }
             );
             assert_eq!(
                 qualifier.position.end,
                 SourcePosition {
                     line: 1,
-                    column: 45
+                    column: 45,
+                    byte_index: 44
                 }
             );
         }
@@ -898,11 +924,13 @@ mod test {
                     } if found_token.lexeme() == " "
                     && found_token.position_range().start == SourcePosition {
                         line: 1,
-                        column: 63
+                        column: 63,
+                        byte_index: 62
                     }
                     && found_token.position_range().end == SourcePosition {
                         line: 1,
-                        column: 64
+                        column: 64,
+                        byte_index: 63
                     }
                     && *found_token.token_kind() == TokenKind::Space
                 ),
@@ -931,11 +959,13 @@ mod test {
                     } if found_token.lexeme() == ""
                     && found_token.position_range().start == SourcePosition {
                         line: 1,
-                        column: 85
+                        column: 85,
+                        byte_index: 84
                     }
                     && found_token.position_range().end == SourcePosition {
                         line: 1,
-                        column: 86
+                        column: 85,
+                        byte_index: 84
                     }
                     && *found_token.token_kind() == TokenKind::EndOfFile
                 ),
