@@ -1,13 +1,17 @@
 pub mod abstract_syntax_tree;
 pub mod error;
 
-use abstract_syntax_tree::{declaration::Declaration, PositiionWrapper};
+use abstract_syntax_tree::{
+    declaration::Declaration, expression::Expression, PositiionWrapper,
+};
 use error::{Context, Error};
 use pernix_lexer::{
-    token::{Keyword, Token, TokenKind},
+    token::{self, Keyword, Token, TokenKind},
     Lexer,
 };
 use pernix_project::source_code::SourceCode;
+
+use crate::abstract_syntax_tree::UnaryOperator;
 
 /// Represents a struct that parases the given token stream into abstract syntax
 /// trees
@@ -75,7 +79,7 @@ impl<'a> Parser<'a> {
     }
 
     // Gets the current token stream and moves the current position forward
-    pub(crate) fn next(&mut self) -> &Token<'a> {
+    fn next(&mut self) -> &Token<'a> {
         // need to generate more tokens
         if self.current_position == self.accumulated_tokens.len() - 1 {
             let new_token;
@@ -106,13 +110,13 @@ impl<'a> Parser<'a> {
     }
 
     // Moves the current position to the next significant token and emits it
-    pub(crate) fn next_significant(&mut self) -> &Token<'a> {
+    fn next_significant(&mut self) -> &Token<'a> {
         self.move_to_significant();
         self.next()
     }
 
     /// Moves the current position to the next significant token
-    pub(crate) fn move_to_significant(&mut self) {
+    fn move_to_significant(&mut self) {
         while !self.peek().is_significant_token() {
             self.next();
         }
@@ -126,7 +130,7 @@ impl<'a> Parser<'a> {
 
     // skips the tokens until the predicate returns true. The parser also
     // skips the tokens inside pairs of brackets and parenthesis
-    pub(crate) fn skip_to(&mut self, predicate: impl Fn(&Token<'a>) -> bool) {
+    fn skip_to(&mut self, predicate: impl Fn(&Token<'a>) -> bool) {
         // keep skipping tokens until the predicate returns true
         while !predicate(self.peek())
             && !matches!(self.peek().token_kind(), TokenKind::EndOfFile)
@@ -426,6 +430,73 @@ impl<'a> Parser<'a> {
         }
 
         Some(program)
+    }
+
+    fn parse_unary_expression(
+        &mut self,
+    ) -> Option<PositiionWrapper<Expression<'a>>> {
+        self.move_to_significant();
+        let operator_position_range = self.peek().position_range().clone();
+
+        let operator = match self.next().token_kind() {
+            TokenKind::Punctuator('!') => UnaryOperator::LogicalNot,
+            TokenKind::Punctuator('-') => UnaryOperator::Minus,
+            TokenKind::Punctuator('+') => UnaryOperator::Plus,
+            _ => {
+                return self.append_error(Error::UnexpectedToken {
+                    context: Context::Expression,
+                    found_token: self.peek_back().clone(),
+                    source_reference: self.source_code(),
+                })
+            }
+        };
+
+        let operand = self.parse_primary_expression()?;
+
+        Some(PositiionWrapper {
+            position: operator_position_range.start
+                ..self.peek_back().position_range().end,
+            value: Expression::UnaryExpression {
+                operator: PositiionWrapper {
+                    position: operator_position_range,
+                    value: operator,
+                },
+                operand: Box::new(operand),
+            },
+        })
+    }
+
+    fn parse_expression(&mut self) -> Option<PositiionWrapper<Expression<'a>>> {
+        todo!();
+    }
+
+    // Parses the current token stream as a primary expression
+    fn parse_primary_expression(
+        &mut self,
+    ) -> Option<PositiionWrapper<Expression<'a>>> {
+        self.move_to_significant();
+
+        match self.peek().token_kind().clone() {
+            TokenKind::Punctuator('!')
+            | TokenKind::Punctuator('-')
+            | TokenKind::Punctuator('+') => self.parse_unary_expression(),
+            TokenKind::LiteralConstant(val) => {
+                let position = self.peek().position_range().clone();
+
+                // eat literal token
+                self.next();
+
+                Some(PositiionWrapper {
+                    position,
+                    value: Expression::LiteralExpression(val),
+                })
+            }
+            _ => self.append_error(error::Error::UnexpectedToken {
+                context: Context::Expression,
+                found_token: self.peek().clone(),
+                source_reference: self.source_code(),
+            }),
+        }
     }
 }
 

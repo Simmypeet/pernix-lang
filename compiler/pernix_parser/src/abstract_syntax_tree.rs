@@ -28,7 +28,7 @@ pub enum BinaryOperator {
     Equal,
     NotEqual,
     And,
-    Or, 
+    Or,
 }
 
 /// List of all available unary operators
@@ -41,10 +41,10 @@ pub enum UnaryOperator {
 
 /// An enumeration containing all kinds of types referenced in the program
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type {
-    Identifier(String),
+pub enum Type<'a> {
+    Identifier(&'a str),
     Array {
-        element_type: Box<Type>,
+        element_type: Box<Type<'a>>,
         size: usize,
     },
 }

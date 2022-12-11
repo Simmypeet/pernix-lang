@@ -5,20 +5,20 @@ use super::{expression::Statement, PositiionWrapper, Type};
 pub enum Declaration<'a> {
     /// Represents a namespace declaration of the form `namespace namespace_name { declarations* }`
     NamespaceDeclaration {
-        namespace_name: PositiionWrapper<String>,
+        namespace_name: PositiionWrapper<&'a str>,
         declarations: Vec<PositiionWrapper<Declaration<'a>>>,
     },
 
     /// Represents a function declaration of the form `type function_name(parameters) { statements* }`
     FunctionDeclaration {
-        function_name: PositiionWrapper<String>,
-        parameters: Vec<PositiionWrapper<String>>,
-        return_type: PositiionWrapper<Type>,
+        function_name: PositiionWrapper<&'a str>,
+        parameters: Vec<PositiionWrapper<&'a str>>,
+        return_type: PositiionWrapper<Type<'a>>,
         body: Vec<PositiionWrapper<Statement<'a>>>,
     },
 
     /// Represents a namespace using statement of the form `using namespace_name;`
     UsingStatement {
-        namespace_name: PositiionWrapper<String>,
+        namespace_name: PositiionWrapper<&'a str>,
     },
 }

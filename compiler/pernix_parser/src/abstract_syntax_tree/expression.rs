@@ -23,12 +23,12 @@ pub enum Expression<'a> {
 
     /// Represents an expression of the form `identifier`
     IdentifierExpression {
-        identifier: PositiionWrapper<String>,
+        identifier: PositiionWrapper<&'a str>,
     },
 
     /// Represents an expression of the form `function_name(arguments)`
     FunctionCallExpression {
-        function_name: PositiionWrapper<String>,
+        function_name: PositiionWrapper<&'a str>,
         arguments: Vec<PositiionWrapper<Expression<'a>>>,
     },
 }
@@ -48,7 +48,7 @@ pub enum Statement<'a> {
 
     /// Represents a statement of the form `let identifier = expression;`
     VariableDeclarationStatement {
-        identifier: PositiionWrapper<String>,
+        identifier: PositiionWrapper<&'a str>,
         expression: PositiionWrapper<Expression<'a>>,
     },
 
