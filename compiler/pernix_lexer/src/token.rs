@@ -15,11 +15,11 @@ pub enum Keyword {
 pub enum LiteralConstantType<'a> {
     Integer {
         value: &'a str,
-        literal_prefix: Option<&'a str>,
+        literal_suffix: Option<&'a str>,
     },
     Float {
         value: &'a str,
-        literal_prefix: Option<&'a str>,
+        literal_suffix: Option<&'a str>,
     },
     Boolean(bool),
 }
