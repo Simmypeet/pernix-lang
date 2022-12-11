@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, ops::Range};
 
-/// Represents a source code
+/// Represent a source code.
 #[derive(Debug, Clone)]
 pub struct SourceCode {
     source_code: String,
@@ -8,7 +8,7 @@ pub struct SourceCode {
     new_line_ranges: Vec<Range<usize>>,
 }
 
-/// Represents a particular position in the source code, consisting of column,
+/// Represent a particular position in the source code, consisting of column,
 /// line and byte index.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SourcePosition {
@@ -57,18 +57,18 @@ impl SourceCode {
         }
     }
 
-    /// Returns a reference to the source code of this [`SourceCode`].
+    /// Return a reference to the source code of this [`SourceCode`].
     pub fn source_code(&self) -> &str {
         self.source_code.as_ref()
     }
 
-    /// Returns a reference to the source name of this [`SourceCode`].
+    /// Return a reference to the source name of this [`SourceCode`].
     pub fn source_name(&self) -> &str {
         self.source_name.as_ref()
     }
 
-    /// Returns the content of the line at the given `line_number`.
-    /// The line number starts from 1.
+    /// Return the content of the line at the given `line_number`. The line 
+    /// number starts from 1.
     pub fn line(&self, line_number: usize) -> Option<&str> {
         if line_number == 0 {
             return None;
@@ -82,31 +82,11 @@ impl SourceCode {
         }
     }
 
-    /// Returns the number of lines in this [`SourceCode`].
+    /// Return the number of lines in this [`SourceCode`].
     pub fn line_number(&self) -> usize {
         self.new_line_ranges.len()
     }
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_line() {
-        let source_code = SourceCode::new(
-            "Hello, world!\n".to_string()
-                + "My Name Is Pernix\n"
-                + "I am a programming language\n"
-                + "I am written in Rust\n"
-                + "\n",
-            "test".to_string(),
-        );
-
-        assert_eq!(source_code.line(1).unwrap(), "Hello, world!");
-        assert_eq!(source_code.line(2).unwrap(), "My Name Is Pernix");
-        assert_eq!(source_code.line(3).unwrap(), "I am a programming language");
-        assert_eq!(source_code.line(4).unwrap(), "I am written in Rust");
-        assert_eq!(source_code.line(5).unwrap(), "");
-    }
-}
+pub mod test;

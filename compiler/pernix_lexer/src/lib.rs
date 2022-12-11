@@ -1,7 +1,7 @@
 pub mod error;
 pub mod token;
 
-use error::Error;
+use error::{Error, InvalidCharacter, UnterminatedMultilineComment};
 use lazy_static::lazy_static;
 use pernix_project::source_code::{SourceCode, SourcePosition};
 use std::{collections::HashMap, iter::Peekable, str::CharIndices};
@@ -14,12 +14,15 @@ lazy_static! {
         map.insert("let", Keyword::Let);
         map.insert("using", Keyword::Using);
         map.insert("namespace", Keyword::Namespace);
+        map.insert("mutable", Keyword::Mutable);
+        map.insert("if", Keyword::Mutable);
+        map.insert("else", Keyword::Mutable);
         map
     };
 }
 
-/// Represents a lexer in lexical analysis which transforms source code into a
-/// token stream
+/// Represent a state-machine that lexes the source code and outputs a token
+/// one at a time.
 pub struct Lexer<'a> {
     source_code: &'a SourceCode,
     chars: Peekable<CharIndices<'a>>,
@@ -27,7 +30,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    /// Creates a new lexer targeting to the given `source_code` char slice
+    /// Create a new lexer targeting to the given `source_code` char slice
     pub fn new(source_code: &'a SourceCode) -> Lexer<'a> {
         Lexer {
             source_code,
@@ -77,8 +80,8 @@ impl<'a> Lexer<'a> {
         return char == '_' || char.is_alphabetic();
     }
 
-    /// Lexes the current word; returns the corresponding token and moves to
-    /// the next token.
+    /// Lex the current word; returns the corresponding token and move to the
+    ///  next token.
     pub fn lex(&mut self) -> Result<Token<'a>, Error<'a>> {
         // the current source file position
         let first_position = self.current_position;
@@ -165,11 +168,13 @@ impl<'a> Lexer<'a> {
                             None => {
                                 // error: multi-line comment is not closed
                                 return Err(
-                                    Error::UnterminatedMultilineComment {
-                                        multiline_comment_position:
-                                            first_position,
-                                        source_refernece: self.source_code,
-                                    },
+                                    Error::UnterminatedMultilineComment(
+                                        UnterminatedMultilineComment {
+                                            multiline_comment_position:
+                                                first_position,
+                                            source_refernece: self.source_code,
+                                        },
+                                    ),
                                 );
                             }
                             _ => {
@@ -324,24 +329,24 @@ impl<'a> Lexer<'a> {
             token_kind = if is_float {
                 TokenKind::LiteralConstant(token::LiteralConstantType::Float {
                     value: value_str,
-                    literal_prefix,
+                    literal_suffix: literal_prefix,
                 })
             } else {
                 TokenKind::LiteralConstant(
                     token::LiteralConstantType::Integer {
                         value: value_str,
-                        literal_prefix,
+                        literal_suffix: literal_prefix,
                     },
                 )
             };
         }
         // this character can't be categorized under any token kinds
         else {
-            return Err(Error::InvalidCharacter {
+            return Err(Error::InvalidCharacter(InvalidCharacter {
                 position: first_position,
                 character: first_char,
                 source_refernece: self.source_code,
-            });
+            }));
         }
 
         // return the token
@@ -359,432 +364,11 @@ impl<'a> Lexer<'a> {
         ));
     }
 
-    /// Returns a reference to the source code of this [`Lexer`].
+    /// Return a reference to the source code of this [`Lexer`].
     pub fn source_code(&self) -> &'a SourceCode {
         self.source_code
     }
 }
 
 #[cfg(test)]
-mod test {
-    use pernix_project::source_code::{SourceCode, SourcePosition};
-
-    use crate::{
-        error::Error,
-        token::{Keyword, LiteralConstantType, TokenKind},
-        Lexer,
-    };
-
-    #[test]
-    // Test for the literal constant token correctness
-    fn literal_test() {
-        let source = SourceCode::new(
-            "123i32 123.456 true false".to_string(),
-            "test".to_string(),
-        );
-        let mut lexer = Lexer::new(&source);
-
-        // expect 123 integer
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(
-                token.token_kind(),
-                TokenKind::LiteralConstant(LiteralConstantType::Integer {
-                    value: "123",
-                    literal_prefix: Some("i32")
-                })
-            ) && token.position_range().start
-                == SourcePosition {
-                    line: 1,
-                    column: 1,
-                    byte_index: 0,
-                }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 7,
-                        byte_index: 6,
-                    }
-        });
-
-        // expect space
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(token.token_kind(), TokenKind::Space)
-                && token.position_range().start
-                    == SourcePosition {
-                        line: 1,
-                        column: 7,
-                        byte_index: 6,
-                    }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 8,
-                        byte_index: 7,
-                    }
-        });
-
-        // expect 123.456 float
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(
-                token.token_kind(),
-                TokenKind::LiteralConstant(LiteralConstantType::Float {
-                    value: "123.456",
-                    literal_prefix: None
-                })
-            ) && token.position_range().start
-                == SourcePosition {
-                    line: 1,
-                    column: 8,
-                    byte_index: 7,
-                }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 15,
-                        byte_index: 14,
-                    }
-        });
-
-        // expect space
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(token.token_kind(), TokenKind::Space)
-                && token.position_range().start
-                    == SourcePosition {
-                        line: 1,
-                        column: 15,
-                        byte_index: 14,
-                    }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 16,
-                        byte_index: 15,
-                    }
-        });
-
-        // expect true boolean
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(
-                token.token_kind(),
-                TokenKind::LiteralConstant(LiteralConstantType::Boolean(true))
-            ) && token.position_range().start
-                == SourcePosition {
-                    line: 1,
-                    column: 16,
-                    byte_index: 15,
-                }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 20,
-                        byte_index: 19,
-                    }
-        });
-
-        // expect space
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(token.token_kind(), TokenKind::Space)
-                && token.position_range().start
-                    == SourcePosition {
-                        line: 1,
-                        column: 20,
-                        byte_index: 19,
-                    }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 21,
-                        byte_index: 20,
-                    }
-        });
-
-        // expect false boolean
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(
-                token.token_kind(),
-                TokenKind::LiteralConstant(LiteralConstantType::Boolean(false))
-            ) && token.position_range().start
-                == SourcePosition {
-                    line: 1,
-                    column: 21,
-                    byte_index: 20,
-                }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 26,
-                        byte_index: 25,
-                    }
-        });
-    }
-
-    #[test]
-    // Tests for the space token gap correctness
-    fn space_test() {
-        let source =
-            SourceCode::new("  | |\n ".to_string(), "test".to_string());
-        let mut lexer = Lexer::new(&source);
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(token.token_kind(), TokenKind::Space)
-                && token.position_range().start
-                    == SourcePosition {
-                        line: 1,
-                        column: 1,
-                        byte_index: 0,
-                    }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 3,
-                        byte_index: 2,
-                    }
-        });
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(token.token_kind(), TokenKind::Punctuator('|'))
-                && token.position_range().start
-                    == SourcePosition {
-                        line: 1,
-                        column: 3,
-                        byte_index: 2,
-                    }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 4,
-                        byte_index: 3,
-                    }
-        });
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(token.token_kind(), TokenKind::Space)
-                && token.position_range().start
-                    == SourcePosition {
-                        line: 1,
-                        column: 4,
-                        byte_index: 3,
-                    }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 5,
-                        byte_index: 4,
-                    }
-        });
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(token.token_kind(), TokenKind::Punctuator('|'))
-                && token.position_range().start
-                    == SourcePosition {
-                        line: 1,
-                        column: 5,
-                        byte_index: 4,
-                    }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 1,
-                        column: 6,
-                        byte_index: 5,
-                    }
-        });
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-
-            matches!(token.token_kind(), TokenKind::Space)
-                && token.position_range().start
-                    == SourcePosition {
-                        line: 1,
-                        column: 6,
-                        byte_index: 5,
-                    }
-                && token.position_range().end
-                    == SourcePosition {
-                        line: 2,
-                        column: 2,
-                        byte_index: 7,
-                    }
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::EndOfFile
-        ));
-    }
-
-    #[test]
-    // Tests whether the lexer can differentiate between identifiers and keywords
-    fn identifier_and_keyword_test() {
-        let source = SourceCode::new(
-            "return some_name _name 23name".to_string(),
-            "test".to_string(),
-        );
-        let mut lexer = Lexer::new(&source);
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Keyword(Keyword::Return)
-        ));
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Space
-        ));
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-            token.lexeme() == "some_name"
-                && matches!(token.token_kind(), TokenKind::Identifier)
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Space
-        ));
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-            token.lexeme() == "_name"
-                && matches!(token.token_kind(), TokenKind::Identifier)
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Space
-        ));
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-            token.lexeme() == "23name"
-                && matches!(
-                    token.token_kind(),
-                    TokenKind::LiteralConstant(LiteralConstantType::Integer {
-                        value: "23",
-                        literal_prefix: Some("name")
-                    })
-                )
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::EndOfFile
-        ));
-    }
-
-    #[test]
-    // Test whether the lexer can correctly lex comment or not
-    fn comment_test() {
-        let source = SourceCode::new(
-            "// Hello\n return// Another".to_string(),
-            "test".to_string(),
-        );
-        let mut lexer = Lexer::new(&source);
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-            token.lexeme() == "// Hello\n"
-                && matches!(token.token_kind(), TokenKind::Comment)
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Space
-        ));
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Keyword(Keyword::Return)
-        ));
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-            token.lexeme() == "// Another"
-                && matches!(token.token_kind(), TokenKind::Comment)
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::EndOfFile
-        ));
-    }
-
-    #[test]
-    // Test whether the lexer can correctly lex multiline comment or not
-    fn multiline_comment_test() {
-        let source = SourceCode::new(
-            "/* Hello */ return/* Another */ /* Hello".to_string(),
-            "test".to_string(),
-        );
-        let mut lexer = Lexer::new(&source);
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-            token.lexeme() == "/* Hello */"
-                && matches!(token.token_kind(), TokenKind::Comment)
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Space
-        ));
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Keyword(Keyword::Return)
-        ));
-
-        assert!({
-            let token = lexer.lex().ok().unwrap();
-            token.lexeme() == "/* Another */"
-                && matches!(token.token_kind(), TokenKind::Comment)
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::Space
-        ));
-
-        assert!({
-            let err = lexer.lex().err().unwrap();
-
-            match err {
-                Error::UnterminatedMultilineComment {
-                    multiline_comment_position,
-                    source_refernece: _,
-                } => {
-                    multiline_comment_position.line == 1
-                        && multiline_comment_position.column == 33
-                }
-                _ => false,
-            }
-        });
-
-        assert!(matches!(
-            lexer.lex().ok().unwrap().token_kind(),
-            TokenKind::EndOfFile
-        ));
-    }
-}
+mod test;

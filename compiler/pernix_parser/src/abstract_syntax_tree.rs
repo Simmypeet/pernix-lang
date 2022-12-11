@@ -4,16 +4,17 @@ use pernix_project::source_code::SourcePosition;
 
 pub mod declaration;
 pub mod expression;
+pub mod statement;
 
-/// A wrapper around a value that also contains the position of the value in the
+/// Describe a wrapper around a value that also contains the position of the value in the
 /// source code
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PositiionWrapper<T> {
+pub struct PositionWrapper<T> {
     pub position: Range<SourcePosition>,
     pub value: T,
 }
 
-/// List of all available binary operators
+/// Represent an enumeration containing all possible binary operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
     Add,
@@ -27,8 +28,8 @@ pub enum BinaryOperator {
     GreaterThanEqual,
     Equal,
     NotEqual,
-    And,
-    Or,
+    LogicalAnd,
+    LogicalOr,
 }
 
 /// List of all available unary operators
@@ -37,14 +38,4 @@ pub enum UnaryOperator {
     Plus,
     Minus,
     LogicalNot,
-}
-
-/// An enumeration containing all kinds of types referenced in the program
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type<'a> {
-    Identifier(&'a str),
-    Array {
-        element_type: Box<Type<'a>>,
-        size: usize,
-    },
 }

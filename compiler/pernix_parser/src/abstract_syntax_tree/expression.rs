@@ -1,60 +1,36 @@
 use pernix_lexer::token::LiteralConstantType;
 
-use super::{BinaryOperator, PositiionWrapper, UnaryOperator};
+use super::{BinaryOperator, PositionWrapper, UnaryOperator};
 
-/// Enumeration containing all possible expressions
+/// Represent an expression that is composed of two expressions and a binary
+/// operator.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Expression<'a> {
-    /// Represents an expression of the form `left operator right`
-    BinaryExpression {
-        left: Box<PositiionWrapper<Expression<'a>>>,
-        operator: PositiionWrapper<BinaryOperator>,
-        right: Box<PositiionWrapper<Expression<'a>>>,
-    },
-
-    /// Represents an expression of the form `operator operand`
-    UnaryExpression {
-        operator: PositiionWrapper<UnaryOperator>,
-        operand: Box<PositiionWrapper<Expression<'a>>>,
-    },
-
-    /// Represents an expression of the form `literal`
-    LiteralExpression(LiteralConstantType<'a>),
-
-    /// Represents an expression of the form `identifier`
-    IdentifierExpression(&'a str),
-
-    /// Represents an expression of the form `function_name(arguments)`
-    FunctionCallExpression {
-        function_name: PositiionWrapper<&'a str>,
-        arguments: Vec<PositiionWrapper<Expression<'a>>>,
-    },
+pub struct BinaryExpression<'a> {
+    pub left: Box<PositionWrapper<Expression<'a>>>,
+    pub operator: PositionWrapper<BinaryOperator>,
+    pub right: Box<PositionWrapper<Expression<'a>>>,
 }
 
-/// Enumeration containing all kinds of statements
+/// Represent an expression that is composed of an unary operator and an operand
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Statement<'a> {
-    /// Represents a statement of the form `return expression;`
-    ReturnStatement {
-        expression: Option<PositiionWrapper<Expression<'a>>>,
-    },
+pub struct UnaryExpression<'a> {
+    pub operator: PositionWrapper<UnaryOperator>,
+    pub operand: Box<PositionWrapper<Expression<'a>>>,
+}
 
-    /// Represents a statement of the form `expression;`
-    ExpressionStatement {
-        expression: PositiionWrapper<Expression<'a>>,
-    },
+/// Represent an expression that is produced by a function call
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionCallExpression<'a> {
+    pub function_name: PositionWrapper<&'a str>,
+    pub arguments: Vec<PositionWrapper<Expression<'a>>>,
+}
 
-    /// Represents a statement of the form `let identifier = expression;`
-    VariableDeclarationStatement {
-        identifier: PositiionWrapper<&'a str>,
-        expression: PositiionWrapper<Expression<'a>>,
-    },
-
-    /// Represents an if statement of the form `if (condition) then_statement
-    /// else else_statement`
-    IfStatement {
-        condition: PositiionWrapper<Expression<'a>>,
-        then_statement: Vec<PositiionWrapper<Statement<'a>>>,
-        else_statement: Option<Vec<PositiionWrapper<Statement<'a>>>>,
-    },
+/// Represent an enumeration containing all possible expressions
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Expression<'a> {
+    BinaryExpression(BinaryExpression<'a>),
+    UnaryExpression(UnaryExpression<'a>),
+    LiteralExpression(LiteralConstantType<'a>),
+    IdentifierExpression(&'a str),
+    FunctionCallExpression(FunctionCallExpression<'a>),
 }

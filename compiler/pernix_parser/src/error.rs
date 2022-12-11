@@ -1,7 +1,8 @@
 use pernix_lexer::token::{Keyword, Token};
 use pernix_project::source_code::SourceCode;
 
-/// Enumeration containing all possible contexts that the error can occur in.
+/// Represent an enumeration containing all possible contexts that the error can
+///  occur in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Context {
     Program,
@@ -10,7 +11,8 @@ pub enum Context {
     Namespace,
 }
 
-/// Enumeration containing all possible errors that can occur during parsing.
+/// Represent an enumeration containing all possible errors that can occur 
+/// during parsing.
 #[derive(Debug, Clone)]
 pub enum Error<'a> {
     LexicalError(pernix_lexer::error::Error<'a>),

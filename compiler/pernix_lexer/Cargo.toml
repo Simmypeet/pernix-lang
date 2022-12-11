@@ -6,6 +6,5 @@ edition = "2021"
 [dependencies]
 lazy_static = "1.4.0"
 pernix_project = { path = "../pernix_project" }
-console = "0.15.2"
 
 [lib]

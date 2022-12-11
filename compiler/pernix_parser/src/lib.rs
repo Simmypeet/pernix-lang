@@ -2,7 +2,11 @@ pub mod abstract_syntax_tree;
 pub mod error;
 
 use abstract_syntax_tree::{
-    declaration::Declaration, expression::Expression, PositiionWrapper,
+    declaration::{Declaration, NamespaceDeclaration, Type, UsingDirective},
+    expression::{
+        BinaryExpression, Expression, FunctionCallExpression, UnaryExpression,
+    },
+    BinaryOperator, PositionWrapper,
 };
 use error::{Context, Error};
 use pernix_lexer::{
@@ -13,8 +17,8 @@ use pernix_project::source_code::SourceCode;
 
 use crate::abstract_syntax_tree::UnaryOperator;
 
-/// Represents a struct that parases the given token stream into abstract syntax
-/// trees
+/// Represent a state-machine data structure that is used to parse a Pernix
+/// source code program.
 pub struct Parser<'a> {
     // The lexer that is used to generate the token stream
     lexer: Lexer<'a>,
@@ -29,15 +33,21 @@ pub struct Parser<'a> {
     produce_errors: bool,
 }
 
-/// A struct representation of a Pernix source code program.
+/// Represent an AST structure that represents a Pernix source code program.
 pub struct Program<'a> {
-    declarations: Vec<PositiionWrapper<Declaration<'a>>>,
+    declarations: Vec<PositionWrapper<Declaration<'a>>>,
+    using_directives: Vec<PositionWrapper<UsingDirective<'a>>>,
 }
 
 impl<'a> Program<'a> {
     /// Returns a reference to the declarations of this [`Program`].
-    pub fn declarations(&self) -> &[PositiionWrapper<Declaration>] {
+    pub fn declarations(&self) -> &[PositionWrapper<Declaration>] {
         self.declarations.as_ref()
+    }
+
+    /// Returns a reference to the using directives of this [`Program`].
+    pub fn using_directives(&self) -> &[PositionWrapper<UsingDirective>] {
+        self.using_directives.as_ref()
     }
 }
 
@@ -115,11 +125,18 @@ impl<'a> Parser<'a> {
         self.next()
     }
 
-    /// Moves the current position to the next significant token
+    // Moves the current position to the next significant token
     fn move_to_significant(&mut self) {
         while !self.peek().is_significant_token() {
             self.next();
         }
+    }
+
+    // Moves the current position to the next significant token and reads it
+    // without moving the current position forward
+    fn peek_significant(&mut self) -> &Token<'a> {
+        self.move_to_significant();
+        self.peek()
     }
 
     fn parenthesis_delimiter_predicate<const C: char>(
@@ -184,7 +201,7 @@ impl<'a> Parser<'a> {
     // `produce_errors` flag is set to true. Moreover, it also rolls the parser
     // position back to the `rollback_position`.
     #[must_use]
-    pub fn append_error<T>(&mut self, error: Error<'a>) -> Option<T> {
+    fn append_error<T>(&mut self, error: Error<'a>) -> Option<T> {
         if self.produce_errors {
             self.accumulated_errors.push(error);
         }
@@ -192,14 +209,15 @@ impl<'a> Parser<'a> {
         None
     }
 
-    /// Parses the current token stream as a qualified name string
+    ////////////////////////////////////////////////////////////////////////////
+    /// DECLARATIONS
+    ////////////////////////////////////////////////////////////////////////////
+
+    /// Parse the current token stream as a qualified name string.
     ///
     /// Qualified_Name:
-    ///     `IDENTIFIER` |
-    ///     `IDENTIFIER` `.` Qualified_Name
-    pub fn parse_qualified_name(
-        &mut self,
-    ) -> Option<PositiionWrapper<&'a str>> {
+    ///     `Identifier` (`.` `Identifier`)*
+    pub fn parse_qualified_name(&mut self) -> Option<PositionWrapper<&'a str>> {
         self.move_to_significant();
         let starting_position = self.peek().position_range().start;
 
@@ -225,7 +243,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Some(PositiionWrapper {
+        Some(PositionWrapper {
             position: starting_position..self.peek_back().position_range().end,
             value: &self.source_code().source_code()[starting_position
                 .byte_index
@@ -233,13 +251,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parses the current token stream as a using_statement
+    /// Parse the current token stream as a using_statement.
     ///
-    /// Using_Statement:
-    ///   `using` Qualified_Name `;`
-    pub fn parse_using_statement(
+    /// Using_Directive:
+    ///     `using` Qualified_Name `;`
+    pub fn parse_using_directive(
         &mut self,
-    ) -> Option<PositiionWrapper<Declaration<'a>>> {
+    ) -> Option<PositionWrapper<UsingDirective<'a>>> {
         // move to the first significant token
         self.move_to_significant();
         let starting_position = self.peek().position_range().start;
@@ -270,24 +288,48 @@ impl<'a> Parser<'a> {
             });
         }
 
-        Some(PositiionWrapper {
+        Some(PositionWrapper {
             position: starting_position..self.peek_back().position_range().end,
-            value: Declaration::UsingStatement {
+            value: UsingDirective {
                 namespace_name: qualified_name,
             },
         })
     }
 
-    /// Parses the current token stream as a namespace declaration
+    // Parse a list of using directives
+    fn parse_using_directive_list(
+        &mut self,
+    ) -> Option<Vec<PositionWrapper<UsingDirective<'a>>>> {
+        let mut using_directives = Vec::new();
+
+        while matches!(
+            self.peek_significant().token_kind(),
+            TokenKind::Keyword(Keyword::Using)
+        ) {
+            using_directives.push(self.parse_using_directive()?);
+        }
+
+        Some(using_directives)
+    }
+
+    /// Parse the current token stream as a namespace declaration.
     ///
     /// Namespace_Declaration:
-    ///    `namespace` Qualified_Name `{` Declaration* `}`
+    ///     `namespace` Qualified_Name `{` Using_Directive* Declaration* `}`
     pub fn parse_namespace_declaration(
         &mut self,
-    ) -> Option<PositiionWrapper<Declaration<'a>>> {
+    ) -> Option<PositionWrapper<Declaration<'a>>> {
         // move to the first significant token
         self.move_to_significant();
         let starting_position = self.peek().position_range().start;
+
+        let namespace_skip_predicate = |token: &Token| {
+            matches!(
+                token.token_kind(),
+                TokenKind::Keyword(Keyword::Namespace)
+                    | TokenKind::Keyword(Keyword::Using)
+            )
+        };
 
         // expect the `namespace` keyword
         if !matches!(
@@ -315,24 +357,27 @@ impl<'a> Parser<'a> {
             });
         }
 
+        // parse the using directives
+        let using_directives = match self.parse_using_directive_list() {
+            Some(using_directives) => using_directives,
+            None => {
+                self.skip_to(namespace_skip_predicate);
+                Vec::new()
+            }
+        };
+
         // loop through all the declarations
         let mut declarations = Vec::new();
-
-        // move to the next significant token
-        self.move_to_significant();
 
         // loop through all the declarations until closing curly bracket or
         // EOF is found
         while !matches!(
-            self.peek().token_kind(),
+            self.peek_significant().token_kind(),
             TokenKind::Punctuator('}') | TokenKind::EndOfFile
         ) {
             let declaration = match self.peek().token_kind() {
                 TokenKind::Keyword(Keyword::Namespace) => {
                     self.parse_namespace_declaration()
-                }
-                TokenKind::Keyword(Keyword::Using) => {
-                    self.parse_using_statement()
                 }
                 _ => self.append_error(Error::UnexpectedToken {
                     context: Context::Namespace,
@@ -345,18 +390,8 @@ impl<'a> Parser<'a> {
                 declarations.push(declaration);
             } else {
                 // skip to the next available declaration all delimeter
-                self.skip_to(|token| {
-                    matches!(
-                        token.token_kind(),
-                        TokenKind::Keyword(Keyword::Namespace)
-                            | TokenKind::Keyword(Keyword::Using)
-                            | TokenKind::Punctuator('}')
-                    )
-                });
+                self.skip_to(namespace_skip_predicate);
             }
-
-            // move to the next significant token
-            self.move_to_significant();
         }
 
         // expect the closing curly bracket
@@ -371,34 +406,44 @@ impl<'a> Parser<'a> {
             });
         }
 
-        Some(PositiionWrapper {
+        Some(PositionWrapper {
             position: starting_position..self.peek_back().position_range().end,
-            value: Declaration::NamespaceDeclaration {
+            value: Declaration::NamespaceDeclaration(NamespaceDeclaration {
                 namespace_name,
+                using_directives,
                 declarations,
-            },
+            }),
         })
     }
 
-    /// Parses all token stream as a program
+    /// Parse all token stream as a program
     ///
     /// Program:
-    ///  Declaration*
+    ///     Using_Directive* Declaration*
     pub fn parse_program(&mut self) -> Option<Program<'a>> {
         let mut program = Program {
             declarations: Vec::new(),
+            using_directives: Vec::new(),
         };
 
-        // move to the next significant token
-        self.move_to_significant();
+        let program_skip_predicate = |token: &Token| {
+            matches!(token.token_kind(), TokenKind::Keyword(Keyword::Namespace))
+        };
 
-        while !matches!(self.peek().token_kind(), TokenKind::EndOfFile) {
+        // parse the using directives
+        if let Some(using_directives) = self.parse_using_directive_list() {
+            program.using_directives = using_directives;
+        } else {
+            self.skip_to(program_skip_predicate);
+        }
+
+        while !matches!(
+            self.peek_significant().token_kind(),
+            TokenKind::EndOfFile
+        ) {
             let declaration = match self.peek().token_kind() {
                 TokenKind::Keyword(Keyword::Namespace) => {
                     self.parse_namespace_declaration()
-                }
-                TokenKind::Keyword(Keyword::Using) => {
-                    self.parse_using_statement()
                 }
                 _ => self.append_error(Error::UnexpectedToken {
                     context: Context::Program,
@@ -411,25 +456,35 @@ impl<'a> Parser<'a> {
                 program.declarations.push(declaration);
             } else {
                 // skip to the next available declaration all delimeter
-                self.skip_to(|token| {
-                    matches!(
-                        token.token_kind(),
-                        TokenKind::Keyword(Keyword::Namespace)
-                            | TokenKind::Keyword(Keyword::Using)
-                    )
-                });
+                self.skip_to(program_skip_predicate);
             }
 
             // move to the next significant token
-            self.move_to_significant();
+            self.peek_significant();
         }
 
         Some(program)
     }
 
+    /// Parses the current token stream as a type
+    pub fn parse_type(&mut self) -> Option<PositionWrapper<Type<'a>>> {
+        // currently we support only primitive types by using identifiers
+        let qualified_name = self.parse_qualified_name()?;
+
+        Some(PositionWrapper {
+            position: qualified_name.position,
+            value: Type::QualifiedName(qualified_name.value),
+        })
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    /// Expresions
+    ////////////////////////////////////////////////////////////////////////////
+
+    // parse an expression with the unary operator
     fn parse_unary_expression(
         &mut self,
-    ) -> Option<PositiionWrapper<Expression<'a>>> {
+    ) -> Option<PositionWrapper<Expression<'a>>> {
         self.move_to_significant();
         let operator_position_range = self.peek().position_range().clone();
 
@@ -448,27 +503,268 @@ impl<'a> Parser<'a> {
 
         let operand = self.parse_primary_expression()?;
 
-        Some(PositiionWrapper {
+        Some(PositionWrapper {
             position: operator_position_range.start
                 ..self.peek_back().position_range().end,
-            value: Expression::UnaryExpression {
-                operator: PositiionWrapper {
+            value: Expression::UnaryExpression(UnaryExpression {
+                operator: PositionWrapper {
                     position: operator_position_range,
                     value: operator,
                 },
                 operand: Box::new(operand),
-            },
+            }),
         })
     }
 
-    fn parse_expression(&mut self) -> Option<PositiionWrapper<Expression<'a>>> {
-        todo!();
+    fn parse_binary_operator_roll_back(
+        &mut self,
+    ) -> Option<PositionWrapper<BinaryOperator>> {
+        let starting_index = self.current_position;
+
+        // move to the next significant token
+        self.move_to_significant();
+        let operator_position_range = self.peek().position_range().clone();
+
+        let bin_op = match self.next().token_kind() {
+            TokenKind::Punctuator('+') => BinaryOperator::Add,
+            TokenKind::Punctuator('-') => BinaryOperator::Subtract,
+            TokenKind::Punctuator('*') => BinaryOperator::Asterisk,
+            TokenKind::Punctuator('/') => BinaryOperator::Slash,
+            TokenKind::Punctuator('%') => BinaryOperator::Percent,
+            TokenKind::Punctuator('<') | TokenKind::Punctuator('>') => {
+                let current_punctuator = match self.peek_back().token_kind() {
+                    TokenKind::Punctuator(c) => *c,
+                    _ => unreachable!(),
+                };
+
+                if matches!(
+                    self.peek().token_kind(),
+                    TokenKind::Punctuator('=')
+                ) {
+                    self.next();
+                    match current_punctuator {
+                        '<' => BinaryOperator::LessThanEqual,
+                        '>' => BinaryOperator::GreaterThanEqual,
+                        _ => unreachable!(),
+                    }
+                } else {
+                    match current_punctuator {
+                        '<' => BinaryOperator::LessThan,
+                        '>' => BinaryOperator::GreaterThan,
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            TokenKind::Punctuator('=') => {
+                if matches!(
+                    self.peek().token_kind(),
+                    TokenKind::Punctuator('=')
+                ) {
+                    self.next();
+                    BinaryOperator::Equal
+                } else {
+                    self.current_position = starting_index;
+                    return None;
+                }
+            }
+            TokenKind::Punctuator('!') => {
+                if matches!(
+                    self.peek().token_kind(),
+                    TokenKind::Punctuator('=')
+                ) {
+                    self.next();
+                    BinaryOperator::NotEqual
+                } else {
+                    self.current_position = starting_index;
+                    return None;
+                }
+            }
+            TokenKind::Punctuator('&') => {
+                if matches!(
+                    self.peek().token_kind(),
+                    TokenKind::Punctuator('&')
+                ) {
+                    self.next();
+                    BinaryOperator::LogicalAnd
+                } else {
+                    self.current_position = starting_index;
+                    return None;
+                }
+            }
+            TokenKind::Punctuator('|') => {
+                if matches!(
+                    self.peek().token_kind(),
+                    TokenKind::Punctuator('|')
+                ) {
+                    self.next();
+                    BinaryOperator::LogicalOr
+                } else {
+                    self.current_position = starting_index;
+                    return None;
+                }
+            }
+            _ => {
+                self.current_position = starting_index;
+                return None;
+            }
+        };
+
+        Some(PositionWrapper {
+            position: operator_position_range.start
+                ..self.peek_back().position_range().end,
+            value: bin_op,
+        })
+    }
+
+    fn get_binary_operator_precedence(operator: BinaryOperator) -> usize {
+        match operator {
+            BinaryOperator::LogicalOr => 1,
+            BinaryOperator::LogicalAnd => 2,
+            BinaryOperator::Equal
+            | BinaryOperator::NotEqual
+            | BinaryOperator::LessThan
+            | BinaryOperator::LessThanEqual
+            | BinaryOperator::GreaterThan
+            | BinaryOperator::GreaterThanEqual => 3,
+            BinaryOperator::Add | BinaryOperator::Subtract => 4,
+            BinaryOperator::Asterisk | BinaryOperator::Slash => 5,
+            BinaryOperator::Percent => 6,
+        }
+    }
+
+    fn parse_expression_bin(
+        &mut self,
+        parent_precedence: usize,
+    ) -> Option<PositionWrapper<Expression<'a>>> {
+        let mut left = self.parse_primary_expression()?;
+
+        loop {
+            let starting_index = self.current_position;
+
+            let binary_op = match self.parse_binary_operator_roll_back() {
+                Some(op) => op,
+                None => return Some(left),
+            };
+            let binary_op_precedence =
+                Self::get_binary_operator_precedence(binary_op.value);
+
+            // if the precedence of the binary operator is less than the
+            // precedence of the parent operator, then we have to stop
+            // parsing the expression
+            if binary_op_precedence <= parent_precedence {
+                // roll back the current position
+                self.current_position = starting_index;
+                break;
+            }
+
+            let right = self.parse_expression_bin(binary_op_precedence)?;
+
+            left = PositionWrapper {
+                position: left.position.start..right.position.end,
+                value: Expression::BinaryExpression(BinaryExpression {
+                    left: Box::new(left),
+                    operator: binary_op,
+                    right: Box::new(right),
+                }),
+            }
+        }
+
+        Some(left)
+    }
+
+    /// Parse the current token stream as an expression
+    pub fn parse_expression(
+        &mut self,
+    ) -> Option<PositionWrapper<Expression<'a>>> {
+        self.parse_expression_bin(0)
+    }
+
+    // parses a list of arguments
+    fn parse_argument_list(
+        &mut self,
+    ) -> Option<Vec<PositionWrapper<Expression<'a>>>> {
+        // starts with a opening parenthesis
+        if !matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Punctuator('(')
+        ) {
+            return self.append_error(Error::PunctuatorExpected {
+                expected_punctuator: '(',
+                found_token: self.peek().clone(),
+                source_reference: self.source_code(),
+            });
+        }
+
+        // list of arguments to return
+        let mut arguments = Vec::new();
+
+        // empty argument list
+        if matches!(
+            self.peek_significant().token_kind(),
+            TokenKind::Punctuator(')')
+        ) {
+            // move to the next significant token
+            self.next();
+            return Some(arguments);
+        }
+
+        loop {
+            let argument = self.parse_expression()?;
+            arguments.push(argument);
+
+            match self.next_significant().token_kind() {
+                TokenKind::Punctuator(',') => {}
+                TokenKind::Punctuator(')') => break,
+                _ => {
+                    return self.append_error(Error::PunctuatorExpected {
+                        expected_punctuator: ')',
+                        found_token: self.peek().clone(),
+                        source_reference: self.source_code(),
+                    })
+                }
+            }
+        }
+
+        Some(arguments)
+    }
+
+    // parses an expression that starts with an identifier
+    fn parse_identifier_expression(
+        &mut self,
+    ) -> Option<PositionWrapper<Expression<'a>>> {
+        // move to the next significant token
+        self.move_to_significant();
+        let starting_position = self.peek().position_range().clone();
+
+        let qualified_name = self.parse_qualified_name()?;
+
+        match self.peek_significant().token_kind() {
+            TokenKind::Punctuator('(') => {
+                let arguments = self.parse_argument_list()?;
+
+                Some(PositionWrapper {
+                    position: starting_position.start
+                        ..self.peek_back().position_range().end,
+                    value: Expression::FunctionCallExpression(
+                        FunctionCallExpression {
+                            function_name: qualified_name,
+                            arguments,
+                        },
+                    ),
+                })
+            }
+            // it's just an identifier
+            _ => Some(PositionWrapper {
+                position: qualified_name.position,
+                value: Expression::IdentifierExpression(qualified_name.value),
+            }),
+        }
     }
 
     // Parses the current token stream as a primary expression
     fn parse_primary_expression(
         &mut self,
-    ) -> Option<PositiionWrapper<Expression<'a>>> {
+    ) -> Option<PositionWrapper<Expression<'a>>> {
         self.move_to_significant();
 
         match self.peek().token_kind().clone() {
@@ -481,497 +777,45 @@ impl<'a> Parser<'a> {
                 // eat literal token
                 self.next();
 
-                Some(PositiionWrapper {
+                Some(PositionWrapper {
                     position,
                     value: Expression::LiteralExpression(val),
                 })
             }
-            _ => self.append_error(error::Error::UnexpectedToken {
-                context: Context::Expression,
-                found_token: self.peek().clone(),
-                source_reference: self.source_code(),
-            }),
+            TokenKind::Identifier => self.parse_identifier_expression(),
+            TokenKind::Punctuator('(') => {
+                // eat the opening parenthesis
+                self.next();
+
+                let expression = self.parse_expression()?;
+
+                // expect a closing parenthesis
+                if !matches!(
+                    self.next_significant().token_kind(),
+                    TokenKind::Punctuator(')')
+                ) {
+                    return self.append_error(Error::PunctuatorExpected {
+                        expected_punctuator: ')',
+                        found_token: self.peek().clone(),
+                        source_reference: self.source_code(),
+                    });
+                } else {
+                    Some(expression)
+                }
+            }
+            _ => {
+                // make progress
+                self.next();
+
+                self.append_error(error::Error::UnexpectedToken {
+                    context: Context::Expression,
+                    found_token: self.peek().clone(),
+                    source_reference: self.source_code(),
+                })
+            }
         }
     }
 }
 
 #[cfg(test)]
-mod test {
-    use pernix_lexer::token::TokenKind;
-    use pernix_project::source_code::{SourceCode, SourcePosition};
-
-    use crate::{
-        abstract_syntax_tree::{declaration::Declaration, PositiionWrapper},
-        error::Error,
-        Parser,
-    };
-
-    // Checks if the parser can parse a program
-    #[test]
-    fn parse_program_test() {
-        let source = "using Math; namespace Simmypeet.Program {}";
-        let source_code = SourceCode::new(source.to_string(), String::new());
-        let mut parser = Parser::new(&source_code);
-
-        let program = parser.parse_program();
-
-        assert!(program.is_some());
-
-        let program = program.unwrap();
-
-        assert_eq!(program.declarations.len(), 2);
-
-        match &program.declarations[0].value {
-            Declaration::UsingStatement { namespace_name } => {
-                assert_eq!(namespace_name.value, "Math");
-            }
-            _ => panic!("Expected using_statement"),
-        }
-
-        match &program.declarations[1].value {
-            Declaration::NamespaceDeclaration {
-                namespace_name,
-                declarations,
-            } => {
-                assert_eq!(namespace_name.value, "Simmypeet.Program");
-                assert_eq!(declarations.len(), 0);
-            }
-            _ => panic!("Expected namespace declaration"),
-        }
-    }
-
-    // Checks if the parser can parse a namespace declaration with error handling
-    #[test]
-    fn parse_namespace_declaration_with_error_handling_test() {
-        let source_code = SourceCode::new(
-            "namespace foo { using; using bar; }".to_string(),
-            String::new(),
-        );
-        let mut parser = Parser::new(&source_code);
-
-        let namespace_declaration = parser.parse_namespace_declaration();
-
-        assert!(namespace_declaration.is_some());
-
-        let namespace_declaration = namespace_declaration.unwrap();
-
-        assert_eq!(
-            namespace_declaration.position.start,
-            SourcePosition {
-                line: 1,
-                column: 1,
-                byte_index: 0
-            }
-        );
-        assert_eq!(
-            namespace_declaration.position.end,
-            SourcePosition {
-                line: 1,
-                column: 36,
-                byte_index: 35
-            }
-        );
-
-        match namespace_declaration.value {
-            Declaration::NamespaceDeclaration {
-                namespace_name,
-                declarations,
-            } => {
-                assert_eq!(namespace_name.value, "foo");
-                assert_eq!(declarations.len(), 1);
-
-                // there should be only one declaration as the first using delcaration
-                // is invalid
-
-                match &declarations[0].value {
-                    Declaration::UsingStatement { namespace_name } => {
-                        assert_eq!(namespace_name.value, "bar");
-                    }
-                    _ => panic!("Unexpected declaration"),
-                }
-
-                // expect one IdentifierExpected error
-                let error = parser.pop_errors();
-
-                assert_eq!(error.len(), 1);
-
-                match &error[0] {
-                    Error::IdentifierExpected {
-                        found_token,
-                        source_reference: _,
-                    } => {
-                        assert!(matches!(
-                            found_token.token_kind(),
-                            TokenKind::Punctuator(';')
-                        ));
-                    }
-                    _ => panic!("Unexpected error"),
-                }
-            }
-            _ => panic!("Unexpected declaration"),
-        }
-    }
-
-    // Checks if the parser can parse a namespace declaration
-    #[test]
-    fn parse_namespace_declaration_test() {
-        let source_code = SourceCode::new(
-            "namespace foo { using bar; }".to_string(),
-            String::new(),
-        );
-        let mut parser = Parser::new(&source_code);
-
-        let namespace_declaration = parser.parse_namespace_declaration();
-
-        assert!(namespace_declaration.is_some());
-
-        let namespace_declaration = namespace_declaration.unwrap();
-
-        assert_eq!(
-            namespace_declaration.position.start,
-            SourcePosition {
-                line: 1,
-                column: 1,
-                byte_index: 0
-            }
-        );
-        assert_eq!(
-            namespace_declaration.position.end,
-            SourcePosition {
-                line: 1,
-                column: 29,
-                byte_index: 28
-            }
-        );
-
-        match namespace_declaration.value {
-            Declaration::NamespaceDeclaration {
-                namespace_name,
-                declarations,
-            } => {
-                assert_eq!(namespace_name.value, "foo");
-                assert_eq!(declarations.len(), 1);
-
-                let using_statement = declarations.get(0).unwrap();
-
-                match &using_statement.value {
-                    Declaration::UsingStatement { namespace_name } => {
-                        assert_eq!(namespace_name.value, "bar");
-                    }
-                    _ => panic!("Expected a using statement"),
-                }
-            }
-            _ => panic!("Expected a namespace declaration"),
-        };
-
-        assert!(parser.pop_errors().len() == 0);
-    }
-
-    // Checks if the parser can skip the tokens based on the given predicate
-    #[test]
-    fn skip_to_test() {
-        let source_code =
-            SourceCode::new("() {{} ([])} }".to_string(), String::new());
-        let mut parser = Parser::new(&source_code);
-
-        // the parser should skip to the last curly bracket
-        parser.skip_to(|token| {
-            matches!(token.token_kind(), TokenKind::Punctuator('}'))
-        });
-
-        assert!(matches!(
-            parser.peek().token_kind(),
-            TokenKind::Punctuator('}')
-        ));
-        assert_eq!(
-            parser.peek().position_range().start,
-            SourcePosition {
-                line: 1,
-                column: 14,
-                byte_index: 13
-            }
-        );
-        assert_eq!(
-            parser.peek().position_range().end,
-            SourcePosition {
-                line: 1,
-                column: 15,
-                byte_index: 14
-            }
-        );
-
-        // the token doesn't exist the parser should stop at the end of the file
-        parser.skip_to(|token| {
-            matches!(token.token_kind(), TokenKind::Punctuator('.'))
-        });
-
-        assert!(matches!(parser.peek().token_kind(), TokenKind::EndOfFile));
-        assert_eq!(
-            parser.peek().position_range().start,
-            SourcePosition {
-                line: 1,
-                column: 15,
-                byte_index: 14
-            }
-        );
-        assert_eq!(
-            parser.peek().position_range().end,
-            SourcePosition {
-                line: 1,
-                column: 15,
-                byte_index: 14
-            }
-        );
-    }
-
-    // Checks if the parser can parse a using_statement
-    #[test]
-    fn parse_using_statement_test() {
-        let source_code = SourceCode::new(
-            "using Simmypeet.Program;\nusing Another;\nusing Missing.SemiColon"
-                .to_string(),
-            String::new(),
-        );
-
-        let mut parser = Parser::new(&source_code);
-
-        // parse the first using_statement
-        {
-            let using_statement = parser.parse_using_statement().unwrap();
-
-            assert_eq!(
-                using_statement.value,
-                Declaration::UsingStatement {
-                    namespace_name: PositiionWrapper {
-                        position: SourcePosition {
-                            line: 1,
-                            column: 7,
-                            byte_index: 6
-                        }..SourcePosition {
-                            line: 1,
-                            column: 24,
-                            byte_index: 23
-                        },
-                        value: "Simmypeet.Program",
-                    }
-                }
-            );
-
-            assert_eq!(
-                using_statement.position.start,
-                SourcePosition {
-                    line: 1,
-                    column: 1,
-                    byte_index: 0
-                }
-            );
-
-            assert_eq!(
-                using_statement.position.end,
-                SourcePosition {
-                    line: 1,
-                    column: 25,
-                    byte_index: 24
-                }
-            );
-        }
-
-        // parse the second using_statement
-        {
-            let using_statement = parser.parse_using_statement().unwrap();
-
-            assert_eq!(
-                using_statement.value,
-                Declaration::UsingStatement {
-                    namespace_name: PositiionWrapper {
-                        position: SourcePosition {
-                            line: 2,
-                            column: 7,
-                            byte_index: 31
-                        }..SourcePosition {
-                            line: 2,
-                            column: 14,
-                            byte_index: 38
-                        },
-                        value: "Another",
-                    }
-                }
-            );
-
-            assert_eq!(
-                using_statement.position.start,
-                SourcePosition {
-                    line: 2,
-                    column: 1,
-                    byte_index: 25
-                }
-            );
-
-            assert_eq!(
-                using_statement.position.end,
-                SourcePosition {
-                    line: 2,
-                    column: 15,
-                    byte_index: 39
-                }
-            );
-        }
-
-        // the last using_statement is missing a semicolon
-        {
-            let using_statement = parser.parse_using_statement();
-
-            assert!(using_statement.is_none());
-
-            // eject the error
-            let errors = parser.pop_errors();
-
-            assert_eq!(errors.len(), 1);
-
-            let error = errors.first().unwrap();
-
-            assert!(
-                matches!(
-                    error,
-                    crate::Error::PunctuatorExpected {
-                        expected_punctuator: ';',
-                        found_token,
-                        source_reference: _
-                    } if found_token.lexeme() == ""
-                   && *found_token.token_kind() == TokenKind::EndOfFile
-                ),
-                "Unexpected error: {:?}",
-                error
-            );
-        }
-    }
-
-    // Checks if the parser can parse a qualified name
-    #[test]
-    fn parse_qualified_name_test() {
-        let source_code = SourceCode::new(
-            "Simmypeet.Program  Another.Simmypeet.Program  Error.Qualifier. Last.Error.Qualifier.".to_string(),
-            String::new(),
-        );
-
-        let mut parser = Parser::new(&source_code);
-
-        // parse first qualifier
-        {
-            let qualifier = parser.parse_qualified_name().unwrap();
-
-            assert_eq!(qualifier.value, "Simmypeet.Program");
-
-            assert_eq!(
-                qualifier.position.start,
-                SourcePosition {
-                    line: 1,
-                    column: 1,
-                    byte_index: 0
-                }
-            );
-            assert_eq!(
-                qualifier.position.end,
-                SourcePosition {
-                    line: 1,
-                    column: 18,
-                    byte_index: 17
-                }
-            );
-        }
-
-        // parse second qualifier
-        {
-            let qualifier = parser.parse_qualified_name().unwrap();
-
-            assert_eq!(qualifier.value, "Another.Simmypeet.Program");
-
-            assert_eq!(
-                qualifier.position.start,
-                SourcePosition {
-                    line: 1,
-                    column: 20,
-                    byte_index: 19
-                }
-            );
-            assert_eq!(
-                qualifier.position.end,
-                SourcePosition {
-                    line: 1,
-                    column: 45,
-                    byte_index: 44
-                }
-            );
-        }
-
-        // the next qualifier is incomplete and should be rejected
-        {
-            assert!(parser.parse_qualified_name().is_none());
-
-            // eject the parser's accumulated errors
-            let errors = parser.pop_errors();
-
-            assert_eq!(errors.len(), 1);
-
-            let error = errors.first().unwrap();
-
-            assert!(
-                matches!(
-                    error,
-                    Error::IdentifierExpected {
-                        found_token,
-                        source_reference: _
-                    } if found_token.lexeme() == " "
-                    && found_token.position_range().start == SourcePosition {
-                        line: 1,
-                        column: 63,
-                        byte_index: 62
-                    }
-                    && found_token.position_range().end == SourcePosition {
-                        line: 1,
-                        column: 64,
-                        byte_index: 63
-                    }
-                    && *found_token.token_kind() == TokenKind::Space
-                ),
-                "Unexpected error: {:?}",
-                error
-            );
-        }
-
-        // the last qualifier is also incomplete found eof first
-        {
-            assert!(parser.parse_qualified_name().is_none());
-
-            // eject the parser's accumulated errors
-            let errors = parser.pop_errors();
-
-            assert_eq!(errors.len(), 1);
-
-            let error = errors.first().unwrap();
-
-            assert!(
-                matches!(
-                    error,
-                    Error::IdentifierExpected {
-                        found_token,
-                        source_reference: _
-                    } if found_token.lexeme() == ""
-                    && found_token.position_range().start == SourcePosition {
-                        line: 1,
-                        column: 85,
-                        byte_index: 84
-                    }
-                    && found_token.position_range().end == SourcePosition {
-                        line: 1,
-                        column: 85,
-                        byte_index: 84
-                    }
-                    && *found_token.token_kind() == TokenKind::EndOfFile
-                ),
-                "Unexpected error: {:?}",
-                error
-            );
-        }
-    }
-}
+mod test;
