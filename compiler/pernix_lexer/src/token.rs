@@ -59,7 +59,7 @@ impl<'a> Token<'a> {
     }
 
     /// Returns a reference to the token kind of this [`Token`].
-    pub fn token_kind(&self) -> &TokenKind {
+    pub fn token_kind(&self) -> &TokenKind<'a> {
         &self.token_kind
     }
 
