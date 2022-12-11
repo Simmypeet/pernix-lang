@@ -8,12 +8,13 @@ pub struct SourceCode {
     new_line_ranges: Vec<Range<usize>>,
 }
 
-/// Represents a particular position in the source code, consisting of column
-/// and line
+/// Represents a particular position in the source code, consisting of column,
+/// line and byte index.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SourcePosition {
     pub line: usize,
     pub column: usize,
+    pub byte_index: usize,
 }
 
 impl PartialOrd for SourcePosition {
