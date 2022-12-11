@@ -93,7 +93,7 @@ impl<'a> Lexer<'a> {
                     TokenKind::EndOfFile,
                     first_position..SourcePosition {
                         line: first_position.line,
-                        column: first_position.column + 1,
+                        column: first_position.column,
                         byte_index: self.source_code.source_code().len(),
                     },
                     "",
@@ -598,9 +598,17 @@ mod test {
 
             matches!(token.token_kind(), TokenKind::Punctuator('|'))
                 && token.position_range().start
-                    == SourcePosition { line: 1, column: 5, byte_index: 4 }
+                    == SourcePosition {
+                        line: 1,
+                        column: 5,
+                        byte_index: 4,
+                    }
                 && token.position_range().end
-                    == SourcePosition { line: 1, column: 6, byte_index: 5 }
+                    == SourcePosition {
+                        line: 1,
+                        column: 6,
+                        byte_index: 5,
+                    }
         });
 
         assert!({
@@ -608,9 +616,17 @@ mod test {
 
             matches!(token.token_kind(), TokenKind::Space)
                 && token.position_range().start
-                    == SourcePosition { line: 1, column: 6, byte_index: 5 }
+                    == SourcePosition {
+                        line: 1,
+                        column: 6,
+                        byte_index: 5,
+                    }
                 && token.position_range().end
-                    == SourcePosition { line: 2, column: 2, byte_index: 7 }
+                    == SourcePosition {
+                        line: 2,
+                        column: 2,
+                        byte_index: 7,
+                    }
         });
 
         assert!(matches!(
