@@ -15,8 +15,8 @@ lazy_static! {
         map.insert("using", Keyword::Using);
         map.insert("namespace", Keyword::Namespace);
         map.insert("mutable", Keyword::Mutable);
-        map.insert("if", Keyword::Mutable);
-        map.insert("else", Keyword::Mutable);
+        map.insert("if", Keyword::If);
+        map.insert("else", Keyword::Else);
         map
     };
 }
@@ -43,7 +43,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    // returns the current character and the its byte index , and moves to the
+    // return the current character and the its byte index , and moves to the
     // next character
     fn next(&mut self) -> Option<(usize, char)> {
         let next = self.chars.next();
@@ -70,7 +70,7 @@ impl<'a> Lexer<'a> {
         next
     }
 
-    // checks if the character can be an identifier character
+    // check if the character can be an identifier character
     fn is_identifier_character(char: char) -> bool {
         return char == '_' || char.is_alphanumeric();
     }
@@ -81,7 +81,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Lex the current word; returns the corresponding token and move to the
-    ///  next token.
+    /// next token.
     pub fn lex(&mut self) -> Result<Token<'a>, Error<'a>> {
         // the current source file position
         let first_position = self.current_position;

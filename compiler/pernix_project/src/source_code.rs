@@ -67,7 +67,7 @@ impl SourceCode {
         self.source_name.as_ref()
     }
 
-    /// Return the content of the line at the given `line_number`. The line 
+    /// Return the content of the line at the given `line_number`. The line
     /// number starts from 1.
     pub fn line(&self, line_number: usize) -> Option<&str> {
         if line_number == 0 {

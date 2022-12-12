@@ -1,589 +1,221 @@
 use core::panic;
 
-use pernix_lexer::token::{LiteralConstantType, TokenKind};
+use pernix_lexer::token::LiteralConstantType;
 use pernix_project::source_code::{SourceCode, SourcePosition};
 
 use crate::{
     abstract_syntax_tree::{
-        declaration::{Declaration, NamespaceDeclaration, UsingDirective},
-        expression::{
-            BinaryExpression, Expression, FunctionCallExpression,
-            UnaryExpression,
-        },
-        BinaryOperator, PositionWrapper, UnaryOperator,
+        declaration::{Declaration, Type},
+        expression::{BinaryExpression, Expression, UnaryExpression},
+        statement::Statement,
+        BinaryOperator, UnaryOperator,
     },
     error::Error,
     Parser,
 };
 
-// Checks if the parser can correctly parse expressions
-#[test]
-fn parse_primary_expression_test() {
-    let source = "!true 321 test another(32, test, func())";
-    let source_code = SourceCode::new(source.to_string(), String::new());
-
-    let mut parser = Parser::new(&source_code);
-
-    // Expression: !true
-    {
-        let expression = parser.parse_primary_expression().unwrap();
-
-        assert!(matches!(
-            expression,
-            PositionWrapper {
-                position: _,
-                value: Expression::UnaryExpression(UnaryExpression {
-                    operator: PositionWrapper {
-                        position: _,
-                        value: UnaryOperator::LogicalNot
-                    },
-                    operand
-                })
-            }
-            if matches!(*operand, PositionWrapper {
-                position: _,
-                value: Expression::LiteralExpression(LiteralConstantType::Boolean(true))
-            })
-        ))
-    }
-
-    // Expression: 321
-    {
-        let expression = parser.parse_primary_expression().unwrap();
-
-        assert!(matches!(
-            expression,
-            PositionWrapper {
-                position: _,
-                value: Expression::LiteralExpression(
-                    LiteralConstantType::Integer {
-                        value: "321",
-                        literal_suffix: None
-                    }
-                )
-            }
-        ))
-    }
-
-    // Expression: test
-    {
-        let expression = parser.parse_primary_expression().unwrap();
-
-        assert!(matches!(
-            expression,
-            PositionWrapper {
-                position: _,
-                value: Expression::IdentifierExpression("test")
-            }
-        ))
-    }
-
-    // Expression: another(32, test, func())
-    {
-        let expression = parser.parse_primary_expression().unwrap();
-
-        assert!({
-            match expression.value {
-                Expression::FunctionCallExpression(
-                    FunctionCallExpression {
-                        function_name,
-                        arguments,
-                    },
-                ) => {
-                    assert_eq!(function_name.value, "another");
-                    assert_eq!(arguments.len(), 3);
-
-                    assert!(matches!(
-                        arguments[0],
-                        PositionWrapper {
-                            position: _,
-                            value: Expression::LiteralExpression(
-                                LiteralConstantType::Integer {
-                                    value: "32",
-                                    literal_suffix: None
-                                }
-                            )
-                        }
-                    ));
-
-                    assert!(matches!(
-                        arguments[1],
-                        PositionWrapper {
-                            position: _,
-                            value: Expression::IdentifierExpression("test")
-                        }
-                    ));
-
-                    assert!(matches!(
-                        &arguments[2],
-                        PositionWrapper {
-                            position: _,
-                            value: Expression::FunctionCallExpression(FunctionCallExpression {
-                                function_name,
-                                arguments
-                            })
-                        }
-                        if function_name.value == "func" && arguments.is_empty()
-                    ));
-                }
-                _ => {}
-            }
-
-            true
-        })
-    }
+/// Create a new [`SourceCode`] instance from the given code.
+fn create_source_code(code: &str) -> SourceCode {
+    SourceCode::new(code.to_string(), String::new())
 }
 
-// Checks if the parser can parse a program
+// Check if the parser can parse a using directive.
 #[test]
-fn parse_program_test() {
-    let source = "using Math; namespace Simmypeet.Program {}";
-    let source_code = SourceCode::new(source.to_string(), String::new());
-    let mut parser = Parser::new(&source_code);
-
-    let program = parser.parse_program();
-
-    assert!(program.is_some());
-
-    let program = program.unwrap();
-
-    assert_eq!(program.using_directives.len(), 1);
-    assert_eq!(program.declarations.len(), 1);
-
-    assert_eq!(
-        program.using_directives[0].value.namespace_name.value,
-        "Math"
-    );
-
-    assert!(matches!(
-        &program.declarations[0],
-        PositionWrapper {
-            position: _,
-            value: Declaration::NamespaceDeclaration(NamespaceDeclaration {
-                namespace_name,
-                using_directives,
-                declarations
-            })
-        }
-        if namespace_name.value == "Simmypeet.Program"
-        && declarations.is_empty()
-        && using_directives.is_empty()
-    ));
-}
-
-// Checks if the parser can parse a namespace declaration
-#[test]
-fn parse_namespace_declaration_test() {
-    let source_code = SourceCode::new(
-        "namespace foo { using bar; }".to_string(),
-        String::new(),
-    );
-    let mut parser = Parser::new(&source_code);
-
-    let namespace_declaration = parser.parse_namespace_declaration();
-
-    assert!(namespace_declaration.is_some());
-
-    let namespace_declaration = namespace_declaration.unwrap();
-
-    assert_eq!(
-        namespace_declaration.position.start,
-        SourcePosition {
-            line: 1,
-            column: 1,
-            byte_index: 0
-        }
-    );
-    assert_eq!(
-        namespace_declaration.position.end,
-        SourcePosition {
-            line: 1,
-            column: 29,
-            byte_index: 28
-        }
-    );
-
-    match namespace_declaration.value {
-        Declaration::NamespaceDeclaration(NamespaceDeclaration {
-            namespace_name,
-            using_directives,
-            declarations: _,
-        }) => {
-            assert_eq!(namespace_name.value, "foo");
-            assert_eq!(using_directives.len(), 1);
-
-            let using_statement = using_directives.get(0).unwrap();
-
-            assert_eq!(
-                using_statement.position.start,
-                SourcePosition {
-                    line: 1,
-                    column: 17,
-                    byte_index: 16
-                }
-            );
-
-            assert_eq!(
-                using_statement.position.end,
-                SourcePosition {
-                    line: 1,
-                    column: 27,
-                    byte_index: 26
-                }
-            );
-
-            assert_eq!(using_statement.value.namespace_name.value, "bar");
-        }
-        _ => panic!("Expected a namespace declaration"),
-    };
-
-    assert!(parser.pop_errors().len() == 0);
-}
-
-// Checks if the parser can skip the tokens based on the given predicate
-#[test]
-fn skip_to_test() {
+fn parse_using_directive_test() {
     let source_code =
-        SourceCode::new("() {{} ([])} }".to_string(), String::new());
+        create_source_code("using Simmypeet.Program; using Another; using;");
     let mut parser = Parser::new(&source_code);
 
-    // the parser should skip to the last curly bracket
-    parser.skip_to(|token| {
-        matches!(token.token_kind(), TokenKind::Punctuator('}'))
-    });
-
-    assert!(matches!(
-        parser.peek().token_kind(),
-        TokenKind::Punctuator('}')
-    ));
-    assert_eq!(
-        parser.peek().position_range().start,
-        SourcePosition {
-            line: 1,
-            column: 14,
-            byte_index: 13
-        }
-    );
-    assert_eq!(
-        parser.peek().position_range().end,
-        SourcePosition {
-            line: 1,
-            column: 15,
-            byte_index: 14
-        }
-    );
-
-    // the token doesn't exist the parser should stop at the end of the file
-    parser.skip_to(|token| {
-        matches!(token.token_kind(), TokenKind::Punctuator('.'))
-    });
-
-    assert!(matches!(parser.peek().token_kind(), TokenKind::EndOfFile));
-    assert_eq!(
-        parser.peek().position_range().start,
-        SourcePosition {
-            line: 1,
-            column: 15,
-            byte_index: 14
-        }
-    );
-    assert_eq!(
-        parser.peek().position_range().end,
-        SourcePosition {
-            line: 1,
-            column: 15,
-            byte_index: 14
-        }
-    );
-}
-
-// Checks if the parser can parse a using_statement
-#[test]
-fn parse_using_statement_test() {
-    let source_code = SourceCode::new(
-        "using Simmypeet.Program;\nusing Another;\nusing Missing.SemiColon"
-            .to_string(),
-        String::new(),
-    );
-
-    let mut parser = Parser::new(&source_code);
-
-    // parse the first using_statement
     {
-        let using_statement = parser.parse_using_directive().unwrap();
-
+        let using_directive = parser.parse_using_directive().unwrap();
         assert_eq!(
-            using_statement.value,
-            UsingDirective {
-                namespace_name: PositionWrapper {
-                    position: SourcePosition {
-                        line: 1,
-                        column: 7,
-                        byte_index: 6
-                    }..SourcePosition {
-                        line: 1,
-                        column: 24,
-                        byte_index: 23
-                    },
-                    value: "Simmypeet.Program",
-                }
-            }
+            using_directive.value.namespace_name.value,
+            "Simmypeet.Program"
         );
-
         assert_eq!(
-            using_statement.position.start,
+            using_directive.position.start,
             SourcePosition {
                 line: 1,
                 column: 1,
                 byte_index: 0
             }
         );
-
         assert_eq!(
-            using_statement.position.end,
+            using_directive.position.end,
             SourcePosition {
                 line: 1,
                 column: 25,
                 byte_index: 24
             }
         );
-    }
-
-    // parse the second using_statement
-    {
-        let using_statement = parser.parse_using_directive().unwrap();
-
         assert_eq!(
-            using_statement.value,
-            UsingDirective {
-                namespace_name: PositionWrapper {
-                    position: SourcePosition {
-                        line: 2,
-                        column: 7,
-                        byte_index: 31
-                    }..SourcePosition {
-                        line: 2,
-                        column: 14,
-                        byte_index: 38
-                    },
-                    value: "Another",
-                }
+            using_directive.value.namespace_name.position.start,
+            SourcePosition {
+                line: 1,
+                column: 7,
+                byte_index: 6
             }
         );
-
         assert_eq!(
-            using_statement.position.start,
+            using_directive.value.namespace_name.position.end,
             SourcePosition {
-                line: 2,
-                column: 1,
+                line: 1,
+                column: 24,
+                byte_index: 23
+            }
+        );
+    }
+
+    {
+        let using_directive = parser.parse_using_directive().unwrap();
+        assert_eq!(using_directive.value.namespace_name.value, "Another");
+        assert_eq!(
+            using_directive.position.start,
+            SourcePosition {
+                line: 1,
+                column: 26,
                 byte_index: 25
             }
         );
-
         assert_eq!(
-            using_statement.position.end,
+            using_directive.position.end,
             SourcePosition {
-                line: 2,
-                column: 15,
+                line: 1,
+                column: 40,
                 byte_index: 39
             }
         );
+        assert_eq!(
+            using_directive.value.namespace_name.position.start,
+            SourcePosition {
+                line: 1,
+                column: 32,
+                byte_index: 31
+            }
+        );
+        assert_eq!(
+            using_directive.value.namespace_name.position.end,
+            SourcePosition {
+                line: 1,
+                column: 39,
+                byte_index: 38
+            }
+        );
     }
 
-    // the last using_statement is missing a semicolon
     {
-        let using_statement = parser.parse_using_directive();
+        assert!(parser.parse_using_directive().is_none());
 
-        assert!(using_statement.is_none());
+        let error = parser.pop_errors();
 
-        // eject the error
-        let errors = parser.pop_errors();
-
-        assert_eq!(errors.len(), 1);
-
-        let error = errors.first().unwrap();
-
-        assert!(
-            matches!(
-                error,
-                crate::Error::PunctuatorExpected {
-                    expected_punctuator: ';',
-                    found_token,
-                    source_reference: _
-                } if found_token.lexeme() == ""
-               && *found_token.token_kind() == TokenKind::EndOfFile
-            ),
-            "Unexpected error: {:?}",
-            error
-        );
+        assert_eq!(error.len(), 1);
+        assert!(matches!(&error[0], Error::IdentifierExpected { .. }))
     }
 }
 
-// Checks if the parser can parse a qualified name
+// Check if the parser can handle a basic namespace declaration
 #[test]
-fn parse_qualified_name_test() {
-    let source_code = SourceCode::new(
-        "Simmypeet.Program  Another.Simmypeet.Program  Error.Qualifier. Last.Error.Qualifier.".to_string(),
-        String::new(),
-    );
-
-    let mut parser = Parser::new(&source_code);
-
-    // parse first qualifier
+fn parse_namespace_declaration_test() {
     {
-        let qualifier = parser.parse_qualified_name().unwrap();
+        let source_code = create_source_code("namespace Simmypeet.Program { }");
+        let mut parser = Parser::new(&source_code);
 
-        assert_eq!(qualifier.value, "Simmypeet.Program");
+        let namespace_declaration =
+            parser.parse_namespace_declaration().unwrap();
 
-        assert_eq!(
-            qualifier.position.start,
-            SourcePosition {
-                line: 1,
-                column: 1,
-                byte_index: 0
+        match namespace_declaration.value {
+            Declaration::NamespaceDeclaration(namespace) => {
+                assert_eq!(namespace.namespace_name.value, "Simmypeet.Program");
+                assert!(namespace.declarations.is_empty());
             }
-        );
-        assert_eq!(
-            qualifier.position.end,
-            SourcePosition {
-                line: 1,
-                column: 18,
-                byte_index: 17
-            }
-        );
+            _ => panic!("expected a namespace declaration"),
+        }
     }
 
-    // parse second qualifier
     {
-        let qualifier = parser.parse_qualified_name().unwrap();
+        let source_code = create_source_code(
+            "namespace Simmypeet { namespace namespace Another{} }",
+        );
+        let mut parser = Parser::new(&source_code);
 
-        assert_eq!(qualifier.value, "Another.Simmypeet.Program");
+        let namespace_declaration =
+            parser.parse_namespace_declaration().unwrap();
 
-        assert_eq!(
-            qualifier.position.start,
-            SourcePosition {
-                line: 1,
-                column: 20,
-                byte_index: 19
+        match namespace_declaration.value {
+            Declaration::NamespaceDeclaration(namespace) => {
+                assert_eq!(namespace.namespace_name.value, "Simmypeet");
+                assert_eq!(namespace.declarations.len(), 1);
+
+                assert!(matches!(
+                    &namespace.declarations[0].value,
+                    Declaration::NamespaceDeclaration(namespace)
+                    if namespace.namespace_name.value == "Another"
+                ));
+
+                let errors = parser.pop_errors();
+                assert_eq!(errors.len(), 1);
+                assert!(matches!(&errors[0], Error::IdentifierExpected { .. }));
             }
-        );
-        assert_eq!(
-            qualifier.position.end,
-            SourcePosition {
-                line: 1,
-                column: 45,
-                byte_index: 44
+            Declaration::FunctionDeclaration(_) => {
+                panic!("expected a namespace declaration")
             }
-        );
-    }
-
-    // the next qualifier is incomplete and should be rejected
-    {
-        assert!(parser.parse_qualified_name().is_none());
-
-        // eject the parser's accumulated errors
-        let errors = parser.pop_errors();
-
-        assert_eq!(errors.len(), 1);
-
-        let error = errors.first().unwrap();
-
-        assert!(
-            matches!(
-                error,
-                Error::IdentifierExpected {
-                    found_token,
-                    source_reference: _
-                } if found_token.lexeme() == " "
-                && found_token.position_range().start == SourcePosition {
-                    line: 1,
-                    column: 63,
-                    byte_index: 62
-                }
-                && found_token.position_range().end == SourcePosition {
-                    line: 1,
-                    column: 64,
-                    byte_index: 63
-                }
-                && *found_token.token_kind() == TokenKind::Space
-            ),
-            "Unexpected error: {:?}",
-            error
-        );
-    }
-
-    // the last qualifier is also incomplete found eof first
-    {
-        assert!(parser.parse_qualified_name().is_none());
-
-        // eject the parser's accumulated errors
-        let errors = parser.pop_errors();
-
-        assert_eq!(errors.len(), 1);
-
-        let error = errors.first().unwrap();
-
-        assert!(
-            matches!(
-                error,
-                Error::IdentifierExpected {
-                    found_token,
-                    source_reference: _
-                } if found_token.lexeme() == ""
-                && found_token.position_range().start == SourcePosition {
-                    line: 1,
-                    column: 85,
-                    byte_index: 84
-                }
-                && found_token.position_range().end == SourcePosition {
-                    line: 1,
-                    column: 85,
-                    byte_index: 84
-                }
-                && *found_token.token_kind() == TokenKind::EndOfFile
-            ),
-            "Unexpected error: {:?}",
-            error
-        );
+        }
     }
 }
 
-// Check if the parser can parse different kinds of binary operators
+// Check if the parser can handle a unary expression.
 #[test]
-fn parse_binary_operator_test() {
-    let source_code =
-        SourceCode::new("+ - == != <= >=".to_string(), String::new());
+fn parse_unary_expression_test() {
+    let source_code = create_source_code("!a");
     let mut parser = Parser::new(&source_code);
 
-    assert_eq!(
-        parser.parse_binary_operator_roll_back().unwrap().value,
-        BinaryOperator::Add
-    );
+    match parser.parse_expression().unwrap().value {
+        Expression::UnaryExpression(expr) => {
+            assert_eq!(expr.operator.value, UnaryOperator::LogicalNot);
+            assert!(matches!(
+                expr.operand.value,
+                Expression::IdentifierExpression(identifier) if identifier == "a"
+            ))
+        }
+        _ => panic!("expected a unary expression"),
+    }
+}
 
-    assert_eq!(
-        parser.parse_binary_operator_roll_back().unwrap().value,
-        BinaryOperator::Subtract
-    );
+// Check if the parser can handle a function call expression.
+#[test]
+fn parse_function_call_expression_test() {
+    let source_code = create_source_code("func(123, test) a()");
+    let mut parser = Parser::new(&source_code);
 
-    assert_eq!(
-        parser.parse_binary_operator_roll_back().unwrap().value,
-        BinaryOperator::Equal
-    );
+    {
+        match parser.parse_expression().unwrap().value {
+            Expression::FunctionCallExpression(expr) => {
+                assert_eq!(expr.function_name.value, "func");
+                assert_eq!(expr.arguments.len(), 2);
 
-    assert_eq!(
-        parser.parse_binary_operator_roll_back().unwrap().value,
-        BinaryOperator::NotEqual
-    );
+                assert!(matches!(
+                    &expr.arguments[0].value,
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "123", literal_suffix: None } )
+                ));
 
-    assert_eq!(
-        parser.parse_binary_operator_roll_back().unwrap().value,
-        BinaryOperator::LessThanEqual
-    );
+                assert!(matches!(
+                    &expr.arguments[1].value,
+                    Expression::IdentifierExpression(identifier) if *identifier == "test"
+                ));
+            }
+            _ => panic!("expected a function call expression"),
+        }
+    }
 
-    assert_eq!(
-        parser.parse_binary_operator_roll_back().unwrap().value,
-        BinaryOperator::GreaterThanEqual
-    );
+    {
+        match parser.parse_expression().unwrap().value {
+            Expression::FunctionCallExpression(expr) => {
+                assert_eq!(expr.function_name.value, "a");
+                assert!(expr.arguments.is_empty());
+            }
+            _ => panic!("expected a function call expression"),
+        }
+    }
 }
 
 trait ExpressionGenerator {
@@ -655,5 +287,134 @@ fn parse_binary_expression_test() {
         let expression = parser.parse_expression().unwrap();
 
         assert_eq!(expression.value.generate_value(), -12);
+    }
+}
+
+// Check if the parse can handle a variable declaration.
+#[test]
+fn parse_variable_declaration_statement_test() {
+    let source_code = create_source_code(
+        "
+    let a = 32;
+    let mutable b = 64;
+    let c: int32 = 128;
+    let mutable d: int32 = 256;",
+    );
+    let mut parser = Parser::new(&source_code);
+
+    // let a = 32;
+    {
+        let statement = parser.parse_statement().unwrap();
+
+        match statement.value {
+            Statement::VariableDeclarationStatement(declaration) => {
+                assert_eq!(declaration.identifier.value, "a");
+                assert!(!declaration.is_mutable);
+                assert!(declaration.type_annotation.is_none());
+
+                assert!(matches!(
+                    declaration.expression.value,
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "32", literal_suffix: None } )
+                ));
+            }
+            _ => panic!("expected a variable declaration statement"),
+        }
+    }
+
+    // let mutable b = 64;
+    {
+        let statement = parser.parse_statement().unwrap();
+
+        match statement.value {
+            Statement::VariableDeclarationStatement(declaration) => {
+                assert_eq!(declaration.identifier.value, "b");
+                assert!(declaration.is_mutable);
+                assert!(declaration.type_annotation.is_none());
+
+                assert!(matches!(
+                    declaration.expression.value,
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "64", literal_suffix: None } )
+                ));
+            }
+            _ => panic!("expected a variable declaration statement"),
+        }
+    }
+
+    // let c: int32 = 128;
+    {
+        let statement = parser.parse_statement().unwrap();
+
+        match statement.value {
+            Statement::VariableDeclarationStatement(declaration) => {
+                assert_eq!(declaration.identifier.value, "c");
+                assert!(!declaration.is_mutable);
+                assert!(matches!(
+                    declaration.type_annotation.unwrap().value,
+                    Type::QualifiedName("int32")
+                ));
+
+                assert!(matches!(
+                    declaration.expression.value,
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "128", literal_suffix: None } )
+                ));
+            }
+            _ => panic!("expected a variable declaration statement"),
+        }
+    }
+
+    // let mutable d: int32 = 256;
+    {
+        let statement = parser.parse_statement().unwrap();
+
+        match statement.value {
+            Statement::VariableDeclarationStatement(declaration) => {
+                assert_eq!(declaration.identifier.value, "d");
+                assert!(declaration.is_mutable);
+                assert!(matches!(
+                    declaration.type_annotation.unwrap().value,
+                    Type::QualifiedName("int32")
+                ));
+
+                assert!(matches!(
+                    declaration.expression.value,
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "256", literal_suffix: None } )
+                ));
+            }
+            _ => panic!("expected a variable declaration statement"),
+        }
+    }
+}
+
+// Check if the parser can handle if statements
+#[test]
+fn parsing_if_statement_test() {
+    let source_code = create_source_code(
+        "
+        if func()
+            return 42;
+        else 
+            return 69; 
+        ",
+    );
+    let mut parser = Parser::new(&source_code);
+
+    match parser.parse_statement().unwrap().value {
+        Statement::IfStatement(statement) => {
+            assert!(matches!(
+                statement.condition.value,
+                Expression::FunctionCallExpression(call) if call.function_name.value == "func" && call.arguments.is_empty()
+            ));
+
+            assert!(matches!(
+                statement.then_statement.value,
+                Statement::ReturnStatement(expression) if matches!(expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "42", literal_suffix: None }))
+            ));
+
+            assert!(matches!(
+                statement.else_statement.unwrap().value,
+                Statement::ReturnStatement(expression) if matches!(expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "69", literal_suffix: None }))
+            ));
+        }
+        _ => panic!("expected an if statement"),
     }
 }

@@ -1,17 +1,20 @@
 use pernix_lexer::token::{Keyword, Token};
 use pernix_project::source_code::SourceCode;
 
+use crate::abstract_syntax_tree::{
+    declaration::UsingDirective, PositionWrapper,
+};
+
 /// Represent an enumeration containing all possible contexts that the error can
 ///  occur in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Context {
-    Program,
+    Declaration,
     Statement,
     Expression,
-    Namespace,
 }
 
-/// Represent an enumeration containing all possible errors that can occur 
+/// Represent an enumeration containing all possible errors that can occur
 /// during parsing.
 #[derive(Debug, Clone)]
 pub enum Error<'a> {
@@ -33,6 +36,10 @@ pub enum Error<'a> {
     UnexpectedToken {
         context: Context,
         found_token: Token<'a>,
+        source_reference: &'a SourceCode,
+    },
+    UsingDirectiveMustAppearPriorToAllDeclarations {
+        using_directive: PositionWrapper<UsingDirective<'a>>,
         source_reference: &'a SourceCode,
     },
 }

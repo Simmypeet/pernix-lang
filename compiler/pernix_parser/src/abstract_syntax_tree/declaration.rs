@@ -11,7 +11,6 @@ pub struct Array<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type<'a> {
     QualifiedName(&'a str),
-    Array(Array<'a>),
 }
 
 /// Represent a wrapper around a type that contains additional qualifiers

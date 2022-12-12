@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use pernix_project::source_code::SourcePosition;
 
-/// Represent an enumeration containing all keywords. 
+/// Represent an enumeration containing all keywords.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
     Return,
