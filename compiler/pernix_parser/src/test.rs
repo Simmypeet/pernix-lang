@@ -5,7 +5,7 @@ use pernix_project::source_code::{SourceCode, SourcePosition};
 
 use crate::{
     abstract_syntax_tree::{
-        declaration::{Declaration, Type},
+        declaration::{Declaration, TypeAnnotation},
         expression::{BinaryExpression, Expression, UnaryExpression},
         statement::Statement,
         BinaryOperator, UnaryOperator,
@@ -350,7 +350,7 @@ fn parse_variable_declaration_statement_test() {
                 assert!(!declaration.is_mutable);
                 assert!(matches!(
                     declaration.type_annotation.unwrap().value,
-                    Type::QualifiedName("int32")
+                    TypeAnnotation::QualifiedName("int32")
                 ));
 
                 assert!(matches!(
@@ -372,7 +372,7 @@ fn parse_variable_declaration_statement_test() {
                 assert!(declaration.is_mutable);
                 assert!(matches!(
                     declaration.type_annotation.unwrap().value,
-                    Type::QualifiedName("int32")
+                    TypeAnnotation::QualifiedName("int32")
                 ));
 
                 assert!(matches!(
@@ -416,5 +416,50 @@ fn parsing_if_statement_test() {
             ));
         }
         _ => panic!("expected an if statement"),
+    }
+}
+
+// Check if the parser can handle function declaration
+#[test]
+fn parse_function_declaration() {
+    let source_code = create_source_code(
+        "
+        function add(mutable a: int32, b: int32) : int32 {}
+        ",
+    );
+    let mut parser = Parser::new(&source_code);
+
+    let function_declaration = parser.parse_declaration().unwrap();
+    match function_declaration.value {
+        Declaration::FunctionDeclaration(function) => {
+            assert_eq!(function.function_name.value, "add");
+            assert_eq!(function.parameters.len(), 2);
+            assert!(matches!(
+                function.return_type.unwrap().value,
+                TypeAnnotation::QualifiedName("int32")
+            ));
+            assert_eq!(function.body.value.statements.len(), 0);
+
+            {
+                let parameter = &function.parameters[0].value;
+                assert_eq!(parameter.1, "a");
+                assert!(parameter.0.is_mutable);
+                assert!(matches!(
+                    parameter.0.element_type,
+                    TypeAnnotation::QualifiedName("int32")
+                ));
+            }
+
+            {
+                let parameter = &function.parameters[1].value;
+                assert_eq!(parameter.1, "b");
+                assert!(!parameter.0.is_mutable);
+                assert!(matches!(
+                    parameter.0.element_type,
+                    TypeAnnotation::QualifiedName("int32")
+                ));
+            }
+        }
+        _ => panic!("expected a function declaration"),
     }
 }

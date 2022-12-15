@@ -1,22 +1,22 @@
-use super::{statement::Statement, PositionWrapper};
+use super::{statement::ScopeStatement, PositionWrapper};
 
 /// Describe a stack allocated array of a given type and size
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Array<'a> {
-    pub element_type: Box<Type<'a>>,
+    pub element_type: Box<TypeAnnotation<'a>>,
     pub size: usize,
 }
 
-/// Represent an enumeration containing all possible type patterns
+/// Represent an enumeration containing all possible type annotaion patterns
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type<'a> {
+pub enum TypeAnnotation<'a> {
     QualifiedName(&'a str),
 }
 
 /// Represent a wrapper around a type that contains additional qualifiers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QualifiedType<'a> {
-    pub element_type: Type<'a>,
+    pub element_type: TypeAnnotation<'a>,
     pub is_mutable: bool,
 }
 
@@ -39,14 +39,9 @@ pub struct NamespaceDeclaration<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDeclaration<'a> {
     pub function_name: PositionWrapper<&'a str>,
-    pub parameters: Vec<
-        PositionWrapper<(
-            PositionWrapper<QualifiedType<'a>>,
-            PositionWrapper<&'a str>,
-        )>,
-    >,
-    pub return_type: PositionWrapper<Type<'a>>,
-    pub body: Vec<PositionWrapper<Statement<'a>>>,
+    pub parameters: Vec<PositionWrapper<(QualifiedType<'a>, &'a str)>>,
+    pub return_type: Option<PositionWrapper<TypeAnnotation<'a>>>,
+    pub body: PositionWrapper<ScopeStatement<'a>>,
 }
 
 /// Represent an enumeration containing all kinds of declarations.

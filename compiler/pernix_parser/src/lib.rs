@@ -2,7 +2,10 @@ pub mod abstract_syntax_tree;
 pub mod error;
 
 use abstract_syntax_tree::{
-    declaration::{Declaration, NamespaceDeclaration, Type, UsingDirective},
+    declaration::{
+        Declaration, FunctionDeclaration, NamespaceDeclaration, TypeAnnotation,
+        UsingDirective,
+    },
     expression::{BinaryExpression, Expression, FunctionCallExpression},
     statement::Statement,
     BinaryOperator, PositionWrapper, UnaryOperator,
@@ -15,8 +18,9 @@ use pernix_lexer::{
 use pernix_project::source_code::SourceCode;
 
 use crate::abstract_syntax_tree::{
+    declaration::QualifiedType,
     expression::UnaryExpression,
-    statement::{IfStatement, Scope, VariableDeclarationStatement},
+    statement::{IfStatement, ScopeStatement, VariableDeclarationStatement},
 };
 
 /// Represent a state-machine data structure that is used to parse a Pernix
@@ -321,6 +325,9 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Namespace) => {
                 self.parse_namespace_declaration()
             }
+            TokenKind::Keyword(Keyword::Function) => {
+                self.parse_function_declaration()
+            }
             _ => {
                 parse_exit_error!(
                     self,
@@ -332,6 +339,254 @@ impl<'a> Parser<'a> {
                 );
             }
         }
+    }
+
+    // Parses the current token stream as a function declaration
+    fn parse_function_declaration(
+        &mut self,
+    ) -> Option<PositionWrapper<Declaration<'a>>> {
+        parse_setup!(self, starting_index, starting_position);
+
+        // expect the function declaration
+        if !matches!(
+            self.next().token_kind(),
+            TokenKind::Keyword(Keyword::Function)
+        ) {
+            parse_exit_error!(
+                self,
+                Error::KeywordExpected {
+                    expected_keyword: Keyword::Function,
+                    found_token: self.peek_back().clone(),
+                    source_reference: self.source_code(),
+                },
+                starting_index
+            );
+        }
+
+        // expect the function name
+        let function_name = if matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Identifier
+        ) {
+            PositionWrapper {
+                position: self.peek_back().position_range().clone(),
+                value: self.peek_back().lexeme(),
+            }
+        } else {
+            parse_exit_error!(
+                self,
+                Error::IdentifierExpected {
+                    found_token: self.peek_back().clone(),
+                    source_reference: self.source_code(),
+                },
+                starting_index
+            );
+        };
+
+        // expect the opening parenthesis
+        if !matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Punctuator('(')
+        ) {
+            parse_exit_error!(
+                self,
+                Error::PunctuatorExpected {
+                    expected_punctuator: '(',
+                    found_token: self.peek_back().clone(),
+                    source_reference: self.source_code(),
+                },
+                starting_index
+            );
+        }
+
+        // parse the function parameters
+        let parameters = {
+            let skip_predicate = |token: &Token| {
+                matches!(
+                    token.token_kind(),
+                    TokenKind::Punctuator(')') | TokenKind::Punctuator(',')
+                )
+            };
+
+            let mut params = Vec::new();
+            let mut first_time = true;
+
+            loop {
+                // found a closing parenthesis, we're done
+                if matches!(
+                    self.peek_significant().token_kind(),
+                    TokenKind::Punctuator(')')
+                ) {
+                    break;
+                }
+
+                // not first parameter, expect a comma
+                if !first_time {
+                    // expect a comma
+                    if !matches!(
+                        self.next_significant().token_kind(),
+                        TokenKind::Punctuator(',')
+                    ) {
+                        if self.produce_errors {
+                            self.accumulated_errors.push(
+                                Error::PunctuatorExpected {
+                                    expected_punctuator: ',',
+                                    found_token: self.peek_back().clone(),
+                                    source_reference: self.source_code(),
+                                },
+                            );
+                        }
+
+                        // skip to the next comma or closing parenthesis
+                        self.skip_to(skip_predicate);
+
+                        continue;
+                    }
+                }
+
+                // parse the parameter
+
+                // set first_time to false
+                first_time = false;
+
+                let parameter_starting_position =
+                    self.peek().position_range().clone();
+                let is_mutable = {
+                    if matches!(
+                        self.peek_significant().token_kind(),
+                        TokenKind::Keyword(Keyword::Mutable)
+                    ) {
+                        // eat the mut keyword
+                        self.next();
+                        true
+                    } else {
+                        false
+                    }
+                };
+                let parameter_name = if matches!(
+                    self.next_significant().token_kind(),
+                    TokenKind::Identifier
+                ) {
+                    self.peek_back().lexeme()
+                } else {
+                    if self.produce_errors {
+                        self.accumulated_errors.push(
+                            Error::IdentifierExpected {
+                                found_token: self.peek_back().clone(),
+                                source_reference: self.source_code(),
+                            },
+                        );
+                    }
+
+                    // skip to the next comma or closing parenthesis
+                    self.skip_to(skip_predicate);
+
+                    continue;
+                };
+
+                // expect a colon
+                if !matches!(
+                    self.next_significant().token_kind(),
+                    TokenKind::Punctuator(':')
+                ) {
+                    if self.produce_errors {
+                        self.accumulated_errors.push(
+                            Error::PunctuatorExpected {
+                                expected_punctuator: ':',
+                                found_token: self.peek_back().clone(),
+                                source_reference: self.source_code(),
+                            },
+                        );
+                    }
+
+                    // skip to the next comma or closing parenthesis
+                    self.skip_to(skip_predicate);
+
+                    continue;
+                }
+
+                // parse the type annotation
+                let qualified_type_annotation =
+                    match self.parse_type_anootation() {
+                        Some(type_annotation) => QualifiedType {
+                            is_mutable,
+                            element_type: type_annotation.value,
+                        },
+                        None => {
+                            // make progress
+                            self.next();
+
+                            // skip to the next comma or closing parenthesis
+                            self.skip_to(skip_predicate);
+
+                            continue;
+                        }
+                    };
+
+                params.push(PositionWrapper {
+                    position: parameter_starting_position.start
+                        ..self.peek_back().position_range().end,
+                    value: (qualified_type_annotation, parameter_name),
+                });
+            }
+
+            params
+        };
+
+        // expect the closing parenthesis
+        if !matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Punctuator(')')
+        ) {
+            parse_exit_error!(
+                self,
+                Error::PunctuatorExpected {
+                    expected_punctuator: ')',
+                    found_token: self.peek_back().clone(),
+                    source_reference: self.source_code(),
+                },
+                starting_index
+            );
+        }
+
+        let return_type = if matches!(
+            self.peek_significant().token_kind(),
+            TokenKind::Punctuator(':')
+        ) {
+            // eat the colon
+            self.next();
+
+            // parse type
+            Some(parse_unwrap!(
+                self,
+                self.parse_type_anootation(),
+                starting_index
+            ))
+        } else {
+            None
+        };
+
+        // expect a scope
+        let scope =
+            parse_unwrap!(self, self.parse_scope_statement(), starting_index);
+        let body = match scope.value {
+            Statement::Scope(scope_statement) => PositionWrapper {
+                position: scope.position,
+                value: scope_statement,
+            },
+            _ => unreachable!(),
+        };
+
+        Some(PositionWrapper {
+            position: starting_position.start
+                ..self.peek_back().position_range().end,
+            value: Declaration::FunctionDeclaration(FunctionDeclaration {
+                function_name,
+                parameters,
+                return_type,
+                body,
+            }),
+        })
     }
 
     // Parse the current token stream as a qualified name string.
@@ -429,7 +684,9 @@ impl<'a> Parser<'a> {
     }
 
     // Parse the current token stream as a type
-    fn parse_type(&mut self) -> Option<PositionWrapper<Type<'a>>> {
+    fn parse_type_anootation(
+        &mut self,
+    ) -> Option<PositionWrapper<TypeAnnotation<'a>>> {
         parse_setup!(self, starting_index, starting_position);
 
         // for now, we only support identifiers
@@ -447,7 +704,7 @@ impl<'a> Parser<'a> {
         Some(PositionWrapper {
             position: starting_position.start
                 ..self.peek_back().position_range().end,
-            value: Type::QualifiedName(self.peek_back().lexeme()),
+            value: TypeAnnotation::QualifiedName(self.peek_back().lexeme()),
         })
     }
 
@@ -1037,7 +1294,7 @@ impl<'a> Parser<'a> {
                 return self.parse_variable_declaration_statement();
             }
             TokenKind::Punctuator('{') => {
-                return self.parse_scope();
+                return self.parse_scope_statement();
             }
             TokenKind::Keyword(Keyword::If) => {
                 return self.parse_if_statement();
@@ -1208,7 +1465,11 @@ impl<'a> Parser<'a> {
             // eat the colon
             self.next();
 
-            Some(parse_unwrap!(self, self.parse_type(), starting_index))
+            Some(parse_unwrap!(
+                self,
+                self.parse_type_anootation(),
+                starting_index
+            ))
         } else {
             None
         };
@@ -1262,7 +1523,9 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_scope(&mut self) -> Option<PositionWrapper<Statement<'a>>> {
+    fn parse_scope_statement(
+        &mut self,
+    ) -> Option<PositionWrapper<Statement<'a>>> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect a left curly brace
@@ -1331,7 +1594,7 @@ impl<'a> Parser<'a> {
         Some(PositionWrapper {
             position: starting_position.start
                 ..self.peek_back().position_range().end,
-            value: Statement::Scope(Scope { statements }),
+            value: Statement::Scope(ScopeStatement { statements }),
         })
     }
 

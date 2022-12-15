@@ -1,9 +1,11 @@
-use super::{declaration::Type, expression::Expression, PositionWrapper};
+use super::{
+    declaration::TypeAnnotation, expression::Expression, PositionWrapper,
+};
 
 /// Represent a statement that declares a variable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableDeclarationStatement<'a> {
-    pub type_annotation: Option<PositionWrapper<Type<'a>>>,
+    pub type_annotation: Option<PositionWrapper<TypeAnnotation<'a>>>,
     pub is_mutable: bool,
     pub identifier: PositionWrapper<&'a str>,
     pub expression: PositionWrapper<Expression<'a>>,
@@ -19,7 +21,7 @@ pub struct IfStatement<'a> {
 
 /// Represent a scope delimited by curly braces containing statements.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Scope<'a> {
+pub struct ScopeStatement<'a> {
     pub statements: Vec<PositionWrapper<Statement<'a>>>,
 }
 
@@ -30,5 +32,5 @@ pub enum Statement<'a> {
     ExpressionStatement(PositionWrapper<Expression<'a>>),
     VariableDeclarationStatement(VariableDeclarationStatement<'a>),
     IfStatement(IfStatement<'a>),
-    Scope(Scope<'a>),
+    Scope(ScopeStatement<'a>),
 }
