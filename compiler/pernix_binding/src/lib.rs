@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use bound_ast::{
     bound_expression::{
         BoundExpression, BoundUnaryExpression, ExpressionCategory,
@@ -8,296 +6,364 @@ use bound_ast::{
     bound_statement::{BoundBlockScopeStatement, BoundStatement},
 };
 use error::Error;
-use pernix_parser::{
-    abstract_syntax_tree::{
-        declaration::{Declaration, FunctionDeclaration},
-        expression::{Expression, UnaryExpression},
-        statement::{BlockScopeStatement, Statement},
-        PositionWrapper, UnaryOperator,
-    },
-    File,
+use pernix_parser::abstract_syntax_tree::{
+    expression::{Expression, FunctionCallExpression, UnaryExpression},
+    statement::{BlockScopeStatement, Statement},
+    PositionWrapper, UnaryOperator,
 };
-use scope::{ScopeInfo, ScopeTransverser};
 use symbol::{
     table::{FunctionSymbolTable, TypeSymbolTable},
-    FunctionSymbol, TypeSymbol, VariableSymbol,
+    FunctionSymbol, PrimitiveType, TypeSymbol,
 };
 
-use crate::symbol::PrimitiveType;
+use crate::bound_ast::bound_expression::BoundImplicitCastExpression;
 
 pub mod bound_ast;
 pub mod error;
 pub mod scope;
 pub mod symbol;
 
-/// Represents a bound function definition with its body.
+/// Represent a bound function definition with its body. The body is the list
+/// of bound statements that will be executed when the function is called.
 pub struct FunctionDefinition<'table, 'parser, 'ast> {
     function_symbol: FunctionSymbol<'table, 'parser, 'ast>,
     body: BoundBlockScopeStatement<'table, 'parser, 'ast>,
 }
 
-pub struct Binder<'table, 'parser, 'ast> {
+impl<'table, 'parser, 'ast> FunctionDefinition<'table, 'parser, 'ast> {
+    /// Returns a reference to the function symbol of this [`FunctionDefinition`].
+    pub fn function_symbol(&self) -> &FunctionSymbol<'table, 'parser, 'ast> {
+        &self.function_symbol
+    }
+
+    /// Returns a reference to the body of this [`FunctionDefinition`].
+    pub fn body(&self) -> &BoundBlockScopeStatement<'table, 'parser, 'ast> {
+        &self.body
+    }
+}
+
+/// Represent a binder that will bind the [`FunctionSymbol`] to the
+/// [`FunctionDefinition`].
+pub struct FunctionBinder<'sym, 'table, 'parser, 'ast> {
     type_table: &'table TypeSymbolTable,
     function_table: &'table FunctionSymbolTable<'table, 'parser, 'ast>,
-    function_definition:
-        HashMap<String, FunctionDefinition<'table, 'parser, 'ast>>,
-    local_scope_stack: LockScopeStack<'table, 'ast>,
-    return_type: Option<&'table TypeSymbol>,
+    func_symbol: &'sym FunctionSymbol<'table, 'parser, 'ast>,
     errors: Vec<Error<'table, 'parser, 'ast>>,
 }
 
-struct LocalScope<'table, 'ast> {
-    variable_declaration: HashMap<String, VariableSymbol<'table, 'ast>>,
-}
-
-impl<'table, 'ast> LocalScope<'table, 'ast> {
-    fn new() -> Self {
-        Self {
-            variable_declaration: HashMap::new(),
-        }
-    }
-
-    fn declare_variable(&mut self, variable: VariableSymbol<'table, 'ast>) {
-        self.variable_declaration
-            .insert(variable.name.to_string(), variable);
-    }
-
-    fn lookup_variable(
-        &self,
-        name: &str,
-    ) -> Option<&VariableSymbol<'table, 'ast>> {
-        self.variable_declaration.get(name)
-    }
-}
-
-struct LockScopeStack<'table, 'ast> {
-    stack: Vec<LocalScope<'table, 'ast>>,
-}
-
-impl<'table, 'ast> LockScopeStack<'table, 'ast> {
-    fn new() -> Self {
-        Self { stack: Vec::new() }
-    }
-
-    fn push(&mut self) {
-        self.stack.push(LocalScope::new());
-    }
-
-    fn pop(&mut self) {
-        self.stack.pop();
-    }
-
-    fn declare_variable(&mut self, variable: VariableSymbol<'table, 'ast>) {
-        self.stack.last_mut().unwrap().declare_variable(variable);
-    }
-
-    fn lookup_variable(
-        &self,
-        name: &str,
-    ) -> Option<&VariableSymbol<'table, 'ast>> {
-        for scope in self.stack.iter().rev() {
-            if let Some(variable) = scope.lookup_variable(name) {
-                return Some(variable);
-            }
-        }
-
-        None
-    }
-}
-
-impl<'table, 'parser: 'ast, 'ast> Binder<'table, 'parser, 'ast> {
-    /// Creates a new [`Binder`] struct with the given type and function tables.
-    ///
-    /// ## Parameters
-    /// - `type_table`: the type table that will be used to lookup the types.
-    /// The table must be already populated with the types.
-    /// - `function_table`: the function table that will be used to lookup the
-    /// functions. The table must be already populated with the functions.
-    pub fn new(
+impl<'sym, 'table, 'parser: 'ast, 'ast>
+    FunctionBinder<'sym, 'table, 'parser, 'ast>
+{
+    /// Bind the [`FunctionSymbol`] to the [`FunctionDefinition`].
+    pub fn bind(
         type_table: &'table TypeSymbolTable,
         function_table: &'table FunctionSymbolTable<'table, 'parser, 'ast>,
-    ) -> Self {
-        Self {
+        func_symbol: &'sym FunctionSymbol<'table, 'parser, 'ast>,
+    ) -> Result<
+        FunctionDefinition<'table, 'parser, 'ast>,
+        Vec<Error<'table, 'parser, 'ast>>,
+    > {
+        let mut binder = Self {
             type_table,
             function_table,
-            function_definition: HashMap::new(),
-            local_scope_stack: LockScopeStack::new(),
-            return_type: None,
+            func_symbol,
             errors: Vec::new(),
-        }
-    }
-
-    /// Bind the given AST file.
-    pub fn bind_file(&mut self, ast: &'parser File<'ast>) {
-        ScopeTransverser::new(ast).transverse(
-            &mut |scope_info, declaration| {
-                if let Declaration::FunctionDeclaration(ast) =
-                    &declaration.value
-                {
-                    if let Some(def) = self.bind_function_definition(
-                        scope_info,
-                        PositionWrapper {
-                            position: declaration.position.clone(),
-                            value: ast,
-                        },
-                    ) {
-                        self.function_definition.insert(
-                            def.function_symbol
-                                .full_qualified_name()
-                                .to_string(),
-                            def,
-                        );
-                    }
-                }
-            },
-        );
-    }
-
-    fn bind_function_definition(
-        &mut self,
-        scope_info: ScopeInfo,
-        ast: PositionWrapper<&'parser FunctionDeclaration<'ast>>,
-    ) -> Option<FunctionDefinition<'table, 'parser, 'ast>> {
-        // get the function symbol
-        let function_symbol = {
-            let full_qualified_name =
-                if scope_info.current_namespace_scope.is_empty() {
-                    ast.value.function_name.value.to_string()
-                } else {
-                    format!(
-                        "{}::{}",
-                        scope_info.current_namespace_scope,
-                        ast.value.function_name.value
-                    )
-                };
-
-            match self.function_table.get(&full_qualified_name) {
-                Some(val) => val.value.clone(),
-                None => {
-                    match FunctionSymbol::bind(
-                        scope_info,
-                        ast.clone(),
-                        self.type_table,
-                    ) {
-                        Ok(val) => val,
-                        Err(mut new_errors) => {
-                            self.errors.append(&mut new_errors);
-                            return None;
-                        }
-                    }
-                }
-            }
         };
 
-        self.return_type = Some(function_symbol.return_type());
-
-        // bind the function body
-        let body = self.bind_block_scope_statement(PositionWrapper {
-            position: ast.value.body.position.clone(),
-            value: &ast.value.body.value,
-        })?;
-
-        // create the function definition
-        Some(FunctionDefinition {
-            function_symbol,
-            body: match body {
-                BoundStatement::BoundBlockScopeStatement(val) => val,
-                _ => unreachable!(),
-            },
-        })
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    /// EXPRESSION
-    ////////////////////////////////////////////////////////////////////////////
-
-    fn bind_expression(
-        &mut self,
-        ast: &'parser PositionWrapper<Expression<'ast>>,
-    ) -> Option<BoundExpression<'table, 'parser, 'ast>> {
-        todo!();
-    }
-
-    fn bind_unary_expression(
-        &mut self,
-        ast: PositionWrapper<&'parser UnaryExpression<'ast>>,
-    ) -> Option<BoundExpression<'table, 'parser, 'ast>> {
-        let operand = self.bind_expression(&ast.value.operand)?;
-
-        match operand.get_type().type_symbol {
-            TypeSymbol::PrimitiveType(primitive_type) => match primitive_type {
-                PrimitiveType::Bool => {
-                    if ast.value.operator.value != UnaryOperator::LogicalNot {
-                        self.errors.push(Error::InvalidUnaryOperation {
-                            operator: ast.value.operator.clone(),
-                            operand: &ast.value.operand,
-                            operand_type: operand.get_type().type_symbol,
-                        });
-                        return None;
-                    }
+        match binder.bind_block_scope_statement(PositionWrapper {
+            position: func_symbol.ast().value.body.position.clone(),
+            value: &func_symbol.ast().value.body.value,
+        }) {
+            Some(value) => {
+                if binder.errors.is_empty() {
+                    Ok(FunctionDefinition {
+                        function_symbol: func_symbol.clone(),
+                        body: value,
+                    })
+                } else {
+                    Err(binder.errors)
                 }
-                PrimitiveType::Float32
-                | PrimitiveType::Float64
-                | PrimitiveType::Int8
-                | PrimitiveType::Int16
-                | PrimitiveType::Int32
-                | PrimitiveType::Int64 => {
-                    if ast.value.operator.value != UnaryOperator::Minus
-                        && ast.value.operator.value != UnaryOperator::Plus
-                    {
-                        self.errors.push(Error::InvalidUnaryOperation {
-                            operator: ast.value.operator.clone(),
-                            operand: &ast.value.operand,
-                            operand_type: operand.get_type().type_symbol,
-                        });
-                        return None;
-                    }
-                }
-                _ => (),
-            },
+            }
+            None => Err(binder.errors),
         }
-
-        Some(BoundExpression::BoundUnaryExpression(
-            BoundUnaryExpression {
-                ast,
-                expression_type: ExpressionType {
-                    type_symbol: operand.get_type().type_symbol,
-                    category: ExpressionCategory::RValue,
-                },
-                operand: Box::new(operand),
-            },
-        ))
     }
 
     ////////////////////////////////////////////////////////////////////////////
     /// STATEMENT
     ////////////////////////////////////////////////////////////////////////////
-
     fn bind_statement(
         &mut self,
-        ast: &'parser PositionWrapper<Statement<'ast>>,
+        statement: &'ast PositionWrapper<Statement<'parser>>,
     ) -> Option<BoundStatement<'table, 'parser, 'ast>> {
         todo!();
     }
 
     fn bind_block_scope_statement(
         &mut self,
-        ast: PositionWrapper<&'parser BlockScopeStatement<'ast>>,
-    ) -> Option<BoundStatement<'table, 'parser, 'ast>> {
-        // push a new local scope
-        self.local_scope_stack.push();
+        statement: PositionWrapper<&'ast BlockScopeStatement<'parser>>,
+    ) -> Option<BoundBlockScopeStatement<'table, 'parser, 'ast>> {
+        todo!();
+    }
 
-        let mut statements = Vec::new();
+    ////////////////////////////////////////////////////////////////////////////
+    /// EXPRESSION
+    ////////////////////////////////////////////////////////////////////////////
+    fn bind_expression(
+        &mut self,
+        expression: &'ast PositionWrapper<Expression<'parser>>,
+    ) -> Option<BoundExpression<'table, 'parser, 'ast>> {
+        todo!();
+    }
 
-        for statement in &ast.value.statements {
-            statements.push(self.bind_statement(&statement)?);
+    fn bind_call_expression(
+        &mut self,
+        expression: PositionWrapper<&'parser FunctionCallExpression<'ast>>,
+    ) -> Option<BoundExpression<'table, 'parser, 'ast>> {
+        
+        let fn_call_symbol = self.function_table.lookup(
+            self.func_symbol.scope_info(),
+            expression.value.function_name.value,
+        )?;
+
+        todo!();
+    }
+
+    fn bind_unary_expression(
+        &mut self,
+        expression: PositionWrapper<&'ast UnaryExpression<'parser>>,
+    ) -> Option<BoundExpression<'table, 'parser, 'ast>> {
+        let bound_operand = self.bind_expression(&expression.value.operand)?;
+
+        let expression_type = &match bound_operand.get_type().type_symbol {
+            TypeSymbol::PrimitiveType(primitive_type) => match primitive_type {
+                PrimitiveType::Bool => {
+                    if expression.value.operator.value
+                        != UnaryOperator::LogicalNot
+                    {
+                        self.errors.push(Error::InvalidUnaryOperation {
+                            operand: &expression.value.operand,
+                            operator: expression.value.operator.clone(),
+                            operand_type: bound_operand.get_type().type_symbol,
+                        });
+                        return None;
+                    }
+
+                    self.type_table.get("bool")
+                }
+                PrimitiveType::Int8
+                | PrimitiveType::Int16
+                | PrimitiveType::Int32
+                | PrimitiveType::Int64
+                | PrimitiveType::Float32
+                | PrimitiveType::Float64 => {
+                    if expression.value.operator.value != UnaryOperator::Minus
+                        && expression.value.operator.value
+                            != UnaryOperator::Plus
+                    {
+                        self.errors.push(Error::InvalidUnaryOperation {
+                            operand: &expression.value.operand,
+                            operator: expression.value.operator.clone(),
+                            operand_type: bound_operand.get_type().type_symbol,
+                        });
+                        return None;
+                    }
+
+                    match primitive_type {
+                        PrimitiveType::Int8 => self.type_table.get("int8"),
+                        PrimitiveType::Int16 => self.type_table.get("int16"),
+                        PrimitiveType::Int32 => self.type_table.get("int32"),
+                        PrimitiveType::Int64 => self.type_table.get("int64"),
+                        PrimitiveType::Float32 => {
+                            self.type_table.get("float32")
+                        }
+                        PrimitiveType::Float64 => {
+                            self.type_table.get("float64")
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                PrimitiveType::Uint8
+                | PrimitiveType::Uint16
+                | PrimitiveType::Uint32
+                | PrimitiveType::Uint64 => {
+                    if expression.value.operator.value != UnaryOperator::Plus {
+                        self.errors.push(Error::InvalidUnaryOperation {
+                            operand: &expression.value.operand,
+                            operator: expression.value.operator.clone(),
+                            operand_type: bound_operand.get_type().type_symbol,
+                        });
+                        return None;
+                    }
+
+                    match primitive_type {
+                        PrimitiveType::Uint8 => self.type_table.get("uint8"),
+                        PrimitiveType::Uint16 => self.type_table.get("uint16"),
+                        PrimitiveType::Uint32 => self.type_table.get("uint32"),
+                        PrimitiveType::Uint64 => self.type_table.get("uint64"),
+                        _ => unreachable!(),
+                    }
+                }
+                _ => {
+                    self.errors.push(Error::InvalidUnaryOperation {
+                        operand: &expression.value.operand,
+                        operator: expression.value.operator.clone(),
+                        operand_type: bound_operand.get_type().type_symbol,
+                    });
+                    return None;
+                }
+            },
         }
+        .unwrap()
+        .value;
 
-        // pop the local scope
-        self.local_scope_stack.pop();
-
-        Some(BoundStatement::BoundBlockScopeStatement(
-            BoundBlockScopeStatement { ast, statements },
+        Some(BoundExpression::BoundUnaryExpression(
+            BoundUnaryExpression {
+                operand: Box::new(bound_operand),
+                ast: expression,
+                expression_type: ExpressionType {
+                    type_symbol: expression_type,
+                    category: ExpressionCategory::RValue,
+                },
+            },
         ))
     }
+
+    ////////////////////////////////////////////////////////////////////////////
+    /// UTILITY
+    ////////////////////////////////////////////////////////////////////////////
+    fn is_implicitly_castable(
+        from: &'table TypeSymbol,
+        to: &'table TypeSymbol,
+    ) -> bool {
+        if std::ptr::eq(from, to) {
+            return true;
+        }
+
+        if from.is_numeric() && to.is_numeric() {
+            /*
+            RULES:
+                - any integer types can be implicitly casted to any floating
+                  point types
+                - signed integer types can't be implicitly casted to unsigned
+                  integer types
+                - casting from a larger type to a smaller type is not allowed
+                - casting from a floating point type to an integer type is not
+                  allowed
+             */
+
+            if from.is_floating_point() && to.is_floating_point() {
+                return true;
+            }
+
+            let from_is_signed = match from {
+                TypeSymbol::PrimitiveType(PrimitiveType::Int8)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Int16)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Int32)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Int64)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Float32)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Float64) => true,
+
+                _ => false,
+            };
+
+            let to_is_signed = match to {
+                TypeSymbol::PrimitiveType(PrimitiveType::Int8)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Int16)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Int32)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Int64)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Float32)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Float64) => true,
+
+                _ => false,
+            };
+
+            if from_is_signed && !to_is_signed {
+                return false;
+            }
+
+            let from_size = match from {
+                TypeSymbol::PrimitiveType(PrimitiveType::Int8)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Uint8) => 8,
+
+                TypeSymbol::PrimitiveType(PrimitiveType::Int16)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Uint16) => 16,
+
+                TypeSymbol::PrimitiveType(PrimitiveType::Int32)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Uint32)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Float32) => 32,
+
+                TypeSymbol::PrimitiveType(PrimitiveType::Int64)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Uint64)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Float64) => 64,
+
+                _ => unreachable!(),
+            };
+
+            let to_size = match to {
+                TypeSymbol::PrimitiveType(PrimitiveType::Int8)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Uint8) => 8,
+
+                TypeSymbol::PrimitiveType(PrimitiveType::Int16)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Uint16) => 16,
+
+                TypeSymbol::PrimitiveType(PrimitiveType::Int32)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Uint32)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Float32) => 32,
+
+                TypeSymbol::PrimitiveType(PrimitiveType::Int64)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Uint64)
+                | TypeSymbol::PrimitiveType(PrimitiveType::Float64) => 64,
+
+                _ => unreachable!(),
+            };
+
+            if from.is_integer() && to.is_integer() {
+                return from_size < to_size;
+            } else if from.is_floating_point() && to.is_floating_point() {
+                return from_size < to_size;
+            }
+
+            false
+        } else {
+            false
+        }
+    }
+
+    fn pass_expression_to(
+        &mut self,
+        expression: &'parser PositionWrapper<Expression<'ast>>,
+        expected_type: &'table TypeSymbol,
+    ) -> Option<BoundExpression<'table, 'parser, 'ast>> {
+        let bound_expression = self.bind_expression(expression)?;
+
+        if std::ptr::eq(bound_expression.get_type().type_symbol, expected_type)
+        {
+            return Some(bound_expression);
+        } else if Self::is_implicitly_castable(
+            bound_expression.get_type().type_symbol,
+            expected_type,
+        ) {
+            return Some(BoundExpression::BoundImplicitCastExpression(
+                BoundImplicitCastExpression {
+                    ast: expression,
+                    operand: Box::new(bound_expression),
+                    expression_type: ExpressionType {
+                        type_symbol: expected_type,
+                        category: ExpressionCategory::RValue,
+                    },
+                },
+            ));
+        }
+
+        self.errors.push(Error::TypeMismatched {
+            expected_type,
+            expression_type: bound_expression.get_type().type_symbol,
+            expression,
+        });
+
+        None
+    }
 }
+
+#[cfg(test)]
+mod test;

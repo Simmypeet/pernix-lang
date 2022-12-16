@@ -1,6 +1,8 @@
 use pernix_lexer::token::LiteralConstantType;
 use pernix_parser::abstract_syntax_tree::{
-    expression::{BinaryExpression, FunctionCallExpression, UnaryExpression},
+    expression::{
+        BinaryExpression, Expression, FunctionCallExpression, UnaryExpression,
+    },
     PositionWrapper,
 };
 
@@ -14,6 +16,9 @@ pub enum BoundExpression<'table, 'parser, 'ast> {
     BoundLiteralExpression(BoundLiteralExpression<'table, 'parser, 'ast>),
     BoundFunctionCallExpression(
         BoundFunctionCallExpression<'table, 'parser, 'ast>,
+    ),
+    BoundImplicitCastExpression(
+        BoundImplicitCastExpression<'table, 'parser, 'ast>,
     ),
 }
 
@@ -36,6 +41,9 @@ impl<'table, 'parser, 'ast> BoundExpression<'table, 'parser, 'ast> {
             BoundExpression::BoundFunctionCallExpression(
                 function_call_expression,
             ) => &function_call_expression.expression_type,
+            BoundExpression::BoundImplicitCastExpression(
+                implicit_cast_expression,
+            ) => &implicit_cast_expression.expression_type,
         }
     }
 }
@@ -78,6 +86,13 @@ pub struct BoundFunctionCallExpression<'table, 'parser, 'ast> {
 pub struct ExpressionType<'table> {
     pub type_symbol: &'table TypeSymbol,
     pub category: ExpressionCategory,
+}
+
+/// Represent a bound expression that performs casting.
+pub struct BoundImplicitCastExpression<'table, 'parser, 'ast> {
+    pub ast: &'parser PositionWrapper<Expression<'ast>>,
+    pub operand: Box<BoundExpression<'table, 'parser, 'ast>>,
+    pub expression_type: ExpressionType<'table>,
 }
 
 /// Represent an enumeration containing all the possible categories of an

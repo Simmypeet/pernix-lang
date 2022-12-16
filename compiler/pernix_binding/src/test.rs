@@ -1,7 +1,7 @@
 use pernix_parser::Parser;
 use pernix_project::source_code::SourceCode;
 
-use crate::FunctionDeclarationTableBuilder;
+use crate::symbol::table::{FunctionSymbolTable, TypeSymbolTable};
 
 #[test]
 fn binder_function_populate_test() {
@@ -18,11 +18,12 @@ fn binder_function_populate_test() {
     let mut parser = Parser::new(&source_code);
     let ast = parser.parse_file().unwrap();
 
-    let mut binder = FunctionDeclarationTableBuilder::new(&ast, &source_code);
-    binder.populate_function(&ast.using_directives(), &ast.declarations(), "");
+    let type_table = TypeSymbolTable::new();
+    let mut func_table = FunctionSymbolTable::new();
+    assert!(func_table.populate(&ast, &type_table).is_ok());
 
-    assert!(binder.function_table.get("Minus").is_some());
-    assert!(binder.function_table.get("Test.Add").is_some());
-    assert!(binder.function_table.get("Test.Multiply").is_some());
-    assert!(binder.function_table.get("Divide").is_some());
+    assert!(func_table.get("Minus").is_some());
+    assert!(func_table.get("Test.Add").is_some());
+    assert!(func_table.get("Test.Multiply").is_some());
+    assert!(func_table.get("Divide").is_some());
 }

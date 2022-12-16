@@ -89,7 +89,7 @@ impl<T> SymbolTable<T> {
     /// - `usings`: is a list of namespaces activated in the current scope.
     pub fn lookup(
         &self,
-        scope_info: ScopeInfo,
+        scope_info: &ScopeInfo,
         name: &str,
     ) -> Option<&SymbolTableEntry<T>> {
         // first, we will try to lookup the entry based on the given usings.
@@ -112,7 +112,7 @@ impl<T> SymbolTable<T> {
         // next, we will try to lookup the entry based on the reference scope,
         // but every time it fails, we will remove the last part of the scope
         // and try again.
-        let mut current_scope = scope_info.current_namespace_scope;
+        let mut current_scope = scope_info.current_namespace_scope.clone();
         loop {
             let full_qualified_name = if current_scope.is_empty() {
                 name.to_string()
@@ -129,11 +129,12 @@ impl<T> SymbolTable<T> {
                 return None;
             }
 
-            // slice the current scope that excludes the last part of the scope.
-            current_scope = match current_scope.rfind('.') {
-                Some(index) => &current_scope[..index],
-                None => "",
-            };
+            // remove the last part of the scope.
+            current_scope = current_scope
+                .rsplit_once('.')
+                .map(|(namespace, _)| namespace)
+                .unwrap_or("")
+                .to_string();
         }
     }
 
@@ -226,7 +227,7 @@ impl TypeSymbolTable {
     /// exist, the function will return `None`.
     pub fn lookup_from_type_annotation<'parser, 'ast>(
         &self,
-        scope_info: ScopeInfo,
+        scope_info: &ScopeInfo,
         type_annotation: &'parser PositionWrapper<TypeAnnotation<'ast>>,
     ) -> Result<&TypeSymbol, Error<'_, 'parser, 'ast>> {
         match type_annotation.value {
@@ -288,7 +289,7 @@ impl<'table, 'parser: 'ast, 'ast: 'table>
                     ) {
                         Ok(bound_func) => {
                             if !self.insert(
-                                scope_info.current_namespace_scope,
+                                &scope_info.current_namespace_scope,
                                 bound_func.ast.value.function_name.value,
                                 bound_func,
                             ) {

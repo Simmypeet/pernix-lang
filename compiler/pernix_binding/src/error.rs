@@ -29,4 +29,9 @@ pub enum Error<'table, 'parser, 'ast> {
         operand: &'parser PositionWrapper<Expression<'ast>>,
         operand_type: &'table TypeSymbol,
     },
+    TypeMismatched {
+        expected_type: &'table TypeSymbol,
+        expression_type: &'table TypeSymbol,
+        expression: &'parser PositionWrapper<Expression<'ast>>,
+    },
 }

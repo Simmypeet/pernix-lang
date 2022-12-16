@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::Hash;
 
 use pernix_parser::abstract_syntax_tree::{
     declaration::{FunctionDeclaration, QualifiedType},
@@ -17,7 +18,7 @@ pub struct FunctionSymbol<'table, 'parser, 'ast> {
     ast: PositionWrapper<&'parser FunctionDeclaration<'ast>>,
     return_type: &'table TypeSymbol,
     parameter_types: Vec<VariableSymbol<'table, 'ast>>,
-    full_qualified_name: String,
+    scope_info: ScopeInfo,
 }
 
 impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
@@ -30,7 +31,7 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
     /// - `ast`: the AST that will be bound.
     /// - `table`: the type table that will be used to lookup the types.
     pub fn bind(
-        scope_info: ScopeInfo,
+        scope_info: &ScopeInfo,
         ast: PositionWrapper<&'parser FunctionDeclaration<'ast>>,
         table: &'table TypeSymbolTable,
     ) -> Result<Self, Vec<Error<'table, 'parser, 'ast>>> {
@@ -104,17 +105,6 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
             parameters
         };
 
-        let full_qualified_name =
-            if scope_info.current_namespace_scope.is_empty() {
-                ast.value.function_name.value.to_string()
-            } else {
-                format!(
-                    "{}.{}",
-                    scope_info.current_namespace_scope,
-                    ast.value.function_name.value
-                )
-            };
-
         if !errors.is_empty() {
             Err(errors)
         } else {
@@ -122,7 +112,7 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
                 ast,
                 return_type: return_type.unwrap(),
                 parameter_types,
-                full_qualified_name: full_qualified_name,
+                scope_info: scope_info.clone(),
             })
         }
     }
@@ -142,18 +132,48 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
         self.parameter_types.as_ref()
     }
 
-    /// Returns a reference to the full qualified name of this [`FunctionSymbol`].
-    pub fn full_qualified_name(&self) -> &str {
-        self.full_qualified_name.as_ref()
+    /// Return a reference to the full qualified name of this [`FunctionSymbol`].
+    pub fn full_qualified_name(&self) -> String {
+        if self.scope_info.current_namespace_scope.is_empty() {
+            self.ast.value.function_name.value.to_string()
+        } else {
+            format!(
+                "{}.{}",
+                self.scope_info.current_namespace_scope,
+                self.ast.value.function_name.value
+            )
+        }
+    }
+
+    /// Return a reference to the scope info of this [`FunctionSymbol`].
+    pub fn scope_info(&self) -> &ScopeInfo {
+        &self.scope_info
     }
 }
 
 /// Represent a type of a variable.
 #[derive(Debug, Clone, Copy)]
 pub struct VariableSymbol<'table, 'ast> {
-    pub variable_type: &'table TypeSymbol,
-    pub name: &'ast str,
-    pub is_mutable: bool,
+    variable_type: &'table TypeSymbol,
+    name: &'ast str,
+    is_mutable: bool,
+}
+
+impl<'table, 'ast> VariableSymbol<'table, 'ast> {
+    /// Return a reference to the variable type of this [`VariableSymbol`].
+    pub fn variable_type(&self) -> &'table TypeSymbol {
+        self.variable_type
+    }
+
+    /// Return a reference to the name of this [`VariableSymbol`].
+    pub fn name(&self) -> &'ast str {
+        self.name
+    }
+
+    /// Return the is mutable of this [`VariableSymbol`].
+    pub fn is_mutable(&self) -> bool {
+        self.is_mutable
+    }
 }
 
 /// Represent an enumeration containing all the primitive types supported by Pernix.
@@ -174,7 +194,73 @@ pub enum PrimitiveType {
 }
 
 /// Represent an enumeration containing all the types supported by Pernix.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub enum TypeSymbol {
     PrimitiveType(PrimitiveType),
+}
+
+impl TypeSymbol {
+    /// Check whether the type is a primitive `bool` type.
+    pub fn is_bool(&self) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(PrimitiveType::Bool) => true,
+            _ => false,
+        }
+    }
+
+    /// Check whether the type is a primitive numeric type.
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(PrimitiveType::Int8)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int16)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int64)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint8)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint16)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint64)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Float32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Float64) => true,
+            _ => false,
+        }
+    }
+
+    /// Check whether the type is a primitive type.
+    pub fn is_primitive_type(&self) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(_) => true,
+        }
+    }
+
+    /// Check whether the type is a primitive `void` type.
+    pub fn is_void(&self) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(PrimitiveType::Void) => true,
+            _ => false,
+        }
+    }
+
+    /// Check whether the type is a primitive integer type.
+    pub fn is_integer(&self) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(PrimitiveType::Int8)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int16)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int64)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint8)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint16)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint64) => true,
+            _ => false,
+        }
+    }
+
+    /// Check whether the type is a primitive floating point type.
+    pub fn is_floating_point(&self) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(PrimitiveType::Float32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Float64) => true,
+            _ => false,
+        }
+    }
 }
