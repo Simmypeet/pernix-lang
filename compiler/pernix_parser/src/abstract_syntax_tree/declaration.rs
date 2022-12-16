@@ -1,11 +1,4 @@
-use super::{statement::ScopeStatement, PositionWrapper};
-
-/// Describe a stack allocated array of a given type and size
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Array<'a> {
-    pub element_type: Box<TypeAnnotation<'a>>,
-    pub size: usize,
-}
+use super::{statement::BlockScopeStatement, PositionWrapper};
 
 /// Represent an enumeration containing all possible type annotaion patterns
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,7 +9,7 @@ pub enum TypeAnnotation<'a> {
 /// Represent a wrapper around a type that contains additional qualifiers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QualifiedType<'a> {
-    pub element_type: TypeAnnotation<'a>,
+    pub type_annotation: PositionWrapper<TypeAnnotation<'a>>,
     pub is_mutable: bool,
 }
 
@@ -41,7 +34,14 @@ pub struct FunctionDeclaration<'a> {
     pub function_name: PositionWrapper<&'a str>,
     pub parameters: Vec<PositionWrapper<(QualifiedType<'a>, &'a str)>>,
     pub return_type: Option<PositionWrapper<TypeAnnotation<'a>>>,
-    pub body: PositionWrapper<ScopeStatement<'a>>,
+    pub body: PositionWrapper<BlockScopeStatement<'a>>,
+}
+
+impl<'a> FunctionDeclaration<'a> {
+    /// Convert the function declaration into a declaration.
+    pub fn to_declaration(self) -> Declaration<'a> {
+        Declaration::FunctionDeclaration(self)
+    }
 }
 
 /// Represent an enumeration containing all kinds of declarations.

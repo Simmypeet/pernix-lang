@@ -13,7 +13,7 @@ pub struct VariableDeclarationStatement<'a> {
 
 /// Represent an if-else statement controlling the flow of execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IfStatement<'a> {
+pub struct IfElseStatement<'a> {
     pub condition: PositionWrapper<Expression<'a>>,
     pub then_statement: Box<PositionWrapper<Statement<'a>>>,
     pub else_statement: Option<Box<PositionWrapper<Statement<'a>>>>,
@@ -21,16 +21,22 @@ pub struct IfStatement<'a> {
 
 /// Represent a scope delimited by curly braces containing statements.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScopeStatement<'a> {
+pub struct BlockScopeStatement<'a> {
     pub statements: Vec<PositionWrapper<Statement<'a>>>,
+}
+
+/// Represent a return statement that returns an expression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReturnStatement<'a> {
+    pub expression: Option<PositionWrapper<Expression<'a>>>,
 }
 
 /// Represent an enumeration containing all kinds of statements.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement<'a> {
-    ReturnStatement(Option<PositionWrapper<Expression<'a>>>),
+    ReturnStatement(ReturnStatement<'a>),
     ExpressionStatement(PositionWrapper<Expression<'a>>),
     VariableDeclarationStatement(VariableDeclarationStatement<'a>),
-    IfStatement(IfStatement<'a>),
-    Scope(ScopeStatement<'a>),
+    IfElseStatement(IfElseStatement<'a>),
+    BlockScopeStatement(BlockScopeStatement<'a>),
 }

@@ -83,7 +83,7 @@ impl<'a> Lexer<'a> {
 
     /// Lex the current word; returns the corresponding token and move to the
     /// next token.
-    pub fn lex(&mut self) -> Result<Token<'a>, Error<'a>> {
+    pub fn lex(&mut self) -> Result<Token<'a>, Error> {
         // the current source file position
         let first_position = self.current_position;
 
@@ -173,7 +173,6 @@ impl<'a> Lexer<'a> {
                                         UnterminatedMultilineComment {
                                             multiline_comment_position:
                                                 first_position,
-                                            source_refernece: self.source_code,
                                         },
                                     ),
                                 );
@@ -346,7 +345,6 @@ impl<'a> Lexer<'a> {
             return Err(Error::InvalidCharacter(InvalidCharacter {
                 position: first_position,
                 character: first_char,
-                source_refernece: self.source_code,
             }));
         }
 

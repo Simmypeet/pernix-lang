@@ -236,9 +236,9 @@ impl ExpressionGenerator for Expression<'_> {
                 match operator.value {
                     BinaryOperator::Add => left_value + right_value,
                     BinaryOperator::Subtract => left_value - right_value,
-                    BinaryOperator::Asterisk => left_value * right_value,
-                    BinaryOperator::Slash => left_value / right_value,
-                    BinaryOperator::Percent => left_value % right_value,
+                    BinaryOperator::Multiply => left_value * right_value,
+                    BinaryOperator::Divide => left_value / right_value,
+                    BinaryOperator::Remainder => left_value % right_value,
                     _ => unimplemented!(),
                 }
             }
@@ -399,7 +399,7 @@ fn parsing_if_statement_test() {
     let mut parser = Parser::new(&source_code);
 
     match parser.parse_statement().unwrap().value {
-        Statement::IfStatement(statement) => {
+        Statement::IfElseStatement(statement) => {
             assert!(matches!(
                 statement.condition.value,
                 Expression::FunctionCallExpression(call) if call.function_name.value == "func" && call.arguments.is_empty()
@@ -407,12 +407,12 @@ fn parsing_if_statement_test() {
 
             assert!(matches!(
                 statement.then_statement.value,
-                Statement::ReturnStatement(expression) if matches!(expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "42", literal_suffix: None }))
+                Statement::ReturnStatement(expression) if matches!(expression.expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "42", literal_suffix: None }))
             ));
 
             assert!(matches!(
                 statement.else_statement.unwrap().value,
-                Statement::ReturnStatement(expression) if matches!(expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "69", literal_suffix: None }))
+                Statement::ReturnStatement(expression) if matches!(expression.expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "69", literal_suffix: None }))
             ));
         }
         _ => panic!("expected an if statement"),
@@ -445,7 +445,7 @@ fn parse_function_declaration() {
                 assert_eq!(parameter.1, "a");
                 assert!(parameter.0.is_mutable);
                 assert!(matches!(
-                    parameter.0.element_type,
+                    parameter.0.type_annotation.value,
                     TypeAnnotation::QualifiedName("int32")
                 ));
             }
@@ -455,7 +455,7 @@ fn parse_function_declaration() {
                 assert_eq!(parameter.1, "b");
                 assert!(!parameter.0.is_mutable);
                 assert!(matches!(
-                    parameter.0.element_type,
+                    parameter.0.type_annotation.value,
                     TypeAnnotation::QualifiedName("int32")
                 ));
             }

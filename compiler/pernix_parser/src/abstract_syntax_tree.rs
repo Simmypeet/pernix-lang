@@ -19,9 +19,9 @@ pub struct PositionWrapper<T> {
 pub enum BinaryOperator {
     Add,
     Subtract,
-    Asterisk,
-    Slash,
-    Percent,
+    Multiply,
+    Divide,
+    Remainder,
     LessThan,
     GreaterThan,
     LessThanEqual,
@@ -30,6 +30,12 @@ pub enum BinaryOperator {
     NotEqual,
     LogicalAnd,
     LogicalOr,
+    Assignment,
+    CompoundAddition,
+    CompoundSubtraction,
+    CompoundMultiplication,
+    CompoundDivision,
+    CompoundRemainder,
 }
 
 /// List of all available unary operators

@@ -20,11 +20,11 @@ use pernix_project::source_code::SourceCode;
 use crate::abstract_syntax_tree::{
     declaration::QualifiedType,
     expression::UnaryExpression,
-    statement::{IfStatement, ScopeStatement, VariableDeclarationStatement},
+    statement::{IfElseStatement, BlockScopeStatement, VariableDeclarationStatement, ReturnStatement},
 };
 
 /// Represent a state-machine data structure that is used to parse a Pernix
-/// source code program.
+/// source code file.
 pub struct Parser<'a> {
     // The lexer that is used to generate the token stream
     lexer: Lexer<'a>,
@@ -39,21 +39,27 @@ pub struct Parser<'a> {
     produce_errors: bool,
 }
 
-/// Represent an AST structure that represents a Pernix source code program.
-pub struct Program<'a> {
+/// Represent an AST structure that represents a Pernix source file.
+pub struct File<'a> {
     declarations: Vec<PositionWrapper<Declaration<'a>>>,
     using_directives: Vec<PositionWrapper<UsingDirective<'a>>>,
+    source_reference: &'a SourceCode,
 }
 
-impl<'a> Program<'a> {
-    /// Returns a reference to the declarations of this [`Program`].
+impl<'a> File<'a> {
+    /// Return a reference to the declarations of this [`File`].
     pub fn declarations(&self) -> &[PositionWrapper<Declaration>] {
         self.declarations.as_ref()
     }
 
-    /// Returns a reference to the using directives of this [`Program`].
+    /// Return a reference to the using directives of this [`File`].
     pub fn using_directives(&self) -> &[PositionWrapper<UsingDirective>] {
         self.using_directives.as_ref()
+    }
+
+    /// Return a reference to the source reference of this [`File`].
+    pub fn source_reference(&self) -> &SourceCode {
+        self.source_reference
     }
 }
 
@@ -241,20 +247,22 @@ impl<'a> Parser<'a> {
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    /// PROGRAM
+    /// FILE
     ////////////////////////////////////////////////////////////////////////////
 
-    /// Parse all token stream as a program
+    /// Parse all token stream as a file
     ///
-    /// Program:
+    /// File:
     ///     Using_Directive* Declaration*
-    pub fn parse_program(&mut self) -> Option<Program<'a>> {
-        let mut program = Program {
+    pub fn parse_file(&mut self) -> Option<File<'a>> {
+        let mut file = File {
             declarations: Vec::new(),
             using_directives: Vec::new(),
+            source_reference: self.source_code()
+
         };
 
-        let program_skip_predicate = |token: &Token| {
+        let file_skip_predicate = |token: &Token| {
             matches!(token.token_kind(), TokenKind::Keyword(Keyword::Namespace))
         };
 
@@ -272,14 +280,14 @@ impl<'a> Parser<'a> {
                 let using_directive = self.parse_using_directive();
 
                 if let Some(using_directive) = using_directive {
-                    program.using_directives.push(using_directive.clone());
+                    file.using_directives.push(using_directive.clone());
 
                     if !parsing_using {
                         if self.produce_errors {
                             self.accumulated_errors.push(
                              Error::UsingDirectiveMustAppearPriorToAllDeclarations {
                                  using_directive,
-                                 source_reference: self.source_code(),
+                                 
                              }
                          );
                         }
@@ -288,17 +296,17 @@ impl<'a> Parser<'a> {
                     // make progress
                     self.next();
                 }
-                self.skip_to(program_skip_predicate);
+                self.skip_to(file_skip_predicate);
             } else if let Some(declaration) = self.parse_declaration() {
                 parsing_using = false;
-                program.declarations.push(declaration);
+                file.declarations.push(declaration);
             } else {
                 // make progress
                 self.next();
-                self.skip_to(program_skip_predicate);
+                self.skip_to(file_skip_predicate);
             }
         }
-        Some(program)
+        Some(file)
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -334,7 +342,6 @@ impl<'a> Parser<'a> {
                     Error::UnexpectedToken {
                         context: Context::Declaration,
                         found_token: self.peek().clone(),
-                        source_reference: self.source_code()
                     }
                 );
             }
@@ -357,7 +364,7 @@ impl<'a> Parser<'a> {
                 Error::KeywordExpected {
                     expected_keyword: Keyword::Function,
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -377,7 +384,7 @@ impl<'a> Parser<'a> {
                 self,
                 Error::IdentifierExpected {
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -393,7 +400,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: '(',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -432,7 +439,7 @@ impl<'a> Parser<'a> {
                                 Error::PunctuatorExpected {
                                     expected_punctuator: ',',
                                     found_token: self.peek_back().clone(),
-                                    source_reference: self.source_code(),
+                                    
                                 },
                             );
                         }
@@ -473,7 +480,7 @@ impl<'a> Parser<'a> {
                         self.accumulated_errors.push(
                             Error::IdentifierExpected {
                                 found_token: self.peek_back().clone(),
-                                source_reference: self.source_code(),
+                                
                             },
                         );
                     }
@@ -494,7 +501,7 @@ impl<'a> Parser<'a> {
                             Error::PunctuatorExpected {
                                 expected_punctuator: ':',
                                 found_token: self.peek_back().clone(),
-                                source_reference: self.source_code(),
+                                
                             },
                         );
                     }
@@ -510,7 +517,7 @@ impl<'a> Parser<'a> {
                     match self.parse_type_anootation() {
                         Some(type_annotation) => QualifiedType {
                             is_mutable,
-                            element_type: type_annotation.value,
+                            type_annotation,
                         },
                         None => {
                             // make progress
@@ -543,7 +550,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: ')',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -568,9 +575,9 @@ impl<'a> Parser<'a> {
 
         // expect a scope
         let scope =
-            parse_unwrap!(self, self.parse_scope_statement(), starting_index);
+            parse_unwrap!(self, self.parse_block_scope_statement(), starting_index);
         let body = match scope.value {
-            Statement::Scope(scope_statement) => PositionWrapper {
+            Statement::BlockScopeStatement(scope_statement) => PositionWrapper {
                 position: scope.position,
                 value: scope_statement,
             },
@@ -599,7 +606,7 @@ impl<'a> Parser<'a> {
                 self,
                 Error::IdentifierExpected {
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -616,7 +623,7 @@ impl<'a> Parser<'a> {
                     self,
                     Error::IdentifierExpected {
                         found_token: self.peek_back().clone(),
-                        source_reference: self.source_code(),
+                        
                     },
                     starting_index
                 );
@@ -649,7 +656,7 @@ impl<'a> Parser<'a> {
                 Error::KeywordExpected {
                     expected_keyword: Keyword::Using,
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -668,7 +675,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: ';',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -695,7 +702,7 @@ impl<'a> Parser<'a> {
                 self,
                 Error::IdentifierExpected {
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -733,7 +740,7 @@ impl<'a> Parser<'a> {
                 Error::KeywordExpected {
                     expected_keyword: Keyword::Namespace,
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -752,7 +759,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: '{',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -781,7 +788,7 @@ impl<'a> Parser<'a> {
                             self.accumulated_errors.push(
                                 Error::UsingDirectiveMustAppearPriorToAllDeclarations {
                                     using_directive,
-                                    source_reference: self.source_code(),
+                                    
                                 }
                             );
                         }
@@ -811,7 +818,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: '}',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -883,7 +890,7 @@ impl<'a> Parser<'a> {
                     Error::UnexpectedToken {
                         context: Context::Expression,
                         found_token: self.peek_back().clone(),
-                        source_reference: self.source_code(),
+                        
                     },
                     starting_index
                 );
@@ -919,11 +926,39 @@ impl<'a> Parser<'a> {
         let operator_position_range = self.peek().position_range().clone();
 
         let bin_op = match self.next().token_kind() {
-            TokenKind::Punctuator('+') => BinaryOperator::Add,
-            TokenKind::Punctuator('-') => BinaryOperator::Subtract,
-            TokenKind::Punctuator('*') => BinaryOperator::Asterisk,
-            TokenKind::Punctuator('/') => BinaryOperator::Slash,
-            TokenKind::Punctuator('%') => BinaryOperator::Percent,
+            TokenKind::Punctuator('+')
+            | TokenKind::Punctuator('-')
+            | TokenKind::Punctuator('*')
+            | TokenKind::Punctuator('/')
+            | TokenKind::Punctuator('%') => {
+                let punctuator = match self.peek_back().token_kind() {
+                    TokenKind::Punctuator(c) => *c,
+                    _ => unreachable!(),
+                };
+
+                // check for compound assignment
+                match self.peek().token_kind() {
+                    TokenKind::Punctuator('=') => {
+                        self.next();
+                        match punctuator {
+                            '+' => BinaryOperator::CompoundAddition,
+                            '-' => BinaryOperator::CompoundSubtraction,
+                            '*' => BinaryOperator::CompoundMultiplication,
+                            '/' => BinaryOperator::CompoundDivision,
+                            '%' => BinaryOperator::CompoundRemainder,
+                            _ => unreachable!(),
+                        }
+                    }
+                    _ => match punctuator {
+                        '+' => BinaryOperator::Add,
+                        '-' => BinaryOperator::Subtract,
+                        '*' => BinaryOperator::Multiply,
+                        '/' => BinaryOperator::Divide,
+                        '%' => BinaryOperator::Remainder,
+                        _ => unreachable!(),
+                    },
+                }
+            }
             TokenKind::Punctuator('<') | TokenKind::Punctuator('>') => {
                 let current_punctuator = match self.peek_back().token_kind() {
                     TokenKind::Punctuator(c) => *c,
@@ -1019,9 +1054,17 @@ impl<'a> Parser<'a> {
             | BinaryOperator::LessThanEqual
             | BinaryOperator::GreaterThan
             | BinaryOperator::GreaterThanEqual => 3,
-            BinaryOperator::Add | BinaryOperator::Subtract => 4,
-            BinaryOperator::Asterisk | BinaryOperator::Slash => 5,
-            BinaryOperator::Percent => 6,
+            BinaryOperator::Add
+            | BinaryOperator::Subtract
+            | BinaryOperator::CompoundAddition
+            | BinaryOperator::CompoundSubtraction => 4,
+            BinaryOperator::Multiply
+            | BinaryOperator::Divide
+            | BinaryOperator::Remainder
+            | BinaryOperator::CompoundMultiplication
+            | BinaryOperator::CompoundDivision
+            | BinaryOperator::CompoundRemainder => 5,
+            BinaryOperator::Assignment => 6,
         }
     }
 
@@ -1082,7 +1125,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: '(',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1125,7 +1168,7 @@ impl<'a> Parser<'a> {
                             Error::PunctuatorExpected {
                                 expected_punctuator: ')',
                                 found_token: self.peek_back().clone(),
-                                source_reference: self.source_code(),
+                                
                             },
                         );
                     }
@@ -1230,7 +1273,7 @@ impl<'a> Parser<'a> {
                         Error::PunctuatorExpected {
                             expected_punctuator: ')',
                             found_token: self.peek_back().clone(),
-                            source_reference: self.source_code(),
+                            
                         },
                         starting_index
                     );
@@ -1244,7 +1287,7 @@ impl<'a> Parser<'a> {
                     Error::UnexpectedToken {
                         context: Context::Expression,
                         found_token: self.peek().clone(),
-                        source_reference: self.source_code(),
+                        
                     },
                     starting_index
                 );
@@ -1294,10 +1337,10 @@ impl<'a> Parser<'a> {
                 return self.parse_variable_declaration_statement();
             }
             TokenKind::Punctuator('{') => {
-                return self.parse_scope_statement();
+                return self.parse_block_scope_statement();
             }
             TokenKind::Keyword(Keyword::If) => {
-                return self.parse_if_statement();
+                return self.parse_if_else_statement();
             }
             _ => {
                 // try to parse an expression
@@ -1317,7 +1360,7 @@ impl<'a> Parser<'a> {
                                 Error::PunctuatorExpected {
                                     expected_punctuator: ';',
                                     found_token: self.peek_back().clone(),
-                                    source_reference: self.source_code(),
+                                    
                                 },
                                 starting_index
                             );
@@ -1335,7 +1378,7 @@ impl<'a> Parser<'a> {
                             Error::UnexpectedToken {
                                 context: Context::Statement,
                                 found_token: self.peek().clone(),
-                                source_reference: self.source_code(),
+                                
                             },
                             starting_index
                         );
@@ -1361,7 +1404,7 @@ impl<'a> Parser<'a> {
                 Error::KeywordExpected {
                     expected_keyword: Keyword::Return,
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1377,7 +1420,9 @@ impl<'a> Parser<'a> {
             return Some(PositionWrapper {
                 position: starting_position.start
                     ..self.peek_back().position_range().end,
-                value: Statement::ReturnStatement(None),
+                value: Statement::ReturnStatement(ReturnStatement {
+                    expression: None,
+                }),
             });
         }
 
@@ -1393,7 +1438,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: ';',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1402,7 +1447,7 @@ impl<'a> Parser<'a> {
         Some(PositionWrapper {
             position: starting_position.start
                 ..self.peek_back().position_range().end,
-            value: Statement::ReturnStatement(Some(expression)),
+            value: Statement::ReturnStatement(ReturnStatement { expression: Some(expression) }),
         })
     }
 
@@ -1421,7 +1466,7 @@ impl<'a> Parser<'a> {
                 Error::KeywordExpected {
                     expected_keyword: Keyword::Let,
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1450,7 +1495,7 @@ impl<'a> Parser<'a> {
                     self,
                     Error::IdentifierExpected {
                         found_token: self.peek_back().clone(),
-                        source_reference: self.source_code(),
+                        
                     },
                     starting_index
                 );
@@ -1484,7 +1529,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: '=',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1503,7 +1548,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: ';',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1523,7 +1568,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_scope_statement(
+    fn parse_block_scope_statement(
         &mut self,
     ) -> Option<PositionWrapper<Statement<'a>>> {
         parse_setup!(self, starting_index, starting_position);
@@ -1538,7 +1583,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: '{',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1585,7 +1630,7 @@ impl<'a> Parser<'a> {
                 Error::PunctuatorExpected {
                     expected_punctuator: '}',
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1594,11 +1639,11 @@ impl<'a> Parser<'a> {
         Some(PositionWrapper {
             position: starting_position.start
                 ..self.peek_back().position_range().end,
-            value: Statement::Scope(ScopeStatement { statements }),
+            value: Statement::BlockScopeStatement(BlockScopeStatement { statements }),
         })
     }
 
-    fn parse_if_statement(&mut self) -> Option<PositionWrapper<Statement<'a>>> {
+    fn parse_if_else_statement(&mut self) -> Option<PositionWrapper<Statement<'a>>> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect an if keyword
@@ -1611,7 +1656,7 @@ impl<'a> Parser<'a> {
                 Error::KeywordExpected {
                     expected_keyword: Keyword::If,
                     found_token: self.peek_back().clone(),
-                    source_reference: self.source_code(),
+                    
                 },
                 starting_index
             );
@@ -1645,7 +1690,7 @@ impl<'a> Parser<'a> {
         Some(PositionWrapper {
             position: starting_position.start
                 ..self.peek_back().position_range().end,
-            value: Statement::IfStatement(IfStatement {
+            value: Statement::IfElseStatement(IfElseStatement {
                 condition,
                 then_statement: Box::new(then_statement),
                 else_statement,

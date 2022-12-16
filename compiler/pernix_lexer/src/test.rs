@@ -404,7 +404,6 @@ fn multiline_comment_test() {
             Error::UnterminatedMultilineComment(
                 UnterminatedMultilineComment {
                     multiline_comment_position,
-                    source_refernece: _,
                 },
             ) => {
                 multiline_comment_position.line == 1
