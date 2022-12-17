@@ -2,7 +2,7 @@ use pernix_project::source_code::{SourceCode, SourcePosition};
 
 use crate::{
     error::{Error, UnterminatedMultilineComment},
-    token::{Keyword, LiteralConstantType, TokenKind},
+    token::{Keyword, LiteralConstantToken, TokenKind},
     Lexer,
 };
 
@@ -21,9 +21,10 @@ fn literal_test() {
 
         matches!(
             token.token_kind(),
-            TokenKind::LiteralConstant(LiteralConstantType::Integer {
+            TokenKind::LiteralConstant(LiteralConstantToken::Number {
                 value: "123",
-                literal_suffix: Some("i32")
+                literal_suffix: Some("i32"),
+                is_decimal: false
             })
         ) && token.position_range().start
             == SourcePosition {
@@ -64,9 +65,10 @@ fn literal_test() {
 
         matches!(
             token.token_kind(),
-            TokenKind::LiteralConstant(LiteralConstantType::Float {
+            TokenKind::LiteralConstant(LiteralConstantToken::Number {
                 value: "123.456",
-                literal_suffix: None
+                literal_suffix: None,
+                is_decimal: true
             })
         ) && token.position_range().start
             == SourcePosition {
@@ -107,7 +109,7 @@ fn literal_test() {
 
         matches!(
             token.token_kind(),
-            TokenKind::LiteralConstant(LiteralConstantType::Boolean(true))
+            TokenKind::LiteralConstant(LiteralConstantToken::Boolean(true))
         ) && token.position_range().start
             == SourcePosition {
                 line: 1,
@@ -147,7 +149,7 @@ fn literal_test() {
 
         matches!(
             token.token_kind(),
-            TokenKind::LiteralConstant(LiteralConstantType::Boolean(false))
+            TokenKind::LiteralConstant(LiteralConstantToken::Boolean(false))
         ) && token.position_range().start
             == SourcePosition {
                 line: 1,
@@ -311,9 +313,10 @@ fn identifier_and_keyword_test() {
         token.lexeme() == "23name"
             && matches!(
                 token.token_kind(),
-                TokenKind::LiteralConstant(LiteralConstantType::Integer {
+                TokenKind::LiteralConstant(LiteralConstantToken::Number {
                     value: "23",
-                    literal_suffix: Some("name")
+                    literal_suffix: Some("name"),
+                    is_decimal: false
                 })
             )
     });

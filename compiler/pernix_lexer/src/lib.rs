@@ -208,12 +208,12 @@ impl<'a> Lexer<'a> {
             match identifier_string.as_str() {
                 "true" => {
                     token_kind = TokenKind::LiteralConstant(
-                        token::LiteralConstantType::Boolean(true),
+                        token::LiteralConstantToken::Boolean(true),
                     )
                 }
                 "false" => {
                     token_kind = TokenKind::LiteralConstant(
-                        token::LiteralConstantType::Boolean(false),
+                        token::LiteralConstantToken::Boolean(false),
                     )
                 }
                 _ => {
@@ -246,7 +246,7 @@ impl<'a> Lexer<'a> {
                 self.next();
             }
 
-            let mut is_float = false;
+            let mut is_decimal = false;
 
             // if found a dot, it might be a float literal if the next character
             // after the dot is a digit
@@ -266,7 +266,7 @@ impl<'a> Lexer<'a> {
                 match self.chars.peek() {
                     Some((_, char)) => {
                         if char.is_digit(10) {
-                            is_float = true;
+                            is_decimal = true;
                             self.next();
 
                             // loop until non-digit character is found
@@ -326,19 +326,13 @@ impl<'a> Lexer<'a> {
                 });
             }
 
-            token_kind = if is_float {
-                TokenKind::LiteralConstant(token::LiteralConstantType::Float {
+            token_kind = TokenKind::LiteralConstant(
+                token::LiteralConstantToken::Number {
                     value: value_str,
                     literal_suffix: literal_prefix,
-                })
-            } else {
-                TokenKind::LiteralConstant(
-                    token::LiteralConstantType::Integer {
-                        value: value_str,
-                        literal_suffix: literal_prefix,
-                    },
-                )
-            };
+                    is_decimal,
+                },
+            )
         }
         // this character can't be categorized under any token kinds
         else {

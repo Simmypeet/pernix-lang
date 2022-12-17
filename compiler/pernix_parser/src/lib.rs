@@ -6,7 +6,7 @@ use abstract_syntax_tree::{
         Declaration, FunctionDeclaration, NamespaceDeclaration, TypeAnnotation,
         UsingDirective,
     },
-    expression::{BinaryExpression, Expression, FunctionCallExpression},
+    expression::{BinaryExpression, Expression, FunctionCallExpression, LiteralExpression},
     statement::Statement,
     BinaryOperator, PositionWrapper, UnaryOperator,
 };
@@ -19,7 +19,7 @@ use pernix_project::source_code::SourceCode;
 
 use crate::abstract_syntax_tree::{
     declaration::QualifiedType,
-    expression::UnaryExpression,
+    expression::{UnaryExpression, IdentifierExpression},
     statement::{IfElseStatement, BlockScopeStatement, VariableDeclarationStatement, ReturnStatement},
 };
 
@@ -1229,7 +1229,7 @@ impl<'a> Parser<'a> {
             // it's just an identifier
             _ => Some(PositionWrapper {
                 position: qualified_name.position,
-                value: Expression::IdentifierExpression(qualified_name.value),
+                value: Expression::IdentifierExpression(IdentifierExpression { identifier: qualified_name.value} ),
             }),
         }
     }
@@ -1253,7 +1253,9 @@ impl<'a> Parser<'a> {
 
                 Some(PositionWrapper {
                     position,
-                    value: Expression::LiteralExpression(val),
+                    value: Expression::LiteralExpression(LiteralExpression {
+                        literal_expression: val,
+                    }),
                 })
             }
             TokenKind::Identifier => self.parse_identifier_expression(),

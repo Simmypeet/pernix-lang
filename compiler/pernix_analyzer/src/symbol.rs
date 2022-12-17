@@ -70,14 +70,14 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
         let return_type = match &ast.value.return_type {
             Some(val) => {
                 match table.lookup_from_type_annotation(scope_info, &val) {
-                    Ok(val) => Some(val),
+                    Ok(val) => Some(&val.value),
                     Err(err) => {
                         errors.push(err);
                         None
                     }
                 }
             }
-            None => Some(&table.get("void").unwrap().value),
+            None => Some(&table.get_primitive_type(PrimitiveType::Void).value),
         };
 
         let parameter_types = {
@@ -96,7 +96,7 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
                 };
 
                 parameters.push(VariableSymbol {
-                    variable_type: parameter_type,
+                    variable_type: &parameter_type.value,
                     name: parameter.value.1,
                     is_mutable: parameter.value.0.is_mutable,
                 });
@@ -154,30 +154,12 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
 /// Represent a type of a variable.
 #[derive(Debug, Clone, Copy)]
 pub struct VariableSymbol<'table, 'ast> {
-    variable_type: &'table TypeSymbol,
-    name: &'ast str,
-    is_mutable: bool,
+    pub variable_type: &'table TypeSymbol,
+    pub name: &'ast str,
+    pub is_mutable: bool,
 }
 
-impl<'table, 'ast> VariableSymbol<'table, 'ast> {
-    /// Return a reference to the variable type of this [`VariableSymbol`].
-    pub fn variable_type(&self) -> &'table TypeSymbol {
-        self.variable_type
-    }
-
-    /// Return a reference to the name of this [`VariableSymbol`].
-    pub fn name(&self) -> &'ast str {
-        self.name
-    }
-
-    /// Return the is mutable of this [`VariableSymbol`].
-    pub fn is_mutable(&self) -> bool {
-        self.is_mutable
-    }
-}
-
-/// Represent an enumeration containing all the primitive types supported by Pernix.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
     Void,
     Bool,

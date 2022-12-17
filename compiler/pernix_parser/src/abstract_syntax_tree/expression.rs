@@ -1,4 +1,4 @@
-use pernix_lexer::token::LiteralConstantType;
+use pernix_lexer::token::LiteralConstantToken;
 
 use super::{BinaryOperator, PositionWrapper, UnaryOperator};
 
@@ -25,12 +25,24 @@ pub struct FunctionCallExpression<'a> {
     pub arguments: Vec<PositionWrapper<Expression<'a>>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Represent an expression that is composed by a reference to an variable
+pub struct IdentifierExpression<'a> {
+    pub identifier: &'a str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Represent an expression that is produced by a literal constant
+pub struct LiteralExpression<'a> {
+    pub literal_expression: LiteralConstantToken<'a>,
+}
+
 /// Represent an enumeration containing all possible expressions
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression<'a> {
     BinaryExpression(BinaryExpression<'a>),
     UnaryExpression(UnaryExpression<'a>),
-    LiteralExpression(LiteralConstantType<'a>),
-    IdentifierExpression(&'a str),
+    LiteralExpression(LiteralExpression<'a>),
+    IdentifierExpression(IdentifierExpression<'a>),
     FunctionCallExpression(FunctionCallExpression<'a>),
 }

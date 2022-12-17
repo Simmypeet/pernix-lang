@@ -1,6 +1,10 @@
 use pernix_parser::abstract_syntax_tree::{
     declaration::{FunctionDeclaration, QualifiedType},
-    expression::Expression,
+    expression::{
+        BinaryExpression, Expression, FunctionCallExpression,
+        IdentifierExpression, LiteralExpression,
+    },
+    statement::ReturnStatement,
     PositionWrapper, UnaryOperator,
 };
 
@@ -33,5 +37,32 @@ pub enum Error<'table, 'parser, 'ast> {
         expected_type: &'table TypeSymbol,
         expression_type: &'table TypeSymbol,
         expression: &'parser PositionWrapper<Expression<'ast>>,
+    },
+    InvalidArgumentCount {
+        function_declaration:
+            PositionWrapper<&'parser FunctionDeclaration<'ast>>,
+        function_call_expression:
+            PositionWrapper<&'parser FunctionCallExpression<'ast>>,
+        expected_argument_count: usize,
+        supplied_argument_count: usize,
+    },
+    UndefinedVariable {
+        variable_name: PositionWrapper<&'parser IdentifierExpression<'ast>>,
+    },
+    UndefinedFunctionName {
+        function_call_expression:
+            PositionWrapper<&'parser FunctionCallExpression<'ast>>,
+    },
+    UndefinedLiteralSuffix {
+        literal_expression: PositionWrapper<&'parser LiteralExpression<'ast>>,
+    },
+    RValueAssignment {
+        rvalue_expression: &'parser PositionWrapper<Expression<'ast>>,
+    },
+    InvalidBinaryOperation {
+        binary_expression: PositionWrapper<&'parser BinaryExpression<'ast>>,
+    },
+    ReturnStatementMustReturnAValue {
+        return_statement: PositionWrapper<&'parser ReturnStatement<'ast>>,
     },
 }

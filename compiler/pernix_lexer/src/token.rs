@@ -16,16 +16,25 @@ pub enum Keyword {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LiteralConstantType<'a> {
-    Integer {
+pub enum LiteralConstantToken<'a> {
+    Number {
         value: &'a str,
         literal_suffix: Option<&'a str>,
-    },
-    Float {
-        value: &'a str,
-        literal_suffix: Option<&'a str>,
+        is_decimal: bool,
     },
     Boolean(bool),
+}
+
+impl<'a> LiteralConstantToken<'a> {
+    /// Return a literal suffix of this [`LiteralConstantToken`].
+    pub fn get_literal_suffix(&self) -> Option<&'a str> {
+        match self {
+            LiteralConstantToken::Number { literal_suffix, .. } => {
+                *literal_suffix
+            }
+            LiteralConstantToken::Boolean(_) => None,
+        }
+    }
 }
 
 /// Represent an enumeration containing all patterns of tokens.
@@ -35,7 +44,7 @@ pub enum TokenKind<'a> {
     Space,
     Comment,
     Keyword(Keyword),
-    LiteralConstant(LiteralConstantType<'a>),
+    LiteralConstant(LiteralConstantToken<'a>),
     Punctuator(char),
     EndOfFile,
 }

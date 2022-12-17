@@ -1,12 +1,14 @@
 use core::panic;
 
-use pernix_lexer::token::LiteralConstantType;
+use pernix_lexer::token::LiteralConstantToken;
 use pernix_project::source_code::{SourceCode, SourcePosition};
 
 use crate::{
     abstract_syntax_tree::{
         declaration::{Declaration, TypeAnnotation},
-        expression::{BinaryExpression, Expression, UnaryExpression},
+        expression::{
+            BinaryExpression, Expression, LiteralExpression, UnaryExpression,
+        },
         statement::Statement,
         BinaryOperator, UnaryOperator,
     },
@@ -174,7 +176,7 @@ fn parse_unary_expression_test() {
             assert_eq!(expr.operator.value, UnaryOperator::LogicalNot);
             assert!(matches!(
                 expr.operand.value,
-                Expression::IdentifierExpression(identifier) if identifier == "a"
+                Expression::IdentifierExpression(identifier) if identifier.identifier == "a"
             ))
         }
         _ => panic!("expected a unary expression"),
@@ -195,12 +197,12 @@ fn parse_function_call_expression_test() {
 
                 assert!(matches!(
                     &expr.arguments[0].value,
-                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "123", literal_suffix: None } )
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralExpression { literal_expression: LiteralConstantToken::Number { value: "123", literal_suffix: None, is_decimal: false } }  )
                 ));
 
                 assert!(matches!(
                     &expr.arguments[1].value,
-                    Expression::IdentifierExpression(identifier) if *identifier == "test"
+                    Expression::IdentifierExpression(identifier) if identifier.identifier == "test"
                 ));
             }
             _ => panic!("expected a function call expression"),
@@ -254,13 +256,16 @@ impl ExpressionGenerator for Expression<'_> {
                     _ => unimplemented!(),
                 }
             }
-            Expression::LiteralExpression(lit) => match lit {
-                LiteralConstantType::Integer {
-                    value,
-                    literal_suffix: _,
-                } => value.parse::<i64>().unwrap(),
-                _ => unimplemented!(),
-            },
+            Expression::LiteralExpression(lit) => {
+                match lit.literal_expression {
+                    LiteralConstantToken::Number {
+                        value,
+                        literal_suffix: _,
+                        is_decimal: false,
+                    } => value.parse::<i64>().unwrap(),
+                    _ => unimplemented!(),
+                }
+            }
             _ => unimplemented!(),
         }
     }
@@ -314,7 +319,7 @@ fn parse_variable_declaration_statement_test() {
 
                 assert!(matches!(
                     declaration.expression.value,
-                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "32", literal_suffix: None } )
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralExpression { literal_expression: LiteralConstantToken::Number { value: "32", literal_suffix: None, is_decimal: false } } )
                 ));
             }
             _ => panic!("expected a variable declaration statement"),
@@ -333,7 +338,7 @@ fn parse_variable_declaration_statement_test() {
 
                 assert!(matches!(
                     declaration.expression.value,
-                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "64", literal_suffix: None } )
+                    Expression::LiteralExpression(literal) if matches!(literal,LiteralExpression { literal_expression: LiteralConstantToken::Number { value: "64", literal_suffix: None, is_decimal: false } } )
                 ));
             }
             _ => panic!("expected a variable declaration statement"),
@@ -355,7 +360,7 @@ fn parse_variable_declaration_statement_test() {
 
                 assert!(matches!(
                     declaration.expression.value,
-                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "128", literal_suffix: None } )
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralExpression { literal_expression: LiteralConstantToken::Number { value: "128", literal_suffix: None, is_decimal: false } } )
                 ));
             }
             _ => panic!("expected a variable declaration statement"),
@@ -377,7 +382,7 @@ fn parse_variable_declaration_statement_test() {
 
                 assert!(matches!(
                     declaration.expression.value,
-                    Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "256", literal_suffix: None } )
+                    Expression::LiteralExpression(literal) if matches!(literal, LiteralExpression { literal_expression: LiteralConstantToken::Number { value: "256", literal_suffix: None, is_decimal: false } } )
                 ));
             }
             _ => panic!("expected a variable declaration statement"),
@@ -407,12 +412,12 @@ fn parsing_if_statement_test() {
 
             assert!(matches!(
                 statement.then_statement.value,
-                Statement::ReturnStatement(expression) if matches!(expression.expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "42", literal_suffix: None }))
+                Statement::ReturnStatement(expression) if matches!(expression.expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralExpression { literal_expression: LiteralConstantToken::Number { value: "42", literal_suffix: None, is_decimal: false } }))
             ));
 
             assert!(matches!(
                 statement.else_statement.unwrap().value,
-                Statement::ReturnStatement(expression) if matches!(expression.expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralConstantType::Integer { value: "69", literal_suffix: None }))
+                Statement::ReturnStatement(expression) if matches!(expression.expression.clone().unwrap().value, Expression::LiteralExpression(literal) if matches!(literal, LiteralExpression { literal_expression: LiteralConstantToken::Number { value: "69", literal_suffix: None, is_decimal: false } }))
             ));
         }
         _ => panic!("expected an if statement"),

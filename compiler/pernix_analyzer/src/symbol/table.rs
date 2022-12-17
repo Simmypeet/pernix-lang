@@ -222,6 +222,26 @@ impl TypeSymbolTable {
         table
     }
 
+    pub fn get_primitive_type(
+        &self,
+        primitive_type: PrimitiveType,
+    ) -> &SymbolTableEntry<TypeSymbol> {
+        match primitive_type {
+            PrimitiveType::Void => self.entries.get("void").unwrap(),
+            PrimitiveType::Bool => self.entries.get("bool").unwrap(),
+            PrimitiveType::Int8 => self.entries.get("int8").unwrap(),
+            PrimitiveType::Int16 => self.entries.get("int16").unwrap(),
+            PrimitiveType::Int32 => self.entries.get("int32").unwrap(),
+            PrimitiveType::Int64 => self.entries.get("int64").unwrap(),
+            PrimitiveType::Uint8 => self.entries.get("uint8").unwrap(),
+            PrimitiveType::Uint16 => self.entries.get("uint16").unwrap(),
+            PrimitiveType::Uint32 => self.entries.get("uint32").unwrap(),
+            PrimitiveType::Uint64 => self.entries.get("uint64").unwrap(),
+            PrimitiveType::Float32 => self.entries.get("float32").unwrap(),
+            PrimitiveType::Float64 => self.entries.get("float64").unwrap(),
+        }
+    }
+
     /// Lookup a type from the [`TypeSymbolTable`]. The function will
     /// search for the type from the given scope info. If the type doesn't
     /// exist, the function will return `None`.
@@ -229,7 +249,7 @@ impl TypeSymbolTable {
         &self,
         scope_info: &ScopeInfo,
         type_annotation: &'parser PositionWrapper<TypeAnnotation<'ast>>,
-    ) -> Result<&TypeSymbol, Error<'_, 'parser, 'ast>> {
+    ) -> Result<&SymbolTableEntry<TypeSymbol>, Error<'_, 'parser, 'ast>> {
         match type_annotation.value {
             TypeAnnotation::QualifiedName(qualified_name) => {
                 let entry = self
@@ -241,7 +261,7 @@ impl TypeSymbolTable {
                         },
                     })?;
 
-                Ok(&entry.value)
+                Ok(&entry)
             }
         }
     }

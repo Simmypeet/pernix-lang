@@ -1,7 +1,7 @@
 use pernix_parser::abstract_syntax_tree::{
-    expression::Expression,
     statement::{
-        BlockScopeStatement, IfElseStatement, VariableDeclarationStatement,
+        BlockScopeStatement, IfElseStatement, ReturnStatement,
+        VariableDeclarationStatement,
     },
     PositionWrapper,
 };
@@ -27,14 +27,13 @@ pub struct BoundBlockScopeStatement<'table, 'parser, 'ast> {
 
 /// Represent a bound version of a [`Statement::ReturnStatement`] AST.
 pub struct BoundReturnStatement<'table, 'parser, 'ast> {
-    pub ast: Option<PositionWrapper<&'parser Expression<'ast>>>,
-    pub expression: BoundExpression<'table, 'parser, 'ast>,
+    pub ast: PositionWrapper<&'parser ReturnStatement<'ast>>,
+    pub expression: Option<BoundExpression<'table, 'parser, 'ast>>,
 }
 
 /// Represent a bound version of a [`VariableDeclarationStatement`] AST.
 pub struct BoundVariableDeclarationStatement<'table, 'parser, 'ast> {
     pub ast: PositionWrapper<&'parser VariableDeclarationStatement<'ast>>,
-    pub identifier: &'ast str,
     pub expression: BoundExpression<'table, 'parser, 'ast>,
 }
 

@@ -1,7 +1,7 @@
-use pernix_lexer::token::LiteralConstantType;
 use pernix_parser::abstract_syntax_tree::{
     expression::{
-        BinaryExpression, Expression, FunctionCallExpression, UnaryExpression,
+        BinaryExpression, Expression, FunctionCallExpression,
+        IdentifierExpression, LiteralExpression, UnaryExpression,
     },
     PositionWrapper,
 };
@@ -17,9 +17,64 @@ pub enum BoundExpression<'table, 'parser, 'ast> {
     BoundFunctionCallExpression(
         BoundFunctionCallExpression<'table, 'parser, 'ast>,
     ),
-    BoundImplicitCastExpression(
-        BoundImplicitCastExpression<'table, 'parser, 'ast>,
-    ),
+    BoundCastExpression(BoundCastExpression<'table, 'parser, 'ast>),
+}
+
+/// Represent a bound version of an [`UnaryExpression`] AST.
+pub struct BoundUnaryExpression<'table, 'parser, 'ast> {
+    pub ast: PositionWrapper<&'parser UnaryExpression<'ast>>,
+    pub operand: Box<BoundExpression<'table, 'parser, 'ast>>,
+    pub expression_type: ExpressionType<'table>,
+}
+
+/// Represent a bound version of a [`BinaryExpression`] AST.
+pub struct BoundBinaryExpression<'table, 'parser, 'ast> {
+    pub ast: PositionWrapper<&'parser BinaryExpression<'ast>>,
+    pub left: Box<BoundExpression<'table, 'parser, 'ast>>,
+    pub right: Box<BoundExpression<'table, 'parser, 'ast>>,
+    pub expression_type: ExpressionType<'table>,
+}
+
+/// Represent a bound version of a [`Expression::LiteralExpression`] AST.
+pub struct BoundLiteralExpression<'table, 'parser, 'ast> {
+    pub ast: PositionWrapper<&'parser LiteralExpression<'ast>>,
+    pub expression_type: ExpressionType<'table>,
+}
+
+/// Represent a bound version of an [`Expression::IdentifierExpression`] AST.
+pub struct BoundIdentifierExpression<'table, 'parser, 'ast> {
+    pub ast: PositionWrapper<&'parser IdentifierExpression<'ast>>,
+    pub expression_type: ExpressionType<'table>,
+}
+
+/// Represent a bound version of a [`FunctionCallExpression`] AST.
+pub struct BoundFunctionCallExpression<'table, 'parser, 'ast> {
+    pub ast: PositionWrapper<&'parser FunctionCallExpression<'ast>>,
+    pub arguments: Vec<BoundExpression<'table, 'parser, 'ast>>,
+    pub expression_type: ExpressionType<'table>,
+}
+
+/// Represent a structure containing the type of an expression and its category.
+pub struct ExpressionType<'table> {
+    pub type_symbol: &'table TypeSymbol,
+    pub category: ExpressionCategory,
+}
+
+/// Represent a bound expression that performs casting.
+pub struct BoundCastExpression<'table, 'parser, 'ast> {
+    pub ast: &'parser PositionWrapper<Expression<'ast>>,
+    pub operand: Box<BoundExpression<'table, 'parser, 'ast>>,
+    pub expression_type: ExpressionType<'table>,
+}
+
+/// Represent an enumeration containing all the possible categories of an
+/// expression.
+pub enum ExpressionCategory {
+    /// Represent an expression that doesn't have the memory storage.
+    RValue,
+
+    /// Represent an expression that has the memory storage.
+    LValue { is_mutable: bool },
 }
 
 impl<'table, 'parser, 'ast> BoundExpression<'table, 'parser, 'ast> {
@@ -41,66 +96,9 @@ impl<'table, 'parser, 'ast> BoundExpression<'table, 'parser, 'ast> {
             BoundExpression::BoundFunctionCallExpression(
                 function_call_expression,
             ) => &function_call_expression.expression_type,
-            BoundExpression::BoundImplicitCastExpression(
-                implicit_cast_expression,
-            ) => &implicit_cast_expression.expression_type,
+            BoundExpression::BoundCastExpression(implicit_cast_expression) => {
+                &implicit_cast_expression.expression_type
+            }
         }
     }
-}
-
-/// Represent a bound version of an [`UnaryExpression`] AST.
-pub struct BoundUnaryExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser UnaryExpression<'ast>>,
-    pub operand: Box<BoundExpression<'table, 'parser, 'ast>>,
-    pub expression_type: ExpressionType<'table>,
-}
-
-/// Represent a bound version of a [`BinaryExpression`] AST.
-pub struct BoundBinaryExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser BinaryExpression<'ast>>,
-    pub left: Box<BoundExpression<'table, 'parser, 'ast>>,
-    pub right: Box<BoundExpression<'table, 'parser, 'ast>>,
-    pub expression_type: ExpressionType<'table>,
-}
-
-/// Represent a bound version of a [`Expression::LiteralExpression`] AST.
-pub struct BoundLiteralExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser LiteralConstantType<'ast>>,
-    pub expression_type: ExpressionType<'table>,
-}
-
-/// Represent a bound version of an [`Expression::IdentifierExpression`] AST.
-pub struct BoundIdentifierExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser &'ast str>,
-    pub expression_type: ExpressionType<'table>,
-}
-
-/// Represent a bound version of a [`FunctionCallExpression`] AST.
-pub struct BoundFunctionCallExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser FunctionCallExpression<'ast>>,
-    pub arguments: Vec<BoundExpression<'table, 'parser, 'ast>>,
-    pub expression_type: ExpressionType<'table>,
-}
-
-/// Represent a structure containing the type of an expression and its category.
-pub struct ExpressionType<'table> {
-    pub type_symbol: &'table TypeSymbol,
-    pub category: ExpressionCategory,
-}
-
-/// Represent a bound expression that performs casting.
-pub struct BoundImplicitCastExpression<'table, 'parser, 'ast> {
-    pub ast: &'parser PositionWrapper<Expression<'ast>>,
-    pub operand: Box<BoundExpression<'table, 'parser, 'ast>>,
-    pub expression_type: ExpressionType<'table>,
-}
-
-/// Represent an enumeration containing all the possible categories of an
-/// expression.
-pub enum ExpressionCategory {
-    /// Represent an expression that doesn't have the memory storage.
-    RValue,
-
-    /// Represent an expression that has the memory storage.
-    LValue { is_mutable: bool },
 }
