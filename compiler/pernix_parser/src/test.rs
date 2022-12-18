@@ -301,9 +301,9 @@ fn parse_variable_declaration_statement_test() {
     let source_code = create_source_code(
         "
     let a = 32;
-    let mutable b = 64;
+    mutable let b = 64;
     let c: int32 = 128;
-    let mutable d: int32 = 256;",
+    mutable let d: int32 = 256;",
     );
     let mut parser = Parser::new(&source_code);
 
@@ -395,7 +395,7 @@ fn parse_variable_declaration_statement_test() {
 fn parsing_if_statement_test() {
     let source_code = create_source_code(
         "
-        if func()
+        if (func())
             return 42;
         else 
             return 69; 
@@ -429,7 +429,10 @@ fn parsing_if_statement_test() {
 fn parse_function_declaration() {
     let source_code = create_source_code(
         "
-        function add(mutable a: int32, b: int32) : int32 {}
+        int32 Add(int32 a, int32 b)
+        {
+
+        }
         ",
     );
     let mut parser = Parser::new(&source_code);
@@ -437,10 +440,10 @@ fn parse_function_declaration() {
     let function_declaration = parser.parse_declaration().unwrap();
     match function_declaration.value {
         Declaration::FunctionDeclaration(function) => {
-            assert_eq!(function.function_name.value, "add");
+            assert_eq!(function.function_name.value, "Add");
             assert_eq!(function.parameters.len(), 2);
             assert!(matches!(
-                function.return_type.unwrap().value,
+                function.return_type.value,
                 TypeAnnotation::QualifiedName("int32")
             ));
             assert_eq!(function.body.value.statements.len(), 0);
@@ -448,7 +451,7 @@ fn parse_function_declaration() {
             {
                 let parameter = &function.parameters[0].value;
                 assert_eq!(parameter.1, "a");
-                assert!(parameter.0.is_mutable);
+                assert!(!parameter.0.is_mutable);
                 assert!(matches!(
                     parameter.0.type_annotation.value,
                     TypeAnnotation::QualifiedName("int32")

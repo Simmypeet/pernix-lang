@@ -333,7 +333,7 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Namespace) => {
                 self.parse_namespace_declaration()
             }
-            TokenKind::Keyword(Keyword::Function) => {
+            TokenKind::Identifier => {
                 self.parse_function_declaration()
             }
             _ => {
@@ -355,20 +355,7 @@ impl<'a> Parser<'a> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect the function declaration
-        if !matches!(
-            self.next().token_kind(),
-            TokenKind::Keyword(Keyword::Function)
-        ) {
-            parse_exit_error!(
-                self,
-                Error::KeywordExpected {
-                    expected_keyword: Keyword::Function,
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        let return_type = parse_unwrap!(self, self.parse_type_anootation(), starting_index);
 
         // expect the function name
         let function_name = if matches!(
@@ -456,8 +443,7 @@ impl<'a> Parser<'a> {
                 // set first_time to false
                 first_time = false;
 
-                let parameter_starting_position =
-                    self.peek().position_range().clone();
+
                 let is_mutable = {
                     if matches!(
                         self.peek_significant().token_kind(),
@@ -470,6 +456,27 @@ impl<'a> Parser<'a> {
                         false
                     }
                 };
+                // parse the type annotation
+                let qualified_type_annotation =
+                match self.parse_type_anootation() {
+                    Some(type_annotation) => QualifiedType {
+                        is_mutable,
+                        type_annotation,
+                    },
+                    None => {
+                        // make progress
+                        self.next();
+
+                        // skip to the next comma or closing parenthesis
+                        self.skip_to(skip_predicate);
+
+                        continue;
+                    }
+                };
+
+                let parameter_starting_position =
+                    self.peek().position_range().clone();
+
                 let parameter_name = if matches!(
                     self.next_significant().token_kind(),
                     TokenKind::Identifier
@@ -491,51 +498,12 @@ impl<'a> Parser<'a> {
                     continue;
                 };
 
-                // expect a colon
-                if !matches!(
-                    self.next_significant().token_kind(),
-                    TokenKind::Punctuator(':')
-                ) {
-                    if self.produce_errors {
-                        self.accumulated_errors.push(
-                            Error::PunctuatorExpected {
-                                expected_punctuator: ':',
-                                found_token: self.peek_back().clone(),
-                                
-                            },
-                        );
-                    }
-
-                    // skip to the next comma or closing parenthesis
-                    self.skip_to(skip_predicate);
-
-                    continue;
-                }
-
-                // parse the type annotation
-                let qualified_type_annotation =
-                    match self.parse_type_anootation() {
-                        Some(type_annotation) => QualifiedType {
-                            is_mutable,
-                            type_annotation,
-                        },
-                        None => {
-                            // make progress
-                            self.next();
-
-                            // skip to the next comma or closing parenthesis
-                            self.skip_to(skip_predicate);
-
-                            continue;
-                        }
-                    };
-
                 params.push(PositionWrapper {
                     position: parameter_starting_position.start
                         ..self.peek_back().position_range().end,
                     value: (qualified_type_annotation, parameter_name),
                 });
-            }
+            }  
 
             params
         };
@@ -555,23 +523,6 @@ impl<'a> Parser<'a> {
                 starting_index
             );
         }
-
-        let return_type = if matches!(
-            self.peek_significant().token_kind(),
-            TokenKind::Punctuator(':')
-        ) {
-            // eat the colon
-            self.next();
-
-            // parse type
-            Some(parse_unwrap!(
-                self,
-                self.parse_type_anootation(),
-                starting_index
-            ))
-        } else {
-            None
-        };
 
         // expect a scope
         let scope =
@@ -1334,6 +1285,7 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Return) => {
                 return self.parse_return_statement();
             }
+            TokenKind::Keyword(Keyword::Mutable) |
             TokenKind::Keyword(Keyword::Let) => {
                 return self.parse_variable_declaration_statement();
             }
@@ -1457,6 +1409,18 @@ impl<'a> Parser<'a> {
     ) -> Option<PositionWrapper<Statement<'a>>> {
         parse_setup!(self, starting_index, starting_position);
 
+        let mut is_mutable = false;
+
+        if matches!(
+            self.peek_significant().token_kind(),
+            TokenKind::Keyword(Keyword::Mutable)
+        ) {
+            // eat the mut keyword
+            self.next();
+
+            is_mutable = true;
+        }
+
         // expect a let keyword
         if !matches!(
             self.next_significant().token_kind(),
@@ -1471,18 +1435,6 @@ impl<'a> Parser<'a> {
                 },
                 starting_index
             );
-        }
-
-        let mut is_mutable = false;
-
-        if matches!(
-            self.peek_significant().token_kind(),
-            TokenKind::Keyword(Keyword::Mutable)
-        ) {
-            // eat the mut keyword
-            self.next();
-
-            is_mutable = true;
         }
 
         // expect an identifier
@@ -1663,9 +1615,41 @@ impl<'a> Parser<'a> {
             );
         }
 
+        // expect a left parenthesis
+        if !matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Punctuator('(')
+        ) {
+            parse_exit_error!(
+                self,
+                Error::PunctuatorExpected {
+                    expected_punctuator: '(',
+                    found_token: self.peek_back().clone(),
+                    
+                },
+                starting_index
+            );
+        }
+
         // expect an expression
         let condition =
             parse_unwrap!(self, self.parse_expression(), starting_index);
+
+        // expect a right parenthesis
+        if !matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Punctuator(')')
+        ) {
+            parse_exit_error!(
+                self,
+                Error::PunctuatorExpected {
+                    expected_punctuator: ')',
+                    found_token: self.peek_back().clone(),
+                    
+                },
+                starting_index
+            );
+        }
 
         // expect a statement
         let then_statement =

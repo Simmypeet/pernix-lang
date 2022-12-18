@@ -67,17 +67,14 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
         }
 
         // The return type of the function
-        let return_type = match &ast.value.return_type {
-            Some(val) => {
-                match table.lookup_from_type_annotation(scope_info, &val) {
-                    Ok(val) => Some(&val.value),
-                    Err(err) => {
-                        errors.push(err);
-                        None
-                    }
-                }
+        let return_type = match table
+            .lookup_from_type_annotation(scope_info, &ast.value.return_type)
+        {
+            Ok(val) => Some(&val.value),
+            Err(error) => {
+                errors.push(error);
+                None
             }
-            None => Some(&table.get_primitive_type(PrimitiveType::Void).value),
         };
 
         let parameter_types = {

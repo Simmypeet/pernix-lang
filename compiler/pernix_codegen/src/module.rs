@@ -2,9 +2,8 @@ use llvm_sys::{
     analysis::{LLVMVerifierFailureAction, LLVMVerifyFunction},
     core::{
         LLVMAppendBasicBlockInContext, LLVMBuildBr, LLVMBuildCall2,
-        LLVMBuildCondBr, LLVMBuildLoad2, LLVMBuildPhi, LLVMBuildRetVoid,
-        LLVMCreateBasicBlockInContext, LLVMDisposeBuilder,
-        LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMGetInsertBlock,
+        LLVMBuildCondBr, LLVMBuildLoad2, LLVMBuildRetVoid, LLVMDisposeBuilder,
+        LLVMDoubleTypeInContext, LLVMFloatTypeInContext,
         LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext,
         LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMVoidTypeInContext,
     },
@@ -374,7 +373,7 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
                 }
             }
 
-            gen.generate_block_scope_statement(&function.bound_function.body());
+            gen.generate_statement(&function.bound_function.body());
 
             gen.local_scope_stack.pop();
 
@@ -416,7 +415,44 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
         &mut self,
         statement: &'table BoundIfElseStatement<'table, 'parser, 'ast>,
     ) {
-        todo!()
+        unsafe {
+            let condition = self.generate_expression(&statement.condition);
+
+            if let Some(else_statement) = &statement.else_statement {
+                let true_bb = LLVMAppendBasicBlockInContext(
+                    self.module.get_context(),
+                    self.function.llvm_function,
+                    b"true\0".as_ptr() as *const i8,
+                );
+                let false_bb = LLVMAppendBasicBlockInContext(
+                    self.module.get_context(),
+                    self.function.llvm_function,
+                    b"false\0".as_ptr() as *const i8,
+                );
+                let merge_bb = LLVMAppendBasicBlockInContext(
+                    self.module.get_context(),
+                    self.function.llvm_function,
+                    b"merge\0".as_ptr() as *const i8,
+                );
+
+                LLVMBuildCondBr(self.builder, condition, true_bb, false_bb);
+
+                // emit true block
+                LLVMPositionBuilderAtEnd(self.builder, true_bb);
+                self.generate_statement(&statement.then_statement);
+                LLVMBuildBr(self.builder, merge_bb);
+
+                // emit false block
+                LLVMPositionBuilderAtEnd(self.builder, false_bb);
+                self.generate_statement(&else_statement);
+                LLVMBuildBr(self.builder, merge_bb);
+
+                // emit merge block
+                LLVMPositionBuilderAtEnd(self.builder, merge_bb);
+            } else {
+                todo!("if statement without else block");
+            }
+        }
     }
 
     fn generate_block_scope_statement(
@@ -1202,21 +1238,15 @@ mod test {
     #[test]
     fn test() {
         let source_code = "
-    function Min(a: int32, b: int32): int32 {
-        let mutable result = 0;
-        if a < b {
-            return a;
-        } else {
-            return b;
-        }
-        return result;
-    }
-
-    function Max(a: int32, b: int32): int32 {
-        if a > b {
-            result = a;
-        } else {
-            result = b;
+    int32 Fibonacci(int32 n) 
+    {
+        if (n < 2) 
+        {
+            result = n;
+        } 
+        else 
+        {
+            result = Fibonacci(n - 1) + Fibonacci(n - 2);
         }
     }
     "

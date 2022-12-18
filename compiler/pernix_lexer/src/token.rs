@@ -12,7 +12,6 @@ pub enum Keyword {
     Mutable,
     If,
     Else,
-    Function,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

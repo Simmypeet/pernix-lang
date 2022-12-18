@@ -6,12 +6,12 @@ use crate::symbol::table::{FunctionSymbolTable, TypeSymbolTable};
 #[test]
 fn binder_function_populate_test() {
     let source_code = "
-    function Minus() : int32 {}
+    int32 Minus() {}
     namespace Test {
-        function Add() : int32 {}
-        function Multiply() : int32 {}
+        int32 Add() {}
+        int32 Multiply() {}
     }
-    function Divide() : int32 {}
+    int32 Divide() {}
     ";
     let source_code =
         SourceCode::new(source_code.to_string(), "test.pernix".to_string());

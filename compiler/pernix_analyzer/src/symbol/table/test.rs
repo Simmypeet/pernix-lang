@@ -6,15 +6,15 @@ use super::{FunctionSymbolTable, TypeSymbolTable};
 #[test]
 fn type_declaration_table() {
     let source_code = "
-    function Equal() : bool {}
+    int32 Equal() {}
     namespace Arithmetic 
     {
-        function Add() : int32 {}
-        function Multiply() : int32 {}
-        function Divide() : int32 {}
-        function Subtract() : int32{}
+        int32 Add() {}
+        int32 Multiply() {}
+        int32 Divide() {}
+        int32 Subtract() {}
     }
-    function NotEqual() : bool {}
+    int32 NotEqual() {}
     ";
     let source_code = SourceCode::new(source_code.to_string(), String::new());
     let mut parser = Parser::new(&source_code);

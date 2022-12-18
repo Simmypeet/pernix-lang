@@ -33,7 +33,7 @@ pub struct NamespaceDeclaration<'a> {
 pub struct FunctionDeclaration<'a> {
     pub function_name: PositionWrapper<&'a str>,
     pub parameters: Vec<PositionWrapper<(QualifiedType<'a>, &'a str)>>,
-    pub return_type: Option<PositionWrapper<TypeAnnotation<'a>>>,
+    pub return_type: PositionWrapper<TypeAnnotation<'a>>,
     pub body: PositionWrapper<BlockScopeStatement<'a>>,
 }
 

@@ -48,7 +48,7 @@ struct Binder<'table, 'parser, 'ast> {
 /// of bound statements that will be executed when the function is called.
 pub struct BoundFunction<'table, 'parser, 'ast> {
     function_symbol: &'table FunctionSymbol<'table, 'parser, 'ast>,
-    body: BoundBlockScopeStatement<'table, 'parser, 'ast>,
+    body: BoundStatement<'table, 'parser, 'ast>,
 }
 
 impl<'table: 'parser, 'parser: 'ast, 'ast>
@@ -62,7 +62,7 @@ impl<'table: 'parser, 'parser: 'ast, 'ast>
     }
 
     /// Return a reference to the body of this [`BoundFunction`].
-    pub fn body(&self) -> &BoundBlockScopeStatement<'table, 'parser, 'ast> {
+    pub fn body(&self) -> &BoundStatement<'table, 'parser, 'ast> {
         &self.body
     }
 
@@ -100,18 +100,20 @@ impl<'table: 'parser, 'parser: 'ast, 'ast>
         } else {
             Ok(Self {
                 function_symbol,
-                body: BoundBlockScopeStatement {
-                    ast: PositionWrapper {
-                        position: function_symbol
-                            .ast()
-                            .value
-                            .body
-                            .position
-                            .clone(),
-                        value: &function_symbol.ast().value.body.value,
+                body: BoundStatement::BoundBlockScopeStatement(
+                    BoundBlockScopeStatement {
+                        ast: PositionWrapper {
+                            position: function_symbol
+                                .ast()
+                                .value
+                                .body
+                                .position
+                                .clone(),
+                            value: &function_symbol.ast().value.body.value,
+                        },
+                        statements,
                     },
-                    statements,
-                },
+                ),
             })
         }
     }
