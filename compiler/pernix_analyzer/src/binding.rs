@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use pernix_lexer::token::LiteralConstantToken;
 use pernix_parser::abstract_syntax_tree::{
     expression::{
@@ -40,7 +42,7 @@ struct Binder<'table, 'parser, 'ast> {
     type_table: &'table TypeSymbolTable,
     function_table: &'table FunctionSymbolTable<'table, 'parser, 'ast>,
     function_symbol: &'table FunctionSymbol<'table, 'parser, 'ast>,
-    local_scope_stack: LockScopeStack<'ast, VariableSymbol<'table, 'ast>>,
+    local_scope_stack: LockScopeStack<'ast, Rc<VariableSymbol<'table, 'ast>>>,
     errors: Vec<Error<'table, 'parser, 'ast>>,
 }
 
@@ -254,18 +256,19 @@ impl<'table, 'parser: 'ast, 'ast> Binder<'table, 'parser, 'ast> {
             expr
         };
 
-        let variable_symbol = VariableSymbol {
+        let symbol = Rc::new(VariableSymbol {
             variable_type: bound_expression.get_type().type_symbol,
             name: variable_declaration_statement.value.identifier.value,
             is_mutable: variable_declaration_statement.value.is_mutable,
-        };
+        });
 
         self.local_scope_stack
-            .declare_variable(variable_symbol.name, variable_symbol);
+            .declare_variable(symbol.name, symbol.clone());
 
         Some(BoundStatement::BoundVariableDeclarationStatement(
             BoundVariableDeclarationStatement {
                 ast: variable_declaration_statement.clone(),
+                variable_symbol: symbol,
                 expression: bound_expression,
             },
         ))
@@ -822,6 +825,7 @@ impl<'table, 'parser: 'ast, 'ast> Binder<'table, 'parser, 'ast> {
                 Some(BoundExpression::BoundIdentifierExpression(
                     BoundIdentifierExpression {
                         ast: expression,
+                        variable_symbol: variable.clone(),
                         expression_type,
                     },
                 ))

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::hash::Hash;
+use std::{collections::HashMap, rc::Rc};
 
 use pernix_parser::abstract_syntax_tree::{
     declaration::{FunctionDeclaration, QualifiedType},
@@ -17,7 +17,7 @@ pub mod table;
 pub struct FunctionSymbol<'table, 'parser, 'ast> {
     ast: PositionWrapper<&'parser FunctionDeclaration<'ast>>,
     return_type: &'table TypeSymbol,
-    parameters: Vec<VariableSymbol<'table, 'ast>>,
+    parameters: Vec<Rc<VariableSymbol<'table, 'ast>>>,
     scope_info: ScopeInfo,
 }
 
@@ -98,11 +98,11 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
                         position: parameter.position.clone(),
                     });
                 } else {
-                    parameters.push(VariableSymbol {
+                    parameters.push(Rc::new(VariableSymbol {
                         variable_type: &parameter_type.value,
                         name: parameter.value.1,
                         is_mutable: parameter.value.0.is_mutable,
-                    });
+                    }));
                 }
             }
 
@@ -132,7 +132,7 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
     }
 
     /// Return a reference to the parameter types of this [`FunctionSymbol`].
-    pub fn parameters(&self) -> &[VariableSymbol<'table, 'table>] {
+    pub fn parameters(&self) -> &[Rc<VariableSymbol<'table, 'table>>] {
         self.parameters.as_ref()
     }
 

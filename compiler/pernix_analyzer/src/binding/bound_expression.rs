@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use pernix_parser::abstract_syntax_tree::{
     expression::{
         BinaryExpression, Expression, FunctionCallExpression,
@@ -6,7 +8,7 @@ use pernix_parser::abstract_syntax_tree::{
     PositionWrapper,
 };
 
-use crate::symbol::{FunctionSymbol, TypeSymbol};
+use crate::symbol::{FunctionSymbol, TypeSymbol, VariableSymbol};
 
 /// Represent an enumeration containing all the possible bound expressions.
 #[derive(Clone, Debug)]
@@ -49,6 +51,7 @@ pub struct BoundLiteralExpression<'table, 'parser, 'ast> {
 #[derive(Clone, Debug)]
 pub struct BoundIdentifierExpression<'table, 'parser, 'ast> {
     pub ast: PositionWrapper<&'parser IdentifierExpression<'ast>>,
+    pub variable_symbol: Rc<VariableSymbol<'table, 'ast>>,
     pub expression_type: ExpressionType<'table>,
 }
 

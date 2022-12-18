@@ -58,6 +58,8 @@ fn basic_control_flow_graph_test() {
             ));
         }
     }
+
+    assert!(cfg.get_entry_block().instructions.len() == 2);
 }
 
 #[test]
@@ -115,6 +117,8 @@ fn if_without_else_branch() {
                             ));
                         }
                     }
+
+                    assert!(true_block.instructions.len() == 1);
                 }
                 {
                     let false_block = cfg.get_block(*false_block);
@@ -142,12 +146,16 @@ fn if_without_else_branch() {
                             ));
                         }
                     }
+
+                    assert!(false_block.instructions.len() == 2);
                 }
             }
             _ => panic!("Expected conditional jump"),
         },
         _ => panic!("Expected terminator"),
     }
+
+    assert!(cfg.get_entry_block().instructions.len() == 1);
 }
 
 #[test]
@@ -253,6 +261,8 @@ fn if_with_else_branch() {
                             };
                         }
                     }
+
+                    assert!(true_block.instructions.len() == 2);
                 }
                 {
                     let false_block = cfg.get_block(*false_block);
@@ -287,6 +297,8 @@ fn if_with_else_branch() {
                             };
                         }
                     }
+
+                    assert!(false_block.instructions.len() == 2);
                 }
 
                 let end_block = cfg.get_block(end_block_index);
@@ -296,10 +308,14 @@ fn if_with_else_branch() {
                     }
                     _ => panic!("Expected return terminator"),
                 }
+
+                assert!(end_block.instructions.len() == 1);
             }
             _ => panic!("Expected conditional jump"),
         },
     }
+
+    assert!(cfg.get_entry_block().instructions.len() == 2);
 }
 
 #[test]
@@ -330,13 +346,13 @@ fn nested_if_flow_graph() {
     let source_code = " 
     void Complex(int32 x) 
     {
-        if (x == 0) { // true: yes2, false: yes5
-            if (x == 1) { // true: yes4, false: no1
-                let a = 1; // jump: yes3
+        if (x == 0) {
+            if (x == 1) {
+                let a = 1;
             }
-            let b = 2; // jump: yes1
-        } else { // yes
-            let c = 3; // jump: yes1
+            let b = 2;
+        } else {
+            let c = 3;
         }
         let d = 4;
     }
@@ -391,6 +407,8 @@ fn nested_if_flow_graph() {
         _ => panic!("Expected conditional jump"),
     }
 
+    assert!(cfg.get_entry_block().instructions.len() == 1);
+
     /*
      * true_block:
      *     cond_jump x == 1 -> true_block1, false_block1;
@@ -414,6 +432,8 @@ fn nested_if_flow_graph() {
             }
             _ => panic!("Expected conditional jump"),
         }
+
+        assert!(true_block.instructions.len() == 1);
     }
 
     /*
@@ -453,6 +473,8 @@ fn nested_if_flow_graph() {
                 };
             }
         }
+
+        assert!(true_block1.instructions.len() == 2);
     }
 
     /*
@@ -486,6 +508,8 @@ fn nested_if_flow_graph() {
                 };
             }
         }
+
+        assert!(false_block1.instructions.len() == 2);
     }
 
     /*
@@ -524,6 +548,8 @@ fn nested_if_flow_graph() {
                 };
             }
         }
+
+        assert!(false_block.instructions.len() == 2);
     }
 
     /*
@@ -544,5 +570,7 @@ fn nested_if_flow_graph() {
                 panic!("Expected statement")
             }
         }
+
+        assert!(end_block.instructions.len() == 1);
     }
 }

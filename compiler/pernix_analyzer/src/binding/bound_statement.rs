@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use pernix_parser::abstract_syntax_tree::{
     statement::{
         BlockScopeStatement, IfElseStatement, ReturnStatement,
@@ -5,6 +7,8 @@ use pernix_parser::abstract_syntax_tree::{
     },
     PositionWrapper,
 };
+
+use crate::symbol::VariableSymbol;
 
 use super::bound_expression::BoundExpression;
 
@@ -38,6 +42,7 @@ pub struct BoundReturnStatement<'table, 'parser, 'ast> {
 #[derive(Clone, Debug)]
 pub struct BoundVariableDeclarationStatement<'table, 'parser, 'ast> {
     pub ast: PositionWrapper<&'parser VariableDeclarationStatement<'ast>>,
+    pub variable_symbol: Rc<VariableSymbol<'table, 'ast>>,
     pub expression: BoundExpression<'table, 'parser, 'ast>,
 }
 

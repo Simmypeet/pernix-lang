@@ -57,6 +57,7 @@ impl<'bound, 'table: 'parser, 'parser: 'ast, 'ast>
         });
 
         let mut statement_stack = vec![bound_statement];
+        let mut terminate_out = false;
 
         while let Some(statement) = statement_stack.pop() {
             match statement {
@@ -68,6 +69,7 @@ impl<'bound, 'table: 'parser, 'parser: 'ast, 'ast>
                             Terminator::ReturnStatement(return_statement),
                         ));
 
+                    terminate_out = true;
                     break;
                 }
                 BoundStatement::BoundVariableDeclarationStatement(_)
@@ -127,43 +129,22 @@ impl<'bound, 'table: 'parser, 'parser: 'ast, 'ast>
                         continuation_index,
                     );
 
-                    // add a jump to the continuation block if it exists
-                    if let Some(continuation_index) = continuation_index {
-                        self.cfg
-                            .get_block_mut(true_then_block_index.1)
-                            .instructions
-                            .push(Instruction::Terminator(Terminator::Jump(
+                    let false_block_index =
+                        if let Some(else_statement) = &if_else.else_statement {
+                            // generate else block
+                            let false_block_index = self.generate(
+                                else_statement.as_ref(),
                                 continuation_index,
-                            )));
-                    }
+                            );
 
-                    let false_block_index = if let Some(else_statement) =
-                        &if_else.else_statement
-                    {
-                        // generate else block
-                        let false_block_index = self.generate(
-                            else_statement.as_ref(),
-                            continuation_index,
-                        );
-
-                        // add a jump to the continuation block if it exists
-                        if let Some(continuation_index) = continuation_index {
-                            self.cfg
-                                .get_block_mut(false_block_index.1)
-                                .instructions
-                                .push(Instruction::Terminator(
-                                    Terminator::Jump(continuation_index),
-                                ));
-                        }
-
-                        false_block_index.0
-                    } else {
-                        if let Some(idx) = continuation_index {
-                            idx
+                            false_block_index.0
                         } else {
-                            parent_continuation.unwrap()
-                        }
-                    };
+                            if let Some(idx) = continuation_index {
+                                idx
+                            } else {
+                                parent_continuation.unwrap()
+                            }
+                        };
 
                     // add the conditional jump to the if-else statement
                     self.cfg
@@ -187,11 +168,15 @@ impl<'bound, 'table: 'parser, 'parser: 'ast, 'ast>
             }
         }
 
-        if let Some(continuation) = parent_continuation {
-            self.cfg
-                .get_block_mut(self.current_index)
-                .instructions
-                .push(Instruction::Terminator(Terminator::Jump(continuation)));
+        if !terminate_out {
+            if let Some(continuation) = parent_continuation {
+                self.cfg
+                    .get_block_mut(self.current_index)
+                    .instructions
+                    .push(Instruction::Terminator(Terminator::Jump(
+                        continuation,
+                    )));
+            }
         }
 
         (head_index, self.current_index)

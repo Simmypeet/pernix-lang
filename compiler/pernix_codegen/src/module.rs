@@ -3,10 +3,11 @@ use llvm_sys::{
     core::{
         LLVMAppendBasicBlockInContext, LLVMBuildBr, LLVMBuildCall2,
         LLVMBuildCondBr, LLVMBuildLoad2, LLVMBuildRetVoid, LLVMDisposeBuilder,
-        LLVMDoubleTypeInContext, LLVMFloatTypeInContext,
+        LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMGetInsertBlock,
         LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext,
         LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMVoidTypeInContext,
     },
+    prelude::LLVMBasicBlockRef,
 };
 use llvm_sys::{
     core::{
@@ -37,15 +38,13 @@ use pernix_analyzer::{
             BoundFunctionCallExpression, BoundIdentifierExpression,
             BoundLiteralExpression, BoundUnaryExpression,
         },
-        bound_statement::{
-            BoundBlockScopeStatement, BoundIfElseStatement,
-            BoundReturnStatement, BoundStatement,
-            BoundVariableDeclarationStatement,
-        },
+        bound_statement::{BoundStatement, BoundVariableDeclarationStatement},
         BoundFunction,
     },
-    scope::LockScopeStack,
-    symbol::{FunctionSymbol, PrimitiveType, TypeSymbol},
+    control_flow_graph::{
+        BlockIndex, ControlFlowGraph, Instruction, Terminator,
+    },
+    symbol::{FunctionSymbol, PrimitiveType, TypeSymbol, VariableSymbol},
 };
 use pernix_lexer::token::LiteralConstantToken;
 use pernix_parser::abstract_syntax_tree::{BinaryOperator, UnaryOperator};
@@ -53,13 +52,17 @@ use pernix_parser::abstract_syntax_tree::{BinaryOperator, UnaryOperator};
 use std::{
     collections::{hash_map::Entry, HashMap},
     ffi::CString,
+    hash::{Hash, Hasher},
     marker::PhantomData,
+    ptr,
+    rc::Rc,
 };
 
 use crate::context::Context;
 
 pub struct ModuleFunction<'table, 'parser, 'ast> {
     bound_function: &'table BoundFunction<'table, 'parser, 'ast>,
+    cfg: ControlFlowGraph<'table, 'table, 'parser, 'ast>,
     llvm_type: LLVMTypeRef,
     llvm_function: LLVMValueRef,
 }
@@ -126,6 +129,11 @@ impl<'ctx: 'table, 'table: 'ast, 'parser, 'ast>
         }
     }
 
+    /// Get the underlying LLVM module.
+    pub unsafe fn get_llvm_module(&self) -> LLVMModuleRef {
+        self.llvm_module
+    }
+
     /// Print the LLVM IR dump of the module.
     pub fn print_ir(&self) {
         unsafe {
@@ -185,6 +193,7 @@ impl<'ctx: 'table, 'table: 'ast, 'parser, 'ast>
                     ModuleFunction {
                         bound_function: bound_func,
                         llvm_function: func,
+                        cfg: ControlFlowGraph::analyze(bound_func),
                         llvm_type,
                     },
                 );
@@ -294,12 +303,39 @@ impl<'ctx: 'table, 'table: 'ast, 'parser, 'ast>
     }
 }
 
+struct VariableWrapper<'table, 'ast> {
+    variable: Rc<VariableSymbol<'table, 'ast>>,
+}
+
+impl<'table, 'ast> VariableWrapper<'table, 'ast> {
+    fn wrap(
+        variable: Rc<VariableSymbol<'table, 'ast>>,
+    ) -> VariableWrapper<'table, 'ast> {
+        VariableWrapper { variable }
+    }
+}
+
+impl PartialEq for VariableWrapper<'_, '_> {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.variable, &other.variable)
+    }
+}
+
+impl Eq for VariableWrapper<'_, '_> {}
+
+impl Hash for VariableWrapper<'_, '_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        ptr::hash(&*self.variable, state)
+    }
+}
+
 struct CodeGenerator<'modu, 'ctx, 'table, 'parser, 'ast> {
     module: &'modu Module<'ctx, 'table, 'parser, 'ast>,
     builder: LLVMBuilderRef,
-    local_scope_stack: LockScopeStack<'ast, LLVMValueRef>,
+    variables: HashMap<VariableWrapper<'table, 'ast>, LLVMValueRef>,
     function: &'modu ModuleFunction<'table, 'parser, 'ast>,
-    parameters: HashMap<&'ast str, LLVMValueRef>,
+    block_map: HashMap<BlockIndex, LLVMBasicBlockRef>,
+    parameters: HashMap<VariableWrapper<'table, 'ast>, LLVMValueRef>,
 }
 
 impl<'modu, 'ctx, 'table, 'parser, 'ast> Drop
@@ -312,7 +348,7 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast> Drop
     }
 }
 
-impl<'modu, 'ctx, 'table, 'parser, 'ast>
+impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
     CodeGenerator<'modu, 'ctx, 'table, 'parser, 'ast>
 {
     pub fn generate(
@@ -323,22 +359,15 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
             // set builder to entry basic block
             let mut gen = {
                 let builder = LLVMCreateBuilderInContext(module.get_context());
-                let entry_basic_block = LLVMAppendBasicBlockInContext(
-                    module.get_context(),
-                    function.llvm_function,
-                    b"entry\0".as_ptr() as *const i8,
-                );
-                LLVMPositionBuilderAtEnd(builder, entry_basic_block);
                 Self {
                     module,
                     builder,
-                    local_scope_stack: LockScopeStack::new(),
+                    variables: HashMap::new(),
                     function,
+                    block_map: HashMap::new(),
                     parameters: HashMap::new(),
                 }
             };
-
-            gen.local_scope_stack.push();
 
             for (idx, parameter) in function
                 .bound_function
@@ -366,26 +395,121 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
 
                     LLVMBuildStore(gen.builder, llvm_parameter, llvm_local);
 
-                    gen.local_scope_stack
-                        .declare_variable(parameter.name, llvm_local);
+                    gen.variables.insert(
+                        VariableWrapper::wrap(parameter.clone()),
+                        llvm_local,
+                    );
                 } else {
-                    gen.parameters.insert(parameter.name, llvm_parameter);
+                    gen.parameters.insert(
+                        VariableWrapper::wrap(parameter.clone()),
+                        llvm_parameter,
+                    );
                 }
             }
 
-            gen.generate_statement(&function.bound_function.body());
-
-            gen.local_scope_stack.pop();
+            gen.generate_block(0);
 
             LLVMVerifyFunction(
                 function.llvm_function,
-                LLVMVerifierFailureAction::LLVMAbortProcessAction,
+                LLVMVerifierFailureAction::LLVMPrintMessageAction,
             );
         }
     }
 
+    fn generate_block(&mut self, block_index: BlockIndex) -> LLVMBasicBlockRef {
+        let prior_block = unsafe { LLVMGetInsertBlock(self.builder) };
+
+        match self.block_map.entry(block_index) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(_) => {
+                unsafe {
+                    // create a new block
+                    let block = LLVMAppendBasicBlockInContext(
+                        self.module.get_context(),
+                        self.function.llvm_function,
+                        b"block\0".as_ptr() as *const i8,
+                    );
+
+                    // set the builder to the new block
+                    LLVMPositionBuilderAtEnd(self.builder, block);
+
+                    // generate the instructions
+                    for instruction in
+                        &self.function.cfg.get_block(block_index).instructions
+                    {
+                        self.generate_instructions(instruction);
+                    }
+
+                    // set the builder back to the prior block
+                    LLVMPositionBuilderAtEnd(self.builder, prior_block);
+
+                    self.block_map.insert(block_index, block);
+
+                    block
+                }
+            }
+        }
+    }
+
     ////////////////////////////////////////////////////////////////////////////
-    /// STATEMENT
+    /// INSTRUCTIONS
+    ////////////////////////////////////////////////////////////////////////////
+
+    fn generate_instructions(
+        &mut self,
+        instructions: &'modu Instruction<'modu, 'table, 'parser, 'ast>,
+    ) {
+        match instructions {
+            Instruction::Statement(statement) => {
+                self.generate_statement(statement);
+            }
+            Instruction::Terminator(terminator) => match terminator {
+                Terminator::Jump(block_idx) => {
+                    let next_block = self.generate_block(*block_idx);
+
+                    unsafe {
+                        LLVMBuildBr(self.builder, next_block);
+                    }
+                }
+                Terminator::ConditionalJump {
+                    expression,
+                    true_block,
+                    false_block,
+                } => {
+                    let true_block = self.generate_block(*true_block);
+                    let false_block = self.generate_block(*false_block);
+
+                    let condition = self.generate_expression(expression);
+
+                    unsafe {
+                        LLVMBuildCondBr(
+                            self.builder,
+                            condition,
+                            true_block,
+                            false_block,
+                        );
+                    }
+                }
+                Terminator::ReturnStatement(return_statement) => {
+                    match &return_statement.expression {
+                        Some(expr) => {
+                            let value = self.generate_expression(&expr);
+
+                            unsafe {
+                                LLVMBuildRet(self.builder, value);
+                            }
+                        }
+                        None => unsafe {
+                            LLVMBuildRetVoid(self.builder);
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    /// STATEMENTS
     ////////////////////////////////////////////////////////////////////////////
 
     fn generate_statement(
@@ -396,78 +520,14 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
             BoundStatement::BoundExpressionStatement(expr) => {
                 self.generate_expression(expr);
             }
-            BoundStatement::BoundBlockScopeStatement(statement) => {
-                self.generate_block_scope_statement(statement)
-            }
-            BoundStatement::BoundReturnStatement(statement) => {
-                self.generate_return_statement(statement)
-            }
             BoundStatement::BoundVariableDeclarationStatement(statement) => {
                 self.generate_variable_declaration_statement(statement)
             }
-            BoundStatement::BoundIfElseStatement(statement) => {
-                self.generate_if_else_statement(statement)
+            _ => {
+                unreachable!()
             }
         }
     }
-
-    fn generate_if_else_statement(
-        &mut self,
-        statement: &'table BoundIfElseStatement<'table, 'parser, 'ast>,
-    ) {
-        unsafe {
-            let condition = self.generate_expression(&statement.condition);
-
-            if let Some(else_statement) = &statement.else_statement {
-                let true_bb = LLVMAppendBasicBlockInContext(
-                    self.module.get_context(),
-                    self.function.llvm_function,
-                    b"true\0".as_ptr() as *const i8,
-                );
-                let false_bb = LLVMAppendBasicBlockInContext(
-                    self.module.get_context(),
-                    self.function.llvm_function,
-                    b"false\0".as_ptr() as *const i8,
-                );
-                let merge_bb = LLVMAppendBasicBlockInContext(
-                    self.module.get_context(),
-                    self.function.llvm_function,
-                    b"merge\0".as_ptr() as *const i8,
-                );
-
-                LLVMBuildCondBr(self.builder, condition, true_bb, false_bb);
-
-                // emit true block
-                LLVMPositionBuilderAtEnd(self.builder, true_bb);
-                self.generate_statement(&statement.then_statement);
-                LLVMBuildBr(self.builder, merge_bb);
-
-                // emit false block
-                LLVMPositionBuilderAtEnd(self.builder, false_bb);
-                self.generate_statement(&else_statement);
-                LLVMBuildBr(self.builder, merge_bb);
-
-                // emit merge block
-                LLVMPositionBuilderAtEnd(self.builder, merge_bb);
-            } else {
-                todo!("if statement without else block");
-            }
-        }
-    }
-
-    fn generate_block_scope_statement(
-        &mut self,
-        statement: &'table BoundBlockScopeStatement<'table, 'parser, 'ast>,
-    ) {
-        self.local_scope_stack.push();
-
-        for statement in &statement.statements {
-            self.generate_statement(statement);
-        }
-
-        self.local_scope_stack.pop();
-    }
-
     fn generate_variable_declaration_statement(
         &mut self,
         statement: &'table BoundVariableDeclarationStatement<
@@ -495,26 +555,11 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
             let value = self.generate_expression(&statement.expression);
             LLVMBuildStore(self.builder, value, llvm_local);
 
-            self.local_scope_stack.declare_variable(
-                statement.ast.value.identifier.value,
+            self.variables.insert(
+                VariableWrapper::wrap(statement.variable_symbol.clone()),
                 llvm_local,
             );
         }
-    }
-
-    fn generate_return_statement(&mut self, statement: &BoundReturnStatement) {
-        match &statement.expression {
-            Some(expr) => {
-                let value = self.generate_expression(expr);
-
-                unsafe {
-                    LLVMBuildRet(self.builder, value);
-                }
-            }
-            None => unsafe {
-                LLVMBuildRetVoid(self.builder);
-            },
-        };
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -523,7 +568,7 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
 
     fn generate_expression(
         &mut self,
-        expression: &BoundExpression,
+        expression: &'modu BoundExpression<'table, 'parser, 'ast>,
     ) -> LLVMValueRef {
         match expression {
             BoundExpression::BoundUnaryExpression(expr) => {
@@ -549,7 +594,7 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
 
     fn generate_cast_expression(
         &mut self,
-        cast: &BoundCastExpression,
+        cast: &'modu BoundCastExpression<'table, 'parser, 'ast>,
     ) -> LLVMValueRef {
         let value = self.generate_expression(&cast.operand);
 
@@ -713,8 +758,8 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
     ) -> LLVMValueRef {
         unsafe {
             match self
-                .local_scope_stack
-                .lookup_variable(identifier.ast.value.identifier)
+                .variables
+                .get(&VariableWrapper::wrap(identifier.variable_symbol.clone()))
             {
                 Some(ptr) => LLVMBuildLoad2(
                     self.builder,
@@ -726,7 +771,9 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
                 ),
                 None => *self
                     .parameters
-                    .get(identifier.ast.value.identifier)
+                    .get(&VariableWrapper::wrap(
+                        identifier.variable_symbol.clone(),
+                    ))
                     .expect("expect parameter"),
             }
         }
@@ -778,7 +825,7 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
 
     fn generate_function_call_expression(
         &mut self,
-        func_call: &BoundFunctionCallExpression,
+        func_call: &'modu BoundFunctionCallExpression<'table, 'parser, 'ast>,
     ) -> LLVMValueRef {
         unsafe {
             let mut args = Vec::new();
@@ -805,7 +852,7 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
 
     fn generate_unary_expression(
         &mut self,
-        expression: &BoundUnaryExpression,
+        expression: &'modu BoundUnaryExpression<'table, 'parser, 'ast>,
     ) -> LLVMValueRef {
         unsafe {
             let operand = self.generate_expression(&expression.operand);
@@ -827,13 +874,13 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
     }
 
     fn get_llvm_ptr_from_lvalue(
-        &mut self,
-        expression: &BoundExpression,
+        &self,
+        expression: &'modu BoundExpression<'table, 'parser, 'ast>,
     ) -> LLVMValueRef {
         match expression {
             BoundExpression::BoundIdentifierExpression(expression) => *self
-                .local_scope_stack
-                .lookup_variable(expression.ast.value.identifier)
+                .variables
+                .get(&VariableWrapper::wrap(expression.variable_symbol.clone()))
                 .unwrap(),
             _ => {
                 todo!();
@@ -843,7 +890,7 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
 
     fn generate_binary_expression(
         &mut self,
-        expression: &BoundBinaryExpression,
+        expression: &'modu BoundBinaryExpression<'table, 'parser, 'ast>,
     ) -> LLVMValueRef {
         unsafe {
             fn generate_assign_expression(
@@ -1219,79 +1266,5 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast>
                 unreachable!()
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use pernix_analyzer::{
-        binding::BoundFunction,
-        symbol::table::{FunctionSymbolTable, TypeSymbolTable},
-    };
-    use pernix_parser::Parser;
-    use pernix_project::source_code::SourceCode;
-
-    use crate::context::Context;
-
-    use super::Module;
-
-    #[test]
-    fn test() {
-        let source_code = "
-    int32 Fibonacci(int32 n) 
-    {
-        if (n < 2) 
-        {
-            result = n;
-        } 
-        else 
-        {
-            result = Fibonacci(n - 1) + Fibonacci(n - 2);
-        }
-    }
-    "
-        .to_string();
-
-        let source_code = SourceCode::new(source_code, "test".to_string());
-        let mut parser = Parser::new(&source_code);
-        let ast = parser.parse_file().unwrap();
-
-        let type_symbol_table = TypeSymbolTable::new();
-        let mut function_symbol_table = FunctionSymbolTable::new();
-
-        let _ = function_symbol_table.populate(&ast, &type_symbol_table);
-
-        let mut bound_functions = Vec::new();
-
-        for function in function_symbol_table.values() {
-            bound_functions.push(
-                match BoundFunction::bind(
-                    &function.value,
-                    &function_symbol_table,
-                    &type_symbol_table,
-                ) {
-                    Ok(val) => val,
-                    Err(error) => {
-                        dbg!(error);
-                        continue;
-                    }
-                },
-            );
-        }
-
-        let context = Context::new();
-        let mut module = Module::new(&context, "test");
-
-        for type_symbol in type_symbol_table.values() {
-            module.add_type_symbol(&type_symbol.value);
-        }
-
-        for bound_function in &bound_functions {
-            module.add_function_symbol(bound_function);
-        }
-
-        module.compile();
-
-        module.print_ir();
     }
 }
