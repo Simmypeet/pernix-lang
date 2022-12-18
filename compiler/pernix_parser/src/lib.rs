@@ -991,8 +991,7 @@ impl<'a> Parser<'a> {
                     self.next();
                     BinaryOperator::Equal
                 } else {
-                    self.current_index = starting_index;
-                    return None;
+                    BinaryOperator::Assignment
                 }
             }
             TokenKind::Punctuator('!') => {

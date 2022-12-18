@@ -1,4 +1,7 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{
+    hash_map::{Entry, Values},
+    HashMap,
+};
 
 use pernix_parser::{
     abstract_syntax_tree::{
@@ -142,6 +145,11 @@ impl<T> SymbolTable<T> {
     pub fn get_entries(&self) -> &HashMap<String, SymbolTableEntry<T>> {
         &self.entries
     }
+
+    /// Get the iterator of the values of the entries.
+    pub fn values(&self) -> Values<'_, String, SymbolTableEntry<T>> {
+        self.entries.values()
+    }
 }
 
 /// Represent a symbol table that manages the type symbols.
@@ -222,6 +230,7 @@ impl TypeSymbolTable {
         table
     }
 
+    /// Get the primitive type from the given [`PrimitiveType`].
     pub fn get_primitive_type(
         &self,
         primitive_type: PrimitiveType,

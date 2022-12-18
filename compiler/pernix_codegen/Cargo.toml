@@ -11,3 +11,5 @@ pernix_project = { path = "../pernix_project" }
 pernix_parser = { path = "../pernix_parser" }
 pernix_analyzer = { path = "../pernix_analyzer" }
 llvm-sys = { package = "llvm-sys", version = "150" }
+
+[lib]

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use pernix_parser::{
     abstract_syntax_tree::{
         declaration::{Declaration, UsingDirective},
@@ -155,5 +157,76 @@ impl<'parser: 'ast, 'ast> ScopeTransverser<'parser, 'ast> {
 
         self.pop_namespace();
         self.pop_using_directive();
+    }
+}
+
+struct LocalScope<'a, T> {
+    variable_declaration: HashMap<&'a str, T>,
+}
+
+impl<'a, T> LocalScope<'a, T> {
+    fn new() -> Self {
+        Self {
+            variable_declaration: HashMap::new(),
+        }
+    }
+
+    fn declare_variable(&mut self, name: &'a str, variable: T) {
+        self.variable_declaration.insert(name, variable);
+    }
+
+    fn lookup_variable(&self, name: &str) -> Option<&T> {
+        self.variable_declaration.get(name)
+    }
+
+    fn values(&self) -> impl Iterator<Item = &T> {
+        self.variable_declaration.values()
+    }
+}
+
+/// Represent a stack structure for local scopes. Each scope is a map from
+/// variable name to variable symbol.
+pub struct LockScopeStack<'a, T> {
+    stack: Vec<LocalScope<'a, T>>,
+}
+
+impl<'a, T> LockScopeStack<'a, T> {
+    /// Create a new scope stack.
+    pub fn new() -> Self {
+        Self { stack: Vec::new() }
+    }
+
+    /// Push a new local scope to the stack.
+    pub fn push(&mut self) {
+        self.stack.push(LocalScope::new());
+    }
+
+    /// Pop the last local scope from the stack.
+    pub fn pop(&mut self) {
+        self.stack.pop();
+    }
+
+    /// Declare a variable in the current scope.
+    pub fn declare_variable(&mut self, name: &'a str, variable: T) {
+        self.stack
+            .last_mut()
+            .unwrap()
+            .declare_variable(name, variable);
+    }
+
+    /// Get all the variables in the current scope.
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.stack.iter().rev().flat_map(|scope| scope.values())
+    }
+
+    /// Lookup a variable in the current scope.
+    pub fn lookup_variable(&self, name: &str) -> Option<&T> {
+        for scope in self.stack.iter().rev() {
+            if let Some(variable) = scope.lookup_variable(name) {
+                return Some(variable);
+            }
+        }
+
+        None
     }
 }

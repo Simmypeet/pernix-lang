@@ -17,7 +17,7 @@ pub mod table;
 pub struct FunctionSymbol<'table, 'parser, 'ast> {
     ast: PositionWrapper<&'parser FunctionDeclaration<'ast>>,
     return_type: &'table TypeSymbol,
-    parameter_types: Vec<VariableSymbol<'table, 'ast>>,
+    parameters: Vec<VariableSymbol<'table, 'ast>>,
     scope_info: ScopeInfo,
 }
 
@@ -95,11 +95,18 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
                     }
                 };
 
-                parameters.push(VariableSymbol {
-                    variable_type: &parameter_type.value,
-                    name: parameter.value.1,
-                    is_mutable: parameter.value.0.is_mutable,
-                });
+                // no void type!
+                if parameter_type.value.is_void() {
+                    errors.push(Error::DefinedVoidVariable {
+                        position: parameter.position.clone(),
+                    });
+                } else {
+                    parameters.push(VariableSymbol {
+                        variable_type: &parameter_type.value,
+                        name: parameter.value.1,
+                        is_mutable: parameter.value.0.is_mutable,
+                    });
+                }
             }
 
             parameters
@@ -111,7 +118,7 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
             Ok(Self {
                 ast,
                 return_type: return_type.unwrap(),
-                parameter_types,
+                parameters: parameter_types,
                 scope_info: scope_info.clone(),
             })
         }
@@ -128,8 +135,8 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
     }
 
     /// Return a reference to the parameter types of this [`FunctionSymbol`].
-    pub fn parameter_types(&self) -> &[VariableSymbol<'table, 'table>] {
-        self.parameter_types.as_ref()
+    pub fn parameters(&self) -> &[VariableSymbol<'table, 'table>] {
+        self.parameters.as_ref()
     }
 
     /// Return a reference to the full qualified name of this [`FunctionSymbol`].
@@ -207,6 +214,30 @@ impl TypeSymbol {
         }
     }
 
+    /// Check whether the type is a primitive signed numeric type.
+    pub fn is_signed_numeric(&self) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(PrimitiveType::Int8)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int16)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Int64)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Float32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Float64) => true,
+            _ => false,
+        }
+    }
+
+    /// Check whether the type is a primitive unsigned numeric type.
+    pub fn is_unsigned_numeric(&self) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(PrimitiveType::Uint8)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint16)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint32)
+            | TypeSymbol::PrimitiveType(PrimitiveType::Uint64) => true,
+            _ => false,
+        }
+    }
+
     /// Check whether the type is a primitive type.
     pub fn is_primitive_type(&self) -> bool {
         match self {
@@ -243,6 +274,13 @@ impl TypeSymbol {
             TypeSymbol::PrimitiveType(PrimitiveType::Float32)
             | TypeSymbol::PrimitiveType(PrimitiveType::Float64) => true,
             _ => false,
+        }
+    }
+
+    /// Check whether the type is a primitive type
+    pub fn is_primitive_type_of(&self, primitive_type: PrimitiveType) -> bool {
+        match self {
+            TypeSymbol::PrimitiveType(val) => val == &primitive_type,
         }
     }
 }

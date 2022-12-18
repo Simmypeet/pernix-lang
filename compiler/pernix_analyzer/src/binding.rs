@@ -5,7 +5,7 @@ use pernix_parser::abstract_syntax_tree::{
         IdentifierExpression, LiteralExpression, UnaryExpression,
     },
     statement::{
-        BlockScopeStatement, ReturnStatement, Statement,
+        BlockScopeStatement, IfElseStatement, ReturnStatement, Statement,
         VariableDeclarationStatement,
     },
     BinaryOperator, PositionWrapper, UnaryOperator,
@@ -13,6 +13,7 @@ use pernix_parser::abstract_syntax_tree::{
 
 use crate::{
     error::Error,
+    scope::LockScopeStack,
     symbol::{
         table::{FunctionSymbolTable, TypeSymbolTable},
         FunctionSymbol, PrimitiveType, TypeSymbol, VariableSymbol,
@@ -27,21 +28,19 @@ use self::{
         ExpressionType,
     },
     bound_statement::{
-        BoundBlockScopeStatement, BoundReturnStatement, BoundStatement,
-        BoundVariableDeclarationStatement,
+        BoundBlockScopeStatement, BoundIfElseStatement, BoundReturnStatement,
+        BoundStatement, BoundVariableDeclarationStatement,
     },
-    local_scope::LockScopeStack,
 };
 
 pub mod bound_expression;
 pub mod bound_statement;
-mod local_scope;
 
-struct Binder<'sym, 'table, 'parser, 'ast> {
+struct Binder<'table, 'parser, 'ast> {
     type_table: &'table TypeSymbolTable,
     function_table: &'table FunctionSymbolTable<'table, 'parser, 'ast>,
-    function_symbol: &'sym FunctionSymbol<'table, 'parser, 'ast>,
-    local_scope_stack: LockScopeStack<'table, 'ast>,
+    function_symbol: &'table FunctionSymbol<'table, 'parser, 'ast>,
+    local_scope_stack: LockScopeStack<'ast, VariableSymbol<'table, 'ast>>,
     errors: Vec<Error<'table, 'parser, 'ast>>,
 }
 
@@ -52,9 +51,13 @@ pub struct BoundFunction<'table, 'parser, 'ast> {
     body: BoundBlockScopeStatement<'table, 'parser, 'ast>,
 }
 
-impl<'table, 'parser: 'ast, 'ast> BoundFunction<'table, 'parser, 'ast> {
+impl<'table: 'parser, 'parser: 'ast, 'ast>
+    BoundFunction<'table, 'parser, 'ast>
+{
     /// Return a reference to the function symbol of this [`BoundFunction`].
-    pub fn function_symbol(&self) -> &FunctionSymbol<'table, 'parser, 'ast> {
+    pub fn function_symbol(
+        &self,
+    ) -> &'table FunctionSymbol<'table, 'parser, 'ast> {
         &self.function_symbol
     }
 
@@ -74,31 +77,47 @@ impl<'table, 'parser: 'ast, 'ast> BoundFunction<'table, 'parser, 'ast> {
     > {
         let mut binder =
             Binder::new(type_table, function_table, &function_symbol);
-        let body = if let BoundStatement::BoundBlockScopeStatement(statement) =
+        let mut statements = Vec::new();
+        binder.local_scope_stack.push();
+
+        for argument in function_symbol.parameters() {
             binder
-                .bind_block_scope_statement(PositionWrapper {
-                    position: function_symbol.ast().value.body.position.clone(),
-                    value: &function_symbol.ast().value.body.value,
-                })
-                .unwrap()
-        {
-            statement
-        } else {
-            return Err(binder.pop_errors());
-        };
+                .local_scope_stack
+                .declare_variable(argument.name, argument.clone());
+        }
+
+        for statement in &function_symbol.ast().value.body.value.statements {
+            statements.push(match binder.bind_statement(statement) {
+                Some(val) => val,
+                None => continue,
+            });
+        }
+
+        binder.local_scope_stack.pop();
 
         if !binder.errors.is_empty() {
             return Err(binder.pop_errors());
+        } else {
+            Ok(Self {
+                function_symbol,
+                body: BoundBlockScopeStatement {
+                    ast: PositionWrapper {
+                        position: function_symbol
+                            .ast()
+                            .value
+                            .body
+                            .position
+                            .clone(),
+                        value: &function_symbol.ast().value.body.value,
+                    },
+                    statements,
+                },
+            })
         }
-
-        Ok(Self {
-            function_symbol,
-            body,
-        })
     }
 }
 
-impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
+impl<'table, 'parser: 'ast, 'ast> Binder<'table, 'parser, 'ast> {
     /// Create a new [`ExpressionBinder`] instance.
     fn new(
         type_table: &'table TypeSymbolTable,
@@ -139,13 +158,46 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
                 value: variable_decl_statement,
                 position: statement.position.clone(),
             }),
-            Statement::IfElseStatement(_) => todo!(),
+            Statement::IfElseStatement(if_else_statement) => self
+                .bind_if_else_statement(PositionWrapper {
+                    value: if_else_statement,
+                    position: statement.position.clone(),
+                }),
             Statement::BlockScopeStatement(block_scope_statement) => self
                 .bind_block_scope_statement(PositionWrapper {
                     value: &block_scope_statement,
                     position: statement.position.clone(),
                 }),
         }
+    }
+
+    fn bind_if_else_statement(
+        &mut self,
+        if_else_statement: PositionWrapper<&'parser IfElseStatement<'ast>>,
+    ) -> Option<BoundStatement<'table, 'parser, 'ast>> {
+        let bound_condition =
+            self.bind_expression(&if_else_statement.value.condition)?;
+
+        let bound_then_statement =
+            self.bind_statement(&if_else_statement.value.then_statement)?;
+
+        let bound_else_statement = if let Some(ref else_statement) =
+            if_else_statement.value.else_statement
+        {
+            Some(self.bind_statement(else_statement)?)
+        } else {
+            None
+        };
+
+        Some(BoundStatement::BoundIfElseStatement(BoundIfElseStatement {
+            ast: if_else_statement,
+            condition: bound_condition,
+            then_statement: Box::new(bound_then_statement),
+            else_statement: match bound_else_statement {
+                Some(val) => Some(Box::new(val)),
+                None => None,
+            },
+        }))
     }
 
     /// Bind the given variable declaration statement AST to a [`BoundStatement`].
@@ -163,7 +215,18 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
                     self.function_symbol.scope_info(),
                     type_annotation,
                 ) {
-                    Ok(variable_type) => &variable_type.value,
+                    Ok(variable_type) => {
+                        if variable_type.value.is_void() {
+                            self.errors.push(Error::DefinedVoidVariable {
+                                position: variable_declaration_statement
+                                    .position
+                                    .clone(),
+                            });
+                            return None;
+                        }
+
+                        &variable_type.value
+                    }
                     Err(err) => {
                         self.errors.push(err);
                         return None;
@@ -175,9 +238,18 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
                 variable_type,
             )?
         } else {
-            self.bind_expression(
+            let expr = self.bind_expression(
                 &variable_declaration_statement.value.expression,
-            )?
+            )?;
+
+            if expr.get_type().type_symbol.is_void() {
+                self.errors.push(Error::DefinedVoidVariable {
+                    position: variable_declaration_statement.position.clone(),
+                });
+                return None;
+            }
+
+            expr
         };
 
         let variable_symbol = VariableSymbol {
@@ -186,7 +258,8 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
             is_mutable: variable_declaration_statement.value.is_mutable,
         };
 
-        self.local_scope_stack.declare_variable(variable_symbol);
+        self.local_scope_stack
+            .declare_variable(variable_symbol.name, variable_symbol);
 
         Some(BoundStatement::BoundVariableDeclarationStatement(
             BoundVariableDeclarationStatement {
@@ -325,9 +398,19 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
             match left.get_type().category {
                 ExpressionCategory::LValue { is_mutable: true } => {}
                 _ => {
-                    self.errors.push(Error::RValueAssignment {
-                        rvalue_expression: &expression.value.left,
-                    });
+                    match left.get_type().category {
+                        ExpressionCategory::RValue => {
+                            self.errors.push(Error::RValueAssignment {
+                                rvalue_expression: &expression.value.left,
+                            })
+                        }
+                        ExpressionCategory::LValue { .. } => {
+                            self.errors.push(Error::IsNotMutable {
+                                lvalue_expression: &expression.value.left,
+                                mutate_expression: &expression.value.right,
+                            })
+                        }
+                    }
                     return None;
                 }
             }
@@ -376,16 +459,9 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
                     right: Box::new(right),
                 },
             ))
-        } else {
-            if !left.get_type().type_symbol.is_numeric()
-                || !right.get_type().type_symbol.is_numeric()
-            {
-                self.errors.push(Error::InvalidBinaryOperation {
-                    binary_expression: expression.clone(),
-                });
-                return None;
-            }
-
+        } else if left.get_type().type_symbol.is_numeric()
+            && right.get_type().type_symbol.is_numeric()
+        {
             if std::ptr::eq(
                 left.get_type().type_symbol,
                 right.get_type().type_symbol,
@@ -472,6 +548,35 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
                     },
                 ))
             }
+        } else if left.get_type().type_symbol.is_bool()
+            && right.get_type().type_symbol.is_bool()
+        {
+            match expression.value.operator.value {
+                BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => {
+                    Some(BoundExpression::BoundBinaryExpression(
+                        BoundBinaryExpression {
+                            ast: expression.clone(),
+                            expression_type: ExpressionType {
+                                type_symbol: left.get_type().type_symbol,
+                                category: ExpressionCategory::RValue,
+                            },
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        },
+                    ))
+                }
+                _ => {
+                    self.errors.push(Error::InvalidBinaryOperation {
+                        binary_expression: expression.clone(),
+                    });
+                    None
+                }
+            }
+        } else {
+            self.errors.push(Error::InvalidBinaryOperation {
+                binary_expression: expression.clone(),
+            });
+            None
         }
     }
 
@@ -749,7 +854,7 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
 
         // Check the number of arguments in the function call matches the number
         // of parameters in the function declaration.
-        let expected_argument_count = fn_call_symbol.parameter_types().len();
+        let expected_argument_count = fn_call_symbol.parameters().len();
         let supplied_argument_count = expression.value.arguments.len();
         if expected_argument_count != supplied_argument_count {
             self.errors.push(Error::InvalidArgumentCount {
@@ -764,7 +869,7 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
         // Check each argument type matches the parameter type.
         let mut bound_arguments = Vec::new();
         for (idx, expected_type) in
-            fn_call_symbol.parameter_types().iter().enumerate()
+            fn_call_symbol.parameters().iter().enumerate()
         {
             // perform any valid implicit conversions (if needed)
             let bound_expression = self.pass_expression_to(
@@ -779,6 +884,7 @@ impl<'sym, 'table, 'parser: 'ast, 'ast> Binder<'sym, 'table, 'parser, 'ast> {
             BoundFunctionCallExpression {
                 ast: expression.clone(),
                 arguments: bound_arguments,
+                function: fn_call_symbol,
                 expression_type: ExpressionType {
                     type_symbol: fn_call_symbol.return_type(),
                     category: ExpressionCategory::RValue,

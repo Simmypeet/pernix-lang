@@ -5,7 +5,7 @@ use llvm_sys::{
 
 /// Represent a wrapper around an LLVM context.
 pub struct Context {
-    pub(crate) context: LLVMContextRef,
+    context: LLVMContextRef,
 }
 
 impl Drop for Context {

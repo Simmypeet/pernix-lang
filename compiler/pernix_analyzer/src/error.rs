@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use pernix_parser::abstract_syntax_tree::{
     declaration::{FunctionDeclaration, QualifiedType},
     expression::{
@@ -7,10 +9,12 @@ use pernix_parser::abstract_syntax_tree::{
     statement::ReturnStatement,
     PositionWrapper, UnaryOperator,
 };
+use pernix_project::source_code::SourcePosition;
 
 use crate::symbol::TypeSymbol;
 
 /// Represent an enumeration containing all the semantic errors
+#[derive(Debug)]
 pub enum Error<'table, 'parser, 'ast> {
     FunctionRedeclaration {
         previous_declaration:
@@ -64,5 +68,12 @@ pub enum Error<'table, 'parser, 'ast> {
     },
     ReturnStatementMustReturnAValue {
         return_statement: PositionWrapper<&'parser ReturnStatement<'ast>>,
+    },
+    DefinedVoidVariable {
+        position: Range<SourcePosition>,
+    },
+    IsNotMutable {
+        lvalue_expression: &'parser PositionWrapper<Expression<'ast>>,
+        mutate_expression: &'parser PositionWrapper<Expression<'ast>>,
     },
 }
