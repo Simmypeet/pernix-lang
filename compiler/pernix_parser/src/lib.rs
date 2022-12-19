@@ -20,7 +20,7 @@ use pernix_project::source_code::SourceCode;
 use crate::abstract_syntax_tree::{
     declaration::QualifiedType,
     expression::{UnaryExpression, IdentifierExpression},
-    statement::{IfElseStatement, BlockScopeStatement, VariableDeclarationStatement, ReturnStatement, self},
+    statement::{IfElseStatement, BlockScopeStatement, VariableDeclarationStatement, ReturnStatement},
 };
 
 /// Represent a state-machine data structure that is used to parse a Pernix
