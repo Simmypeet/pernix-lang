@@ -31,6 +31,13 @@ pub struct ReturnStatement<'a> {
     pub expression: Option<PositionWrapper<Expression<'a>>>,
 }
 
+/// Represent a while loop statement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhileStatement<'a> {
+    pub condition: PositionWrapper<Expression<'a>>,
+    pub loop_statement: Box<PositionWrapper<Statement<'a>>>,
+}
+
 /// Represent an enumeration containing all kinds of statements.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement<'a> {
@@ -39,4 +46,7 @@ pub enum Statement<'a> {
     VariableDeclarationStatement(VariableDeclarationStatement<'a>),
     IfElseStatement(IfElseStatement<'a>),
     BlockScopeStatement(BlockScopeStatement<'a>),
+    WhileStatement(WhileStatement<'a>),
+    BreakStatement,
+    ContinueStatement,
 }

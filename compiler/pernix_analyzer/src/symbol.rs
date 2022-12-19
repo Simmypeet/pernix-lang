@@ -1,3 +1,13 @@
+//! This module handles the binding of the AST to the symbol table. The symbol
+//! means the declaration of a variable, function, type, etc. It doesn't concern
+//! the correctness of the definition, only the declaration, making it possible
+//! to lookup the declaration of a variable, function, type, etc. in the symbol
+//! table.
+//!
+//! The symbol's equality is based on the reference returned by the symbol
+//! table. Symbol populating is the first step of the semantic analysis. The
+//! table is populated with the declarations of the AST.
+
 use std::hash::Hash;
 use std::{collections::HashMap, rc::Rc};
 
@@ -12,16 +22,16 @@ use self::table::TypeSymbolTable;
 
 pub mod table;
 
-/// Represent a bound version of the [`FunctionDeclaration`] AST.
+/// Represent function declaration symbol.
 #[derive(Debug, Clone)]
-pub struct FunctionSymbol<'table, 'parser, 'ast> {
-    ast: PositionWrapper<&'parser FunctionDeclaration<'ast>>,
+pub struct FunctionSymbol<'table, 'ast> {
+    ast: PositionWrapper<&'ast FunctionDeclaration<'ast>>,
     return_type: &'table TypeSymbol,
     parameters: Vec<Rc<VariableSymbol<'table, 'ast>>>,
     scope_info: ScopeInfo,
 }
 
-impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
+impl<'table, 'ast: 'table> FunctionSymbol<'table, 'ast> {
     /// Bind the [`FunctionDeclaration`] AST to a [`FunctionSymbol`]
     /// struct. The function will check if the function parameters have
     /// redeclaration errors and if the return type is valid.
@@ -32,9 +42,9 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
     /// - `table`: the type table that will be used to lookup the types.
     pub fn bind(
         scope_info: &ScopeInfo,
-        ast: PositionWrapper<&'parser FunctionDeclaration<'ast>>,
+        ast: PositionWrapper<&'ast FunctionDeclaration<'ast>>,
         table: &'table TypeSymbolTable,
-    ) -> Result<Self, Vec<Error<'table, 'parser, 'ast>>> {
+    ) -> Result<Self, Vec<Error<'table, 'ast>>> {
         let mut errors = Vec::new();
 
         // check if the function parameters have redeclaration
@@ -42,7 +52,7 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
         {
             let mut parameter_names = HashMap::<
                 &'ast str,
-                &'parser PositionWrapper<(QualifiedType<'ast>, &'ast str)>,
+                &'ast PositionWrapper<(QualifiedType<'ast>, &'ast str)>,
             >::new();
 
             let mut errors = Vec::new();
@@ -122,7 +132,7 @@ impl<'table, 'parser, 'ast: 'table> FunctionSymbol<'table, 'parser, 'ast> {
     }
 
     /// Return a reference to the ast of this [`FunctionSymbol`].
-    pub fn ast(&self) -> &PositionWrapper<&'parser FunctionDeclaration<'ast>> {
+    pub fn ast(&self) -> &PositionWrapper<&'ast FunctionDeclaration<'ast>> {
         &self.ast
     }
 
@@ -163,6 +173,8 @@ pub struct VariableSymbol<'table, 'ast> {
     pub is_mutable: bool,
 }
 
+/// Represent an enumeration containing all the primitive types supported by 
+/// Pernix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
     Void,

@@ -6,7 +6,7 @@ use pernix_parser::abstract_syntax_tree::{
         BinaryExpression, Expression, FunctionCallExpression,
         IdentifierExpression, LiteralExpression,
     },
-    statement::ReturnStatement,
+    statement::{ReturnStatement, Statement},
     PositionWrapper, UnaryOperator,
 };
 use pernix_project::source_code::SourcePosition;
@@ -15,65 +15,64 @@ use crate::symbol::TypeSymbol;
 
 /// Represent an enumeration containing all the semantic errors
 #[derive(Debug)]
-pub enum Error<'table, 'parser, 'ast> {
+pub enum Error<'table, 'ast> {
     FunctionRedeclaration {
-        previous_declaration:
-            PositionWrapper<&'parser FunctionDeclaration<'ast>>,
-        redeclaration: PositionWrapper<&'parser FunctionDeclaration<'ast>>,
+        previous_declaration: PositionWrapper<&'ast FunctionDeclaration<'ast>>,
+        redeclaration: PositionWrapper<&'ast FunctionDeclaration<'ast>>,
     },
     ParameterRedeclaration {
-        function_declaration:
-            PositionWrapper<&'parser FunctionDeclaration<'ast>>,
+        function_declaration: PositionWrapper<&'ast FunctionDeclaration<'ast>>,
         previous_declaration:
-            &'parser PositionWrapper<(QualifiedType<'ast>, &'ast str)>,
-        redeclaration:
-            &'parser PositionWrapper<(QualifiedType<'ast>, &'ast str)>,
+            &'ast PositionWrapper<(QualifiedType<'ast>, &'ast str)>,
+        redeclaration: &'ast PositionWrapper<(QualifiedType<'ast>, &'ast str)>,
     },
     TypeNotFound {
         type_name: PositionWrapper<&'ast str>,
     },
     InvalidUnaryOperation {
         operator: PositionWrapper<UnaryOperator>,
-        operand: &'parser PositionWrapper<Expression<'ast>>,
+        operand: &'ast PositionWrapper<Expression<'ast>>,
         operand_type: &'table TypeSymbol,
     },
     TypeMismatched {
         expected_type: &'table TypeSymbol,
         expression_type: &'table TypeSymbol,
-        expression: &'parser PositionWrapper<Expression<'ast>>,
+        expression: &'ast PositionWrapper<Expression<'ast>>,
     },
     InvalidArgumentCount {
-        function_declaration:
-            PositionWrapper<&'parser FunctionDeclaration<'ast>>,
+        function_declaration: PositionWrapper<&'ast FunctionDeclaration<'ast>>,
         function_call_expression:
-            PositionWrapper<&'parser FunctionCallExpression<'ast>>,
+            PositionWrapper<&'ast FunctionCallExpression<'ast>>,
         expected_argument_count: usize,
         supplied_argument_count: usize,
     },
     UndefinedVariable {
-        variable_name: PositionWrapper<&'parser IdentifierExpression<'ast>>,
+        variable_name: PositionWrapper<&'ast IdentifierExpression<'ast>>,
     },
     UndefinedFunctionName {
         function_call_expression:
-            PositionWrapper<&'parser FunctionCallExpression<'ast>>,
+            PositionWrapper<&'ast FunctionCallExpression<'ast>>,
     },
     UndefinedLiteralSuffix {
-        literal_expression: PositionWrapper<&'parser LiteralExpression<'ast>>,
+        literal_expression: PositionWrapper<&'ast LiteralExpression<'ast>>,
     },
     RValueAssignment {
-        rvalue_expression: &'parser PositionWrapper<Expression<'ast>>,
+        rvalue_expression: &'ast PositionWrapper<Expression<'ast>>,
     },
     InvalidBinaryOperation {
-        binary_expression: PositionWrapper<&'parser BinaryExpression<'ast>>,
+        binary_expression: PositionWrapper<&'ast BinaryExpression<'ast>>,
     },
     ReturnStatementMustReturnAValue {
-        return_statement: PositionWrapper<&'parser ReturnStatement<'ast>>,
+        return_statement: PositionWrapper<&'ast ReturnStatement<'ast>>,
     },
     DefinedVoidVariable {
         position: Range<SourcePosition>,
     },
     IsNotMutable {
-        lvalue_expression: &'parser PositionWrapper<Expression<'ast>>,
-        mutate_expression: &'parser PositionWrapper<Expression<'ast>>,
+        lvalue_expression: &'ast PositionWrapper<Expression<'ast>>,
+        mutate_expression: &'ast PositionWrapper<Expression<'ast>>,
+    },
+    InvalidLoopFlowStatement {
+        invalid_statement: &'ast PositionWrapper<Statement<'ast>>,
     },
 }

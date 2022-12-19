@@ -7,7 +7,7 @@ use abstract_syntax_tree::{
         UsingDirective,
     },
     expression::{BinaryExpression, Expression, FunctionCallExpression, LiteralExpression},
-    statement::Statement,
+    statement::{Statement, WhileStatement},
     BinaryOperator, PositionWrapper, UnaryOperator,
 };
 use error::{Context, Error};
@@ -20,7 +20,7 @@ use pernix_project::source_code::SourceCode;
 use crate::abstract_syntax_tree::{
     declaration::QualifiedType,
     expression::{UnaryExpression, IdentifierExpression},
-    statement::{IfElseStatement, BlockScopeStatement, VariableDeclarationStatement, ReturnStatement},
+    statement::{IfElseStatement, BlockScopeStatement, VariableDeclarationStatement, ReturnStatement, self},
 };
 
 /// Represent a state-machine data structure that is used to parse a Pernix
@@ -1285,6 +1285,9 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Return) => {
                 return self.parse_return_statement();
             }
+            TokenKind::Keyword(Keyword::While) => {
+                return self.parse_while_statement();
+            }
             TokenKind::Keyword(Keyword::Mutable) |
             TokenKind::Keyword(Keyword::Let) => {
                 return self.parse_variable_declaration_statement();
@@ -1295,6 +1298,36 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::If) => {
                 return self.parse_if_else_statement();
             }
+            TokenKind::Keyword(Keyword::Break) |
+            TokenKind::Keyword(Keyword::Continue) => {
+                let statement = match self.peek().token_kind() {
+                    TokenKind::Keyword(Keyword::Break) => Statement::BreakStatement,
+                    TokenKind::Keyword(Keyword::Continue) => Statement::ContinueStatement,
+                    _ => unreachable!(),
+                };
+
+                // expect a semi colon
+                if !matches!(
+                    self.next_significant().token_kind(),
+                    TokenKind::Punctuator(';')
+                ) {
+                    parse_exit_error!(
+                        self,
+                        Error::PunctuatorExpected {
+                            expected_punctuator: ';',
+                            found_token: self.peek_back().clone(),
+                            
+                        },
+                        starting_index
+                    );
+                } else {
+                    return Some(PositionWrapper {
+                        position: starting_position.start
+                            ..self.peek_back().position_range().end,
+                        value: statement,
+                    });
+                }
+            },
             _ => {
                 // try to parse an expression
                 self.produce_errors = false;
@@ -1339,6 +1372,76 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+    }
+
+    // Parse the current token stream as a while loop statement
+    fn parse_while_statement(
+        &mut self
+    ) -> Option<PositionWrapper<Statement<'a>>> {
+        parse_setup!(self, starting_index, starting_position);
+    
+        // expect while keyword
+        if !matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Keyword(Keyword::While)
+        ) {
+            parse_exit_error!(
+                self,
+                Error::KeywordExpected {
+                    expected_keyword: Keyword::While,
+                    found_token: self.peek_back().clone(),
+                    
+                },
+                starting_index
+            );
+        }
+
+        // expect opening parenthesis
+        if !matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Punctuator('(')
+        ) {
+            parse_exit_error!(
+                self,
+                Error::PunctuatorExpected {
+                    expected_punctuator: '(',
+                    found_token: self.peek_back().clone(),
+                    
+                },
+                starting_index
+            );
+        }
+
+        // parse the condition
+        let condition = parse_unwrap!(self, self.parse_expression(), starting_index);
+
+        // expect closing parenthesis
+        if !matches!(
+            self.next_significant().token_kind(),
+            TokenKind::Punctuator(')')
+        ) {
+            parse_exit_error!(
+                self,
+                Error::PunctuatorExpected {
+                    expected_punctuator: ')',
+                    found_token: self.peek_back().clone(),
+                    
+                },
+                starting_index
+            );
+        }
+        
+        // expect a statement
+        let loop_statement = parse_unwrap!(self, self.parse_statement(), starting_index);
+
+        Some(PositionWrapper {
+            position: starting_position.start
+                ..self.peek_back().position_range().end,
+            value: Statement::WhileStatement(WhileStatement {
+                condition,
+                loop_statement: Box::new(loop_statement)
+            }),
+        })
     }
 
     // Parse the current token stream as a return statement

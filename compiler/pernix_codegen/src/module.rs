@@ -33,17 +33,15 @@ use llvm_sys::{
 };
 use pernix_analyzer::{
     binding::{
+        bound_declaration::BoundFunction,
         bound_expression::{
             BoundBinaryExpression, BoundCastExpression, BoundExpression,
             BoundFunctionCallExpression, BoundIdentifierExpression,
             BoundLiteralExpression, BoundUnaryExpression,
         },
         bound_statement::{BoundStatement, BoundVariableDeclarationStatement},
-        BoundFunction,
     },
-    control_flow_graph::{
-        BlockIndex, ControlFlowGraph, Instruction, Terminator,
-    },
+    control_flow_graph::{BlockIndex, Instruction, Terminator},
     symbol::{FunctionSymbol, PrimitiveType, TypeSymbol, VariableSymbol},
 };
 use pernix_lexer::token::LiteralConstantToken;
@@ -58,22 +56,16 @@ use std::{
     rc::Rc,
 };
 
-use crate::context::Context;
+use crate::{context::Context, function::Function};
 
-pub struct ModuleFunction<'table, 'parser, 'ast> {
-    bound_function: &'table BoundFunction<'table, 'parser, 'ast>,
-    cfg: ControlFlowGraph<'table, 'table, 'parser, 'ast>,
-    llvm_type: LLVMTypeRef,
-    llvm_function: LLVMValueRef,
-}
-
-/// Represent a wrapper around an LLVM module.
-pub struct Module<'ctx, 'table, 'parser, 'ast> {
+/// Represent a wrapper around an LLVM module. The module contains all the
+/// functions and types that are used in the program and ready to be compiled.
+pub struct Module<'ctx, 'table, 'ast> {
     llvm_module: LLVMModuleRef,
     type_map: HashMap<SymbolWrapper<'table, TypeSymbol>, LLVMTypeRef>,
     function_map: HashMap<
-        SymbolWrapper<'table, FunctionSymbol<'table, 'parser, 'ast>>,
-        ModuleFunction<'table, 'parser, 'ast>,
+        SymbolWrapper<'table, FunctionSymbol<'table, 'ast>>,
+        Function<'table, 'ast>,
     >,
     _phantom: PhantomData<&'ctx Context>,
 }
@@ -102,16 +94,14 @@ impl<T> std::hash::Hash for SymbolWrapper<'_, T> {
     }
 }
 
-impl<'ctx, 'table, 'parser, 'ast> Drop for Module<'ctx, 'table, 'parser, 'ast> {
+impl<'ctx, 'table, 'ast> Drop for Module<'ctx, 'table, 'ast> {
     fn drop(&mut self) {
         // destroy llvm module
         unsafe { LLVMDisposeModule(self.llvm_module) }
     }
 }
 
-impl<'ctx: 'table, 'table: 'ast, 'parser, 'ast>
-    Module<'ctx, 'table, 'parser, 'ast>
-{
+impl<'ctx: 'table, 'table: 'ast, 'ast> Module<'ctx, 'table, 'ast> {
     /// Create a new LLVM module.
     pub fn new(context: &'ctx Context, module_name: &str) -> Self {
         let cstring = CString::new(module_name).unwrap();
@@ -145,7 +135,7 @@ impl<'ctx: 'table, 'table: 'ast, 'parser, 'ast>
     /// function map.
     pub fn add_function_symbol(
         &mut self,
-        bound_func: &'table BoundFunction<'table, 'parser, 'ast>,
+        bound_func: BoundFunction<'table, 'ast>,
     ) -> bool {
         match self
             .function_map
@@ -190,12 +180,7 @@ impl<'ctx: 'table, 'table: 'ast, 'parser, 'ast>
 
                 self.function_map.insert(
                     SymbolWrapper::wrap(bound_func.function_symbol()),
-                    ModuleFunction {
-                        bound_function: bound_func,
-                        llvm_function: func,
-                        cfg: ControlFlowGraph::analyze(bound_func),
-                        llvm_type,
-                    },
+                    Function::new(bound_func, llvm_type, func),
                 );
 
                 for (i, param) in symbol.parameters().iter().enumerate() {
@@ -275,7 +260,7 @@ impl<'ctx: 'table, 'table: 'ast, 'parser, 'ast>
     pub unsafe fn get_function(
         &self,
         symbol: &'table FunctionSymbol,
-    ) -> Option<&ModuleFunction<'table, 'parser, 'ast>> {
+    ) -> Option<&Function<'table, 'ast>> {
         self.function_map.get(&SymbolWrapper::wrap(symbol))
     }
 
@@ -329,17 +314,17 @@ impl Hash for VariableWrapper<'_, '_> {
     }
 }
 
-struct CodeGenerator<'modu, 'ctx, 'table, 'parser, 'ast> {
-    module: &'modu Module<'ctx, 'table, 'parser, 'ast>,
+struct CodeGenerator<'modu, 'ctx, 'table, 'ast> {
+    module: &'modu Module<'ctx, 'table, 'ast>,
     builder: LLVMBuilderRef,
     variables: HashMap<VariableWrapper<'table, 'ast>, LLVMValueRef>,
-    function: &'modu ModuleFunction<'table, 'parser, 'ast>,
+    function: &'modu Function<'table, 'ast>,
     block_map: HashMap<BlockIndex, LLVMBasicBlockRef>,
     parameters: HashMap<VariableWrapper<'table, 'ast>, LLVMValueRef>,
 }
 
-impl<'modu, 'ctx, 'table, 'parser, 'ast> Drop
-    for CodeGenerator<'modu, 'ctx, 'table, 'parser, 'ast>
+impl<'modu, 'ctx, 'table, 'ast> Drop
+    for CodeGenerator<'modu, 'ctx, 'table, 'ast>
 {
     fn drop(&mut self) {
         unsafe {
@@ -348,12 +333,12 @@ impl<'modu, 'ctx, 'table, 'parser, 'ast> Drop
     }
 }
 
-impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
-    CodeGenerator<'modu, 'ctx, 'table, 'parser, 'ast>
+impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
+    CodeGenerator<'modu, 'ctx, 'table, 'ast>
 {
     pub fn generate(
-        module: &'modu Module<'ctx, 'table, 'parser, 'ast>,
-        function: &'modu ModuleFunction<'table, 'parser, 'ast>,
+        module: &'modu Module<'ctx, 'table, 'ast>,
+        function: &'modu Function<'table, 'ast>,
     ) {
         unsafe {
             // set builder to entry basic block
@@ -370,14 +355,14 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
             };
 
             for (idx, parameter) in function
-                .bound_function
+                .bound_function()
                 .function_symbol()
                 .parameters()
                 .iter()
                 .enumerate()
             {
                 let llvm_parameter =
-                    LLVMGetParam(function.llvm_function, idx as u32);
+                    LLVMGetParam(function.llvm_function(), idx as u32);
 
                 // if mutable, we need to create a local variable
                 if parameter.is_mutable {
@@ -410,7 +395,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
             gen.generate_block(0);
 
             LLVMVerifyFunction(
-                function.llvm_function,
+                function.llvm_function(),
                 LLVMVerifierFailureAction::LLVMPrintMessageAction,
             );
         }
@@ -426,7 +411,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
                     // create a new block
                     let block = LLVMAppendBasicBlockInContext(
                         self.module.get_context(),
-                        self.function.llvm_function,
+                        self.function.llvm_function(),
                         b"block\0".as_ptr() as *const i8,
                     );
 
@@ -434,8 +419,12 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
                     LLVMPositionBuilderAtEnd(self.builder, block);
 
                     // generate the instructions
-                    for instruction in
-                        &self.function.cfg.get_block(block_index).instructions
+                    for instruction in &self
+                        .function
+                        .bound_function()
+                        .control_flow_graph()
+                        .get_block(block_index)
+                        .instructions
                     {
                         self.generate_instructions(instruction);
                     }
@@ -457,7 +446,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
     fn generate_instructions(
         &mut self,
-        instructions: &'modu Instruction<'modu, 'table, 'parser, 'ast>,
+        instructions: &'modu Instruction<'table, 'ast>,
     ) {
         match instructions {
             Instruction::Statement(statement) => {
@@ -514,7 +503,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
     fn generate_statement(
         &mut self,
-        statement: &'table BoundStatement<'table, 'parser, 'ast>,
+        statement: &'modu BoundStatement<'table, 'ast>,
     ) {
         match statement {
             BoundStatement::BoundExpressionStatement(expr) => {
@@ -530,11 +519,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
     }
     fn generate_variable_declaration_statement(
         &mut self,
-        statement: &'table BoundVariableDeclarationStatement<
-            'table,
-            'parser,
-            'ast,
-        >,
+        statement: &'modu BoundVariableDeclarationStatement<'table, 'ast>,
     ) {
         unsafe {
             let llvm_type = self
@@ -568,7 +553,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
     fn generate_expression(
         &mut self,
-        expression: &'modu BoundExpression<'table, 'parser, 'ast>,
+        expression: &'modu BoundExpression<'table, 'ast>,
     ) -> LLVMValueRef {
         match expression {
             BoundExpression::BoundUnaryExpression(expr) => {
@@ -594,7 +579,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
     fn generate_cast_expression(
         &mut self,
-        cast: &'modu BoundCastExpression<'table, 'parser, 'ast>,
+        cast: &'modu BoundCastExpression<'table, 'ast>,
     ) -> LLVMValueRef {
         let value = self.generate_expression(&cast.operand);
 
@@ -825,7 +810,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
     fn generate_function_call_expression(
         &mut self,
-        func_call: &'modu BoundFunctionCallExpression<'table, 'parser, 'ast>,
+        func_call: &'modu BoundFunctionCallExpression<'table, 'ast>,
     ) -> LLVMValueRef {
         unsafe {
             let mut args = Vec::new();
@@ -841,8 +826,8 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
             LLVMBuildCall2(
                 self.builder,
-                function.llvm_type,
-                function.llvm_function,
+                function.llvm_type(),
+                function.llvm_function(),
                 args.as_mut_ptr(),
                 args.len() as u32,
                 b"call\0".as_ptr() as *const i8,
@@ -852,7 +837,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
     fn generate_unary_expression(
         &mut self,
-        expression: &'modu BoundUnaryExpression<'table, 'parser, 'ast>,
+        expression: &'modu BoundUnaryExpression<'table, 'ast>,
     ) -> LLVMValueRef {
         unsafe {
             let operand = self.generate_expression(&expression.operand);
@@ -875,7 +860,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
     fn get_llvm_ptr_from_lvalue(
         &self,
-        expression: &'modu BoundExpression<'table, 'parser, 'ast>,
+        expression: &'modu BoundExpression<'table, 'ast>,
     ) -> LLVMValueRef {
         match expression {
             BoundExpression::BoundIdentifierExpression(expression) => *self
@@ -890,7 +875,7 @@ impl<'modu: 'table, 'ctx, 'table: 'parser, 'parser: 'ast, 'ast>
 
     fn generate_binary_expression(
         &mut self,
-        expression: &'modu BoundBinaryExpression<'table, 'parser, 'ast>,
+        expression: &'modu BoundBinaryExpression<'table, 'ast>,
     ) -> LLVMValueRef {
         unsafe {
             fn generate_assign_expression(

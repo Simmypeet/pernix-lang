@@ -12,55 +12,53 @@ use crate::symbol::{FunctionSymbol, TypeSymbol, VariableSymbol};
 
 /// Represent an enumeration containing all the possible bound expressions.
 #[derive(Clone, Debug)]
-pub enum BoundExpression<'table, 'parser, 'ast> {
-    BoundUnaryExpression(BoundUnaryExpression<'table, 'parser, 'ast>),
-    BoundBinaryExpression(BoundBinaryExpression<'table, 'parser, 'ast>),
-    BoundIdentifierExpression(BoundIdentifierExpression<'table, 'parser, 'ast>),
-    BoundLiteralExpression(BoundLiteralExpression<'table, 'parser, 'ast>),
-    BoundFunctionCallExpression(
-        BoundFunctionCallExpression<'table, 'parser, 'ast>,
-    ),
-    BoundCastExpression(BoundCastExpression<'table, 'parser, 'ast>),
+pub enum BoundExpression<'table, 'ast> {
+    BoundUnaryExpression(BoundUnaryExpression<'table, 'ast>),
+    BoundBinaryExpression(BoundBinaryExpression<'table, 'ast>),
+    BoundIdentifierExpression(BoundIdentifierExpression<'table, 'ast>),
+    BoundLiteralExpression(BoundLiteralExpression<'table, 'ast>),
+    BoundFunctionCallExpression(BoundFunctionCallExpression<'table, 'ast>),
+    BoundCastExpression(BoundCastExpression<'table, 'ast>),
 }
 
 /// Represent a bound version of an [`UnaryExpression`] AST.
 #[derive(Clone, Debug)]
-pub struct BoundUnaryExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser UnaryExpression<'ast>>,
-    pub operand: Box<BoundExpression<'table, 'parser, 'ast>>,
+pub struct BoundUnaryExpression<'table, 'ast> {
+    pub ast: PositionWrapper<&'ast UnaryExpression<'ast>>,
+    pub operand: Box<BoundExpression<'table, 'ast>>,
     pub expression_type: ExpressionType<'table>,
 }
 
 /// Represent a bound version of a [`BinaryExpression`] AST.
 #[derive(Clone, Debug)]
-pub struct BoundBinaryExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser BinaryExpression<'ast>>,
-    pub left: Box<BoundExpression<'table, 'parser, 'ast>>,
-    pub right: Box<BoundExpression<'table, 'parser, 'ast>>,
+pub struct BoundBinaryExpression<'table, 'ast> {
+    pub ast: PositionWrapper<&'ast BinaryExpression<'ast>>,
+    pub left: Box<BoundExpression<'table, 'ast>>,
+    pub right: Box<BoundExpression<'table, 'ast>>,
     pub expression_type: ExpressionType<'table>,
 }
 
 /// Represent a bound version of a [`Expression::LiteralExpression`] AST.
 #[derive(Clone, Debug)]
-pub struct BoundLiteralExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser LiteralExpression<'ast>>,
+pub struct BoundLiteralExpression<'table, 'ast> {
+    pub ast: PositionWrapper<&'ast LiteralExpression<'ast>>,
     pub expression_type: ExpressionType<'table>,
 }
 
 /// Represent a bound version of an [`Expression::IdentifierExpression`] AST.
 #[derive(Clone, Debug)]
-pub struct BoundIdentifierExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser IdentifierExpression<'ast>>,
+pub struct BoundIdentifierExpression<'table, 'ast> {
+    pub ast: PositionWrapper<&'ast IdentifierExpression<'ast>>,
     pub variable_symbol: Rc<VariableSymbol<'table, 'ast>>,
     pub expression_type: ExpressionType<'table>,
 }
 
 /// Represent a bound version of a [`FunctionCallExpression`] AST.
 #[derive(Clone, Debug)]
-pub struct BoundFunctionCallExpression<'table, 'parser, 'ast> {
-    pub ast: PositionWrapper<&'parser FunctionCallExpression<'ast>>,
-    pub arguments: Vec<BoundExpression<'table, 'parser, 'ast>>,
-    pub function: &'table FunctionSymbol<'table, 'parser, 'ast>,
+pub struct BoundFunctionCallExpression<'table, 'ast> {
+    pub ast: PositionWrapper<&'ast FunctionCallExpression<'ast>>,
+    pub arguments: Vec<BoundExpression<'table, 'ast>>,
+    pub function: &'table FunctionSymbol<'table, 'ast>,
     pub expression_type: ExpressionType<'table>,
 }
 
@@ -73,9 +71,9 @@ pub struct ExpressionType<'table> {
 
 /// Represent a bound expression that performs casting.
 #[derive(Clone, Debug)]
-pub struct BoundCastExpression<'table, 'parser, 'ast> {
-    pub ast: &'parser PositionWrapper<Expression<'ast>>,
-    pub operand: Box<BoundExpression<'table, 'parser, 'ast>>,
+pub struct BoundCastExpression<'table, 'ast> {
+    pub ast: &'ast PositionWrapper<Expression<'ast>>,
+    pub operand: Box<BoundExpression<'table, 'ast>>,
     pub expression_type: ExpressionType<'table>,
 }
 
@@ -90,7 +88,7 @@ pub enum ExpressionCategory {
     LValue { is_mutable: bool },
 }
 
-impl<'table, 'parser, 'ast> BoundExpression<'table, 'parser, 'ast> {
+impl<'table, 'ast> BoundExpression<'table, 'ast> {
     /// Get the type of the expression.
     pub fn get_type(&self) -> &ExpressionType<'table> {
         match &self {

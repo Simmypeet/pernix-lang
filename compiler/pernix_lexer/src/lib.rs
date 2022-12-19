@@ -17,6 +17,9 @@ lazy_static! {
         map.insert("mutable", Keyword::Mutable);
         map.insert("if", Keyword::If);
         map.insert("else", Keyword::Else);
+        map.insert("while", Keyword::While);
+        map.insert("break", Keyword::Break);
+        map.insert("continue", Keyword::Continue);
         map
     };
 }

@@ -12,6 +12,9 @@ pub enum Keyword {
     Mutable,
     If,
     Else,
+    While,
+    Break,
+    Continue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

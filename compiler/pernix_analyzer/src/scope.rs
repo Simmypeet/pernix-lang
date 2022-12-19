@@ -15,15 +15,16 @@ pub struct ScopeInfo {
     pub active_using_directives: Vec<String>,
 }
 
-/// A helper struct that is used to manage the scope of the file
-pub struct ScopeTransverser<'parser, 'ast> {
+/// Is a helper struct that is used to traverse through the namespace scopes
+/// and using directives.
+pub struct ScopeTraverser<'parser, 'ast> {
     ast: &'parser File<'ast>,
     using_directives_count_stack: Vec<usize>,
     namespace_scope_depth_stack: Vec<usize>,
     current_scope_info: ScopeInfo,
 }
 
-impl<'parser: 'ast, 'ast> ScopeTransverser<'parser, 'ast> {
+impl<'parser: 'ast, 'ast> ScopeTraverser<'parser, 'ast> {
     /// Create a new instance of the scope manager.
     pub fn new(ast: &'parser File<'ast>) -> Self {
         Self {
@@ -108,17 +109,17 @@ impl<'parser: 'ast, 'ast> ScopeTransverser<'parser, 'ast> {
         &self.current_scope_info
     }
 
-    /// Transverse through the namespace scopes defined in the file.
+    /// Traverse through the namespace scopes defined in the file.
     /// Every time a new namespace scope is entered, the `func` will be called.
     /// The `func` will be called with the current namespace scope.
-    pub fn transverse<'a>(
+    pub fn traverse<'a>(
         &mut self,
         func: &mut impl FnMut(
             &ScopeInfo,
             &'parser PositionWrapper<Declaration<'ast>>,
         ),
     ) {
-        self.transverse_helper(
+        self.traverse_helper(
             self.ast.using_directives(),
             self.ast.declarations(),
             "",
@@ -126,7 +127,7 @@ impl<'parser: 'ast, 'ast> ScopeTransverser<'parser, 'ast> {
         );
     }
 
-    fn transverse_helper<'a>(
+    fn traverse_helper<'a>(
         &mut self,
         using_directives: &'parser [PositionWrapper<UsingDirective<'ast>>],
         declarations: &'parser [PositionWrapper<Declaration<'ast>>],
@@ -142,7 +143,7 @@ impl<'parser: 'ast, 'ast> ScopeTransverser<'parser, 'ast> {
         for declaration in declarations {
             match &declaration.value {
                 Declaration::NamespaceDeclaration(namespace) => {
-                    self.transverse_helper(
+                    self.traverse_helper(
                         &namespace.using_directives,
                         &namespace.declarations,
                         namespace.namespace_name.value,

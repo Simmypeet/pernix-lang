@@ -13,7 +13,7 @@ use pernix_parser::{
 
 use crate::{
     error::Error,
-    scope::{ScopeInfo, ScopeTransverser},
+    scope::{ScopeInfo, ScopeTraverser},
 };
 
 use super::{FunctionSymbol, PrimitiveType, TypeSymbol};
@@ -156,8 +156,8 @@ impl<T> SymbolTable<T> {
 pub type TypeSymbolTable = SymbolTable<TypeSymbol>;
 
 /// Represent a symbol table that manages the function symbols.
-pub type FunctionSymbolTable<'table, 'parser, 'ast> =
-    SymbolTable<FunctionSymbol<'table, 'parser, 'ast>>;
+pub type FunctionSymbolTable<'table, 'ast> =
+    SymbolTable<FunctionSymbol<'table, 'ast>>;
 
 impl TypeSymbolTable {
     /// Create a new instance of the [`TypeSymbolTable`] struct with the
@@ -258,7 +258,7 @@ impl TypeSymbolTable {
         &self,
         scope_info: &ScopeInfo,
         type_annotation: &'parser PositionWrapper<TypeAnnotation<'ast>>,
-    ) -> Result<&SymbolTableEntry<TypeSymbol>, Error<'_, 'parser, 'ast>> {
+    ) -> Result<&SymbolTableEntry<TypeSymbol>, Error<'_, 'ast>> {
         match type_annotation.value {
             TypeAnnotation::QualifiedName(qualified_name) => {
                 let entry = self
@@ -276,9 +276,7 @@ impl TypeSymbolTable {
     }
 }
 
-impl<'table, 'parser: 'ast, 'ast: 'table>
-    FunctionSymbolTable<'table, 'parser, 'ast>
-{
+impl<'table, 'ast: 'table> FunctionSymbolTable<'table, 'ast> {
     /// Creates a new empty instance of the [`FunctionSymbolTable`] struct.
     pub fn new() -> Self {
         Self::new_internal()
@@ -299,13 +297,13 @@ impl<'table, 'parser: 'ast, 'ast: 'table>
     /// is a list of errors that occurred during the binding process.
     pub fn populate(
         &mut self,
-        ast: &'parser File<'ast>,
+        ast: &'ast File<'ast>,
         type_table: &'table TypeSymbolTable,
-    ) -> Result<(), Vec<Error<'_, 'parser, 'ast>>> {
-        let mut scope_transverser = ScopeTransverser::new(ast);
-        let mut errors = Vec::<Error<'_, 'parser, 'ast>>::new();
+    ) -> Result<(), Vec<Error<'_, 'ast>>> {
+        let mut scope_traverser = ScopeTraverser::new(ast);
+        let mut errors = Vec::<Error<'_, 'ast>>::new();
 
-        scope_transverser.transverse(&mut |scope_info, declaration| {
+        scope_traverser.traverse(&mut |scope_info, declaration| {
             match &declaration.value {
                 Declaration::FunctionDeclaration(function) => {
                     match FunctionSymbol::bind(

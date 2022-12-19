@@ -5,8 +5,8 @@ use pernix_project::source_code::SourceCode;
 
 use crate::{
     binding::{
-        bound_expression::BoundExpression, bound_statement::BoundStatement,
-        BoundFunction,
+        binder::Binder, bound_expression::BoundExpression,
+        bound_statement::BoundStatement,
     },
     control_flow_graph::Terminator,
     symbol::table::{FunctionSymbolTable, TypeSymbolTable},
@@ -31,7 +31,7 @@ fn basic_control_flow_graph_test() {
     let mut function_table = FunctionSymbolTable::new();
     let _ = function_table.populate(&ast, &type_table);
 
-    let bound_function = BoundFunction::bind(
+    let bound_function = Binder::bind(
         &function_table.get("ReturnOne").unwrap().value,
         &function_table,
         &type_table,
@@ -39,7 +39,7 @@ fn basic_control_flow_graph_test() {
     .ok()
     .unwrap();
 
-    let cfg = ControlFlowGraph::analyze(&bound_function);
+    let cfg = ControlFlowGraph::analyze(bound_function);
     match &cfg.get_entry_block().instructions[0] {
         Instruction::Statement(statement) => {
             assert!(matches!(
@@ -82,7 +82,7 @@ fn if_without_else_branch() {
     let mut function_table = FunctionSymbolTable::new();
     let _ = function_table.populate(&ast, &type_table);
 
-    let bound_function = BoundFunction::bind(
+    let bound_function = Binder::bind(
         &function_table.get("Max").unwrap().value,
         &function_table,
         &type_table,
@@ -90,7 +90,7 @@ fn if_without_else_branch() {
     .ok()
     .unwrap();
 
-    let cfg = ControlFlowGraph::analyze(&bound_function);
+    let cfg = ControlFlowGraph::analyze(bound_function);
 
     match &cfg.get_entry_block().instructions[0] {
         Instruction::Terminator(terminator) => match terminator {
@@ -197,7 +197,7 @@ fn if_with_else_branch() {
     let mut function_table = FunctionSymbolTable::new();
     let _ = function_table.populate(&ast, &type_table);
 
-    let bound_function = BoundFunction::bind(
+    let bound_function = Binder::bind(
         &function_table.get("Max").unwrap().value,
         &function_table,
         &type_table,
@@ -205,7 +205,7 @@ fn if_with_else_branch() {
     .ok()
     .unwrap();
 
-    let cfg = ControlFlowGraph::analyze(&bound_function);
+    let cfg = ControlFlowGraph::analyze(bound_function);
 
     let mut end_block_index;
 
@@ -370,7 +370,7 @@ fn nested_if_flow_graph() {
     let mut function_table = FunctionSymbolTable::new();
     let _ = function_table.populate(&ast, &type_table);
 
-    let bound_function = BoundFunction::bind(
+    let bound_function = Binder::bind(
         &function_table.get("Complex").unwrap().value,
         &function_table,
         &type_table,
@@ -378,7 +378,7 @@ fn nested_if_flow_graph() {
     .ok()
     .unwrap();
 
-    let cfg = ControlFlowGraph::analyze(&bound_function);
+    let cfg = ControlFlowGraph::analyze(bound_function);
 
     let end_block_index;
     let true_block_index;

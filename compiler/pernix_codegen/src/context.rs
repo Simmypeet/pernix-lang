@@ -3,7 +3,8 @@ use llvm_sys::{
     prelude::LLVMContextRef,
 };
 
-/// Represent a wrapper around an LLVM context.
+/// Represent a wrapper around an LLVM context. All the entieis related to
+/// LLVM code generation are created using this context.
 pub struct Context {
     context: LLVMContextRef,
 }
