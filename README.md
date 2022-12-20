@@ -29,3 +29,8 @@ for the Pernix language using the Pernix language.
   and uses an LLVM linker (`ld`)  for linking object files to an executable. Please 
   look at the [llvm-sys](https://crates.io/crates/llvm-sys) crate for more 
   installation information.
+
+--- 
+
+The repository also includes the document directory, which serves as an educational 
+material for making a compiler.
