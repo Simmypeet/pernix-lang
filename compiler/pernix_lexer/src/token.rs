@@ -35,6 +35,7 @@ impl Keyword {
     }
 }
 
+/// Represent an enumeration containing all literal constant types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LiteralConstantToken<'a> {
     Number {

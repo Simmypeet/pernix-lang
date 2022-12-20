@@ -395,8 +395,7 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
                 }
             }
 
-            for _ in function.bound_function().control_flow_graph().get_blocks()
-            {
+            for _ in function.control_flow_graph().get_blocks() {
                 let block = LLVMAppendBasicBlockInContext(
                     module.get_context(),
                     function.llvm_function(),
@@ -407,7 +406,6 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
             }
 
             for (idx, block) in function
-                .bound_function()
                 .control_flow_graph()
                 .get_blocks()
                 .iter()

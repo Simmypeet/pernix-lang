@@ -1,6 +1,6 @@
 use pernix_project::source_code::SourcePosition;
 
-/// Describe an enumeration containing all lexical errors
+/// Represent an enumeration containing all lexical errors
 #[derive(Debug, Clone)]
 pub enum Error {
     InvalidCharacter {
