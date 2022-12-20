@@ -44,20 +44,24 @@ use pernix_project::source_code::SourceCode;
 mod printing;
 
 #[derive(Parser, Debug)]
-#[clap(author, version, about)]
+#[clap(
+    author = "Pernix",
+    about = "A compiler for the Pernix programming language",
+    version = "0.1.0"
+)]
 struct CompileArg {
-    /// Is the path to the file to compile
+    /// The input files
     file: Vec<String>,
 
-    /// Is the path to the output file
+    /// The output file name
     #[clap(long, short)]
     output: Option<String>,
 
-    /// Determine whether to apply optimizations
+    /// Apply optimizations to the generated code
     #[clap(long)]
     optimize: bool,
 
-    /// Determine whether to emit LLVM IR
+    /// Emit the LLVM IR code
     #[clap(long)]
     emit_llvm: bool,
 }
@@ -345,8 +349,12 @@ fn main() {
                             );
                         }
                     }
-                    Err(_) => {
-                        printing::print_error("failed to link the object file");
+                    Err(e) => {
+                        if let std::io::ErrorKind::NotFound = e.kind() {
+                            printing::print_error(
+                                "pernixc compiler requires `ld` to link the object file",
+                            );
+                        }
                     }
                 }
 
