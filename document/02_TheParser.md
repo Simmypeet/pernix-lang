@@ -245,5 +245,73 @@ If `5 + 5 * 5` is parsed, the parser will generate an AST node that looks like t
 }
 ```
 
-According to the above AST, the expression `5 + 5 * 5` is parsed as `(5 + 5) * 5`
-and results in `
+According to the above AST, the expression `5 + 5 * 5` is parsed as `(5 + 5) * 5` and 
+results in `50`, which is incorrect. The correct result should be `30` as the 
+multiplication operator has higher precedence than the addition operation; the 
+operator precedence should've been considered.
+
+To solve this problem, the parser can use the **operator precedence** to parse the
+expression. The parser will first parse the expression with the highest precedence
+and then parse the expression with the lower precedence. 
+
+``` rust
+fn get_binary_operator_precedence(operator: BinaryOperator) -> usize {
+    match operator {
+        BinaryOperator::Assignment => 1,
+        BinaryOperator::LogicalOr => 2,
+        BinaryOperator::LogicalAnd => 3,
+        BinaryOperator::Equal
+        | BinaryOperator::NotEqual
+        | BinaryOperator::LessThan
+        | BinaryOperator::LessThanEqual
+        | BinaryOperator::GreaterThan
+        | BinaryOperator::GreaterThanEqual => 4,
+        BinaryOperator::Add
+        | BinaryOperator::Subtract
+        | BinaryOperator::CompoundAddition
+        | BinaryOperator::CompoundSubtraction => 5,
+        BinaryOperator::Multiply
+        | BinaryOperator::Divide
+        | BinaryOperator::Remainder
+        | BinaryOperator::CompoundMultiplication
+        | BinaryOperator::CompoundDivision
+        | BinaryOperator::CompoundRemainder => 6,
+    }
+}
+```
+
+Operator precedence parsing is implemented in the following way:
+
+``` rust
+// Example of operator precedence parsing
+pub fn parse_expression_bin(&mut self, parent_precedence: usize) -> Option<Expression> {
+    let mut left = self.parse_primary_expression()?;
+
+    loop {
+        if self.peek_token_kind() != TokenKind::BinaryOperator {
+            break;
+        }
+
+        let starting_position = self.current_token_position;
+        let operator = self.parse_binary_operator()?;
+        let precedence = get_binary_operator_precedence(operator);
+
+        if precedence <= parent_precedence {
+            self.current_token_position = starting_position;
+            break;
+        }
+
+        let right = self.parse_expression_bin(precedence)?;
+
+        left = Expression::BinaryExpression(BinaryExpression {
+            left: Box::new(left),
+            right: Box::new(right),
+            operator,
+        });
+    }
+
+    Some(left)
+}
+```
+
+---
