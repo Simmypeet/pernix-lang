@@ -32,5 +32,5 @@ for the Pernix language using the Pernix language.
 
 --- 
 
-The repository also includes the document directory, which serves as an educational 
-material for making a compiler.
+The repository also includes the [`document`](document) directory, which serves as an
+educational material for making a compiler.
