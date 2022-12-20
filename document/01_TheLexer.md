@@ -30,6 +30,7 @@ The code above can be broken down into tokens:
     <td><code>main</code></td>
     <td><code>(</code></td>
     <td><code>)</code></td>
+    <td><code>:</code></td>
     <td><code>return</code></td>
     <td><code>0</code></td>
   </tr>
@@ -37,6 +38,7 @@ The code above can be broken down into tokens:
     <th>Category</th>
     <td>Keyword</td>
     <td>Identifier</td>
+    <td>Punctuation</td>
     <td>Punctuation</td>
     <td>Punctuation</td>
     <td>Keyword</td>
