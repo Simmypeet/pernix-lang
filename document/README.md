@@ -21,3 +21,4 @@ many other compilers like [Rust](https://www.rust-lang.org/), [Swift](https://sw
 
 - [The Lexer](01_TheLexer.md) - Lexical analysis and how the lexer works. 
 - [The Parser](02_TheParser.md) - Syntactic analysis and how the parser works.
+- [Semantic Analysis](03_SemanticAnalysis) - Overview of semantic analysis and how the compiler performs it.
