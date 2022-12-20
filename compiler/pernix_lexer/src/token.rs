@@ -17,6 +17,24 @@ pub enum Keyword {
     Continue,
 }
 
+impl Keyword {
+    /// Return a string representation of this [`Keyword`].
+    pub fn get_keyword_string(&self) -> &'static str {
+        match self {
+            Keyword::Return => "return",
+            Keyword::Let => "let",
+            Keyword::Using => "using",
+            Keyword::Namespace => "namespace",
+            Keyword::Mutable => "mutable",
+            Keyword::If => "if",
+            Keyword::Else => "else",
+            Keyword::While => "while",
+            Keyword::Break => "break",
+            Keyword::Continue => "continue",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LiteralConstantToken<'a> {
     Number {

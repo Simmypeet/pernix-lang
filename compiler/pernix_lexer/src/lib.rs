@@ -1,7 +1,7 @@
 pub mod error;
 pub mod token;
 
-use error::{Error, InvalidCharacter, UnterminatedMultilineComment};
+use error::Error;
 use lazy_static::lazy_static;
 use pernix_project::source_code::{SourceCode, SourcePosition};
 use std::{collections::HashMap, iter::Peekable, str::CharIndices};
@@ -171,12 +171,10 @@ impl<'a> Lexer<'a> {
                             None => {
                                 // error: multi-line comment is not closed
                                 return Err(
-                                    Error::UnterminatedMultilineComment(
-                                        UnterminatedMultilineComment {
-                                            multiline_comment_position:
-                                                first_position,
-                                        },
-                                    ),
+                                    Error::UnterminatedMultilineComment {
+                                        multiline_comment_position:
+                                            first_position,
+                                    },
                                 );
                             }
                             _ => {
@@ -338,10 +336,10 @@ impl<'a> Lexer<'a> {
         }
         // this character can't be categorized under any token kinds
         else {
-            return Err(Error::InvalidCharacter(InvalidCharacter {
+            return Err(Error::InvalidCharacter {
                 position: first_position,
                 character: first_char,
-            }));
+            });
         }
 
         // return the token

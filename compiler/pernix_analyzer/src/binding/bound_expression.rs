@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use pernix_parser::abstract_syntax_tree::{
     expression::{
@@ -49,7 +49,7 @@ pub struct BoundLiteralExpression<'table, 'ast> {
 #[derive(Clone, Debug)]
 pub struct BoundIdentifierExpression<'table, 'ast> {
     pub ast: PositionWrapper<&'ast IdentifierExpression<'ast>>,
-    pub variable_symbol: Rc<VariableSymbol<'table, 'ast>>,
+    pub variable_symbol: Arc<VariableSymbol<'table, 'ast>>,
     pub expression_type: ExpressionType<'table>,
 }
 

@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use pernix_lexer::token::LiteralConstantToken;
 use pernix_parser::abstract_syntax_tree::{
@@ -39,7 +39,7 @@ pub(crate) struct Binder<'table, 'ast> {
     type_table: &'table TypeSymbolTable,
     function_table: &'table FunctionSymbolTable<'table, 'ast>,
     function_symbol: &'table FunctionSymbol<'table, 'ast>,
-    local_scope_stack: LockScopeStack<'ast, Rc<VariableSymbol<'table, 'ast>>>,
+    local_scope_stack: LockScopeStack<'ast, Arc<VariableSymbol<'table, 'ast>>>,
     errors: Vec<Error<'table, 'ast>>,
 }
 
@@ -288,7 +288,7 @@ impl<'table: 'ast, 'ast> Binder<'table, 'ast> {
             expr
         };
 
-        let symbol = Rc::new(VariableSymbol {
+        let symbol = Arc::new(VariableSymbol {
             variable_type: bound_expression.get_type().type_symbol,
             name: variable_declaration_statement.value.identifier.value,
             is_mutable: variable_declaration_statement.value.is_mutable,
@@ -502,6 +502,16 @@ impl<'table: 'ast, 'ast> Binder<'table, 'ast> {
         } else if left.get_type().type_symbol.is_numeric()
             && right.get_type().type_symbol.is_numeric()
         {
+            let is_comparison = match expression.value.operator.value {
+                BinaryOperator::Equal
+                | BinaryOperator::NotEqual
+                | BinaryOperator::LessThan
+                | BinaryOperator::LessThanEqual
+                | BinaryOperator::GreaterThan
+                | BinaryOperator::GreaterThanEqual => true,
+                _ => false,
+            };
+
             if std::ptr::eq(
                 left.get_type().type_symbol,
                 right.get_type().type_symbol,
@@ -510,7 +520,14 @@ impl<'table: 'ast, 'ast> Binder<'table, 'ast> {
                     BoundBinaryExpression {
                         ast: expression.clone(),
                         expression_type: ExpressionType {
-                            type_symbol: left.get_type().type_symbol,
+                            type_symbol: if is_comparison {
+                                &self
+                                    .type_table
+                                    .get_primitive_type(PrimitiveType::Bool)
+                                    .value
+                            } else {
+                                left.get_type().type_symbol
+                            },
                             category: ExpressionCategory::RValue,
                         },
                         left: Box::new(left),
@@ -573,14 +590,31 @@ impl<'table: 'ast, 'ast> Binder<'table, 'ast> {
                     )
                 }
 
+                let is_comparison = match expression.value.operator.value {
+                    BinaryOperator::Equal
+                    | BinaryOperator::NotEqual
+                    | BinaryOperator::LessThan
+                    | BinaryOperator::LessThanEqual
+                    | BinaryOperator::GreaterThan
+                    | BinaryOperator::GreaterThanEqual => true,
+                    _ => false,
+                };
+
                 Some(BoundExpression::BoundBinaryExpression(
                     BoundBinaryExpression {
                         ast: expression.clone(),
                         expression_type: ExpressionType {
-                            type_symbol: &self
-                                .type_table
-                                .get_primitive_type(convert_type)
-                                .value,
+                            type_symbol: if is_comparison {
+                                &self
+                                    .type_table
+                                    .get_primitive_type(PrimitiveType::Bool)
+                                    .value
+                            } else {
+                                &self
+                                    .type_table
+                                    .get_primitive_type(convert_type)
+                                    .value
+                            },
                             category: ExpressionCategory::RValue,
                         },
                         left: Box::new(left),

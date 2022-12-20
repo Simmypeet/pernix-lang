@@ -1,7 +1,7 @@
 use pernix_project::source_code::{SourceCode, SourcePosition};
 
 use crate::{
-    error::{Error, UnterminatedMultilineComment},
+    error::Error,
     token::{Keyword, LiteralConstantToken, TokenKind},
     Lexer,
 };
@@ -404,11 +404,9 @@ fn multiline_comment_test() {
         let err = lexer.lex().err().unwrap();
 
         match err {
-            Error::UnterminatedMultilineComment(
-                UnterminatedMultilineComment {
-                    multiline_comment_position,
-                },
-            ) => {
+            Error::UnterminatedMultilineComment {
+                multiline_comment_position,
+            } => {
                 multiline_comment_position.line == 1
                     && multiline_comment_position.column == 33
             }

@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use pernix_parser::abstract_syntax_tree::{
     statement::{
@@ -62,7 +62,7 @@ pub struct BoundReturnStatement<'table, 'ast> {
 #[derive(Clone, Debug)]
 pub struct BoundVariableDeclarationStatement<'table, 'ast> {
     pub ast: PositionWrapper<&'ast VariableDeclarationStatement<'ast>>,
-    pub variable_symbol: Rc<VariableSymbol<'table, 'ast>>,
+    pub variable_symbol: Arc<VariableSymbol<'table, 'ast>>,
     pub expression: BoundExpression<'table, 'ast>,
 }
 

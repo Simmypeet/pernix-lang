@@ -13,7 +13,7 @@ use pernix_parser::{
 
 use crate::{
     error::Error,
-    scope::{ScopeInfo, ScopeTraverser},
+    scope::{ScopeInfo, ScopeTransverser},
 };
 
 use super::{FunctionSymbol, PrimitiveType, TypeSymbol};
@@ -300,10 +300,10 @@ impl<'table, 'ast: 'table> FunctionSymbolTable<'table, 'ast> {
         ast: &'ast File<'ast>,
         type_table: &'table TypeSymbolTable,
     ) -> Result<(), Vec<Error<'_, 'ast>>> {
-        let mut scope_traverser = ScopeTraverser::new(ast);
+        let mut scope_transverser = ScopeTransverser::new(ast);
         let mut errors = Vec::<Error<'_, 'ast>>::new();
 
-        scope_traverser.traverse(&mut |scope_info, declaration| {
+        scope_transverser.transverse(&mut |scope_info, declaration| {
             match &declaration.value {
                 Declaration::FunctionDeclaration(function) => {
                     match FunctionSymbol::bind(

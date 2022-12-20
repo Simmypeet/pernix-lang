@@ -9,7 +9,7 @@
 //! table is populated with the declarations of the AST.
 
 use std::hash::Hash;
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use pernix_parser::abstract_syntax_tree::{
     declaration::{FunctionDeclaration, QualifiedType},
@@ -27,7 +27,7 @@ pub mod table;
 pub struct FunctionSymbol<'table, 'ast> {
     ast: PositionWrapper<&'ast FunctionDeclaration<'ast>>,
     return_type: &'table TypeSymbol,
-    parameters: Vec<Rc<VariableSymbol<'table, 'ast>>>,
+    parameters: Vec<Arc<VariableSymbol<'table, 'ast>>>,
     scope_info: ScopeInfo,
 }
 
@@ -108,7 +108,7 @@ impl<'table, 'ast: 'table> FunctionSymbol<'table, 'ast> {
                         position: parameter.position.clone(),
                     });
                 } else {
-                    parameters.push(Rc::new(VariableSymbol {
+                    parameters.push(Arc::new(VariableSymbol {
                         variable_type: &parameter_type.value,
                         name: parameter.value.1,
                         is_mutable: parameter.value.0.is_mutable,
@@ -142,7 +142,7 @@ impl<'table, 'ast: 'table> FunctionSymbol<'table, 'ast> {
     }
 
     /// Return a reference to the parameter types of this [`FunctionSymbol`].
-    pub fn parameters(&self) -> &[Rc<VariableSymbol<'table, 'table>>] {
+    pub fn parameters(&self) -> &[Arc<VariableSymbol<'table, 'table>>] {
         self.parameters.as_ref()
     }
 
@@ -173,7 +173,7 @@ pub struct VariableSymbol<'table, 'ast> {
     pub is_mutable: bool,
 }
 
-/// Represent an enumeration containing all the primitive types supported by 
+/// Represent an enumeration containing all the primitive types supported by
 /// Pernix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {

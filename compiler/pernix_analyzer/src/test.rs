@@ -16,7 +16,7 @@ fn binder_function_populate_test() {
     let source_code =
         SourceCode::new(source_code.to_string(), "test.pernix".to_string());
     let mut parser = Parser::new(&source_code);
-    let ast = parser.parse_file().unwrap();
+    let ast = parser.parse_file();
 
     let type_table = TypeSymbolTable::new();
     let mut func_table = FunctionSymbolTable::new();

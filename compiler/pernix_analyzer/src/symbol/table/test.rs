@@ -18,7 +18,7 @@ fn type_declaration_table() {
     ";
     let source_code = SourceCode::new(source_code.to_string(), String::new());
     let mut parser = Parser::new(&source_code);
-    let ast = parser.parse_file().unwrap();
+    let ast = parser.parse_file();
 
     let type_table = TypeSymbolTable::new();
     let mut function_table = FunctionSymbolTable::new();

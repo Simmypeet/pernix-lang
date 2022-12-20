@@ -3,7 +3,7 @@ use llvm_sys::{
     core::{
         LLVMAppendBasicBlockInContext, LLVMBuildBr, LLVMBuildCall2,
         LLVMBuildCondBr, LLVMBuildLoad2, LLVMBuildRetVoid, LLVMDisposeBuilder,
-        LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMGetInsertBlock,
+        LLVMDoubleTypeInContext, LLVMFloatTypeInContext,
         LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext,
         LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMVoidTypeInContext,
     },
@@ -41,7 +41,7 @@ use pernix_analyzer::{
         },
         bound_statement::{BoundStatement, BoundVariableDeclarationStatement},
     },
-    control_flow_graph::{BlockIndex, Instruction, Terminator},
+    control_flow_graph::{Instruction, Terminator},
     symbol::{FunctionSymbol, PrimitiveType, TypeSymbol, VariableSymbol},
 };
 use pernix_lexer::token::LiteralConstantToken;
@@ -53,7 +53,7 @@ use std::{
     hash::{Hash, Hasher},
     marker::PhantomData,
     ptr,
-    rc::Rc,
+    sync::Arc,
 };
 
 use crate::{context::Context, function::Function};
@@ -117,6 +117,11 @@ impl<'ctx: 'table, 'table: 'ast, 'ast> Module<'ctx, 'table, 'ast> {
             function_map: HashMap::new(),
             _phantom: PhantomData,
         }
+    }
+
+    /// Get the iterator of all the functions in the module.
+    pub fn functions(&self) -> impl Iterator<Item = &Function<'table, 'ast>> {
+        self.function_map.values()
     }
 
     /// Get the underlying LLVM module.
@@ -289,12 +294,12 @@ impl<'ctx: 'table, 'table: 'ast, 'ast> Module<'ctx, 'table, 'ast> {
 }
 
 struct VariableWrapper<'table, 'ast> {
-    variable: Rc<VariableSymbol<'table, 'ast>>,
+    variable: Arc<VariableSymbol<'table, 'ast>>,
 }
 
 impl<'table, 'ast> VariableWrapper<'table, 'ast> {
     fn wrap(
-        variable: Rc<VariableSymbol<'table, 'ast>>,
+        variable: Arc<VariableSymbol<'table, 'ast>>,
     ) -> VariableWrapper<'table, 'ast> {
         VariableWrapper { variable }
     }
@@ -302,7 +307,7 @@ impl<'table, 'ast> VariableWrapper<'table, 'ast> {
 
 impl PartialEq for VariableWrapper<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.variable, &other.variable)
+        Arc::ptr_eq(&self.variable, &other.variable)
     }
 }
 
@@ -318,8 +323,7 @@ struct CodeGenerator<'modu, 'ctx, 'table, 'ast> {
     module: &'modu Module<'ctx, 'table, 'ast>,
     builder: LLVMBuilderRef,
     variables: HashMap<VariableWrapper<'table, 'ast>, LLVMValueRef>,
-    function: &'modu Function<'table, 'ast>,
-    block_map: HashMap<BlockIndex, LLVMBasicBlockRef>,
+    block_vec: Vec<LLVMBasicBlockRef>,
     parameters: HashMap<VariableWrapper<'table, 'ast>, LLVMValueRef>,
 }
 
@@ -348,8 +352,7 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
                     module,
                     builder,
                     variables: HashMap::new(),
-                    function,
-                    block_map: HashMap::new(),
+                    block_vec: Vec::new(),
                     parameters: HashMap::new(),
                 }
             };
@@ -392,7 +395,32 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
                 }
             }
 
-            gen.generate_block(0);
+            for _ in function.bound_function().control_flow_graph().get_blocks()
+            {
+                let block = LLVMAppendBasicBlockInContext(
+                    module.get_context(),
+                    function.llvm_function(),
+                    b"block\0".as_ptr() as *const i8,
+                );
+
+                gen.block_vec.push(block);
+            }
+
+            for (idx, block) in function
+                .bound_function()
+                .control_flow_graph()
+                .get_blocks()
+                .iter()
+                .enumerate()
+            {
+                // set the builder to the new block
+                LLVMPositionBuilderAtEnd(gen.builder, gen.block_vec[idx]);
+
+                // geneerate the instructions
+                for instruction in &block.instructions {
+                    gen.generate_instruction(instruction);
+                }
+            }
 
             LLVMVerifyFunction(
                 function.llvm_function(),
@@ -401,50 +429,11 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
         }
     }
 
-    fn generate_block(&mut self, block_index: BlockIndex) -> LLVMBasicBlockRef {
-        let prior_block = unsafe { LLVMGetInsertBlock(self.builder) };
-
-        match self.block_map.entry(block_index) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(_) => {
-                unsafe {
-                    // create a new block
-                    let block = LLVMAppendBasicBlockInContext(
-                        self.module.get_context(),
-                        self.function.llvm_function(),
-                        b"block\0".as_ptr() as *const i8,
-                    );
-
-                    // set the builder to the new block
-                    LLVMPositionBuilderAtEnd(self.builder, block);
-
-                    // generate the instructions
-                    for instruction in &self
-                        .function
-                        .bound_function()
-                        .control_flow_graph()
-                        .get_block(block_index)
-                        .instructions
-                    {
-                        self.generate_instructions(instruction);
-                    }
-
-                    // set the builder back to the prior block
-                    LLVMPositionBuilderAtEnd(self.builder, prior_block);
-
-                    self.block_map.insert(block_index, block);
-
-                    block
-                }
-            }
-        }
-    }
-
     ////////////////////////////////////////////////////////////////////////////
     /// INSTRUCTIONS
     ////////////////////////////////////////////////////////////////////////////
 
-    fn generate_instructions(
+    fn generate_instruction(
         &mut self,
         instructions: &'modu Instruction<'table, 'ast>,
     ) {
@@ -453,29 +442,22 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
                 self.generate_statement(statement);
             }
             Instruction::Terminator(terminator) => match terminator {
-                Terminator::Jump(block_idx) => {
-                    let next_block = self.generate_block(*block_idx);
-
-                    unsafe {
-                        LLVMBuildBr(self.builder, next_block);
-                    }
-                }
+                Terminator::Jump(block_idx) => unsafe {
+                    LLVMBuildBr(self.builder, self.block_vec[*block_idx]);
+                },
                 Terminator::ConditionalJump {
                     expression,
                     true_block,
                     false_block,
                 } => {
-                    let true_block = self.generate_block(*true_block);
-                    let false_block = self.generate_block(*false_block);
-
                     let condition = self.generate_expression(expression);
 
                     unsafe {
                         LLVMBuildCondBr(
                             self.builder,
                             condition,
-                            true_block,
-                            false_block,
+                            self.block_vec[*true_block],
+                            self.block_vec[*false_block],
                         );
                     }
                 }
@@ -962,42 +944,6 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
                     | BinaryOperator::Remainder => {
                         generate_arithmetic_expression(self, left, right, op)
                     }
-                    BinaryOperator::LessThan
-                    | BinaryOperator::GreaterThan
-                    | BinaryOperator::LessThanEqual
-                    | BinaryOperator::GreaterThanEqual
-                    | BinaryOperator::Equal
-                    | BinaryOperator::NotEqual => {
-                        let (llvm_op, llvm_predicate) = match op {
-                            BinaryOperator::LessThan => {
-                                (LLVMBuildFCmp, LLVMRealPredicate::LLVMRealOLT)
-                            }
-                            BinaryOperator::GreaterThan => {
-                                (LLVMBuildFCmp, LLVMRealPredicate::LLVMRealOGT)
-                            }
-                            BinaryOperator::LessThanEqual => {
-                                (LLVMBuildFCmp, LLVMRealPredicate::LLVMRealOLE)
-                            }
-                            BinaryOperator::GreaterThanEqual => {
-                                (LLVMBuildFCmp, LLVMRealPredicate::LLVMRealOGE)
-                            }
-                            BinaryOperator::Equal => {
-                                (LLVMBuildFCmp, LLVMRealPredicate::LLVMRealOEQ)
-                            }
-                            BinaryOperator::NotEqual => {
-                                (LLVMBuildFCmp, LLVMRealPredicate::LLVMRealONE)
-                            }
-                            _ => unreachable!(),
-                        };
-
-                        llvm_op(
-                            self.builder,
-                            llvm_predicate,
-                            left,
-                            right,
-                            b"bin_val\0".as_ptr() as *const i8,
-                        )
-                    }
                     BinaryOperator::CompoundAddition
                     | BinaryOperator::CompoundSubtraction
                     | BinaryOperator::CompoundMultiplication
@@ -1120,62 +1066,6 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
                             is_unsigned,
                         )
                     }
-                    BinaryOperator::LessThan
-                    | BinaryOperator::GreaterThan
-                    | BinaryOperator::LessThanEqual
-                    | BinaryOperator::GreaterThanEqual
-                    | BinaryOperator::Equal
-                    | BinaryOperator::NotEqual => {
-                        let (llvm_op, llvm_predicate) = match op {
-                            BinaryOperator::LessThan => (
-                                LLVMBuildICmp,
-                                if is_unsigned {
-                                    LLVMIntPredicate::LLVMIntULT
-                                } else {
-                                    LLVMIntPredicate::LLVMIntSLT
-                                },
-                            ),
-                            BinaryOperator::GreaterThan => (
-                                LLVMBuildICmp,
-                                if is_unsigned {
-                                    LLVMIntPredicate::LLVMIntUGT
-                                } else {
-                                    LLVMIntPredicate::LLVMIntSGT
-                                },
-                            ),
-                            BinaryOperator::LessThanEqual => (
-                                LLVMBuildICmp,
-                                if is_unsigned {
-                                    LLVMIntPredicate::LLVMIntULE
-                                } else {
-                                    LLVMIntPredicate::LLVMIntSLE
-                                },
-                            ),
-                            BinaryOperator::GreaterThanEqual => (
-                                LLVMBuildICmp,
-                                if is_unsigned {
-                                    LLVMIntPredicate::LLVMIntUGE
-                                } else {
-                                    LLVMIntPredicate::LLVMIntSGE
-                                },
-                            ),
-                            BinaryOperator::Equal => {
-                                (LLVMBuildICmp, LLVMIntPredicate::LLVMIntEQ)
-                            }
-                            BinaryOperator::NotEqual => {
-                                (LLVMBuildICmp, LLVMIntPredicate::LLVMIntNE)
-                            }
-                            _ => unreachable!(),
-                        };
-
-                        llvm_op(
-                            self.builder,
-                            llvm_predicate,
-                            left,
-                            right,
-                            b"bin_val\0".as_ptr() as *const i8,
-                        )
-                    }
                     BinaryOperator::CompoundAddition
                     | BinaryOperator::CompoundSubtraction
                     | BinaryOperator::CompoundMultiplication
@@ -1245,7 +1135,123 @@ impl<'modu: 'table, 'ctx, 'table: 'ast, 'ast>
                         right,
                         b"bin_val\0".as_ptr() as *const i8,
                     ),
-                    _ => unreachable!(),
+                    _ => {
+                        if expression
+                            .left
+                            .get_type()
+                            .type_symbol
+                            .is_floating_point()
+                            && expression
+                                .right
+                                .get_type()
+                                .type_symbol
+                                .is_floating_point()
+                        {
+                            let (llvm_op, llvm_predicate) = match op {
+                                BinaryOperator::LessThan => (
+                                    LLVMBuildFCmp,
+                                    LLVMRealPredicate::LLVMRealOLT,
+                                ),
+                                BinaryOperator::GreaterThan => (
+                                    LLVMBuildFCmp,
+                                    LLVMRealPredicate::LLVMRealOGT,
+                                ),
+                                BinaryOperator::LessThanEqual => (
+                                    LLVMBuildFCmp,
+                                    LLVMRealPredicate::LLVMRealOLE,
+                                ),
+                                BinaryOperator::GreaterThanEqual => (
+                                    LLVMBuildFCmp,
+                                    LLVMRealPredicate::LLVMRealOGE,
+                                ),
+                                BinaryOperator::Equal => (
+                                    LLVMBuildFCmp,
+                                    LLVMRealPredicate::LLVMRealOEQ,
+                                ),
+                                BinaryOperator::NotEqual => (
+                                    LLVMBuildFCmp,
+                                    LLVMRealPredicate::LLVMRealONE,
+                                ),
+                                _ => unreachable!(),
+                            };
+
+                            llvm_op(
+                                self.builder,
+                                llvm_predicate,
+                                left,
+                                right,
+                                b"bin_val\0".as_ptr() as *const i8,
+                            )
+                        } else if expression
+                            .left
+                            .get_type()
+                            .type_symbol
+                            .is_numeric()
+                            && expression
+                                .right
+                                .get_type()
+                                .type_symbol
+                                .is_numeric()
+                        {
+                            let is_unsigned = expression
+                                .left
+                                .get_type()
+                                .type_symbol
+                                .is_unsigned_numeric();
+
+                            let (llvm_op, llvm_predicate) = match op {
+                                BinaryOperator::LessThan => (
+                                    LLVMBuildICmp,
+                                    if is_unsigned {
+                                        LLVMIntPredicate::LLVMIntULT
+                                    } else {
+                                        LLVMIntPredicate::LLVMIntSLT
+                                    },
+                                ),
+                                BinaryOperator::GreaterThan => (
+                                    LLVMBuildICmp,
+                                    if is_unsigned {
+                                        LLVMIntPredicate::LLVMIntUGT
+                                    } else {
+                                        LLVMIntPredicate::LLVMIntSGT
+                                    },
+                                ),
+                                BinaryOperator::LessThanEqual => (
+                                    LLVMBuildICmp,
+                                    if is_unsigned {
+                                        LLVMIntPredicate::LLVMIntULE
+                                    } else {
+                                        LLVMIntPredicate::LLVMIntSLE
+                                    },
+                                ),
+                                BinaryOperator::GreaterThanEqual => (
+                                    LLVMBuildICmp,
+                                    if is_unsigned {
+                                        LLVMIntPredicate::LLVMIntUGE
+                                    } else {
+                                        LLVMIntPredicate::LLVMIntSGE
+                                    },
+                                ),
+                                BinaryOperator::Equal => {
+                                    (LLVMBuildICmp, LLVMIntPredicate::LLVMIntEQ)
+                                }
+                                BinaryOperator::NotEqual => {
+                                    (LLVMBuildICmp, LLVMIntPredicate::LLVMIntNE)
+                                }
+                                _ => unreachable!(),
+                            };
+
+                            llvm_op(
+                                self.builder,
+                                llvm_predicate,
+                                left,
+                                right,
+                                b"bin_val\0".as_ptr() as *const i8,
+                            )
+                        } else {
+                            unreachable!()
+                        }
+                    }
                 }
             } else {
                 unreachable!()

@@ -25,7 +25,7 @@ fn basic_control_flow_graph_test() {
     let source_code =
         SourceCode::new(source_code.to_string(), "test.pnx".to_string());
     let mut parser = Parser::new(&source_code);
-    let ast = parser.parse_file().unwrap();
+    let ast = parser.parse_file();
 
     let type_table = TypeSymbolTable::new();
     let mut function_table = FunctionSymbolTable::new();
@@ -76,19 +76,23 @@ fn if_without_else_branch() {
     let source_code =
         SourceCode::new(source_code.to_string(), "test.pnx".to_string());
     let mut parser = Parser::new(&source_code);
-    let ast = parser.parse_file().unwrap();
+    let ast = parser.parse_file();
 
     let type_table = TypeSymbolTable::new();
     let mut function_table = FunctionSymbolTable::new();
     let _ = function_table.populate(&ast, &type_table);
 
-    let bound_function = Binder::bind(
+    let bound_function = match Binder::bind(
         &function_table.get("Max").unwrap().value,
         &function_table,
         &type_table,
-    )
-    .ok()
-    .unwrap();
+    ) {
+        Ok(bound) => bound,
+        Err(errors) => {
+            dbg!(&errors);
+            panic!("Failed to bind function");
+        }
+    };
 
     let cfg = ControlFlowGraph::analyze(bound_function);
 
@@ -191,7 +195,10 @@ fn if_with_else_branch() {
     let source_code =
         SourceCode::new(source_code.to_string(), "test.pnx".to_string());
     let mut parser = Parser::new(&source_code);
-    let ast = parser.parse_file().unwrap();
+    let ast = parser.parse_file();
+
+    let errors = parser.pop_errors();
+    dbg!(&errors);
 
     let type_table = TypeSymbolTable::new();
     let mut function_table = FunctionSymbolTable::new();
@@ -364,7 +371,7 @@ fn nested_if_flow_graph() {
     let source_code =
         SourceCode::new(source_code.to_string(), "test.pnx".to_string());
     let mut parser = Parser::new(&source_code);
-    let ast = parser.parse_file().unwrap();
+    let ast = parser.parse_file();
 
     let type_table = TypeSymbolTable::new();
     let mut function_table = FunctionSymbolTable::new();

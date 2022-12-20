@@ -40,6 +40,7 @@ pub struct Parser<'a> {
 }
 
 /// Represent an AST structure that represents a Pernix source file.
+#[derive(Debug, Clone)]
 pub struct File<'a> {
     declarations: Vec<PositionWrapper<Declaration<'a>>>,
     using_directives: Vec<PositionWrapper<UsingDirective<'a>>>,
@@ -254,12 +255,11 @@ impl<'a> Parser<'a> {
     ///
     /// File:
     ///     Using_Directive* Declaration*
-    pub fn parse_file(&mut self) -> Option<File<'a>> {
+    pub fn parse_file(&mut self) -> File<'a> {
         let mut file = File {
             declarations: Vec::new(),
             using_directives: Vec::new(),
             source_reference: self.source_code()
-
         };
 
         let file_skip_predicate = |token: &Token| {
@@ -306,7 +306,9 @@ impl<'a> Parser<'a> {
                 self.skip_to(file_skip_predicate);
             }
         }
-        Some(file)
+
+
+        file
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -996,25 +998,25 @@ impl<'a> Parser<'a> {
 
     fn get_binary_operator_precedence(operator: BinaryOperator) -> usize {
         match operator {
-            BinaryOperator::LogicalOr => 1,
-            BinaryOperator::LogicalAnd => 2,
+            BinaryOperator::Assignment => 1,
+            BinaryOperator::LogicalOr => 2,
+            BinaryOperator::LogicalAnd => 3,
             BinaryOperator::Equal
             | BinaryOperator::NotEqual
             | BinaryOperator::LessThan
             | BinaryOperator::LessThanEqual
             | BinaryOperator::GreaterThan
-            | BinaryOperator::GreaterThanEqual => 3,
+            | BinaryOperator::GreaterThanEqual => 4,
             BinaryOperator::Add
             | BinaryOperator::Subtract
             | BinaryOperator::CompoundAddition
-            | BinaryOperator::CompoundSubtraction => 4,
+            | BinaryOperator::CompoundSubtraction => 5,
             BinaryOperator::Multiply
             | BinaryOperator::Divide
             | BinaryOperator::Remainder
             | BinaryOperator::CompoundMultiplication
             | BinaryOperator::CompoundDivision
-            | BinaryOperator::CompoundRemainder => 5,
-            BinaryOperator::Assignment => 6,
+            | BinaryOperator::CompoundRemainder => 6,
         }
     }
 
@@ -1656,12 +1658,18 @@ impl<'a> Parser<'a> {
                     statements.push(statement);
                 }
                 None => {
+                    // make progress
+                    self.next();
+
                     self.skip_to(|token| {
                         matches!(
                             token.token_kind(),
                             TokenKind::Punctuator(';')
                                 | TokenKind::Punctuator('}')
                                 | TokenKind::Keyword(Keyword::If)
+                                | TokenKind::Keyword(Keyword::While)
+                                | TokenKind::Keyword(Keyword::Let)
+                                | TokenKind::Keyword(Keyword::Mutable)
                         )
                     });
 

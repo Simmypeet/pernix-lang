@@ -5,4 +5,5 @@ members = [
     "compiler/pernix_project",
     "compiler/pernix_parser",
     "compiler/pernix_codegen",
+    "compiler/pernixc",
 ]

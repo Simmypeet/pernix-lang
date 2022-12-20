@@ -22,7 +22,7 @@ pub type BlockIndex = usize;
 ///
 /// A terminator instruction is the last instruction in a basic block. It
 /// determines the next basic block to be executed or the end of the function.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Terminator<'table, 'ast> {
     /// Jump to the specified basic block directly.
     Jump(BlockIndex),
@@ -40,7 +40,7 @@ pub enum Terminator<'table, 'ast> {
 
 /// Represent an instruction in the basic block. An instruction can be either a
 /// statement or a terminator instruction.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Instruction<'table, 'ast> {
     Statement(BoundStatement<'table, 'ast>),
     Terminator(Terminator<'table, 'ast>),
@@ -48,7 +48,7 @@ pub enum Instruction<'table, 'ast> {
 
 /// Represent a basic block in the control flow graph (CFG). A basic block is a
 /// sequence of instructions that are executed sequentially.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Block<'table, 'ast> {
     pub instructions: Vec<Instruction<'table, 'ast>>,
 }
@@ -57,7 +57,7 @@ pub struct Block<'table, 'ast> {
 /// connected basic blocks. Each basic block can refer to other basic blocks
 /// by using the `Jump` and `ConditionalJump` terminator instructions. The CFG
 /// uses indices to refer to the basic blocks.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ControlFlowGraph<'table, 'ast> {
     blocks: Vec<Block<'table, 'ast>>,
 }
@@ -137,6 +137,13 @@ impl<'table, 'ast> ControlFlowGraphGenerator<'table, 'ast> {
 
                     let pre_header_block_index = self.allocate_block();
 
+                    self.cfg
+                        .get_block_mut(self.current_index)
+                        .instructions
+                        .push(Instruction::Terminator(Terminator::Jump(
+                            pre_header_block_index,
+                        )));
+
                     let out_block_index = self.allocate_block();
 
                     self.loop_info_stack.push(LoopInfo {
@@ -162,6 +169,8 @@ impl<'table, 'ast> ControlFlowGraphGenerator<'table, 'ast> {
                         ));
 
                     self.loop_info_stack.pop();
+
+                    self.current_index = out_block_index;
                 }
                 BoundStatement::BoundIfElseStatement(if_else) => {
                     /*
@@ -310,6 +319,11 @@ impl<'table, 'ast> ControlFlowGraph<'table, 'ast> {
     /// Get a reference to the entry block of the control flow graph.
     pub fn get_entry_block(&self) -> &Block<'table, 'ast> {
         &self.blocks[0]
+    }
+
+    /// Get a reference to the blocks of the control flow graph.
+    pub fn get_blocks(&self) -> &[Block<'table, 'ast>] {
+        &self.blocks
     }
 }
 

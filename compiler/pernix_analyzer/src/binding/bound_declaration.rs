@@ -12,6 +12,7 @@ use super::binder::Binder;
 /// Represent a bound function. It has been checked for all semantic correctness
 /// and is ready to be compiled. The struct contains a reference to the function
 /// symbol and the control flow graph (CFG) of the function.
+#[derive(Clone, Debug)]
 pub struct BoundFunction<'table, 'ast> {
     function_symbol: &'table FunctionSymbol<'table, 'ast>,
     control_flow_graph: ControlFlowGraph<'table, 'ast>,
