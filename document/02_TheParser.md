@@ -224,24 +224,24 @@ If `5 + 5 * 5` is parsed, the parser will generate an AST node that looks like t
 
 ``` json
 {
-    type: "BinaryExpression",
-    left: {
-        type: "BinaryExpression",
-        left: {
-            type: "LiteralExpression",
-            value: 5
+    "type": "BinaryExpression",
+    "left": {
+        "type": "BinaryExpression",
+        "left": {
+            "type": "LiteralExpression",
+            "value": 5
         },
-        right: {
-            type: "LiteralExpression",
-            value: 5
+        "right": {
+            "type": "LiteralExpression",
+            "value": 5
         },
-        operator: "+"
+        "operator": "+"
     },
-    right: {
-        type: "LiteralExpression",
-        value: 5
+    "right": {
+        "type": "LiteralExpression",
+        "value": 5
     },
-    operator: "*"
+    "operator": "*"
 }
 ```
 
