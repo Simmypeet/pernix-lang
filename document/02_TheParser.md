@@ -50,7 +50,7 @@ undefined variables, etc.
 
 The `pernix_parser` crate holds the code related to the parser. The parser is
 implemented as a struct that outputs one AST node at a time and advances the state
-for the next token, similar to the lexer. 
+for the next AST, similar to the lexer. 
 
 There will be three kinds of AST nodes: `Statement`, `Expression`, and `Declaration`.
 
