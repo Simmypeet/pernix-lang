@@ -68,7 +68,7 @@ pub enum Declaration<'a> {
     FunctionDeclaration(FunctionDeclaration<'a>),
 }
 ```
-> File: [`statenebt.rs`](../compiler/pernix_parser/src/abstract_syntax_tree/statement.rs)
+> File: [`statement.rs`](../compiler/pernix_parser/src/abstract_syntax_tree/statement.rs)
 ``` rust
 /// Represent an enumeration containing all kinds of statements.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,7 +84,7 @@ pub enum Statement<'a> {
 }
 ```
 
-> File: [`statenebt.rs`](../compiler/pernix_parser/src/abstract_syntax_tree/statement.rs)
+> File: [`expression.rs`](../compiler/pernix_parser/src/abstract_syntax_tree/statement.rs)
 ``` rust
 /// Represent an enumeration containing all possible expressions
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +102,7 @@ pub enum Expression<'a> {
 The `Parser` struct is the main component of the Syntactic Analysis phase. It uses
 the `Lexer`, the main component of the Lexical Analysis phase, to generate the token stream. The `Parser` then uses the token stream to construct the AST.
 
+> File: [`lib.rs`](../compiler/pernix_parser/src/lib.rs)
 ```rust
 /// Represent a state-machine data structure that is used to parse a Pernix
 /// source code file.
