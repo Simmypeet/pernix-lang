@@ -196,8 +196,7 @@ impl<'table, 'ast> ControlFlowGraphGenerator<'table, 'ast> {
                     // block for the continuation
 
                     // check if we need to make continuation block
-                    let continuation = statement_stack.len() > 0
-                        || parent_continuation.is_none();
+                    let continuation = statement_stack.len() > 0;
 
                     // if we need to make a continuation block, then we need
                     // to allocate a new block index for it

@@ -5,10 +5,9 @@ use clap::Parser;
 use llvm_sys::{
     analysis::{LLVMVerifierFailureAction, LLVMVerifyModule},
     core::{
-        LLVMCreateFunctionPassManagerForModule, LLVMDisposeMessage,
-        LLVMDisposePassManager, LLVMFinalizeFunctionPassManager,
-        LLVMInitializeFunctionPassManager, LLVMPrintModuleToFile,
-        LLVMRunFunctionPassManager, LLVMSetDataLayout, LLVMSetTarget,
+        LLVMCreatePassManager, LLVMDisposeMessage, LLVMDisposePassManager,
+        LLVMPrintModuleToFile, LLVMRunPassManager, LLVMSetDataLayout,
+        LLVMSetTarget,
     },
     target::{
         LLVMCopyStringRepOfTargetData, LLVM_InitializeAllAsmParsers,
@@ -24,10 +23,12 @@ use llvm_sys::{
     },
     transforms::{
         instcombine::LLVMAddInstructionCombiningPass,
+        ipo::LLVMAddGlobalOptimizerPass,
         scalar::{
             LLVMAddCFGSimplificationPass, LLVMAddGVNPass,
             LLVMAddReassociatePass,
         },
+        util::LLVMAddPromoteMemoryToRegisterPass,
     },
 };
 use pernix_analyzer::{
@@ -109,6 +110,10 @@ fn main() {
         }
     };
 
+    if source_codes.is_empty() {
+        std::process::exit(1);
+    }
+
     let mut ast_vector = Vec::new();
     let type_table = TypeSymbolTable::new();
     let mut function_table = FunctionSymbolTable::new();
@@ -175,32 +180,6 @@ fn main() {
         LLVMDisposeMessage(out_message);
     }
 
-    if args.optimize {
-        unsafe {
-            let pass_manager = LLVMCreateFunctionPassManagerForModule(
-                module.get_llvm_module(),
-            );
-
-            LLVMAddInstructionCombiningPass(pass_manager);
-            LLVMAddReassociatePass(pass_manager);
-            LLVMAddGVNPass(pass_manager);
-            LLVMAddCFGSimplificationPass(pass_manager);
-
-            LLVMInitializeFunctionPassManager(pass_manager);
-
-            for function in module.functions() {
-                LLVMRunFunctionPassManager(
-                    pass_manager,
-                    function.llvm_function(),
-                );
-            }
-
-            LLVMFinalizeFunctionPassManager(pass_manager);
-
-            LLVMDisposePassManager(pass_manager);
-        }
-    }
-
     // expect function "Main"
     let mut found_main = false;
     for function in module.functions() {
@@ -241,6 +220,21 @@ fn main() {
     if !found_main {
         printing::print_error("the function `Main` is not defined");
         std::process::exit(1);
+    }
+
+    if args.optimize {
+        unsafe {
+            // optimize the module
+            let pass_manager = LLVMCreatePassManager();
+            LLVMAddPromoteMemoryToRegisterPass(pass_manager);
+            LLVMAddGlobalOptimizerPass(pass_manager);
+            LLVMAddInstructionCombiningPass(pass_manager);
+            LLVMAddReassociatePass(pass_manager);
+            LLVMAddGVNPass(pass_manager);
+            LLVMAddCFGSimplificationPass(pass_manager);
+            LLVMRunPassManager(pass_manager, module.get_llvm_module());
+            LLVMDisposePassManager(pass_manager);
+        }
     }
 
     if args.emit_llvm {
