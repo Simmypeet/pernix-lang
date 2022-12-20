@@ -1,7 +1,8 @@
 # The Pernix Compiler
 
 This folder serves as tutorial and documentation for the Pernix compiler.
-It will describe  all the thought processes behind the compiler and how it works. It will illustrate each step of making the compiler in detail so that anyone can
+It will describe  all the thought processes behind the compiler and how it works. 
+It will illustrate each step of making the compiler in detail so that anyone can
 follow along and make their compiler should they desire.
 
 > Note: This is a work in progress. Everything is subject to change.
@@ -13,7 +14,11 @@ With modular design in mind, each compiler part will get its crate.
 Finally, the compiler will be made by combining all the crates.
 
 The compiler is powered by the [LLVM](https://llvm.org/) library similar to
-many other compilers like [Rust](https://www.rust-lang.org/), [Swift](https://swift.org/), and [Kotlin](https://kotlinlang.org/). The most direct benefit of using LLVM is that it allows us to target many different platforms with the same code. This is a huge benefit for a compiler that is meant to be used on many different platforms.
+many other compilers like [Rust](https://www.rust-lang.org/), 
+[Swift](https://swift.org/), and [Kotlin](https://kotlinlang.org/). The most direct 
+benefit of using LLVM is that it allows us to target many different platforms with 
+the same code. This is a huge benefit for a compiler that is meant to be used on many
+ different platforms.
 
 ---
 
@@ -21,4 +26,5 @@ many other compilers like [Rust](https://www.rust-lang.org/), [Swift](https://sw
 
 - [The Lexer](01_TheLexer.md) - Lexical analysis and how the lexer works. 
 - [The Parser](02_TheParser.md) - Syntactic analysis and how the parser works.
-- [Semantic Analysis](03_SemanticAnalysis) - Overview of semantic analysis and how the compiler performs it.
+- [Semantic Analysis](03_SemanticAnalysis) - Overview of semantic analysis and how 
+  the compiler performs it.
