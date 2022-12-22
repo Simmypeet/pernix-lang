@@ -1,5 +1,6 @@
 pub mod abstract_syntax_tree;
 pub mod error;
+pub mod scoped_declaration;
 
 use abstract_syntax_tree::{
     declaration::{
@@ -47,26 +48,9 @@ pub struct Parser<'a> {
 /// Represent an AST structure that represents a Pernix source file.
 #[derive(Debug, Clone)]
 pub struct File<'a> {
-    declarations: Vec<PositionWrapper<Declaration<'a>>>,
-    using_directives: Vec<PositionWrapper<UsingDirective<'a>>>,
-    source_reference: &'a SourceCode,
-}
-
-impl<'a> File<'a> {
-    /// Return a reference to the declarations of this [`File`].
-    pub fn declarations(&self) -> &[PositionWrapper<Declaration>] {
-        self.declarations.as_ref()
-    }
-
-    /// Return a reference to the using directives of this [`File`].
-    pub fn using_directives(&self) -> &[PositionWrapper<UsingDirective>] {
-        self.using_directives.as_ref()
-    }
-
-    /// Return a reference to the source reference of this [`File`].
-    pub fn source_reference(&self) -> &SourceCode {
-        self.source_reference
-    }
+    pub declarations: Vec<PositionWrapper<Declaration<'a>>>,
+    pub using_directives: Vec<PositionWrapper<UsingDirective<'a>>>,
+    pub source_code: &'a SourceCode,
 }
 
 macro_rules! parse_unwrap {
@@ -360,7 +344,7 @@ impl<'a> Parser<'a> {
         let mut file = File {
             declarations: Vec::new(),
             using_directives: Vec::new(),
-            source_reference: self.source_code(),
+            source_code: self.source_code(),
         };
 
         let file_skip_predicate = |token: &Token| {

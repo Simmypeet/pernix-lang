@@ -119,8 +119,8 @@ impl<'parser: 'ast, 'ast> ScopeTransverser<'parser, 'ast> {
         ),
     ) {
         self.transverse_helper(
-            self.ast.using_directives(),
-            self.ast.declarations(),
+            &self.ast.using_directives,
+            &self.ast.declarations,
             "",
             func,
         );
