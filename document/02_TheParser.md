@@ -4,7 +4,8 @@ Continuing from the previous chapter, the compiler now needs to identify the str
 of the source code using the tokens by building some tree that represents the 
 construct of the program. This is known as the **Syntactic Analysis** phase.
 
-There are many kinds of trees to choose from, depending on the requirements of the compiler. The one that the compiler will use is **Abstract Syntax Tree** or **AST** 
+There are many kinds of trees to choose from, depending on the requirements of the 
+compiler. The one that the compiler will use is **Abstract Syntax Tree** or **AST** 
 for short.
 
 ## Motivation
@@ -36,7 +37,8 @@ Obviously, each of them has its own pros and cons.
 
 - The syntax tree contains more information about the source code, which is useful
   for error reporting. However, it's more challenging to work with than the AST.
-  Furthermore, if the compiler somehow changes the language's syntax, the syntax tree  will also need to be changed.
+  Furthermore, if the compiler somehow changes the language's syntax, the syntax tree
+  will also need to be changed.
 
 - The abstract syntax tree is easier to work with. It only contains the necessary
   information about the source code. Nevertheless, it holds less information, making 

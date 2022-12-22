@@ -1,7 +1,7 @@
 pub mod error;
 pub mod token;
 
-use error::Error;
+use error::{Error, LexicalError};
 use lazy_static::lazy_static;
 use pernix_project::source_code::{SourceCode, SourcePosition};
 use std::{collections::HashMap, iter::Peekable, str::CharIndices};
@@ -85,7 +85,7 @@ impl<'a> Lexer<'a> {
 
     /// Lex the current word; returns the corresponding token and move to the
     /// next token.
-    pub fn lex(&mut self) -> Result<Token<'a>, Error> {
+    pub fn lex(&mut self) -> Result<Token<'a>, Error<'a>> {
         // the current source file position
         let first_position = self.current_position;
 
@@ -170,12 +170,12 @@ impl<'a> Lexer<'a> {
                             }
                             None => {
                                 // error: multi-line comment is not closed
-                                return Err(
-                                    Error::UnterminatedMultilineComment {
-                                        multiline_comment_position:
-                                            first_position,
-                                    },
-                                );
+                                return Err(Error {
+                                    source_reference: self.source_code(),
+                                    lexical_error: LexicalError::UnterminatedMultilineComment{
+                                            multiline_comment_position: first_position.into(),
+                                    }
+                                });
                             }
                             _ => {
                                 self.next();
@@ -336,9 +336,12 @@ impl<'a> Lexer<'a> {
         }
         // this character can't be categorized under any token kinds
         else {
-            return Err(Error::InvalidCharacter {
-                position: first_position,
-                character: first_char,
+            return Err(Error {
+                source_reference: self.source_code(),
+                lexical_error: LexicalError::InvalidCharacter {
+                    position: self.current_position.into(),
+                    character: first_char,
+                },
             });
         }
 

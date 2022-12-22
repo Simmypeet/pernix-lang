@@ -6,11 +6,13 @@ use abstract_syntax_tree::{
         Declaration, FunctionDeclaration, NamespaceDeclaration, TypeAnnotation,
         UsingDirective,
     },
-    expression::{BinaryExpression, Expression, FunctionCallExpression, LiteralExpression},
+    expression::{
+        BinaryExpression, Expression, FunctionCallExpression, LiteralExpression,
+    },
     statement::{Statement, WhileStatement},
     BinaryOperator, PositionWrapper, UnaryOperator,
 };
-use error::{Context, Error};
+use error::{Context, Error, SyntacticError};
 use pernix_lexer::{
     token::{Keyword, Token, TokenKind},
     Lexer,
@@ -19,12 +21,15 @@ use pernix_project::source_code::SourceCode;
 
 use crate::abstract_syntax_tree::{
     declaration::QualifiedType,
-    expression::{UnaryExpression, IdentifierExpression},
-    statement::{IfElseStatement, BlockScopeStatement, VariableDeclarationStatement, ReturnStatement},
+    expression::{IdentifierExpression, UnaryExpression},
+    statement::{
+        BlockScopeStatement, IfElseStatement, ReturnStatement,
+        VariableDeclarationStatement,
+    },
 };
 
 /// Represent a state-machine data structure that is used to parse a Pernix
-/// source code file.
+/// source code.
 pub struct Parser<'a> {
     // The lexer that is used to generate the token stream
     lexer: Lexer<'a>,
@@ -117,7 +122,12 @@ impl<'a> Parser<'a> {
                         break;
                     }
                     Err(err) => {
-                        accumulated_errors.push(Error::LexicalError(err));
+                        accumulated_errors.push(Error {
+                            source_reference: source_code,
+                            syntactic_error: SyntacticError::LexicalError(
+                                err.clone(),
+                            ),
+                        });
                     }
                 }
             }
@@ -150,7 +160,10 @@ impl<'a> Parser<'a> {
                         break;
                     }
                     Err(err) => {
-                        self.accumulated_errors.push(Error::LexicalError(err));
+                        self.accumulated_errors.push(Error {
+                            source_reference: err.source_reference(),
+                            syntactic_error: SyntacticError::LexicalError(err),
+                        });
                     }
                 }
             }
@@ -240,11 +253,99 @@ impl<'a> Parser<'a> {
         &self.accumulated_tokens[self.current_index - 1]
     }
 
+    // Get the first significant token back by one position without moving the
+    // current position
+    fn peek_back_significant(&self) -> &Token<'a> {
+        let mut index = self.current_index - 1;
+        while !self.accumulated_tokens[index].is_significant_token() {
+            index -= 1;
+        }
+        &self.accumulated_tokens[index]
+    }
+
     /// Clear the accumulated errors and returns them
     pub fn pop_errors(&mut self) -> Vec<Error<'a>> {
         let mut errors = Vec::new();
         std::mem::swap(&mut errors, &mut self.accumulated_errors);
         errors
+    }
+
+    /// Create an error from the given syntactic error
+    fn create_error(&self, syntactic_error: SyntacticError<'a>) -> Error<'a> {
+        Error {
+            source_reference: self.source_code(),
+            syntactic_error,
+        }
+    }
+
+    /// Expect the next token to be an identifier and returns it
+    fn expect_identifier(&mut self) -> Option<PositionWrapper<&'a str>> {
+        let starting_index = self.current_index;
+        if matches!(self.next_significant().token_kind(), TokenKind::Identifier)
+        {
+            Some(PositionWrapper {
+                position: self.peek_back().position_range().clone(),
+                value: self.peek_back().lexeme(),
+            })
+        } else {
+            self.current_index = starting_index;
+            if self.produce_errors {
+                self.accumulated_errors.push(
+                    self.create_error(SyntacticError::IdentifierExpected {
+                        expected_at: self
+                            .peek_back_significant()
+                            .position_range()
+                            .end
+                            .into(),
+                    }),
+                );
+            }
+            None
+        }
+    }
+
+    /// Expect the next token to be the given keyword
+    fn expected_keyword(&mut self, keyword: Keyword) -> Option<()> {
+        let starting_index = self.current_index;
+        if matches!(self.next_significant().token_kind(), TokenKind::Keyword(k) if *k == keyword)
+        {
+            Some(())
+        } else {
+            self.current_index = starting_index;
+            if self.produce_errors {
+                self.accumulated_errors.push(self.create_error(
+                    SyntacticError::KeywordExpected {
+                        expected_keyword: keyword,
+                        found_token: self.peek_back().clone(),
+                    },
+                ));
+            }
+            None
+        }
+    }
+
+    /// Expect the next token to be the given punctuator
+    fn expected_punctuator(&mut self, punctuator: char) -> Option<()> {
+        let starting_index = self.current_index;
+        if matches!(self.next_significant().token_kind(), TokenKind::Punctuator(c) if *c == punctuator)
+        {
+            Some(())
+        } else {
+            self.current_index = starting_index;
+            if self.produce_errors {
+                self.accumulated_errors.push(
+                    self.create_error(SyntacticError::PunctuatorExpected {
+                        expected_punctuator: punctuator,
+                        expected_at: self
+                            .peek_back_significant()
+                            .position_range()
+                            .end
+                            .into(),
+                    }),
+                );
+            }
+            None
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -259,7 +360,7 @@ impl<'a> Parser<'a> {
         let mut file = File {
             declarations: Vec::new(),
             using_directives: Vec::new(),
-            source_reference: self.source_code()
+            source_reference: self.source_code(),
         };
 
         let file_skip_predicate = |token: &Token| {
@@ -284,12 +385,11 @@ impl<'a> Parser<'a> {
 
                     if !parsing_using {
                         if self.produce_errors {
-                            self.accumulated_errors.push(
-                             Error::UsingDirectiveMustAppearPriorToAllDeclarations {
-                                 using_directive,
-                                 
-                             }
-                         );
+                            self.accumulated_errors.push(self.create_error(
+                                SyntacticError::UsingDirectiveMustAppearPriorToAllDeclarations{
+                                    using_directive,
+                                },
+                            ));
                         }
                     }
                 } else {
@@ -306,7 +406,6 @@ impl<'a> Parser<'a> {
                 self.skip_to(file_skip_predicate);
             }
         }
-
 
         file
     }
@@ -335,17 +434,18 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Namespace) => {
                 self.parse_namespace_declaration()
             }
-            TokenKind::Identifier => {
-                self.parse_function_declaration()
-            }
+            TokenKind::Identifier => self.parse_function_declaration(),
             _ => {
-                parse_exit_error!(
-                    self,
-                    Error::UnexpectedToken {
-                        context: Context::Declaration,
-                        found_token: self.peek().clone(),
-                    }
-                );
+                if self.produce_errors {
+                    self.accumulated_errors.push(self.create_error(
+                        SyntacticError::UnexpectedToken {
+                            context: Context::Declaration,
+                            found_token: self.peek().clone(),
+                        },
+                    ));
+                }
+
+                None
             }
         }
     }
@@ -357,43 +457,15 @@ impl<'a> Parser<'a> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect the function declaration
-        let return_type = parse_unwrap!(self, self.parse_type_anootation(), starting_index);
+        let return_type =
+            parse_unwrap!(self, self.parse_type_anootation(), starting_index);
 
         // expect the function name
-        let function_name = if matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Identifier
-        ) {
-            PositionWrapper {
-                position: self.peek_back().position_range().clone(),
-                value: self.peek_back().lexeme(),
-            }
-        } else {
-            parse_exit_error!(
-                self,
-                Error::IdentifierExpected {
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        };
+        let function_name =
+            parse_unwrap!(self, self.expect_identifier(), starting_index);
 
         // expect the opening parenthesis
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('(')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '(',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('('), starting_index);
 
         // parse the function parameters
         let parameters = {
@@ -419,19 +491,9 @@ impl<'a> Parser<'a> {
                 // not first parameter, expect a comma
                 if !first_time {
                     // expect a comma
-                    if !matches!(
-                        self.next_significant().token_kind(),
-                        TokenKind::Punctuator(',')
-                    ) {
-                        if self.produce_errors {
-                            self.accumulated_errors.push(
-                                Error::PunctuatorExpected {
-                                    expected_punctuator: ',',
-                                    found_token: self.peek_back().clone(),
-                                    
-                                },
-                            );
-                        }
+                    if let None = self.expected_punctuator(',') {
+                        // make progress
+                        self.next();
 
                         // skip to the next comma or closing parenthesis
                         self.skip_to(skip_predicate);
@@ -444,7 +506,6 @@ impl<'a> Parser<'a> {
 
                 // set first_time to false
                 first_time = false;
-
 
                 let is_mutable = {
                     if matches!(
@@ -460,12 +521,29 @@ impl<'a> Parser<'a> {
                 };
                 // parse the type annotation
                 let qualified_type_annotation =
-                match self.parse_type_anootation() {
-                    Some(type_annotation) => QualifiedType {
-                        is_mutable,
-                        type_annotation,
-                    },
-                    None => {
+                    match self.parse_type_anootation() {
+                        Some(type_annotation) => QualifiedType {
+                            is_mutable,
+                            type_annotation,
+                        },
+                        None => {
+                            // make progress
+                            self.next();
+
+                            // skip to the next comma or closing parenthesis
+                            self.skip_to(skip_predicate);
+
+                            continue;
+                        }
+                    };
+
+                let parameter_starting_position =
+                    self.peek().position_range().clone();
+
+                let parameter_name =
+                    if let Some(name) = self.expect_identifier() {
+                        name.value
+                    } else {
                         // make progress
                         self.next();
 
@@ -473,67 +551,34 @@ impl<'a> Parser<'a> {
                         self.skip_to(skip_predicate);
 
                         continue;
-                    }
-                };
-
-                let parameter_starting_position =
-                    self.peek().position_range().clone();
-
-                let parameter_name = if matches!(
-                    self.next_significant().token_kind(),
-                    TokenKind::Identifier
-                ) {
-                    self.peek_back().lexeme()
-                } else {
-                    if self.produce_errors {
-                        self.accumulated_errors.push(
-                            Error::IdentifierExpected {
-                                found_token: self.peek_back().clone(),
-                                
-                            },
-                        );
-                    }
-
-                    // skip to the next comma or closing parenthesis
-                    self.skip_to(skip_predicate);
-
-                    continue;
-                };
+                    };
 
                 params.push(PositionWrapper {
                     position: parameter_starting_position.start
                         ..self.peek_back().position_range().end,
                     value: (qualified_type_annotation, parameter_name),
                 });
-            }  
+            }
 
             params
         };
 
         // expect the closing parenthesis
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator(')')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: ')',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator(')'), starting_index);
 
         // expect a scope
-        let scope =
-            parse_unwrap!(self, self.parse_block_scope_statement(), starting_index);
+        let scope = parse_unwrap!(
+            self,
+            self.parse_block_scope_statement(),
+            starting_index
+        );
         let body = match scope.value {
-            Statement::BlockScopeStatement(scope_statement) => PositionWrapper {
-                position: scope.position,
-                value: scope_statement,
-            },
+            Statement::BlockScopeStatement(scope_statement) => {
+                PositionWrapper {
+                    position: scope.position,
+                    value: scope_statement,
+                }
+            }
             _ => unreachable!(),
         };
 
@@ -554,16 +599,7 @@ impl<'a> Parser<'a> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect the first identifier
-        if !matches!(self.next().token_kind(), TokenKind::Identifier) {
-            parse_exit_error!(
-                self,
-                Error::IdentifierExpected {
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expect_identifier(), starting_index);
 
         // found additional scopes
         while matches!(self.peek().token_kind(), TokenKind::Punctuator('.')) {
@@ -571,16 +607,7 @@ impl<'a> Parser<'a> {
             self.next();
 
             // expect the next identifier
-            if !matches!(self.next().token_kind(), TokenKind::Identifier) {
-                parse_exit_error!(
-                    self,
-                    Error::IdentifierExpected {
-                        found_token: self.peek_back().clone(),
-                        
-                    },
-                    starting_index
-                );
-            }
+            parse_unwrap!(self, self.expect_identifier(), starting_index);
         }
 
         Some(PositionWrapper {
@@ -600,39 +627,17 @@ impl<'a> Parser<'a> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect the `using` keyword
-        if !matches!(
-            self.next().token_kind(),
-            TokenKind::Keyword(Keyword::Using)
-        ) {
-            parse_exit_error!(
-                self,
-                Error::KeywordExpected {
-                    expected_keyword: Keyword::Using,
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(
+            self,
+            self.expected_keyword(Keyword::Using),
+            starting_index
+        );
 
         let qualified_name =
             parse_unwrap!(self, self.parse_qualified_name(), starting_index);
 
         // expect the semicolon
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator(';')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: ';',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator(';'), starting_index);
 
         Some(PositionWrapper {
             position: starting_position.start
@@ -650,16 +655,7 @@ impl<'a> Parser<'a> {
         parse_setup!(self, starting_index, starting_position);
 
         // for now, we only support identifiers
-        if !matches!(self.next().token_kind(), TokenKind::Identifier) {
-            parse_exit_error!(
-                self,
-                Error::IdentifierExpected {
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.parse_qualified_name(), starting_index);
 
         Some(PositionWrapper {
             position: starting_position.start
@@ -684,39 +680,17 @@ impl<'a> Parser<'a> {
         };
 
         // expect the `namespace` keyword
-        if !matches!(
-            self.next().token_kind(),
-            TokenKind::Keyword(Keyword::Namespace)
-        ) {
-            parse_exit_error!(
-                self,
-                Error::KeywordExpected {
-                    expected_keyword: Keyword::Namespace,
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(
+            self,
+            self.expected_keyword(Keyword::Namespace),
+            starting_index
+        );
 
         let namespace_name =
             parse_unwrap!(self, self.parse_qualified_name(), starting_index);
 
         // expect the opening curly bracket
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('{')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '{',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('{'), starting_index);
 
         // loop through all the declarations
         let mut declarations = Vec::new();
@@ -739,10 +713,9 @@ impl<'a> Parser<'a> {
                     if !parsing_using {
                         if self.produce_errors {
                             self.accumulated_errors.push(
-                                Error::UsingDirectiveMustAppearPriorToAllDeclarations {
+                                self.create_error(SyntacticError::UsingDirectiveMustAppearPriorToAllDeclarations {
                                     using_directive,
-                                    
-                                }
+                                })
                             );
                         }
                     }
@@ -762,20 +735,7 @@ impl<'a> Parser<'a> {
         }
 
         // expect the closing curly bracket
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('}')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '}',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('}'), starting_index);
 
         Some(PositionWrapper {
             position: starting_position.start
@@ -838,15 +798,8 @@ impl<'a> Parser<'a> {
             TokenKind::Punctuator('-') => UnaryOperator::Minus,
             TokenKind::Punctuator('+') => UnaryOperator::Plus,
             _ => {
-                parse_exit_error!(
-                    self,
-                    Error::UnexpectedToken {
-                        context: Context::Expression,
-                        found_token: self.peek_back().clone(),
-                        
-                    },
-                    starting_index
-                );
+                self.current_index = starting_index;
+                return None;
             }
         };
 
@@ -1068,20 +1021,7 @@ impl<'a> Parser<'a> {
         let starting_index = self.current_index;
 
         // starts with a opening parenthesis
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('(')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '(',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('('), starting_index);
 
         // list of arguments to return
         let mut arguments = Vec::new();
@@ -1111,18 +1051,24 @@ impl<'a> Parser<'a> {
                 });
             }
 
+            let before_punctuator_position = self.current_index;
             match self.next_significant().token_kind() {
                 TokenKind::Punctuator(',') => (),
                 TokenKind::Punctuator(')') => break,
                 _ => {
                     if self.produce_errors {
                         self.accumulated_errors.push(
-                            Error::PunctuatorExpected {
-                                expected_punctuator: ')',
-                                found_token: self.peek_back().clone(),
-                                
-                            },
-                        );
+                            self.create_error(
+                                SyntacticError::PunctuatorExpected {
+                                    expected_punctuator: ',',
+                                    expected_at: self.accumulated_tokens
+                                        [before_punctuator_position]
+                                        .position_range()
+                                        .end
+                                        .into(),
+                                },
+                            ),
+                        )
                     }
 
                     self.skip_to(|token| {
@@ -1181,7 +1127,9 @@ impl<'a> Parser<'a> {
             // it's just an identifier
             _ => Some(PositionWrapper {
                 position: qualified_name.position,
-                value: Expression::IdentifierExpression(IdentifierExpression { identifier: qualified_name.value} ),
+                value: Expression::IdentifierExpression(IdentifierExpression {
+                    identifier: qualified_name.value,
+                }),
             }),
         }
     }
@@ -1218,30 +1166,23 @@ impl<'a> Parser<'a> {
                 let expression = self.parse_expression()?;
 
                 // expect a closing parenthesis
-                if !matches!(
-                    self.next_significant().token_kind(),
-                    TokenKind::Punctuator(')')
-                ) {
-                    parse_exit_error!(
-                        self,
-                        Error::PunctuatorExpected {
-                            expected_punctuator: ')',
-                            found_token: self.peek_back().clone(),
-                            
-                        },
-                        starting_index
-                    );
-                } else {
-                    Some(expression)
-                }
+                parse_unwrap!(
+                    self,
+                    self.expected_punctuator(')'),
+                    starting_index
+                );
+
+                Some(expression)
             }
             _ => {
                 parse_exit_error!(
                     self,
-                    Error::UnexpectedToken {
-                        context: Context::Expression,
-                        found_token: self.peek().clone(),
-                        
+                    Error {
+                        source_reference: self.source_code(),
+                        syntactic_error: SyntacticError::UnexpectedToken {
+                            context: Context::Expression,
+                            found_token: self.peek().clone(),
+                        }
                     },
                     starting_index
                 );
@@ -1290,8 +1231,8 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::While) => {
                 return self.parse_while_statement();
             }
-            TokenKind::Keyword(Keyword::Mutable) |
-            TokenKind::Keyword(Keyword::Let) => {
+            TokenKind::Keyword(Keyword::Mutable)
+            | TokenKind::Keyword(Keyword::Let) => {
                 return self.parse_variable_declaration_statement();
             }
             TokenKind::Punctuator('{') => {
@@ -1300,36 +1241,31 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::If) => {
                 return self.parse_if_else_statement();
             }
-            TokenKind::Keyword(Keyword::Break) |
-            TokenKind::Keyword(Keyword::Continue) => {
+            TokenKind::Keyword(Keyword::Break)
+            | TokenKind::Keyword(Keyword::Continue) => {
                 let statement = match self.peek().token_kind() {
-                    TokenKind::Keyword(Keyword::Break) => Statement::BreakStatement,
-                    TokenKind::Keyword(Keyword::Continue) => Statement::ContinueStatement,
+                    TokenKind::Keyword(Keyword::Break) => {
+                        Statement::BreakStatement
+                    }
+                    TokenKind::Keyword(Keyword::Continue) => {
+                        Statement::ContinueStatement
+                    }
                     _ => unreachable!(),
                 };
 
-                // expect a semi colon
-                if !matches!(
-                    self.next_significant().token_kind(),
-                    TokenKind::Punctuator(';')
-                ) {
-                    parse_exit_error!(
-                        self,
-                        Error::PunctuatorExpected {
-                            expected_punctuator: ';',
-                            found_token: self.peek_back().clone(),
-                            
-                        },
-                        starting_index
-                    );
-                } else {
-                    return Some(PositionWrapper {
-                        position: starting_position.start
-                            ..self.peek_back().position_range().end,
-                        value: statement,
-                    });
-                }
-            },
+                // expect a semicolon
+                parse_unwrap!(
+                    self,
+                    self.expected_punctuator(';'),
+                    starting_index
+                );
+
+                return Some(PositionWrapper {
+                    position: starting_position.start
+                        ..self.peek_back().position_range().end,
+                    value: statement,
+                });
+            }
             _ => {
                 // try to parse an expression
                 self.produce_errors = false;
@@ -1339,34 +1275,28 @@ impl<'a> Parser<'a> {
                 match expression {
                     Some(expr) => {
                         // expect a semicolon
-                        if !matches!(
-                            self.next_significant().token_kind(),
-                            TokenKind::Punctuator(';')
-                        ) {
-                            parse_exit_error!(
-                                self,
-                                Error::PunctuatorExpected {
-                                    expected_punctuator: ';',
-                                    found_token: self.peek_back().clone(),
-                                    
-                                },
-                                starting_index
-                            );
-                        } else {
-                            Some(PositionWrapper {
-                                position: starting_position.start
-                                    ..self.peek_back().position_range().end,
-                                value: Statement::ExpressionStatement(expr),
-                            })
-                        }
+                        parse_unwrap!(
+                            self,
+                            self.expected_punctuator(';'),
+                            starting_index
+                        );
+
+                        Some(PositionWrapper {
+                            position: starting_position.start
+                                ..self.peek_back().position_range().end,
+                            value: Statement::ExpressionStatement(expr),
+                        })
                     }
                     None => {
                         parse_exit_error!(
                             self,
-                            Error::UnexpectedToken {
-                                context: Context::Statement,
-                                found_token: self.peek().clone(),
-                                
+                            Error {
+                                source_reference: self.source_code(),
+                                syntactic_error:
+                                    SyntacticError::UnexpectedToken {
+                                        context: Context::Statement,
+                                        found_token: self.peek().clone(),
+                                    }
                             },
                             starting_index
                         );
@@ -1378,70 +1308,37 @@ impl<'a> Parser<'a> {
 
     // Parse the current token stream as a while loop statement
     fn parse_while_statement(
-        &mut self
+        &mut self,
     ) -> Option<PositionWrapper<Statement<'a>>> {
         parse_setup!(self, starting_index, starting_position);
-    
+
         // expect while keyword
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Keyword(Keyword::While)
-        ) {
-            parse_exit_error!(
-                self,
-                Error::KeywordExpected {
-                    expected_keyword: Keyword::While,
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(
+            self,
+            self.expected_keyword(Keyword::While),
+            starting_index
+        );
 
         // expect opening parenthesis
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('(')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '(',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('('), starting_index);
 
         // parse the condition
-        let condition = parse_unwrap!(self, self.parse_expression(), starting_index);
+        let condition =
+            parse_unwrap!(self, self.parse_expression(), starting_index);
 
         // expect closing parenthesis
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator(')')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: ')',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
-        
+        parse_unwrap!(self, self.expected_punctuator(')'), starting_index);
+
         // expect a statement
-        let loop_statement = parse_unwrap!(self, self.parse_statement(), starting_index);
+        let loop_statement =
+            parse_unwrap!(self, self.parse_statement(), starting_index);
 
         Some(PositionWrapper {
             position: starting_position.start
                 ..self.peek_back().position_range().end,
             value: Statement::WhileStatement(WhileStatement {
                 condition,
-                loop_statement: Box::new(loop_statement)
+                loop_statement: Box::new(loop_statement),
             }),
         })
     }
@@ -1453,20 +1350,11 @@ impl<'a> Parser<'a> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect a return keyword
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Keyword(Keyword::Return)
-        ) {
-            parse_exit_error!(
-                self,
-                Error::KeywordExpected {
-                    expected_keyword: Keyword::Return,
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(
+            self,
+            self.expected_keyword(Keyword::Return),
+            starting_index
+        );
 
         if matches!(
             self.peek_significant().token_kind(),
@@ -1487,25 +1375,14 @@ impl<'a> Parser<'a> {
         let expression = self.parse_expression()?;
 
         // expect a semicolon
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator(';')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: ';',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator(';'), starting_index);
 
         Some(PositionWrapper {
             position: starting_position.start
                 ..self.peek_back().position_range().end,
-            value: Statement::ReturnStatement(ReturnStatement { expression: Some(expression) }),
+            value: Statement::ReturnStatement(ReturnStatement {
+                expression: Some(expression),
+            }),
         })
     }
 
@@ -1527,38 +1404,15 @@ impl<'a> Parser<'a> {
         }
 
         // expect a let keyword
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Keyword(Keyword::Let)
-        ) {
-            parse_exit_error!(
-                self,
-                Error::KeywordExpected {
-                    expected_keyword: Keyword::Let,
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(
+            self,
+            self.expected_keyword(Keyword::Let),
+            starting_index
+        );
 
         // expect an identifier
-        let identifier = match self.next_significant().token_kind() {
-            TokenKind::Identifier => PositionWrapper {
-                position: self.peek_back().position_range().clone(),
-                value: self.peek_back().clone().lexeme(),
-            },
-            _ => {
-                parse_exit_error!(
-                    self,
-                    Error::IdentifierExpected {
-                        found_token: self.peek_back().clone(),
-                        
-                    },
-                    starting_index
-                );
-            }
-        };
+        let identifier =
+            parse_unwrap!(self, self.expect_identifier(), starting_index);
 
         // if the next token is a colon, then we have a type annotation
         let type_annotation = if matches!(
@@ -1578,39 +1432,13 @@ impl<'a> Parser<'a> {
         };
 
         // expect an equal sign
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('=')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '=',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('='), starting_index);
 
         let expression =
             parse_unwrap!(self, self.parse_expression(), starting_index);
 
         // expect a semicolon
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator(';')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: ';',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator(';'), starting_index);
 
         Some(PositionWrapper {
             position: starting_position.start
@@ -1632,20 +1460,7 @@ impl<'a> Parser<'a> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect a left curly brace
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('{')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '{',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('{'), starting_index);
 
         let mut statements = Vec::new();
 
@@ -1685,82 +1500,34 @@ impl<'a> Parser<'a> {
         }
 
         // expect a right curly brace
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('}')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '}',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('}'), starting_index);
 
         Some(PositionWrapper {
             position: starting_position.start
                 ..self.peek_back().position_range().end,
-            value: Statement::BlockScopeStatement(BlockScopeStatement { statements }),
+            value: Statement::BlockScopeStatement(BlockScopeStatement {
+                statements,
+            }),
         })
     }
 
-    fn parse_if_else_statement(&mut self) -> Option<PositionWrapper<Statement<'a>>> {
+    fn parse_if_else_statement(
+        &mut self,
+    ) -> Option<PositionWrapper<Statement<'a>>> {
         parse_setup!(self, starting_index, starting_position);
 
         // expect an if keyword
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Keyword(Keyword::If)
-        ) {
-            parse_exit_error!(
-                self,
-                Error::KeywordExpected {
-                    expected_keyword: Keyword::If,
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_keyword(Keyword::If), starting_index);
 
         // expect a left parenthesis
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator('(')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: '(',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator('('), starting_index);
 
         // expect an expression
         let condition =
             parse_unwrap!(self, self.parse_expression(), starting_index);
 
         // expect a right parenthesis
-        if !matches!(
-            self.next_significant().token_kind(),
-            TokenKind::Punctuator(')')
-        ) {
-            parse_exit_error!(
-                self,
-                Error::PunctuatorExpected {
-                    expected_punctuator: ')',
-                    found_token: self.peek_back().clone(),
-                    
-                },
-                starting_index
-            );
-        }
+        parse_unwrap!(self, self.expected_punctuator(')'), starting_index);
 
         // expect a statement
         let then_statement =

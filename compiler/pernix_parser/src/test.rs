@@ -12,7 +12,7 @@ use crate::{
         statement::Statement,
         BinaryOperator, UnaryOperator,
     },
-    error::Error,
+    error::SyntacticError,
     Parser,
 };
 
@@ -111,7 +111,10 @@ fn parse_using_directive_test() {
         let error = parser.pop_errors();
 
         assert_eq!(error.len(), 1);
-        assert!(matches!(&error[0], Error::IdentifierExpected { .. }))
+        assert!(matches!(
+            &error[0].syntactic_error(),
+            SyntacticError::IdentifierExpected { .. }
+        ))
     }
 }
 
@@ -156,7 +159,10 @@ fn parse_namespace_declaration_test() {
 
                 let errors = parser.pop_errors();
                 assert_eq!(errors.len(), 1);
-                assert!(matches!(&errors[0], Error::IdentifierExpected { .. }));
+                assert!(matches!(
+                    &errors[0].syntactic_error(),
+                    SyntacticError::IdentifierExpected { .. }
+                ));
             }
             Declaration::FunctionDeclaration(_) => {
                 panic!("expected a namespace declaration")

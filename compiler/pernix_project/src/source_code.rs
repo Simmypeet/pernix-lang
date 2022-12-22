@@ -17,17 +17,75 @@ pub struct SourcePosition {
     pub byte_index: usize,
 }
 
-impl PartialOrd for SourcePosition {
+impl From<SourcePosition> for SourcePositionWithoutByteIndex {
+    fn from(position: SourcePosition) -> Self {
+        SourcePositionWithoutByteIndex {
+            line: position.line,
+            column: position.column,
+        }
+    }
+}
+
+/// Represent a particular position in the source code, consisting of column and
+/// line.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SourcePositionWithoutByteIndex {
+    pub line: usize,
+    pub column: usize,
+}
+
+impl PartialOrd for SourcePositionWithoutByteIndex {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.line == other.line {
-            return Some(self.column.cmp(&other.column));
+            Some(self.column.cmp(&other.column))
+        } else {
+            Some(self.line.cmp(&other.line))
         }
-        Some(self.line.cmp(&other.line))
+    }
+}
+
+impl SourcePosition {
+    /// Return the line number of this [`SourcePosition`].
+    pub fn line(&self) -> usize {
+        self.line
+    }
+
+    /// Return the column number of this [`SourcePosition`].
+    pub fn column(&self) -> usize {
+        self.column
+    }
+
+    /// Return the byte index of this [`SourcePosition`].
+    pub fn byte_index(&self) -> usize {
+        self.byte_index
+    }
+
+    /// Return a tuple of the line and column of this [`SourcePosition`].
+    pub fn to_line_column(&self) -> (usize, usize) {
+        (self.line, self.column)
+    }
+}
+
+impl PartialOrd for SourcePosition {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let position_wise = if self.line == other.line {
+            self.column.cmp(&other.column)
+        } else {
+            self.line.cmp(&other.line)
+        };
+
+        let byte_index_wise = self.byte_index.cmp(&other.byte_index);
+
+        if position_wise == byte_index_wise {
+            Some(position_wise)
+        } else {
+            None
+        }
     }
 }
 
 impl SourceCode {
-    /// Creates a new [`SourceCode`].
+    /// Create a new [`SourceCode`].
     pub fn new(source_code: String, source_name: String) -> Self {
         let mut new_line_ranges = Vec::new();
         let mut last_new_line_byte_index = 0;
@@ -85,6 +143,36 @@ impl SourceCode {
     /// Return the number of lines in this [`SourceCode`].
     pub fn line_number(&self) -> usize {
         self.new_line_ranges.len()
+    }
+
+    /// Check if the given `source_position` is in this [`SourceCode`].
+    pub fn is_source_position_in_file(
+        &self,
+        source_position: SourcePosition,
+    ) -> bool {
+        if source_position.line == 0
+            && source_position.column == 0
+            && source_position.byte_index == 0
+            && source_position.line > self.line_number()
+            && source_position.byte_index > self.source_code.len()
+        {
+            return false;
+        }
+
+        let byte_index_range =
+            self.new_line_ranges[source_position.line - 1].clone();
+        if source_position.byte_index < byte_index_range.start
+            || source_position.byte_index > byte_index_range.end
+        {
+            return false;
+        }
+
+        let line = self.line(source_position.line).unwrap();
+        if source_position.column > line.len() {
+            false
+        } else {
+            true
+        }
     }
 }
 

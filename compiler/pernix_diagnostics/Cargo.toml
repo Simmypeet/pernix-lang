@@ -1,13 +1,11 @@
 [package]
-name = "pernix_parser"
+name = "pernix_diagnostics"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pernix_lexer = { path = "../pernix_lexer" }
 pernix_project = { path = "../pernix_project" }
-pernix_diagnostics = { path = "../pernix_diagnostics" }
-
-[lib]
+lazy_static = "1.4.0"
+console = "0.15.2"
