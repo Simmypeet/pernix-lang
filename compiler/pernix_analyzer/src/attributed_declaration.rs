@@ -22,8 +22,21 @@ pub struct DeclarationAttributes<'a> {
 
 impl PartialEq for DeclarationAttributes<'_> {
     fn eq(&self, other: &Self) -> bool {
+        if self.active_using_directives.len()
+            != other.active_using_directives.len()
+        {
+            return false;
+        }
+
+        for (i, using_directive) in
+            self.active_using_directives.iter().enumerate()
+        {
+            if using_directive != &other.active_using_directives[i] {
+                return false;
+            }
+        }
+
         self.namespace_scope == other.namespace_scope
-            && self.active_using_directives == other.active_using_directives
             && std::ptr::eq(self.source_code, other.source_code)
     }
 }
@@ -33,7 +46,9 @@ impl Eq for DeclarationAttributes<'_> {}
 impl Hash for DeclarationAttributes<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.namespace_scope.hash(state);
-        self.active_using_directives.hash(state);
+        for using_directive in self.active_using_directives.iter() {
+            using_directive.hash(state);
+        }
         std::ptr::hash(self.source_code, state);
     }
 }
@@ -56,6 +71,7 @@ impl<'a> DeclarationAttributes<'a> {
 }
 
 /// Is a struct that groups a list of declarations with the same attributes together.
+#[derive(Debug, Clone)]
 pub struct AttributedDeclarationGroup<'a> {
     declarations: Vec<PositionWrapper<Declaration<'a>>>,
     attributes: DeclarationAttributes<'a>,
@@ -96,15 +112,18 @@ impl<'a> FileASTExtractor<'a> {
             .collect()
     }
 
-    pub fn add_entry(
+    fn add_entry(
         &mut self,
         attributes: &DeclarationAttributes<'a>,
         declaration: PositionWrapper<Declaration<'a>>,
     ) {
-        self.attributed_group
-            .entry(attributes.clone())
-            .or_insert_with(Vec::new)
-            .push(declaration);
+        match self.attributed_group.get_mut(attributes) {
+            Some(declarations) => declarations.push(declaration),
+            None => {
+                self.attributed_group
+                    .insert(attributes.clone(), vec![declaration]);
+            }
+        }
     }
 
     /// Extract all the declarations defined in the given [`pernix_parser::File`] AST
@@ -202,12 +221,14 @@ mod test {
     };
     use pernix_project::source_code::SourceCode;
 
+    use crate::attributed_declaration::AttributedDeclarationGroup;
+
     use super::FileASTExtractor;
 
     #[test]
     fn test_extractor() {
         let source = "
-        void foo() {]
+        void foo() {}
         void bar() {}
         
         namespace fizz {
@@ -233,54 +254,109 @@ mod test {
         extractor.feed(file_ast);
 
         let groups = extractor.finalize();
+        assert_eq!(groups.len(), 3);
 
-        // check the first group
-        {
-            let group = &groups[0];
-            assert!(group.attributes.namespace_scope.is_empty());
-            assert!(group.attributes.active_using_directives.is_empty());
-            assert_eq!(group.declarations.len(), 2);
+        fn is_group_one(group: &AttributedDeclarationGroup) -> bool {
+            if !group.attributes().namespace_scope.is_empty()
+                || !group.attributes().active_using_directives.is_empty()
+            {
+                return false;
+            }
 
-            let foo = &group.declarations[0];
-            assert!(matches!(
-                &foo.value,
-                Declaration::FunctionDeclaration(func) if func.function_name.value == "foo"
-            ));
+            if group.declarations().len() != 2 {
+                return false;
+            }
 
-            let bar = &group.declarations[1];
-            assert!(matches!(
-                &bar.value,
-                Declaration::FunctionDeclaration(func) if func.function_name.value == "bar"
-            ));
+            let mut foo_found = false;
+            let mut bar_found = false;
+
+            for declaration in group.declarations() {
+                match &declaration.value {
+                    Declaration::FunctionDeclaration(function) => {
+                        if function.function_name.value == "foo" {
+                            foo_found = true;
+                        } else if function.function_name.value == "bar" {
+                            bar_found = true;
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+
+            foo_found && bar_found
         }
 
-        // check the second group
-        {
-            let group = &groups[1];
-            assert_eq!(group.attributes.namespace_scope, "fizz");
-            assert_eq!(group.attributes.active_using_directives.len(), 1);
-            assert_eq!(group.attributes.active_using_directives[0], "buzz");
-            assert_eq!(group.declarations.len(), 1);
+        fn is_group_two(group: &AttributedDeclarationGroup) -> bool {
+            if group.attributes().namespace_scope != "fizz"
+                || group.attributes().active_using_directives.len() != 1
+                || group.attributes().active_using_directives[0] != "buzz"
+            {
+                return false;
+            }
 
-            let foo = &group.declarations[0];
-            assert!(matches!(
-                &foo.value,
-                Declaration::FunctionDeclaration(func) if func.function_name.value == "foo"
-            ));
+            if group.declarations().len() != 1 {
+                return false;
+            }
+
+            let mut foo_found = false;
+
+            for declaration in group.declarations() {
+                match &declaration.value {
+                    Declaration::FunctionDeclaration(function) => {
+                        if function.function_name.value == "foo" {
+                            foo_found = true;
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+
+            foo_found
         }
 
-        // check the third group
-        {
-            let group = &groups[2];
-            assert_eq!(group.attributes.namespace_scope, "fizz");
-            assert!(group.attributes.active_using_directives.is_empty());
-            assert_eq!(group.declarations.len(), 1);
+        fn is_group_three(group: &AttributedDeclarationGroup) -> bool {
+            if group.attributes().namespace_scope != "fizz"
+                || !group.attributes().active_using_directives.is_empty()
+            {
+                return false;
+            }
 
-            let bar = &group.declarations[0];
-            assert!(matches!(
-                &bar.value,
-                Declaration::FunctionDeclaration(func) if func.function_name.value == "bar"
-            ));
+            if group.declarations().len() != 1 {
+                return false;
+            }
+
+            let mut bar_found = false;
+
+            for declaration in group.declarations() {
+                match &declaration.value {
+                    Declaration::FunctionDeclaration(function) => {
+                        if function.function_name.value == "bar" {
+                            bar_found = true;
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+
+            bar_found
         }
+
+        let mut group_one_found = false;
+        let mut group_two_found = false;
+        let mut group_three_found = false;
+
+        for group in groups {
+            if is_group_one(&group) {
+                group_one_found = true;
+            } else if is_group_two(&group) {
+                group_two_found = true;
+            } else if is_group_three(&group) {
+                group_three_found = true;
+            }
+        }
+
+        assert!(group_one_found);
+        assert!(group_two_found);
+        assert!(group_three_found);
     }
 }

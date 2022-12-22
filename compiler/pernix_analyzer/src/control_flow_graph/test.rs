@@ -88,8 +88,7 @@ fn if_without_else_branch() {
         &type_table,
     ) {
         Ok(bound) => bound,
-        Err(errors) => {
-            dbg!(&errors);
+        Err(_) => {
             panic!("Failed to bind function");
         }
     };
@@ -196,9 +195,6 @@ fn if_with_else_branch() {
         SourceCode::new(source_code.to_string(), "test.pnx".to_string());
     let mut parser = Parser::new(&source_code);
     let ast = parser.parse_file();
-
-    let errors = parser.pop_errors();
-    dbg!(&errors);
 
     let type_table = TypeSymbolTable::new();
     let mut function_table = FunctionSymbolTable::new();

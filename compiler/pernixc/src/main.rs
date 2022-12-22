@@ -154,7 +154,7 @@ fn main() {
                 bound_functions.push(bound_function);
             }
             Err(error) => {
-                dbg!(error);
+                (error);
             }
         }
     }

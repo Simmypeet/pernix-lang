@@ -1,6 +1,5 @@
 pub mod abstract_syntax_tree;
 pub mod error;
-pub mod scoped_declaration;
 
 use abstract_syntax_tree::{
     declaration::{
@@ -687,6 +686,7 @@ impl<'a> Parser<'a> {
             self.peek_significant().token_kind(),
             TokenKind::Punctuator('}') | TokenKind::EndOfFile
         ) {
+            (self.peek());
             if let TokenKind::Keyword(Keyword::Using) = self.peek().token_kind()
             {
                 let using_directive = self.parse_using_directive();
@@ -706,8 +706,8 @@ impl<'a> Parser<'a> {
                 } else {
                     // make progress
                     self.next();
+                    self.skip_to(namespace_skip_predicate);
                 }
-                self.skip_to(namespace_skip_predicate);
             } else if let Some(declaration) = self.parse_declaration() {
                 parsing_using = false;
                 declarations.push(declaration);
