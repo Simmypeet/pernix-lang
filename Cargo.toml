@@ -1,10 +1,5 @@
 [workspace]
 members = [
-    "compiler/pernix_analyzer",
-    "compiler/pernix_lexer",
-    "compiler/pernix_project",
-    "compiler/pernix_parser",
-    "compiler/pernix_codegen",
-    "compiler/pernix_diagnostics",
-    "compiler/pernixc",
+    "pernixc/pernixc_common",
+    "pernixc/pernixc_lexical_analysis",
 ]
