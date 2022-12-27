@@ -2,4 +2,5 @@
 members = [
     "pernixc/pernixc_common",
     "pernixc/pernixc_lexical_analysis",
+    "pernixc/pernixc_syntactic_analysis",
 ]

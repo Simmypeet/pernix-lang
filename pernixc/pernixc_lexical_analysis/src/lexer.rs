@@ -197,7 +197,6 @@ impl<'src> Lexer<'src> {
                 }
                 "return" => token_kind = TokenKind::Keyword(Keyword::Return),
                 "let" => token_kind = TokenKind::Keyword(Keyword::Let),
-                "var" => token_kind = TokenKind::Keyword(Keyword::Var),
                 "using" => token_kind = TokenKind::Keyword(Keyword::Using),
                 "namespace" => {
                     token_kind = TokenKind::Keyword(Keyword::Namespace)
@@ -206,9 +205,26 @@ impl<'src> Lexer<'src> {
                 "else" => token_kind = TokenKind::Keyword(Keyword::Else),
                 "while" => token_kind = TokenKind::Keyword(Keyword::While),
                 "break" => token_kind = TokenKind::Keyword(Keyword::Break),
+                "public" => token_kind = TokenKind::Keyword(Keyword::Public),
+                "private" => token_kind = TokenKind::Keyword(Keyword::Private),
                 "continue" => {
                     token_kind = TokenKind::Keyword(Keyword::Continue)
                 }
+                "new" => token_kind = TokenKind::Keyword(Keyword::New),
+                "mutable" => token_kind = TokenKind::Keyword(Keyword::Mutable),
+                "class" => token_kind = TokenKind::Keyword(Keyword::Class),
+                "int8" => token_kind = TokenKind::Keyword(Keyword::Int8),
+                "int16" => token_kind = TokenKind::Keyword(Keyword::Int16),
+                "int32" => token_kind = TokenKind::Keyword(Keyword::Int32),
+                "int64" => token_kind = TokenKind::Keyword(Keyword::Int64),
+                "uint8" => token_kind = TokenKind::Keyword(Keyword::Uint8),
+                "uint16" => token_kind = TokenKind::Keyword(Keyword::Uint16),
+                "uint32" => token_kind = TokenKind::Keyword(Keyword::Uint32),
+                "uint64" => token_kind = TokenKind::Keyword(Keyword::Uint64),
+                "float32" => token_kind = TokenKind::Keyword(Keyword::Float32),
+                "float64" => token_kind = TokenKind::Keyword(Keyword::Float64),
+                "bool" => token_kind = TokenKind::Keyword(Keyword::Bool),
+                "void" => token_kind = TokenKind::Keyword(Keyword::Void),
                 _ => token_kind = TokenKind::Identifier,
             }
         }

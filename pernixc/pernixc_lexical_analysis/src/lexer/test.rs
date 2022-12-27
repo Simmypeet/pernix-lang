@@ -20,19 +20,19 @@ fn literal_test() {
         let token = lexer.lex().ok().unwrap();
 
         matches!(
-            token.token_kind(),
+            token.token_kind,
             TokenKind::LiteralConstant(LiteralConstantToken::Number {
                 value: "123",
                 literal_suffix: Some("i32"),
                 is_decimal: false
             })
-        ) && token.position_range().start
+        ) && token.position_range.start
             == SourcePosition {
                 line: 1,
                 column: 1,
                 byte_index: 0,
             }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 7,
@@ -44,14 +44,14 @@ fn literal_test() {
     assert!({
         let token = lexer.lex().ok().unwrap();
 
-        matches!(token.token_kind(), TokenKind::Space)
-            && token.position_range().start
+        matches!(token.token_kind, TokenKind::Space)
+            && token.position_range.start
                 == SourcePosition {
                     line: 1,
                     column: 7,
                     byte_index: 6,
                 }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 8,
@@ -64,19 +64,19 @@ fn literal_test() {
         let token = lexer.lex().ok().unwrap();
 
         matches!(
-            token.token_kind(),
+            token.token_kind,
             TokenKind::LiteralConstant(LiteralConstantToken::Number {
                 value: "123.456",
                 literal_suffix: None,
                 is_decimal: true
             })
-        ) && token.position_range().start
+        ) && token.position_range.start
             == SourcePosition {
                 line: 1,
                 column: 8,
                 byte_index: 7,
             }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 15,
@@ -88,14 +88,14 @@ fn literal_test() {
     assert!({
         let token = lexer.lex().ok().unwrap();
 
-        matches!(token.token_kind(), TokenKind::Space)
-            && token.position_range().start
+        matches!(token.token_kind, TokenKind::Space)
+            && token.position_range.start
                 == SourcePosition {
                     line: 1,
                     column: 15,
                     byte_index: 14,
                 }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 16,
@@ -108,15 +108,15 @@ fn literal_test() {
         let token = lexer.lex().ok().unwrap();
 
         matches!(
-            token.token_kind(),
+            token.token_kind,
             TokenKind::LiteralConstant(LiteralConstantToken::Boolean(true))
-        ) && token.position_range().start
+        ) && token.position_range.start
             == SourcePosition {
                 line: 1,
                 column: 16,
                 byte_index: 15,
             }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 20,
@@ -128,14 +128,14 @@ fn literal_test() {
     assert!({
         let token = lexer.lex().ok().unwrap();
 
-        matches!(token.token_kind(), TokenKind::Space)
-            && token.position_range().start
+        matches!(token.token_kind, TokenKind::Space)
+            && token.position_range.start
                 == SourcePosition {
                     line: 1,
                     column: 20,
                     byte_index: 19,
                 }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 21,
@@ -148,15 +148,15 @@ fn literal_test() {
         let token = lexer.lex().ok().unwrap();
 
         matches!(
-            token.token_kind(),
+            token.token_kind,
             TokenKind::LiteralConstant(LiteralConstantToken::Boolean(false))
-        ) && token.position_range().start
+        ) && token.position_range.start
             == SourcePosition {
                 line: 1,
                 column: 21,
                 byte_index: 20,
             }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 26,
@@ -174,14 +174,14 @@ fn space_test() {
     assert!({
         let token = lexer.lex().ok().unwrap();
 
-        matches!(token.token_kind(), TokenKind::Space)
-            && token.position_range().start
+        matches!(token.token_kind, TokenKind::Space)
+            && token.position_range.start
                 == SourcePosition {
                     line: 1,
                     column: 1,
                     byte_index: 0,
                 }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 3,
@@ -192,14 +192,14 @@ fn space_test() {
     assert!({
         let token = lexer.lex().ok().unwrap();
 
-        matches!(token.token_kind(), TokenKind::Punctuator('|'))
-            && token.position_range().start
+        matches!(token.token_kind, TokenKind::Punctuator('|'))
+            && token.position_range.start
                 == SourcePosition {
                     line: 1,
                     column: 3,
                     byte_index: 2,
                 }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 4,
@@ -210,14 +210,14 @@ fn space_test() {
     assert!({
         let token = lexer.lex().ok().unwrap();
 
-        matches!(token.token_kind(), TokenKind::Space)
-            && token.position_range().start
+        matches!(token.token_kind, TokenKind::Space)
+            && token.position_range.start
                 == SourcePosition {
                     line: 1,
                     column: 4,
                     byte_index: 3,
                 }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 5,
@@ -228,14 +228,14 @@ fn space_test() {
     assert!({
         let token = lexer.lex().ok().unwrap();
 
-        matches!(token.token_kind(), TokenKind::Punctuator('|'))
-            && token.position_range().start
+        matches!(token.token_kind, TokenKind::Punctuator('|'))
+            && token.position_range.start
                 == SourcePosition {
                     line: 1,
                     column: 5,
                     byte_index: 4,
                 }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 1,
                     column: 6,
@@ -246,14 +246,14 @@ fn space_test() {
     assert!({
         let token = lexer.lex().ok().unwrap();
 
-        matches!(token.token_kind(), TokenKind::Space)
-            && token.position_range().start
+        matches!(token.token_kind, TokenKind::Space)
+            && token.position_range.start
                 == SourcePosition {
                     line: 1,
                     column: 6,
                     byte_index: 5,
                 }
-            && token.position_range().end
+            && token.position_range.end
                 == SourcePosition {
                     line: 2,
                     column: 2,
@@ -262,7 +262,7 @@ fn space_test() {
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::EndOfFile
     ));
 }
@@ -277,42 +277,42 @@ fn identifier_and_keyword_test() {
     let mut lexer = Lexer::new(&source);
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Keyword(Keyword::Return)
     ));
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Space
     ));
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme() == "some_name"
-            && matches!(token.token_kind(), TokenKind::Identifier)
+        token.lexeme == "some_name"
+            && matches!(token.token_kind, TokenKind::Identifier)
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Space
     ));
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme() == "_name"
-            && matches!(token.token_kind(), TokenKind::Identifier)
+        token.lexeme == "_name"
+            && matches!(token.token_kind, TokenKind::Identifier)
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Space
     ));
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme() == "23name"
+        token.lexeme == "23name"
             && matches!(
-                token.token_kind(),
+                token.token_kind,
                 TokenKind::LiteralConstant(LiteralConstantToken::Number {
                     value: "23",
                     literal_suffix: Some("name"),
@@ -322,7 +322,7 @@ fn identifier_and_keyword_test() {
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::EndOfFile
     ));
 }
@@ -338,28 +338,28 @@ fn comment_test() {
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme() == "// Hello\n"
-            && matches!(token.token_kind(), TokenKind::Comment)
+        token.lexeme == "// Hello\n"
+            && matches!(token.token_kind, TokenKind::Comment)
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Space
     ));
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Keyword(Keyword::Return)
     ));
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme() == "// Another"
-            && matches!(token.token_kind(), TokenKind::Comment)
+        token.lexeme == "// Another"
+            && matches!(token.token_kind, TokenKind::Comment)
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::EndOfFile
     ));
 }
@@ -375,35 +375,35 @@ fn multiline_comment_test() {
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme() == "/* Hello */"
-            && matches!(token.token_kind(), TokenKind::Comment)
+        token.lexeme == "/* Hello */"
+            && matches!(token.token_kind, TokenKind::Comment)
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Space
     ));
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Keyword(Keyword::Return)
     ));
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme() == "/* Another */"
-            && matches!(token.token_kind(), TokenKind::Comment)
+        token.lexeme == "/* Another */"
+            && matches!(token.token_kind, TokenKind::Comment)
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::Space
     ));
 
     assert!({
         let err = lexer.lex().err().unwrap();
 
-        match err.lexical_error() {
+        match err.lexical_error {
             LexicalError::UnterminatedMultilineComment {
                 multiline_comment_position,
             } => {
@@ -415,7 +415,7 @@ fn multiline_comment_test() {
     });
 
     assert!(matches!(
-        lexer.lex().ok().unwrap().token_kind(),
+        lexer.lex().ok().unwrap().token_kind,
         TokenKind::EndOfFile
     ));
 }

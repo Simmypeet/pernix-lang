@@ -15,48 +15,48 @@ fn token_stream_test() {
     let token_stream = TokenStream::tokenize(&source_file).unwrap();
 
     // create an iterator that ignores the whitespace and comments
-    let mut iter = token_stream.tokens().iter().filter(|token| {
-        !matches!(token.token_kind(), TokenKind::Comment | TokenKind::Space)
+    let mut iter = token_stream.iter().filter(|token| {
+        !matches!(token.token_kind, TokenKind::Comment | TokenKind::Space)
     });
 
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::Identifier
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::Identifier
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::Punctuator('(')
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::Punctuator(')')
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::Punctuator('{')
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::Keyword(Keyword::Return)
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::LiteralConstant(_)
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::Punctuator(';')
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::Punctuator('}')
     ));
     assert!(matches!(
-        iter.next().unwrap().token_kind(),
+        iter.next().unwrap().token_kind,
         TokenKind::EndOfFile
     ));
     assert!(iter.next().is_none());

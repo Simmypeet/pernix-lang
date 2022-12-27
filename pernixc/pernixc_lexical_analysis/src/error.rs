@@ -9,21 +9,11 @@ use pernixc_common::{
 /// source file.
 #[derive(Debug, Clone)]
 pub struct Error<'src> {
-    pub(crate) source_file: &'src SourceFile,
-    pub(crate) lexical_error: LexicalError,
+    pub source_file: &'src SourceFile,
+    pub lexical_error: LexicalError,
 }
 
 impl<'src> Error<'src> {
-    /// Return a reference to the source file of this [`Error`].
-    pub fn source_file(&self) -> &'src SourceFile {
-        self.source_file
-    }
-
-    /// Return a reference to the lexical error of this [`Error`].
-    pub fn lexical_error(&self) -> &LexicalError {
-        &self.lexical_error
-    }
-
     /// Print the error message of this [`Error`]
     pub fn print_error(&self) {
         // 0 -> LXA000

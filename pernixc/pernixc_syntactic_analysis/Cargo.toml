@@ -1,11 +1,10 @@
 [package]
-name = "pernixc_common"
+name = "pernixc_syntactic_analysis"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-console = "0.15.2"
-
-[lib]
+pernixc_common = { path = "../pernixc_common" }
+pernixc_lexical_analysis = { path = "../pernixc_lexical_analysis" }

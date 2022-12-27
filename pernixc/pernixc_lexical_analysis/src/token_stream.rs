@@ -30,7 +30,7 @@ impl<'src> TokenStream<'src> {
             match lexer.lex() {
                 Ok(token) => {
                     let is_eof =
-                        matches!(token.token_kind(), TokenKind::EndOfFile);
+                        matches!(token.token_kind, TokenKind::EndOfFile);
 
                     tokens.push(token);
 
@@ -60,8 +60,27 @@ impl<'src> TokenStream<'src> {
     }
 
     /// Return a reference to the tokens of this [`TokenStream`].
-    pub fn tokens(&self) -> &[Token<'src>] {
-        self.tokens.as_ref()
+    pub fn len(&self) -> usize {
+        self.tokens.len()
+    }
+
+    /// Get the token at the given `index` of this [`TokenStream`].
+    /// Return `None` if the index is out of bounds.
+    pub fn get(&self, index: usize) -> Option<&Token<'src>> {
+        self.tokens.get(index)
+    }
+
+    /// Return an iterator over the tokens of this [`TokenStream`].
+    pub fn iter(&self) -> std::slice::Iter<'_, Token<'src>> {
+        self.tokens.iter()
+    }
+}
+
+impl<'src> std::ops::Index<usize> for TokenStream<'src> {
+    type Output = Token<'src>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.tokens[index]
     }
 }
 

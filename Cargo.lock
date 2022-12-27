@@ -45,8 +45,15 @@ dependencies = [
 name = "pernixc_lexical_analysis"
 version = "0.1.0"
 dependencies = [
- "console",
  "pernixc_common",
+]
+
+[[package]]
+name = "pernixc_syntactic_analysis"
+version = "0.1.0"
+dependencies = [
+ "pernixc_common",
+ "pernixc_lexical_analysis",
 ]
 
 [[package]]
