@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, ops::Range};
 
 /// Is a source file, consisting of the source code and the source name.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SourceFile {
     source_file: String,
     file_name: String,
@@ -10,7 +10,7 @@ pub struct SourceFile {
 
 /// Represent a particular position in the source code, consisting of column,
 /// line and byte index.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub struct SourcePosition {
     pub line: usize,
     pub column: usize,
@@ -39,7 +39,7 @@ impl From<SourcePosition> for TextPosition {
 
 /// Represent a particular position in the source file, consisting of column and
 /// line.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub struct TextPosition {
     pub line: usize,
     pub column: usize,
@@ -142,10 +142,7 @@ impl SourceFile {
     }
 
     /// Check if the given `source_position` is in this [`SourceFile`].
-    pub fn is_source_position_in_file(
-        &self,
-        source_position: SourcePosition,
-    ) -> bool {
+    pub fn is_source_position_in_file(&self, source_position: SourcePosition) -> bool {
         if source_position.line == 0
             && source_position.column == 0
             && source_position.byte_index == 0
@@ -155,8 +152,7 @@ impl SourceFile {
             return false;
         }
 
-        let byte_index_range =
-            self.new_line_ranges[source_position.line - 1].clone();
+        let byte_index_range = self.new_line_ranges[source_position.line - 1].clone();
         if source_position.byte_index < byte_index_range.start
             || source_position.byte_index > byte_index_range.end
         {

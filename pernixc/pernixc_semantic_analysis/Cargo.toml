@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_syntactic_analysis"
+name = "pernixc_semantic_analysis"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 pernixc_common = { path = "../pernixc_common" }
 pernixc_lexical_analysis = { path = "../pernixc_lexical_analysis" }
+pernixc_syntactic_analysis = { path = "../pernixc_syntactic_analysis" }

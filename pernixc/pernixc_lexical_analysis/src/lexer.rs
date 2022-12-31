@@ -3,13 +3,13 @@ use std::{iter::Peekable, str::CharIndices};
 use pernixc_common::source_file::{SourceFile, SourcePosition};
 
 use crate::{
-    error::{Error, LexicalError},
+    error::LexicalError,
     token::{Keyword, LiteralConstantToken, Token, TokenKind},
 };
 
 /// Represent a state-machine that lexes the source code and outputs a token
 /// one at a time.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Lexer<'src> {
     source_file: &'src SourceFile,
     chars: Peekable<CharIndices<'src>>,
@@ -84,7 +84,7 @@ impl<'src> Lexer<'src> {
 
     /// Lex the current word; returns the corresponding token and move to the
     /// next token.
-    pub fn lex(&mut self) -> Result<Token<'src>, Error<'src>> {
+    pub fn lex(&mut self) -> Result<Token<'src>, LexicalError> {
         // the current source file position
         let first_position = self.current_position;
 
@@ -157,13 +157,8 @@ impl<'src> Lexer<'src> {
                             }
                             None => {
                                 // error: multi-line comment is not closed
-                                return Err(Error {
-                                    source_file: self.source_file,
-                                    lexical_error:
-                                        LexicalError::UnterminatedMultilineComment {
-                                            multiline_comment_position:
-                                                first_position.into(),
-                                        },
+                                return Err(LexicalError::UnterminatedMultilineComment {
+                                    multiline_comment_position: first_position.into(),
                                 });
                             }
                             _ => {
@@ -181,35 +176,27 @@ impl<'src> Lexer<'src> {
         else if Self::is_first_identifier_character(first_char) {
             self.lex_predicate(Self::is_identifier_character);
 
-            let identifier_string = &self.source_file.source_code()
-                [begin_index..self.current_position.byte_index];
+            let identifier_string =
+                &self.source_file.source_code()[begin_index..self.current_position.byte_index];
 
             match identifier_string {
                 "true" => {
-                    token_kind = TokenKind::LiteralConstant(
-                        LiteralConstantToken::Boolean(true),
-                    )
+                    token_kind = TokenKind::LiteralConstant(LiteralConstantToken::Boolean(true))
                 }
                 "false" => {
-                    token_kind = TokenKind::LiteralConstant(
-                        LiteralConstantToken::Boolean(false),
-                    )
+                    token_kind = TokenKind::LiteralConstant(LiteralConstantToken::Boolean(false))
                 }
                 "return" => token_kind = TokenKind::Keyword(Keyword::Return),
                 "let" => token_kind = TokenKind::Keyword(Keyword::Let),
                 "using" => token_kind = TokenKind::Keyword(Keyword::Using),
-                "namespace" => {
-                    token_kind = TokenKind::Keyword(Keyword::Namespace)
-                }
+                "namespace" => token_kind = TokenKind::Keyword(Keyword::Namespace),
                 "if" => token_kind = TokenKind::Keyword(Keyword::If),
                 "else" => token_kind = TokenKind::Keyword(Keyword::Else),
                 "while" => token_kind = TokenKind::Keyword(Keyword::While),
                 "break" => token_kind = TokenKind::Keyword(Keyword::Break),
                 "public" => token_kind = TokenKind::Keyword(Keyword::Public),
                 "private" => token_kind = TokenKind::Keyword(Keyword::Private),
-                "continue" => {
-                    token_kind = TokenKind::Keyword(Keyword::Continue)
-                }
+                "continue" => token_kind = TokenKind::Keyword(Keyword::Continue),
                 "new" => token_kind = TokenKind::Keyword(Keyword::New),
                 "mutable" => token_kind = TokenKind::Keyword(Keyword::Mutable),
                 "class" => token_kind = TokenKind::Keyword(Keyword::Class),
@@ -276,9 +263,7 @@ impl<'src> Lexer<'src> {
 
             let value_str = {
                 match self.chars.peek() {
-                    Some((index, _)) => {
-                        &self.source_file.source_code()[begin_index..*index]
-                    }
+                    Some((index, _)) => &self.source_file.source_code()[begin_index..*index],
                     None => &self.source_file.source_code()[begin_index..],
                 }
             };
@@ -302,29 +287,24 @@ impl<'src> Lexer<'src> {
                 }
 
                 literal_prefix = Some(match self.chars.peek() {
-                    Some((index, _)) => &self.source_file.source_code()
-                        [prefix_starting_index..*index],
-                    None => {
-                        &self.source_file.source_code()[prefix_starting_index..]
+                    Some((index, _)) => {
+                        &self.source_file.source_code()[prefix_starting_index..*index]
                     }
+                    None => &self.source_file.source_code()[prefix_starting_index..],
                 });
             }
 
-            token_kind =
-                TokenKind::LiteralConstant(LiteralConstantToken::Number {
-                    value: value_str,
-                    literal_suffix: literal_prefix,
-                    is_decimal,
-                })
+            token_kind = TokenKind::LiteralConstant(LiteralConstantToken::Number {
+                value: value_str,
+                literal_suffix: literal_prefix,
+                is_decimal,
+            })
         }
         // this character can't be categorized under any token kinds
         else {
-            return Err(Error {
-                source_file: self.source_file,
-                lexical_error: LexicalError::InvalidCharacter {
-                    position: self.current_position.into(),
-                    character: first_char,
-                },
+            return Err(LexicalError::InvalidCharacter {
+                position: self.current_position.into(),
+                character: first_char,
             });
         }
 
@@ -334,9 +314,7 @@ impl<'src> Lexer<'src> {
             position_range: first_position..self.current_position,
             lexeme: {
                 match self.chars.peek() {
-                    Some((index, _)) => {
-                        &self.source_file.source_code()[begin_index..*index]
-                    }
+                    Some((index, _)) => &self.source_file.source_code()[begin_index..*index],
                     None => &self.source_file.source_code()[begin_index..],
                 }
             },

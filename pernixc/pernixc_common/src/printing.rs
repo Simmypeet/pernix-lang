@@ -18,11 +18,7 @@ pub enum Severity {
 ///
 /// # Format
 /// `[error|warning|info][category]: message`
-pub fn print_message(
-    message: &str,
-    severity: Severity,
-    error_category: Option<&str>,
-) {
+pub fn print_message(message: &str, severity: Severity, error_category: Option<&str>) {
     let bold_white = Style::new().bold().white();
     let (severity_message, style) = {
         match severity {
@@ -56,7 +52,7 @@ pub fn print_message(
 }
 
 /// Is an enumeration containing all highlight styles
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum HighlightStyle {
     Range(Range<TextPosition>),
     Position(TextPosition),
@@ -107,8 +103,7 @@ pub fn highlight_source_file(
                 HighlightStyle::Range(range) => range.end.line,
                 HighlightStyle::Position(position) => position.line,
             };
-            let raised_line_number =
-                min(source_file.line_number(), original_line_number + 1);
+            let raised_line_number = min(source_file.line_number(), original_line_number + 1);
             if !source_file.line(raised_line_number).unwrap().is_empty() {
                 raised_line_number
             } else {
@@ -184,11 +179,10 @@ pub fn highlight_source_file(
                 let mut last_column = None;
                 for c in line.chars() {
                     let should_highlight: bool = {
-                        let line_satisfies = line_number >= range.start.line
-                            && line_number <= range.end.line;
+                        let line_satisfies =
+                            line_number >= range.start.line && line_number <= range.end.line;
                         let column_satisfies = if same_line {
-                            column_number >= range.start.column
-                                && column_number < range.end.column
+                            column_number >= range.start.column && column_number < range.end.column
                         } else {
                             if line_number == range.end.line {
                                 column_number < range.end.column
@@ -221,8 +215,7 @@ pub fn highlight_source_file(
 
                     column_number += 1;
                 }
-                if matches!(last_column, Some(_)) && matches!(message, Some(_))
-                {
+                if matches!(last_column, Some(_)) && matches!(message, Some(_)) {
                     print!("\n");
                     print!("{: <1$}", "", largest_digit_number + 1);
                     print!("{}", bright_cyan.apply_to('|'));
@@ -256,8 +249,7 @@ pub fn highlight_source_file(
                         }
                     };
 
-                    let should_highligh =
-                        line_number == pos.line && column_number == pos.column;
+                    let should_highligh = line_number == pos.line && column_number == pos.column;
 
                     if should_highligh {
                         print!("{}", bold_red_on_white.apply_to(c));
@@ -269,8 +261,7 @@ pub fn highlight_source_file(
                     column_number += 1;
                 }
 
-                if matches!(last_column, Some(_)) && matches!(message, Some(_))
-                {
+                if matches!(last_column, Some(_)) && matches!(message, Some(_)) {
                     print!("\n");
                     print!("{: <1$}", "", largest_digit_number + 1);
                     print!("{}", bright_cyan.apply_to('|'));

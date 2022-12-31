@@ -7,8 +7,7 @@ I hope it does";
 
 #[test]
 fn source_file_test() {
-    let source_file =
-        SourceFile::new(SOURCE_FILE.to_string(), "test.pnx".to_string());
+    let source_file = SourceFile::new(SOURCE_FILE.to_string(), "test.pnx".to_string());
 
     assert_eq!(source_file.line(0), None);
     assert_eq!(source_file.line(1), Some("Hello World"));

@@ -1,7 +1,7 @@
 use pernixc_common::source_file::SourceFile;
 
 use crate::{
-    error::Error,
+    error::LexicalError,
     lexer::Lexer,
     token::{Token, TokenKind},
 };
@@ -9,7 +9,7 @@ use crate::{
 /// Represent a struct that contains a vector of [`Token`]s and a reference to
 /// the source file. This struct is used to iterate over the tokens of a source
 /// file.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TokenStream<'src> {
     source_file: &'src SourceFile,
     tokens: Vec<Token<'src>>,
@@ -18,9 +18,7 @@ pub struct TokenStream<'src> {
 impl<'src> TokenStream<'src> {
     /// Tokenize the given `source_file` and return a [`TokenStream`] containing
     /// the tokens of the source file.
-    pub fn tokenize(
-        source_file: &'src SourceFile,
-    ) -> Result<Self, Vec<Error<'src>>> {
+    pub fn tokenize(source_file: &'src SourceFile) -> (Self, Vec<LexicalError>) {
         let mut lexer = Lexer::new(source_file);
         let mut errors = Vec::new();
         let mut tokens = Vec::new();
@@ -29,8 +27,7 @@ impl<'src> TokenStream<'src> {
         loop {
             match lexer.lex() {
                 Ok(token) => {
-                    let is_eof =
-                        matches!(token.token_kind, TokenKind::EndOfFile);
+                    let is_eof = matches!(token.token_kind, TokenKind::EndOfFile);
 
                     tokens.push(token);
 
@@ -44,14 +41,13 @@ impl<'src> TokenStream<'src> {
             }
         }
 
-        if errors.is_empty() {
-            Ok(Self {
+        (
+            Self {
                 source_file,
                 tokens,
-            })
-        } else {
-            Err(errors)
-        }
+            },
+            errors,
+        )
     }
 
     /// Return a reference to the source file of this [`TokenStream`].

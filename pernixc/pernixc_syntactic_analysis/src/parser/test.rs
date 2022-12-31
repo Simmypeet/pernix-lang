@@ -3,11 +3,11 @@ use pernixc_lexical_analysis::token_stream::TokenStream;
 
 use crate::abstract_syntax_tree::{
     declaration::{
-        AccessModifier, ClassMemberDeclaration, Declaration, TypeAnnotaion,
+        AccessModifier, ClassMemberDeclarationAST, NamespaceLevelDeclarationAST, TypeAnnotationAST,
     },
-    expression::{Expression, FunctionCallExpression, QualifiedNameExpression},
-    statement::Statement,
-    PrimitiveTypeUnit, TypeUnit,
+    expression::{ExpressionAST, FunctionCallExpressionAST, QualifiedNameExpressionAST},
+    statement::StatementAST,
+    PrimitiveTypeUnit, TypeUnitAST,
 };
 
 use super::Parser;
@@ -15,10 +15,8 @@ use super::Parser;
 static QUALIFIED_NAME: &str = "Simmypeet::Program::Test ::Another";
 static QUALIFIED_NAME_EXPRESSION: &str = "a::b a() a::b() a::b(a) a::b(a, b)";
 static RETURN_STATEMENT: &str = "return 1 + 2;";
-static VARIABLE_DECLARATION_STATEMENT: &str =
-    "mutable a = 1 + 2; let b = 1 + 2;";
-static IF_ELSE_STATEMENT: &str =
-    "if (a == b) { a = 1; } else { a = 2; } if (a == b) return 1;";
+static VARIABLE_DECLARATION_STATEMENT: &str = "mutable a = 1 + 2; let b = 1 + 2;";
+static IF_ELSE_STATEMENT: &str = "if (a == b) { a = 1; } else { a = 2; } if (a == b) return 1;";
 static WHILE_STATEMENT: &str = "while (a == b) return 1;";
 static CLASS_INSTANTIATION_EXPRESSION: &str = "new A{} new B{a = 32, b = 65}";
 static NAMESPACE_DECLARATION: &str =
@@ -28,11 +26,10 @@ static CLASS_DECLARATION: &str =
 
 #[test]
 fn test_qualified_name() {
-    let source_file =
-        SourceFile::new(QUALIFIED_NAME.to_string(), "test.pnx".to_string());
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
+    let source_file = SourceFile::new(QUALIFIED_NAME.to_string(), "test.pnx".to_string());
+    let token_stream = TokenStream::tokenize(&source_file).0;
 
-    let mut parser = Parser::new(token_stream);
+    let mut parser = Parser::new(&token_stream);
     let qualified_name = parser.parse_qualified_name().unwrap();
 
     assert_eq!(qualified_name.value, "Simmypeet::Program::Test");
@@ -44,16 +41,16 @@ fn test_qualified_name_expression() {
         QUALIFIED_NAME_EXPRESSION.to_string(),
         "test.pnx".to_string(),
     );
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
+    let token_stream = TokenStream::tokenize(&source_file).0;
 
-    let mut parser = Parser::new(token_stream);
+    let mut parser = Parser::new(&token_stream);
 
     // a.b
     {
         let qualified_name = parser.parse_primary_expression().unwrap();
         assert!(matches!(
             qualified_name.value,
-            Expression::QualifiedNameExpression(QualifiedNameExpression {
+            ExpressionAST::QualifiedNameExpression(QualifiedNameExpressionAST {
                 qualified_name: "a::b"
             })
         ));
@@ -69,7 +66,7 @@ fn test_qualified_name_expression() {
         let qualified_name = parser.parse_primary_expression().unwrap();
         assert!(matches!(
             qualified_name.value,
-            Expression::FunctionCallExpression(FunctionCallExpression {
+            ExpressionAST::FunctionCallExpression(FunctionCallExpressionAST {
                 qualified_name,
                 arguments
             }) if qualified_name.value == "a" && arguments.is_empty()
@@ -87,7 +84,7 @@ fn test_qualified_name_expression() {
         let qualified_name = parser.parse_primary_expression().unwrap();
         assert!(matches!(
             qualified_name.value,
-            Expression::FunctionCallExpression(FunctionCallExpression {
+            ExpressionAST::FunctionCallExpression(FunctionCallExpressionAST {
                 qualified_name,
                 arguments
             }) if qualified_name.value == "a::b" && arguments.is_empty()
@@ -105,7 +102,7 @@ fn test_qualified_name_expression() {
         let qualified_name = parser.parse_primary_expression().unwrap();
         assert!(matches!(
             qualified_name.value,
-            Expression::FunctionCallExpression(FunctionCallExpression {
+            ExpressionAST::FunctionCallExpression(FunctionCallExpressionAST {
                 qualified_name,
                 arguments
             }) if qualified_name.value == "a::b" && arguments.len() == 1
@@ -123,7 +120,7 @@ fn test_qualified_name_expression() {
         let qualified_name = parser.parse_primary_expression().unwrap();
         assert!(matches!(
             qualified_name.value,
-            Expression::FunctionCallExpression(FunctionCallExpression {
+            ExpressionAST::FunctionCallExpression(FunctionCallExpressionAST {
                 qualified_name,
                 arguments
             }) if qualified_name.value == "a::b" && arguments.len() == 2
@@ -139,18 +136,17 @@ fn test_qualified_name_expression() {
 
 #[test]
 fn test_return_statement() {
-    let source_file =
-        SourceFile::new(RETURN_STATEMENT.to_string(), "test.pnx".to_string());
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
+    let source_file = SourceFile::new(RETURN_STATEMENT.to_string(), "test.pnx".to_string());
+    let token_stream = TokenStream::tokenize(&source_file).0;
 
-    let mut parser = Parser::new(token_stream);
+    let mut parser = Parser::new(&token_stream);
     let return_statement = parser.parse_return_statement().unwrap();
 
     match return_statement.value {
-        Statement::ReturnStatement(statement) => {
+        StatementAST::ReturnStatement(statement) => {
             assert!(matches!(
                 statement.expression.value,
-                Expression::BinaryExpression(_)
+                ExpressionAST::BinaryExpression(_)
             ));
 
             assert_eq!(return_statement.position.start.column, 1);
@@ -169,38 +165,28 @@ fn test_variable_declaration_statement() {
         VARIABLE_DECLARATION_STATEMENT.to_string(),
         "test.pnx".to_string(),
     );
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
-    let mut parser = Parser::new(token_stream);
+    let token_stream = TokenStream::tokenize(&source_file).0;
+    let mut parser = Parser::new(&token_stream);
 
     // first variable decl: mutable a = 1 + 2;
     {
-        let variable_declaration_statement =
-            parser.parse_variable_declaration_statement().unwrap();
+        let variable_declaration_statement = parser.parse_variable_declaration_statement().unwrap();
 
         match variable_declaration_statement.value {
-            Statement::VariableDeclarationStatement(statement) => {
+            StatementAST::VariableDeclarationStatement(statement) => {
                 assert_eq!(statement.variable_name.value, "a");
                 assert!(matches!(
                     statement.expression.value,
-                    Expression::BinaryExpression(_)
+                    ExpressionAST::BinaryExpression(_)
                 ));
 
-                assert_eq!(
-                    variable_declaration_statement.position.start.column,
-                    1
-                );
-                assert_eq!(
-                    variable_declaration_statement.position.start.line,
-                    1
-                );
+                assert_eq!(variable_declaration_statement.position.start.column, 1);
+                assert_eq!(variable_declaration_statement.position.start.line, 1);
 
-                assert_eq!(
-                    variable_declaration_statement.position.end.column,
-                    19
-                );
+                assert_eq!(variable_declaration_statement.position.end.column, 19);
                 assert_eq!(variable_declaration_statement.position.end.line, 1);
 
-                // is_const
+                // is_mutable
                 assert_eq!(statement.is_mutable, true);
             }
             _ => panic!("Expected variable declaration statement"),
@@ -209,33 +195,23 @@ fn test_variable_declaration_statement() {
 
     // second variable decl: let b = 1 + 2;
     {
-        let variable_declaration_statement =
-            parser.parse_variable_declaration_statement().unwrap();
+        let variable_declaration_statement = parser.parse_variable_declaration_statement().unwrap();
 
         match variable_declaration_statement.value {
-            Statement::VariableDeclarationStatement(statement) => {
+            StatementAST::VariableDeclarationStatement(statement) => {
                 assert_eq!(statement.variable_name.value, "b");
                 assert!(matches!(
                     statement.expression.value,
-                    Expression::BinaryExpression(_)
+                    ExpressionAST::BinaryExpression(_)
                 ));
 
-                assert_eq!(
-                    variable_declaration_statement.position.start.column,
-                    20
-                );
-                assert_eq!(
-                    variable_declaration_statement.position.start.line,
-                    1
-                );
+                assert_eq!(variable_declaration_statement.position.start.column, 20);
+                assert_eq!(variable_declaration_statement.position.start.line, 1);
 
-                assert_eq!(
-                    variable_declaration_statement.position.end.column,
-                    34
-                );
+                assert_eq!(variable_declaration_statement.position.end.column, 34);
                 assert_eq!(variable_declaration_statement.position.end.line, 1);
 
-                // is_const
+                // is_mutable
                 assert_eq!(statement.is_mutable, false);
             }
             _ => panic!("Expected variable declaration statement"),
@@ -245,30 +221,29 @@ fn test_variable_declaration_statement() {
 
 #[test]
 fn if_else_statement_test() {
-    let source_file =
-        SourceFile::new(IF_ELSE_STATEMENT.to_string(), "test.pnx".to_string());
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
-    let mut parser = Parser::new(token_stream);
+    let source_file = SourceFile::new(IF_ELSE_STATEMENT.to_string(), "test.pnx".to_string());
+    let token_stream = TokenStream::tokenize(&source_file).0;
+    let mut parser = Parser::new(&token_stream);
 
     // first if-else statement: if with else
     {
         let if_statement = parser.parse_if_else_statement().unwrap();
 
         match if_statement.value {
-            Statement::IfElseStatement(statement) => {
+            StatementAST::IfElseStatement(statement) => {
                 assert!(matches!(
                     statement.condition.value,
-                    Expression::BinaryExpression(_)
+                    ExpressionAST::BinaryExpression(_)
                 ));
 
                 assert!(matches!(
                     statement.then_statement.value,
-                    Statement::BlockScopeStatement(_)
+                    StatementAST::BlockScopeStatement(_)
                 ));
 
                 assert!(matches!(
                     statement.else_statement.unwrap().value,
-                    Statement::BlockScopeStatement(_)
+                    StatementAST::BlockScopeStatement(_)
                 ));
 
                 assert_eq!(if_statement.position.start.column, 1);
@@ -286,15 +261,15 @@ fn if_else_statement_test() {
         let if_statement = parser.parse_if_else_statement().unwrap();
 
         match if_statement.value {
-            Statement::IfElseStatement(statement) => {
+            StatementAST::IfElseStatement(statement) => {
                 assert!(matches!(
                     statement.condition.value,
-                    Expression::BinaryExpression(_)
+                    ExpressionAST::BinaryExpression(_)
                 ));
 
                 assert!(matches!(
                     statement.then_statement.value,
-                    Statement::ReturnStatement(_)
+                    StatementAST::ReturnStatement(_)
                 ));
 
                 assert!(statement.else_statement.is_none());
@@ -312,23 +287,22 @@ fn if_else_statement_test() {
 
 #[test]
 fn test_while_statement() {
-    let source_file =
-        SourceFile::new(WHILE_STATEMENT.to_string(), "test.pnx".to_string());
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
-    let mut parser = Parser::new(token_stream);
+    let source_file = SourceFile::new(WHILE_STATEMENT.to_string(), "test.pnx".to_string());
+    let token_stream = TokenStream::tokenize(&source_file).0;
+    let mut parser = Parser::new(&token_stream);
 
     let while_statement = parser.parse_while_statement().unwrap();
 
     match while_statement.value {
-        Statement::WhileStatement(statement) => {
+        StatementAST::WhileStatement(statement) => {
             assert!(matches!(
                 statement.condition.value,
-                Expression::BinaryExpression(_)
+                ExpressionAST::BinaryExpression(_)
             ));
 
             assert!(matches!(
                 statement.statement.value,
-                Statement::ReturnStatement(_)
+                StatementAST::ReturnStatement(_)
             ));
 
             assert_eq!(while_statement.position.start.column, 1);
@@ -347,18 +321,17 @@ fn test_class_instantiation_expression() {
         CLASS_INSTANTIATION_EXPRESSION.to_string(),
         "test.pnx".to_string(),
     );
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
-    let mut parser = Parser::new(token_stream);
+    let token_stream = TokenStream::tokenize(&source_file).0;
+    let mut parser = Parser::new(&token_stream);
 
     // first instantiation: new A{}
     {
-        let class_instantiation_expression =
-            parser.parse_class_instantiation_expression().unwrap();
+        let class_instantiation_expression = parser.parse_class_instantiation_expression().unwrap();
 
         match class_instantiation_expression.value {
-            Expression::ClassInstantiationExpression(expression) => {
+            ExpressionAST::ClassInstantiationExpression(expression) => {
                 match expression.type_unit.value {
-                    TypeUnit::QualifiedName(name) => {
+                    TypeUnitAST::QualifiedName(name) => {
                         assert_eq!(name, "A");
                     }
                     _ => panic!("Expected qualified name"),
@@ -366,19 +339,10 @@ fn test_class_instantiation_expression() {
 
                 assert!(expression.field_initializations.is_empty());
 
-                assert_eq!(
-                    class_instantiation_expression.position.start.column,
-                    1
-                );
-                assert_eq!(
-                    class_instantiation_expression.position.start.line,
-                    1
-                );
+                assert_eq!(class_instantiation_expression.position.start.column, 1);
+                assert_eq!(class_instantiation_expression.position.start.line, 1);
 
-                assert_eq!(
-                    class_instantiation_expression.position.end.column,
-                    8
-                );
+                assert_eq!(class_instantiation_expression.position.end.column, 8);
                 assert_eq!(class_instantiation_expression.position.end.line, 1);
             }
             _ => panic!("Expected class instantiation expression"),
@@ -387,13 +351,12 @@ fn test_class_instantiation_expression() {
 
     // second instantiation: new B{a = 32, b = 65}
     {
-        let class_instantiation_expression =
-            parser.parse_class_instantiation_expression().unwrap();
+        let class_instantiation_expression = parser.parse_class_instantiation_expression().unwrap();
 
         match class_instantiation_expression.value {
-            Expression::ClassInstantiationExpression(expression) => {
+            ExpressionAST::ClassInstantiationExpression(expression) => {
                 match expression.type_unit.value {
-                    TypeUnit::QualifiedName(name) => {
+                    TypeUnitAST::QualifiedName(name) => {
                         assert_eq!(name, "B");
                     }
                     _ => panic!("Expected qualified name"),
@@ -403,49 +366,32 @@ fn test_class_instantiation_expression() {
 
                 // first field initialization: a = 32
                 {
-                    let field_initialization =
-                        &expression.field_initializations[0];
+                    let field_initialization = &expression.field_initializations[0];
 
-                    assert_eq!(
-                        field_initialization.value.identifier.value,
-                        "a"
-                    );
+                    assert_eq!(field_initialization.value.identifier.value, "a");
 
                     assert!(matches!(
                         field_initialization.value.expression.value,
-                        Expression::LiteralExpression(_)
+                        ExpressionAST::LiteralExpression(_)
                     ));
                 }
 
                 // second field initialization: b = 65
                 {
-                    let field_initialization =
-                        &expression.field_initializations[1];
+                    let field_initialization = &expression.field_initializations[1];
 
-                    assert_eq!(
-                        field_initialization.value.identifier.value,
-                        "b"
-                    );
+                    assert_eq!(field_initialization.value.identifier.value, "b");
 
                     assert!(matches!(
                         field_initialization.value.expression.value,
-                        Expression::LiteralExpression(_)
+                        ExpressionAST::LiteralExpression(_)
                     ));
                 }
 
-                assert_eq!(
-                    class_instantiation_expression.position.start.column,
-                    9
-                );
-                assert_eq!(
-                    class_instantiation_expression.position.start.line,
-                    1
-                );
+                assert_eq!(class_instantiation_expression.position.start.column, 9);
+                assert_eq!(class_instantiation_expression.position.start.line, 1);
 
-                assert_eq!(
-                    class_instantiation_expression.position.end.column,
-                    30
-                );
+                assert_eq!(class_instantiation_expression.position.end.column, 30);
                 assert_eq!(class_instantiation_expression.position.end.line, 1);
             }
             _ => panic!("Expected class instantiation expression"),
@@ -455,17 +401,14 @@ fn test_class_instantiation_expression() {
 
 #[test]
 fn test_namespace_declaration() {
-    let source_file = SourceFile::new(
-        NAMESPACE_DECLARATION.to_string(),
-        "test.pnx".to_string(),
-    );
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
-    let mut parser = Parser::new(token_stream);
+    let source_file = SourceFile::new(NAMESPACE_DECLARATION.to_string(), "test.pnx".to_string());
+    let token_stream = TokenStream::tokenize(&source_file).0;
+    let mut parser = Parser::new(&token_stream);
 
     let namespace_declaration = parser.parse_namespace_declaration().unwrap();
 
     match namespace_declaration.value {
-        Declaration::NamespaceDeclaration(declaration) => {
+        NamespaceLevelDeclarationAST::NamespaceDeclaration(declaration) => {
             assert_eq!(declaration.qualified_name.value, "Outer::Space");
 
             // using directive: A::B
@@ -482,11 +425,8 @@ fn test_namespace_declaration() {
                 let declaration = &declaration.declarations[0];
 
                 match &declaration.value {
-                    Declaration::NamespaceDeclaration(declaration) => {
-                        assert_eq!(
-                            declaration.qualified_name.value,
-                            "Inner::Space"
-                        );
+                    NamespaceLevelDeclarationAST::NamespaceDeclaration(declaration) => {
+                        assert_eq!(declaration.qualified_name.value, "Inner::Space");
 
                         assert!(declaration.using_directives.is_empty());
                         assert!(declaration.declarations.is_empty());
@@ -501,14 +441,13 @@ fn test_namespace_declaration() {
 
 #[test]
 fn test_class_declaration() {
-    let source_file =
-        SourceFile::new(CLASS_DECLARATION.to_string(), "test.pnx".to_string());
-    let token_stream = TokenStream::tokenize(&source_file).unwrap();
-    let mut parser = Parser::new(token_stream);
+    let source_file = SourceFile::new(CLASS_DECLARATION.to_string(), "test.pnx".to_string());
+    let token_stream = TokenStream::tokenize(&source_file).0;
+    let mut parser = Parser::new(&token_stream);
 
     let class_declaration = parser.parse_class_declaration().unwrap();
     match class_declaration.value {
-        Declaration::ClassDeclaration(class_declaration) => {
+        NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
             // class name Test
             assert_eq!(class_declaration.identifier.value, "Test");
 
@@ -520,7 +459,7 @@ fn test_class_declaration() {
                 let member = &class_declaration.members[0];
 
                 match &member.value {
-                    ClassMemberDeclaration::ClassFieldDeclaration(field) => {
+                    ClassMemberDeclarationAST::ClassFieldDeclaration(field) => {
                         assert_eq!(field.identifier.value, "a");
 
                         assert!(matches!(
@@ -530,11 +469,9 @@ fn test_class_declaration() {
 
                         assert!(matches!(
                             field.type_annotation.value,
-                            TypeAnnotaion::TypeUnit(
-                                TypeUnit::PrimitiveTypeUnit(
-                                    PrimitiveTypeUnit::Int32
-                                )
-                            )
+                            TypeAnnotationAST::TypeUnit(TypeUnitAST::PrimitiveTypeUnit(
+                                PrimitiveTypeUnit::Int32
+                            ))
                         ));
 
                         assert_eq!(field.identifier.value, "a");
@@ -548,7 +485,7 @@ fn test_class_declaration() {
                 let member = &class_declaration.members[1];
 
                 match &member.value {
-                    ClassMemberDeclaration::ClassFieldDeclaration(field) => {
+                    ClassMemberDeclarationAST::ClassFieldDeclaration(field) => {
                         assert_eq!(field.identifier.value, "b");
 
                         assert!(matches!(
@@ -558,9 +495,7 @@ fn test_class_declaration() {
 
                         assert!(matches!(
                             field.type_annotation.value,
-                            TypeAnnotaion::TypeUnit(TypeUnit::QualifiedName(
-                                "SomeType"
-                            ))
+                            TypeAnnotationAST::TypeUnit(TypeUnitAST::QualifiedName("SomeType"))
                         ));
 
                         assert_eq!(field.identifier.value, "b");
@@ -574,7 +509,7 @@ fn test_class_declaration() {
                 let member = &class_declaration.members[2];
 
                 match &member.value {
-                    ClassMemberDeclaration::ClassMethodDeclaration(method) => {
+                    ClassMemberDeclarationAST::ClassMethodDeclaration(method) => {
                         assert_eq!(method.identifier.value, "Main");
 
                         assert!(matches!(
@@ -584,11 +519,9 @@ fn test_class_declaration() {
 
                         assert!(matches!(
                             method.return_type_annotation.value,
-                            TypeAnnotaion::TypeUnit(
-                                TypeUnit::PrimitiveTypeUnit(
-                                    PrimitiveTypeUnit::Int32
-                                )
-                            )
+                            TypeAnnotationAST::TypeUnit(TypeUnitAST::PrimitiveTypeUnit(
+                                PrimitiveTypeUnit::Int32
+                            ))
                         ));
 
                         assert!(method.parameters.is_empty());
@@ -598,10 +531,10 @@ fn test_class_declaration() {
                         let statement = &method.body.value.statements[0];
 
                         match &statement.value {
-                            Statement::ReturnStatement(statement) => {
+                            StatementAST::ReturnStatement(statement) => {
                                 assert!(matches!(
                                     statement.expression.value,
-                                    Expression::LiteralExpression(_)
+                                    ExpressionAST::LiteralExpression(_)
                                 ));
                             }
                             _ => panic!("Expected return statement"),

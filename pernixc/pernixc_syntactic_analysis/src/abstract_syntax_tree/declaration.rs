@@ -1,6 +1,7 @@
-use super::{statement::BlockScopeStatement, PositionWrapper, TypeUnit};
+use super::{statement::BlockScopeStatementAST, PositionWrapper, TypeUnitAST};
 
 /// Represent an enumeration containing all access modifiers.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AccessModifier {
     Public,
     Private,
@@ -14,9 +15,10 @@ pub enum AccessModifier {
 /// ClassDeclaration:
 ///    'class' Identifier '{' ClassMemberDeclaration* '}';
 /// ```
-pub struct ClassDeclaration<'src> {
+#[derive(Clone)]
+pub struct ClassDeclarationAST<'src> {
     pub identifier: PositionWrapper<&'src str>,
-    pub members: Vec<PositionWrapper<ClassMemberDeclaration<'src>>>,
+    pub members: Vec<PositionWrapper<ClassMemberDeclarationAST<'src>>>,
 }
 
 /// Is an enumeration containing all possible class member declarations.
@@ -28,9 +30,10 @@ pub struct ClassDeclaration<'src> {
 ///     ClassMethodDeclaration
 ///     | ClassFieldDeclaration;
 /// ```
-pub enum ClassMemberDeclaration<'src> {
-    ClassMethodDeclaration(ClassMethodDeclaration<'src>),
-    ClassFieldDeclaration(ClassFieldDeclaration<'src>),
+#[derive(Clone)]
+pub enum ClassMemberDeclarationAST<'src> {
+    ClassMethodDeclaration(ClassMethodDeclarationAST<'src>),
+    ClassFieldDeclaration(ClassFieldDeclarationAST<'src>),
 }
 
 /// Is an abstract syntax tree node that represents a class field declaration.
@@ -41,9 +44,10 @@ pub enum ClassMemberDeclaration<'src> {
 /// ClassFieldDeclaration:
 ///     AccessModifier TypeAnnotation Identifier ';';
 /// ```
-pub struct ClassFieldDeclaration<'src> {
+#[derive(Clone)]
+pub struct ClassFieldDeclarationAST<'src> {
     pub access_modifier: PositionWrapper<AccessModifier>,
-    pub type_annotation: PositionWrapper<TypeAnnotaion<'src>>,
+    pub type_annotation: PositionWrapper<TypeAnnotationAST<'src>>,
     pub identifier: PositionWrapper<&'src str>,
 }
 
@@ -55,12 +59,14 @@ pub struct ClassFieldDeclaration<'src> {
 /// ClassMethodDeclaration:
 ///     AccessModifier TypeAnnotation Identifier '(' Parameter (',' Parameter)* ')'
 ///     BlockScopeStatement;
-pub struct ClassMethodDeclaration<'src> {
+/// ```
+#[derive(Clone)]
+pub struct ClassMethodDeclarationAST<'src> {
     pub access_modifier: PositionWrapper<AccessModifier>,
     pub identifier: PositionWrapper<&'src str>,
-    pub parameters: Vec<PositionWrapper<Parameter<'src>>>,
-    pub return_type_annotation: PositionWrapper<TypeAnnotaion<'src>>,
-    pub body: PositionWrapper<BlockScopeStatement<'src>>,
+    pub parameters: Vec<PositionWrapper<ParameterAST<'src>>>,
+    pub return_type_annotation: PositionWrapper<TypeAnnotationAST<'src>>,
+    pub body: PositionWrapper<BlockScopeStatementAST<'src>>,
 }
 
 /// Is an abstract syntax tree node that represents a parameter..
@@ -71,9 +77,9 @@ pub struct ClassMethodDeclaration<'src> {
 /// Parameter:
 ///     QualifiedTypeAnnotation Identifier;
 /// ```
-pub struct Parameter<'src> {
-    pub qualified_type_annotation:
-        PositionWrapper<QualifiedTypeAnnotaion<'src>>,
+#[derive(Clone)]
+pub struct ParameterAST<'src> {
+    pub qualified_type_annotation: PositionWrapper<QualifiedTypeAnnotationAST<'src>>,
     pub identifier: PositionWrapper<&'src str>,
 }
 
@@ -85,7 +91,8 @@ pub struct Parameter<'src> {
 /// UsingDirective:
 ///     'using' QualifiedName ';';
 /// ```
-pub struct UsingDirective<'src> {
+#[derive(Clone)]
+pub struct UsingDirectiveAST<'src> {
     pub qualified_name: PositionWrapper<&'src str>,
 }
 
@@ -97,10 +104,11 @@ pub struct UsingDirective<'src> {
 /// NamespaceDeclaration:
 ///     'namespace' QualifiedName '{' UsingDirective* Declaration* '}';
 /// ```
-pub struct NamespaceDeclaration<'src> {
+#[derive(Clone)]
+pub struct NamespaceDeclarationAST<'src> {
     pub qualified_name: PositionWrapper<&'src str>,
-    pub using_directives: Vec<PositionWrapper<UsingDirective<'src>>>,
-    pub declarations: Vec<PositionWrapper<Declaration<'src>>>,
+    pub using_directives: Vec<PositionWrapper<UsingDirectiveAST<'src>>>,
+    pub declarations: Vec<PositionWrapper<NamespaceLevelDeclarationAST<'src>>>,
 }
 
 /// Represent an enumeration containing all type annotations.
@@ -111,9 +119,9 @@ pub struct NamespaceDeclaration<'src> {
 /// TypeAnnotation:
 ///     TypeUnit;
 /// ```
-#[derive(Debug, Clone)]
-pub enum TypeAnnotaion<'src> {
-    TypeUnit(TypeUnit<'src>),
+#[derive(Clone)]
+pub enum TypeAnnotationAST<'src> {
+    TypeUnit(TypeUnitAST<'src>),
 }
 
 /// Is an abstract syntax tree node that represents a qualified type annotation.
@@ -124,8 +132,9 @@ pub enum TypeAnnotaion<'src> {
 /// QualifiedTypeAnnotation:
 ///     'mutable'? TypeAnnotation;
 /// ```
-pub struct QualifiedTypeAnnotaion<'src> {
-    pub type_annotation: PositionWrapper<TypeAnnotaion<'src>>,
+#[derive(Clone)]
+pub struct QualifiedTypeAnnotationAST<'src> {
+    pub type_annotation: PositionWrapper<TypeAnnotationAST<'src>>,
     pub is_mutable: bool,
 }
 
@@ -137,7 +146,62 @@ pub struct QualifiedTypeAnnotaion<'src> {
 /// Declaration:
 ///     ClassDeclaration
 ///     | NamespaceDeclaration;
-pub enum Declaration<'src> {
-    ClassDeclaration(ClassDeclaration<'src>),
-    NamespaceDeclaration(NamespaceDeclaration<'src>),
+#[derive(Clone)]
+pub enum NamespaceLevelDeclarationAST<'src> {
+    ClassDeclaration(ClassDeclarationAST<'src>),
+    NamespaceDeclaration(NamespaceDeclarationAST<'src>),
+}
+
+impl<'src> NamespaceLevelDeclarationAST<'src> {
+    /// Return the class declaration if the variant is a class declaration.
+    pub fn get_class_declaration(&self) -> Option<&ClassDeclarationAST<'src>> {
+        match self {
+            NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
+                Some(class_declaration)
+            }
+            _ => None,
+        }
+    }
+
+    /// Return the namespace declaration if the variant is a namespace declaration.
+    pub fn get_namespace_declaration(&self) -> Option<&NamespaceDeclarationAST<'src>> {
+        match self {
+            NamespaceLevelDeclarationAST::NamespaceDeclaration(namespace_declaration) => {
+                Some(namespace_declaration)
+            }
+            _ => None,
+        }
+    }
+
+    /// Returb the class declaration if the variant is a class declaration.
+    pub fn to_class_declaration(self) -> Option<ClassDeclarationAST<'src>> {
+        match self {
+            NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
+                Some(class_declaration)
+            }
+            _ => None,
+        }
+    }
+
+    /// Return the namespace declaration if the variant is a namespace declaration.
+    pub fn to_namespace_declaration(self) -> Option<NamespaceDeclarationAST<'src>> {
+        match self {
+            NamespaceLevelDeclarationAST::NamespaceDeclaration(namespace_declaration) => {
+                Some(namespace_declaration)
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the name of the declaration
+    pub fn get_name(&self) -> &PositionWrapper<&'src str> {
+        match self {
+            NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
+                &class_declaration.identifier
+            }
+            NamespaceLevelDeclarationAST::NamespaceDeclaration(namespace_declaration) => {
+                &namespace_declaration.qualified_name
+            }
+        }
+    }
 }

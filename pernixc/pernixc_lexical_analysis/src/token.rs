@@ -3,7 +3,7 @@ use std::ops::Range;
 use pernixc_common::source_file::SourcePosition;
 
 /// Represent an enumeration containing all keywords.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
     Return,
     Let,
@@ -68,7 +68,7 @@ impl Keyword {
 }
 
 /// Represent an enumeration containing all literal constant types.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum LiteralConstantToken<'src> {
     Number {
         value: &'src str,
@@ -82,16 +82,14 @@ impl<'src> LiteralConstantToken<'src> {
     /// Return a literal suffix of this [`LiteralConstantToken`].
     pub fn get_literal_suffix(&self) -> Option<&'src str> {
         match self {
-            LiteralConstantToken::Number { literal_suffix, .. } => {
-                *literal_suffix
-            }
+            LiteralConstantToken::Number { literal_suffix, .. } => *literal_suffix,
             LiteralConstantToken::Boolean(_) => None,
         }
     }
 }
 
 /// Represent an enumeration containing all patterns of tokens.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum TokenKind<'src> {
     Identifier,
     Space,
@@ -114,7 +112,7 @@ impl<'src> TokenKind<'src> {
 }
 
 /// Represent a single token word; containing type of the token and its lexeme.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Token<'src> {
     pub token_kind: TokenKind<'src>,
     pub position_range: Range<SourcePosition>,

@@ -1,4 +1,4 @@
-use super::{expression::Expression, PositionWrapper};
+use super::{expression::ExpressionAST, PositionWrapper};
 
 /// Reprsent an if-else statement abstract syntax tree node.
 ///
@@ -8,10 +8,11 @@ use super::{expression::Expression, PositionWrapper};
 /// IfElseStatement:
 ///     'if' '(' Expression ')' Statement ('else' Statement)?;
 /// ```
-pub struct IfElseStatement<'src> {
-    pub condition: PositionWrapper<Expression<'src>>,
-    pub then_statement: Box<PositionWrapper<Statement<'src>>>,
-    pub else_statement: Option<Box<PositionWrapper<Statement<'src>>>>,
+#[derive(Clone)]
+pub struct IfElseStatementAST<'src> {
+    pub condition: PositionWrapper<ExpressionAST<'src>>,
+    pub then_statement: Box<PositionWrapper<StatementAST<'src>>>,
+    pub else_statement: Option<Box<PositionWrapper<StatementAST<'src>>>>,
 }
 
 /// Reprsent a while statement abstract syntax tree node.
@@ -22,9 +23,10 @@ pub struct IfElseStatement<'src> {
 /// WhileStatement:
 ///     'while' '(' Expression ')' Statement;
 /// ```
-pub struct WhileStatement<'src> {
-    pub condition: PositionWrapper<Expression<'src>>,
-    pub statement: Box<PositionWrapper<Statement<'src>>>,
+#[derive(Clone)]
+pub struct WhileStatementAST<'src> {
+    pub condition: PositionWrapper<ExpressionAST<'src>>,
+    pub statement: Box<PositionWrapper<StatementAST<'src>>>,
 }
 
 /// Reprsent a variable declaration statement abstract syntax tree node.
@@ -34,10 +36,12 @@ pub struct WhileStatement<'src> {
 /// ``` txt
 /// VariableDeclarationStatement:
 ///     ('mutable' | 'let') Identifier '=' Expression ';';
-pub struct VariableDeclarationStatement<'src> {
+/// ```
+#[derive(Clone)]
+pub struct VariableDeclarationStatementAST<'src> {
     pub variable_name: PositionWrapper<&'src str>,
     pub is_mutable: bool,
-    pub expression: PositionWrapper<Expression<'src>>,
+    pub expression: PositionWrapper<ExpressionAST<'src>>,
 }
 
 /// Reprsent a return statement abstract syntax tree node.
@@ -47,8 +51,10 @@ pub struct VariableDeclarationStatement<'src> {
 /// ``` txt
 /// ReturnStatement:
 ///     'return' Expression? ';';
-pub struct ReturnStatement<'src> {
-    pub expression: PositionWrapper<Expression<'src>>,
+/// ```
+#[derive(Clone)]
+pub struct ReturnStatementAST<'src> {
+    pub expression: PositionWrapper<ExpressionAST<'src>>,
 }
 
 /// Reprsent a block statement abstract syntax tree node contain
@@ -59,8 +65,9 @@ pub struct ReturnStatement<'src> {
 /// BlockScopeStatement:
 ///     '{' Statement* '}';
 /// ```
-pub struct BlockScopeStatement<'src> {
-    pub statements: Vec<PositionWrapper<Statement<'src>>>,
+#[derive(Clone)]
+pub struct BlockScopeStatementAST<'src> {
+    pub statements: Vec<PositionWrapper<StatementAST<'src>>>,
 }
 
 /// Represent an enumeration of all possible statement abstract syntax tree nodes.
@@ -78,13 +85,14 @@ pub struct BlockScopeStatement<'src> {
 ///     | ('break' ';')
 ///     | ('continue' ';');
 /// ```
-pub enum Statement<'src> {
-    IfElseStatement(IfElseStatement<'src>),
-    WhileStatement(WhileStatement<'src>),
-    ExpressionStatement(Expression<'src>),
-    VariableDeclarationStatement(VariableDeclarationStatement<'src>),
-    ReturnStatement(ReturnStatement<'src>),
-    BlockScopeStatement(BlockScopeStatement<'src>),
+#[derive(Clone)]
+pub enum StatementAST<'src> {
+    IfElseStatement(IfElseStatementAST<'src>),
+    WhileStatement(WhileStatementAST<'src>),
+    ExpressionStatement(ExpressionAST<'src>),
+    VariableDeclarationStatement(VariableDeclarationStatementAST<'src>),
+    ReturnStatement(ReturnStatementAST<'src>),
+    BlockScopeStatement(BlockScopeStatementAST<'src>),
     BreakStatement,
     ContinueStatement,
 }

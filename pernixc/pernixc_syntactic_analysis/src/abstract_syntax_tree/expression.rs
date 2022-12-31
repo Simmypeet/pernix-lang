@@ -1,6 +1,6 @@
 use pernixc_lexical_analysis::token::LiteralConstantToken;
 
-use super::{PositionWrapper, TypeUnit};
+use super::{PositionWrapper, TypeUnitAST};
 
 /// Represent an expression abstract syntax tree node containing a literal expression.
 ///
@@ -9,8 +9,8 @@ use super::{PositionWrapper, TypeUnit};
 /// ``` txt
 /// LiteralExpression: LiteralConstant;
 /// ```
-#[derive(Debug, Clone)]
-pub struct LiteralExpression<'src> {
+#[derive(Clone)]
+pub struct LiteralExpressionAST<'src> {
     pub literal_expression: LiteralConstantToken<'src>,
 }
 
@@ -22,13 +22,13 @@ pub struct LiteralExpression<'src> {
 /// ``` txt
 /// QualifiedNameExpression: QualifiedName;
 /// ```
-#[derive(Debug, Clone)]
-pub struct QualifiedNameExpression<'src> {
+#[derive(Clone)]
+pub struct QualifiedNameExpressionAST<'src> {
     pub qualified_name: &'src str,
 }
 
 /// Is an enumeration of all possible prefix operators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOperator {
     Identity,
     Negation,
@@ -45,14 +45,14 @@ pub enum UnaryOperator {
 /// UnaryExpression:
 ///    UnaryOperator Expression;
 /// ```
-#[derive(Debug, Clone)]
-pub struct UnaryExpression<'src> {
+#[derive(Clone)]
+pub struct UnaryExpressionAST<'src> {
     pub unary_operator: PositionWrapper<UnaryOperator>,
-    pub expression: Box<PositionWrapper<Expression<'src>>>,
+    pub expression: Box<PositionWrapper<ExpressionAST<'src>>>,
 }
 
 /// Is an enumeration of all possible binary operators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
     Addition,
     Subtraction,
@@ -83,11 +83,11 @@ pub enum BinaryOperator {
 /// BinaryExpression:
 ///     Expression BinaryOperator Expression;
 /// ```
-#[derive(Debug, Clone)]
-pub struct BinaryExpression<'src> {
-    pub left_expression: Box<PositionWrapper<Expression<'src>>>,
+#[derive(Clone)]
+pub struct BinaryExpressionAST<'src> {
+    pub left_expression: Box<PositionWrapper<ExpressionAST<'src>>>,
     pub binary_operator: PositionWrapper<BinaryOperator>,
-    pub right_expression: Box<PositionWrapper<Expression<'src>>>,
+    pub right_expression: Box<PositionWrapper<ExpressionAST<'src>>>,
 }
 
 /// Represent an expression abstract syntax tree node yielding a function call
@@ -99,10 +99,10 @@ pub struct BinaryExpression<'src> {
 /// FunctionCallExpression:
 ///     QualifiedName '(' Expression? (',' Expression)* ')';
 /// ```
-#[derive(Debug, Clone)]
-pub struct FunctionCallExpression<'src> {
+#[derive(Clone)]
+pub struct FunctionCallExpressionAST<'src> {
     pub qualified_name: PositionWrapper<&'src str>,
-    pub arguments: Vec<PositionWrapper<Expression<'src>>>,
+    pub arguments: Vec<PositionWrapper<ExpressionAST<'src>>>,
 }
 
 /// Reprsent an initialization statement for a class field.
@@ -113,10 +113,10 @@ pub struct FunctionCallExpression<'src> {
 /// ClassFiledInitialization:
 ///     QualifiedName '=' Expression;
 /// ```
-#[derive(Debug, Clone)]
-pub struct ClassFiledInitialization<'src> {
+#[derive(Clone)]
+pub struct ClassFiledInitializationAST<'src> {
     pub identifier: PositionWrapper<&'src str>,
-    pub expression: PositionWrapper<Expression<'src>>,
+    pub expression: PositionWrapper<ExpressionAST<'src>>,
 }
 
 /// Represent an expression abstract syntax tree node yielding from a class
@@ -131,11 +131,10 @@ pub struct ClassFiledInitialization<'src> {
 /// ClassInstantiationExpression:
 ///     'new' TypeUnit '{' ClassFieldInitialization? '}';
 /// ```
-#[derive(Debug, Clone)]
-pub struct ClassInstantiationExpression<'src> {
-    pub type_unit: PositionWrapper<TypeUnit<'src>>,
-    pub field_initializations:
-        Vec<PositionWrapper<ClassFiledInitialization<'src>>>,
+#[derive(Clone)]
+pub struct ClassInstantiationExpressionAST<'src> {
+    pub type_unit: PositionWrapper<TypeUnitAST<'src>>,
+    pub field_initializations: Vec<PositionWrapper<ClassFiledInitializationAST<'src>>>,
 }
 
 /// Represent an expression abstract syntax tree node yielding from accessing a
@@ -147,10 +146,10 @@ pub struct ClassInstantiationExpression<'src> {
 /// MemberFieldAccessExpression:
 ///     Expression '.' Identifier;
 /// ```
-#[derive(Debug, Clone)]
-pub struct MemberFieldAccessExpression<'src> {
+#[derive(Clone)]
+pub struct MemberFieldAccessExpressionAST<'src> {
     pub identifier: PositionWrapper<&'src str>,
-    pub expression: Box<PositionWrapper<Expression<'src>>>,
+    pub expression: Box<PositionWrapper<ExpressionAST<'src>>>,
 }
 
 /// Is an enumeration of all possible expression abstract syntax tree nodes.
@@ -167,13 +166,13 @@ pub struct MemberFieldAccessExpression<'src> {
 ///     | ClassInstantiationExpression
 ///     | MemberFieldAccessExpression;
 /// ```
-#[derive(Debug, Clone)]
-pub enum Expression<'src> {
-    LiteralExpression(LiteralExpression<'src>),
-    QualifiedNameExpression(QualifiedNameExpression<'src>),
-    UnaryExpression(UnaryExpression<'src>),
-    BinaryExpression(BinaryExpression<'src>),
-    FunctionCallExpression(FunctionCallExpression<'src>),
-    ClassInstantiationExpression(ClassInstantiationExpression<'src>),
-    MemberFieldAccessExpression(MemberFieldAccessExpression<'src>),
+#[derive(Clone)]
+pub enum ExpressionAST<'src> {
+    LiteralExpression(LiteralExpressionAST<'src>),
+    QualifiedNameExpression(QualifiedNameExpressionAST<'src>),
+    UnaryExpression(UnaryExpressionAST<'src>),
+    BinaryExpression(BinaryExpressionAST<'src>),
+    FunctionCallExpression(FunctionCallExpressionAST<'src>),
+    ClassInstantiationExpression(ClassInstantiationExpressionAST<'src>),
+    MemberFieldAccessExpression(MemberFieldAccessExpressionAST<'src>),
 }

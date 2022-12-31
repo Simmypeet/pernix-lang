@@ -7,5 +7,3 @@ edition = "2021"
 
 [dependencies]
 pernixc_common = { path = "../pernixc_common" }
-
-[lib]

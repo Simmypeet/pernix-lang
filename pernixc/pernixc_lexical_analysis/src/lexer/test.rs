@@ -9,10 +9,7 @@ use crate::{
 #[test]
 // Test for the literal constant token correctness
 fn literal_test() {
-    let source = SourceFile::new(
-        "123i32 123.456 true false".to_string(),
-        "test".to_string(),
-    );
+    let source = SourceFile::new("123i32 123.456 true false".to_string(), "test".to_string());
     let mut lexer = Lexer::new(&source);
 
     // expect 123 integer
@@ -288,8 +285,7 @@ fn identifier_and_keyword_test() {
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme == "some_name"
-            && matches!(token.token_kind, TokenKind::Identifier)
+        token.lexeme == "some_name" && matches!(token.token_kind, TokenKind::Identifier)
     });
 
     assert!(matches!(
@@ -299,8 +295,7 @@ fn identifier_and_keyword_test() {
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme == "_name"
-            && matches!(token.token_kind, TokenKind::Identifier)
+        token.lexeme == "_name" && matches!(token.token_kind, TokenKind::Identifier)
     });
 
     assert!(matches!(
@@ -338,8 +333,7 @@ fn comment_test() {
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme == "// Hello\n"
-            && matches!(token.token_kind, TokenKind::Comment)
+        token.lexeme == "// Hello\n" && matches!(token.token_kind, TokenKind::Comment)
     });
 
     assert!(matches!(
@@ -354,8 +348,7 @@ fn comment_test() {
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme == "// Another"
-            && matches!(token.token_kind, TokenKind::Comment)
+        token.lexeme == "// Another" && matches!(token.token_kind, TokenKind::Comment)
     });
 
     assert!(matches!(
@@ -375,8 +368,7 @@ fn multiline_comment_test() {
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme == "/* Hello */"
-            && matches!(token.token_kind, TokenKind::Comment)
+        token.lexeme == "/* Hello */" && matches!(token.token_kind, TokenKind::Comment)
     });
 
     assert!(matches!(
@@ -391,8 +383,7 @@ fn multiline_comment_test() {
 
     assert!({
         let token = lexer.lex().ok().unwrap();
-        token.lexeme == "/* Another */"
-            && matches!(token.token_kind, TokenKind::Comment)
+        token.lexeme == "/* Another */" && matches!(token.token_kind, TokenKind::Comment)
     });
 
     assert!(matches!(
@@ -403,13 +394,10 @@ fn multiline_comment_test() {
     assert!({
         let err = lexer.lex().err().unwrap();
 
-        match err.lexical_error {
+        match err {
             LexicalError::UnterminatedMultilineComment {
                 multiline_comment_position,
-            } => {
-                multiline_comment_position.line == 1
-                    && multiline_comment_position.column == 33
-            }
+            } => multiline_comment_position.line == 1 && multiline_comment_position.column == 33,
             _ => false,
         }
     });
