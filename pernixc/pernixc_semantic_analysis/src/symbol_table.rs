@@ -80,6 +80,32 @@ pub enum Symbol {
     OverloadSetSymbol(OverloadSetSymbol),
 }
 
+impl Symbol {
+    /// Returns `true` if the symbol is [`Namespace`].
+    ///
+    /// [`Namespace`]: Symbol::Namespace
+    #[must_use]
+    pub fn is_namespace(&self) -> bool {
+        matches!(self, Self::Namespace)
+    }
+
+    /// Returns `true` if the symbol is [`ClassSymbol`].
+    ///
+    /// [`ClassSymbol`]: Symbol::ClassSymbol
+    #[must_use]
+    pub fn is_class_symbol(&self) -> bool {
+        matches!(self, Self::ClassSymbol(..))
+    }
+
+    /// Returns `true` if the symbol is [`OverloadSetSymbol`].
+    ///
+    /// [`OverloadSetSymbol`]: Symbol::OverloadSetSymbol
+    #[must_use]
+    pub fn is_overload_set_symbol(&self) -> bool {
+        matches!(self, Self::OverloadSetSymbol(..))
+    }
+}
+
 /// Is a symbol table that contains all the symbols that are defined in the program.
 /// It allows fast lookup of symbols by name.
 pub struct SymbolTable {

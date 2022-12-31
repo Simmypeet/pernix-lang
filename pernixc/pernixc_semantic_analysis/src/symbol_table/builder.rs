@@ -8,7 +8,8 @@ use pernixc_syntactic_analysis::abstract_syntax_tree::{
 use crate::{error::SemanticError, scope::ScopeInfo};
 
 use super::{
-    ClassFieldSymbol, ClassSymbol, FunctionSymbol, OverloadSetSymbol, Symbol, SymbolTable,
+    ClassFieldSymbol, ClassSymbol, FunctionSymbol, OverloadSetSymbol, Symbol, SymbolID,
+    SymbolTable, TypeAnnotationSymbol, TypeUnitSymbol,
 };
 
 /// Is a builder struct that is used to build a symbol table. It records a list of
@@ -82,7 +83,10 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
     }
 
     /// Finalize the builder and build the symbol table.
-    pub fn build(self) -> (SymbolTable, Vec<SemanticError<'ast, 'src>>) {
+    pub fn build(self) -> (SymbolTable, Vec<SemanticError<'ast, 'src>>)
+    where
+        'ast: 'src,
+    {
         let mut errors = Vec::new();
         let mut symbol_table = SymbolTable {
             symbols: Vec::new(),
@@ -118,120 +122,131 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
 
         // pass 2: loop through the class declarations and expand the class method symbol
         for (declaration, scope_info, full_qualified_name) in &self.declarations {
-            if let NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) =
-                &declaration.value
-            {
-                for class_member in &class_declaration.members {
-                    if let ClassMemberDeclarationAST::ClassMethodDeclaration(class_method) =
-                        &class_member.value
-                    {
-                        // full method name
-                        let method_name =
-                            format!("{}::{}", full_qualified_name, class_method.identifier.value);
+            let class_declaration =
+                if let NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) =
+                    &declaration.value
+                {
+                    if !matches!(
+                        symbol_table.get_by_full_qualified_name(&full_qualified_name),
+                        Some(Symbol::ClassSymbol(_)),
+                    ) {
+                        continue;
+                    }
+                    class_declaration
+                } else {
+                    continue;
+                };
 
-                        // the overload set symbol to insert
-                        let overload_set = Symbol::OverloadSetSymbol(OverloadSetSymbol {
-                            name: class_method.identifier.value.to_string(),
-                            functions: Vec::new(),
-                        });
+            for class_member in &class_declaration.members {
+                if let ClassMemberDeclarationAST::ClassMethodDeclaration(class_method) =
+                    &class_member.value
+                {
+                    // full method name
+                    let method_name =
+                        format!("{}::{}", full_qualified_name, class_method.identifier.value);
 
-                        // construct the function symbol
-                        let function_symbol = {
-                            // get the return type
-                            let return_type = symbol_table.get_type_annotation_symbol(
-                                &class_method.return_type_annotation,
+                    // the overload set symbol to insert
+                    let overload_set = Symbol::OverloadSetSymbol(OverloadSetSymbol {
+                        name: class_method.identifier.value.to_string(),
+                        functions: Vec::new(),
+                    });
+
+                    // construct the function symbol
+                    let function_symbol = {
+                        // get the return type
+                        let return_type = symbol_table.get_type_annotation_symbol(
+                            &class_method.return_type_annotation,
+                            scope_info,
+                        );
+
+                        // list of parameter
+                        let mut parameters = Vec::new();
+
+                        for parameter in &class_method.parameters {
+                            parameters.push(symbol_table.get_qualified_type_annotation_symbol(
+                                &parameter.value.qualified_type_annotation,
                                 scope_info,
-                            );
+                            ));
+                        }
 
-                            // list of parameter
-                            let mut parameters = Vec::new();
-
-                            for parameter in &class_method.parameters {
-                                parameters.push(symbol_table.get_qualified_type_annotation_symbol(
-                                    &parameter.value.qualified_type_annotation,
-                                    scope_info,
-                                ));
+                        // unwrap the Result
+                        if return_type.is_err() || parameters.iter().any(|x| x.is_err()) {
+                            // unwrap the error of return type
+                            if let Err(error) = return_type {
+                                errors.push(error);
                             }
 
-                            // unwrap the Result
-                            if return_type.is_err() || parameters.iter().any(|x| x.is_err()) {
-                                // unwrap the error of return type
-                                if let Err(error) = return_type {
+                            // unwrap the error of parameters
+                            for parameter in parameters {
+                                if let Err(error) = parameter {
                                     errors.push(error);
                                 }
-
-                                // unwrap the error of parameters
-                                for parameter in parameters {
-                                    if let Err(error) = parameter {
-                                        errors.push(error);
-                                    }
-                                }
-
-                                continue;
-                            } else {
-                                // everything is ok, unwrap the type
-                                let return_type = return_type.ok().unwrap();
-                                let mut unwrapped_parameters = Vec::new();
-
-                                for parameter in parameters {
-                                    // push to the list
-                                    unwrapped_parameters.push(parameter.ok().unwrap());
-                                }
-
-                                FunctionSymbol {
-                                    name: class_method.identifier.value.to_string(),
-                                    return_type,
-                                    parameters: unwrapped_parameters,
-                                    access_modifier: class_method.access_modifier.value,
-                                }
-                            }
-                        };
-
-                        // try to insert new overload set symbol
-                        let overload_set = match symbol_table.insert(method_name, overload_set) {
-                            Ok(sym_id) => {
-                                if let Symbol::OverloadSetSymbol(overload_set) =
-                                    symbol_table.get_mut_by_id(sym_id).unwrap()
-                                {
-                                    overload_set
-                                } else {
-                                    unreachable!();
-                                }
-                            }
-                            Err(sym_id) => {
-                                if let Symbol::OverloadSetSymbol(overload_set) =
-                                    symbol_table.get_mut_by_id(sym_id).unwrap()
-                                {
-                                    overload_set
-                                } else {
-                                    errors.push(SemanticError::SymbolRedeclaration {
-                                        redeclaration_name: &class_method.identifier,
-                                    });
-                                    continue;
-                                }
-                            }
-                        };
-
-                        // check for function redeclaration
-                        if {
-                            let mut is_redeclaration = false;
-
-                            for function in &overload_set.functions {
-                                if function.parameters == function_symbol.parameters {
-                                    is_redeclaration = true;
-                                    break;
-                                }
                             }
 
-                            is_redeclaration
-                        } {
-                            errors.push(SemanticError::FunctionRedeclaration {
-                                redeclaration_name: &class_method.identifier,
-                            });
+                            continue;
                         } else {
-                            // insert the function symbol
-                            overload_set.functions.push(function_symbol);
+                            // everything is ok, unwrap the type
+                            let return_type = return_type.ok().unwrap();
+                            let mut unwrapped_parameters = Vec::new();
+
+                            for parameter in parameters {
+                                // push to the list
+                                unwrapped_parameters.push(parameter.ok().unwrap());
+                            }
+
+                            FunctionSymbol {
+                                name: class_method.identifier.value.to_string(),
+                                return_type,
+                                parameters: unwrapped_parameters,
+                                access_modifier: class_method.access_modifier.value,
+                            }
                         }
+                    };
+
+                    // try to insert new overload set symbol
+                    let overload_set = match symbol_table.insert(method_name, overload_set) {
+                        Ok(sym_id) => {
+                            if let Symbol::OverloadSetSymbol(overload_set) =
+                                symbol_table.get_mut_by_id(sym_id).unwrap()
+                            {
+                                overload_set
+                            } else {
+                                unreachable!();
+                            }
+                        }
+                        Err(sym_id) => {
+                            if let Symbol::OverloadSetSymbol(overload_set) =
+                                symbol_table.get_mut_by_id(sym_id).unwrap()
+                            {
+                                overload_set
+                            } else {
+                                errors.push(SemanticError::SymbolRedeclaration {
+                                    redeclaration_name: &class_method.identifier,
+                                });
+                                continue;
+                            }
+                        }
+                    };
+
+                    // check for function redeclaration
+                    if {
+                        let mut is_redeclaration = false;
+
+                        for function in &overload_set.functions {
+                            if function.parameters == function_symbol.parameters {
+                                is_redeclaration = true;
+                                break;
+                            }
+                        }
+
+                        is_redeclaration
+                    } {
+                        errors.push(SemanticError::FunctionRedeclaration {
+                            redeclaration_name: &class_method.identifier,
+                        });
+                    } else {
+                        // insert the function symbol
+                        overload_set.functions.push(function_symbol);
                     }
                 }
             }
@@ -242,6 +257,13 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
             // class declaration
             let class_declaration = match &declaration.value {
                 NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
+                    if !matches!(
+                        symbol_table.get_by_full_qualified_name(&full_qualified_name),
+                        Some(Symbol::ClassSymbol(_)),
+                    ) {
+                        continue;
+                    }
+
                     class_declaration
                 }
                 _ => continue,
@@ -285,11 +307,12 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
                 }
             }
 
-            // get the class symbol
-            let class_symbol = match symbol_table
+            let symbol = symbol_table
                 .get_mut_by_full_qualified_name(full_qualified_name)
-                .unwrap()
-            {
+                .unwrap();
+
+            // get the class symbol
+            let class_symbol = match symbol {
                 Symbol::ClassSymbol(class_sym) => class_sym,
                 _ => unreachable!("should be a class symbol"),
             };
@@ -299,13 +322,91 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
         }
 
         // pass 4: check for recursive type in class layout
-        for symbol in &symbol_table.symbols {
-            let class_symbol = match symbol {
-                Symbol::ClassSymbol(class_symbol) => class_symbol,
-                _ => continue,
-            };
+        for (idx, symbol) in symbol_table.symbols.iter().enumerate() {
+            if !matches!(symbol, Symbol::ClassSymbol(_)) {
+                continue;
+            }
+
+            Self::is_recursive(
+                &symbol_table,
+                &mut Vec::new(),
+                &mut errors,
+                SymbolID { id: idx },
+            );
         }
 
         (symbol_table, errors)
+    }
+
+    fn is_recursive(
+        symbol_table: &SymbolTable,
+        visited_symbols: &mut Vec<SymbolID>,
+        errors: &mut Vec<SemanticError<'src, 'ast>>,
+        symbol_id: SymbolID,
+    ) where
+        'src: 'ast,
+    {
+        // check if the symbol is already visited
+        if visited_symbols.contains(&symbol_id) {
+            // error with these recursive symbols might have already been reported
+            // we must check if the error has already been reported with these symbols
+            let has_been_reported = {
+                let mut has_been_reported = false;
+
+                for error in errors.iter() {
+                    if let SemanticError::RecursiveType {
+                        recursive_class_symbol_ids,
+                    } = error
+                    {
+                        if recursive_class_symbol_ids.len() != visited_symbols.len() {
+                            continue;
+                        }
+
+                        for idx in visited_symbols.iter() {
+                            if !recursive_class_symbol_ids.contains(idx) {
+                                continue;
+                            }
+                        }
+
+                        has_been_reported = true;
+                        break;
+                    }
+                }
+
+                has_been_reported
+            };
+
+            if !has_been_reported {
+                errors.push(SemanticError::RecursiveType {
+                    recursive_class_symbol_ids: visited_symbols.clone(),
+                });
+            }
+
+            return;
+        }
+
+        // get the class symbol
+        if let Symbol::ClassSymbol(class_symbol) = symbol_table.get_by_id(symbol_id).unwrap() {
+            // append the symbol id to the visited symbols
+            visited_symbols.push(symbol_id);
+
+            // check for recursive type in class layout
+            for class_field in class_symbol.fields.values() {
+                // get the type of the field
+                let type_annotation_symbol = &class_field.type_annotation_symbol;
+
+                match type_annotation_symbol {
+                    TypeAnnotationSymbol::TypeUnitSymbol(type_unit) => match type_unit {
+                        TypeUnitSymbol::UserDefinedTypeUnit(type_sym) => {
+                            Self::is_recursive(symbol_table, visited_symbols, errors, *type_sym);
+                        }
+                        _ => (),
+                    },
+                }
+            }
+
+            // pop the symbol id from the visited symbols
+            visited_symbols.pop();
+        }
     }
 }

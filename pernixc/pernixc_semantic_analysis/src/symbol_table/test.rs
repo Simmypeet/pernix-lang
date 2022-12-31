@@ -1,8 +1,11 @@
 use pernixc_common::source_file::SourceFile;
 use pernixc_lexical_analysis::token_stream::TokenStream;
-use pernixc_syntactic_analysis::abstract_syntax_tree::FileAST;
+use pernixc_syntactic_analysis::abstract_syntax_tree::{declaration::AccessModifier, FileAST};
 
-use crate::{error::SemanticError, symbol_table::Symbol};
+use crate::{
+    error::SemanticError,
+    symbol_table::{PrimitiveTypeUnit, Symbol, TypeAnnotationSymbol, TypeUnitSymbol},
+};
 
 use super::builder::SymbolTableBuilder;
 
@@ -20,9 +23,26 @@ namespace Outer::Inner
         public void Test() {}
 
         public void Test() {}
+
+        public int32 myField;
     }
 
     class More {}
+
+    class A 
+    {
+        public B field;
+    }
+
+    class B 
+    {
+        public C field;
+    }
+
+    class C 
+    {
+        public A field;
+    }
 }
 
 ";
@@ -37,7 +57,7 @@ fn symbol_table_builder_test() {
 
     let (symbol_table, errors) = symbol_table_builder.build();
 
-    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.len(), 3);
     {
         let func_redeclaration = |error: &SemanticError| match error {
             SemanticError::FunctionRedeclaration { redeclaration_name } => {
@@ -53,19 +73,30 @@ fn symbol_table_builder_test() {
             _ => false,
         };
 
+        let recursive_type = |error: &SemanticError| match error {
+            SemanticError::RecursiveType {
+                recursive_class_symbol_ids,
+            } => recursive_class_symbol_ids.len() == 3,
+            _ => false,
+        };
+
         let mut func_redeclaration_found = false;
         let mut name_conflict_found = false;
+        let mut recursive_type_found = false;
 
         for error in &errors {
             if func_redeclaration(error) {
                 func_redeclaration_found = true;
             } else if name_conflict(error) {
                 name_conflict_found = true;
+            } else if recursive_type(error) {
+                recursive_type_found = true;
             }
         }
 
         assert!(func_redeclaration_found);
         assert!(name_conflict_found);
+        assert!(recursive_type_found);
     }
 
     assert!(matches!(
@@ -95,6 +126,22 @@ fn symbol_table_builder_test() {
         match symbol {
             Symbol::ClassSymbol(class_symbol) => {
                 assert_eq!(class_symbol.name, "TestClass");
+                assert_eq!(class_symbol.fields.len(), 1);
+                assert_eq!(class_symbol.fields.get("myField").unwrap().name, "myField");
+                assert!(matches!(
+                    class_symbol.fields.get("myField").unwrap().access_modifier,
+                    AccessModifier::Public
+                ));
+                assert!(matches!(
+                    class_symbol
+                        .fields
+                        .get("myField")
+                        .unwrap()
+                        .type_annotation_symbol,
+                    TypeAnnotationSymbol::TypeUnitSymbol(TypeUnitSymbol::PrimitiveTypeUnit(
+                        PrimitiveTypeUnit::Int32
+                    ))
+                ));
             }
             _ => panic!("Expected class symbol"),
         }
@@ -125,6 +172,126 @@ fn symbol_table_builder_test() {
                 assert_eq!(overload_set.functions.len(), 1);
             }
             _ => panic!("Expected function symbol"),
+        }
+    }
+
+    {
+        let symbol = symbol_table
+            .get_by_full_qualified_name("Outer::Inner::A")
+            .unwrap();
+
+        match symbol {
+            Symbol::ClassSymbol(class_symbol) => {
+                assert_eq!(class_symbol.name, "A");
+                assert_eq!(class_symbol.fields.len(), 1);
+                assert_eq!(class_symbol.fields.get("field").unwrap().name, "field");
+                assert!(matches!(
+                    class_symbol.fields.get("field").unwrap().access_modifier,
+                    AccessModifier::Public
+                ));
+                {
+                    match &class_symbol
+                        .fields
+                        .get("field")
+                        .unwrap()
+                        .type_annotation_symbol
+                    {
+                        TypeAnnotationSymbol::TypeUnitSymbol(
+                            TypeUnitSymbol::UserDefinedTypeUnit(symbol_id),
+                        ) => {
+                            let symbol = symbol_table.get_by_id(*symbol_id).unwrap();
+                            match symbol {
+                                Symbol::ClassSymbol(class_symbol) => {
+                                    assert_eq!(class_symbol.name, "B");
+                                }
+                                _ => panic!("Expected class symbol"),
+                            }
+                        }
+                        _ => panic!("Expected class type unit"),
+                    }
+                }
+            }
+            _ => panic!("Expected class symbol"),
+        }
+    }
+
+    {
+        let symbol = symbol_table
+            .get_by_full_qualified_name("Outer::Inner::B")
+            .unwrap();
+
+        match symbol {
+            Symbol::ClassSymbol(class_symbol) => {
+                assert_eq!(class_symbol.name, "B");
+                assert_eq!(class_symbol.fields.len(), 1);
+                assert_eq!(class_symbol.fields.get("field").unwrap().name, "field");
+                assert!(matches!(
+                    class_symbol.fields.get("field").unwrap().access_modifier,
+                    AccessModifier::Public
+                ));
+                {
+                    match &class_symbol
+                        .fields
+                        .get("field")
+                        .unwrap()
+                        .type_annotation_symbol
+                    {
+                        TypeAnnotationSymbol::TypeUnitSymbol(
+                            TypeUnitSymbol::UserDefinedTypeUnit(symbol_id),
+                        ) => {
+                            let symbol = symbol_table.get_by_id(*symbol_id).unwrap();
+                            match symbol {
+                                Symbol::ClassSymbol(class_symbol) => {
+                                    assert_eq!(class_symbol.name, "C");
+                                }
+                                _ => panic!("Expected class symbol"),
+                            }
+                        }
+                        _ => panic!("Expected class type unit"),
+                    }
+                }
+            }
+            _ => panic!("Expected class symbol"),
+        }
+    }
+
+    {
+        let symbol = symbol_table
+            .get_by_full_qualified_name("Outer::Inner::C")
+            .unwrap();
+
+        match symbol {
+            Symbol::ClassSymbol(class_symbol) => {
+                assert_eq!(class_symbol.name, "C");
+                assert_eq!(class_symbol.fields.len(), 1);
+                assert_eq!(class_symbol.fields.get("field").unwrap().name, "field");
+                assert!(matches!(
+                    class_symbol.fields.get("field").unwrap().access_modifier,
+                    AccessModifier::Public
+                ));
+                {
+                    match &class_symbol
+                        .fields
+                        .get("field")
+                        .unwrap()
+                        .type_annotation_symbol
+                    {
+                        TypeAnnotationSymbol::TypeUnitSymbol(
+                            TypeUnitSymbol::UserDefinedTypeUnit(symbol_id),
+                        ) => {
+                            let symbol = symbol_table.get_by_id(*symbol_id).unwrap();
+                            match symbol {
+                                Symbol::ClassSymbol(class_symbol) => {
+                                    assert_eq!(class_symbol.name, "A");
+                                }
+                                _ => panic!("Expected class symbol"),
+                            }
+                        }
+                        _ => panic!("Expected class type unit"),
+                    }
+                }
+            }
+            _ => panic!("Expected class symbol"),
         }
     }
 }
