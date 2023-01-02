@@ -101,21 +101,21 @@ fn symbol_table_builder_test() {
 
     assert!(matches!(
         symbol_table.get_by_full_qualified_name("Outer").unwrap(),
-        Symbol::Namespace
+        Symbol::Namespace(..)
     ));
 
     assert!(matches!(
         symbol_table
             .get_by_full_qualified_name("Outer::Inner")
             .unwrap(),
-        Symbol::Namespace
+        Symbol::Namespace(..)
     ));
 
     assert!(matches!(
         symbol_table
             .get_by_full_qualified_name("Outer::Inner::More")
             .unwrap(),
-        Symbol::Namespace
+        Symbol::Namespace(..)
     ));
 
     {
@@ -125,7 +125,7 @@ fn symbol_table_builder_test() {
 
         match symbol {
             Symbol::ClassSymbol(class_symbol) => {
-                assert_eq!(class_symbol.name, "TestClass");
+                assert_eq!(symbol.name(), "TestClass");
                 assert_eq!(class_symbol.fields.len(), 1);
                 assert_eq!(class_symbol.fields.get("myField").unwrap().name, "myField");
                 assert!(matches!(
@@ -154,7 +154,7 @@ fn symbol_table_builder_test() {
 
         match symbol {
             Symbol::OverloadSetSymbol(overload_set) => {
-                assert_eq!(overload_set.name, "Main");
+                assert_eq!(symbol.name(), "Main");
                 assert_eq!(overload_set.functions.len(), 2);
             }
             _ => panic!("Expected function symbol"),
@@ -168,7 +168,7 @@ fn symbol_table_builder_test() {
 
         match symbol {
             Symbol::OverloadSetSymbol(overload_set) => {
-                assert_eq!(overload_set.name, "Test");
+                assert_eq!(symbol.name(), "Test");
                 assert_eq!(overload_set.functions.len(), 1);
             }
             _ => panic!("Expected function symbol"),
@@ -182,7 +182,7 @@ fn symbol_table_builder_test() {
 
         match symbol {
             Symbol::ClassSymbol(class_symbol) => {
-                assert_eq!(class_symbol.name, "A");
+                assert_eq!(symbol.name(), "A");
                 assert_eq!(class_symbol.fields.len(), 1);
                 assert_eq!(class_symbol.fields.get("field").unwrap().name, "field");
                 assert!(matches!(
@@ -201,8 +201,8 @@ fn symbol_table_builder_test() {
                         ) => {
                             let symbol = symbol_table.get_by_id(*symbol_id).unwrap();
                             match symbol {
-                                Symbol::ClassSymbol(class_symbol) => {
-                                    assert_eq!(class_symbol.name, "B");
+                                Symbol::ClassSymbol(..) => {
+                                    assert_eq!(symbol.name(), "B");
                                 }
                                 _ => panic!("Expected class symbol"),
                             }
@@ -222,7 +222,7 @@ fn symbol_table_builder_test() {
 
         match symbol {
             Symbol::ClassSymbol(class_symbol) => {
-                assert_eq!(class_symbol.name, "B");
+                assert_eq!(symbol.name(), "B");
                 assert_eq!(class_symbol.fields.len(), 1);
                 assert_eq!(class_symbol.fields.get("field").unwrap().name, "field");
                 assert!(matches!(
@@ -241,8 +241,8 @@ fn symbol_table_builder_test() {
                         ) => {
                             let symbol = symbol_table.get_by_id(*symbol_id).unwrap();
                             match symbol {
-                                Symbol::ClassSymbol(class_symbol) => {
-                                    assert_eq!(class_symbol.name, "C");
+                                Symbol::ClassSymbol(..) => {
+                                    assert_eq!(symbol.name(), "C");
                                 }
                                 _ => panic!("Expected class symbol"),
                             }
@@ -262,7 +262,7 @@ fn symbol_table_builder_test() {
 
         match symbol {
             Symbol::ClassSymbol(class_symbol) => {
-                assert_eq!(class_symbol.name, "C");
+                assert_eq!(symbol.name(), "C");
                 assert_eq!(class_symbol.fields.len(), 1);
                 assert_eq!(class_symbol.fields.get("field").unwrap().name, "field");
                 assert!(matches!(
@@ -281,8 +281,8 @@ fn symbol_table_builder_test() {
                         ) => {
                             let symbol = symbol_table.get_by_id(*symbol_id).unwrap();
                             match symbol {
-                                Symbol::ClassSymbol(class_symbol) => {
-                                    assert_eq!(class_symbol.name, "A");
+                                Symbol::ClassSymbol(..) => {
+                                    assert_eq!(symbol.name(), "A");
                                 }
                                 _ => panic!("Expected class symbol"),
                             }

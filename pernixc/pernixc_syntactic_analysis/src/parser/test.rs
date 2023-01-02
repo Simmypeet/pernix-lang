@@ -145,7 +145,7 @@ fn test_return_statement() {
     match return_statement.value {
         StatementAST::ReturnStatement(statement) => {
             assert!(matches!(
-                statement.expression.value,
+                statement.expression.unwrap().value,
                 ExpressionAST::BinaryExpression(_)
             ));
 
@@ -447,7 +447,7 @@ fn test_class_declaration() {
 
     let class_declaration = parser.parse_class_declaration().unwrap();
     match class_declaration.value {
-        NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
+        NamespaceLevelDeclarationAST::ClassDeclaration(mut class_declaration) => {
             // class name Test
             assert_eq!(class_declaration.identifier.value, "Test");
 
@@ -456,7 +456,7 @@ fn test_class_declaration() {
 
             // first member: public int32 a;
             {
-                let member = &class_declaration.members[0];
+                let member = class_declaration.members.remove(0);
 
                 match &member.value {
                     ClassMemberDeclarationAST::ClassFieldDeclaration(field) => {
@@ -482,7 +482,7 @@ fn test_class_declaration() {
 
             // second member: private SomeType b;
             {
-                let member = &class_declaration.members[1];
+                let member = class_declaration.members.remove(1);
 
                 match &member.value {
                     ClassMemberDeclarationAST::ClassFieldDeclaration(field) => {
@@ -506,10 +506,10 @@ fn test_class_declaration() {
 
             // third member: public int32 Main() { return 0; }
             {
-                let member = &class_declaration.members[2];
+                let member = class_declaration.members.remove(2);
 
-                match &member.value {
-                    ClassMemberDeclarationAST::ClassMethodDeclaration(method) => {
+                match member.value {
+                    ClassMemberDeclarationAST::ClassMethodDeclaration(mut method) => {
                         assert_eq!(method.identifier.value, "Main");
 
                         assert!(matches!(
@@ -528,12 +528,12 @@ fn test_class_declaration() {
 
                         assert_eq!(method.body.value.statements.len(), 1);
 
-                        let statement = &method.body.value.statements[0];
+                        let statement = method.body.value.statements.remove(0);
 
-                        match &statement.value {
+                        match statement.value {
                             StatementAST::ReturnStatement(statement) => {
                                 assert!(matches!(
-                                    statement.expression.value,
+                                    statement.expression.unwrap().value,
                                     ExpressionAST::LiteralExpression(_)
                                 ));
                             }

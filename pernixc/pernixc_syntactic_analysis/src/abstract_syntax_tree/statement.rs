@@ -54,7 +54,7 @@ pub struct VariableDeclarationStatementAST<'src> {
 /// ```
 #[derive(Clone)]
 pub struct ReturnStatementAST<'src> {
-    pub expression: PositionWrapper<ExpressionAST<'src>>,
+    pub expression: Option<PositionWrapper<ExpressionAST<'src>>>,
 }
 
 /// Reprsent a block statement abstract syntax tree node contain

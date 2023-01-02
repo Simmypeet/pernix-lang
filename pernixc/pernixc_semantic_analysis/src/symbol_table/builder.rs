@@ -8,8 +8,9 @@ use pernixc_syntactic_analysis::abstract_syntax_tree::{
 use crate::{error::SemanticError, scope::ScopeInfo};
 
 use super::{
-    ClassFieldSymbol, ClassSymbol, FunctionSymbol, OverloadSetSymbol, Symbol, SymbolID,
-    SymbolTable, TypeAnnotationSymbol, TypeUnitSymbol,
+    ClassFieldSymbol, ClassSymbol, FunctionSymbol, NamespaceSymbol, OverloadSetSymbol, Symbol,
+    SymbolAttribute, SymbolID, SymbolTable, TypeAnnotationSymbol, TypeUnitSymbol, VariableSymbol,
+    VariableSymbolID,
 };
 
 /// Is a builder struct that is used to build a symbol table. It records a list of
@@ -83,7 +84,7 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
     }
 
     /// Finalize the builder and build the symbol table.
-    pub fn build(self) -> (SymbolTable, Vec<SemanticError<'ast, 'src>>)
+    pub fn build(self) -> (SymbolTable<'ast, 'src>, Vec<SemanticError<'ast, 'src>>)
     where
         'ast: 'src,
     {
@@ -95,20 +96,39 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
 
         // insert the namespace into the symbol table first
         for namespace in self.namespaces {
-            let _ = symbol_table.insert(namespace, Symbol::Namespace);
+            let _ = symbol_table.insert(
+                namespace.clone(),
+                Symbol::Namespace(NamespaceSymbol {
+                    full_qualified_name: namespace,
+                }),
+            );
         }
 
         // pass 1: loop through the declarations and add them to the symbol table
-        for (declaration, _, full_qualified_name) in &self.declarations {
+        for (declaration, scope_info, full_qualified_name) in self.declarations {
             // the class symbol to insert
-            let class_symbol = Symbol::ClassSymbol(ClassSymbol {
-                name: declaration.value.get_name().value.to_string(),
-                fields: HashMap::new(),
-            });
+            let symbol = {
+                match &declaration.value {
+                    NamespaceLevelDeclarationAST::ClassDeclaration(class_decl) => {
+                        Symbol::ClassSymbol(ClassSymbol {
+                            full_qualified_name: full_qualified_name.clone(),
+                            fields: HashMap::new(),
+                            symbol_attribute: SymbolAttribute {
+                            abstract_syntax_tree: PositionWrapper {
+                                    value: class_decl,
+                                    position: declaration.position.clone(),
+                                },
+                                scope_info
+                            },
+                        })
+                    }
+                    NamespaceLevelDeclarationAST::NamespaceDeclaration(_) => unreachable!("Namespace declaration should have been added to the namespace set in the pass 1."),
+                }
+            };
 
             // insert the symbol
-            if let Err(sym_id) = symbol_table.insert(full_qualified_name.clone(), class_symbol) {
-                if let Symbol::Namespace = symbol_table.get_by_id(sym_id).unwrap() {
+            if let Err(sym_id) = symbol_table.insert(full_qualified_name, symbol) {
+                if let Symbol::Namespace(..) = symbol_table.get_by_id(sym_id).unwrap() {
                     errors.push(SemanticError::DeclarationNameConflictWithNamespace {
                         name_conflict: declaration.value.get_name(),
                     })
@@ -121,42 +141,44 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
         }
 
         // pass 2: loop through the class declarations and expand the class method symbol
-        for (declaration, scope_info, full_qualified_name) in &self.declarations {
-            let class_declaration =
-                if let NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) =
-                    &declaration.value
-                {
-                    if !matches!(
-                        symbol_table.get_by_full_qualified_name(&full_qualified_name),
-                        Some(Symbol::ClassSymbol(_)),
-                    ) {
-                        continue;
-                    }
-                    class_declaration
-                } else {
-                    continue;
+        for i in 0..symbol_table.symbols.len() {
+            // get the class symbol
+            let (class_declaration_ast, full_qualified_name, scope_info) =
+                match &symbol_table.symbols[i] {
+                    Symbol::ClassSymbol(class_symbol) => (
+                        class_symbol.symbol_attribute.abstract_syntax_tree.value,
+                        class_symbol.full_qualified_name.clone(),
+                        class_symbol.symbol_attribute.scope_info.clone(),
+                    ),
+                    _ => continue,
                 };
 
-            for class_member in &class_declaration.members {
+            for class_member in &class_declaration_ast.members {
                 if let ClassMemberDeclarationAST::ClassMethodDeclaration(class_method) =
                     &class_member.value
                 {
                     // full method name
-                    let method_name =
+                    let full_qualified_name =
                         format!("{}::{}", full_qualified_name, class_method.identifier.value);
 
                     // the overload set symbol to insert
                     let overload_set = Symbol::OverloadSetSymbol(OverloadSetSymbol {
-                        name: class_method.identifier.value.to_string(),
+                        full_qualified_name: full_qualified_name.clone(),
                         functions: Vec::new(),
                     });
+
+                    let scope_info = ScopeInfo {
+                        scope_name: full_qualified_name.clone(),
+                        active_using_directives: scope_info.active_using_directives.clone(),
+                        source_file: scope_info.source_file,
+                    };
 
                     // construct the function symbol
                     let function_symbol = {
                         // get the return type
                         let return_type = symbol_table.get_type_annotation_symbol(
                             &class_method.return_type_annotation,
-                            scope_info,
+                            &scope_info,
                         );
 
                         // list of parameter
@@ -165,7 +187,7 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
                         for parameter in &class_method.parameters {
                             parameters.push(symbol_table.get_qualified_type_annotation_symbol(
                                 &parameter.value.qualified_type_annotation,
-                                scope_info,
+                                &scope_info,
                             ));
                         }
 
@@ -187,24 +209,58 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
                         } else {
                             // everything is ok, unwrap the type
                             let return_type = return_type.ok().unwrap();
-                            let mut unwrapped_parameters = Vec::new();
+                            let mut unwrapped_parameters = HashMap::new();
 
-                            for parameter in parameters {
-                                // push to the list
-                                unwrapped_parameters.push(parameter.ok().unwrap());
+                            {
+                                let mut idx = 0;
+                                for parameter in parameters {
+                                    // push to the list
+                                    match unwrapped_parameters.entry(
+                                        class_method.parameters[i]
+                                            .value
+                                            .identifier
+                                            .value
+                                            .to_string(),
+                                    ) {
+                                        Entry::Occupied(entry) => {
+                                            errors.push(SemanticError::SymbolRedeclaration {
+                                                redeclaration_name: &class_method.parameters[i]
+                                                    .value
+                                                    .identifier,
+                                            });
+                                        }
+                                        Entry::Vacant(entry) => {
+                                            entry.insert(VariableSymbol {
+                                                id: VariableSymbolID { id: idx },
+                                                qualified_type_annotation_symbol: parameter
+                                                    .ok()
+                                                    .unwrap(),
+                                            });
+                                        }
+                                    }
+                                    idx += 1;
+                                }
                             }
 
                             FunctionSymbol {
-                                name: class_method.identifier.value.to_string(),
+                                full_qualified_name: full_qualified_name.clone(),
                                 return_type,
                                 parameters: unwrapped_parameters,
                                 access_modifier: class_method.access_modifier.value,
+                                symbol_attribute: SymbolAttribute {
+                                    abstract_syntax_tree: PositionWrapper {
+                                        value: class_method,
+                                        position: class_member.position.clone(),
+                                    },
+                                    scope_info,
+                                },
                             }
                         }
                     };
 
                     // try to insert new overload set symbol
-                    let overload_set = match symbol_table.insert(method_name, overload_set) {
+                    let overload_set = match symbol_table.insert(full_qualified_name, overload_set)
+                    {
                         Ok(sym_id) => {
                             if let Symbol::OverloadSetSymbol(overload_set) =
                                 symbol_table.get_mut_by_id(sym_id).unwrap()
@@ -253,35 +309,33 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
         }
 
         // pass 3: construct class layout
-        for (declaration, scope_info, full_qualified_name) in &self.declarations {
-            // class declaration
-            let class_declaration = match &declaration.value {
-                NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
-                    if !matches!(
-                        symbol_table.get_by_full_qualified_name(&full_qualified_name),
-                        Some(Symbol::ClassSymbol(_)),
-                    ) {
-                        continue;
-                    }
-
-                    class_declaration
-                }
+        for i in 0..symbol_table.symbols.len() {
+            // get the class symbol
+            let (class_ast, scope_info, full_qualified_name) = match &symbol_table.symbols[i] {
+                Symbol::ClassSymbol(class_symbol) => (
+                    class_symbol.symbol_attribute.abstract_syntax_tree.clone(),
+                    class_symbol.symbol_attribute.scope_info.clone(),
+                    class_symbol.full_qualified_name.clone(),
+                ),
                 _ => continue,
             };
 
+            // construct the class layout
             let mut class_field_map = HashMap::new();
 
             // construct the class layout
-            for member in &class_declaration.members {
+            for member in &class_ast.value.members {
                 // class field
                 let class_field = match &member.value {
                     ClassMemberDeclarationAST::ClassFieldDeclaration(class_field) => class_field,
                     _ => continue,
                 };
 
+                // get the scope name
+
                 // get the type annotation symbol
                 match symbol_table
-                    .get_type_annotation_symbol(&class_field.type_annotation, scope_info)
+                    .get_type_annotation_symbol(&class_field.type_annotation, &scope_info)
                 {
                     Ok(type_annotation_symbol) => {
                         // check if the clas field already exists
@@ -292,10 +346,25 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
                                 });
                             }
                             Entry::Vacant(entry) => {
+                                let scope_info = ScopeInfo {
+                                    scope_name: full_qualified_name.clone(),
+                                    active_using_directives: scope_info
+                                        .active_using_directives
+                                        .clone(),
+                                    source_file: scope_info.source_file,
+                                };
+
                                 entry.insert(ClassFieldSymbol {
                                     name: class_field.identifier.value.to_string(),
                                     type_annotation_symbol,
                                     access_modifier: class_field.access_modifier.value,
+                                    symbol_attribute: SymbolAttribute {
+                                        abstract_syntax_tree: PositionWrapper {
+                                            value: class_field,
+                                            position: member.position.clone(),
+                                        },
+                                        scope_info,
+                                    },
                                 });
                             }
                         }
@@ -307,18 +376,13 @@ impl<'ast, 'src> SymbolTableBuilder<'ast, 'src> {
                 }
             }
 
-            let symbol = symbol_table
-                .get_mut_by_full_qualified_name(full_qualified_name)
-                .unwrap();
-
-            // get the class symbol
-            let class_symbol = match symbol {
-                Symbol::ClassSymbol(class_sym) => class_sym,
-                _ => unreachable!("should be a class symbol"),
-            };
-
             // assign the class field map
-            class_symbol.fields = class_field_map;
+            match symbol_table.symbols.get_mut(i).unwrap() {
+                Symbol::ClassSymbol(class_symbol) => {
+                    class_symbol.fields = class_field_map;
+                }
+                _ => unreachable!(),
+            }
         }
 
         // pass 4: check for recursive type in class layout

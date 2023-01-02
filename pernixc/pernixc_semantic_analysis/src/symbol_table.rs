@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use pernixc_syntactic_analysis::abstract_syntax_tree::{
-    declaration::{AccessModifier, QualifiedTypeAnnotationAST, TypeAnnotationAST},
+    declaration::{
+        AccessModifier, ClassDeclarationAST, ClassFieldDeclarationAST, ClassMethodDeclarationAST,
+        QualifiedTypeAnnotationAST, TypeAnnotationAST,
+    },
     PositionWrapper, TypeUnitAST,
 };
 
@@ -42,54 +45,89 @@ pub enum TypeUnitSymbol {
     UserDefinedTypeUnit(SymbolID),
 }
 
+pub struct SymbolAttribute<'ast, 'src, AST> {
+    pub abstract_syntax_tree: PositionWrapper<&'ast AST>,
+    pub scope_info: ScopeInfo<'src>,
+}
+
 /// Represent a class declaration symbol. It contains the name of the class and
 /// the class layout.
-pub struct ClassSymbol {
-    pub name: String,
-    pub fields: HashMap<String, ClassFieldSymbol>,
+pub struct ClassSymbol<'ast, 'src> {
+    pub full_qualified_name: String,
+    pub fields: HashMap<String, ClassFieldSymbol<'ast, 'src>>,
+    pub symbol_attribute: SymbolAttribute<'ast, 'src, ClassDeclarationAST<'src>>,
 }
 
 /// Represent a class field declaration symbol. It contains the name of the field,
 /// the type annotation and the access modifier.
-pub struct ClassFieldSymbol {
+pub struct ClassFieldSymbol<'ast, 'src> {
     pub name: String,
     pub type_annotation_symbol: TypeAnnotationSymbol,
     pub access_modifier: AccessModifier,
+    pub symbol_attribute: SymbolAttribute<'ast, 'src, ClassFieldDeclarationAST<'src>>,
+}
+
+/// A variable symbol ID is a unique identifier used to identify a variable symbol. It is unique
+/// only within the scope of a single method. It also specifies the order in which the variable
+/// was declared in the method (starting from 0 for the first parameter, then the local variables)
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub struct VariableSymbolID {
+    pub(super) id: usize,
+}
+
+impl VariableSymbolID {
+    /// Return the order in which the variable was declared in the method.
+    pub fn declaration_order(&self) -> usize {
+        self.id
+    }
+}
+
+/// A variable symbol is a symbol that represents a variable. It is unique only within the scope of
+/// a single method.
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct VariableSymbol {
+    pub id: VariableSymbolID,
+    pub qualified_type_annotation_symbol: QualifiedTypeAnnotationSymbol,
 }
 
 /// Represent a function declaration symbol. It contains the name of the function,
 /// the return type, the parameters and the access modifier.
-pub struct FunctionSymbol {
-    pub name: String,
+pub struct FunctionSymbol<'ast, 'src> {
+    pub full_qualified_name: String,
     pub return_type: TypeAnnotationSymbol,
-    pub parameters: Vec<QualifiedTypeAnnotationSymbol>,
+    pub parameters: HashMap<String, VariableSymbol>,
     pub access_modifier: AccessModifier,
+    pub symbol_attribute: SymbolAttribute<'ast, 'src, ClassMethodDeclarationAST<'src>>,
 }
 
 /// Is a symbol that contains a collection of functions that share the same name but
 /// have different signatures (parameters).
-pub struct OverloadSetSymbol {
-    pub name: String,
-    pub functions: Vec<FunctionSymbol>,
+pub struct OverloadSetSymbol<'ast, 'src> {
+    pub full_qualified_name: String,
+    pub functions: Vec<FunctionSymbol<'ast, 'src>>,
+}
+
+pub struct NamespaceSymbol {
+    pub full_qualified_name: String,
 }
 
 /// Is an enumeration of all the symbols that can be defined in the language.
-pub enum Symbol {
-    Namespace,
-    ClassSymbol(ClassSymbol),
-    OverloadSetSymbol(OverloadSetSymbol),
+pub enum Symbol<'ast, 'src> {
+    Namespace(NamespaceSymbol),
+    ClassSymbol(ClassSymbol<'ast, 'src>),
+    OverloadSetSymbol(OverloadSetSymbol<'ast, 'src>),
 }
 
-impl Symbol {
-    /// Returns `true` if the symbol is [`Namespace`].
+impl Symbol<'_, '_> {
+    /// Return `true` if the symbol is [`Namespace`].
     ///
     /// [`Namespace`]: Symbol::Namespace
     #[must_use]
     pub fn is_namespace(&self) -> bool {
-        matches!(self, Self::Namespace)
+        matches!(self, Self::Namespace(..))
     }
 
-    /// Returns `true` if the symbol is [`ClassSymbol`].
+    /// Return `true` if the symbol is [`ClassSymbol`].
     ///
     /// [`ClassSymbol`]: Symbol::ClassSymbol
     #[must_use]
@@ -97,28 +135,51 @@ impl Symbol {
         matches!(self, Self::ClassSymbol(..))
     }
 
-    /// Returns `true` if the symbol is [`OverloadSetSymbol`].
+    /// Return `true` if the symbol is [`OverloadSetSymbol`].
     ///
     /// [`OverloadSetSymbol`]: Symbol::OverloadSetSymbol
     #[must_use]
     pub fn is_overload_set_symbol(&self) -> bool {
         matches!(self, Self::OverloadSetSymbol(..))
     }
+
+    /// Return the full qualified name of the symbol
+    #[must_use]
+    pub fn full_qualified_name(&self) -> &str {
+        match self {
+            Self::Namespace(symbol) => &symbol.full_qualified_name,
+            Self::ClassSymbol(symbol) => &symbol.full_qualified_name,
+            Self::OverloadSetSymbol(symbol) => &symbol.full_qualified_name,
+        }
+    }
+
+    /// Return the name of the symbol (without the scope name)
+    #[must_use]
+    pub fn name(&self) -> &str {
+        self.full_qualified_name()
+            .rsplit("::")
+            .next()
+            .expect("Symbol name cannot be empty")
+    }
 }
 
 /// Is a symbol table that contains all the symbols that are defined in the program.
 /// It allows fast lookup of symbols by name.
-pub struct SymbolTable {
-    symbols: Vec<Symbol>,
+pub struct SymbolTable<'ast, 'src> {
+    symbols: Vec<Symbol<'ast, 'src>>,
     qualified_name_map: HashMap<String, usize>,
 }
 
-impl SymbolTable {
+impl<'ast, 'src> SymbolTable<'ast, 'src> {
     /// Insert a new symbol into the symbol table. The function returns `Ok` with
     /// the symbol ID of the newly inserted symbol if the symbol was successfully.
     /// Otherwise, it returns `Err` with the symbol ID of the symbol that already
     /// exists in the symbol table.
-    pub fn insert(&mut self, qualified_name: String, symbol: Symbol) -> Result<SymbolID, SymbolID> {
+    pub fn insert(
+        &mut self,
+        qualified_name: String,
+        symbol: Symbol<'ast, 'src>,
+    ) -> Result<SymbolID, SymbolID> {
         // check if the symbol already exists
         if let Some(id) = self.qualified_name_map.get(&qualified_name) {
             return Err(SymbolID { id: *id });
@@ -133,17 +194,17 @@ impl SymbolTable {
     }
 
     /// Get a reference to a symbol by its symbol ID.
-    pub fn get_by_id(&self, id: SymbolID) -> Option<&Symbol> {
+    pub fn get_by_id(&self, id: SymbolID) -> Option<&Symbol<'ast, 'src>> {
         self.symbols.get(id.id)
     }
 
     /// Get a mutable reference to a symbol by its symbol ID.
-    pub fn get_mut_by_id(&mut self, id: SymbolID) -> Option<&mut Symbol> {
+    pub fn get_mut_by_id(&mut self, id: SymbolID) -> Option<&mut Symbol<'ast, 'src>> {
         self.symbols.get_mut(id.id)
     }
 
     /// Get a reference to a symbol by its full qualified name.
-    pub fn get_by_full_qualified_name(&self, qualified_name: &str) -> Option<&Symbol> {
+    pub fn get_by_full_qualified_name(&self, qualified_name: &str) -> Option<&Symbol<'ast, 'src>> {
         if let Some(id) = self.qualified_name_map.get(qualified_name) {
             self.symbols.get(*id)
         } else {
@@ -152,7 +213,10 @@ impl SymbolTable {
     }
 
     /// Get a mutable reference to a symbol by its full qualified name.
-    pub fn get_mut_by_full_qualified_name(&mut self, qualified_name: &str) -> Option<&mut Symbol> {
+    pub fn get_mut_by_full_qualified_name(
+        &mut self,
+        qualified_name: &str,
+    ) -> Option<&mut Symbol<'ast, 'src>> {
         if let Some(id) = self.qualified_name_map.get(qualified_name) {
             self.symbols.get_mut(*id)
         } else {
@@ -212,11 +276,11 @@ impl SymbolTable {
 
     /// Is a helper function that will create a new [`TypeAnnotationSymbol`] from the given
     /// [`TypeAnnotationAST`] and the scope information of the referring site.
-    pub fn get_type_annotation_symbol<'ast, 'src>(
+    pub fn get_type_annotation_symbol<'ast1, 'src1>(
         &self,
-        type_annotation_ast: &'ast PositionWrapper<TypeAnnotationAST<'src>>,
-        scope_info: &ScopeInfo<'src>,
-    ) -> Result<TypeAnnotationSymbol, SemanticError<'ast, 'src>> {
+        type_annotation_ast: &'ast1 PositionWrapper<TypeAnnotationAST<'src1>>,
+        scope_info: &ScopeInfo<'src1>,
+    ) -> Result<TypeAnnotationSymbol, SemanticError<'ast1, 'src1>> {
         match &type_annotation_ast.value {
             // type unit type annotation
             TypeAnnotationAST::TypeUnit(type_unit) => match type_unit {
@@ -255,11 +319,11 @@ impl SymbolTable {
 
     /// Is a helper function that will create a new [`QualifiedTypeAnnotationSymbol`] from the given
     /// [`QualifiedTypeAnnotationAST`] and the scope information of the referring site.
-    pub fn get_qualified_type_annotation_symbol<'ast, 'src>(
+    pub fn get_qualified_type_annotation_symbol<'ast1, 'src1>(
         &self,
-        qualified_type_annotation_ast: &'ast PositionWrapper<QualifiedTypeAnnotationAST<'src>>,
-        scope_info: &ScopeInfo<'src>,
-    ) -> Result<QualifiedTypeAnnotationSymbol, SemanticError<'ast, 'src>> {
+        qualified_type_annotation_ast: &'ast1 PositionWrapper<QualifiedTypeAnnotationAST<'src1>>,
+        scope_info: &ScopeInfo<'src1>,
+    ) -> Result<QualifiedTypeAnnotationSymbol, SemanticError<'ast1, 'src1>> {
         let type_annotation_symbol = self.get_type_annotation_symbol(
             &qualified_type_annotation_ast.value.type_annotation,
             scope_info,

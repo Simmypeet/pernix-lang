@@ -1,5 +1,5 @@
 use pernixc_syntactic_analysis::abstract_syntax_tree::{
-    declaration::TypeAnnotationAST, PositionWrapper,
+    declaration::TypeAnnotationAST, statement::StatementAST, PositionWrapper,
 };
 
 use crate::symbol_table::SymbolID;
@@ -25,5 +25,8 @@ pub enum SemanticError<'ast, 'src> {
     },
     RecursiveType {
         recursive_class_symbol_ids: Vec<SymbolID>,
+    },
+    BreakOrContinueOutsideLoop {
+        break_or_continue_ast: &'ast PositionWrapper<StatementAST<'src>>,
     },
 }
