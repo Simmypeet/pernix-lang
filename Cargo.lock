@@ -53,16 +53,15 @@ dependencies = [
 
 [[package]]
 name = "console"
-version = "0.15.2"
+version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c050367d967ced717c04b65d8c619d863ef9292ce0c5760028655a2fb298718c"
+checksum = "c9b6515d269224923b26b5febea2ed42b2d5f2ce37284a4dd670fedd6cb8347a"
 dependencies = [
  "encode_unicode",
  "lazy_static",
  "libc",
- "terminal_size",
  "unicode-width",
- "winapi",
+ "windows-sys",
 ]
 
 [[package]]
@@ -149,26 +148,15 @@ checksum = "f051f77a7c8e6957c0696eac88f26b0117e54f52d3fc682ab19397a8812846a4"
 
 [[package]]
 name = "once_cell"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f0b0d4bf799edbc74508c1e8bf170ff5f41238e5f8225603ca7caaae2b7860"
+checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 
 [[package]]
 name = "os_str_bytes"
 version = "6.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b7820b9daea5457c9f21c69448905d723fbd21136ccf521748f23fd49e723ee"
-
-[[package]]
-name = "pernixc"
-version = "0.1.0"
-dependencies = [
- "clap",
- "pernixc_common",
- "pernixc_lexical_analysis",
- "pernixc_semantic_analysis",
- "pernixc_syntactic_analysis",
-]
 
 [[package]]
 name = "pernixc_common"
@@ -178,19 +166,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "pernixc_lexical_analysis"
+name = "pernixc_driver"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "pernixc_common",
 ]
 
 [[package]]
-name = "pernixc_semantic_analysis"
+name = "pernixc_lexical_analysis"
 version = "0.1.0"
 dependencies = [
  "pernixc_common",
- "pernixc_lexical_analysis",
- "pernixc_syntactic_analysis",
 ]
 
 [[package]]
@@ -281,16 +268,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bab24d30b911b2376f3a13cc2cd443142f0c81dda04c118693e35b3835757755"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "terminal_size"
-version = "0.1.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "633c1a546cee861a1a6d0dc69ebeca693bf4296661ba7852b9d21d159e0506df"
-dependencies = [
- "libc",
- "winapi",
 ]
 
 [[package]]

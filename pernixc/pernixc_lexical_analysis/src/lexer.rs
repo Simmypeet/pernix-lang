@@ -1,36 +1,32 @@
 use std::{iter::Peekable, str::CharIndices};
 
-use pernixc_common::source_file::{SourceFile, SourcePosition};
+use pernixc_common::source_file::TextPosition;
 
 use crate::{
     error::LexicalError,
-    token::{Keyword, LiteralConstantToken, Token, TokenKind},
+    token::{Keyword, LiteralToken, NumberLiteralSuffix, Token, TokenType},
 };
 
-/// Represent a state-machine that lexes the source code and outputs a token
-/// one at a time.
-#[derive(Clone)]
+/// Represents a state-machine that lexes the source code and outputs a token one at a time. This
+/// struct is the main component of the lexical analysis phase.
+#[derive(Debug, Clone)]
 pub struct Lexer<'src> {
-    source_file: &'src SourceFile,
+    source_code: &'src str,
     chars: Peekable<CharIndices<'src>>,
-    current_position: SourcePosition,
+    current_position: (TextPosition, usize),
 }
 
 impl<'src> Lexer<'src> {
-    /// Create a new lexer targeting to the given `source_file` char slice
-    pub fn new(source_file: &'src SourceFile) -> Lexer<'src> {
+    /// Creates a new lexer targeting to the given `source_code` char slice
+    pub fn new(source_code: &'src str) -> Lexer<'src> {
         Lexer {
-            source_file,
-            chars: source_file.source_code().char_indices().peekable(),
-            current_position: SourcePosition {
-                column: 1,
-                line: 1,
-                byte_index: 0,
-            },
+            source_code,
+            chars: source_code.char_indices().peekable(),
+            current_position: (TextPosition { column: 1, line: 1 }, 0),
         }
     }
 
-    /// Return a character at its current position and increment the position
+    /// Returns a character at its current position and increment the position
     fn next(&mut self) -> Option<(usize, char)> {
         let next = self.chars.next();
 
@@ -38,13 +34,13 @@ impl<'src> Lexer<'src> {
         match next {
             Some(char) => {
                 if char.1 == '\n' {
-                    self.current_position.line += 1;
-                    self.current_position.column = 1;
+                    self.current_position.0.line += 1;
+                    self.current_position.0.column = 1;
                 } else {
-                    self.current_position.column += 1;
+                    self.current_position.0.column += 1;
                 }
 
-                self.current_position.byte_index = {
+                self.current_position.1 = {
                     self.chars
                         // peek the next character
                         .peek()
@@ -52,7 +48,7 @@ impl<'src> Lexer<'src> {
                         .map(|next_char| next_char.0)
                         // if there is no next character, get the length of the
                         // source code
-                        .unwrap_or(self.source_file.source_code().len())
+                        .unwrap_or(self.source_code.len())
                 };
             }
             _ => {}
@@ -60,12 +56,13 @@ impl<'src> Lexer<'src> {
         next
     }
 
-    /// Check if the character can be an identifier character
+    /// Checks if the character can be an identifier character
     fn is_identifier_character(char: char) -> bool {
-        return char == '_' || char.is_alphanumeric();
+        return char == '_'
+            || (!char.is_ascii_punctuation() && !char.is_whitespace() && !char.is_control());
     }
 
-    /// Check if the character can be the first character in an identifier
+    /// Checks if the character can be the first character in an identifier
     fn is_first_identifier_character(char: char) -> bool {
         return char == '_' || char.is_alphabetic();
     }
@@ -90,14 +87,14 @@ impl<'src> Lexer<'src> {
 
         let first_char;
         let begin_index;
-        let token_kind;
+        let token_type;
 
         match self.next() {
             None => {
                 return Ok(Token {
-                    token_kind: TokenKind::EndOfFile,
-                    position_range: first_position..first_position,
-                    lexeme: "",
+                    token_type: TokenType::EndOfFile,
+                    position_range: first_position.0..first_position.0,
+                    byte_index_range: first_position.1..first_position.1,
                 });
             }
             Some((index, char)) => {
@@ -110,7 +107,7 @@ impl<'src> Lexer<'src> {
         if first_char.is_whitespace() {
             self.lex_predicate(|char| char.is_whitespace());
 
-            token_kind = TokenKind::Space;
+            token_type = TokenType::Space;
         }
         // might found a comment
         else if first_char == '/' {
@@ -124,11 +121,13 @@ impl<'src> Lexer<'src> {
                         match self.chars.peek() {
                             Some((_, '\n')) => {
                                 self.next();
-                                token_kind = TokenKind::Comment;
+                                token_type = TokenType::Comment(
+                                    &self.source_code[begin_index..self.current_position.1],
+                                );
                                 break;
                             }
                             None => {
-                                token_kind = TokenKind::Comment;
+                                token_type = TokenType::Comment(&self.source_code[begin_index..]);
                                 break;
                             }
                             _ => {
@@ -149,7 +148,9 @@ impl<'src> Lexer<'src> {
                                 match self.chars.peek() {
                                     Some((_, '/')) => {
                                         self.next();
-                                        token_kind = TokenKind::Comment;
+                                        token_type = TokenType::Comment(
+                                            &self.source_code[begin_index..self.current_position.1],
+                                        );
                                         break;
                                     }
                                     _ => {}
@@ -158,7 +159,7 @@ impl<'src> Lexer<'src> {
                             None => {
                                 // error: multi-line comment is not closed
                                 return Err(LexicalError::UnterminatedMultilineComment {
-                                    multiline_comment_position: first_position.into(),
+                                    multiline_comment_position: first_position.0,
                                 });
                             }
                             _ => {
@@ -168,7 +169,7 @@ impl<'src> Lexer<'src> {
                     }
                 }
                 _ => {
-                    token_kind = TokenKind::Punctuator('/');
+                    token_type = TokenType::Punctuation('/');
                 }
             }
         }
@@ -176,48 +177,47 @@ impl<'src> Lexer<'src> {
         else if Self::is_first_identifier_character(first_char) {
             self.lex_predicate(Self::is_identifier_character);
 
-            let identifier_string =
-                &self.source_file.source_code()[begin_index..self.current_position.byte_index];
+            let identifier_string = &self.source_code[begin_index..self.current_position.1];
 
             match identifier_string {
-                "true" => {
-                    token_kind = TokenKind::LiteralConstant(LiteralConstantToken::Boolean(true))
-                }
-                "false" => {
-                    token_kind = TokenKind::LiteralConstant(LiteralConstantToken::Boolean(false))
-                }
-                "return" => token_kind = TokenKind::Keyword(Keyword::Return),
-                "let" => token_kind = TokenKind::Keyword(Keyword::Let),
-                "using" => token_kind = TokenKind::Keyword(Keyword::Using),
-                "namespace" => token_kind = TokenKind::Keyword(Keyword::Namespace),
-                "if" => token_kind = TokenKind::Keyword(Keyword::If),
-                "else" => token_kind = TokenKind::Keyword(Keyword::Else),
-                "while" => token_kind = TokenKind::Keyword(Keyword::While),
-                "break" => token_kind = TokenKind::Keyword(Keyword::Break),
-                "public" => token_kind = TokenKind::Keyword(Keyword::Public),
-                "private" => token_kind = TokenKind::Keyword(Keyword::Private),
-                "continue" => token_kind = TokenKind::Keyword(Keyword::Continue),
-                "new" => token_kind = TokenKind::Keyword(Keyword::New),
-                "mutable" => token_kind = TokenKind::Keyword(Keyword::Mutable),
-                "class" => token_kind = TokenKind::Keyword(Keyword::Class),
-                "int8" => token_kind = TokenKind::Keyword(Keyword::Int8),
-                "int16" => token_kind = TokenKind::Keyword(Keyword::Int16),
-                "int32" => token_kind = TokenKind::Keyword(Keyword::Int32),
-                "int64" => token_kind = TokenKind::Keyword(Keyword::Int64),
-                "uint8" => token_kind = TokenKind::Keyword(Keyword::Uint8),
-                "uint16" => token_kind = TokenKind::Keyword(Keyword::Uint16),
-                "uint32" => token_kind = TokenKind::Keyword(Keyword::Uint32),
-                "uint64" => token_kind = TokenKind::Keyword(Keyword::Uint64),
-                "float32" => token_kind = TokenKind::Keyword(Keyword::Float32),
-                "float64" => token_kind = TokenKind::Keyword(Keyword::Float64),
-                "bool" => token_kind = TokenKind::Keyword(Keyword::Bool),
-                "void" => token_kind = TokenKind::Keyword(Keyword::Void),
-                _ => token_kind = TokenKind::Identifier,
+                "true" => token_type = TokenType::Literal(LiteralToken::BoolLiteral(true)),
+                "false" => token_type = TokenType::Literal(LiteralToken::BoolLiteral(false)),
+                "using" => token_type = TokenType::Keyword(Keyword::Using),
+                "class" => token_type = TokenType::Keyword(Keyword::Class),
+                "public" => token_type = TokenType::Keyword(Keyword::Public),
+                "private" => token_type = TokenType::Keyword(Keyword::Private),
+                "function" => token_type = TokenType::Keyword(Keyword::Function),
+                "module" => token_type = TokenType::Keyword(Keyword::Module),
+                "void" => token_type = TokenType::Keyword(Keyword::Void),
+                "int8" => token_type = TokenType::Keyword(Keyword::Int8),
+                "int16" => token_type = TokenType::Keyword(Keyword::Int16),
+                "int32" => token_type = TokenType::Keyword(Keyword::Int32),
+                "int64" => token_type = TokenType::Keyword(Keyword::Int64),
+                "uint8" => token_type = TokenType::Keyword(Keyword::Uint8),
+                "uint16" => token_type = TokenType::Keyword(Keyword::Uint16),
+                "uint32" => token_type = TokenType::Keyword(Keyword::Uint32),
+                "uint64" => token_type = TokenType::Keyword(Keyword::Uint64),
+                "float32" => token_type = TokenType::Keyword(Keyword::Float32),
+                "float64" => token_type = TokenType::Keyword(Keyword::Float64),
+                "bool" => token_type = TokenType::Keyword(Keyword::Bool),
+                "if" => token_type = TokenType::Keyword(Keyword::If),
+                "else" => token_type = TokenType::Keyword(Keyword::Else),
+                "while" => token_type = TokenType::Keyword(Keyword::While),
+                "break" => token_type = TokenType::Keyword(Keyword::Break),
+                "continue" => token_type = TokenType::Keyword(Keyword::Continue),
+                "return" => token_type = TokenType::Keyword(Keyword::Return),
+                "let" => token_type = TokenType::Keyword(Keyword::Let),
+                "mutable" => token_type = TokenType::Keyword(Keyword::Mutable),
+                "var" => token_type = TokenType::Keyword(Keyword::Var),
+                "export" => token_type = TokenType::Keyword(Keyword::Export),
+                "new" => token_type = TokenType::Keyword(Keyword::New),
+                "import" => token_type = TokenType::Keyword(Keyword::Import),
+                _ => token_type = TokenType::Identifier(identifier_string),
             }
         }
         // found punctuator
         else if first_char.is_ascii_punctuation() {
-            token_kind = TokenKind::Punctuator(first_char);
+            token_type = TokenType::Punctuation(first_char);
         }
         // found a number literal
         else if first_char.is_digit(10) {
@@ -263,18 +263,19 @@ impl<'src> Lexer<'src> {
 
             let value_str = {
                 match self.chars.peek() {
-                    Some((index, _)) => &self.source_file.source_code()[begin_index..*index],
-                    None => &self.source_file.source_code()[begin_index..],
+                    Some((index, _)) => &self.source_code[begin_index..*index],
+                    None => &self.source_code[begin_index..],
                 }
             };
 
-            let mut literal_prefix = None;
+            let mut literal_suffix = None;
+            let suffix_starting_text_position = self.current_position.0;
 
             if match self.chars.peek() {
                 Some((_, char)) => Self::is_first_identifier_character(*char),
                 _ => false,
             } {
-                let prefix_starting_index = self.chars.peek().unwrap().0;
+                let suffix_starting_index = self.chars.peek().unwrap().0;
 
                 // loop until non-identifier character is found
                 while {
@@ -286,41 +287,57 @@ impl<'src> Lexer<'src> {
                     self.next();
                 }
 
-                literal_prefix = Some(match self.chars.peek() {
-                    Some((index, _)) => {
-                        &self.source_file.source_code()[prefix_starting_index..*index]
-                    }
-                    None => &self.source_file.source_code()[prefix_starting_index..],
+                literal_suffix = Some(match self.chars.peek() {
+                    Some((index, _)) => &self.source_code[suffix_starting_index..*index],
+                    None => &self.source_code[suffix_starting_index..],
                 });
             }
 
-            token_kind = TokenKind::LiteralConstant(LiteralConstantToken::Number {
+            let suffix = if let Some(literal_suffix) = literal_suffix {
+                match literal_suffix {
+                    "i8" => Some(NumberLiteralSuffix::Int8),
+                    "i16" => Some(NumberLiteralSuffix::Int16),
+                    "i32" => Some(NumberLiteralSuffix::Int32),
+                    "i64" => Some(NumberLiteralSuffix::Int64),
+                    "u8" => Some(NumberLiteralSuffix::Uint8),
+                    "u16" => Some(NumberLiteralSuffix::Uint16),
+                    "u32" => Some(NumberLiteralSuffix::Uint32),
+                    "u64" => Some(NumberLiteralSuffix::Uint64),
+                    "f32" => Some(NumberLiteralSuffix::Float32),
+                    "f64" => Some(NumberLiteralSuffix::Float64),
+                    _ => {
+                        return Err(LexicalError::InvalidLiteralSuffix {
+                            literal_suffix_position: suffix_starting_text_position
+                                ..self.current_position.0,
+                        })
+                    }
+                }
+            } else {
+                None
+            };
+
+            token_type = TokenType::Literal(LiteralToken::NumberLiteral {
                 value: value_str,
-                literal_suffix: literal_prefix,
+                suffix,
                 is_decimal,
             })
         }
         // this character can't be categorized under any token kinds
         else {
             return Err(LexicalError::InvalidCharacter {
-                position: self.current_position.into(),
+                position: self.current_position.0,
                 character: first_char,
             });
         }
 
         // return the token
         return Ok(Token {
-            token_kind,
-            position_range: first_position..self.current_position,
-            lexeme: {
-                match self.chars.peek() {
-                    Some((index, _)) => &self.source_file.source_code()[begin_index..*index],
-                    None => &self.source_file.source_code()[begin_index..],
-                }
-            },
+            token_type,
+            position_range: first_position.0..self.current_position.0,
+            byte_index_range: first_position.1..self.current_position.1,
         });
     }
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

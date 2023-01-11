@@ -8,13 +8,14 @@ use console::Style;
 use crate::source_file::{SourceFile, TextPosition};
 
 /// Is an enumeration containing all severity levels
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum Severity {
     Error,
     Warning,
     Info,
 }
 
-/// Print a message with a severity level
+/// Prints a message with a severity level
 ///
 /// # Format
 /// `[error|warning|info][category]: message`
@@ -52,13 +53,13 @@ pub fn print_message(message: &str, severity: Severity, error_category: Option<&
 }
 
 /// Is an enumeration containing all highlight styles
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum HighlightStyle {
     Range(Range<TextPosition>),
     Position(TextPosition),
 }
 
-/// Print the fragment of source code that contains the erorr
+/// Prints the fragment of source code that contains the erorr
 ///
 /// # Arguments
 /// * `source_file` - The source code that contains the error
@@ -131,7 +132,14 @@ pub fn highlight_source_file(
             HighlightStyle::Range(ref range) => {
                 println!(
                     "{}{}{}{}{}",
-                    bright_cyan.apply_to(source_file.source_name()),
+                    bright_cyan.apply_to(
+                        source_file
+                            .absolute_path()
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                    ),
                     bright_cyan.apply_to(':'),
                     bright_cyan.apply_to(range.start.line),
                     bright_cyan.apply_to(':'),
@@ -141,7 +149,14 @@ pub fn highlight_source_file(
             HighlightStyle::Position(pos) => {
                 println!(
                     "{}{}{}{}{}",
-                    bright_cyan.apply_to(source_file.source_name()),
+                    bright_cyan.apply_to(
+                        source_file
+                            .absolute_path()
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                    ),
                     bright_cyan.apply_to(':'),
                     bright_cyan.apply_to(pos.line),
                     bright_cyan.apply_to(':'),

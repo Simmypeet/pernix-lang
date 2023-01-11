@@ -1,35 +1,42 @@
+use std::ops::Range;
+
 use pernixc_common::{
     printing::{highlight_source_file, print_message, HighlightStyle, Severity},
     source_file::{SourceFile, TextPosition},
 };
 
-/// Is an enumeration of all the possible errors that can occur during the lexical
-/// analysis phase.
-#[derive(Clone)]
+/// Is an enumeration of all the possible errors that can occur during the lexical analysis phase.
+#[derive(Debug, Clone)]
 pub enum LexicalError {
-    /// Represent an error when a character is not valid
+    /// Represents an error when encountering an invalid character.
     InvalidCharacter {
         position: TextPosition,
         character: char,
     },
 
-    /// Represent an error of an unterminated multiline comment (Started with /* and
-    /// not ended with */)
+    /// Represents an error of an unterminated multiline comment (Started with /* and  not ended
+    /// with */)
     UnterminatedMultilineComment {
         multiline_comment_position: TextPosition,
+    },
+
+    /// Represents an error when encountering an invalid literal suffix.
+    InvalidLiteralSuffix {
+        literal_suffix_position: Range<TextPosition>,
     },
 }
 
 impl LexicalError {
-    /// Return the error number of this [`LexicalError`].
+    /// Returns the error number of this [`LexicalError`].
     pub fn get_error_number(&self) -> usize {
         match self {
             LexicalError::InvalidCharacter { .. } => 0,
             LexicalError::UnterminatedMultilineComment { .. } => 1,
+            LexicalError::InvalidLiteralSuffix { .. } => 2,
         }
     }
 
-    /// Print the error message of this [`LexicalError`].
+    /// Prints the error message of this [`LexicalError`].
     pub fn print_error(&self, source_file_reference: &SourceFile) {
         // 0 -> LXA000
         // 1 -> LXA001
@@ -73,6 +80,17 @@ impl LexicalError {
                 };
 
                 highlight_source_file(source_file_reference, HighlightStyle::Range(range), None)
+            }
+            LexicalError::InvalidLiteralSuffix {
+                literal_suffix_position,
+            } => {
+                print_message("invalid literal suffix", Severity::Error, Some(&category));
+
+                highlight_source_file(
+                    source_file_reference,
+                    HighlightStyle::Range(literal_suffix_position.clone()),
+                    None,
+                )
             }
         }
     }

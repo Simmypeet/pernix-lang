@@ -1,6 +1,5 @@
-use pernixc_common::source_file::TextPosition;
 use pernixc_lexical_analysis::{
-    token::{Keyword, Token, TokenKind},
+    token::{Keyword, Token, TokenType},
     token_stream::TokenStream,
 };
 
@@ -8,9 +7,8 @@ use crate::{
     abstract_syntax_tree::{
         declaration::{
             AccessModifier, ClassDeclarationAST, ClassFieldDeclarationAST,
-            ClassMemberDeclarationAST, ClassMethodDeclarationAST, NamespaceDeclarationAST,
-            NamespaceLevelDeclarationAST, ParameterAST, QualifiedTypeAnnotationAST,
-            TypeAnnotationAST, UsingDirectiveAST,
+            ClassMemberDeclarationAST, ClassMethodDeclarationAST, DeclarationAST, ParameterAST,
+            PrimitiveTypeUnit, QualifiedTypeAnnotation, TypeAnnotationAST, TypeUnitAST,
         },
         expression::{
             BinaryExpressionAST, BinaryOperator, ClassFiledInitializationAST,
@@ -22,21 +20,26 @@ use crate::{
             BlockScopeStatementAST, IfElseStatementAST, ReturnStatementAST, StatementAST,
             VariableDeclarationStatementAST, WhileStatementAST,
         },
-        PositionWrapper, PrimitiveTypeUnit, TypeUnitAST,
+        FileAST, ImportModuleAST, ModuleAST, PositionWrapper,
     },
     error::{ParsingContext, SyntacticError},
 };
 
 /// A parser that parses a [`TokenStream`] into a [`SyntaxTree`]. The parser is
 /// implemented as a recursive descent parser with operator precedence parsing.
-pub struct Parser<'src, 'token> {
+#[derive(Debug)]
+pub struct Parser<'token, 'src> {
     token_stream: &'token TokenStream<'src>,
     current: usize,
     accumulated_errors: Vec<SyntacticError>,
 }
 
-impl<'src, 'token> Parser<'src, 'token> {
-    /// Create a new [`Parser`] from a [`TokenStream`].
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// PUBLIC API
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+impl<'token, 'src> Parser<'token, 'src> {
+    /// Create a new [`Parser`] that parses the given [`TokenStream`].
     pub fn new(token_stream: &'token TokenStream<'src>) -> Self {
         Self {
             token_stream,
@@ -45,22 +48,82 @@ impl<'src, 'token> Parser<'src, 'token> {
         }
     }
 
-    /// Return a reference to the accumulated errors.
-    pub fn errors(&self) -> &[SyntacticError] {
-        &self.accumulated_errors
+    /// Return the position where the parser is currently at in the token stream. It indicates the
+    /// index of the next token to be parsed.
+    pub fn current_token_stream_position(&self) -> usize {
+        self.current
     }
 
-    /// Take the accumulated errors and return them.
-    pub fn pop_errors(&mut self) -> Vec<SyntacticError> {
-        std::mem::take(&mut self.accumulated_errors)
+    /// Parse the token stream at the current position into a [`FileAST`].
+    pub fn parse_file(&mut self) -> Result<FileAST<'src>, Vec<SyntacticError>>
+    where
+        'token: 'src,
+    {
+        match self.parse_file_internal() {
+            Some(file) => Ok(file),
+            None => Err(std::mem::take(&mut self.accumulated_errors)),
+        }
+    }
+
+    /// Parse the token stream at the current position into a [`DeclarationAST`].
+    pub fn parse_declaration(
+        &mut self,
+    ) -> Result<PositionWrapper<DeclarationAST<'src>>, Vec<SyntacticError>>
+    where
+        'token: 'src,
+    {
+        match self.parse_declaration_internal() {
+            Some(declaration) => Ok(declaration),
+            None => Err(std::mem::take(&mut self.accumulated_errors)),
+        }
+    }
+
+    /// Parse the token stream at the current position into a [`StatementAST`].
+    pub fn parse_statement(
+        &mut self,
+    ) -> Result<PositionWrapper<StatementAST<'src>>, Vec<SyntacticError>>
+    where
+        'token: 'src,
+    {
+        match self.parse_statement_internal() {
+            Some(statement) => Ok(statement),
+            None => Err(std::mem::take(&mut self.accumulated_errors)),
+        }
+    }
+
+    /// Parse the token stream at the current position into a [`ExpressionAST`].
+    pub fn parse_expression(
+        &mut self,
+    ) -> Result<PositionWrapper<ExpressionAST<'src>>, Vec<SyntacticError>>
+    where
+        'token: 'src,
+    {
+        match self.parse_expression_internal() {
+            Some(expression) => Ok(expression),
+            None => Err(std::mem::take(&mut self.accumulated_errors)),
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// HELPER FUNCTIONS
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+impl<'token, 'src> Parser<'token, 'src> {
+    /// Check if the given token type is a significant token.
+    fn is_significant_token(token_type: &TokenType) -> bool {
+        match token_type {
+            TokenType::Space | TokenType::Comment(_) => false,
+            _ => true,
+        }
     }
 
     /// Move the current token to the next significant token.
-    pub fn move_to_significant_token(&mut self) {
+    fn move_to_significant_token(&mut self) {
         while self.current < self.token_stream.len() {
             let token = &self.token_stream[self.current];
 
-            if token.token_kind.is_significant_token() {
+            if Self::is_significant_token(&token.token_type) {
                 break;
             }
 
@@ -76,7 +139,7 @@ impl<'src, 'token> Parser<'src, 'token> {
     /// Return the current token pointed by the `current` field and move the
     /// `current` field to the next token. If the `current` is the last token,
     /// then return the last token without moving the `current` field.
-    pub fn next(&mut self) -> Token<'src> {
+    fn next(&mut self) -> Token<'src> {
         // if the `current` is the last token, then return the last token
         if self.current == self.token_stream.len() - 1 {
             self.token_stream[self.current].clone()
@@ -87,30 +150,30 @@ impl<'src, 'token> Parser<'src, 'token> {
     }
 
     /// Peek the current toke and return a reference to it.
-    pub fn peek(&self) -> Token<'src> {
+    fn peek(&self) -> Token<'src> {
         self.token_stream[self.current].clone()
     }
 
     /// Move the `current` to the next significant token and return a reference to
     /// it. If the `current` is the last token, then return the last token without
     /// moving the `current` field.
-    pub fn peek_significant_token(&mut self) -> Token<'src> {
+    fn peek_significant_token(&mut self) -> Token<'src> {
         self.move_to_significant_token();
         self.peek()
     }
 
     /// Peek the token at the given `offset` and return a reference to it. If the
     /// `offset` is out of bounds, then return the first or last token.
-    pub fn peek_with_offset(&self, offset: isize) -> Token<'src> {
+    fn peek_with_offset(&self, offset: isize) -> Token<'src> {
         let index = (self.current as isize + offset).clamp(0, self.token_stream.len() as isize - 1)
             as usize;
 
         self.token_stream[index].clone()
     }
 
-    /// Similar to [`Parser::next`], but the function will move the `current` to the
-    /// next significant token before returning the next token.
-    pub fn next_significant_token(&mut self) -> Token<'src> {
+    /// Similar to [`Parser::next`], but the function will move the `current` to the next
+    /// significant token before returning the next token.
+    fn next_significant_token(&mut self) -> Token<'src> {
         self.move_to_significant_token();
         self.next()
     }
@@ -121,27 +184,27 @@ impl<'src, 'token> Parser<'src, 'token> {
         return None;
     }
 
-    fn parenthesis_delimiter_predicate<const C: char>(token: Token<'src>) -> bool {
-        matches!(token.token_kind, TokenKind::Punctuator(c) if c == C)
+    fn parenthesis_delimiter_predicate<const C: char>(token: &Token) -> bool {
+        matches!(token.token_type, TokenType::Punctuation(c) if c == C)
     }
 
-    // Skip the tokens until the predicate returns true. The parser also
-    // skips the tokens inside pairs of brackets and parenthesis
-    pub fn skip_to(&mut self, predicate: impl Fn(Token<'src>) -> bool) {
+    /// Skip the tokens until the predicate returns true. The parser also skips the tokens inside
+    /// pairs of brackets and parenthesis
+    fn skip_to(&mut self, predicate: impl Fn(&Token) -> bool) {
         // keep skipping tokens until the predicate returns true
-        while !predicate(self.peek()) && !matches!(self.peek().token_kind, TokenKind::EndOfFile) {
+        while !predicate(&self.peek()) && !matches!(self.peek().token_type, TokenType::EndOfFile) {
             // if found open bracket or open parenthesis, skip to the closing
             // bracket or parenthesis
             if matches!(
-                self.peek().token_kind,
-                TokenKind::Punctuator('(')
-                    | TokenKind::Punctuator('{')
-                    | TokenKind::Punctuator('[')
+                self.peek().token_type,
+                TokenType::Punctuation('(')
+                    | TokenType::Punctuation('{')
+                    | TokenType::Punctuation('[')
             ) {
-                let predicate = match self.peek().token_kind {
-                    TokenKind::Punctuator('(') => Self::parenthesis_delimiter_predicate::<')'>,
-                    TokenKind::Punctuator('{') => Self::parenthesis_delimiter_predicate::<'}'>,
-                    TokenKind::Punctuator('[') => Self::parenthesis_delimiter_predicate::<']'>,
+                let predicate = match self.peek().token_type {
+                    TokenType::Punctuation('(') => Self::parenthesis_delimiter_predicate::<')'>,
+                    TokenType::Punctuation('{') => Self::parenthesis_delimiter_predicate::<'}'>,
+                    TokenType::Punctuation('[') => Self::parenthesis_delimiter_predicate::<']'>,
                     _ => unreachable!(),
                 };
 
@@ -151,84 +214,85 @@ impl<'src, 'token> Parser<'src, 'token> {
             self.next();
         }
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    /// EXPECT FUNCTION
-    ////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// EXPECT FUNCTIONS
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+impl<'token, 'src> Parser<'token, 'src> {
+    /// Expect the next token to be a [`TokenType::Identifier`]
     fn expect_identifier(&mut self) -> Option<PositionWrapper<&'src str>> {
         // move to the next significant token
         let ident = self.next_significant_token();
 
-        if matches!(ident.token_kind, TokenKind::Identifier) {
+        if let TokenType::Identifier(value) = ident.token_type {
             Some(PositionWrapper {
-                position: ident.position_range.start.into()..ident.position_range.end.into(),
-                value: ident.lexeme,
+                position_range: ident.position_range.clone(),
+                value,
             })
         } else {
             self.create_error(SyntacticError::IdentifierExpected {
-                expected_position: TextPosition {
-                    line: ident.position_range.start.line,
-                    column: ident.position_range.start.column,
-                },
+                expected_position: ident.position_range.start.clone(),
             })
         }
     }
 
-    fn expect_punctuator(&mut self, punctuator: char) -> Option<()> {
+    /// Expect the next token to be a [`TokenType::Punctuation`]
+    fn expect_punctuation(&mut self, expected: char) -> Option<Token<'src>> {
         // move to the next significant token
         let punct = self.next_significant_token();
 
-        if !matches!(punct.token_kind, TokenKind::Punctuator(p) if p == punctuator) {
-            self.create_error(SyntacticError::PunctuatorExpected {
-                expected_punctuator: punctuator,
-                expected_position: TextPosition {
-                    line: punct.position_range.start.line,
-                    column: punct.position_range.start.column,
-                },
+        if !matches!(punct.token_type, TokenType::Punctuation(p) if p == expected) {
+            self.create_error(SyntacticError::PunctuationExpected {
+                expected_punctuation: expected,
+                expected_position: punct.position_range.start,
             })
         } else {
-            Some(())
+            Some(punct)
         }
     }
 
-    fn expect_keyword(&mut self, keyword: Keyword) -> Option<Token<'src>> {
+    /// Expect the next token to be a [`TokenType::Keyword`]
+    fn expect_keyword(&mut self, expected: Keyword) -> Option<Token<'src>> {
         // move to the next significant token
-        let kw = self.next_significant_token();
+        let keyword = self.next_significant_token();
 
-        if !matches!(kw.token_kind, TokenKind::Keyword(k) if k == keyword) {
+        if !matches!(keyword.token_type, TokenType::Keyword(k) if k == expected) {
             self.create_error(SyntacticError::KeywordExpected {
-                expected_keyword: keyword,
-                expected_position: TextPosition {
-                    line: kw.position_range.start.line,
-                    column: kw.position_range.start.column,
-                },
+                expected_keyword: expected,
+                expected_position: keyword.position_range.start,
             })
         } else {
-            Some(kw)
+            Some(keyword)
         }
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    /// COMMON PARSING
-    ////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// COMMON PARSING FUNCTIONS
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    /// Parse the current token pointed by the `current` field as a qualified
-    /// name.
-    pub fn parse_qualified_name(&mut self) -> Option<PositionWrapper<&'src str>> {
+impl<'token, 'src> Parser<'token, 'src> {
+    /// Parse the current token pointed by the `current` field as a qualified name.
+    fn parse_qualified_name(&mut self) -> Option<PositionWrapper<&'src str>>
+    where
+        'token: 'src,
+    {
         // move to the next significant token
         self.move_to_significant_token();
 
         // get the first byte index of the qualified name
-        let first_byte_index = self.peek().position_range.start.byte_index;
+        let first_byte_index = self.peek().byte_index_range.start;
         let first_position = self.peek().position_range.start;
 
         self.expect_identifier()?;
 
         // get the consecutive identifiers
-        while matches!(self.peek().token_kind, TokenKind::Punctuator(':'))
+        while matches!(self.peek().token_type, TokenType::Punctuation(':'))
             && matches!(
-                self.peek_with_offset(1).token_kind,
-                TokenKind::Punctuator(':')
+                self.peek_with_offset(1).token_type,
+                TokenType::Punctuation(':')
             )
         {
             self.next();
@@ -237,111 +301,15 @@ impl<'src, 'token> Parser<'src, 'token> {
         }
 
         // get the last byte index of the qualified name
-        let last_byte_index = self.peek().position_range.start.byte_index;
+        let last_byte_index = self.peek().byte_index_range.start;
 
         // string slice of the qualified name
         let qualified_name_string =
-            &self.token_stream.source_file().source_code()[first_byte_index..last_byte_index];
+            &self.token_stream.source_code()[first_byte_index..last_byte_index];
 
         Some(PositionWrapper {
-            position: first_position.into()..self.peek().position_range.start.into(),
+            position_range: first_position..self.peek().position_range.start,
             value: qualified_name_string,
-        })
-    }
-
-    /// Parse the current token pointed by the `current` field as a type unit.
-    pub fn parse_type_unit(&mut self) -> Option<PositionWrapper<TypeUnitAST<'src>>> {
-        let next = self.peek_significant_token();
-
-        let type_unit = match next.token_kind {
-            TokenKind::Identifier => TypeUnitAST::QualifiedName(self.parse_qualified_name()?.value),
-            TokenKind::Keyword(Keyword::Bool) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Bool)
-            }
-            TokenKind::Keyword(Keyword::Void) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Void)
-            }
-            TokenKind::Keyword(Keyword::Int8) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Int8)
-            }
-            TokenKind::Keyword(Keyword::Int16) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Int16)
-            }
-            TokenKind::Keyword(Keyword::Int32) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Int32)
-            }
-            TokenKind::Keyword(Keyword::Int64) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Int64)
-            }
-            TokenKind::Keyword(Keyword::Uint8) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Uint8)
-            }
-            TokenKind::Keyword(Keyword::Uint16) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Uint16)
-            }
-            TokenKind::Keyword(Keyword::Uint32) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Uint32)
-            }
-            TokenKind::Keyword(Keyword::Uint64) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Uint64)
-            }
-            TokenKind::Keyword(Keyword::Float32) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Float32)
-            }
-            TokenKind::Keyword(Keyword::Float64) => {
-                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Float64)
-            }
-            _ => {
-                return self.create_error(SyntacticError::IdentifierExpected {
-                    expected_position: TextPosition {
-                        line: next.position_range.start.line,
-                        column: next.position_range.start.column,
-                    },
-                });
-            }
-        };
-
-        if let TypeUnitAST::PrimitiveTypeUnit(_) = type_unit {
-            self.next();
-        }
-
-        Some(PositionWrapper {
-            position: next.position_range.start.into()..next.position_range.start.into(),
-            value: type_unit,
-        })
-    }
-
-    /// Parse the current token pointed by the `current` field as a type annotation.
-    pub fn parse_type_annotation(&mut self) -> Option<PositionWrapper<TypeAnnotationAST<'src>>> {
-        let type_unit = self.parse_type_unit()?;
-        Some(PositionWrapper {
-            position: type_unit.position,
-            value: TypeAnnotationAST::TypeUnit(type_unit.value),
-        })
-    }
-
-    /// Parse the current token pointed by the `current` field as a qualified type
-    /// annotation.
-    pub fn parse_qualified_type_annotation(
-        &mut self,
-    ) -> Option<PositionWrapper<QualifiedTypeAnnotationAST<'src>>> {
-        let first_token = self.peek_significant_token();
-        let mut is_mutable = false;
-
-        // check for `const` keyword
-        if let TokenKind::Keyword(Keyword::Mutable) = first_token.token_kind {
-            self.next();
-            is_mutable = true;
-        }
-
-        let type_annotation = self.parse_type_annotation()?;
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()..type_annotation.position.end,
-            value: QualifiedTypeAnnotationAST {
-                is_mutable,
-                type_annotation,
-            },
         })
     }
 
@@ -357,22 +325,22 @@ impl<'src, 'token> Parser<'src, 'token> {
 
         // keep looping until the terminator is found or the end of file is reached
         while !matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::Punctuator(c) if c == TERMINATOR
+            self.peek_significant_token().token_type,
+            TokenType::Punctuation(c) if c == TERMINATOR
         ) && !matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::EndOfFile
+            self.peek_significant_token().token_type,
+            TokenType::EndOfFile
         ) {
             // if this is not the first element, expect a separator
             if !first_element {
-                if let None = self.expect_punctuator(SEPARATOR) {
+                if let None = self.expect_punctuation(SEPARATOR) {
                     found_error = true;
 
                     // skip to either the separator or the terminator
                     self.skip_to(|token| {
                         matches!(
-                            token.token_kind,
-                            TokenKind::Punctuator(c) if c == SEPARATOR || c == TERMINATOR
+                            token.token_type,
+                            TokenType::Punctuation(c) if c == SEPARATOR || c == TERMINATOR
                         )
                     });
                     first_element = false;
@@ -391,8 +359,8 @@ impl<'src, 'token> Parser<'src, 'token> {
                 // skip to either the separator or the terminator
                 self.skip_to(|token| {
                     matches!(
-                        token.token_kind,
-                        TokenKind::Punctuator(c) if c == SEPARATOR || c == TERMINATOR
+                        token.token_type,
+                        TokenType::Punctuation(c) if c == SEPARATOR || c == TERMINATOR
                     )
                 });
                 continue;
@@ -400,7 +368,7 @@ impl<'src, 'token> Parser<'src, 'token> {
         }
 
         // expect closing parenthesis
-        self.expect_punctuator(TERMINATOR)?;
+        self.expect_punctuation(TERMINATOR)?;
 
         if !found_error {
             Some(elements)
@@ -408,625 +376,18 @@ impl<'src, 'token> Parser<'src, 'token> {
             None
         }
     }
+}
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    /// DECLARATION PARSING
-    ////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// EXPRESSION PARSING FUNCTIONS
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    pub(crate) fn parse_file_level_declaration(
-        &mut self,
-    ) -> (
-        Vec<PositionWrapper<UsingDirectiveAST<'src>>>,
-        Vec<PositionWrapper<NamespaceDeclarationAST<'src>>>,
-    ) {
-        let skip_predicate = |token: Token<'src>| {
-            matches!(
-                token.token_kind,
-                TokenKind::EndOfFile
-                    | TokenKind::Keyword(Keyword::Namespace)
-                    | TokenKind::Keyword(Keyword::Using)
-                    | TokenKind::Keyword(Keyword::Class)
-            )
-        };
-
-        let mut using_directives = Vec::new();
-        let mut declarations = Vec::new();
-
-        // set to true when a non-using directive is found
-        let mut using_directives_stop = false;
-
-        // keep looping until the end of file is reached
-        while !matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::EndOfFile
-        ) {
-            if let TokenKind::Keyword(Keyword::Using) = self.peek_significant_token().token_kind {
-                if let Some(using_directive) = self.parse_using_directive() {
-                    if using_directives_stop {
-                        self.create_error::<i8>(
-                            SyntacticError::UsingDirectiveMustBeDeclaredPriorToAnyOtherDeclaration {
-                                using_directive_position: using_directive.position.clone()
-                            },
-                        );
-                    } else {
-                        using_directives.push(using_directive);
-                    }
-                    continue;
-                }
-            } else if let TokenKind::Keyword(Keyword::Namespace) =
-                self.peek_significant_token().token_kind
-            {
-                if let Some(declaration) = self.parse_namespace_declaration() {
-                    using_directives_stop = true;
-                    declarations.push(PositionWrapper {
-                        position: declaration.position,
-                        value: declaration.value.to_namespace_declaration().unwrap(),
-                    });
-                    continue;
-                }
-            } else {
-                // make progress
-                let unexpected_token = self.next();
-
-                self.create_error::<i8>(SyntacticError::UnexpectedToken {
-                    unexpected_position: unexpected_token.position_range.start.into()
-                        ..unexpected_token.position_range.end.into(),
-                    parsing_context: ParsingContext::File,
-                });
-            }
-
-            // skip to the next declaration
-            self.skip_to(skip_predicate);
-        }
-
-        (using_directives, declarations)
-    }
-
-    fn parse_namespace_level_declaration(
-        &mut self,
-    ) -> (
-        Vec<PositionWrapper<UsingDirectiveAST<'src>>>,
-        Vec<PositionWrapper<NamespaceLevelDeclarationAST<'src>>>,
-    ) {
-        let skip_predicate = |token: Token<'src>| {
-            matches!(
-                token.token_kind,
-                TokenKind::EndOfFile
-                    | TokenKind::Keyword(Keyword::Namespace)
-                    | TokenKind::Keyword(Keyword::Using)
-                    | TokenKind::Keyword(Keyword::Class)
-                    | TokenKind::Punctuator('}')
-            )
-        };
-
-        let mut using_directives = Vec::new();
-        let mut declarations = Vec::new();
-
-        // set to true when a non-using directive is found
-        let mut using_directives_stop = false;
-
-        // keep looping until the end of file is reached or the closing brace is
-        // found
-        while !matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::EndOfFile | TokenKind::Punctuator('}')
-        ) {
-            if let TokenKind::Keyword(Keyword::Using) = self.peek_significant_token().token_kind {
-                if let Some(using_directive) = self.parse_using_directive() {
-                    if using_directives_stop {
-                        self.create_error::<i8>(
-                            SyntacticError::UsingDirectiveMustBeDeclaredPriorToAnyOtherDeclaration {
-                                using_directive_position: using_directive.position.clone()
-                            },
-                        );
-                    } else {
-                        using_directives.push(using_directive);
-                    }
-                    continue;
-                }
-            } else {
-                if let Some(declaration) = self.parse_declaration() {
-                    using_directives_stop = true;
-                    declarations.push(declaration);
-                    continue;
-                }
-            }
-
-            // skip to the next declaration
-            self.skip_to(skip_predicate);
-        }
-
-        (using_directives, declarations)
-    }
-
-    /// Parse the current token pointed by the `current` field as a declaration
-    pub fn parse_declaration(
-        &mut self,
-    ) -> Option<PositionWrapper<NamespaceLevelDeclarationAST<'src>>> {
-        match self.peek_significant_token().token_kind {
-            TokenKind::Keyword(Keyword::Namespace) => self.parse_namespace_declaration(),
-            TokenKind::Keyword(Keyword::Class) => self.parse_class_declaration(),
-            _ => {
-                self.next(); // make prgress
-                self.create_error(SyntacticError::UnexpectedToken {
-                    unexpected_position: self.peek().position_range.start.into()
-                        ..self.peek().position_range.end.into(),
-                    parsing_context: ParsingContext::Declaration,
-                })
-            }
-        }
-    }
-
-    /// Parse the current token pointed by the `current` field as an access
-    /// modififer.
-    fn parse_access_modifier(&mut self) -> Option<PositionWrapper<AccessModifier>> {
-        let first_token = self.next_significant_token();
-        let access_mod = match first_token.token_kind {
-            TokenKind::Keyword(Keyword::Public) => AccessModifier::Public,
-            TokenKind::Keyword(Keyword::Private) => AccessModifier::Private,
-            _ => {
-                return self.create_error(SyntacticError::AccessModifierExpected {
-                    expected_position: first_token.position_range.start.into()
-                        ..first_token.position_range.end.into(),
-                })
-            }
-        };
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..first_token.position_range.end.into(),
-            value: access_mod,
-        })
-    }
-
-    /// Parse the current token pointed by the `current` field as a class
-    /// declaration.
-    fn parse_class_declaration(
-        &mut self,
-    ) -> Option<PositionWrapper<NamespaceLevelDeclarationAST<'src>>> {
-        let first_token = self.peek_significant_token();
-        self.expect_keyword(Keyword::Class)?;
-
-        // name of the class
-        let identifier = self.expect_identifier()?;
-
-        // expect opening brace
-        self.expect_punctuator('{')?;
-
-        let skip_predicate = |token: Token<'src>| {
-            matches!(
-                token.token_kind,
-                TokenKind::Punctuator('}')
-                    | TokenKind::Keyword(Keyword::Public)
-                    | TokenKind::Keyword(Keyword::Private)
-            )
-        };
-
-        let mut members = Vec::new();
-
-        // parse the members of the class
-        while !matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::Punctuator('}')
-        ) && !matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::EndOfFile
-        ) {
-            // parse the access modifier
-            let access_modifier = match self.parse_access_modifier() {
-                Some(access_modifier) => access_modifier,
-                None => {
-                    self.skip_to(skip_predicate);
-                    continue;
-                }
-            };
-
-            // parse the type annotation
-            let type_annotation = match self.parse_type_annotation() {
-                Some(type_annotation) => type_annotation,
-                None => {
-                    self.skip_to(skip_predicate);
-                    continue;
-                }
-            };
-
-            // parse the identifier
-            let identifier = match self.expect_identifier() {
-                Some(identifier) => identifier,
-                None => {
-                    self.skip_to(skip_predicate);
-                    continue;
-                }
-            };
-
-            // if the next token is a semicolon, then we are parsing a field
-            // declaration
-            if matches!(
-                self.peek_significant_token().token_kind,
-                TokenKind::Punctuator(';')
-            ) {
-                self.next_significant_token();
-                members.push(PositionWrapper {
-                    position: access_modifier.position.start.into()
-                        ..self.peek().position_range.start.into(),
-                    value: ClassMemberDeclarationAST::ClassFieldDeclaration(
-                        ClassFieldDeclarationAST {
-                            access_modifier,
-                            type_annotation,
-                            identifier,
-                        },
-                    ),
-                })
-            }
-            // if the next token is an opening parenthesis, then we are parsing
-            // a class method
-            else if matches!(
-                self.peek_significant_token().token_kind,
-                TokenKind::Punctuator('(')
-            ) {
-                self.next_significant_token();
-
-                fn parse_parameter<'src, 'token>(
-                    this: &mut Parser<'src, 'token>,
-                ) -> Option<PositionWrapper<ParameterAST<'src>>> {
-                    let qualified_type_annotation = this.parse_qualified_type_annotation()?;
-                    let identifier = this.expect_identifier()?;
-
-                    Some(PositionWrapper {
-                        position: qualified_type_annotation.position.start.into()
-                            ..identifier.position.end.into(),
-                        value: ParameterAST {
-                            qualified_type_annotation,
-                            identifier,
-                        },
-                    })
-                }
-
-                // list of parameters
-                let parameters = self
-                    .parse_separated_list::<',', ')', PositionWrapper<ParameterAST>>(|this| {
-                        parse_parameter(this)
-                    })?;
-
-                // function body
-                let body = match self.parse_block_scope_statement() {
-                    Some(body) => body,
-                    None => {
-                        self.skip_to(skip_predicate);
-                        continue;
-                    }
-                };
-                let body = match body.value {
-                    StatementAST::BlockScopeStatement(block_scope_statement) => PositionWrapper {
-                        position: body.position,
-                        value: block_scope_statement,
-                    },
-                    _ => unreachable!(),
-                };
-                let return_type_annotation = type_annotation;
-
-                members.push(PositionWrapper {
-                    position: access_modifier.position.start.into()
-                        ..self.peek().position_range.start.into(),
-                    value: ClassMemberDeclarationAST::ClassMethodDeclaration(
-                        ClassMethodDeclarationAST {
-                            access_modifier,
-                            return_type_annotation,
-                            identifier,
-                            parameters,
-                            body,
-                        },
-                    ),
-                })
-            }
-        }
-
-        // expect closing brace
-        self.expect_punctuator('}')?;
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..self.peek().position_range.start.into(),
-            value: NamespaceLevelDeclarationAST::ClassDeclaration(ClassDeclarationAST {
-                identifier,
-                members,
-            }),
-        })
-    }
-
-    /// Parse a namespace declaration
-    fn parse_namespace_declaration(
-        &mut self,
-    ) -> Option<PositionWrapper<NamespaceLevelDeclarationAST<'src>>> {
-        let first_token = self.peek_significant_token();
-        self.expect_keyword(Keyword::Namespace)?;
-
-        let qualified_name = self.parse_qualified_name()?;
-
-        // expect opening brace
-        self.expect_punctuator('{')?;
-
-        let (using_directives, declarations) = self.parse_namespace_level_declaration();
-
-        // expect closing brace
-        self.expect_punctuator('}')?;
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..self.peek().position_range.start.into(),
-            value: NamespaceLevelDeclarationAST::NamespaceDeclaration(NamespaceDeclarationAST {
-                qualified_name,
-                using_directives,
-                declarations,
-            }),
-        })
-    }
-
-    /// Parse the current token pointed by the `current` field as a using directive.
-    pub fn parse_using_directive(&mut self) -> Option<PositionWrapper<UsingDirectiveAST<'src>>> {
-        let first_token = self.peek_significant_token();
-
-        // expect using keyword
-        self.expect_keyword(Keyword::Using)?;
-
-        // expect qualified name
-        let qualified_name = self.parse_qualified_name()?;
-
-        // expect semicolon
-        self.expect_punctuator(';')?;
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..self.peek().position_range.start.into(),
-            value: UsingDirectiveAST { qualified_name },
-        })
-    }
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    /// STATEMENT PARSING
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
-    /// Parse the current token pointed by the `current` field as a statement.
-    pub fn parse_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>> {
-        // move to the next significant token
-        match self.peek_significant_token().token_kind {
-            // parse a variable declaration
-            TokenKind::Keyword(Keyword::Mutable) | TokenKind::Keyword(Keyword::Let) => {
-                self.parse_variable_declaration_statement()
-            }
-            // parse a block statement
-            TokenKind::Punctuator('{') => self.parse_block_scope_statement(),
-            // parse an if-else statement
-            TokenKind::Keyword(Keyword::If) => self.parse_if_else_statement(),
-            // parse a while loop statement
-            TokenKind::Keyword(Keyword::While) => self.parse_while_statement(),
-            // parse a return statement
-            TokenKind::Keyword(Keyword::Return) => self.parse_return_statement(),
-            // parse break and continue statements
-            TokenKind::Keyword(Keyword::Break) | TokenKind::Keyword(Keyword::Continue) => {
-                let token = self.next();
-                Some(PositionWrapper {
-                    position: token.position_range.start.into()..token.position_range.end.into(),
-                    value: match token.token_kind {
-                        TokenKind::Keyword(Keyword::Break) => StatementAST::BreakStatement,
-                        TokenKind::Keyword(Keyword::Continue) => StatementAST::ContinueStatement,
-                        _ => unreachable!(),
-                    },
-                })
-            }
-            _ => {
-                // parse an expression statement
-                let expr = self.parse_expression()?;
-
-                // expect a semicolon
-                self.expect_punctuator(';')?;
-
-                Some(PositionWrapper {
-                    position: expr.position.start..self.peek().position_range.start.into(),
-                    value: StatementAST::ExpressionStatement(expr.value),
-                })
-            }
-        }
-    }
-
-    fn parse_return_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>> {
-        let first_token = self.peek_significant_token();
-        self.expect_keyword(Keyword::Return)?;
-
-        if self.peek_significant_token().token_kind == TokenKind::Punctuator(';') {
-            return Some(PositionWrapper {
-                position: first_token.position_range.start.into()
-                    ..self.peek().position_range.start.into(),
-                value: StatementAST::ReturnStatement(ReturnStatementAST { expression: None }),
-            });
-        }
-
-        let expression = self.parse_expression()?;
-
-        // expect a semicolon
-        self.expect_punctuator(';')?;
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..self.peek().position_range.start.into(),
-            value: StatementAST::ReturnStatement(ReturnStatementAST {
-                expression: Some(expression),
-            }),
-        })
-    }
-
-    // parse a while loop statement
-    fn parse_while_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>> {
-        let first_token = self.peek_significant_token();
-        self.expect_keyword(Keyword::While)?;
-
-        // expect an opening parenthesis
-        self.expect_punctuator('(')?;
-
-        // parse the condition
-        let condition = self.parse_expression()?;
-
-        // expect a closing parenthesis
-        self.expect_punctuator(')')?;
-
-        // parse the body
-        let statement = Box::new(self.parse_statement()?);
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()..statement.position.end,
-            value: StatementAST::WhileStatement(WhileStatementAST {
-                condition,
-                statement,
-            }),
-        })
-    }
-
-    // parse a block statement
-    fn parse_block_scope_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>> {
-        let first_token = self.peek_significant_token();
-        self.expect_punctuator('{')?;
-
-        // keep looping until the end of file is reached or the closing brace is
-        // found
-        let mut statements = Vec::new();
-
-        while !matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::Punctuator('}')
-        ) && !matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::EndOfFile
-        ) {
-            if let Some(statement) = self.parse_statement() {
-                statements.push(statement);
-            } else {
-                // skip to either the separator or the terminator
-                self.skip_to(|token| {
-                    // skip to either the separator or the terminator
-                    matches!(
-                        token.token_kind,
-                        TokenKind::Punctuator(c) if c == ';' || c == '}'
-                    )
-
-                    // skip to if, while, return, break, continue, var, let
-                    || matches!(
-                        token.token_kind,
-                        TokenKind::Keyword(k) if k == Keyword::If
-                            || k == Keyword::While
-                            || k == Keyword::Return
-                            || k == Keyword::Break
-                            || k == Keyword::Continue
-                            || k == Keyword::Let
-                            || k == Keyword::Mutable
-                    )
-                });
-
-                // if the position has skipped to the semicolon, eat it
-                if matches!(
-                    self.peek_significant_token().token_kind,
-                    TokenKind::Punctuator(';')
-                ) {
-                    self.next();
-                }
-
-                continue;
-            }
-        }
-
-        self.expect_punctuator('}')?;
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..self.peek().position_range.start.into(),
-            value: StatementAST::BlockScopeStatement(BlockScopeStatementAST { statements }),
-        })
-    }
-
-    // parse an if-else statemetn
-    fn parse_if_else_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>> {
-        // get the first token in the if-else statement
-        let first_token = self.peek_significant_token();
-
-        // expect the `if` keyword
-        self.expect_keyword(Keyword::If)?;
-
-        // expect the opening parenthesis
-        self.expect_punctuator('(')?;
-
-        // parse the condition
-        let condition = self.parse_expression()?;
-
-        // expect the closing parenthesis
-        self.expect_punctuator(')')?;
-
-        // expect then statement
-        let then_statement = Box::new(self.parse_statement()?);
-
-        // if the next token is an `else` keyword, parse the else expression
-        let else_statement = if matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::Keyword(Keyword::Else)
-        ) {
-            self.next();
-            Some(Box::new(self.parse_statement()?))
-        } else {
-            None
-        };
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..self.peek().position_range.start.into(),
-            value: StatementAST::IfElseStatement(IfElseStatementAST {
-                condition,
-                then_statement,
-                else_statement,
-            }),
-        })
-    }
-
-    // parse a variable declaration statement
-    fn parse_variable_declaration_statement(
-        &mut self,
-    ) -> Option<PositionWrapper<StatementAST<'src>>> {
-        // get the first token in variable declaration statement
-        // it can either be `let` or `var`
-        let first_token = self.next_significant_token();
-
-        let is_mutable = match first_token.token_kind {
-            TokenKind::Keyword(Keyword::Let) => false,
-            TokenKind::Keyword(Keyword::Mutable) => true,
-            _ => unreachable!("parse_statement should have handled this case"),
-        };
-
-        // next, expect an identifier
-        let variable_name = self.expect_identifier()?;
-
-        // next, expect an assignment operator
-        self.expect_punctuator('=')?;
-
-        // next, expect an expression
-        let expression = self.parse_expression()?;
-
-        // finally, expect a semicolon
-        self.expect_punctuator(';')?;
-
-        Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..self.peek().position_range.start.into(),
-            value: StatementAST::VariableDeclarationStatement(VariableDeclarationStatementAST {
-                variable_name,
-                is_mutable,
-                expression,
-            }),
-        })
-    }
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    /// EXPRESSION PARSING
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
+impl<'token, 'src> Parser<'token, 'src> {
     /// Parse the current token pointed by the `current` field as an expression.
-    pub fn parse_expression(&mut self) -> Option<PositionWrapper<ExpressionAST<'src>>> {
+    fn parse_expression_internal(&mut self) -> Option<PositionWrapper<ExpressionAST<'src>>>
+    where
+        'token: 'src,
+    {
         self.parse_expression_bin(0)
     }
 
@@ -1034,7 +395,10 @@ impl<'src, 'token> Parser<'src, 'token> {
     fn parse_expression_bin(
         &mut self,
         parent_precedence: usize,
-    ) -> Option<PositionWrapper<ExpressionAST<'src>>> {
+    ) -> Option<PositionWrapper<ExpressionAST<'src>>>
+    where
+        'token: 'src,
+    {
         let mut left = self.parse_primary_expression()?;
 
         loop {
@@ -1058,7 +422,7 @@ impl<'src, 'token> Parser<'src, 'token> {
             let right = self.parse_expression_bin(binary_op_precedence)?;
 
             left = PositionWrapper {
-                position: left.position.start..right.position.end,
+                position_range: left.position_range.start..right.position_range.end,
                 value: ExpressionAST::BinaryExpression(BinaryExpressionAST {
                     left_expression: Box::new(left),
                     binary_operator: binary_op,
@@ -1103,22 +467,22 @@ impl<'src, 'token> Parser<'src, 'token> {
         self.move_to_significant_token();
         let operator_position_range = self.peek().position_range.clone();
 
-        let bin_op = match self.next().token_kind {
-            TokenKind::Punctuator('+')
-            | TokenKind::Punctuator('-')
-            | TokenKind::Punctuator('*')
-            | TokenKind::Punctuator('/')
-            | TokenKind::Punctuator('%') => {
-                let punctuator = match self.peek_with_offset(-1).token_kind {
-                    TokenKind::Punctuator(c) => c,
+        let bin_op = match self.next().token_type {
+            TokenType::Punctuation('+')
+            | TokenType::Punctuation('-')
+            | TokenType::Punctuation('*')
+            | TokenType::Punctuation('/')
+            | TokenType::Punctuation('%') => {
+                let punctuation = match self.peek_with_offset(-1).token_type {
+                    TokenType::Punctuation(c) => c,
                     _ => unreachable!(),
                 };
 
                 // check for compound assignment
-                match self.peek().token_kind {
-                    TokenKind::Punctuator('=') => {
+                match self.peek().token_type {
+                    TokenType::Punctuation('=') => {
                         self.next();
-                        match punctuator {
+                        match punctuation {
                             '+' => BinaryOperator::CompoundAddition,
                             '-' => BinaryOperator::CompoundSubtraction,
                             '*' => BinaryOperator::CompoundMultiplication,
@@ -1127,7 +491,7 @@ impl<'src, 'token> Parser<'src, 'token> {
                             _ => unreachable!(),
                         }
                     }
-                    _ => match punctuator {
+                    _ => match punctuation {
                         '+' => BinaryOperator::Addition,
                         '-' => BinaryOperator::Subtraction,
                         '*' => BinaryOperator::Multiplication,
@@ -1137,37 +501,37 @@ impl<'src, 'token> Parser<'src, 'token> {
                     },
                 }
             }
-            TokenKind::Punctuator('<') | TokenKind::Punctuator('>') => {
-                let current_punctuator = match self.peek().token_kind {
-                    TokenKind::Punctuator(c) => c,
+            TokenType::Punctuation('<') | TokenType::Punctuation('>') => {
+                let current_punctuation = match self.peek().token_type {
+                    TokenType::Punctuation(c) => c,
                     _ => unreachable!(),
                 };
 
-                if matches!(self.peek().token_kind, TokenKind::Punctuator('=')) {
+                if matches!(self.peek().token_type, TokenType::Punctuation('=')) {
                     self.next();
-                    match current_punctuator {
+                    match current_punctuation {
                         '<' => BinaryOperator::LessThanOrEqual,
                         '>' => BinaryOperator::GreaterThanOrEqual,
                         _ => unreachable!(),
                     }
                 } else {
-                    match current_punctuator {
+                    match current_punctuation {
                         '<' => BinaryOperator::LessThan,
                         '>' => BinaryOperator::GreaterThan,
                         _ => unreachable!(),
                     }
                 }
             }
-            TokenKind::Punctuator('=') => {
-                if matches!(self.peek().token_kind, TokenKind::Punctuator('=')) {
+            TokenType::Punctuation('=') => {
+                if matches!(self.peek().token_type, TokenType::Punctuation('=')) {
                     self.next();
                     BinaryOperator::Equal
                 } else {
                     BinaryOperator::Assignment
                 }
             }
-            TokenKind::Punctuator('!') => {
-                if matches!(self.peek().token_kind, TokenKind::Punctuator('=')) {
+            TokenType::Punctuation('!') => {
+                if matches!(self.peek().token_type, TokenType::Punctuation('=')) {
                     self.next();
                     BinaryOperator::NotEqual
                 } else {
@@ -1175,8 +539,8 @@ impl<'src, 'token> Parser<'src, 'token> {
                     return None;
                 }
             }
-            TokenKind::Punctuator('&') => {
-                if matches!(self.peek().token_kind, TokenKind::Punctuator('&')) {
+            TokenType::Punctuation('&') => {
+                if matches!(self.peek().token_type, TokenType::Punctuation('&')) {
                     self.next();
                     BinaryOperator::LogicalAnd
                 } else {
@@ -1184,8 +548,8 @@ impl<'src, 'token> Parser<'src, 'token> {
                     return None;
                 }
             }
-            TokenKind::Punctuator('|') => {
-                if matches!(self.peek().token_kind, TokenKind::Punctuator('|')) {
+            TokenType::Punctuation('|') => {
+                if matches!(self.peek().token_type, TokenType::Punctuation('|')) {
                     self.next();
                     BinaryOperator::LogicalOr
                 } else {
@@ -1200,71 +564,38 @@ impl<'src, 'token> Parser<'src, 'token> {
         };
 
         Some(PositionWrapper {
-            position: operator_position_range.start.into()
-                ..self.peek_with_offset(-1).position_range.end.into(),
+            position_range: operator_position_range.start
+                ..self.peek_with_offset(-1).position_range.end,
             value: bin_op,
         })
     }
 
-    /// Parse the current token pointed by the `current` field as a unary operator.
-    fn parse_unary_operator(
-        &mut self,
-        lookahead: Token<'src>,
-    ) -> Option<PositionWrapper<UnaryOperator>> {
-        let operator = match lookahead.lexeme {
-            "+" | "-" => {
-                // two consecutive plus/minus signs are considered as an increment/
-                // decrement operator
-                if lookahead.lexeme == self.peek().lexeme {
-                    // eat the second plus/minus sign
-                    self.next();
-
-                    match lookahead.lexeme {
-                        "+" => UnaryOperator::Increment,
-                        "-" => UnaryOperator::Decrement,
-                        _ => unreachable!(),
-                    }
-                } else {
-                    match lookahead.lexeme {
-                        "+" => UnaryOperator::Identity,
-                        "-" => UnaryOperator::Negation,
-                        _ => unreachable!(),
-                    }
-                }
-            }
-            "!" => UnaryOperator::LogicalNegation,
-            _ => unreachable!(),
-        };
-
-        let position =
-            lookahead.position_range.start.into()..self.peek().position_range.start.into();
-
-        Some(PositionWrapper {
-            position,
-            value: operator,
-        })
-    }
-
+    /// Parse the current token pointed by the `current` field as a class instantiation expression.
     fn parse_class_instantiation_expression(
         &mut self,
-    ) -> Option<PositionWrapper<ExpressionAST<'src>>> {
-        let first_token = self.peek_significant_token();
-        self.expect_keyword(Keyword::New)?;
+    ) -> Option<PositionWrapper<ExpressionAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect the `new` keyword
+        let first_token = self.expect_keyword(Keyword::New)?;
 
-        let type_unit = self.parse_type_unit()?;
+        // expect the class name
+        let qualified_name = self.parse_qualified_name()?;
 
         // expect a left brace
-        self.expect_punctuator('{')?;
+        self.expect_punctuation('{')?;
 
         let field_initializations = self
             .parse_separated_list::<',', '}', PositionWrapper<ClassFiledInitializationAST>>(
                 |this| {
                     let identifier = this.expect_identifier()?;
-                    this.expect_punctuator('=')?;
-                    let expression = this.parse_expression()?;
+                    this.expect_punctuation(':')?;
+                    let expression = this.parse_expression_internal()?;
 
                     Some(PositionWrapper {
-                        position: identifier.position.start.into()..expression.position.end.into(),
+                        position_range: identifier.position_range.start
+                            ..expression.position_range.end,
                         value: ClassFiledInitializationAST {
                             identifier,
                             expression,
@@ -1274,25 +605,27 @@ impl<'src, 'token> Parser<'src, 'token> {
             )?;
 
         Some(PositionWrapper {
-            position: first_token.position_range.start.into()
-                ..self.peek().position_range.start.into(),
+            position_range: first_token.position_range.start..self.peek().position_range.start,
             value: ExpressionAST::ClassInstantiationExpression(ClassInstantiationExpressionAST {
-                type_unit,
+                qualified_name,
                 field_initializations,
             }),
         })
     }
 
     /// Parse an expression that starts with an identifier.
-    fn parse_identifier_expression(&mut self) -> Option<PositionWrapper<ExpressionAST<'src>>> {
+    fn parse_identifier_expression(&mut self) -> Option<PositionWrapper<ExpressionAST<'src>>>
+    where
+        'token: 'src,
+    {
         let qualified_name = self.parse_qualified_name()?;
 
         // check if the next token is a left parenthesis
         let pos = self.current;
 
         if matches!(
-            self.peek_significant_token().token_kind,
-            TokenKind::Punctuator('(')
+            self.peek_significant_token().token_type,
+            TokenType::Punctuation('(')
         ) {
             // eat the left parenthesis
             self.next();
@@ -1300,14 +633,14 @@ impl<'src, 'token> Parser<'src, 'token> {
             // parse the arguments
             let arguments = self
                 .parse_separated_list::<',', ')', PositionWrapper<ExpressionAST<'src>>>(|c| {
-                    c.parse_expression()
+                    c.parse_expression_internal()
                 })?;
 
             Some(PositionWrapper {
-                position: qualified_name.position.start.into()
-                    ..self.peek().position_range.start.into(),
+                position_range: qualified_name.position_range.start
+                    ..self.peek().position_range.start,
                 value: ExpressionAST::FunctionCallExpression(FunctionCallExpressionAST {
-                    qualified_name: qualified_name,
+                    qualified_name,
                     arguments,
                 }),
             })
@@ -1316,7 +649,7 @@ impl<'src, 'token> Parser<'src, 'token> {
 
             // parse a variable expression
             Some(PositionWrapper {
-                position: qualified_name.position,
+                position_range: qualified_name.position_range,
                 value: ExpressionAST::QualifiedNameExpression(QualifiedNameExpressionAST {
                     qualified_name: qualified_name.value,
                 }),
@@ -1326,22 +659,25 @@ impl<'src, 'token> Parser<'src, 'token> {
 
     /// Parse the current token pointed by the `current` field as a primary
     /// expression.
-    fn parse_primary_expression(&mut self) -> Option<PositionWrapper<ExpressionAST<'src>>> {
+    fn parse_primary_expression(&mut self) -> Option<PositionWrapper<ExpressionAST<'src>>>
+    where
+        'token: 'src,
+    {
         // move to the next significant token
         self.move_to_significant_token();
         let starting_position = self.peek().position_range.start;
 
-        let mut expression = match self.peek().token_kind {
+        let mut expression = match self.peek().token_type {
             // parse an expression that starts with an identifier
-            TokenKind::Identifier => self.parse_identifier_expression()?,
+            TokenType::Identifier(_) => self.parse_identifier_expression()?,
 
             // parse a literal expression
-            TokenKind::LiteralConstant(literal_expression) => {
+            TokenType::Literal(literal_expression) => {
                 // eat the literal constant
                 self.next();
 
                 PositionWrapper {
-                    position: starting_position.into()..self.peek().position_range.start.into(),
+                    position_range: starting_position..self.peek().position_range.start,
                     value: ExpressionAST::LiteralExpression(LiteralExpressionAST {
                         literal_expression,
                     }),
@@ -1349,32 +685,41 @@ impl<'src, 'token> Parser<'src, 'token> {
             }
 
             // parse a parenthesized expression
-            TokenKind::Punctuator('(') => {
+            TokenType::Punctuation('(') => {
                 let left_parenthesis = self.next();
-                let mut expression = self.parse_expression()?;
+                let mut expression = self.parse_expression_internal()?;
                 let right_parenthesis = self.next();
 
-                self.expect_punctuator(')')?;
+                self.expect_punctuation(')')?;
 
-                expression.position.start = left_parenthesis.position_range.start.into();
-                expression.position.end = right_parenthesis.position_range.end.into();
+                expression.position_range.start = left_parenthesis.position_range.start;
+                expression.position_range.end = right_parenthesis.position_range.end;
 
                 expression
             }
 
             // parse a class instantiation expression
-            TokenKind::Keyword(Keyword::New) => self.parse_class_instantiation_expression()?,
+            TokenType::Keyword(Keyword::New) => self.parse_class_instantiation_expression()?,
 
             // parse a unary expression
-            TokenKind::Punctuator('+')
-            | TokenKind::Punctuator('-')
-            | TokenKind::Punctuator('!') => {
-                let next = self.next();
-                let unary_operator = self.parse_unary_operator(next)?;
+            TokenType::Punctuation('+')
+            | TokenType::Punctuation('-')
+            | TokenType::Punctuation('!') => {
+                let unary_operator = self.next();
+                let unary_operator = PositionWrapper {
+                    position_range: unary_operator.position_range,
+                    value: match unary_operator.token_type {
+                        TokenType::Punctuation('+') => UnaryOperator::Identity,
+                        TokenType::Punctuation('-') => UnaryOperator::Negation,
+                        TokenType::Punctuation('!') => UnaryOperator::LogicalNegation,
+                        _ => unreachable!(),
+                    },
+                };
                 let expression = self.parse_primary_expression()?;
 
                 PositionWrapper {
-                    position: unary_operator.position.start..expression.position.end,
+                    position_range: unary_operator.position_range.start
+                        ..expression.position_range.end,
                     value: ExpressionAST::UnaryExpression(UnaryExpressionAST {
                         unary_operator,
                         expression: Box::new(expression),
@@ -1386,7 +731,7 @@ impl<'src, 'token> Parser<'src, 'token> {
                 let current_token = self.next().position_range;
 
                 return self.create_error(SyntacticError::UnexpectedToken {
-                    unexpected_position: current_token.start.into()..current_token.end.into(),
+                    unexpected_position_range: current_token.start.into()..current_token.end.into(),
                     parsing_context: ParsingContext::Expression,
                 });
             }
@@ -1398,12 +743,12 @@ impl<'src, 'token> Parser<'src, 'token> {
             // check if the next token is a dot '.'. If it is, then we are parsing
             // a member access expression.
 
-            if let TokenKind::Punctuator('.') = self.next_significant_token().token_kind {
+            if let TokenType::Punctuation('.') = self.next_significant_token().token_type {
                 // expect an identifier
                 let identifier = self.expect_identifier()?;
 
                 expression = PositionWrapper {
-                    position: expression.position.start.into()..identifier.position.end.into(),
+                    position_range: expression.position_range.start..identifier.position_range.end,
                     value: ExpressionAST::MemberFieldAccessExpression(
                         MemberFieldAccessExpressionAST {
                             expression: Box::new(expression),
@@ -1421,5 +766,737 @@ impl<'src, 'token> Parser<'src, 'token> {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// STATEMENT PARSING FUNCTIONS
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+impl<'token, 'src> Parser<'token, 'src> {
+    /// Parse the current token pointed by the `current` field as a statement.
+    fn parse_statement_internal(&mut self) -> Option<PositionWrapper<StatementAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // move to the next significant token
+        match self.peek_significant_token().token_type {
+            // parse a variable declaration
+            TokenType::Keyword(Keyword::Var) | TokenType::Keyword(Keyword::Let) => {
+                self.parse_variable_declaration_statement()
+            }
+            // parse a block statement
+            TokenType::Punctuation('{') => self.parse_block_scope_statement(),
+            // parse an if-else statement
+            TokenType::Keyword(Keyword::If) => self.parse_if_else_statement(),
+            // parse a while loop statement
+            TokenType::Keyword(Keyword::While) => self.parse_while_statement(),
+            // parse a return statement
+            TokenType::Keyword(Keyword::Return) => self.parse_return_statement(),
+            // parse break and continue statements
+            TokenType::Keyword(Keyword::Break) | TokenType::Keyword(Keyword::Continue) => {
+                let token = self.next();
+                Some(PositionWrapper {
+                    position_range: token.position_range,
+                    value: match token.token_type {
+                        TokenType::Keyword(Keyword::Break) => StatementAST::BreakStatement,
+                        TokenType::Keyword(Keyword::Continue) => StatementAST::ContinueStatement,
+                        _ => unreachable!(),
+                    },
+                })
+            }
+            _ => {
+                // parse an expression statement
+                let expr = self.parse_expression_internal()?;
+
+                // expect a semicolon
+                self.expect_punctuation(';')?;
+
+                Some(PositionWrapper {
+                    position_range: expr.position_range.start..self.peek().position_range.start,
+                    value: StatementAST::ExpressionStatement(expr.value),
+                })
+            }
+        }
+    }
+
+    /// Parse the current token pointed by the `current` field as a return statement.
+    fn parse_return_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect the return keyword
+        let first_token = self.expect_keyword(Keyword::Return)?;
+
+        if matches!(
+            self.peek_significant_token().token_type,
+            TokenType::Punctuation(';')
+        ) {
+            return Some(PositionWrapper {
+                position_range: first_token.position_range.start..self.peek().position_range.start,
+                value: StatementAST::ReturnStatement(ReturnStatementAST { expression: None }),
+            });
+        }
+
+        // parse the expression
+        let expression = self.parse_expression_internal()?;
+
+        // expect a semicolon
+        self.expect_punctuation(';')?;
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range.start..self.peek().position_range.start,
+            value: StatementAST::ReturnStatement(ReturnStatementAST {
+                expression: Some(expression),
+            }),
+        })
+    }
+
+    /// Parse the current token pointed by the `current` field as a while loop statement.
+    fn parse_while_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect a while keyword
+        let first_token = self.expect_keyword(Keyword::While)?;
+
+        // expect an opening parenthesis
+        self.expect_punctuation('(')?;
+
+        // parse the condition
+        let condition = self.parse_expression_internal()?;
+
+        // expect a closing parenthesis
+        self.expect_punctuation(')')?;
+
+        // parse the body
+        let statement = Box::new(self.parse_statement_internal()?);
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range.start..statement.position_range.end,
+            value: StatementAST::WhileStatement(WhileStatementAST {
+                condition,
+                statement,
+            }),
+        })
+    }
+
+    // parse a block statement
+    fn parse_block_scope_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect an opening brace
+        let first_token = self.expect_punctuation('{')?;
+
+        // keep looping until the end of file is reached or the closing brace is
+        // found
+        let mut statements = Vec::new();
+
+        while !matches!(
+            self.peek_significant_token().token_type,
+            TokenType::Punctuation('}')
+        ) && !matches!(
+            self.peek_significant_token().token_type,
+            TokenType::EndOfFile
+        ) {
+            if let Some(statement) = self.parse_statement_internal() {
+                statements.push(statement);
+            } else {
+                // skip to either the separator or the terminator
+                self.skip_to(|token| {
+                    // skip to either the separator or the terminator
+                    matches!(
+                        token.token_type,
+                        TokenType::Punctuation(c) if c == ';' || c == '}'
+                    )
+
+                    // skip to if, while, return, break, continue, var, let
+                    || matches!(
+                        token.token_type,
+                        TokenType::Keyword(k) if k == Keyword::If
+                            || k == Keyword::While
+                            || k == Keyword::Return
+                            || k == Keyword::Break
+                            || k == Keyword::Continue
+                            || k == Keyword::Let
+                            || k == Keyword::Mutable
+                    )
+                });
+
+                // if the position has skipped to the semicolon, eat it
+                if matches!(
+                    self.peek_significant_token().token_type,
+                    TokenType::Punctuation(';')
+                ) {
+                    self.next();
+                }
+
+                continue;
+            }
+        }
+
+        self.expect_punctuation('}')?;
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range.start..self.peek().position_range.start,
+            value: StatementAST::BlockScopeStatement(BlockScopeStatementAST { statements }),
+        })
+    }
+
+    // parse an if-else statemetn
+    fn parse_if_else_statement(&mut self) -> Option<PositionWrapper<StatementAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect the `if` keyword
+        let first_token = self.expect_keyword(Keyword::If)?;
+
+        // expect the opening parenthesis
+        self.expect_punctuation('(')?;
+
+        // parse the condition
+        let condition = self.parse_expression_internal()?;
+
+        // expect the closing parenthesis
+        self.expect_punctuation(')')?;
+
+        // expect then statement
+        let then_statement = Box::new(self.parse_statement_internal()?);
+
+        // if the next token is an `else` keyword, parse the else expression
+        let else_statement = if matches!(
+            self.peek_significant_token().token_type,
+            TokenType::Keyword(Keyword::Else)
+        ) {
+            self.next();
+            Some(Box::new(self.parse_statement_internal()?))
+        } else {
+            None
+        };
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range.start..self.peek().position_range.start,
+            value: StatementAST::IfElseStatement(IfElseStatementAST {
+                condition,
+                then_statement,
+                else_statement,
+            }),
+        })
+    }
+
+    // parse a variable declaration statement
+    fn parse_variable_declaration_statement(
+        &mut self,
+    ) -> Option<PositionWrapper<StatementAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // get the first token in variable declaration statement
+        // it can either be `let` or `var`
+        let first_token = self.next_significant_token();
+
+        let is_mutable = match first_token.token_type {
+            TokenType::Keyword(Keyword::Let) => false,
+            TokenType::Keyword(Keyword::Var) => true,
+            _ => unreachable!("parse_statement should have handled this case"),
+        };
+
+        // next, expect an identifier
+        let variable_name = self.expect_identifier()?;
+
+        // next, expect an assignment operator
+        self.expect_punctuation('=')?;
+
+        // next, expect an expression
+        let expression = self.parse_expression_internal()?;
+
+        // finally, expect a semicolon
+        self.expect_punctuation(';')?;
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range.start..self.peek().position_range.start,
+            value: StatementAST::VariableDeclarationStatement(VariableDeclarationStatementAST {
+                variable_name,
+                is_mutable,
+                expression,
+            }),
+        })
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// DECLARATION PARSING FUNCTIONS
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+impl<'token, 'src> Parser<'token, 'src> {
+    /// Parse the current token pointed by the `current` field as a declaration.
+    fn parse_declaration_internal(&mut self) -> Option<PositionWrapper<DeclarationAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // check if this declaration is exported
+        let export_token = if matches!(
+            self.peek_significant_token().token_type,
+            TokenType::Keyword(Keyword::Export)
+        ) {
+            Some(self.next())
+        } else {
+            None
+        };
+
+        // parse the declaration
+        let mut declaration = {
+            let token = self.peek_significant_token().clone();
+
+            match token.token_type {
+                TokenType::Keyword(Keyword::Class) => self.parse_class_declaration()?,
+                _ => {
+                    // make progress
+                    self.next();
+
+                    return self.create_error(SyntacticError::UnexpectedToken {
+                        unexpected_position_range: token.position_range.clone(),
+                        parsing_context: ParsingContext::Declaration,
+                    });
+                }
+            }
+        };
+
+        // assign `export`ness to the declaration
+        if let Some(export_token) = export_token {
+            match &mut declaration.value {
+                DeclarationAST::ClassDeclaration(class_decl) => class_decl.export = true,
+            }
+
+            // update the position range of the declaration
+            declaration.position_range.start = export_token.position_range.start;
+        }
+
+        Some(declaration)
+    }
+
+    /// Parse the current token pointed by the `current` field as a type unit.
+    fn parse_type_unit(&mut self) -> Option<PositionWrapper<TypeUnitAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // get the first token
+        let first_token = self.peek_significant_token();
+
+        // match the first token to determine the type unit
+        let value = match first_token.token_type {
+            TokenType::Identifier(_) => {
+                TypeUnitAST::QualifiedName(self.parse_qualified_name()?.value)
+            }
+            TokenType::Keyword(Keyword::Bool) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Bool)
+            }
+            TokenType::Keyword(Keyword::Void) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Void)
+            }
+            TokenType::Keyword(Keyword::Int8) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Int8)
+            }
+            TokenType::Keyword(Keyword::Int16) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Int16)
+            }
+            TokenType::Keyword(Keyword::Int32) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Int32)
+            }
+            TokenType::Keyword(Keyword::Int64) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Int64)
+            }
+            TokenType::Keyword(Keyword::Uint8) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Uint8)
+            }
+            TokenType::Keyword(Keyword::Uint16) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Uint16)
+            }
+            TokenType::Keyword(Keyword::Uint32) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Uint32)
+            }
+            TokenType::Keyword(Keyword::Uint64) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Uint64)
+            }
+            TokenType::Keyword(Keyword::Float32) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Float32)
+            }
+            TokenType::Keyword(Keyword::Float64) => {
+                TypeUnitAST::PrimitiveTypeUnit(PrimitiveTypeUnit::Float64)
+            }
+            _ => {
+                return self.create_error(SyntacticError::IdentifierExpected {
+                    expected_position: first_token.position_range.start,
+                });
+            }
+        };
+
+        if let TypeUnitAST::PrimitiveTypeUnit(_) = value {
+            self.next();
+        }
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range,
+            value,
+        })
+    }
+
+    /// Parse the current token pointed by the `current` field as a type annotation.
+    fn parse_type_annotation(&mut self) -> Option<PositionWrapper<TypeAnnotationAST<'src>>>
+    where
+        'token: 'src,
+    {
+        let type_unit = self.parse_type_unit()?;
+        Some(PositionWrapper {
+            position_range: type_unit.position_range,
+            value: TypeAnnotationAST::TypeUnit(type_unit.value),
+        })
+    }
+
+    /// Parse the current token pointed by the `current` field as a class member declaration.
+    fn parse_class_member_declaration(
+        &mut self,
+    ) -> Option<PositionWrapper<ClassMemberDeclarationAST<'src>>>
+    where
+        'token: 'src,
+    {
+        let token = self.peek_significant_token().clone();
+
+        match token.token_type {
+            TokenType::Keyword(Keyword::Function) => self.parse_class_method_declaration(),
+            TokenType::Identifier(_) => self.parse_class_field_declaration(),
+            _ => {
+                // make progress
+                self.next();
+
+                self.create_error(SyntacticError::UnexpectedToken {
+                    unexpected_position_range: token.position_range,
+                    parsing_context: ParsingContext::ClassMemberDeclaration,
+                })
+            }
+        }
+    }
+
+    /// Parse the current token pointed by the `current` field as a class field declaration.
+    fn parse_class_field_declaration(
+        &mut self,
+    ) -> Option<PositionWrapper<ClassMemberDeclarationAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect the name of the field
+        let identifier = self.expect_identifier()?;
+
+        // expect a colon
+        self.expect_punctuation(':')?;
+
+        // expect the type annotation
+        let type_annotation = self.parse_type_annotation()?;
+
+        // expect a semicolon
+        let semi_colon = self.expect_punctuation(';')?;
+
+        Some(PositionWrapper {
+            position_range: identifier.position_range.start..semi_colon.position_range.end,
+            value: ClassMemberDeclarationAST::ClassFieldDeclaration(ClassFieldDeclarationAST {
+                access_modifier: None, // to be determined
+                identifier,
+                type_annotation,
+            }),
+        })
+    }
+
+    /// Parse the current token pointed by the `current` field as a class method declaration.
+    fn parse_class_method_declaration(
+        &mut self,
+    ) -> Option<PositionWrapper<ClassMemberDeclarationAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect `function` keyword
+        let first_token = self.expect_keyword(Keyword::Function)?;
+
+        // expect the name of the method
+        let identifier = self.expect_identifier()?;
+
+        // expect opening parenthesis
+        self.expect_punctuation('(')?;
+
+        // Parse a parameter of a function
+        let parameters =
+            self.parse_separated_list::<',', ')', PositionWrapper<ParameterAST>>(|this| {
+                // if the next token is `mutable`, then the parameter is mutable
+                let is_mutable = {
+                    if matches!(
+                        this.peek_significant_token().token_type,
+                        TokenType::Keyword(Keyword::Mutable)
+                    ) {
+                        this.next();
+                        true
+                    } else {
+                        false
+                    }
+                };
+
+                // expect the name of the parameter
+                let identifier = this.expect_identifier()?;
+
+                // expect a colon
+                this.expect_punctuation(':')?;
+
+                // expect the type annotation of the paramter
+                let type_annotation = this.parse_type_annotation()?;
+
+                // return the parameter
+                Some(PositionWrapper {
+                    position_range: identifier.position_range.start
+                        ..type_annotation.position_range.end,
+                    value: ParameterAST {
+                        identifier,
+                        qualified_type_annotation: QualifiedTypeAnnotation {
+                            type_annotation,
+                            is_mutable,
+                        },
+                    },
+                })
+            })?;
+
+        // expect a colon
+        self.expect_punctuation(':')?;
+
+        // expect the return type
+        let return_type_annotation = self.parse_type_annotation()?;
+
+        // expect block scope statement
+        let body = {
+            // get the statement
+            let body_statement = self.parse_block_scope_statement()?;
+
+            // transform the statement into a block statement
+            let value = match body_statement.value {
+                StatementAST::BlockScopeStatement(block_statement) => block_statement,
+                _ => unreachable!("Block scope statement is not a block statement"),
+            };
+
+            PositionWrapper {
+                position_range: body_statement.position_range,
+                value,
+            }
+        };
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range.start..body.position_range.end,
+            value: ClassMemberDeclarationAST::ClassMethodDeclaration(ClassMethodDeclarationAST {
+                access_modifier: None, // to be determined later
+                identifier,
+                parameters,
+                return_type_annotation,
+                body,
+            }),
+        })
+    }
+
+    /// Parse the current token pointed by the `current` field as a class declaration.
+    fn parse_class_declaration(&mut self) -> Option<PositionWrapper<DeclarationAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect `class` keyword
+        let first_token = self.expect_keyword(Keyword::Class)?;
+
+        // name of the class
+        let identifier = self.expect_identifier()?;
+
+        // expect opening brace
+        self.expect_punctuation('{')?;
+
+        // the list of members of the class
+        let mut members = Vec::new();
+
+        // parse the members of the class
+        while !matches!(
+            self.peek_significant_token().token_type,
+            TokenType::Punctuation('}')
+        ) && !matches!(
+            self.peek_significant_token().token_type,
+            TokenType::EndOfFile
+        ) {
+            // check if the member is public or private or not specified
+            let access_modifier = if matches!(
+                self.peek_significant_token().token_type,
+                TokenType::Keyword(Keyword::Public | Keyword::Private)
+            ) {
+                let token = self.next();
+                let access_mod = match token.token_type {
+                    TokenType::Keyword(Keyword::Public) => AccessModifier::Public,
+                    TokenType::Keyword(Keyword::Private) => AccessModifier::Private,
+                    _ => unreachable!(),
+                };
+
+                Some(PositionWrapper {
+                    position_range: token.position_range,
+                    value: access_mod,
+                })
+            } else {
+                None
+            };
+
+            // parse the member
+            if let Some(mut member) = self.parse_class_member_declaration() {
+                // if the member has an access modifier, update the position range of the member
+                if let Some(access_modifier) = &access_modifier {
+                    member.position_range.start = access_modifier.position_range.start;
+                }
+
+                // assign the access modifier to the member
+                match &mut member.value {
+                    ClassMemberDeclarationAST::ClassMethodDeclaration(method) => {
+                        method.access_modifier = access_modifier;
+                    }
+                    ClassMemberDeclarationAST::ClassFieldDeclaration(field) => {
+                        field.access_modifier = access_modifier;
+                    }
+                }
+
+                // add the member to the list of members
+                members.push(member);
+            } else {
+                // skip until the next member
+                self.skip_to(|token: &Token| {
+                    matches!(
+                        token.token_type,
+                        TokenType::Punctuation('}')
+                            | TokenType::Keyword(Keyword::Public)
+                            | TokenType::Keyword(Keyword::Private)
+                            | TokenType::Keyword(Keyword::Function)
+                            | TokenType::Identifier(_)
+                    )
+                });
+            }
+        }
+
+        // expect closing brace
+        self.expect_punctuation('}')?;
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range.start..self.peek().position_range.start,
+            value: DeclarationAST::ClassDeclaration(ClassDeclarationAST {
+                export: false, // to be determined
+                identifier,
+                members,
+            }),
+        })
+    }
+
+    fn parse_import_module_declaration(&mut self) -> Option<PositionWrapper<ImportModuleAST<'src>>>
+    where
+        'token: 'src,
+    {
+        // expect `import` keyword
+        let first_token = self.expect_keyword(Keyword::Import)?;
+
+        // expect the qualified name of the module
+        let qualified_name = self.parse_qualified_name()?;
+
+        // expect the semicolon
+        let semi_colon = self.expect_punctuation(';')?;
+
+        Some(PositionWrapper {
+            position_range: first_token.position_range.start..semi_colon.position_range.end,
+            value: ImportModuleAST { qualified_name },
+        })
+    }
+
+    /// Parse all the tokens in the token stream into a [`FileAST`].
+    fn parse_file_internal(&mut self) -> Option<FileAST<'src>>
+    where
+        'token: 'src,
+    {
+        // flag to indicate if an error has been found
+        let mut found_error = false;
+
+        // expect module keyword
+        let module_keyword = self.expect_keyword(Keyword::Module)?;
+
+        // expect the qualified name of the module
+        let qualified_name = self.parse_qualified_name()?;
+
+        // expect the semicolon
+        let semi_colon = self.expect_punctuation(';')?;
+
+        // create the module
+        let module = PositionWrapper {
+            position_range: module_keyword.position_range.start..semi_colon.position_range.end,
+            value: ModuleAST { qualified_name },
+        };
+
+        // the list of imports
+        let import_modules = {
+            let mut import_modules = Vec::new();
+
+            while matches!(
+                self.peek_significant_token().token_type,
+                TokenType::Keyword(Keyword::Import)
+            ) {
+                if let Some(import_module_declaration) = self.parse_import_module_declaration() {
+                    import_modules.push(import_module_declaration);
+                } else {
+                    found_error = true;
+
+                    // skip until the next import module declaration
+                    self.skip_to(|token| {
+                        matches!(
+                            token.token_type,
+                            TokenType::Keyword(Keyword::Import)
+                                | TokenType::Keyword(Keyword::Class)
+                                | TokenType::Keyword(Keyword::Export)
+                        )
+                    });
+                }
+            }
+
+            import_modules
+        };
+
+        // the list of declarations
+        let declarations = {
+            let mut declarations = Vec::new();
+
+            // the list of declarations
+            while !matches!(
+                self.peek_significant_token().token_type,
+                TokenType::EndOfFile
+            ) {
+                // parse the declaration
+                if let Some(declaration) = self.parse_declaration_internal() {
+                    // add the declaration to the list of declarations
+                    declarations.push(declaration);
+                } else {
+                    found_error = true;
+
+                    // skip until the next declaration
+                    self.skip_to(|token| {
+                        matches!(
+                            token.token_type,
+                            TokenType::Keyword(Keyword::Class)
+                                | TokenType::Keyword(Keyword::Export)
+                        )
+                    });
+                }
+            }
+
+            declarations
+        };
+
+        if found_error {
+            None
+        } else {
+            Some(FileAST {
+                module,
+                import_modules,
+                declarations,
+            })
+        }
+    }
+}
+
 #[cfg(test)]
-mod test;
+mod tests;

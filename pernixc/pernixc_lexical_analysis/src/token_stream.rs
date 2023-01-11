@@ -1,25 +1,23 @@
-use pernixc_common::source_file::SourceFile;
-
 use crate::{
     error::LexicalError,
     lexer::Lexer,
-    token::{Token, TokenKind},
+    token::{Token, TokenType},
 };
 
 /// Represent a struct that contains a vector of [`Token`]s and a reference to
 /// the source file. This struct is used to iterate over the tokens of a source
 /// file.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TokenStream<'src> {
-    source_file: &'src SourceFile,
     tokens: Vec<Token<'src>>,
+    source_code: &'src str,
 }
 
 impl<'src> TokenStream<'src> {
     /// Tokenize the given `source_file` and return a [`TokenStream`] containing
     /// the tokens of the source file.
-    pub fn tokenize(source_file: &'src SourceFile) -> (Self, Vec<LexicalError>) {
-        let mut lexer = Lexer::new(source_file);
+    pub fn tokenize(source_code: &'src str) -> (Self, Vec<LexicalError>) {
+        let mut lexer = Lexer::new(source_code);
         let mut errors = Vec::new();
         let mut tokens = Vec::new();
 
@@ -27,7 +25,7 @@ impl<'src> TokenStream<'src> {
         loop {
             match lexer.lex() {
                 Ok(token) => {
-                    let is_eof = matches!(token.token_kind, TokenKind::EndOfFile);
+                    let is_eof = matches!(token.token_type, TokenType::EndOfFile);
 
                     tokens.push(token);
 
@@ -43,16 +41,11 @@ impl<'src> TokenStream<'src> {
 
         (
             Self {
-                source_file,
                 tokens,
+                source_code,
             },
             errors,
         )
-    }
-
-    /// Return a reference to the source file of this [`TokenStream`].
-    pub fn source_file(&self) -> &'src SourceFile {
-        self.source_file
     }
 
     /// Return a reference to the tokens of this [`TokenStream`].
@@ -62,13 +55,18 @@ impl<'src> TokenStream<'src> {
 
     /// Get the token at the given `index` of this [`TokenStream`].
     /// Return `None` if the index is out of bounds.
-    pub fn get(&self, index: usize) -> Option<&Token<'src>> {
+    pub fn get(&self, index: usize) -> Option<&Token> {
         self.tokens.get(index)
     }
 
     /// Return an iterator over the tokens of this [`TokenStream`].
-    pub fn iter(&self) -> std::slice::Iter<'_, Token<'src>> {
+    pub fn iter(&self) -> std::slice::Iter<Token> {
         self.tokens.iter()
+    }
+
+    /// Return a reference to the source code of this [`TokenStream`].
+    pub fn source_code(&self) -> &str {
+        self.source_code
     }
 }
 
@@ -81,4 +79,4 @@ impl<'src> std::ops::Index<usize> for TokenStream<'src> {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

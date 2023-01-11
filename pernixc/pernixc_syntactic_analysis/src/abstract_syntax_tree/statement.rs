@@ -8,7 +8,7 @@ use super::{expression::ExpressionAST, PositionWrapper};
 /// IfElseStatement:
 ///     'if' '(' Expression ')' Statement ('else' Statement)?;
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct IfElseStatementAST<'src> {
     pub condition: PositionWrapper<ExpressionAST<'src>>,
     pub then_statement: Box<PositionWrapper<StatementAST<'src>>>,
@@ -23,7 +23,7 @@ pub struct IfElseStatementAST<'src> {
 /// WhileStatement:
 ///     'while' '(' Expression ')' Statement;
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WhileStatementAST<'src> {
     pub condition: PositionWrapper<ExpressionAST<'src>>,
     pub statement: Box<PositionWrapper<StatementAST<'src>>>,
@@ -37,7 +37,7 @@ pub struct WhileStatementAST<'src> {
 /// VariableDeclarationStatement:
 ///     ('mutable' | 'let') Identifier '=' Expression ';';
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct VariableDeclarationStatementAST<'src> {
     pub variable_name: PositionWrapper<&'src str>,
     pub is_mutable: bool,
@@ -52,7 +52,7 @@ pub struct VariableDeclarationStatementAST<'src> {
 /// ReturnStatement:
 ///     'return' Expression? ';';
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ReturnStatementAST<'src> {
     pub expression: Option<PositionWrapper<ExpressionAST<'src>>>,
 }
@@ -65,7 +65,7 @@ pub struct ReturnStatementAST<'src> {
 /// BlockScopeStatement:
 ///     '{' Statement* '}';
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BlockScopeStatementAST<'src> {
     pub statements: Vec<PositionWrapper<StatementAST<'src>>>,
 }
@@ -85,7 +85,7 @@ pub struct BlockScopeStatementAST<'src> {
 ///     | ('break' ';')
 ///     | ('continue' ';');
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum StatementAST<'src> {
     IfElseStatement(IfElseStatementAST<'src>),
     WhileStatement(WhileStatementAST<'src>),

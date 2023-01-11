@@ -1,8 +1,7 @@
 [workspace]
 members = [
     "pernixc/pernixc_common",
+    "pernixc/pernixc_driver",
     "pernixc/pernixc_lexical_analysis",
     "pernixc/pernixc_syntactic_analysis",
-    "pernixc/pernixc_semantic_analysis",
-    "pernixc/pernixc",
 ]

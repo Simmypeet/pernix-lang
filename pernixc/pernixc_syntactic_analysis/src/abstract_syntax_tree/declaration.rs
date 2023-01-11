@@ -1,7 +1,7 @@
-use super::{statement::BlockScopeStatementAST, PositionWrapper, TypeUnitAST};
+use super::{statement::BlockScopeStatementAST, PositionWrapper};
 
 /// Represent an enumeration containing all access modifiers.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AccessModifier {
     Public,
     Private,
@@ -13,10 +13,11 @@ pub enum AccessModifier {
 ///
 /// ``` txt
 /// ClassDeclaration:
-///    'class' Identifier '{' ClassMemberDeclaration* '}';
+///    'export'? 'class' Identifier '{' ClassMemberDeclaration* '}';
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ClassDeclarationAST<'src> {
+    pub export: bool,
     pub identifier: PositionWrapper<&'src str>,
     pub members: Vec<PositionWrapper<ClassMemberDeclarationAST<'src>>>,
 }
@@ -30,7 +31,7 @@ pub struct ClassDeclarationAST<'src> {
 ///     ClassMethodDeclaration
 ///     | ClassFieldDeclaration;
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ClassMemberDeclarationAST<'src> {
     ClassMethodDeclaration(ClassMethodDeclarationAST<'src>),
     ClassFieldDeclaration(ClassFieldDeclarationAST<'src>),
@@ -42,11 +43,11 @@ pub enum ClassMemberDeclarationAST<'src> {
 ///
 /// ``` txt
 /// ClassFieldDeclaration:
-///     AccessModifier TypeAnnotation Identifier ';';
+///     AccessModifier? Identifier ':' TypeAnnotation ';';
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ClassFieldDeclarationAST<'src> {
-    pub access_modifier: PositionWrapper<AccessModifier>,
+    pub access_modifier: Option<PositionWrapper<AccessModifier>>,
     pub type_annotation: PositionWrapper<TypeAnnotationAST<'src>>,
     pub identifier: PositionWrapper<&'src str>,
 }
@@ -57,58 +58,42 @@ pub struct ClassFieldDeclarationAST<'src> {
 ///
 /// ``` txt
 /// ClassMethodDeclaration:
-///     AccessModifier TypeAnnotation Identifier '(' Parameter (',' Parameter)* ')'
+///     AccessModifier? 'function' Identifier '(' Parameter (',' Parameter)* ')' ':' TypeAnnotation
 ///     BlockScopeStatement;
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ClassMethodDeclarationAST<'src> {
-    pub access_modifier: PositionWrapper<AccessModifier>,
+    pub access_modifier: Option<PositionWrapper<AccessModifier>>,
     pub identifier: PositionWrapper<&'src str>,
     pub parameters: Vec<PositionWrapper<ParameterAST<'src>>>,
     pub return_type_annotation: PositionWrapper<TypeAnnotationAST<'src>>,
     pub body: PositionWrapper<BlockScopeStatementAST<'src>>,
 }
 
-/// Is an abstract syntax tree node that represents a parameter..
+/// Is an abstract syntax tree node that represents a parameter.
 ///
 /// ANTLR4 grammar:
 ///
 /// ``` txt
 /// Parameter:
-///     QualifiedTypeAnnotation Identifier;
+///     'mutable'? Identifier ':' TypeAnnotation ';';
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ParameterAST<'src> {
-    pub qualified_type_annotation: PositionWrapper<QualifiedTypeAnnotationAST<'src>>,
+    pub qualified_type_annotation: QualifiedTypeAnnotation<'src>,
     pub identifier: PositionWrapper<&'src str>,
 }
 
-/// Is an abstract syntax tree node that represents a using directive.
+/// Is an enumeration containing all possible declarations.
 ///
 /// ANTLR4 grammar:
 ///
 /// ``` txt
-/// UsingDirective:
-///     'using' QualifiedName ';';
+/// Declaration:
+///    ClassDeclaration;
 /// ```
-#[derive(Clone)]
-pub struct UsingDirectiveAST<'src> {
-    pub qualified_name: PositionWrapper<&'src str>,
-}
-
-/// Is an abstract syntax tree node that represents a namespace declaration.
-///
-/// ANTLR4 grammar:
-///
-/// ``` txt
-/// NamespaceDeclaration:
-///     'namespace' QualifiedName '{' UsingDirective* Declaration* '}';
-/// ```
-#[derive(Clone)]
-pub struct NamespaceDeclarationAST<'src> {
-    pub qualified_name: PositionWrapper<&'src str>,
-    pub using_directives: Vec<PositionWrapper<UsingDirectiveAST<'src>>>,
-    pub declarations: Vec<PositionWrapper<NamespaceLevelDeclarationAST<'src>>>,
+pub enum DeclarationAST<'src> {
+    ClassDeclaration(ClassDeclarationAST<'src>),
 }
 
 /// Represent an enumeration containing all type annotations.
@@ -119,89 +104,64 @@ pub struct NamespaceDeclarationAST<'src> {
 /// TypeAnnotation:
 ///     TypeUnit;
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum TypeAnnotationAST<'src> {
     TypeUnit(TypeUnitAST<'src>),
 }
 
 /// Is an abstract syntax tree node that represents a qualified type annotation.
-///
-/// ANTLR4 grammar:
-///
-/// ``` txt
-/// QualifiedTypeAnnotation:
-///     'mutable'? TypeAnnotation;
-/// ```
-#[derive(Clone)]
-pub struct QualifiedTypeAnnotationAST<'src> {
+#[derive(Debug, Clone)]
+pub struct QualifiedTypeAnnotation<'src> {
     pub type_annotation: PositionWrapper<TypeAnnotationAST<'src>>,
     pub is_mutable: bool,
 }
 
-/// Is an enumeration containing all possible declarations.
+/// Represent an enumeration containing all type units.
 ///
 /// ANTLR4 grammar:
 ///
 /// ``` txt
-/// Declaration:
-///     ClassDeclaration
-///     | NamespaceDeclaration;
-#[derive(Clone)]
-pub enum NamespaceLevelDeclarationAST<'src> {
-    ClassDeclaration(ClassDeclarationAST<'src>),
-    NamespaceDeclaration(NamespaceDeclarationAST<'src>),
+/// TypeUnit:
+///     PrimitiveTypeUnit
+///     | QualifiedName;
+/// ```
+#[derive(Debug, Clone)]
+pub enum TypeUnitAST<'src> {
+    PrimitiveTypeUnit(PrimitiveTypeUnit),
+    QualifiedName(&'src str),
 }
 
-impl<'src> NamespaceLevelDeclarationAST<'src> {
-    /// Return the class declaration if the variant is a class declaration.
-    pub fn get_class_declaration(&self) -> Option<&ClassDeclarationAST<'src>> {
-        match self {
-            NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
-                Some(class_declaration)
-            }
-            _ => None,
-        }
-    }
-
-    /// Return the namespace declaration if the variant is a namespace declaration.
-    pub fn get_namespace_declaration(&self) -> Option<&NamespaceDeclarationAST<'src>> {
-        match self {
-            NamespaceLevelDeclarationAST::NamespaceDeclaration(namespace_declaration) => {
-                Some(namespace_declaration)
-            }
-            _ => None,
-        }
-    }
-
-    /// Returb the class declaration if the variant is a class declaration.
-    pub fn to_class_declaration(self) -> Option<ClassDeclarationAST<'src>> {
-        match self {
-            NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
-                Some(class_declaration)
-            }
-            _ => None,
-        }
-    }
-
-    /// Return the namespace declaration if the variant is a namespace declaration.
-    pub fn to_namespace_declaration(self) -> Option<NamespaceDeclarationAST<'src>> {
-        match self {
-            NamespaceLevelDeclarationAST::NamespaceDeclaration(namespace_declaration) => {
-                Some(namespace_declaration)
-            }
-            _ => None,
-        }
-    }
-
-    /// Get the name of the declaration
-    pub fn get_name(&self) -> &PositionWrapper<&'src str> {
-        match self {
-            NamespaceLevelDeclarationAST::ClassDeclaration(class_declaration) => {
-                &class_declaration.identifier
-            }
-            NamespaceLevelDeclarationAST::NamespaceDeclaration(namespace_declaration) => {
-                &namespace_declaration.qualified_name
-            }
-        }
-    }
+/// Represent an enumeration containing all primitive type units.
+///
+/// ANTLR4 grammar:
+///
+/// ``` txt
+/// PrimitiveTypeUnit:
+///     'void'
+///     | 'bool'
+///     | 'int8'
+///     | 'int16'
+///     | 'int32'
+///     | 'int64'
+///     | 'uint8'
+///     | 'uint16'
+///     | 'uint32'
+///     | 'uint64'
+///     | 'float32'
+///     | 'float64'
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PrimitiveTypeUnit {
+    Void = 0,
+    Bool = 1,
+    Int8 = 2,
+    Int16 = 3,
+    Int32 = 4,
+    Int64 = 5,
+    Uint8 = 6,
+    Uint16 = 7,
+    Uint32 = 8,
+    Uint64 = 9,
+    Float32 = 10,
+    Float64 = 11,
 }
