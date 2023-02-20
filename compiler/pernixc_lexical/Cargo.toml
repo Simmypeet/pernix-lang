@@ -1,0 +1,16 @@
+[package]
+name = "pernixc_lexical"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pernixc_common = { path = "../pernixc_common" }
+getset = "0.1.1"
+enum-as-inner = "0.5.1"
+thiserror = "1.0.26"
+enum_dispatch = "0.3.6"
+strum = "0.24.1"
+strum_macros = "0.24"
+lazy_static = "1.4.0"

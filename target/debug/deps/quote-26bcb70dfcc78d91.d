@@ -1,0 +1,13 @@
+c:\Dev\pernix-lang\target\debug\deps\quote-26bcb70dfcc78d91.rmeta: C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\lib.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\ext.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\format.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\ident_fragment.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\to_tokens.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\runtime.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\spanned.rs
+
+c:\Dev\pernix-lang\target\debug\deps\libquote-26bcb70dfcc78d91.rlib: C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\lib.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\ext.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\format.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\ident_fragment.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\to_tokens.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\runtime.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\spanned.rs
+
+c:\Dev\pernix-lang\target\debug\deps\quote-26bcb70dfcc78d91.d: C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\lib.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\ext.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\format.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\ident_fragment.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\to_tokens.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\runtime.rs C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\spanned.rs
+
+C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\lib.rs:
+C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\ext.rs:
+C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\format.rs:
+C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\ident_fragment.rs:
+C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\to_tokens.rs:
+C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\runtime.rs:
+C:\Users\simmy\.cargo\registry\src\github.com-1ecc6299db9ec823\quote-1.0.23\src\spanned.rs:
