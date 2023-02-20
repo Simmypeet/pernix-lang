@@ -7,16 +7,22 @@ use thiserror::Error;
 #[derive(Debug, Getters)]
 pub struct SourceFile {
     /// Gets the name of the source file.
-    #[getset(get = "pub")]
+    #[get = "pub"]
     name: String,
 
     /// Gets the string content of the source file.
-    #[getset(get = "pub")]
+    #[get = "pub"]
     content: String,
     lines: Vec<Range<usize>>,
 }
 
 impl SourceFile {
+    /// For convenience, this is the new line character that is used in the source file.
+    pub const NEW_LINE: char = '\n';
+
+    /// For convenience, this is the new line character that is used in the source file.
+    pub const NEW_LINE_STR: &'static str = "\n";
+
     /// Creates a new [`SourceFile`] from the given name and content.
     ///
     /// # Modifications
@@ -38,8 +44,8 @@ impl SourceFile {
             }
         }
 
-        replace_string_inplace(&mut content, "\r\n", "\n");
-        replace_string_inplace(&mut content, "\r", "\n");
+        replace_string_inplace(&mut content, "\r\n", Self::NEW_LINE_STR);
+        replace_string_inplace(&mut content, "\r", Self::NEW_LINE_STR);
 
         while content.ends_with('\n') {
             content.pop();
@@ -47,7 +53,7 @@ impl SourceFile {
 
         for (i, c) in content.char_indices() {
             // The new line character is included in the line range
-            if c == '\n' {
+            if c == Self::NEW_LINE {
                 let new_start = i + 1;
                 lines.push(start..new_start);
                 start = new_start;
@@ -141,19 +147,19 @@ impl<'a> Iterator for SourceFileIterator<'a> {
 #[derive(Debug, Clone, Copy, Getters)]
 pub struct SourceLocation<'a> {
     /// Gets the reference to the source file that this location is in.
-    #[getset(get = "pub")]
+    #[get = "pub"]
     source_file: &'a SourceFile,
 
     /// Gets the line number of this location. The first line is 1.   
-    #[getset(get = "pub")]
+    #[get = "pub"]
     line: usize,
 
     /// Gets the column number of this location. The first column is 1.
-    #[getset(get = "pub")]
+    #[get = "pub"]
     column: usize,
 
     /// Gets the byte number of this location. The first byte is 0.
-    #[getset(get = "pub")]
+    #[get = "pub"]
     byte: usize,
 }
 
@@ -184,15 +190,15 @@ pub enum SpanEnding {
 #[derive(Debug, Clone, Copy, Getters)]
 pub struct Span<'a> {
     /// Gets the reference to the source file that this span is in.
-    #[getset(get = "pub")]
+    #[get = "pub"]
     source_file: &'a SourceFile,
 
     /// Gets the start location of this span.
-    #[getset(get = "pub")]
+    #[get = "pub"]
     start: Location,
 
     /// Gets the end location of this span.
-    #[getset(get = "pub")]
+    #[get = "pub"]
     end: SpanEnding,
 }
 
@@ -239,6 +245,14 @@ impl<'a> Span<'a> {
                 byte: start.byte,
             },
             end: SpanEnding::EndOfFile,
+        }
+    }
+
+    /// Gets the string that this span represents.
+    pub fn string(&self) -> &'a str {
+        match self.end {
+            SpanEnding::Location(end) => &self.source_file.content[self.start.byte..end.byte],
+            SpanEnding::EndOfFile => &self.source_file.content[self.start.byte..],
         }
     }
 }
