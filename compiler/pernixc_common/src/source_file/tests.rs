@@ -32,47 +32,47 @@ fn source_file_iterator_test() -> Result<(), Box<dyn Error>> {
 
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'H' && *location.line() == 1 && *location.column() == 1 && *location.byte() == 0
+        c == 'H' && location.line == 1 && location.column == 1 && location.byte == 0
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'e' && *location.line() == 1 && *location.column() == 2 && *location.byte() == 1
+        c == 'e' && location.line == 1 && location.column == 2 && location.byte == 1
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'l' && *location.line() == 1 && *location.column() == 3 && *location.byte() == 2
+        c == 'l' && location.line == 1 && location.column == 3 && location.byte == 2
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'l' && *location.line() == 1 && *location.column() == 4 && *location.byte() == 3
+        c == 'l' && location.line == 1 && location.column == 4 && location.byte == 3
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'o' && *location.line() == 1 && *location.column() == 5 && *location.byte() == 4
+        c == 'o' && location.line == 1 && location.column == 5 && location.byte == 4
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == '\n' && *location.line() == 1 && *location.column() == 6 && *location.byte() == 5
+        c == '\n' && location.line == 1 && location.column == 6 && location.byte == 5
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'W' && *location.line() == 2 && *location.column() == 1 && *location.byte() == 6
+        c == 'W' && location.line == 2 && location.column == 1 && location.byte == 6
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'o' && *location.line() == 2 && *location.column() == 2 && *location.byte() == 7
+        c == 'o' && location.line == 2 && location.column == 2 && location.byte == 7
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'r' && *location.line() == 2 && *location.column() == 3 && *location.byte() == 8
+        c == 'r' && location.line == 2 && location.column == 3 && location.byte == 8
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'l' && *location.line() == 2 && *location.column() == 4 && *location.byte() == 9
+        c == 'l' && location.line == 2 && location.column == 4 && location.byte == 9
     });
     assert!({
         let (location, c) = iter.next().unwrap();
-        c == 'd' && *location.line() == 2 && *location.column() == 5 && *location.byte() == 10
+        c == 'd' && location.line == 2 && location.column == 5 && location.byte == 10
     });
     assert!(iter.next().is_none());
 

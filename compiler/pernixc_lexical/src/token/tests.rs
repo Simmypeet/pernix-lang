@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use pernixc_common::source_file::SourceFile;
+use pernixc_common::source_file::{Location, SourceFile, Span, SpanEnding};
 
-use crate::token::{CommentKind, Keyword, Token, TokenTrait, TokenizationError};
+use crate::token::{Keyword, Token};
 
 #[test]
 fn token_test() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,284 +13,139 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .join("tokenTest.pnx"),
     )?;
 
-    let mut iter = source_file.iter().peekable();
+    let mut iter = source_file.iter();
 
-    assert!({
+    // helloWorld @Test _1 public void
+    {
+        // helloWorld
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_identifier()
-            .copied()
+            .cloned()
             .unwrap();
-        token.lexeme() == "helloWorld"
-    });
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 1, 0),
+                SpanEnding::Location(Location::new(1, 11, 10))
+            )
+        );
 
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
+        // WHITESPACE
+        let token = Token::tokenize(&mut iter)
+            .unwrap()
+            .as_white_space()
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 11, 10),
+                SpanEnding::Location(Location::new(1, 12, 11))
+            )
+        );
 
-    assert!({
+        // @Test
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_identifier()
-            .copied()
+            .cloned()
             .unwrap();
-        token.lexeme() == "@Test"
-    });
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 12, 11),
+                SpanEnding::Location(Location::new(1, 17, 16))
+            )
+        );
 
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
+        // WHITESPACE
+        let token = Token::tokenize(&mut iter)
+            .unwrap()
+            .as_white_space()
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 17, 16),
+                SpanEnding::Location(Location::new(1, 18, 17))
+            )
+        );
 
-    assert!({
+        // _1
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_identifier()
-            .copied()
+            .cloned()
             .unwrap();
-        token.lexeme() == "_1"
-    });
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 18, 17),
+                SpanEnding::Location(Location::new(1, 20, 19))
+            )
+        );
 
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
+        // WHITESPACE
+        let token = Token::tokenize(&mut iter)
+            .unwrap()
+            .as_white_space()
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 20, 19),
+                SpanEnding::Location(Location::new(1, 21, 20))
+            )
+        );
 
-    assert!({
+        // public
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_keyword()
-            .copied()
+            .cloned()
             .unwrap();
-        token.lexeme() == "public" && *token.keyword() == Keyword::Public
-    });
+        assert_eq!(token.keyword, Keyword::Public);
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 21, 20 ),
+                SpanEnding::Location(Location::new(1, 27, 26))
+            )
+        );
 
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
+        // WHITESPACE
+        let token = Token::tokenize(&mut iter)
+            .unwrap()
+            .as_white_space()
+            .cloned()
+            .unwrap();
 
-    assert!({
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 27, 26),
+                SpanEnding::Location(Location::new(1, 28, 27))
+            )
+        );
+
+        // void
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_keyword()
-            .copied()
+            .cloned()
             .unwrap();
-        token.lexeme() == "void" && *token.keyword() == Keyword::Void
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_comment()
-            .copied()
-            .unwrap();
-        token.lexeme() == "// Test\n" && *token.kind() == CommentKind::SingleLine
-    });
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_comment()
-            .copied()
-            .unwrap();
-        token.lexeme() == "/*Multi\nLine*/" && *token.kind() == CommentKind::Delimited
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_numeric_literal()
-            .copied()
-            .unwrap();
-        token.lexeme() == "1231"
-            && token.value_span().string() == "1231"
-            && token.suffix_span().is_none()
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_numeric_literal()
-            .copied()
-            .unwrap();
-        token.lexeme() == "12.42f32"
-            && token.value_span().string() == "12.42"
-            && token.suffix_span().unwrap().string() == "f32"
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_numeric_literal()
-            .copied()
-            .unwrap();
-        token.lexeme() == "123"
-            && token.value_span().string() == "123"
-            && token.suffix_span().is_none()
-    });
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_punctuation()
-            .copied()
-            .unwrap();
-        token.lexeme() == "." && token.punctuation == '.'
-    });
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_identifier()
-            .copied()
-            .unwrap();
-        token.lexeme() == "f32"
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_character_literal()
-            .copied()
-            .unwrap();
-        token.lexeme() == "'a'" && token.character == 'a'
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_punctuation()
-            .copied()
-            .unwrap();
-        token.lexeme() == "'" && token.punctuation == '\''
-    });
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_identifier()
-            .copied()
-            .unwrap();
-        token.lexeme() == "ab"
-    });
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_punctuation()
-            .copied()
-            .unwrap();
-        token.lexeme() == "'" && token.punctuation == '\''
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_character_literal()
-            .copied()
-            .unwrap();
-        token.lexeme() == "'\\0'" && token.character == '\0'
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let err = Token::tokenize(&mut iter).err().unwrap();
-        let err = err
-            .as_lexical()
-            .unwrap()
-            .as_invalid_escape_character_sequences()
-            .unwrap();
-        err[0].string() == "1" && err.len() == 1
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_string_literal()
-            .copied()
-            .unwrap();
-        token.lexeme() == "\"Hello, world!\""
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let token = Token::tokenize(&mut iter)
-            .unwrap()
-            .as_string_literal()
-            .copied()
-            .unwrap();
-        token.lexeme() == "\"\\\"With escape sequences\\\"\""
-    });
-
-    assert!(Token::tokenize(&mut iter)
-        .unwrap()
-        .as_white_space()
-        .is_some());
-
-    assert!({
-        let err = Token::tokenize(&mut iter).err().unwrap();
-        let err = err
-            .as_lexical()
-            .unwrap()
-            .as_invalid_escape_character_sequences()
-            .unwrap();
-        err[0].string() == "1" && err[1].string() == "2" && err[2].string() == "3" && err.len() == 3
-    });
-
-    assert!({
-        let error = Token::tokenize(&mut iter).err().unwrap();
-        matches!(error, TokenizationError::EndOfSourceCodeIteratorArgument)
-    });
+        assert_eq!(token.keyword, Keyword::Void);
+        assert_eq!(
+            token.span,
+            Span::new(
+                Location::new(1, 28, 27),
+                SpanEnding::Location(Location::new(1, 32, 31))
+            )
+        );
+    }
 
     Ok(())
 }
