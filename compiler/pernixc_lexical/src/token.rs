@@ -1,3 +1,5 @@
+//! Contains the definition of the [`Token`] and its variants.
+
 use std::{collections::HashMap, hash::Hash, str::FromStr};
 
 use enum_as_inner::EnumAsInner;
@@ -6,6 +8,8 @@ use pernixc_common::source_file::{Location, SourceFile, SourceFileIterator, Span
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
+
+use crate::errors::LexicalError;
 
 /// Is an enumeration representing keywords in the Pernix programming language.
 ///
@@ -246,29 +250,6 @@ pub struct CommentToken {
 
     /// Is the kind of comment that the token represents.
     pub kind: CommentKind,
-}
-
-/// Is an enumeration containing all kinds of lexical errors that can occur while tokenizing the
-/// source code.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, Error)]
-#[error("Encountered an lexical error while tokenizing the source code.")]
-pub enum LexicalError {
-    /// The source code contains an invalid escape character sequences.
-    ///
-    /// The spans represent the locations of the invalid escape character sequences.
-    InvalidEscapeCharacterSequences(Vec<Span>),
-
-    /// The source code contains an unclosed double quote.
-    UnterminatedStringLiteral(Span),
-
-    /// The source code contains an unclosed `/*` comment.
-    UnterminatedDelimitedComment(Span),
-
-    /// The source code contains an empty character literal.
-    EmptyCharacterLiteral(Span),
-
-    /// In a character literal, it contains the control character that must be escaped explicitly.
-    ControlCharactersMustBeEscaped(Span),
 }
 
 /// Is an error that can occur when invoking the [Token::tokenize()](Token::tokenize()) method.

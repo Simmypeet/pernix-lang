@@ -1,1 +1,1 @@
-# pernix-lang
+# The Pernix Programming Language

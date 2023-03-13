@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "compiler/pernixc_common",
-    "compiler/pernixc_lexical"
+    "compiler/pernixc_lexical",
+    "compiler/pernixc_syntax"
 ]

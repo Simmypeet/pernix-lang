@@ -1,0 +1,10 @@
+[package]
+name = "pernixc_syntax"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pernixc_lexical = { path = "../pernixc_lexical" }
+pernixc_common = { path = "../pernixc_common" }
