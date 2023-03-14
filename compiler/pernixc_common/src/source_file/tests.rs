@@ -6,8 +6,7 @@ use super::SourceFile;
 fn source_file_line_test() -> Result<(), Box<dyn Error>> {
     let source_file = SourceFile::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("source_file")
+            .join("resource")
             .join("sourceFileTest.pnx"),
     )?;
 

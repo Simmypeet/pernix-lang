@@ -1,8 +1,9 @@
 //! Contains the definition of the [`TokenStream`] and its iterators.
 
-use std::ops::{Index, IndexMut};
+use std::ops::Index;
 
 use delegate::delegate;
+use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::SourceFileIterator;
 
 use crate::{
@@ -20,23 +21,14 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TokenStream(Vec<Token>);
 
-/// Is an iterator over the tokens of a [`TokenStream`].
-pub struct Iter<'a>(std::slice::Iter<'a, Token>);
-
-/// Is a mutable iterator over the tokens of a [`TokenStream`].
-pub struct IterMut<'a>(std::slice::IterMut<'a, Token>);
-
 impl TokenStream {
     delegate! {
         to self.0 {
             pub fn is_empty(&self) -> bool;
             pub fn len(&self) -> usize;
             pub fn get(&self, index: usize) -> Option<&Token>;
-            pub fn get_mut(&mut self, index: usize) -> Option<&mut Token>;
             pub fn first(&self) -> Option<&Token>;
-            pub fn first_mut(&mut self) -> Option<&mut Token>;
             pub fn last(&self) -> Option<&Token>;
-            pub fn last_mut(&mut self) -> Option<&mut Token>;
         }
     }
 
@@ -72,11 +64,13 @@ impl TokenStream {
         }
     }
 
-    /// Returns an iterator over the tokens of the token stream.
-    pub fn iter(&self) -> Iter { Iter(self.0.iter()) }
-
-    /// Returns a mutable iterator over the tokens of the token stream.
-    pub fn iter_mut(&mut self) -> IterMut { IterMut(self.0.iter_mut()) }
+    /// Returns a cursor over the token stream.
+    pub fn cursor(&self) -> TokenStreamCursor {
+        TokenStreamCursor {
+            token_stream: &self.0,
+            position:     CursorPosition::Before,
+        }
+    }
 }
 
 impl Index<usize> for TokenStream {
@@ -85,6 +79,179 @@ impl Index<usize> for TokenStream {
     fn index(&self, index: usize) -> &Self::Output { &self.0[index] }
 }
 
-impl IndexMut<usize> for TokenStream {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output { &mut self.0[index] }
+/// Represents the position of a cursor over a [`TokenStream`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum CursorPosition {
+    /// The cursor is before the first token of the token stream.
+    ///
+    /// Reads will return `None`.
+    Before,
+
+    /// The cursor is pointing to a valid token of the token stream.
+    ///
+    /// Reads will return the token pointed by the cursor.
+    Valid(usize),
+
+    /// The cursor is after the last token of the token stream.
+    ///
+    /// Reads will return `None`.
+    After,
+}
+
+/// Represents a bidirectional cursor over a [`TokenStream`].
+#[derive(Debug, Clone, Copy)]
+pub struct TokenStreamCursor<'a> {
+    token_stream: &'a [Token],
+    position:     CursorPosition,
+}
+
+impl<'a> TokenStreamCursor<'a> {
+    /// Returns the current token pointed by the cursor.
+    pub fn read(&self) -> Option<&'a Token> {
+        match self.position {
+            CursorPosition::Valid(index) => Some(&self.token_stream[index]),
+            _ => None,
+        }
+    }
+
+    /// Reads the current token and moves the cursor to the next token.
+    pub fn next_token(&mut self) -> Option<&'a Token> {
+        match self.position {
+            CursorPosition::Valid(index) => {
+                let result = self.token_stream.get(index);
+                if index == self.token_stream.len() - 1 {
+                    self.position = CursorPosition::After;
+                } else {
+                    self.position = CursorPosition::Valid(index + 1);
+                }
+                result
+            }
+            CursorPosition::Before => {
+                if self.token_stream.is_empty() {
+                    self.position = CursorPosition::After;
+                } else {
+                    self.position = CursorPosition::Valid(0);
+                }
+                None
+            }
+            CursorPosition::After => None,
+        }
+    }
+
+    /// Reads the current token and moves the cursor to the previous token.
+    pub fn previous_token(&mut self) -> Option<&'a Token> {
+        match self.position {
+            CursorPosition::Valid(index) => {
+                let result = self.token_stream.get(index);
+                if index == 0 {
+                    self.position = CursorPosition::Before;
+                } else {
+                    self.position = CursorPosition::Valid(index - 1);
+                }
+                result
+            }
+            CursorPosition::Before => None,
+            CursorPosition::After => {
+                if self.token_stream.is_empty() {
+                    self.position = CursorPosition::Before;
+                } else {
+                    self.position = CursorPosition::Valid(self.token_stream.len() - 1);
+                }
+                None
+            }
+        }
+    }
+
+    /// Sets the position of the cursor to the given position.
+    ///
+    /// If the given position is valid, the cursor will be moved to the given position and `true`
+    /// will be returned. Otherwise, the cursor will not be moved and `false` will be returned.
+    pub fn set_position(&mut self, position: CursorPosition) -> bool {
+        match position {
+            CursorPosition::Valid(index) => {
+                if index < self.token_stream.len() {
+                    self.position = position;
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => {
+                self.position = position;
+                true
+            }
+        }
+    }
+
+    /// Moves the cursor to the next token until the given predicate returns `true`.
+    ///
+    /// The token that caused the predicate to return `true` will be consumed by the cursor.
+    pub fn next_token_until(&mut self, predicate: impl Fn(&Token) -> bool) -> Option<&'a Token> {
+        loop {
+            match self.next_token() {
+                Some(token) => {
+                    if predicate(token) {
+                        return Some(token);
+                    }
+                }
+                None => return None,
+            }
+        }
+    }
+
+    /// Moves the cursor to the previous token until the given predicate returns `true`.
+    ///
+    /// The token that caused the predicate to return `true` will be consumed by the cursor.
+    pub fn previous_token_until(
+        &mut self,
+        predicate: impl Fn(&Token) -> bool,
+    ) -> Option<&'a Token> {
+        loop {
+            match self.previous_token() {
+                Some(token) => {
+                    if predicate(token) {
+                        return Some(token);
+                    }
+                }
+                None => return None,
+            }
+        }
+    }
+
+    /// Moves the cursor to the next token until the given predicate returns `true`.
+    ///
+    /// The cursor will be moved to the token that caused the predicate to return `true`.
+    pub fn forward_until(&mut self, predicate: impl Fn(&Token) -> bool) -> Option<&'a Token> {
+        loop {
+            match self.read() {
+                Some(token) => {
+                    if predicate(token) {
+                        return Some(token);
+                    }
+                    self.next_token();
+                }
+                None => return None,
+            }
+        }
+    }
+
+    /// Moves the cursor to the previous token until the given predicate returns `true`.
+    ///
+    /// The cursor will be moved to the token that caused the predicate to return `true`.
+    pub fn backward_until(&mut self, predicate: impl Fn(&Token) -> bool) -> Option<&'a Token> {
+        loop {
+            match self.read() {
+                Some(token) => {
+                    if predicate(token) {
+                        return Some(token);
+                    }
+                    self.previous_token();
+                }
+                None => return None,
+            }
+        }
+    }
+
+    /// Returns the position of the cursor.
+    pub fn position(&self) -> CursorPosition { self.position }
 }

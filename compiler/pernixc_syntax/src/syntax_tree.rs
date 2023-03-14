@@ -1,8 +1,14 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Span;
-use pernixc_lexical::token::{IdentifierToken, KeywordToken, PunctuationToken};
+use pernixc_lexical::token::{
+    CharacterLiteralToken, IdentifierToken, KeywordToken, NumericLiteralToken, PunctuationToken,
+    StringLiteralToken, Token,
+};
 
-pub mod declaration;
+use crate::parser::Parser;
+
 pub mod expression;
+pub mod item;
 pub mod statement;
 
 /// Is a trait that all syntax tree types must implement.
@@ -11,11 +17,32 @@ pub trait SyntaxTree {
     fn span(&self) -> Span;
 }
 
-/// Represents a single identifier syntax tree node.
-pub struct IdentifierSyntaxTree(pub IdentifierToken);
+impl<T: SyntaxTree> SyntaxTree for Box<T> {
+    fn span(&self) -> Span { self.as_ref().span() }
+}
 
-impl SyntaxTree for IdentifierSyntaxTree {
-    fn span(&self) -> Span { self.0.span }
+impl SyntaxTree for IdentifierToken {
+    fn span(&self) -> Span { self.span }
+}
+
+impl SyntaxTree for KeywordToken {
+    fn span(&self) -> Span { self.span }
+}
+
+impl SyntaxTree for PunctuationToken {
+    fn span(&self) -> Span { self.span }
+}
+
+impl SyntaxTree for CharacterLiteralToken {
+    fn span(&self) -> Span { self.span }
+}
+
+impl SyntaxTree for StringLiteralToken {
+    fn span(&self) -> Span { self.span }
+}
+
+impl SyntaxTree for NumericLiteralToken {
+    fn span(&self) -> Span { self.span }
 }
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
@@ -23,6 +50,7 @@ impl SyntaxTree for IdentifierSyntaxTree {
 /// This struct is useful for representing syntax tree nodes that are separated by a separator.
 /// For example, a comma separated list of expressions such as `1, 2, 3` can be represented by a
 /// [`ConnectedList`] with the separator being a comma token and the elements being the expressions.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectedList<Element, Separator> {
     /// The first element of the list.
     pub first: Element,
@@ -45,10 +73,18 @@ impl<Element: SyntaxTree, Separator: SyntaxTree> SyntaxTree for ConnectedList<El
     }
 }
 
+impl<Element, Separator> ConnectedList<Element, Separator> {
+    /// Returns an iterator over the elements of the list.
+    pub fn element_iter(&self) -> impl Iterator<Item = &Element> {
+        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, element)| element))
+    }
+}
+
 /// Represents a syntax tree node of two consecutive colon tokens.
 ///
 /// This syntax tree is used to represent the scope separator `::` in the qualified identifier
 /// syntax
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeSeparatorSyntaxTree(pub PunctuationToken, pub PunctuationToken);
 
 impl SyntaxTree for ScopeSeparatorSyntaxTree {
@@ -63,8 +99,7 @@ impl SyntaxTree for ScopeSeparatorSyntaxTree {
 ///     IdentifierSyntaxTree ('::' IdentifierSyntaxTree)*
 ///     ;
 /// ```
-pub type QualifiedIdentifierSyntaxTree =
-    ConnectedList<IdentifierSyntaxTree, ScopeSeparatorSyntaxTree>;
+pub type QualifiedIdentifierSyntaxTree = ConnectedList<IdentifierToken, ScopeSeparatorSyntaxTree>;
 
 /// Represents a syntax tree node of primitive type identifiers.
 ///
@@ -85,6 +120,7 @@ pub type QualifiedIdentifierSyntaxTree =
 ///     | Uint64
 ///     ;
 /// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum PrimitiveTypeSpecifierSyntaxTree {
     Bool(KeywordToken),
     Void(KeywordToken),
@@ -130,6 +166,7 @@ impl SyntaxTree for PrimitiveTypeSpecifierSyntaxTree {
 ///     | QualifiedIdentifierSyntaxTree
 ///     ;
 /// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum TypeSpecifierSyntaxTree {
     Primitive(PrimitiveTypeSpecifierSyntaxTree),
     Qualified(QualifiedIdentifierSyntaxTree),
@@ -143,3 +180,101 @@ impl SyntaxTree for TypeSpecifierSyntaxTree {
         }
     }
 }
+
+/// Is a syntax tree node that represents a label.
+///
+/// It's commonly used in labeling the loop statements.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// LabelSyntaxTree:
+///     '\'' IdentifierSyntaxTree
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LabelSyntaxTree {
+    pub single_quote: PunctuationToken,
+    pub name:         IdentifierToken,
+}
+
+impl SyntaxTree for LabelSyntaxTree {
+    fn span(&self) -> Span { Span::new(self.single_quote.span.start, self.name.span.end) }
+}
+
+/// Is a syntax tree node that represents a type binding.
+///
+/// It's commonly used to annotate the type of lvalues in the syntax tree.
+///
+/// Syntax Sypnosis:
+/// ``` txt
+/// TypeBindingSyntaxTree:
+///     'mutable'? TypeSpecifierSyntaxTree
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TypeBindingSyntaxTree {
+    pub mutable_keyword: Option<KeywordToken>,
+    pub type_specifier:  TypeSpecifierSyntaxTree,
+}
+
+impl SyntaxTree for TypeBindingSyntaxTree {
+    fn span(&self) -> Span {
+        Span::new(
+            self.mutable_keyword
+                .as_ref()
+                .map_or(self.type_specifier.span().start, |keyword| {
+                    keyword.span.start
+                }),
+            self.type_specifier.span().end,
+        )
+    }
+}
+
+impl<'a> Parser<'a> {
+    /// Parses a [QualifiedIdentifierSyntaxTree]
+    pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifierSyntaxTree> {
+        // expect the first identifier
+        let first_identifier = self.expect_identifier()?.clone();
+
+        let mut rest = Vec::new();
+        let mut cursor = self.cursor;
+
+        // check if the next token is a scope separator '::'
+        while let Some((first_colon, second_colon)) = {
+            let first_colon = match self.next_significant_token() {
+                Some(Token::Punctuation(first_colon)) => Some(first_colon),
+                _ => None,
+            };
+            let second_colon = match self.next_token() {
+                Some(Token::Punctuation(second_colon)) => Some(second_colon),
+                _ => None,
+            };
+
+            // check if two consecutive colons are found
+            if let Some(x) = first_colon.zip(second_colon) {
+                Some(x)
+            } else {
+                self.cursor = cursor;
+                None
+            }
+        } {
+            let scope_separator =
+                ScopeSeparatorSyntaxTree(first_colon.clone(), second_colon.clone());
+
+            // must be followed by an identifier
+            let identifier = self.expect_identifier()?;
+
+            rest.push((scope_separator, identifier.clone()));
+
+            cursor = self.cursor;
+        }
+
+        Some(QualifiedIdentifierSyntaxTree {
+            first: first_identifier,
+            rest,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests;

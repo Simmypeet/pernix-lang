@@ -8,8 +8,7 @@ use crate::token::{CommentKind, Keyword, Token};
 fn token_test() -> Result<(), Box<dyn std::error::Error>> {
     let source_file = SourceFile::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("token")
+            .join("resource")
             .join("tokenTest.pnx"),
     )?;
 

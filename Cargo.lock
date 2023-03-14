@@ -107,8 +107,10 @@ dependencies = [
 name = "pernixc_syntax"
 version = "0.1.0"
 dependencies = [
+ "enum-as-inner",
  "pernixc_common",
  "pernixc_lexical",
+ "thiserror",
 ]
 
 [[package]]
