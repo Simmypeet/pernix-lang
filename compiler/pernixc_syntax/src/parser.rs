@@ -14,7 +14,7 @@ use crate::errors::SyntacticError;
 pub struct Parser<'a> {
     pub(super) cursor: TokenStreamCursor<'a>,
     errors:            Vec<SyntacticError>,
-    produce_errors:    bool,
+    pub produce_errors:    bool,
 }
 
 /// Indicates that the given token stream cursor is not pointing at a valid position when creating a
@@ -75,10 +75,27 @@ impl<'a> Parser<'a> {
     /// Expects the next significant token to be [`IdentifierToken`] and returns it if it is.
     /// Otherwise, returns [`None`].
     pub fn expect_identifier(&mut self) -> Option<&'a IdentifierToken> {
-        if let Some(Token::Identifier(ident)) = self.next_significant_token() {
-            Some(ident)
-        } else {
-            None
+        let token = self.next_significant_token();
+
+        match token {
+            Some(Token::Identifier(identifier)) => Some(identifier),
+            Some(token) => {
+                self.report_error(SyntacticError::IdentifierExpected(Some(token.clone())));
+                None
+            }
+            None => {
+                self.report_error(SyntacticError::IdentifierExpected(None));
+                None
+            }
+        }
+    }
+
+    /// Stores the given error into the error list of the parser.
+    /// 
+    /// The error is discarded if the parser is not configured to produce errors.
+    pub fn report_error(&mut self, error: SyntacticError) {
+        if self.produce_errors {
+            self.errors.push(error);
         }
     }
 }

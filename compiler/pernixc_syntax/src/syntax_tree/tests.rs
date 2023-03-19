@@ -74,3 +74,21 @@ fn qualified_identifier_test() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn type_specifier_test() -> Result<(), Box<dyn std::error::Error>> {
+    let source_file = SourceFile::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resource")
+            .join("typeSpecifierTest.pnx"),
+    )?;
+
+    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+    let mut cursor = token_stream.cursor();
+    cursor.next_token();
+    let mut parser = Parser::new(cursor)?;
+
+    
+
+    Ok(())
+}

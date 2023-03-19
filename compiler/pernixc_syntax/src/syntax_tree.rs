@@ -1,11 +1,11 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{
-    CharacterLiteralToken, IdentifierToken, KeywordToken, NumericLiteralToken, PunctuationToken,
-    StringLiteralToken, Token,
+    CharacterLiteralToken, IdentifierToken, Keyword, KeywordToken, NumericLiteralToken,
+    PunctuationToken, StringLiteralToken, Token,
 };
 
-use crate::parser::Parser;
+use crate::{errors::SyntacticError, parser::Parser};
 
 pub mod expression;
 pub mod item;
@@ -18,31 +18,45 @@ pub trait SyntaxTree {
 }
 
 impl<T: SyntaxTree> SyntaxTree for Box<T> {
-    fn span(&self) -> Span { self.as_ref().span() }
+    fn span(&self) -> Span {
+        self.as_ref().span()
+    }
 }
 
 impl SyntaxTree for IdentifierToken {
-    fn span(&self) -> Span { self.span }
+    fn span(&self) -> Span {
+        self.span
+    }
 }
 
 impl SyntaxTree for KeywordToken {
-    fn span(&self) -> Span { self.span }
+    fn span(&self) -> Span {
+        self.span
+    }
 }
 
 impl SyntaxTree for PunctuationToken {
-    fn span(&self) -> Span { self.span }
+    fn span(&self) -> Span {
+        self.span
+    }
 }
 
 impl SyntaxTree for CharacterLiteralToken {
-    fn span(&self) -> Span { self.span }
+    fn span(&self) -> Span {
+        self.span
+    }
 }
 
 impl SyntaxTree for StringLiteralToken {
-    fn span(&self) -> Span { self.span }
+    fn span(&self) -> Span {
+        self.span
+    }
 }
 
 impl SyntaxTree for NumericLiteralToken {
-    fn span(&self) -> Span { self.span }
+    fn span(&self) -> Span {
+        self.span
+    }
 }
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
@@ -88,7 +102,9 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
 pub struct ScopeSeparatorSyntaxTree(pub PunctuationToken, pub PunctuationToken);
 
 impl SyntaxTree for ScopeSeparatorSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.0.span.start, self.1.span.end) }
+    fn span(&self) -> Span {
+        Span::new(self.0.span.start, self.1.span.end)
+    }
 }
 
 /// Represents a syntax tree node of identifiers separated by scope separators.
@@ -194,11 +210,13 @@ impl SyntaxTree for TypeSpecifierSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelSyntaxTree {
     pub single_quote: PunctuationToken,
-    pub name:         IdentifierToken,
+    pub name: IdentifierToken,
 }
 
 impl SyntaxTree for LabelSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.single_quote.span.start, self.name.span.end) }
+    fn span(&self) -> Span {
+        Span::new(self.single_quote.span.start, self.name.span.end)
+    }
 }
 
 /// Is a syntax tree node that represents a type binding.
@@ -214,7 +232,7 @@ impl SyntaxTree for LabelSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeBindingSyntaxTree {
     pub mutable_keyword: Option<KeywordToken>,
-    pub type_specifier:  TypeSpecifierSyntaxTree,
+    pub type_specifier: TypeSpecifierSyntaxTree,
 }
 
 impl SyntaxTree for TypeBindingSyntaxTree {
@@ -273,6 +291,63 @@ impl<'a> Parser<'a> {
             first: first_identifier,
             rest,
         })
+    }
+
+    /// Parses a [TypeSpecifierSyntaxTree]
+    pub fn parse_type_specifier(&mut self) -> Option<TypeSpecifierSyntaxTree> {
+        match self.peek_significant_token() {
+            Some(token) => match token {
+                Token::Identifier(_) => Some(TypeSpecifierSyntaxTree::Qualified(
+                    self.parse_qualified_identifier()?,
+                )),
+                Token::Keyword(keyword) => {
+                    // eat the token right away
+                    self.next_token();
+
+                    let primitive_type = match keyword.keyword {
+                        Keyword::Bool => PrimitiveTypeSpecifierSyntaxTree::Bool(keyword.clone()),
+                        Keyword::Void => PrimitiveTypeSpecifierSyntaxTree::Void(keyword.clone()),
+                        Keyword::Float32 => {
+                            PrimitiveTypeSpecifierSyntaxTree::Float32(keyword.clone())
+                        }
+                        Keyword::Float64 => {
+                            PrimitiveTypeSpecifierSyntaxTree::Float64(keyword.clone())
+                        }
+                        Keyword::Int8 => PrimitiveTypeSpecifierSyntaxTree::Int8(keyword.clone()),
+                        Keyword::Int16 => PrimitiveTypeSpecifierSyntaxTree::Int16(keyword.clone()),
+                        Keyword::Int32 => PrimitiveTypeSpecifierSyntaxTree::Int32(keyword.clone()),
+                        Keyword::Int64 => PrimitiveTypeSpecifierSyntaxTree::Int64(keyword.clone()),
+                        Keyword::Uint8 => PrimitiveTypeSpecifierSyntaxTree::Uint8(keyword.clone()),
+                        Keyword::Uint16 => {
+                            PrimitiveTypeSpecifierSyntaxTree::Uint16(keyword.clone())
+                        }
+                        Keyword::Uint32 => {
+                            PrimitiveTypeSpecifierSyntaxTree::Uint32(keyword.clone())
+                        }
+                        Keyword::Uint64 => {
+                            PrimitiveTypeSpecifierSyntaxTree::Uint64(keyword.clone())
+                        }
+                        _ => return None,
+                    };
+
+                    Some(TypeSpecifierSyntaxTree::Primitive(primitive_type))
+                }
+                token => {
+                    // eat the token, make progress
+                    self.next_token();
+
+                    self.report_error(SyntacticError::TypeSpecifierExpected(Some(token.clone())));
+                    None
+                }
+            },
+            None => {
+                // eat the token, make progress
+                self.next_token();
+
+                self.report_error(SyntacticError::TypeSpecifierExpected(None));
+                None
+            }
+        }
     }
 }
 

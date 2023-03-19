@@ -10,4 +10,4 @@ pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_common = { path = "../pernixc_common" }
 enum-as-inner = "0.5.1"
 thiserror = "1.0.26"
-    
+proptest = "1.1.0"
