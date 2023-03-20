@@ -183,8 +183,6 @@ impl SyntaxTree for TypeSpecifierSyntaxTree {
 
 /// Is a syntax tree node that represents a label.
 ///
-/// It's commonly used in labeling the loop statements.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// LabelSyntaxTree:

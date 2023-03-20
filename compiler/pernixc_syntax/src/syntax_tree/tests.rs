@@ -1,8 +1,6 @@
-use proptest::{prop_assert, prop_assert_eq, proptest};
-
 use pernixc_common::source_file::{SourceFile, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
-use proptest::strategy::Strategy;
+use proptest::{prop_assert, prop_assert_eq, proptest, strategy::Strategy};
 
 use crate::{parser::Parser, syntax_tree::SyntaxTree};
 
@@ -57,9 +55,13 @@ proptest! {
     }
 }
 
-fn primitive_type_specifier_strategy() -> impl Strategy<Value = String> {
+fn primitive_type_specifier_strategy() -> impl Strategy<Value = &'static str> {
     // get one of the primitive type strings
-    
+    let values = vec![
+        "bool", "void", "float32", "float64", "int8", "int16", "int32", "int64", "uint8", "uint16",
+        "uint32", "uint64",
+    ];
+    proptest::sample::select(values)
 }
 
 fn qualified_type_specifier_strategy() -> impl Strategy<Value = String> {

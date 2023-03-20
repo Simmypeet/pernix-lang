@@ -8,6 +8,7 @@ use super::{
     },
     LabelSyntaxTree, SyntaxTree, TypeBindingSyntaxTree,
 };
+use crate::parser::Parser;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum StatementSyntaxTree {
@@ -190,4 +191,8 @@ impl SyntaxTree for ReturnStatementSyntaxTree {
             None => self.return_keyword.span,
         }
     }
+}
+
+impl<'a> Parser<'a> {
+    pub fn parse_statement(&mut self) -> Option<StatementSyntaxTree> { todo!() }
 }
