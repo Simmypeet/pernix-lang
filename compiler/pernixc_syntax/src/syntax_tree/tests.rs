@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use proptest::{prop_assert, prop_assert_eq, proptest};
 
 use pernixc_common::source_file::{SourceFile, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
+use proptest::strategy::Strategy;
 
-use crate::parser::Parser;
+use crate::{parser::Parser, syntax_tree::SyntaxTree};
 
 fn substr_span(source_file: &SourceFile, span: Span) -> &str {
     match span.end {
@@ -14,81 +15,86 @@ fn substr_span(source_file: &SourceFile, span: Span) -> &str {
     }
 }
 
-#[test]
-fn qualified_identifier_test() -> Result<(), Box<dyn std::error::Error>> {
-    let source_file = SourceFile::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resource")
-            .join("qualifiedIdentifierTest.pnx"),
-    )?;
-
-    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
-    let mut cursor = token_stream.cursor();
-    cursor.next_token();
-    let mut parser = Parser::new(cursor)?;
-
-    // One
-    {
-        let qualified_identifier = parser.parse_qualified_identifier().unwrap();
-        let mut identifiers = qualified_identifier.element_iter();
-        assert_eq!(
-            substr_span(&source_file, identifiers.next().unwrap().span),
-            "One"
-        );
-        assert!(identifiers.next().is_none());
-    }
-
-    // First::Second
-    {
-        let qualified_identifier = parser.parse_qualified_identifier().unwrap();
-        let mut identifiers = qualified_identifier.element_iter();
-        assert_eq!(
-            substr_span(&source_file, identifiers.next().unwrap().span),
-            "First"
-        );
-        assert_eq!(
-            substr_span(&source_file, identifiers.next().unwrap().span),
-            "Second"
-        );
-        assert!(identifiers.next().is_none());
-    }
-
-    // Third :: Fourth::Fifth
-    {
-        let qualified_identifier = parser.parse_qualified_identifier().unwrap();
-        let mut identifiers = qualified_identifier.element_iter();
-        assert_eq!(
-            substr_span(&source_file, identifiers.next().unwrap().span),
-            "Third"
-        );
-        assert_eq!(
-            substr_span(&source_file, identifiers.next().unwrap().span),
-            "Fourth"
-        );
-        assert_eq!(
-            substr_span(&source_file, identifiers.next().unwrap().span),
-            "Fifth"
-        );
-        assert!(identifiers.next().is_none());
-    }
-
-    Ok(())
+fn qualified_identifier_strategy() -> impl Strategy<Value = Vec<(bool, String, bool)>> {
+    proptest::collection::vec(
+        (
+            proptest::bool::ANY,
+            proptest::string::string_regex("[a-zA-Z_][a-zA-Z0-9_]*").unwrap(),
+            proptest::bool::ANY,
+        ),
+        1..=10,
+    )
 }
 
-#[test]
-fn type_specifier_test() -> Result<(), Box<dyn std::error::Error>> {
-    let source_file = SourceFile::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resource")
-            .join("typeSpecifierTest.pnx"),
-    )?;
+proptest! {
+    #[test]
+    fn qualified_identifier_test(identifiers in qualified_identifier_strategy()) {
+        // Generates a new string from the identifiers
+        let string = identifiers.iter().map(|(prepend_space, identifier, append_space)| {
+            let mut string = String::new();
+            if *prepend_space {
+                string.push(' ');
+            }
+            string.push_str(identifier);
+            if *append_space {
+                string.push(' ');
+            }
+            string
+        }).collect::<Vec<_>>().join("::");
 
-    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
-    let mut cursor = token_stream.cursor();
-    cursor.next_token();
-    let mut parser = Parser::new(cursor)?;
+        let source_file = SourceFile::new("test".to_string(), string);
+        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let mut cursor = token_stream.cursor();
+        cursor.next_token();
+        let mut parser = Parser::new(cursor).unwrap();
 
+        // Parses the qualified identifiers
+        let qualified_identifier = parser.parse_qualified_identifier().unwrap();
+
+        for (original_identifier, parsed_identifier) in identifiers.iter().zip(qualified_identifier.element_iter()) {
+            prop_assert_eq!(&original_identifier.1, substr_span(&source_file, parsed_identifier.span()))
+        }
+    }
+}
+
+fn primitive_type_specifier_strategy() -> impl Strategy<Value = String> {
+    // get one of the primitive type strings
     
+}
 
-    Ok(())
+fn qualified_type_specifier_strategy() -> impl Strategy<Value = String> {
+    qualified_identifier_strategy().prop_map(|identifiers| {
+        identifiers
+            .iter()
+            .map(|(prepend_space, identifier, append_space)| {
+                let mut string = String::new();
+                if *prepend_space {
+                    string.push(' ');
+                }
+                string.push_str(identifier);
+                if *append_space {
+                    string.push(' ');
+                }
+                string
+            })
+            .collect::<Vec<_>>()
+            .join("::")
+    })
+}
+
+proptest! {
+    #[test]
+    fn type_specifier_test(
+        primitive_type in primitive_type_specifier_strategy(),
+        qualified_type in qualified_type_specifier_strategy(),
+    ) {
+        let source_file = SourceFile::new("test".to_string(), format!("{} {}", primitive_type, qualified_type));
+        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let mut cursor = token_stream.cursor();
+        cursor.next_token();
+        let mut parser = Parser::new(cursor).unwrap();
+
+        prop_assert!(parser.parse_type_specifier().unwrap().into_primitive().is_ok());
+        prop_assert!(parser.parse_type_specifier().unwrap().into_qualified().is_ok());
+    }
 }

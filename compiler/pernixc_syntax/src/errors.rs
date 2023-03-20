@@ -13,4 +13,3 @@ pub enum SyntacticError {
     /// A type specifier syntax is expected but found an other invalid token.
     TypeSpecifierExpected(Option<Token>),
 }
-

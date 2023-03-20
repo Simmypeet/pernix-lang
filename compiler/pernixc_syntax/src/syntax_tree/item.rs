@@ -173,7 +173,7 @@ impl SyntaxTree for FunctionSyntaxTree {
 }
 
 /// Is an enum that represents all possible item syntax tree nodes.
-/// 
+///
 /// Syntax Synopsis:
 /// ``` txt
 /// ItemSyntaxTree:

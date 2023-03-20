@@ -254,6 +254,7 @@ name = "pernixc_syntax"
 version = "0.1.0"
 dependencies = [
  "enum-as-inner",
+ "getset",
  "pernixc_common",
  "pernixc_lexical",
  "proptest",

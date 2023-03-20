@@ -1,3 +1,4 @@
+use getset::Getters;
 use pernixc_lexical::{
     token::{IdentifierToken, Token},
     token_stream::{CursorPosition, TokenStreamCursor},
@@ -11,10 +12,13 @@ use crate::errors::SyntacticError;
 /// The parser takes a [`TokenStreamCursor`] as input and produces various kinds of syntax trees as
 /// result. The parser provides various `parse_*` methods that can be used to parse different kinds
 /// of syntax trees.
+#[derive(Debug, Getters)]
 pub struct Parser<'a> {
-    pub(super) cursor: TokenStreamCursor<'a>,
-    errors:            Vec<SyntacticError>,
-    pub produce_errors:    bool,
+    pub(super) cursor:  TokenStreamCursor<'a>,
+    /// Gets the list of errors that have been produced by the parser.
+    #[get = "pub"]
+    errors:             Vec<SyntacticError>,
+    pub produce_errors: bool,
 }
 
 /// Indicates that the given token stream cursor is not pointing at a valid position when creating a
@@ -91,11 +95,16 @@ impl<'a> Parser<'a> {
     }
 
     /// Stores the given error into the error list of the parser.
-    /// 
+    ///
     /// The error is discarded if the parser is not configured to produce errors.
     pub fn report_error(&mut self, error: SyntacticError) {
         if self.produce_errors {
             self.errors.push(error);
         }
     }
+
+    /// Takes the list of errors that have been produced by the parser.
+    ///
+    /// The list of errors is cleared after this method is called.
+    pub fn take_errors(&mut self) -> Vec<SyntacticError> { std::mem::take(&mut self.errors) }
 }
