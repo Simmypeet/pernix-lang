@@ -229,6 +229,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a list of items that are separated by a particular separator.
+    ///
+    /// This function is useful for parsing patterns of elements that are separated by a single
+    /// character, such as comma-separated lists of expressions; where the list is enclosed in
+    /// parentheses, brackets, or braces.
     pub(super) fn parse_enclosed_list<T>(
         &mut self,
         delimiter: char,

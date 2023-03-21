@@ -28,22 +28,6 @@ impl SyntaxTree for ExpressionSyntaxTree {
     }
 }
 
-/// Is an enum of all the possible functional expressions.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// FunctionalExpressionSyntaxTree:
-///     NumericLiteral
-///     | BooleanLiteral
-///     | BinaryExpression
-///     | PrefixExpression
-///     | IdentifierExpression
-///     | FunctionCallExpression
-///     | ParenthesizedExpression
-///     | StructLiteralSyntaxTree
-///     | MemberAccessExpression
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum FunctionalExpressionSyntaxTree {
     NumericLiteral(NumericLiteralSyntaxTree),
@@ -73,14 +57,6 @@ impl SyntaxTree for FunctionalExpressionSyntaxTree {
     }
 }
 
-/// Represents a single numeric literal token.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// NumericLiteralSyntaxTree:
-///     NumericLiteral
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NumericLiteralSyntaxTree(pub NumericLiteralToken);
 
@@ -88,14 +64,6 @@ impl SyntaxTree for NumericLiteralSyntaxTree {
     fn span(&self) -> Span { self.0.span }
 }
 
-/// Represents either a `true` or `false` keyword token.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// BooleanLiteralSyntaxTree:
-///     'true' | 'false'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum BooleanLiteralSyntaxTree {
     True(KeywordToken),
@@ -111,7 +79,6 @@ impl SyntaxTree for BooleanLiteralSyntaxTree {
     }
 }
 
-/// Is an enumeration of all binary operator syntax tree nodes.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum BinaryOperatorSyntaxTree {
     Add(PunctuationToken),
@@ -133,6 +100,42 @@ pub enum BinaryOperatorSyntaxTree {
     GreaterThanOrEqual(PunctuationToken, PunctuationToken),
     LogicalAnd(KeywordToken),
     LogicalOr(KeywordToken),
+}
+
+impl BinaryOperatorSyntaxTree {
+    /// Returns `true` if the operator is assignment (including compound assignment)
+    pub fn is_assignment(&self) -> bool {
+        matches!(
+            self,
+            Self::Assign(_)
+                | Self::CompoundAdd(_, _)
+                | Self::CompoundSubtract(_, _)
+                | Self::CompoundMultiply(_, _)
+                | Self::CompoundDivide(_, _)
+                | Self::CompoundModulo(_, _)
+        )
+    }
+
+    /// Gets the precedence of the operator (the higher the number, the first it will be evaluated)
+    pub fn get_precedence(&self) -> u32 {
+        match self {
+            Self::Assign(_)
+            | Self::CompoundAdd(_, _)
+            | Self::CompoundSubtract(_, _)
+            | Self::CompoundMultiply(_, _)
+            | Self::CompoundDivide(_, _)
+            | Self::CompoundModulo(_, _) => 1,
+            Self::LogicalOr(_) => 2,
+            Self::LogicalAnd(_) => 3,
+            Self::Equal(_, _) | Self::NotEqual(_, _) => 4,
+            Self::LessThan(_)
+            | Self::LessThanOrEqual(_, _)
+            | Self::GreaterThan(_)
+            | Self::GreaterThanOrEqual(_, _) => 5,
+            Self::Add(_) | Self::Subtract(_) => 6,
+            Self::Multiply(_) | Self::Divide(_) | Self::Modulo(_) => 7,
+        }
+    }
 }
 
 impl SyntaxTree for BinaryOperatorSyntaxTree {
@@ -161,14 +164,6 @@ impl SyntaxTree for BinaryOperatorSyntaxTree {
     }
 }
 
-/// Represents an expression that takes two expressions and applies a binary operator to them.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// BinaryExpressionSyntaxTree:
-///     ExpressionSyntaxTree BinaryOperatorSyntaxTree ExpressionSyntaxTree
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BinaryExpressionSyntaxTree {
     pub left:     Box<ExpressionSyntaxTree>,
@@ -180,14 +175,6 @@ impl SyntaxTree for BinaryExpressionSyntaxTree {
     fn span(&self) -> Span { Span::new(self.left.span().start, self.right.span().end) }
 }
 
-/// Is an enumeration of all prefix operator syntax tree nodes.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// PerfixOperatorSyntaxTree:
-///     '!' | '-'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum PerfixOperatorSyntaxTree {
     LogicalNot(PunctuationToken),
@@ -203,14 +190,6 @@ impl SyntaxTree for PerfixOperatorSyntaxTree {
     }
 }
 
-/// Is an expression that takes a single expression and applies a prefix operator to it.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// PrefixExpressionSyntaxTree:
-///     PerfixOperatorSyntaxTree ExpressionSyntaxTree
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PrefixExpressionSyntaxTree {
     pub operator: PerfixOperatorSyntaxTree,
@@ -221,14 +200,6 @@ impl SyntaxTree for PrefixExpressionSyntaxTree {
     fn span(&self) -> Span { Span::new(self.operator.span().start, self.operand.span().end) }
 }
 
-/// Is an expression that yields a value by referencing a named value.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// IdentifierExpressionSyntaxTree:
-///     QualifiedIdentifierSyntaxTree
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentifierExpressionSyntaxTree(pub QualifiedIdentifierSyntaxTree);
 
@@ -236,24 +207,8 @@ impl SyntaxTree for IdentifierExpressionSyntaxTree {
     fn span(&self) -> Span { self.0.span() }
 }
 
-/// Is a list of expressions separated by commas.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// ArgumentListSyntaxTree:
-///     ExpressionSyntaxTree (',' ExpressionSyntaxTree)*
-///     ;
-/// ```
 pub type ArgumentListSyntaxTree = ConnectedList<Box<ExpressionSyntaxTree>, PunctuationToken>;
 
-/// Is an expression that yields a value by calling a function.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// FunctionCallExpressionSyntaxTree:
-///     IdentifierExpressionSyntaxTree '(' ArgumentListSyntaxTree ')'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionCallExpressionSyntaxTree {
     pub identifier:  IdentifierExpressionSyntaxTree,
@@ -266,14 +221,6 @@ impl SyntaxTree for FunctionCallExpressionSyntaxTree {
     fn span(&self) -> Span { Span::new(self.identifier.span().start, self.right_paren.span.end) }
 }
 
-/// Represents an expression that is surrounded by parentheses.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// ParenthesizedExpressionSyntaxTree:
-///     '(' ExpressionSyntaxTree ')'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ParenthesizedExpressionSyntaxTree {
     pub left_paren:  PunctuationToken,
@@ -285,14 +232,6 @@ impl SyntaxTree for ParenthesizedExpressionSyntaxTree {
     fn span(&self) -> Span { Span::new(self.left_paren.span.start, self.right_paren.span.end) }
 }
 
-/// Is a syntax tree node that represents a field initialization in a struct literal.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// FieldInitializeSyntaxTree:
-///     IdentifierExpressionSyntaxTree ':' ExpressionSyntaxTree
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldInitializeSyntaxTree {
     pub identifier: IdentifierExpressionSyntaxTree,
@@ -304,24 +243,8 @@ impl SyntaxTree for FieldInitializeSyntaxTree {
     fn span(&self) -> Span { Span::new(self.identifier.span().start, self.expression.span().end) }
 }
 
-/// Is a list of field initializations separated by commas.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// FieldInitializeListSyntaxTree:
-///     FieldInitializeSyntaxTree (',' FieldInitializeSyntaxTree)*
-///    ;
-/// ```
 pub type FieldInitializeListSyntaxTree = ConnectedList<FieldInitializeSyntaxTree, PunctuationToken>;
 
-/// Is an expression that yields a value by initializing a struct.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// StructLiteralSyntaxTree:
-///     IdentifierExpressionSyntaxTree '{' FieldInitializeListSyntaxTree '}'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructLiteralSyntaxTree {
     pub identifier:            IdentifierExpressionSyntaxTree,
@@ -334,14 +257,6 @@ impl SyntaxTree for StructLiteralSyntaxTree {
     fn span(&self) -> Span { Span::new(self.identifier.span().start, self.right_brace.span.end) }
 }
 
-/// Represents an expression that yields a value by accessing a field of a struct.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// MemberAccessExpressionSyntaxTree:
-///     ExpressionSyntaxTree '.' IdentifierExpressionSyntaxTree
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MemberAccessExpressionSyntaxTree {
     pub expression: Box<ExpressionSyntaxTree>,
@@ -368,16 +283,6 @@ impl SyntaxTree for ImperativeExpressionSyntaxTree {
             Self::LoopExpression(loop_) => loop_.span(),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SemiColonStatementSyntaxTree {
-    pub expression: Box<StatementSyntaxTree>,
-    pub semi_colon: PunctuationToken,
-}
-
-impl SyntaxTree for SemiColonStatementSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.expression.span().start, self.semi_colon.span.end) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -453,19 +358,41 @@ impl SyntaxTree for LoopExpressionSyntaxTree {
 }
 
 impl<'a> Parser<'a> {
-    /// Parses an [`ExpressionSyntaxTree`]
-    pub fn parse_expression(&mut self) -> Option<ExpressionSyntaxTree> { todo!() }
+    /// Parses an [ExpressionSyntaxTree].
+    pub fn parse_expression(&mut self) -> Option<ExpressionSyntaxTree> {
+        // Gets the first primary expression
+        let mut first_expression = self.parse_primary_expression()?;
 
+        let mut expressions = Vec::new();
+
+        // Parses a list of binary operators and expressions
+        while let Some(binary_operator) = self.try_parse_binary_operator() {
+            expressions.push((binary_operator, self.parse_primary_expression()?));
+        }
+
+        // We have to fold the expressions based on the precedence of the binary operators and the
+        // associativity of the binary operators.
+
+        loop {
+            // Gets the index in the `expressions` vector of the binary operator based on its
+            // precedence and associativity.
+        }
+
+        Some(first_expression)
+    }
+
+    fn try_parse_binary_operator(&mut self) -> Option<BinaryOperatorSyntaxTree> { todo!() }
+
+    // Parses either a block expression or a loop expression.
     fn parse_block_or_loop_expression(
         &mut self,
         label_specifier: Option<LabelSpecifierSyntaxTree>,
     ) -> Option<ExpressionSyntaxTree> {
         match self.peek_significant_token() {
+            // Handles loop
             Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == Keyword::Loop => {
-                // eat the loop keyword
                 self.next_token();
 
-                // parse the loop expression
                 let expression = self.parse_expression()?;
 
                 Some(ExpressionSyntaxTree::ImperativeExpression(
@@ -476,18 +403,17 @@ impl<'a> Parser<'a> {
                     }),
                 ))
             }
+            // Handles block
             Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
-                // eat the left brace
                 self.next_token();
 
-                // parse the statements until we reach the right brace or EOF
                 let mut statements = Vec::new();
+
+                // Parses statements until a right brace is found.
                 let right_brace = loop {
                     match self.peek_significant_token() {
-                        // found closing brace
                         Some(Token::Punctuation(punc)) if punc.punctuation == '}' => break punc,
 
-                        // unexpected eof
                         None => {
                             self.report_error(SyntacticError::PunctuationExpected(
                                 PunctuationExpected {
@@ -498,14 +424,13 @@ impl<'a> Parser<'a> {
                             return None;
                         }
 
-                        // parse the statement
                         _ => {
                             let statement = self.parse_statement();
 
                             if let Some(statement) = statement {
                                 statements.push(statement);
                             } else {
-                                // skip to either the next semi-colon or the next right brace
+                                // Skips to either the next semicolon or the next right brace.
                                 let token = self.next_token_until(|token| {
                                     matches!(
                                         token,
@@ -514,7 +439,6 @@ impl<'a> Parser<'a> {
                                     )
                                 });
 
-                                // handle the token
                                 match token {
                                     Some(Token::Punctuation(punc)) if punc.punctuation == '}' => {
                                         break punc
@@ -551,28 +475,24 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a primary expression without prefix operators
+    // Parses an primary expression without any prefix operators.
     fn parse_primary_expression_raw(&mut self) -> Option<ExpressionSyntaxTree> {
         match self.peek_significant_token() {
+            // Handles if expressions
             Some(Token::Keyword(if_keyword)) if if_keyword.keyword == Keyword::If => {
-                // eat the if keyword
                 self.next_token();
 
-                // parse condition
                 let left_paren = self.expect_punctuation('(')?;
                 let condition = self.parse_expression()?;
                 let right_paren = self.expect_punctuation(')')?;
 
-                // parse then expression
                 let them_expression = self.parse_expression()?;
 
-                // parse else expression
+                // Parses an else expression if it exists.
                 let else_expression = match self.peek_significant_token() {
                     Some(Token::Keyword(else_keyword)) if else_keyword.keyword == Keyword::Else => {
-                        // eat the else keyword
                         self.next_token();
 
-                        // parse the else expression
                         let else_expression = self.parse_expression()?;
 
                         Some(ElseExpressionSyntaxTree {
@@ -596,7 +516,6 @@ impl<'a> Parser<'a> {
             }
 
             Some(Token::NumericLiteral(numeric_literal)) => {
-                // eat the numeric literal
                 self.next_token();
 
                 Some(ExpressionSyntaxTree::FunctionalExpression(
@@ -607,13 +526,10 @@ impl<'a> Parser<'a> {
             }
 
             Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
-                // eat the left parenthesis
                 self.next_token();
 
-                // parse the expression
                 let expression = self.parse_expression()?;
 
-                // expect a right parenthesis
                 let right_paren = self.expect_punctuation(')')?;
 
                 Some(ExpressionSyntaxTree::FunctionalExpression(
@@ -628,13 +544,10 @@ impl<'a> Parser<'a> {
             }
 
             Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
-                // eat the single quote
                 self.next_token();
 
-                // expect an identifier
                 let name = self.expect_identifier()?;
 
-                // expect a colon
                 let colon = self.expect_punctuation(':')?;
 
                 let label = LabelSpecifierSyntaxTree {
@@ -645,7 +558,6 @@ impl<'a> Parser<'a> {
                     colon: colon.clone(),
                 };
 
-                // parse the block or loop expression
                 self.parse_block_or_loop_expression(Some(label))
             }
 
@@ -653,18 +565,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    // Parses a primary expression with prefix operators and postfix operators.
     fn parse_primary_expression(&mut self) -> Option<ExpressionSyntaxTree> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(punc))
                 if punc.punctuation == '!' || punc.punctuation == '-' =>
             {
-                // eat the punctuation
                 self.next_token();
 
-                // parse the operand
                 let operand = self.parse_primary_expression()?;
 
-                // return the unary expression syntax tree
                 return Some(ExpressionSyntaxTree::FunctionalExpression(
                     FunctionalExpressionSyntaxTree::PrefixExpression(PrefixExpressionSyntaxTree {
                         operator: match punc.punctuation {
@@ -684,13 +594,10 @@ impl<'a> Parser<'a> {
         loop {
             match self.peek_significant_token() {
                 Some(Token::Punctuation(dot)) if dot.punctuation == '.' => {
-                    // eat the dot
                     self.next_token();
 
-                    // expect an identifier
                     let identifier = self.expect_identifier()?.clone();
 
-                    // create the member access expression
                     primary_expression = ExpressionSyntaxTree::FunctionalExpression(
                         FunctionalExpressionSyntaxTree::MemberAccessExpression(
                             MemberAccessExpressionSyntaxTree {
