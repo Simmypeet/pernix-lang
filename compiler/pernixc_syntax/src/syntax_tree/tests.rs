@@ -17,7 +17,9 @@ fn qualified_identifier_strategy() -> impl Strategy<Value = Vec<(bool, String, b
     proptest::collection::vec(
         (
             proptest::bool::ANY,
-            proptest::string::string_regex("[a-zA-Z_][a-zA-Z0-9_]*").unwrap(),
+            // the first character in the string will always start with an underscore to avoid a
+            // collision with a keyword
+            proptest::string::string_regex("_[_a-zA-Z][_a-zA-Z0-9]*").unwrap(),
             proptest::bool::ANY,
         ),
         1..=10,

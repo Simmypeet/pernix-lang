@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{
@@ -117,6 +119,8 @@ impl BinaryOperatorSyntaxTree {
     }
 
     /// Gets the precedence of the operator (the higher the number, the first it will be evaluated)
+    ///
+    /// The least operator has precedence 1.
     pub fn get_precedence(&self) -> u32 {
         match self {
             Self::Assign(_)
@@ -367,15 +371,79 @@ impl<'a> Parser<'a> {
 
         // Parses a list of binary operators and expressions
         while let Some(binary_operator) = self.try_parse_binary_operator() {
-            expressions.push((binary_operator, self.parse_primary_expression()?));
+            expressions.push((binary_operator, Some(self.parse_primary_expression()?)));
         }
 
         // We have to fold the expressions based on the precedence of the binary operators and the
         // associativity of the binary operators.
 
-        loop {
-            // Gets the index in the `expressions` vector of the binary operator based on its
-            // precedence and associativity.
+        // This a vector of indices of the expressions that are candidates for folding.
+        let mut candidate_indices = Vec::new();
+        let mut current_precedence;
+
+        while !expressions.is_empty() {
+            // Reset the current precedence and the candidate indices
+            current_precedence = 0;
+            candidate_indices.clear();
+
+            for (index, (binary_operator, _)) in expressions.iter().enumerate() {
+                let new_precedence = binary_operator.get_precedence();
+                match new_precedence.cmp(&current_precedence) {
+                    // Push the index of the binary operator to the candidate indices
+                    Ordering::Equal => candidate_indices.push(index),
+
+                    // Clear the candidate indices and set the current precedence to the
+                    // precedence of the current binary operator.
+                    Ordering::Greater => {
+                        candidate_indices.clear();
+                        current_precedence = new_precedence;
+                        candidate_indices.push(index);
+                    }
+
+                    _ => (),
+                }
+            }
+
+            // ASSUMPTION: The assignments have 1 precedence and are right associative.
+            assert!(current_precedence > 0);
+
+            let index_to_fold = if current_precedence == 1 {
+                // If the current precedence is 1, then we have to fold the right most candidate
+                // index.
+                *candidate_indices
+                    .last()
+                    .expect("candidate indices cannot be empty!")
+            } else {
+                // If the current precedence is not 1, then we have to fold the left most candidate
+                // index.
+                *candidate_indices
+                    .first()
+                    .expect("candidate indices cannot be empty!")
+            };
+
+            if index_to_fold == 0 {
+                let (binary_operator, right_expression) = expressions.remove(0);
+
+                // Replace the first expression with the folded expression.
+                first_expression = ExpressionSyntaxTree::FunctionalExpression(
+                    FunctionalExpressionSyntaxTree::BinaryExpression(BinaryExpressionSyntaxTree {
+                        left:     Box::new(first_expression),
+                        operator: binary_operator,
+                        right:    Box::new(right_expression.unwrap()),
+                    }),
+                )
+            } else {
+                let (binary_operator, right_expression) = expressions.remove(index_to_fold);
+
+                // Replace the expression at the index with the folded expression.
+                expressions[index_to_fold - 1].1 = Some(ExpressionSyntaxTree::FunctionalExpression(
+                    FunctionalExpressionSyntaxTree::BinaryExpression(BinaryExpressionSyntaxTree {
+                        left:     Box::new(expressions[index_to_fold - 1].1.take().unwrap()),
+                        operator: binary_operator,
+                        right:    Box::new(right_expression.unwrap()),
+                    }),
+                ))
+            }
         }
 
         Some(first_expression)
@@ -613,3 +681,6 @@ impl<'a> Parser<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
