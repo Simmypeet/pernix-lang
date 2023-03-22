@@ -75,7 +75,7 @@ impl<Element: SyntaxTree, Separator: SyntaxTree> SyntaxTree for ConnectedList<El
 
 impl<Element, Separator> ConnectedList<Element, Separator> {
     /// Returns an iterator over the elements of the list.
-    pub fn element_iter(&self) -> impl Iterator<Item = &Element> {
+    pub fn elements(&self) -> impl Iterator<Item = &Element> {
         std::iter::once(&self.first).chain(self.rest.iter().map(|(_, element)| element))
     }
 }
@@ -240,11 +240,15 @@ impl<'a> Parser<'a> {
         // check if the next token is a scope separator '::'
         while let Some((first_colon, second_colon)) = {
             let first_colon = match self.next_significant_token() {
-                Some(Token::Punctuation(first_colon)) => Some(first_colon),
+                Some(Token::Punctuation(first_colon)) if first_colon.punctuation == ':' => {
+                    Some(first_colon)
+                }
                 _ => None,
             };
             let second_colon = match self.next_token() {
-                Some(Token::Punctuation(second_colon)) => Some(second_colon),
+                Some(Token::Punctuation(second_colon)) if second_colon.punctuation == ':' => {
+                    Some(second_colon)
+                }
                 _ => None,
             };
 

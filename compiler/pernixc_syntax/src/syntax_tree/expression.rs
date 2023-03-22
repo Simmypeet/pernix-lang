@@ -215,14 +215,19 @@ pub type ArgumentListSyntaxTree = ConnectedList<Box<ExpressionSyntaxTree>, Punct
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionCallExpressionSyntaxTree {
-    pub identifier:  IdentifierExpressionSyntaxTree,
-    pub left_paren:  PunctuationToken,
-    pub arguments:   ArgumentListSyntaxTree,
-    pub right_paren: PunctuationToken,
+    pub qualified_identifier: QualifiedIdentifierSyntaxTree,
+    pub left_paren:           PunctuationToken,
+    pub arguments:            Option<ArgumentListSyntaxTree>,
+    pub right_paren:          PunctuationToken,
 }
 
 impl SyntaxTree for FunctionCallExpressionSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.identifier.span().start, self.right_paren.span.end) }
+    fn span(&self) -> Span {
+        Span::new(
+            self.qualified_identifier.span().start,
+            self.right_paren.span.end,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -238,7 +243,7 @@ impl SyntaxTree for ParenthesizedExpressionSyntaxTree {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldInitializeSyntaxTree {
-    pub identifier: IdentifierExpressionSyntaxTree,
+    pub identifier: IdentifierToken,
     pub colon:      PunctuationToken,
     pub expression: Box<ExpressionSyntaxTree>,
 }
@@ -251,14 +256,19 @@ pub type FieldInitializeListSyntaxTree = ConnectedList<FieldInitializeSyntaxTree
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructLiteralSyntaxTree {
-    pub identifier:            IdentifierExpressionSyntaxTree,
+    pub qualified_identifier:  QualifiedIdentifierSyntaxTree,
     pub left_brace:            PunctuationToken,
-    pub field_initializations: FieldInitializeListSyntaxTree,
+    pub field_initializations: Option<FieldInitializeListSyntaxTree>,
     pub right_brace:           PunctuationToken,
 }
 
 impl SyntaxTree for StructLiteralSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.identifier.span().start, self.right_brace.span.end) }
+    fn span(&self) -> Span {
+        Span::new(
+            self.qualified_identifier.span().start,
+            self.right_brace.span.end,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -378,26 +388,28 @@ impl<'a> Parser<'a> {
         // associativity of the binary operators.
 
         // This a vector of indices of the expressions that are candidates for folding.
-        let mut candidate_indices = Vec::new();
+        let mut candidate_index = 0;
         let mut current_precedence;
 
         while !expressions.is_empty() {
             // Reset the current precedence and the candidate indices
             current_precedence = 0;
-            candidate_indices.clear();
 
             for (index, (binary_operator, _)) in expressions.iter().enumerate() {
                 let new_precedence = binary_operator.get_precedence();
                 match new_precedence.cmp(&current_precedence) {
                     // Push the index of the binary operator to the candidate indices
-                    Ordering::Equal => candidate_indices.push(index),
+                    Ordering::Equal => {
+                        if binary_operator.is_assignment() {
+                            candidate_index = index;
+                        }
+                    }
 
                     // Clear the candidate indices and set the current precedence to the
                     // precedence of the current binary operator.
                     Ordering::Greater => {
-                        candidate_indices.clear();
                         current_precedence = new_precedence;
-                        candidate_indices.push(index);
+                        candidate_index = index;
                     }
 
                     _ => (),
@@ -407,21 +419,7 @@ impl<'a> Parser<'a> {
             // ASSUMPTION: The assignments have 1 precedence and are right associative.
             assert!(current_precedence > 0);
 
-            let index_to_fold = if current_precedence == 1 {
-                // If the current precedence is 1, then we have to fold the right most candidate
-                // index.
-                *candidate_indices
-                    .last()
-                    .expect("candidate indices cannot be empty!")
-            } else {
-                // If the current precedence is not 1, then we have to fold the left most candidate
-                // index.
-                *candidate_indices
-                    .first()
-                    .expect("candidate indices cannot be empty!")
-            };
-
-            if index_to_fold == 0 {
+            if candidate_index == 0 {
                 let (binary_operator, right_expression) = expressions.remove(0);
 
                 // Replace the first expression with the folded expression.
@@ -433,23 +431,134 @@ impl<'a> Parser<'a> {
                     }),
                 )
             } else {
-                let (binary_operator, right_expression) = expressions.remove(index_to_fold);
+                let (binary_operator, right_expression) = expressions.remove(candidate_index);
 
                 // Replace the expression at the index with the folded expression.
-                expressions[index_to_fold - 1].1 = Some(ExpressionSyntaxTree::FunctionalExpression(
-                    FunctionalExpressionSyntaxTree::BinaryExpression(BinaryExpressionSyntaxTree {
-                        left:     Box::new(expressions[index_to_fold - 1].1.take().unwrap()),
-                        operator: binary_operator,
-                        right:    Box::new(right_expression.unwrap()),
-                    }),
-                ))
+                expressions[candidate_index - 1].1 =
+                    Some(ExpressionSyntaxTree::FunctionalExpression(
+                        FunctionalExpressionSyntaxTree::BinaryExpression(
+                            BinaryExpressionSyntaxTree {
+                                left:     Box::new(
+                                    expressions[candidate_index - 1].1.take().unwrap(),
+                                ),
+                                operator: binary_operator,
+                                right:    Box::new(right_expression.unwrap()),
+                            },
+                        ),
+                    ))
             }
         }
 
         Some(first_expression)
     }
 
-    fn try_parse_binary_operator(&mut self) -> Option<BinaryOperatorSyntaxTree> { todo!() }
+    fn try_parse_first_punctuation_binary_operator(&mut self) -> Option<BinaryOperatorSyntaxTree> {
+        let starting_cursor_position = self.cursor.position();
+        let next_token = self.next_significant_token();
+        match next_token {
+            Some(Token::Punctuation(punctuation)) => match punctuation.punctuation {
+                '+' => return Some(BinaryOperatorSyntaxTree::Add(punctuation.clone())),
+                '-' => return Some(BinaryOperatorSyntaxTree::Subtract(punctuation.clone())),
+                '*' => return Some(BinaryOperatorSyntaxTree::Multiply(punctuation.clone())),
+                '/' => return Some(BinaryOperatorSyntaxTree::Divide(punctuation.clone())),
+                '%' => return Some(BinaryOperatorSyntaxTree::Modulo(punctuation.clone())),
+                '=' => return Some(BinaryOperatorSyntaxTree::Assign(punctuation.clone())),
+                '!' => {
+                    if let Some(Token::Punctuation(punctuation1)) = self.peek_significant_token() {
+                        if punctuation1.punctuation == '=' {
+                            self.next_significant_token();
+                            return Some(BinaryOperatorSyntaxTree::NotEqual(
+                                punctuation.clone(),
+                                punctuation1.clone(),
+                            ));
+                        }
+                    }
+                }
+                '<' => return Some(BinaryOperatorSyntaxTree::LessThan(punctuation.clone())),
+                '>' => return Some(BinaryOperatorSyntaxTree::GreaterThan(punctuation.clone())),
+                _ => (),
+            },
+            Some(Token::Keyword(and_keyword)) if and_keyword.keyword == Keyword::And => {
+                return Some(BinaryOperatorSyntaxTree::LogicalAnd(and_keyword.clone()))
+            }
+            Some(Token::Keyword(or_keyword)) if or_keyword.keyword == Keyword::Or => {
+                return Some(BinaryOperatorSyntaxTree::LogicalOr(or_keyword.clone()))
+            }
+            _ => (),
+        }
+        self.cursor.set_position(starting_cursor_position);
+        None
+    }
+
+    fn try_parse_second_punctuation_binary_operator(
+        &mut self,
+        first_punctuation_binary_operator: BinaryOperatorSyntaxTree,
+    ) -> BinaryOperatorSyntaxTree {
+        let starting_cursor_position = self.cursor.position();
+
+        match self.next_significant_token() {
+            Some(Token::Punctuation(punctuation)) if punctuation.punctuation == '=' => {
+                match first_punctuation_binary_operator {
+                    BinaryOperatorSyntaxTree::Add(prev_punctuation) => {
+                        BinaryOperatorSyntaxTree::CompoundAdd(prev_punctuation, punctuation.clone())
+                    }
+                    BinaryOperatorSyntaxTree::Subtract(prev_punctuation) => {
+                        BinaryOperatorSyntaxTree::CompoundSubtract(
+                            prev_punctuation,
+                            punctuation.clone(),
+                        )
+                    }
+                    BinaryOperatorSyntaxTree::Multiply(prev_punctuation) => {
+                        BinaryOperatorSyntaxTree::CompoundMultiply(
+                            prev_punctuation,
+                            punctuation.clone(),
+                        )
+                    }
+                    BinaryOperatorSyntaxTree::Divide(prev_punctuation) => {
+                        BinaryOperatorSyntaxTree::CompoundDivide(
+                            prev_punctuation,
+                            punctuation.clone(),
+                        )
+                    }
+                    BinaryOperatorSyntaxTree::Modulo(prev_punctuation) => {
+                        BinaryOperatorSyntaxTree::CompoundModulo(
+                            prev_punctuation,
+                            punctuation.clone(),
+                        )
+                    }
+                    BinaryOperatorSyntaxTree::Assign(prev_punctuation) => {
+                        BinaryOperatorSyntaxTree::Equal(prev_punctuation, punctuation.clone())
+                    }
+                    BinaryOperatorSyntaxTree::LessThan(prev_punctuation) => {
+                        BinaryOperatorSyntaxTree::LessThanOrEqual(
+                            prev_punctuation,
+                            punctuation.clone(),
+                        )
+                    }
+                    BinaryOperatorSyntaxTree::GreaterThan(prev_punctuation) => {
+                        BinaryOperatorSyntaxTree::GreaterThanOrEqual(
+                            prev_punctuation,
+                            punctuation.clone(),
+                        )
+                    }
+                    _ => {
+                        self.cursor.set_position(starting_cursor_position);
+                        first_punctuation_binary_operator
+                    }
+                }
+            }
+            _ => {
+                self.cursor.set_position(starting_cursor_position);
+                first_punctuation_binary_operator
+            }
+        }
+    }
+
+    fn try_parse_binary_operator(&mut self) -> Option<BinaryOperatorSyntaxTree> {
+        let first_punctuation_binary_operator =
+            self.try_parse_first_punctuation_binary_operator()?;
+        Some(self.try_parse_second_punctuation_binary_operator(first_punctuation_binary_operator))
+    }
 
     // Parses either a block expression or a loop expression.
     fn parse_block_or_loop_expression(
@@ -583,6 +692,7 @@ impl<'a> Parser<'a> {
                 ))
             }
 
+            // Handles numeric literal
             Some(Token::NumericLiteral(numeric_literal)) => {
                 self.next_token();
 
@@ -593,6 +703,7 @@ impl<'a> Parser<'a> {
                 ))
             }
 
+            // Handles parenthesis
             Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
                 self.next_token();
 
@@ -611,6 +722,7 @@ impl<'a> Parser<'a> {
                 ))
             }
 
+            // Handles label specifier
             Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
                 self.next_token();
 
@@ -627,6 +739,74 @@ impl<'a> Parser<'a> {
                 };
 
                 self.parse_block_or_loop_expression(Some(label))
+            }
+
+            // Handles identifier
+            Some(Token::Identifier(_)) => {
+                let qualified_identifier = self.parse_qualified_identifier()?;
+
+                match self.peek_significant_token() {
+                    // Function call
+                    Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
+                        // eat the left parenthesis
+                        self.next_token();
+
+                        let (arguments, right_paren) =
+                            self.parse_enclosed_list(')', ',', |this| {
+                                this.parse_expression().map(Box::new)
+                            })?;
+
+                        Some(ExpressionSyntaxTree::FunctionalExpression(
+                            FunctionalExpressionSyntaxTree::FunctionCallExpression(
+                                FunctionCallExpressionSyntaxTree {
+                                    qualified_identifier,
+                                    left_paren: left_paren.clone(),
+                                    arguments,
+                                    right_paren,
+                                },
+                            ),
+                        ))
+                    }
+
+                    // Struct literal
+                    Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
+                        // eat the left brace
+                        self.next_token();
+                        
+                        let (field_initializations, right_brace) =
+                            self.parse_enclosed_list('}', ',', |this| {
+                                let identifier = this.expect_identifier()?;
+
+                                let colon = this.expect_punctuation(':')?;
+
+                                let expression = this.parse_expression()?;
+
+                                Some(FieldInitializeSyntaxTree {
+                                    identifier: identifier.clone(),
+                                    colon:      colon.clone(),
+                                    expression: Box::new(expression),
+                                })
+                            })?;
+
+                        Some(ExpressionSyntaxTree::FunctionalExpression(
+                            FunctionalExpressionSyntaxTree::StructLiteralSyntaxTree(
+                                StructLiteralSyntaxTree {
+                                    qualified_identifier,
+                                    left_brace: left_brace.clone(),
+                                    field_initializations,
+                                    right_brace,
+                                },
+                            ),
+                        ))
+                    }
+
+                    // Simple identifier expression
+                    _ => Some(ExpressionSyntaxTree::FunctionalExpression(
+                        FunctionalExpressionSyntaxTree::IdentifierExpression(
+                            IdentifierExpressionSyntaxTree(qualified_identifier),
+                        ),
+                    )),
+                }
             }
 
             _ => self.parse_block_or_loop_expression(None),

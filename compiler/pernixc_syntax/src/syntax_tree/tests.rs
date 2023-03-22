@@ -51,7 +51,7 @@ proptest! {
         // Parses the qualified identifiers
         let qualified_identifier = parser.parse_qualified_identifier().unwrap();
 
-        for (original_identifier, parsed_identifier) in identifiers.iter().zip(qualified_identifier.element_iter()) {
+        for (original_identifier, parsed_identifier) in identifiers.iter().zip(qualified_identifier.elements()) {
             prop_assert_eq!(&original_identifier.1, substr_span(&source_file, parsed_identifier.span()))
         }
     }

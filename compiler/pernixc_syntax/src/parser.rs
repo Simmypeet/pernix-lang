@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use getset::Getters;
 use pernixc_lexical::{
     token::{IdentifierToken, PunctuationToken, Token},
@@ -233,7 +235,7 @@ impl<'a> Parser<'a> {
     /// This function is useful for parsing patterns of elements that are separated by a single
     /// character, such as comma-separated lists of expressions; where the list is enclosed in
     /// parentheses, brackets, or braces.
-    pub(super) fn parse_enclosed_list<T>(
+    pub(super) fn parse_enclosed_list<T: Debug>(
         &mut self,
         delimiter: char,
         separator: char,
