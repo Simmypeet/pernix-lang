@@ -22,7 +22,7 @@ pub struct Parser<'a> {
     pub(super) cursor:  TokenStreamCursor<'a>,
     /// Gets the list of errors that have been produced by the parser.
     #[get = "pub"]
-    errors:             Vec<SyntacticError>,
+    pub(crate) errors:  Vec<SyntacticError>,
     pub produce_errors: bool,
 }
 

@@ -41,6 +41,9 @@ pub enum FunctionalExpressionSyntaxTree {
     ParenthesizedExpression(ParenthesizedExpressionSyntaxTree),
     StructLiteralSyntaxTree(StructLiteralSyntaxTree),
     MemberAccessExpression(MemberAccessExpressionSyntaxTree),
+    ContinueExpression(ContinueSyntaxTree),
+    BreakExpression(BreakSyntaxTree),
+    ReturnExpression(ReturnSyntaxTree),
 }
 
 impl SyntaxTree for FunctionalExpressionSyntaxTree {
@@ -55,6 +58,9 @@ impl SyntaxTree for FunctionalExpressionSyntaxTree {
             Self::ParenthesizedExpression(expression) => expression.span(),
             Self::StructLiteralSyntaxTree(expression) => expression.span(),
             Self::MemberAccessExpression(expression) => expression.span(),
+            Self::ContinueExpression(expression) => expression.span(),
+            Self::BreakExpression(expression) => expression.span(),
+            Self::ReturnExpression(expression) => expression.span(),
         }
     }
 }
@@ -368,6 +374,83 @@ impl SyntaxTree for LoopExpressionSyntaxTree {
             .map(|label| label.span().start)
             .unwrap_or(self.loop_keyword.span.start);
         Span::new(start, self.expression.span().end)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum ControlExpressionSyntaxTree {
+    Continue(ContinueSyntaxTree),
+    Break(BreakSyntaxTree),
+    Return(ReturnSyntaxTree),
+}
+
+impl SyntaxTree for ControlExpressionSyntaxTree {
+    fn span(&self) -> Span {
+        match self {
+            Self::Continue(continue_) => continue_.span(),
+            Self::Break(break_) => break_.span(),
+            Self::Return(return_) => return_.span(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ContinueSyntaxTree {
+    pub continue_keyword: KeywordToken,
+    pub label:            Option<LabelSyntaxTree>,
+}
+
+impl SyntaxTree for ContinueSyntaxTree {
+    fn span(&self) -> Span {
+        Span::new(
+            self.continue_keyword.span.start,
+            self.label
+                .as_ref()
+                .map(|label| label.span().end)
+                .unwrap_or(self.continue_keyword.span.end),
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BreakSyntaxTree {
+    pub break_keyword: KeywordToken,
+    pub label:         Option<LabelSyntaxTree>,
+    pub expression:    Option<Box<ExpressionSyntaxTree>>,
+}
+
+impl SyntaxTree for BreakSyntaxTree {
+    fn span(&self) -> Span {
+        Span::new(
+            self.break_keyword.span.start,
+            self.expression
+                .as_ref()
+                .map(|expression| expression.span().end)
+                .unwrap_or_else(|| {
+                    self.label
+                        .as_ref()
+                        .map(|label| label.span().end)
+                        .unwrap_or(self.break_keyword.span.end)
+                }),
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReturnSyntaxTree {
+    pub return_keyword: KeywordToken,
+    pub expression:     Option<Box<ExpressionSyntaxTree>>,
+}
+
+impl SyntaxTree for ReturnSyntaxTree {
+    fn span(&self) -> Span {
+        Span::new(
+            self.return_keyword.span.start,
+            self.expression
+                .as_ref()
+                .map(|expression| expression.span().end)
+                .unwrap_or(self.return_keyword.span.end),
+        )
     }
 }
 
@@ -741,6 +824,134 @@ impl<'a> Parser<'a> {
                 self.parse_block_or_loop_expression(Some(label))
             }
 
+            // Handle continue expression
+            Some(Token::Keyword(continue_keyword))
+                if continue_keyword.keyword == Keyword::Continue =>
+            {
+                // eat the continue keyword
+                self.next_token();
+
+                let label = match self.peek_significant_token() {
+                    Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
+                        // eat the single quote
+                        self.next_token();
+
+                        let name = self.expect_identifier()?;
+
+                        Some(LabelSyntaxTree {
+                            single_quote: single_quote.clone(),
+                            name:         name.clone(),
+                        })
+                    }
+                    _ => None,
+                };
+
+                Some(ExpressionSyntaxTree::FunctionalExpression(
+                    FunctionalExpressionSyntaxTree::ContinueExpression(ContinueSyntaxTree {
+                        continue_keyword: continue_keyword.clone(),
+                        label,
+                    }),
+                ))
+            }
+
+            // Handle break expression
+            Some(Token::Keyword(break_keyword)) if break_keyword.keyword == Keyword::Break => {
+                // eat the break keyword
+                self.next_token();
+
+                let label = match self.peek_significant_token() {
+                    Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
+                        // eat the single quote
+                        self.next_token();
+
+                        let name = self.expect_identifier()?;
+
+                        Some(LabelSyntaxTree {
+                            single_quote: single_quote.clone(),
+                            name:         name.clone(),
+                        })
+                    }
+                    _ => None,
+                };
+
+                match self.peek_significant_token() {
+                    Some(Token::Punctuation(semi_colon)) if semi_colon.punctuation == ';' => {
+                        Some(ExpressionSyntaxTree::ControlExpression(
+                            ControlExpressionSyntaxTree::Break(BreakSyntaxTree {
+                                break_keyword: break_keyword.clone(),
+                                label,
+                                expression: None,
+                            }),
+                        ))
+                    }
+                    _ => {
+                        let current_position = self.cursor.position();
+
+                        if self.try_parse_binary_operator().is_some() {
+                            self.cursor.set_position(current_position);
+
+                            Some(ExpressionSyntaxTree::ControlExpression(
+                                ControlExpressionSyntaxTree::Break(BreakSyntaxTree {
+                                    break_keyword: break_keyword.clone(),
+                                    label,
+                                    expression: None,
+                                }),
+                            ))
+                        } else {
+                            let expression = self.parse_expression()?;
+
+                            Some(ExpressionSyntaxTree::ControlExpression(
+                                ControlExpressionSyntaxTree::Break(BreakSyntaxTree {
+                                    break_keyword: break_keyword.clone(),
+                                    label,
+                                    expression: Some(Box::new(expression)),
+                                }),
+                            ))
+                        }
+                    }
+                }
+            }
+
+            // Handles return expression
+            Some(Token::Keyword(return_keyword)) if return_keyword.keyword == Keyword::Return => {
+                // eat the return keyword
+                self.next_token();
+
+                match self.peek_significant_token() {
+                    Some(Token::Punctuation(semi_colon)) if semi_colon.punctuation == ';' => {
+                        Some(ExpressionSyntaxTree::ControlExpression(
+                            ControlExpressionSyntaxTree::Return(ReturnSyntaxTree {
+                                return_keyword: return_keyword.clone(),
+                                expression:     None,
+                            }),
+                        ))
+                    }
+                    _ => {
+                        let current_position = self.cursor.position();
+
+                        if self.try_parse_binary_operator().is_some() {
+                            self.cursor.set_position(current_position);
+
+                            Some(ExpressionSyntaxTree::ControlExpression(
+                                ControlExpressionSyntaxTree::Return(ReturnSyntaxTree {
+                                    return_keyword: return_keyword.clone(),
+                                    expression:     None,
+                                }),
+                            ))
+                        } else {
+                            let expression = self.parse_expression()?;
+
+                            Some(ExpressionSyntaxTree::ControlExpression(
+                                ControlExpressionSyntaxTree::Return(ReturnSyntaxTree {
+                                    return_keyword: return_keyword.clone(),
+                                    expression:     Some(Box::new(expression)),
+                                }),
+                            ))
+                        }
+                    }
+                }
+            }
+
             // Handles identifier
             Some(Token::Identifier(_)) => {
                 let qualified_identifier = self.parse_qualified_identifier()?;
@@ -772,7 +983,7 @@ impl<'a> Parser<'a> {
                     Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
                         // eat the left brace
                         self.next_token();
-                        
+
                         let (field_initializations, right_brace) =
                             self.parse_enclosed_list('}', ',', |this| {
                                 let identifier = this.expect_identifier()?;

@@ -1,20 +1,20 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Span;
-use pernixc_lexical::token::{IdentifierToken, KeywordToken, PunctuationToken};
+use pernixc_lexical::token::{IdentifierToken, Keyword, KeywordToken, PunctuationToken, Token};
 
 use super::{
     expression::{
         ExpressionSyntaxTree, FunctionalExpressionSyntaxTree, ImperativeExpressionSyntaxTree,
     },
-    LabelSyntaxTree, SyntaxTree, TypeBindingSyntaxTree,
+    SyntaxTree, TypeBindingSyntaxTree,
 };
-use crate::parser::Parser;
+use crate::{parser::Parser, syntax_tree::expression::ControlExpressionSyntaxTree};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum StatementSyntaxTree {
     Declaration(DeclarationStatementSyntaxTree),
     Expression(ExpressionStatementSyntaxTree),
-    Control(ControlStatementSyntaxTree),
+    
 }
 
 impl SyntaxTree for StatementSyntaxTree {
@@ -22,7 +22,6 @@ impl SyntaxTree for StatementSyntaxTree {
         match self {
             StatementSyntaxTree::Declaration(declaration) => declaration.span(),
             StatementSyntaxTree::Expression(expression) => expression.span(),
-            StatementSyntaxTree::Control(control) => control.span(),
         }
     }
 }
@@ -113,86 +112,146 @@ impl SyntaxTree for FunctionalExpressionStatementSyntaxTree {
     fn span(&self) -> Span { Span::new(self.expression.span().start, self.semicolon.span.end) }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum ControlStatementSyntaxTree {
-    Break(BreakStatementSyntaxTree),
-    Continue(ContinueStatementSyntaxTree),
-    Express(ExpressStatementSyntaxTree),
-    Return(ReturnStatementSyntaxTree),
-}
-
-impl SyntaxTree for ControlStatementSyntaxTree {
-    fn span(&self) -> Span {
-        match self {
-            ControlStatementSyntaxTree::Break(statement) => statement.span(),
-            ControlStatementSyntaxTree::Continue(statement) => statement.span(),
-            ControlStatementSyntaxTree::Express(statement) => statement.span(),
-            ControlStatementSyntaxTree::Return(statement) => statement.span(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BreakStatementSyntaxTree {
-    pub break_keyword: PunctuationToken,
-    pub label:         Option<LabelSyntaxTree>,
-    pub expression:    Option<ExpressionSyntaxTree>,
-}
-
-impl SyntaxTree for BreakStatementSyntaxTree {
-    fn span(&self) -> Span {
-        match &self.expression {
-            Some(expression) => Span::new(self.break_keyword.span.start, expression.span().end),
-            None => match &self.label {
-                Some(label) => Span::new(self.break_keyword.span.start, label.span().end),
-                None => self.break_keyword.span,
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ContinueStatementSyntaxTree {
-    pub continue_keyword: PunctuationToken,
-    pub label:            Option<LabelSyntaxTree>,
-}
-
-impl SyntaxTree for ContinueStatementSyntaxTree {
-    fn span(&self) -> Span {
-        match &self.label {
-            Some(label) => Span::new(self.continue_keyword.span.start, label.span().end),
-            None => self.continue_keyword.span,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpressStatementSyntaxTree {
-    pub express_keyword: KeywordToken,
-    pub expression:      ExpressionSyntaxTree,
-}
-
-impl SyntaxTree for ExpressStatementSyntaxTree {
-    fn span(&self) -> Span {
-        Span::new(self.express_keyword.span.start, self.expression.span().end)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReturnStatementSyntaxTree {
-    pub return_keyword: KeywordToken,
-    pub expression:     Option<ExpressionSyntaxTree>,
-}
-
-impl SyntaxTree for ReturnStatementSyntaxTree {
-    fn span(&self) -> Span {
-        match &self.expression {
-            Some(expression) => Span::new(self.return_keyword.span.start, expression.span().end),
-            None => self.return_keyword.span,
-        }
-    }
-}
-
 impl<'a> Parser<'a> {
-    pub fn parse_statement(&mut self) -> Option<StatementSyntaxTree> { todo!() }
+    /// Parses a [StatementSyntaxTree]
+    pub fn parse_statement(&mut self) -> Option<StatementSyntaxTree> {
+        match self.peek_significant_token() {
+            // Handles variable declaration statements
+            Some(Token::Keyword(mutable_keyword))
+                if mutable_keyword.keyword == Keyword::Mutable =>
+            {
+                // eat mutable keyword
+                self.next_token();
+
+                match self.peek_significant_token() {
+                    Some(Token::Keyword(let_keyword)) if let_keyword.keyword == Keyword::Let => {
+                        // eat let keyword
+                        self.next_token();
+
+                        self.parse_variable_declaration_statement(
+                            VariableTypeBindingSyntaxTree::LetBinding(LetBindingSyntaxTree {
+                                mutable_keyword: Some(mutable_keyword.clone()),
+                                let_keyword:     let_keyword.clone(),
+                            }),
+                        )
+                    }
+                    _ => {
+                        let type_specifier = self.parse_type_specifier()?;
+                        self.parse_variable_declaration_statement(
+                            VariableTypeBindingSyntaxTree::TypeBinding(TypeBindingSyntaxTree {
+                                mutable_keyword: Some(mutable_keyword.clone()),
+                                type_specifier,
+                            }),
+                        )
+                    }
+                }
+            }
+
+            // Handles variable declaration statements
+            Some(Token::Keyword(let_keyword)) if let_keyword.keyword == Keyword::Let => {
+                // eat let keyword
+                self.next_token();
+
+                self.parse_variable_declaration_statement(
+                    VariableTypeBindingSyntaxTree::LetBinding(LetBindingSyntaxTree {
+                        mutable_keyword: None,
+                        let_keyword:     let_keyword.clone(),
+                    }),
+                )
+            }
+            // Might be either a variable declaration statement or identifier expression statement
+            Some(Token::Identifier(_)) => {
+                // try to parse either a variable declaration statement or identifier expression
+                // statement.
+                //
+                // the syntax tree that eats most tokens will be the one that is returned.
+
+                let mut variable_parser = Parser {
+                    cursor:         self.cursor,
+                    produce_errors: self.produce_errors,
+                    errors:         Vec::new(),
+                };
+                let mut expression_parser = Parser {
+                    cursor:         self.cursor,
+                    produce_errors: self.produce_errors,
+                    errors:         Vec::new(),
+                };
+
+                let variable_declaration_statement_fn =
+                    |this: &mut Self| -> Option<StatementSyntaxTree> {
+                        let type_specifier = this.parse_type_specifier()?;
+                        this.parse_variable_declaration_statement(
+                            VariableTypeBindingSyntaxTree::TypeBinding(TypeBindingSyntaxTree {
+                                mutable_keyword: None,
+                                type_specifier,
+                            }),
+                        )
+                    };
+                let expression_statement_fn = |this: &mut Self| -> Option<StatementSyntaxTree> {
+                    let expression = this.parse_expression()?;
+                    match expression {
+                        ExpressionSyntaxTree::FunctionalExpression(expression) => {
+                            // expect semi-colon
+                            let semicolon = this.expect_punctuation(';')?;
+
+                            Some(StatementSyntaxTree::Expression(
+                                ExpressionStatementSyntaxTree::FunctionalExpresion(
+                                    FunctionalExpressionStatementSyntaxTree {
+                                        expression,
+                                        semicolon: semicolon.clone(),
+                                    },
+                                ),
+                            ))
+                        }
+                        ExpressionSyntaxTree::ImperativeExpression(expression) => {
+                            Some(StatementSyntaxTree::Expression(
+                                ExpressionStatementSyntaxTree::ImperativeExpression(expression),
+                            ))
+                        }
+                        ExpressionSyntaxTree::ControlExpression(expression) => {
+                            // expect semi-colon
+                            let semicolon = this.expect_punctuation(';')?;
+
+                            Some(StatementSyntaxTree::Expression(
+                                ExpressionStatementSyntaxTree::(
+                                    FunctionalExpressionStatementSyntaxTree {
+                                        expression:
+                                            FunctionalExpressionSyntaxTree::ControlExpression(
+                                                expression,
+                                            ),
+                                        semicolon:  semicolon.clone(),
+                                    },
+                                ),
+                            ))
+                        }
+                    }
+                };
+
+                todo!()
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn parse_variable_declaration_statement(
+        &mut self,
+        variable_type_binding: VariableTypeBindingSyntaxTree,
+    ) -> Option<StatementSyntaxTree> {
+        let identifier = self.expect_identifier()?;
+        let equals = self.expect_punctuation('=')?;
+        let expression = self.parse_expression()?;
+        let semicolon = self.expect_punctuation(';')?;
+
+        Some(StatementSyntaxTree::Declaration(
+            DeclarationStatementSyntaxTree::VariableDeclaration(
+                VariableDeclarationStatementSyntaxTree {
+                    variable_type_binding,
+                    identifier: identifier.clone(),
+                    equals: equals.clone(),
+                    expression,
+                    semicolon: semicolon.clone(),
+                },
+            ),
+        ))
+    }
 }
