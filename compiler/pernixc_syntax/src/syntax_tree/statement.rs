@@ -8,13 +8,12 @@ use super::{
     },
     SyntaxTree, TypeBindingSyntaxTree,
 };
-use crate::{parser::Parser, syntax_tree::expression::ControlExpressionSyntaxTree};
+use crate::parser::Parser;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum StatementSyntaxTree {
     Declaration(DeclarationStatementSyntaxTree),
     Expression(ExpressionStatementSyntaxTree),
-    
 }
 
 impl SyntaxTree for StatementSyntaxTree {
@@ -177,6 +176,8 @@ impl<'a> Parser<'a> {
                     errors:         Vec::new(),
                 };
 
+                
+
                 let variable_declaration_statement_fn =
                     |this: &mut Self| -> Option<StatementSyntaxTree> {
                         let type_specifier = this.parse_type_specifier()?;
@@ -208,24 +209,10 @@ impl<'a> Parser<'a> {
                                 ExpressionStatementSyntaxTree::ImperativeExpression(expression),
                             ))
                         }
-                        ExpressionSyntaxTree::ControlExpression(expression) => {
-                            // expect semi-colon
-                            let semicolon = this.expect_punctuation(';')?;
-
-                            Some(StatementSyntaxTree::Expression(
-                                ExpressionStatementSyntaxTree::(
-                                    FunctionalExpressionStatementSyntaxTree {
-                                        expression:
-                                            FunctionalExpressionSyntaxTree::ControlExpression(
-                                                expression,
-                                            ),
-                                        semicolon:  semicolon.clone(),
-                                    },
-                                ),
-                            ))
-                        }
                     }
                 };
+
+
 
                 todo!()
             }

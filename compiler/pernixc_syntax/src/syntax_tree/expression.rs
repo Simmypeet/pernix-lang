@@ -377,23 +377,6 @@ impl SyntaxTree for LoopExpressionSyntaxTree {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum ControlExpressionSyntaxTree {
-    Continue(ContinueSyntaxTree),
-    Break(BreakSyntaxTree),
-    Return(ReturnSyntaxTree),
-}
-
-impl SyntaxTree for ControlExpressionSyntaxTree {
-    fn span(&self) -> Span {
-        match self {
-            Self::Continue(continue_) => continue_.span(),
-            Self::Break(break_) => break_.span(),
-            Self::Return(return_) => return_.span(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContinueSyntaxTree {
     pub continue_keyword: KeywordToken,
@@ -876,8 +859,8 @@ impl<'a> Parser<'a> {
 
                 match self.peek_significant_token() {
                     Some(Token::Punctuation(semi_colon)) if semi_colon.punctuation == ';' => {
-                        Some(ExpressionSyntaxTree::ControlExpression(
-                            ControlExpressionSyntaxTree::Break(BreakSyntaxTree {
+                        Some(ExpressionSyntaxTree::FunctionalExpression(
+                            FunctionalExpressionSyntaxTree::BreakExpression(BreakSyntaxTree {
                                 break_keyword: break_keyword.clone(),
                                 label,
                                 expression: None,
@@ -890,8 +873,8 @@ impl<'a> Parser<'a> {
                         if self.try_parse_binary_operator().is_some() {
                             self.cursor.set_position(current_position);
 
-                            Some(ExpressionSyntaxTree::ControlExpression(
-                                ControlExpressionSyntaxTree::Break(BreakSyntaxTree {
+                            Some(ExpressionSyntaxTree::FunctionalExpression(
+                                FunctionalExpressionSyntaxTree::BreakExpression(BreakSyntaxTree {
                                     break_keyword: break_keyword.clone(),
                                     label,
                                     expression: None,
@@ -900,8 +883,8 @@ impl<'a> Parser<'a> {
                         } else {
                             let expression = self.parse_expression()?;
 
-                            Some(ExpressionSyntaxTree::ControlExpression(
-                                ControlExpressionSyntaxTree::Break(BreakSyntaxTree {
+                            Some(ExpressionSyntaxTree::FunctionalExpression(
+                                FunctionalExpressionSyntaxTree::BreakExpression(BreakSyntaxTree {
                                     break_keyword: break_keyword.clone(),
                                     label,
                                     expression: Some(Box::new(expression)),
@@ -919,8 +902,8 @@ impl<'a> Parser<'a> {
 
                 match self.peek_significant_token() {
                     Some(Token::Punctuation(semi_colon)) if semi_colon.punctuation == ';' => {
-                        Some(ExpressionSyntaxTree::ControlExpression(
-                            ControlExpressionSyntaxTree::Return(ReturnSyntaxTree {
+                        Some(ExpressionSyntaxTree::FunctionalExpression(
+                            FunctionalExpressionSyntaxTree::ReturnExpression(ReturnSyntaxTree {
                                 return_keyword: return_keyword.clone(),
                                 expression:     None,
                             }),
@@ -932,20 +915,24 @@ impl<'a> Parser<'a> {
                         if self.try_parse_binary_operator().is_some() {
                             self.cursor.set_position(current_position);
 
-                            Some(ExpressionSyntaxTree::ControlExpression(
-                                ControlExpressionSyntaxTree::Return(ReturnSyntaxTree {
-                                    return_keyword: return_keyword.clone(),
-                                    expression:     None,
-                                }),
+                            Some(ExpressionSyntaxTree::FunctionalExpression(
+                                FunctionalExpressionSyntaxTree::ReturnExpression(
+                                    ReturnSyntaxTree {
+                                        return_keyword: return_keyword.clone(),
+                                        expression:     None,
+                                    },
+                                ),
                             ))
                         } else {
                             let expression = self.parse_expression()?;
 
-                            Some(ExpressionSyntaxTree::ControlExpression(
-                                ControlExpressionSyntaxTree::Return(ReturnSyntaxTree {
-                                    return_keyword: return_keyword.clone(),
-                                    expression:     Some(Box::new(expression)),
-                                }),
+                            Some(ExpressionSyntaxTree::FunctionalExpression(
+                                FunctionalExpressionSyntaxTree::ReturnExpression(
+                                    ReturnSyntaxTree {
+                                        return_keyword: return_keyword.clone(),
+                                        expression:     Some(Box::new(expression)),
+                                    },
+                                ),
                             ))
                         }
                     }
