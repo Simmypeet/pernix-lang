@@ -2,5 +2,7 @@
 members = [
     "compiler/pernixc_common",
     "compiler/pernixc_lexical",
-    "compiler/pernixc_syntax"
+    "compiler/pernixc_syntax",
+    "compiler/pernixc_semantic",
+    "compiler/pernixc_driver",
 ]

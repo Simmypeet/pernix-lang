@@ -235,6 +235,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernixc_driver"
+version = "0.1.0"
+
+[[package]]
 name = "pernixc_lexical"
 version = "0.1.0"
 dependencies = [
@@ -247,6 +251,14 @@ dependencies = [
  "strum",
  "strum_macros",
  "thiserror",
+]
+
+[[package]]
+name = "pernixc_semantic"
+version = "0.1.0"
+dependencies = [
+ "enum-as-inner",
+ "pernixc_syntax",
 ]
 
 [[package]]

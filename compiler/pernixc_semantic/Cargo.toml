@@ -1,0 +1,10 @@
+[package]
+name = "pernixc_semantic"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pernixc_syntax = { path = "../pernixc_syntax" }
+enum-as-inner = "0.5.1"
