@@ -1,10 +1,17 @@
 use std::collections::{hash_map::Entry, HashMap};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_syntax::syntax_tree::item::{EnumSyntaxTree, FunctionSyntaxTree, StructSyntaxTree};
+use pernixc_syntax::syntax_tree::{
+    item::{EnumSyntaxTree, FunctionSyntaxTree, StructSyntaxTree},
+    FileSyntaxTree,
+};
 
-use self::ty::{Type, TypeBinding};
+use self::{
+    errors::SemanticSymbolError,
+    ty::{Type, TypeBinding},
+};
 
+pub mod errors;
 pub mod ty;
 
 /// Is an enumeration of all access modifiers.
@@ -18,6 +25,22 @@ pub enum AccessModifier {
 
     /// The symbol is only accessible within the same target.
     Internal,
+}
+
+impl AccessModifier {
+    /// Gets the rank of the access modifier in terms of restrictions.
+    ///
+    /// The higher the rank, the more restrictive the access modifier is.
+    /// The higher the number, the higher the rank.
+    ///
+    /// The rank starts at 0.
+    pub fn rank(self) -> u32 {
+        match self {
+            AccessModifier::Public => 0,
+            AccessModifier::Private => 1,
+            AccessModifier::Internal => 2,
+        }
+    }
 }
 
 /// Is an enumeration of all item symbols that can be defined in a namespace.
@@ -170,6 +193,41 @@ pub struct ItemSymbolTable {
     symbols: VecNameMap<ItemSymbol>,
 }
 
+pub struct FileInput<T: Iterator<Item = String>> {
+    pub module_heirarchy: T,
+    pub file_syntax_tree: FileSyntaxTree,
+}
+
+pub enum ItemSymbolTableCreateError {
+    DuplicateModuleHeirarchyArgumentError(),
+}
+
 impl ItemSymbolTable {
-    
+    pub fn analyze<ModuleIter: Iterator<Item = String>>(
+        files: impl Iterator<Item = FileInput<ModuleIter>> + Clone,
+    ) -> (ItemSymbolTable, Vec<SemanticSymbolError>) {
+        let mut symbols = VecNameMap::new();
+        let mut errors = Vec::new();
+
+        (ItemSymbolTable { symbols }, errors)
+    }
+
+    fn create_module(
+        symbols: &mut VecNameMap<ItemSymbol>,
+        files: impl Iterator<Item = FileInput<impl Iterator<Item = String>>> + Clone,
+    ) {
+        for file in files {
+            let mut current_module_index = None;
+
+            match current_module_index {
+                Some(index) => {
+                    let module = symbols
+                        .get_mut(index)
+                        .expect("should exist")
+                        .as_module_mut()
+                        .expect("should be module");
+                }
+            }
+        }
+    }
 }

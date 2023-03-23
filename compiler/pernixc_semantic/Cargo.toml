@@ -6,5 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+pernixc_common = { path = "../pernixc_common" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 enum-as-inner = "0.5.1"
+thiserror = "1.0.29"

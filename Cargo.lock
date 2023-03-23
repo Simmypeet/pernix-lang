@@ -237,6 +237,12 @@ dependencies = [
 [[package]]
 name = "pernixc_driver"
 version = "0.1.0"
+dependencies = [
+ "pernixc_common",
+ "pernixc_lexical",
+ "pernixc_semantic",
+ "pernixc_syntax",
+]
 
 [[package]]
 name = "pernixc_lexical"
@@ -258,7 +264,9 @@ name = "pernixc_semantic"
 version = "0.1.0"
 dependencies = [
  "enum-as-inner",
+ "pernixc_common",
  "pernixc_syntax",
+ "thiserror",
 ]
 
 [[package]]
