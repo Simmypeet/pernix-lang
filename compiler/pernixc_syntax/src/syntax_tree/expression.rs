@@ -44,6 +44,7 @@ pub enum FunctionalExpressionSyntaxTree {
     ContinueExpression(ContinueSyntaxTree),
     BreakExpression(BreakSyntaxTree),
     ReturnExpression(ReturnSyntaxTree),
+    ExpressExpression(ExpressSyntaxTree),
 }
 
 impl SyntaxTree for FunctionalExpressionSyntaxTree {
@@ -61,6 +62,7 @@ impl SyntaxTree for FunctionalExpressionSyntaxTree {
             Self::ContinueExpression(expression) => expression.span(),
             Self::BreakExpression(expression) => expression.span(),
             Self::ReturnExpression(expression) => expression.span(),
+            Self::ExpressExpression(expression) => expression.span(),
         }
     }
 }
@@ -396,6 +398,30 @@ impl SyntaxTree for ContinueSyntaxTree {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpressSyntaxTree {
+    pub express_keyword: KeywordToken,
+    pub label:           Option<LabelSyntaxTree>,
+    pub expression:      Option<Box<ExpressionSyntaxTree>>,
+}
+
+impl SyntaxTree for ExpressSyntaxTree {
+    fn span(&self) -> Span {
+        Span::new(
+            self.express_keyword.span.start,
+            self.expression
+                .as_ref()
+                .map(|expression| expression.span().end)
+                .unwrap_or_else(|| {
+                    self.label
+                        .as_ref()
+                        .map(|label| label.span().end)
+                        .unwrap_or(self.express_keyword.span.end)
+                }),
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BreakSyntaxTree {
     pub break_keyword: KeywordToken,
     pub label:         Option<LabelSyntaxTree>,
@@ -655,7 +681,10 @@ impl<'a> Parser<'a> {
                 // Parses statements until a right brace is found.
                 let right_brace = loop {
                     match self.peek_significant_token() {
-                        Some(Token::Punctuation(punc)) if punc.punctuation == '}' => break punc,
+                        Some(Token::Punctuation(punc)) if punc.punctuation == '}' => {
+                            self.next_token();
+                            break punc;
+                        }
 
                         None => {
                             self.report_error(SyntacticError::PunctuationExpected(
@@ -729,7 +758,7 @@ impl<'a> Parser<'a> {
                 let condition = self.parse_expression()?;
                 let right_paren = self.expect_punctuation(')')?;
 
-                let them_expression = self.parse_expression()?;
+                let then_expression = self.parse_expression()?;
 
                 // Parses an else expression if it exists.
                 let else_expression = match self.peek_significant_token() {
@@ -752,7 +781,7 @@ impl<'a> Parser<'a> {
                         left_paren: left_paren.clone(),
                         condition: Box::new(condition),
                         right_paren: right_paren.clone(),
-                        then_expression: Box::new(them_expression),
+                        then_expression: Box::new(then_expression),
                         else_expression,
                     }),
                 ))
@@ -799,7 +828,7 @@ impl<'a> Parser<'a> {
                 let label = LabelSpecifierSyntaxTree {
                     label: LabelSyntaxTree {
                         single_quote: single_quote.clone(),
-                        name:         name.clone(),
+                        identifier:   name.clone(),
                     },
                     colon: colon.clone(),
                 };
@@ -823,7 +852,7 @@ impl<'a> Parser<'a> {
 
                         Some(LabelSyntaxTree {
                             single_quote: single_quote.clone(),
-                            name:         name.clone(),
+                            identifier:   name.clone(),
                         })
                     }
                     _ => None,
@@ -851,7 +880,7 @@ impl<'a> Parser<'a> {
 
                         Some(LabelSyntaxTree {
                             single_quote: single_quote.clone(),
-                            name:         name.clone(),
+                            identifier:   name.clone(),
                         })
                     }
                     _ => None,
@@ -889,6 +918,70 @@ impl<'a> Parser<'a> {
                                     label,
                                     expression: Some(Box::new(expression)),
                                 }),
+                            ))
+                        }
+                    }
+                }
+            }
+
+            // Handle express expression
+            Some(Token::Keyword(express_keyword))
+                if express_keyword.keyword == Keyword::Express =>
+            {
+                // eat the express keyword
+                self.next_token();
+
+                let label = match self.peek_significant_token() {
+                    Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
+                        // eat the single quote
+                        self.next_token();
+
+                        let name = self.expect_identifier()?;
+
+                        Some(LabelSyntaxTree {
+                            single_quote: single_quote.clone(),
+                            identifier:   name.clone(),
+                        })
+                    }
+                    _ => None,
+                };
+
+                match self.peek_significant_token() {
+                    Some(Token::Punctuation(semi_colon)) if semi_colon.punctuation == ';' => {
+                        Some(ExpressionSyntaxTree::FunctionalExpression(
+                            FunctionalExpressionSyntaxTree::ExpressExpression(ExpressSyntaxTree {
+                                express_keyword: express_keyword.clone(),
+                                label,
+                                expression: None,
+                            }),
+                        ))
+                    }
+                    _ => {
+                        let current_position = self.cursor.position();
+
+                        if self.try_parse_binary_operator().is_some() {
+                            self.cursor.set_position(current_position);
+
+                            Some(ExpressionSyntaxTree::FunctionalExpression(
+                                FunctionalExpressionSyntaxTree::ExpressExpression(
+                                    ExpressSyntaxTree {
+                                        express_keyword: express_keyword.clone(),
+                                        label,
+                                        expression: None,
+                                    },
+                                ),
+                            ))
+                        } else {
+                            let expression = self.parse_expression()?;
+
+                            Some(ExpressionSyntaxTree::FunctionalExpression(
+                                FunctionalExpressionSyntaxTree::ExpressExpression(
+                                    ExpressSyntaxTree {
+                                        express_keyword: express_keyword.clone(),
+                                        label,
+                                        expression: Some(Box::new(expression)),
+                                    },
+                                ),
                             ))
                         }
                     }

@@ -27,19 +27,21 @@ impl SyntaxTree for AccessModifierSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldSyntaxTree {
     pub type_specifier: TypeSpecifierSyntaxTree,
-    pub identifier:     IdentifierToken,
-    pub semicolon:      PunctuationToken,
+    pub identifier: IdentifierToken,
+    pub semicolon: PunctuationToken,
 }
 
 impl SyntaxTree for FieldSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.type_specifier.span().start, self.semicolon.span.end) }
+    fn span(&self) -> Span {
+        Span::new(self.type_specifier.span().start, self.semicolon.span.end)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldGroupSyntaxTree {
     pub access_modifier: AccessModifierSyntaxTree,
-    pub colon:           PunctuationToken,
-    pub fields:          Vec<FieldSyntaxTree>,
+    pub colon: PunctuationToken,
+    pub fields: Vec<FieldSyntaxTree>,
 }
 
 impl SyntaxTree for FieldGroupSyntaxTree {
@@ -54,11 +56,11 @@ impl SyntaxTree for FieldGroupSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructSyntaxTree {
     pub access_modifier: AccessModifierSyntaxTree,
-    pub struct_keyword:  KeywordToken,
-    pub identifier:      IdentifierToken,
-    pub open_brace:      PunctuationToken,
-    pub field_groups:    Vec<FieldGroupSyntaxTree>,
-    pub close_brace:     PunctuationToken,
+    pub struct_keyword: KeywordToken,
+    pub identifier: IdentifierToken,
+    pub open_brace: PunctuationToken,
+    pub field_groups: Vec<FieldGroupSyntaxTree>,
+    pub close_brace: PunctuationToken,
 }
 
 impl SyntaxTree for StructSyntaxTree {
@@ -72,24 +74,28 @@ pub type EnumVariantListSyntaxTree = ConnectedList<IdentifierToken, PunctuationT
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnumSyntaxTree {
     pub enum_keyword: KeywordToken,
-    pub identifier:   IdentifierToken,
-    pub open_brace:   PunctuationToken,
-    pub variants:     EnumVariantListSyntaxTree,
-    pub close_brace:  PunctuationToken,
+    pub identifier: IdentifierToken,
+    pub open_brace: PunctuationToken,
+    pub variants: EnumVariantListSyntaxTree,
+    pub close_brace: PunctuationToken,
 }
 
 impl SyntaxTree for EnumSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.enum_keyword.span().start, self.close_brace.span.end) }
+    fn span(&self) -> Span {
+        Span::new(self.enum_keyword.span().start, self.close_brace.span.end)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionParameterSyntaxTree {
     pub type_binding: TypeBindingSyntaxTree,
-    pub identifier:   IdentifierToken,
+    pub identifier: IdentifierToken,
 }
 
 impl SyntaxTree for FunctionParameterSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.type_binding.span().start, self.identifier.span.end) }
+    fn span(&self) -> Span {
+        Span::new(self.type_binding.span().start, self.identifier.span.end)
+    }
 }
 
 pub type FunctionParameterListSyntaxTree =
@@ -98,15 +104,17 @@ pub type FunctionParameterListSyntaxTree =
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionSyntaxTree {
     pub type_specifier: TypeSpecifierSyntaxTree,
-    pub identifier:     IdentifierToken,
-    pub open_paren:     PunctuationToken,
-    pub parameters:     FunctionParameterListSyntaxTree,
-    pub close_paren:    PunctuationToken,
-    pub body:           ExpressionSyntaxTree,
+    pub identifier: IdentifierToken,
+    pub open_paren: PunctuationToken,
+    pub parameters: FunctionParameterListSyntaxTree,
+    pub close_paren: PunctuationToken,
+    pub body: ExpressionSyntaxTree,
 }
 
 impl SyntaxTree for FunctionSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.type_specifier.span().start, self.body.span().end) }
+    fn span(&self) -> Span {
+        Span::new(self.type_specifier.span().start, self.body.span().end)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]

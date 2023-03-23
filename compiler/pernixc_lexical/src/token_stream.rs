@@ -80,7 +80,7 @@ impl Index<usize> for TokenStream {
 }
 
 /// Represents the position of a cursor over a [`TokenStream`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner)]
 pub enum CursorPosition {
     /// The cursor is before the first token of the token stream.
     ///
@@ -96,6 +96,28 @@ pub enum CursorPosition {
     ///
     /// Reads will return `None`.
     After,
+}
+
+impl PartialOrd for CursorPosition {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self {
+            CursorPosition::Before => match other {
+                CursorPosition::Before => Some(std::cmp::Ordering::Equal),
+                CursorPosition::Valid(_) => Some(std::cmp::Ordering::Less),
+                CursorPosition::After => Some(std::cmp::Ordering::Less),
+            },
+            CursorPosition::Valid(index) => match other {
+                CursorPosition::Before => Some(std::cmp::Ordering::Greater),
+                CursorPosition::Valid(other_index) => index.partial_cmp(other_index),
+                CursorPosition::After => Some(std::cmp::Ordering::Less),
+            },
+            CursorPosition::After => match other {
+                CursorPosition::Before => Some(std::cmp::Ordering::Greater),
+                CursorPosition::Valid(_) => Some(std::cmp::Ordering::Greater),
+                CursorPosition::After => Some(std::cmp::Ordering::Equal),
+            },
+        }
+    }
 }
 
 /// Represents a bidirectional cursor over a [`TokenStream`].

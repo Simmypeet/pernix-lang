@@ -192,11 +192,11 @@ impl SyntaxTree for TypeSpecifierSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelSyntaxTree {
     pub single_quote: PunctuationToken,
-    pub name:         IdentifierToken,
+    pub identifier:   IdentifierToken,
 }
 
 impl SyntaxTree for LabelSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.single_quote.span.start, self.name.span.end) }
+    fn span(&self) -> Span { Span::new(self.single_quote.span.start, self.identifier.span.end) }
 }
 
 /// Is a syntax tree node that represents a type binding.
