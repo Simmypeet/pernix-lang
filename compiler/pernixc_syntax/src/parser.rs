@@ -318,7 +318,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Tries to parse a syntax tree node with rollback on failure.
-    fn try_parse<T>(&mut self, parse: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+    pub fn try_parse<T>(&mut self, parse: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
         let produce_errors_record = self.produce_errors;
         let cursor_position = self.cursor.position();
 

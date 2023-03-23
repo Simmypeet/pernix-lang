@@ -1,11 +1,15 @@
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_common::source_file::Span;
-use pernixc_lexical::token::{
-    CharacterLiteralToken, IdentifierToken, Keyword, KeywordToken, NumericLiteralToken,
-    PunctuationToken, StringLiteralToken, Token,
+use pernixc_lexical::{
+    token::{
+        CharacterLiteralToken, IdentifierToken, Keyword, KeywordToken, NumericLiteralToken,
+        PunctuationToken, StringLiteralToken, Token,
+    },
+    token_stream::TokenStream,
 };
 
-use self::item::{FunctionSyntaxTree, ItemSyntaxTree};
+use self::item::ItemSyntaxTree;
 use crate::{errors::SyntacticError, parser::Parser};
 
 pub mod expression;
@@ -229,13 +233,6 @@ impl SyntaxTree for TypeBindingSyntaxTree {
     }
 }
 
-pub struct ModuleDeclarationSyntaxTree {}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SourceFileSyntaxTree {
-    pub items: Vec<ItemSyntaxTree>,
-}
-
 impl<'a> Parser<'a> {
     /// Parses a [QualifiedIdentifierSyntaxTree]
     pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifierSyntaxTree> {
@@ -340,6 +337,56 @@ impl<'a> Parser<'a> {
                 None
             }
         }
+    }
+}
+
+/// Is a syntax tree node that represents a list of items in a file.
+/// 
+/// Syntax Synopsis:
+/// ``` txt
+/// FileSyntaxTree:
+///     ItemSyntaxTree*
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct FileSyntaxTree {
+    #[get = "pub"]
+    items: Vec<ItemSyntaxTree>,
+}
+
+impl FileSyntaxTree {
+    /// Parses a file syntax tree from a token stream.
+    pub fn parse(tokens: &TokenStream) -> (FileSyntaxTree, Vec<SyntacticError>) {
+        // empty token stream
+        if tokens.is_empty() {
+            return (FileSyntaxTree { items: Vec::new() }, Vec::new());
+        }
+
+        let mut cursor = tokens.cursor();
+        cursor.next_token();
+
+        // create a parser
+        let mut parser = Parser::new(cursor).expect("should be no problem");
+
+        let mut items = Vec::new();
+
+        // parse items
+        while parser.peek_significant_token().is_some() {
+            let item = parser.parse_item();
+            match item {
+                Some(item) => items.push(item),
+                None => {
+                    // look for the next access modifier
+                    parser.forward_until(|token| 
+                        matches!(token, Token::Keyword(keyword) if keyword.keyword == Keyword::Public 
+                            || keyword.keyword == Keyword::Private)
+                        );
+                }
+            }
+        }
+
+        // return the syntax tree and the errors
+        (FileSyntaxTree { items }, parser.take_errors())
     }
 }
 
