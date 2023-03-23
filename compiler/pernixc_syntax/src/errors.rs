@@ -30,6 +30,15 @@ pub enum SyntacticError {
     /// An expression syntax is expected but found an other invalid token.
     ExpressionExpected(Option<Token>),
 
+    /// A item syntax is expected but found an other invalid token.
+    ItemExpected(Option<Token>),
+
+    /// A field group syntax is expected but found an other invalid token.
+    FieldGroupExpected(Option<Token>),
+
+    /// An access modifier syntax is expected but found an other invalid token.
+    AccessModifierExpected(Option<Token>),
+
     PunctuationExpected(PunctuationExpected),
     KeywordExpected(KeywordExpected),
 }

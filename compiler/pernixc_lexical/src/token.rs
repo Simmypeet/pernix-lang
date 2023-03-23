@@ -52,6 +52,10 @@ pub enum Keyword {
     Or,
     Loop,
     Express,
+    Enum,
+    Private,
+    Internal,
+    Module,
 }
 
 impl ToString for Keyword {
@@ -91,11 +95,12 @@ impl Keyword {
     /// Gets the string representation of the keyword as a `&str`.
     pub fn as_str(self) -> &'static str {
         match self {
+            Keyword::Enum => "enum",
+            Keyword::Struct => "struct",
             Keyword::Express => "express",
             Keyword::Loop => "loop",
             Keyword::Function => "function",
             Keyword::Public => "public",
-            Keyword::Struct => "struct",
             Keyword::Interface => "interface",
             Keyword::Implement => "implement",
             Keyword::Let => "let",
@@ -125,6 +130,9 @@ impl Keyword {
             Keyword::SelfKeyword => "self",
             Keyword::And => "and",
             Keyword::Or => "or",
+            Keyword::Private => "private",
+            Keyword::Internal => "internal",
+            Keyword::Module => "module",
         }
     }
 

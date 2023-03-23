@@ -316,6 +316,31 @@ impl<'a> Parser<'a> {
             delimiter.clone(),
         ))
     }
+
+    /// Tries to parse a syntax tree node with rollback on failure.
+    fn try_parse<T>(&mut self, parse: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+        let produce_errors_record = self.produce_errors;
+        let cursor_position = self.cursor.position();
+
+        // disable error production
+        if produce_errors_record {
+            self.produce_errors = false;
+        }
+
+        let result = parse(self);
+
+        if result.is_none() {
+            // restore the cursor position
+            self.cursor.set_position(cursor_position);
+
+            // restore the error production
+            if produce_errors_record {
+                self.produce_errors = true;
+            }
+        }
+
+        result
+    }
 }
 
 #[cfg(test)]

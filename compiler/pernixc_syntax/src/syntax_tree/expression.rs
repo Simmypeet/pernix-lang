@@ -887,7 +887,7 @@ impl<'a> Parser<'a> {
                 };
 
                 match self.peek_significant_token() {
-                    Some(Token::Punctuation(semi_colon)) if semi_colon.punctuation == ';' => {
+                    Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => {
                         Some(ExpressionSyntaxTree::FunctionalExpression(
                             FunctionalExpressionSyntaxTree::BreakExpression(BreakSyntaxTree {
                                 break_keyword: break_keyword.clone(),
@@ -947,7 +947,7 @@ impl<'a> Parser<'a> {
                 };
 
                 match self.peek_significant_token() {
-                    Some(Token::Punctuation(semi_colon)) if semi_colon.punctuation == ';' => {
+                    Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => {
                         Some(ExpressionSyntaxTree::FunctionalExpression(
                             FunctionalExpressionSyntaxTree::ExpressExpression(ExpressSyntaxTree {
                                 express_keyword: express_keyword.clone(),
@@ -994,7 +994,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
 
                 match self.peek_significant_token() {
-                    Some(Token::Punctuation(semi_colon)) if semi_colon.punctuation == ';' => {
+                    Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => {
                         Some(ExpressionSyntaxTree::FunctionalExpression(
                             FunctionalExpressionSyntaxTree::ReturnExpression(ReturnSyntaxTree {
                                 return_keyword: return_keyword.clone(),

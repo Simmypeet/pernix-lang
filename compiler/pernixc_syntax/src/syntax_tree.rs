@@ -5,6 +5,7 @@ use pernixc_lexical::token::{
     PunctuationToken, StringLiteralToken, Token,
 };
 
+use self::item::{FunctionSyntaxTree, ItemSyntaxTree};
 use crate::{errors::SyntacticError, parser::Parser};
 
 pub mod expression;
@@ -228,6 +229,13 @@ impl SyntaxTree for TypeBindingSyntaxTree {
     }
 }
 
+pub struct ModuleDeclarationSyntaxTree {}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SourceFileSyntaxTree {
+    pub items: Vec<ItemSyntaxTree>,
+}
+
 impl<'a> Parser<'a> {
     /// Parses a [QualifiedIdentifierSyntaxTree]
     pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifierSyntaxTree> {
@@ -325,7 +333,7 @@ impl<'a> Parser<'a> {
                 }
             },
             None => {
-                // eat the token, make progress
+                // make progress
                 self.next_token();
 
                 self.report_error(SyntacticError::TypeSpecifierExpected(None));
