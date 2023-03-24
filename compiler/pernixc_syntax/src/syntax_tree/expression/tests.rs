@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use pernixc_common::source_file::{SourceFile, Span, SpanEnding};
+use pernixc_common::source_file::{SourceFileIterator, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 use proptest::{
     prop_assert_eq, prop_oneof, proptest,
@@ -38,12 +38,10 @@ fn member_access_strategy() -> impl Strategy<Value = Vec<String>> {
     )
 }
 
-fn substr_span(source_file: &SourceFile, span: Span) -> &str {
+fn substr_span(source_code: &str, span: Span) -> &str {
     match span.end {
-        SpanEnding::Location(end_location) => {
-            &source_file.content()[span.start.byte..end_location.byte]
-        }
-        SpanEnding::EndOfFile => &source_file.content()[span.start.byte..],
+        SpanEnding::Location(end_location) => &source_code[span.start.byte..end_location.byte],
+        SpanEnding::EndOfFile => &source_code[span.start.byte..],
     }
 }
 
@@ -56,8 +54,7 @@ proptest! {
         }).collect::<String>();
         string.push('1');
 
-        let source_file = SourceFile::new("test".to_string(), string);
-        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(&string));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
@@ -79,8 +76,7 @@ proptest! {
     #[test]
     fn member_access_test(identifiers in member_access_strategy()) {
         let string = format!("1.{}", identifiers.join("."));
-        let source_file = SourceFile::new("test".to_string(), string);
-        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(&string));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
@@ -89,7 +85,7 @@ proptest! {
 
         for original_identifier in identifiers.iter().rev() {
             let member_access_expr = expression.into_functional_expression().unwrap().into_member_access_expression().unwrap();
-            prop_assert_eq!(original_identifier, substr_span(&source_file, member_access_expr.identifier.span));
+            prop_assert_eq!(original_identifier, substr_span(&string, member_access_expr.identifier.span));
             expression = *member_access_expr.expression;
         }
 
@@ -99,8 +95,7 @@ proptest! {
 
 #[test]
 fn binary_operator_test() -> Result<(), Box<dyn Error>> {
-    let string = "!1 + 2 * 3 - 4 / 5 % 6".to_string();
-
+    let source_code = "!1 + 2 * 3 - 4 / 5 % 6";
     /*
     Expected Tree:
     - BinaryOperatorExpression
@@ -123,8 +118,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
             - NumericLiteral: 6
     */
 
-    let source_file = SourceFile::new("test".to_string(), string);
-    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+    let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(source_code));
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
@@ -175,7 +169,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
-            assert_eq!(substr_span(&source_file, operand.span()), "1");
+            assert_eq!(substr_span(source_code, operand.span()), "1");
         }
 
         let right = expression
@@ -198,7 +192,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
-            assert_eq!(substr_span(&source_file, left.span()), "2");
+            assert_eq!(substr_span(source_code, left.span()), "2");
 
             let right = expression
                 .right
@@ -206,7 +200,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
-            assert_eq!(substr_span(&source_file, right.span()), "3");
+            assert_eq!(substr_span(source_code, right.span()), "3");
         }
     }
     let right = expression
@@ -243,7 +237,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
-            assert_eq!(substr_span(&source_file, left.span()), "4");
+            assert_eq!(substr_span(source_code, left.span()), "4");
 
             let right = expression
                 .right
@@ -251,7 +245,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
-            assert_eq!(substr_span(&source_file, right.span()), "5");
+            assert_eq!(substr_span(source_code, right.span()), "5");
         }
 
         let right = expression
@@ -260,7 +254,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .into_numeric_literal()
             .unwrap();
-        assert_eq!(substr_span(&source_file, right.span()), "6");
+        assert_eq!(substr_span(source_code, right.span()), "6");
     }
 
     Ok(())
@@ -268,9 +262,8 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
-    let string = "Qualified::Identifier Hello(1, 2) World() Test { yeah: 1 }".to_string();
-    let source_file = SourceFile::new("test".to_string(), string);
-    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+    let source_code = "Qualified::Identifier Hello(1, 2) World() Test { yeah: 1 }";
+    let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(source_code));
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
@@ -287,7 +280,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(
-            substr_span(&source_file, expression.span()),
+            substr_span(source_code, expression.span()),
             "Qualified::Identifier"
         );
     }
@@ -303,7 +296,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(
-            substr_span(&source_file, expression.qualified_identifier.span()),
+            substr_span(source_code, expression.qualified_identifier.span()),
             "Hello"
         );
 
@@ -318,7 +311,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
             .as_numeric_literal()
             .unwrap();
 
-        assert_eq!(substr_span(&source_file, expression.span()), "1");
+        assert_eq!(substr_span(source_code, expression.span()), "1");
 
         let expression = iter
             .next()
@@ -328,7 +321,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
             .as_numeric_literal()
             .unwrap();
 
-        assert_eq!(substr_span(&source_file, expression.span()), "2");
+        assert_eq!(substr_span(source_code, expression.span()), "2");
 
         assert!(iter.next().is_none());
     }
@@ -344,7 +337,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(
-            substr_span(&source_file, expression.qualified_identifier.span()),
+            substr_span(source_code, expression.qualified_identifier.span()),
             "World"
         );
 
@@ -362,7 +355,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(
-            substr_span(&source_file, expression.qualified_identifier.span()),
+            substr_span(source_code, expression.qualified_identifier.span()),
             "Test"
         );
 
@@ -374,7 +367,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
 
         let field = iter.next().unwrap();
 
-        assert_eq!(substr_span(&source_file, field.identifier.span), "yeah");
+        assert_eq!(substr_span(source_code, field.identifier.span), "yeah");
 
         let expression = field
             .expression
@@ -383,7 +376,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
             .as_numeric_literal()
             .unwrap();
 
-        assert_eq!(substr_span(&source_file, expression.span()), "1");
+        assert_eq!(substr_span(source_code, expression.span()), "1");
 
         assert!(iter.next().is_none());
     }

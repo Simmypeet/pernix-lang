@@ -1,20 +1,55 @@
-use std::{iter::Peekable, ops::Range, path::PathBuf, str::Chars};
+use std::{
+    iter::Peekable,
+    ops::{Index, Range},
+    path::PathBuf,
+    slice::SliceIndex,
+    str::Chars,
+};
 
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
+use thiserror::Error;
 
 /// Represents an source file input for the compiler.
 #[derive(Debug, Getters, Clone, PartialEq, Eq, Hash)]
 pub struct SourceFile {
-    /// Gets the name of the source file.
+    /// Gets the path input that the source file was created from.
     #[get = "pub"]
-    name: String,
+    path_input: PathBuf,
+
+    /// Gets the full path of the source file.
+    #[get = "pub"]
+    full_path: PathBuf,
+
+    /// Gets whether the source file is the root file that the compiler is compiling.
+    #[get = "pub"]
+    module_heirarchy: Vec<String>,
+
+    /// Gets the module's fully qualified name of the source file.
+    #[get = "pub"]
+    module_qualified_name: String,
 
     /// Gets teh string content that the source file contains.
     #[get = "pub"]
     content: String,
     lines:   Vec<Range<usize>>,
+}
+
+/// Is an enumeration containing all kinds of errors that can occur while loading a source file.
+#[derive(Debug, EnumAsInner, Error)]
+pub enum SourceFileLoadError {
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("The file extension of the source file must be `.pnx`")]
+    InvalidFileExtension,
+
+    #[error("The module heirarchy of the source file is invalid")]
+    InvalidModuleHeirarchy,
+
+    #[error("The module heirarchy of the source file is empty")]
+    EmptyModuleHeirarchy,
 }
 
 impl SourceFile {
@@ -26,8 +61,40 @@ impl SourceFile {
     /// Is the preferred new line string that the compiler uses.
     pub const NEW_LINE_STR: &'static str = "\n";
 
-    /// Creates a new source file from the given name and content.
-    pub fn new(name: String, mut content: String) -> SourceFile {
+    /// Loads a source file from the given path.
+    pub fn load(
+        path: PathBuf,
+        module_heirarchy: Vec<String>,
+    ) -> Result<SourceFile, SourceFileLoadError> {
+        // get the full path of the file
+        let full_path = if path.is_absolute() {
+            path.clone()
+        } else {
+            std::fs::canonicalize(path.clone())?
+        };
+
+        // the file extension must be `.pnx`
+        if full_path
+            .extension()
+            .map(|ext| ext != "pnx")
+            .unwrap_or(true)
+        {
+            return Err(SourceFileLoadError::InvalidFileExtension);
+        }
+
+        if module_heirarchy.is_empty() {
+            return Err(SourceFileLoadError::EmptyModuleHeirarchy);
+        }
+
+        for module in &module_heirarchy {
+            if module.is_empty() {
+                return Err(SourceFileLoadError::InvalidModuleHeirarchy);
+            }
+        }
+
+        // read the string content of the source file
+        let mut content = std::fs::read_to_string(&full_path)?;
+
         let mut lines = Vec::new();
         let mut start = 0;
 
@@ -59,20 +126,18 @@ impl SourceFile {
             }
         }
 
-        SourceFile {
-            name,
+        Ok(SourceFile {
+            path_input: path,
+            full_path,
             content,
             lines,
-        }
+            module_qualified_name: module_heirarchy.join("::"),
+            module_heirarchy,
+        })
     }
 
-    /// Loads a source file from the given path.
-    pub fn load(path: &PathBuf) -> std::io::Result<SourceFile> {
-        let name = path.to_str().unwrap().to_string();
-        let content = std::fs::read_to_string(path)?;
-
-        Ok(SourceFile::new(name, content))
-    }
+    /// Gets whether the source file is the root file that the compiler is compiling.
+    pub fn is_root(&self) -> bool { self.module_heirarchy.len() == 1 }
 
     /// Gets the line of the source file at the given line number.
     ///
@@ -91,7 +156,7 @@ impl SourceFile {
     /// Gets the source file iterator for this source file.
     pub fn iter(&self) -> SourceFileIterator {
         SourceFileIterator {
-            source_file: self,
+            source_code: &self.content,
             chars:       self.content.chars().peekable(),
             line:        1,
             column:      1,
@@ -107,7 +172,7 @@ impl SourceFile {
 /// iterator adapter.
 #[derive(Clone, Debug)]
 pub struct SourceFileIterator<'a> {
-    source_file: &'a SourceFile,
+    source_code: &'a str,
     chars:       Peekable<Chars<'a>>,
     line:        usize,
     column:      usize,
@@ -139,8 +204,19 @@ impl<'a> Iterator for SourceFileIterator<'a> {
 }
 
 impl<'a> SourceFileIterator<'a> {
+    /// Creates a new source file iterator from the given source code string.
+    pub fn new(source_code: &'a str) -> Self {
+        Self {
+            source_code,
+            chars: source_code.chars().peekable(),
+            line: 1,
+            column: 1,
+            byte: 0,
+        }
+    }
+
     /// Gets the source file that this iterator is iterating over.
-    pub fn source_file(&self) -> &'a SourceFile { self.source_file }
+    pub fn source_code(&self) -> &'a str { self.source_code }
 
     /// Peeks the next character in the source file without consuming it.
     pub fn peek(&mut self) -> Option<(Location, char)> {
@@ -190,6 +266,20 @@ pub struct Span {
 
     /// The ending location of the span (exclusive).
     pub end: SpanEnding,
+}
+
+impl Index<Span> for SourceFile {
+    type Output = str;
+
+    fn index(&self, index: Span) -> &Self::Output {
+        let start = index.start.byte;
+        let end = match index.end {
+            SpanEnding::Location(location) => location.byte,
+            SpanEnding::EndOfFile => self.content.len(),
+        };
+
+        &self.content[start..end]
+    }
 }
 
 #[cfg(test)]

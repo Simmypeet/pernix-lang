@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use pernixc_common::source_file::{SourceFile, Span, SpanEnding};
+use pernixc_common::source_file::{SourceFileIterator, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
@@ -8,12 +8,10 @@ use crate::{
     syntax_tree::{expression::BinaryOperatorSyntaxTree, SyntaxTree},
 };
 
-fn substr_span(source_file: &SourceFile, span: Span) -> &str {
+fn substr_span(source_code: &str, span: Span) -> &str {
     match span.end {
-        SpanEnding::Location(end_location) => {
-            &source_file.content()[span.start.byte..end_location.byte]
-        }
-        SpanEnding::EndOfFile => &source_file.content()[span.start.byte..],
+        SpanEnding::Location(end_location) => &source_code[span.start.byte..end_location.byte],
+        SpanEnding::EndOfFile => &source_code[span.start.byte..],
     }
 }
 
@@ -36,8 +34,7 @@ const SOURCE_CODE: &str = "
 
 #[test]
 fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
-    let source_file = SourceFile::new("test.pnx".to_string(), SOURCE_CODE.to_string());
-    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+    let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(SOURCE_CODE));
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
@@ -53,7 +50,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
 
     assert_eq!(
         substr_span(
-            &source_file,
+            SOURCE_CODE,
             block.label_specifier.unwrap().label.identifier.span
         ),
         "test"
@@ -76,13 +73,13 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         assert!(type_binding.mutable_keyword.is_none());
         let type_specifier = type_binding.type_specifier.into_qualified().unwrap();
         assert_eq!(
-            substr_span(&source_file, type_specifier.span()),
+            substr_span(SOURCE_CODE, type_specifier.span()),
             "Some::Struct::Name"
         );
 
         // check variable name
         assert_eq!(
-            substr_span(&source_file, variable_declaration.identifier.span),
+            substr_span(SOURCE_CODE, variable_declaration.identifier.span),
             "test"
         );
 
@@ -94,7 +91,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .into_numeric_literal()
             .unwrap()
             .0;
-        assert_eq!(substr_span(&source_file, expression.span), "32");
+        assert_eq!(substr_span(SOURCE_CODE, expression.span), "32");
     }
 
     {
@@ -117,7 +114,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .into_identifier_expression()
             .unwrap()
             .0;
-        assert_eq!(substr_span(&source_file, left.span()), "test");
+        assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
 
         // check assignment operator
         assert!(matches!(
@@ -133,7 +130,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .into_numeric_literal()
             .unwrap()
             .0;
-        assert_eq!(substr_span(&source_file, right.span()), "64");
+        assert_eq!(substr_span(SOURCE_CODE, right.span()), "64");
     }
 
     {
@@ -163,7 +160,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .into_identifier_expression()
                 .unwrap()
                 .0;
-            assert_eq!(substr_span(&source_file, left.span()), "test");
+            assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
 
             assert!(matches!(
                 condition.operator,
@@ -177,7 +174,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .into_numeric_literal()
                 .unwrap()
                 .0;
-            assert_eq!(substr_span(&source_file, right.span()), "64");
+            assert_eq!(substr_span(SOURCE_CODE, right.span()), "64");
         }
 
         // check then expression
@@ -211,7 +208,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .into_identifier_expression()
                 .unwrap()
                 .0;
-            assert_eq!(substr_span(&source_file, left.span()), "test");
+            assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
 
             assert!(matches!(
                 binary_expression.operator,
@@ -225,7 +222,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .into_numeric_literal()
                 .unwrap()
                 .0;
-            assert_eq!(substr_span(&source_file, right.span()), "128");
+            assert_eq!(substr_span(SOURCE_CODE, right.span()), "128");
         }
 
         // check else expression
@@ -261,7 +258,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .into_identifier_expression()
                 .unwrap()
                 .0;
-            assert_eq!(substr_span(&source_file, left.span()), "test");
+            assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
 
             assert!(matches!(
                 binary_expression.operator,
@@ -275,7 +272,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .into_numeric_literal()
                 .unwrap()
                 .0;
-            assert_eq!(substr_span(&source_file, right.span()), "256");
+            assert_eq!(substr_span(SOURCE_CODE, right.span()), "256");
         }
     }
 
@@ -300,7 +297,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         assert!(function_call.arguments.is_none());
 
         assert_eq!(
-            substr_span(&source_file, function_call.qualified_identifier.span()),
+            substr_span(SOURCE_CODE, function_call.qualified_identifier.span()),
             "SomeFunction::Test"
         );
     }
@@ -319,7 +316,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
 
         assert_eq!(
             substr_span(
-                &source_file,
+                SOURCE_CODE,
                 express_statement.label.unwrap().identifier.span()
             ),
             "test"
@@ -335,7 +332,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .0;
 
         assert_eq!(
-            substr_span(&source_file, identifier_expression.span()),
+            substr_span(SOURCE_CODE, identifier_expression.span()),
             "someValue"
         );
     }

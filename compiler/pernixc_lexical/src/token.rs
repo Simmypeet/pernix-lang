@@ -373,8 +373,8 @@ impl Token {
             let word = span
                 .end
                 .as_location()
-                .map_or(&iter.source_file().content()[span.start.byte..], |end| {
-                    &iter.source_file().content()[span.start.byte..end.byte]
+                .map_or(&iter.source_code()[span.start.byte..], |end| {
+                    &iter.source_code()[span.start.byte..end.byte]
                 });
 
             // Checks if the word is a keyword

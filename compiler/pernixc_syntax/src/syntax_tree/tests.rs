@@ -1,15 +1,13 @@
-use pernixc_common::source_file::{SourceFile, Span, SpanEnding};
+use pernixc_common::source_file::{SourceFileIterator, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 use proptest::{prop_assert, prop_assert_eq, proptest, strategy::Strategy};
 
 use crate::{parser::Parser, syntax_tree::SyntaxTree};
 
-fn substr_span(source_file: &SourceFile, span: Span) -> &str {
+fn substr_span(source_file: &str, span: Span) -> &str {
     match span.end {
-        SpanEnding::Location(end_location) => {
-            &source_file.content()[span.start.byte..end_location.byte]
-        }
-        SpanEnding::EndOfFile => &source_file.content()[span.start.byte..],
+        SpanEnding::Location(end_location) => &source_file[span.start.byte..end_location.byte],
+        SpanEnding::EndOfFile => &source_file[span.start.byte..],
     }
 }
 
@@ -30,7 +28,7 @@ proptest! {
     #[test]
     fn qualified_identifier_test(identifiers in qualified_identifier_strategy()) {
         // Generates a new string from the identifiers
-        let string = identifiers.iter().map(|(prepend_space, identifier, append_space)| {
+        let source_code = identifiers.iter().map(|(prepend_space, identifier, append_space)| {
             let mut string = String::new();
             if *prepend_space {
                 string.push(' ');
@@ -42,8 +40,7 @@ proptest! {
             string
         }).collect::<Vec<_>>().join("::");
 
-        let source_file = SourceFile::new("test".to_string(), string);
-        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(&source_code));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
@@ -52,7 +49,7 @@ proptest! {
         let qualified_identifier = parser.parse_qualified_identifier().unwrap();
 
         for (original_identifier, parsed_identifier) in identifiers.iter().zip(qualified_identifier.elements()) {
-            prop_assert_eq!(&original_identifier.1, substr_span(&source_file, parsed_identifier.span()))
+            prop_assert_eq!(&original_identifier.1, substr_span(&source_code, parsed_identifier.span()))
         }
     }
 }
@@ -92,8 +89,8 @@ proptest! {
         primitive_type in primitive_type_specifier_strategy(),
         qualified_type in qualified_type_specifier_strategy(),
     ) {
-        let source_file = SourceFile::new("test".to_string(), format!("{} {}", primitive_type, qualified_type));
-        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let source_code = format!("{} {}", primitive_type, qualified_type);
+        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(&source_code));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();

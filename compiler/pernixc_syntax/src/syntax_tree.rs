@@ -350,8 +350,7 @@ impl<'a> Parser<'a> {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct FileSyntaxTree {
-    #[get = "pub"]
-    items: Vec<ItemSyntaxTree>,
+    pub items: Vec<ItemSyntaxTree>,
 }
 
 impl FileSyntaxTree {

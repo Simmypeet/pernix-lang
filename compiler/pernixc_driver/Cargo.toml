@@ -10,3 +10,5 @@ pernixc_common = { path = "../pernixc_common" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_semantic = { path = "../pernixc_semantic" }
+thiserror = { workspace = true }
+clap = { version = "4.1.13", features = ["derive"] }

@@ -7,9 +7,10 @@ use crate::token::{CommentKind, Keyword, Token};
 #[test]
 fn token_test() -> Result<(), Box<dyn std::error::Error>> {
     let source_file = SourceFile::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resource")
             .join("tokenTest.pnx"),
+        Vec::new(),
     )?;
 
     let mut iter = source_file.iter();

@@ -8,5 +8,7 @@ edition = "2021"
 [dependencies]
 pernixc_common = { path = "../pernixc_common" }
 pernixc_syntax = { path = "../pernixc_syntax" }
-enum-as-inner = "0.5.1"
-thiserror = "1.0.29"
+pernixc_lexical = { path = "../pernixc_lexical" }
+enum-as-inner = { workspace = true }
+thiserror = { workspace = true }
+derive-new = { workspace = true }

@@ -5,9 +5,10 @@ use super::SourceFile;
 #[test]
 fn source_file_line_test() -> Result<(), Box<dyn Error>> {
     let source_file = SourceFile::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resource")
             .join("sourceFileTest.pnx"),
+        vec!["test".to_string()],
     )?;
 
     assert!(source_file.get_line(0).is_none());
@@ -21,9 +22,10 @@ fn source_file_line_test() -> Result<(), Box<dyn Error>> {
 #[test]
 fn source_file_iterator_test() -> Result<(), Box<dyn Error>> {
     let source_file = SourceFile::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resource")
             .join("sourceFileTest.pnx"),
+        vec!["test".to_string()],
     )?;
 
     let mut iter = source_file.iter();

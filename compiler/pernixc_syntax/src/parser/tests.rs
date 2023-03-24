@@ -1,4 +1,4 @@
-use pernixc_common::source_file::{Location, SourceFile, Span, SpanEnding};
+use pernixc_common::source_file::{Location, SourceFileIterator, Span, SpanEnding};
 use pernixc_lexical::{
     token::{PunctuationToken, Token},
     token_stream::TokenStream,
@@ -9,9 +9,7 @@ use super::Parser;
 #[test]
 fn next_token_until_test() -> Result<(), Box<dyn std::error::Error>> {
     {
-        let string = "-(+)[+]{+}+-".to_string();
-        let source_file = SourceFile::new("test".to_string(), string);
-        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new("-(+)[+]{+}+-"));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
 
@@ -39,9 +37,7 @@ fn next_token_until_test() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     {
-        let string = "[++".to_string();
-        let source_file = SourceFile::new("test".to_string(), string);
-        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new("[++"));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
 

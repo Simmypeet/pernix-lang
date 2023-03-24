@@ -13,4 +13,3 @@ max_width = 100
 overflow_delimited_expr = true
 reorder_impl_items = true
 group_imports = "StdExternalCrate"
-struct_field_align_threshold = 25

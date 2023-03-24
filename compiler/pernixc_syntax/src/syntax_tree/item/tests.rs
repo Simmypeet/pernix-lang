@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use pernixc_common::source_file::{SourceFile, Span, SpanEnding};
+use pernixc_common::source_file::{SourceFileIterator, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
@@ -21,19 +21,16 @@ private:
 }
 ";
 
-fn substr_span(source_file: &SourceFile, span: Span) -> &str {
+fn substr_span(source_code: &str, span: Span) -> &str {
     match span.end {
-        SpanEnding::Location(end_location) => {
-            &source_file.content()[span.start.byte..end_location.byte]
-        }
-        SpanEnding::EndOfFile => &source_file.content()[span.start.byte..],
+        SpanEnding::Location(end_location) => &source_code[span.start.byte..end_location.byte],
+        SpanEnding::EndOfFile => &source_code[span.start.byte..],
     }
 }
 
 #[test]
 fn struct_item_test() -> Result<(), Box<dyn Error>> {
-    let source_file = SourceFile::new("test.pnx".to_string(), STRUCT_SOURCE_CODE.to_string());
-    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+    let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(STRUCT_SOURCE_CODE));
     let mut cursor = token_stream.cursor();
     cursor.next_token();
     let mut parser = Parser::new(cursor)?;
@@ -46,7 +43,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
     ));
 
     assert_eq!(
-        substr_span(&source_file, struct_item.identifier.span),
+        substr_span(STRUCT_SOURCE_CODE, struct_item.identifier.span),
         "Test"
     );
 
@@ -71,7 +68,10 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
         let mut field_iter = field_group.fields.into_iter();
         {
             let field = field_iter.next().unwrap();
-            assert_eq!(substr_span(&source_file, field.identifier.span), "test");
+            assert_eq!(
+                substr_span(STRUCT_SOURCE_CODE, field.identifier.span),
+                "test"
+            );
             assert!(matches!(
                 field.type_specifier,
                 TypeSpecifierSyntaxTree::Primitive(PrimitiveTypeSpecifierSyntaxTree::Int32(_))
@@ -79,10 +79,13 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
         }
         {
             let field = field_iter.next().unwrap();
-            assert_eq!(substr_span(&source_file, field.identifier.span), "test2");
+            assert_eq!(
+                substr_span(STRUCT_SOURCE_CODE, field.identifier.span),
+                "test2"
+            );
             assert_eq!(
                 substr_span(
-                    &source_file,
+                    STRUCT_SOURCE_CODE,
                     field.type_specifier.into_qualified().unwrap().span()
                 ),
                 "some::other::type"

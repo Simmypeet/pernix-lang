@@ -1,6 +1,34 @@
-pub struct CompilerArguments {
-    pub input_file:  String,
+use std::path::PathBuf;
+
+use pernixc_common::source_file::SourceFile;
+use pernixc_semantic::symbol::ItemSymbolTable;
+use pernixc_syntax::file_parsing::FileParsing;
+
+#[derive(clap::Parser, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CompilationArgument {
+    pub input: String,
     pub target_name: Option<String>,
 }
 
-pub fn compile(argument: CompilerArguments) {}
+fn late_frontend_compilation(syntax_trees: Vec<FileParsing>) {
+    let result = ItemSymbolTable::analyze(syntax_trees.into_iter());
+
+    dbg!(result);
+}
+
+pub fn compile(args: CompilationArgument) {
+    let source_file =
+        match SourceFile::load(PathBuf::from(args.input), vec![match args.target_name {
+            Some(target_name) => target_name,
+            None => "untitled".to_string(),
+        }]) {
+            Ok(source_file) => source_file,
+            Err(_) => std::process::exit(1), // TODO: Better error handling
+        };
+
+    let syntax_trees =
+        pernixc_syntax::file_parsing::parse_files(source_file).expect("should be no errors");
+}
+
+#[cfg(test)]
+mod tests;
