@@ -10,7 +10,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resource")
             .join("tokenTest.pnx"),
-        Vec::new(),
+        vec!["test".to_string()],
     )?;
 
     let mut iter = source_file.iter();

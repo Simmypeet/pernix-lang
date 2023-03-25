@@ -1,9 +1,6 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Span;
-use pernixc_lexical::{
-    token::{IdentifierToken, Keyword, KeywordToken, PunctuationToken, Token},
-    token_stream::TokenStreamCursor,
-};
+use pernixc_lexical::token::{IdentifierToken, Keyword, KeywordToken, PunctuationToken, Token};
 
 use super::{
     expression::{
@@ -11,7 +8,7 @@ use super::{
     },
     SyntaxTree, TypeBindingSyntaxTree,
 };
-use crate::parser::Parser;
+use crate::parser::{FirstOrSecond, Parser};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum StatementSyntaxTree {
@@ -44,7 +41,7 @@ impl SyntaxTree for DeclarationStatementSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LetBindingSyntaxTree {
     pub mutable_keyword: Option<KeywordToken>,
-    pub let_keyword:     KeywordToken,
+    pub let_keyword: KeywordToken,
 }
 
 impl SyntaxTree for LetBindingSyntaxTree {
@@ -74,10 +71,10 @@ impl SyntaxTree for VariableTypeBindingSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableDeclarationStatementSyntaxTree {
     pub variable_type_binding: VariableTypeBindingSyntaxTree,
-    pub identifier:            IdentifierToken,
-    pub equals:                PunctuationToken,
-    pub expression:            ExpressionSyntaxTree,
-    pub semicolon:             PunctuationToken,
+    pub identifier: IdentifierToken,
+    pub equals: PunctuationToken,
+    pub expression: ExpressionSyntaxTree,
+    pub semicolon: PunctuationToken,
 }
 
 impl SyntaxTree for VariableDeclarationStatementSyntaxTree {
@@ -107,7 +104,7 @@ impl SyntaxTree for ExpressionStatementSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionalExpressionStatementSyntaxTree {
     pub expression: FunctionalExpressionSyntaxTree,
-    pub semicolon:  PunctuationToken,
+    pub semicolon: PunctuationToken,
 }
 
 impl SyntaxTree for FunctionalExpressionStatementSyntaxTree {
@@ -133,7 +130,7 @@ impl<'a> Parser<'a> {
                         self.parse_variable_declaration_statement(
                             VariableTypeBindingSyntaxTree::LetBinding(LetBindingSyntaxTree {
                                 mutable_keyword: Some(mutable_keyword.clone()),
-                                let_keyword:     let_keyword.clone(),
+                                let_keyword: let_keyword.clone(),
                             }),
                         )
                     }
@@ -157,7 +154,7 @@ impl<'a> Parser<'a> {
                 self.parse_variable_declaration_statement(
                     VariableTypeBindingSyntaxTree::LetBinding(LetBindingSyntaxTree {
                         mutable_keyword: None,
-                        let_keyword:     let_keyword.clone(),
+                        let_keyword: let_keyword.clone(),
                     }),
                 )
             }
@@ -167,19 +164,7 @@ impl<'a> Parser<'a> {
                 // statement.
                 //
                 // the syntax tree that eats most tokens will be the one that is returned.
-
-                let mut variable_parser = Parser {
-                    cursor:         self.cursor,
-                    produce_errors: self.produce_errors,
-                    errors:         Vec::new(),
-                };
-                let mut expression_parser = Parser {
-                    cursor:         self.cursor,
-                    produce_errors: self.produce_errors,
-                    errors:         Vec::new(),
-                };
-
-                let variable_declaration_statement_fn =
+                let result = self.ambiguity_resolution(
                     |this: &mut Self| -> Option<StatementSyntaxTree> {
                         let type_specifier = this.parse_type_specifier()?;
                         this.parse_variable_declaration_statement(
@@ -188,68 +173,36 @@ impl<'a> Parser<'a> {
                                 type_specifier,
                             }),
                         )
-                    };
-                let expression_statement_fn = |this: &mut Self| -> Option<StatementSyntaxTree> {
-                    let expression = this.parse_expression()?;
-                    match expression {
-                        ExpressionSyntaxTree::FunctionalExpression(expression) => {
-                            // expect semi-colon
-                            let semicolon = this.expect_punctuation(';')?;
+                    },
+                    |this: &mut Self| -> Option<StatementSyntaxTree> {
+                        let expression = this.parse_expression()?;
+                        match expression {
+                            ExpressionSyntaxTree::FunctionalExpression(expression) => {
+                                // expect semi-colon
+                                let semicolon = this.expect_punctuation(';')?;
 
-                            Some(StatementSyntaxTree::Expression(
-                                ExpressionStatementSyntaxTree::FunctionalExpresion(
-                                    FunctionalExpressionStatementSyntaxTree {
-                                        expression,
-                                        semicolon: semicolon.clone(),
-                                    },
-                                ),
-                            ))
-                        }
-                        ExpressionSyntaxTree::ImperativeExpression(expression) => {
-                            Some(StatementSyntaxTree::Expression(
-                                ExpressionStatementSyntaxTree::ImperativeExpression(expression),
-                            ))
-                        }
-                    }
-                };
-
-                // count the number of significant tokens that are eaten by each parser
-                let count_fn = |original_cursor: &mut TokenStreamCursor,
-                                comparing_cursor: &TokenStreamCursor|
-                 -> usize {
-                    let mut significant_token_eaten = 0;
-                    let starting_cursor_position = original_cursor.position();
-                    while original_cursor.position() < comparing_cursor.position() {
-                        if let Some(token) = original_cursor.next_token() {
-                            if !matches!(token, Token::WhiteSpace(_) | Token::Comment(_)) {
-                                significant_token_eaten += 1;
+                                Some(StatementSyntaxTree::Expression(
+                                    ExpressionStatementSyntaxTree::FunctionalExpresion(
+                                        FunctionalExpressionStatementSyntaxTree {
+                                            expression,
+                                            semicolon: semicolon.clone(),
+                                        },
+                                    ),
+                                ))
+                            }
+                            ExpressionSyntaxTree::ImperativeExpression(expression) => {
+                                Some(StatementSyntaxTree::Expression(
+                                    ExpressionStatementSyntaxTree::ImperativeExpression(expression),
+                                ))
                             }
                         }
-                    }
-                    original_cursor.set_position(starting_cursor_position);
-                    significant_token_eaten
-                };
+                    },
+                );
 
-                let variable_declaration_statement =
-                    variable_declaration_statement_fn(&mut variable_parser);
-                let expression_statement = expression_statement_fn(&mut expression_parser);
-
-                let variable_declaration_statement_significant_token_eaten =
-                    count_fn(&mut self.cursor, &variable_parser.cursor);
-                let expression_statement_significant_token_eaten =
-                    count_fn(&mut self.cursor, &expression_parser.cursor);
-
-                if variable_declaration_statement_significant_token_eaten
-                    > expression_statement_significant_token_eaten
-                {
-                    self.cursor = variable_parser.cursor;
-                    self.errors.append(&mut variable_parser.errors);
-                    variable_declaration_statement
-                } else {
-                    self.cursor = expression_parser.cursor;
-                    self.errors.append(&mut expression_parser.errors);
-                    expression_statement
-                }
+                result.map(|x| match x {
+                    FirstOrSecond::First(x) => x,
+                    FirstOrSecond::Second(x) => x,
+                })
             }
             // Handles variable declaration statements
             Some(Token::Keyword(primitive_type))

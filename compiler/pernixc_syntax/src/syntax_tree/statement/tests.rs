@@ -18,6 +18,7 @@ fn substr_span(source_code: &str, span: Span) -> &str {
 const SOURCE_CODE: &str = "
 'test: {
     Some::Struct::Name test = 32;
+    SomeFunction;
     test = 64;
     if (test == 64) {
         test = 128;
@@ -29,6 +30,8 @@ const SOURCE_CODE: &str = "
     loop SomeFunction::Test()
 
     express 'test someValue;
+
+    (SomeType)42;
 }
 ";
 
@@ -92,6 +95,24 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .0;
         assert_eq!(substr_span(SOURCE_CODE, expression.span), "32");
+    }
+
+    {
+        let identifier_expression = statement_iter
+            .next()
+            .unwrap()
+            .into_expression()
+            .unwrap()
+            .into_functional_expresion()
+            .unwrap()
+            .expression
+            .into_identifier_expression()
+            .unwrap();
+
+        assert_eq!(
+            substr_span(SOURCE_CODE, identifier_expression.span()),
+            "SomeFunction"
+        );
     }
 
     {
@@ -334,6 +355,44 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         assert_eq!(
             substr_span(SOURCE_CODE, identifier_expression.span()),
             "someValue"
+        );
+    }
+
+    {
+        let cast_expression = statement_iter
+            .next()
+            .unwrap()
+            .into_expression()
+            .unwrap()
+            .into_functional_expresion()
+            .unwrap()
+            .expression
+            .into_cast_expression()
+            .unwrap();
+
+        assert_eq!(
+            substr_span(
+                SOURCE_CODE,
+                cast_expression
+                    .type_specifier
+                    .into_qualified()
+                    .unwrap()
+                    .span()
+            ),
+            "SomeType"
+        );
+
+        let numeric_literal_expression = cast_expression
+            .expression
+            .into_functional_expression()
+            .unwrap()
+            .into_numeric_literal()
+            .unwrap()
+            .0;
+
+        assert_eq!(
+            substr_span(SOURCE_CODE, numeric_literal_expression.span()),
+            "42"
         );
     }
 

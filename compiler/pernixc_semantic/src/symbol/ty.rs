@@ -1,7 +1,6 @@
-use super::SymbolID;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum PrimitiveType {
+    #[default]
     Void,
     Bool,
     Float32,
@@ -19,11 +18,15 @@ pub enum PrimitiveType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Type {
     Primitive(PrimitiveType),
-    UserDefined(SymbolID),
+    UserDefinedSymbolIndex(usize),
+}
+
+impl Default for Type {
+    fn default() -> Self { Type::Primitive(PrimitiveType::Void) }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeBinding {
-    pub ty:         Type,
+    pub ty: Type,
     pub is_mutable: bool,
 }

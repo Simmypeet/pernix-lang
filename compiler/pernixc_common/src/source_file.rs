@@ -2,7 +2,6 @@ use std::{
     iter::Peekable,
     ops::{Index, Range},
     path::PathBuf,
-    slice::SliceIndex,
     str::Chars,
 };
 
@@ -33,7 +32,7 @@ pub struct SourceFile {
     /// Gets teh string content that the source file contains.
     #[get = "pub"]
     content: String,
-    lines:   Vec<Range<usize>>,
+    lines: Vec<Range<usize>>,
 }
 
 /// Is an enumeration containing all kinds of errors that can occur while loading a source file.
@@ -157,10 +156,10 @@ impl SourceFile {
     pub fn iter(&self) -> SourceFileIterator {
         SourceFileIterator {
             source_code: &self.content,
-            chars:       self.content.chars().peekable(),
-            line:        1,
-            column:      1,
-            byte:        0,
+            chars: self.content.chars().peekable(),
+            line: 1,
+            column: 1,
+            byte: 0,
         }
     }
 }
@@ -173,10 +172,10 @@ impl SourceFile {
 #[derive(Clone, Debug)]
 pub struct SourceFileIterator<'a> {
     source_code: &'a str,
-    chars:       Peekable<Chars<'a>>,
-    line:        usize,
-    column:      usize,
-    byte:        usize,
+    chars: Peekable<Chars<'a>>,
+    line: usize,
+    column: usize,
+    byte: usize,
 }
 
 impl<'a> Iterator for SourceFileIterator<'a> {
@@ -185,9 +184,9 @@ impl<'a> Iterator for SourceFileIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let c = self.chars.next()?;
         let location = Location {
-            line:   self.line,
+            line: self.line,
             column: self.column,
-            byte:   self.byte,
+            byte: self.byte,
         };
 
         self.byte += c.len_utf8();
@@ -222,9 +221,9 @@ impl<'a> SourceFileIterator<'a> {
     pub fn peek(&mut self) -> Option<(Location, char)> {
         let c = self.chars.peek()?;
         let location = Location {
-            line:   self.line,
+            line: self.line,
             column: self.column,
-            byte:   self.byte,
+            byte: self.byte,
         };
 
         Some((location, *c))

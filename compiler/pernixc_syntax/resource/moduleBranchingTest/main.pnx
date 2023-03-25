@@ -1,1 +1,23 @@
 public module sub;
+
+public struct Test 
+{
+public:
+    int32 a;
+    int32 b;
+}
+
+public int32 Main() 
+{
+    let calculation = 'test: {
+        let a = 1;
+        let b = 2;
+        
+        if (a > b)  {
+            // some crazy calculation
+            express 'test a;
+        }
+
+        express b;
+    };
+}

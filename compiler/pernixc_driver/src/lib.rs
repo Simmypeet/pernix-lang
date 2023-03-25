@@ -12,8 +12,6 @@ pub struct CompilationArgument {
 
 fn late_frontend_compilation(syntax_trees: Vec<FileParsing>) {
     let result = ItemSymbolTable::analyze(syntax_trees.into_iter());
-
-    dbg!(result);
 }
 
 pub fn compile(args: CompilationArgument) {

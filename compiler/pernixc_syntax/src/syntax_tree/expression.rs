@@ -8,11 +8,11 @@ use pernixc_lexical::token::{
 
 use super::{
     statement::StatementSyntaxTree, ConnectedList, LabelSyntaxTree, QualifiedIdentifierSyntaxTree,
-    SyntaxTree,
+    SyntaxTree, TypeSpecifierSyntaxTree,
 };
 use crate::{
     errors::{PunctuationExpected, SyntacticError},
-    parser::Parser,
+    parser::{FirstOrSecond, Parser},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -45,6 +45,7 @@ pub enum FunctionalExpressionSyntaxTree {
     BreakExpression(BreakSyntaxTree),
     ReturnExpression(ReturnSyntaxTree),
     ExpressExpression(ExpressSyntaxTree),
+    CastExpression(CastSyntaxTree),
 }
 
 impl SyntaxTree for FunctionalExpressionSyntaxTree {
@@ -63,8 +64,21 @@ impl SyntaxTree for FunctionalExpressionSyntaxTree {
             Self::BreakExpression(expression) => expression.span(),
             Self::ReturnExpression(expression) => expression.span(),
             Self::ExpressExpression(expression) => expression.span(),
+            Self::CastExpression(expression) => expression.span(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CastSyntaxTree {
+    pub left_paren: PunctuationToken,
+    pub type_specifier: TypeSpecifierSyntaxTree,
+    pub right_paren: PunctuationToken,
+    pub expression: Box<ExpressionSyntaxTree>,
+}
+
+impl SyntaxTree for CastSyntaxTree {
+    fn span(&self) -> Span { Span::new(self.left_paren.span.start, self.expression.span().end) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -178,9 +192,9 @@ impl SyntaxTree for BinaryOperatorSyntaxTree {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BinaryExpressionSyntaxTree {
-    pub left:     Box<ExpressionSyntaxTree>,
+    pub left: Box<ExpressionSyntaxTree>,
     pub operator: BinaryOperatorSyntaxTree,
-    pub right:    Box<ExpressionSyntaxTree>,
+    pub right: Box<ExpressionSyntaxTree>,
 }
 
 impl SyntaxTree for BinaryExpressionSyntaxTree {
@@ -205,7 +219,7 @@ impl SyntaxTree for PerfixOperatorSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PrefixExpressionSyntaxTree {
     pub operator: PerfixOperatorSyntaxTree,
-    pub operand:  Box<ExpressionSyntaxTree>,
+    pub operand: Box<ExpressionSyntaxTree>,
 }
 
 impl SyntaxTree for PrefixExpressionSyntaxTree {
@@ -224,9 +238,9 @@ pub type ArgumentListSyntaxTree = ConnectedList<Box<ExpressionSyntaxTree>, Punct
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionCallExpressionSyntaxTree {
     pub qualified_identifier: QualifiedIdentifierSyntaxTree,
-    pub left_paren:           PunctuationToken,
-    pub arguments:            Option<ArgumentListSyntaxTree>,
-    pub right_paren:          PunctuationToken,
+    pub left_paren: PunctuationToken,
+    pub arguments: Option<ArgumentListSyntaxTree>,
+    pub right_paren: PunctuationToken,
 }
 
 impl SyntaxTree for FunctionCallExpressionSyntaxTree {
@@ -240,8 +254,8 @@ impl SyntaxTree for FunctionCallExpressionSyntaxTree {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ParenthesizedExpressionSyntaxTree {
-    pub left_paren:  PunctuationToken,
-    pub expression:  Box<ExpressionSyntaxTree>,
+    pub left_paren: PunctuationToken,
+    pub expression: Box<ExpressionSyntaxTree>,
     pub right_paren: PunctuationToken,
 }
 
@@ -252,7 +266,7 @@ impl SyntaxTree for ParenthesizedExpressionSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldInitializeSyntaxTree {
     pub identifier: IdentifierToken,
-    pub colon:      PunctuationToken,
+    pub colon: PunctuationToken,
     pub expression: Box<ExpressionSyntaxTree>,
 }
 
@@ -264,10 +278,10 @@ pub type FieldInitializeListSyntaxTree = ConnectedList<FieldInitializeSyntaxTree
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructLiteralSyntaxTree {
-    pub qualified_identifier:  QualifiedIdentifierSyntaxTree,
-    pub left_brace:            PunctuationToken,
+    pub qualified_identifier: QualifiedIdentifierSyntaxTree,
+    pub left_brace: PunctuationToken,
     pub field_initializations: Option<FieldInitializeListSyntaxTree>,
-    pub right_brace:           PunctuationToken,
+    pub right_brace: PunctuationToken,
 }
 
 impl SyntaxTree for StructLiteralSyntaxTree {
@@ -282,7 +296,7 @@ impl SyntaxTree for StructLiteralSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MemberAccessExpressionSyntaxTree {
     pub expression: Box<ExpressionSyntaxTree>,
-    pub dot:        PunctuationToken,
+    pub dot: PunctuationToken,
     pub identifier: IdentifierToken,
 }
 
@@ -320,9 +334,9 @@ impl SyntaxTree for LabelSpecifierSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockExpressionSyntaxTree {
     pub label_specifier: Option<LabelSpecifierSyntaxTree>,
-    pub left_brace:      PunctuationToken,
-    pub statements:      Vec<StatementSyntaxTree>,
-    pub right_brace:     PunctuationToken,
+    pub left_brace: PunctuationToken,
+    pub statements: Vec<StatementSyntaxTree>,
+    pub right_brace: PunctuationToken,
 }
 
 impl SyntaxTree for BlockExpressionSyntaxTree {
@@ -332,7 +346,7 @@ impl SyntaxTree for BlockExpressionSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ElseExpressionSyntaxTree {
     pub else_keyword: KeywordToken,
-    pub expression:   Box<ExpressionSyntaxTree>,
+    pub expression: Box<ExpressionSyntaxTree>,
 }
 
 impl SyntaxTree for ElseExpressionSyntaxTree {
@@ -341,10 +355,10 @@ impl SyntaxTree for ElseExpressionSyntaxTree {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IfElseExpressionSyntaxTree {
-    pub if_keyword:      KeywordToken,
-    pub left_paren:      PunctuationToken,
-    pub condition:       Box<ExpressionSyntaxTree>,
-    pub right_paren:     PunctuationToken,
+    pub if_keyword: KeywordToken,
+    pub left_paren: PunctuationToken,
+    pub condition: Box<ExpressionSyntaxTree>,
+    pub right_paren: PunctuationToken,
     pub then_expression: Box<ExpressionSyntaxTree>,
     pub else_expression: Option<ElseExpressionSyntaxTree>,
 }
@@ -364,8 +378,8 @@ impl SyntaxTree for IfElseExpressionSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LoopExpressionSyntaxTree {
     pub label_specifier: Option<LabelSpecifierSyntaxTree>,
-    pub loop_keyword:    KeywordToken,
-    pub expression:      Box<ExpressionSyntaxTree>,
+    pub loop_keyword: KeywordToken,
+    pub expression: Box<ExpressionSyntaxTree>,
 }
 
 impl SyntaxTree for LoopExpressionSyntaxTree {
@@ -382,7 +396,7 @@ impl SyntaxTree for LoopExpressionSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContinueSyntaxTree {
     pub continue_keyword: KeywordToken,
-    pub label:            Option<LabelSyntaxTree>,
+    pub label: Option<LabelSyntaxTree>,
 }
 
 impl SyntaxTree for ContinueSyntaxTree {
@@ -400,8 +414,8 @@ impl SyntaxTree for ContinueSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpressSyntaxTree {
     pub express_keyword: KeywordToken,
-    pub label:           Option<LabelSyntaxTree>,
-    pub expression:      Option<Box<ExpressionSyntaxTree>>,
+    pub label: Option<LabelSyntaxTree>,
+    pub expression: Option<Box<ExpressionSyntaxTree>>,
 }
 
 impl SyntaxTree for ExpressSyntaxTree {
@@ -424,8 +438,8 @@ impl SyntaxTree for ExpressSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BreakSyntaxTree {
     pub break_keyword: KeywordToken,
-    pub label:         Option<LabelSyntaxTree>,
-    pub expression:    Option<Box<ExpressionSyntaxTree>>,
+    pub label: Option<LabelSyntaxTree>,
+    pub expression: Option<Box<ExpressionSyntaxTree>>,
 }
 
 impl SyntaxTree for BreakSyntaxTree {
@@ -448,7 +462,7 @@ impl SyntaxTree for BreakSyntaxTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReturnSyntaxTree {
     pub return_keyword: KeywordToken,
-    pub expression:     Option<Box<ExpressionSyntaxTree>>,
+    pub expression: Option<Box<ExpressionSyntaxTree>>,
 }
 
 impl SyntaxTree for ReturnSyntaxTree {
@@ -517,9 +531,9 @@ impl<'a> Parser<'a> {
                 // Replace the first expression with the folded expression.
                 first_expression = ExpressionSyntaxTree::FunctionalExpression(
                     FunctionalExpressionSyntaxTree::BinaryExpression(BinaryExpressionSyntaxTree {
-                        left:     Box::new(first_expression),
+                        left: Box::new(first_expression),
                         operator: binary_operator,
-                        right:    Box::new(right_expression.unwrap()),
+                        right: Box::new(right_expression.unwrap()),
                     }),
                 )
             } else {
@@ -530,11 +544,9 @@ impl<'a> Parser<'a> {
                     Some(ExpressionSyntaxTree::FunctionalExpression(
                         FunctionalExpressionSyntaxTree::BinaryExpression(
                             BinaryExpressionSyntaxTree {
-                                left:     Box::new(
-                                    expressions[candidate_index - 1].1.take().unwrap(),
-                                ),
+                                left: Box::new(expressions[candidate_index - 1].1.take().unwrap()),
                                 operator: binary_operator,
-                                right:    Box::new(right_expression.unwrap()),
+                                right: Box::new(right_expression.unwrap()),
                             },
                         ),
                     ))
@@ -667,8 +679,8 @@ impl<'a> Parser<'a> {
                 Some(ExpressionSyntaxTree::ImperativeExpression(
                     ImperativeExpressionSyntaxTree::LoopExpression(LoopExpressionSyntaxTree {
                         label_specifier: None,
-                        loop_keyword:    loop_keyword.clone(),
-                        expression:      Box::new(expression),
+                        loop_keyword: loop_keyword.clone(),
+                        expression: Box::new(expression),
                     }),
                 ))
             }
@@ -690,7 +702,7 @@ impl<'a> Parser<'a> {
                             self.report_error(SyntacticError::PunctuationExpected(
                                 PunctuationExpected {
                                     expected: '}',
-                                    found:    None,
+                                    found: None,
                                 },
                             ));
                             return None;
@@ -719,7 +731,7 @@ impl<'a> Parser<'a> {
                                         self.report_error(SyntacticError::PunctuationExpected(
                                             PunctuationExpected {
                                                 expected: '}',
-                                                found:    None,
+                                                found: None,
                                             },
                                         ));
                                         return None;
@@ -769,7 +781,7 @@ impl<'a> Parser<'a> {
 
                         Some(ElseExpressionSyntaxTree {
                             else_keyword: else_keyword.clone(),
-                            expression:   Box::new(else_expression),
+                            expression: Box::new(else_expression),
                         })
                     }
                     _ => None,
@@ -800,21 +812,48 @@ impl<'a> Parser<'a> {
 
             // Handles parenthesis
             Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
-                self.next_token();
+                let result = self.ambiguity_resolution(
+                    |this: &mut Self| {
+                        this.next_token();
 
-                let expression = self.parse_expression()?;
+                        let expression = this.parse_expression()?;
 
-                let right_paren = self.expect_punctuation(')')?;
+                        let right_paren = this.expect_punctuation(')')?;
 
-                Some(ExpressionSyntaxTree::FunctionalExpression(
-                    FunctionalExpressionSyntaxTree::ParenthesizedExpression(
-                        ParenthesizedExpressionSyntaxTree {
-                            left_paren:  left_paren.clone(),
-                            expression:  Box::new(expression),
-                            right_paren: right_paren.clone(),
-                        },
-                    ),
-                ))
+                        Some(ExpressionSyntaxTree::FunctionalExpression(
+                            FunctionalExpressionSyntaxTree::ParenthesizedExpression(
+                                ParenthesizedExpressionSyntaxTree {
+                                    left_paren: left_paren.clone(),
+                                    expression: Box::new(expression),
+                                    right_paren: right_paren.clone(),
+                                },
+                            ),
+                        ))
+                    },
+                    |this: &mut Self| {
+                        this.next_token();
+
+                        let type_specifier = this.parse_type_specifier()?;
+
+                        let right_paren = this.expect_punctuation(')')?;
+
+                        let expression = this.parse_expression()?;
+
+                        Some(ExpressionSyntaxTree::FunctionalExpression(
+                            FunctionalExpressionSyntaxTree::CastExpression(CastSyntaxTree {
+                                left_paren: left_paren.clone(),
+                                type_specifier,
+                                right_paren: right_paren.clone(),
+                                expression: Box::new(expression),
+                            }),
+                        ))
+                    },
+                );
+
+                result.map(|x| match x {
+                    FirstOrSecond::First(x) => x,
+                    FirstOrSecond::Second(x) => x,
+                })
             }
 
             // Handles label specifier
@@ -828,7 +867,7 @@ impl<'a> Parser<'a> {
                 let label = LabelSpecifierSyntaxTree {
                     label: LabelSyntaxTree {
                         single_quote: single_quote.clone(),
-                        identifier:   name.clone(),
+                        identifier: name.clone(),
                     },
                     colon: colon.clone(),
                 };
@@ -852,7 +891,7 @@ impl<'a> Parser<'a> {
 
                         Some(LabelSyntaxTree {
                             single_quote: single_quote.clone(),
-                            identifier:   name.clone(),
+                            identifier: name.clone(),
                         })
                     }
                     _ => None,
@@ -880,7 +919,7 @@ impl<'a> Parser<'a> {
 
                         Some(LabelSyntaxTree {
                             single_quote: single_quote.clone(),
-                            identifier:   name.clone(),
+                            identifier: name.clone(),
                         })
                     }
                     _ => None,
@@ -940,7 +979,7 @@ impl<'a> Parser<'a> {
 
                         Some(LabelSyntaxTree {
                             single_quote: single_quote.clone(),
-                            identifier:   name.clone(),
+                            identifier: name.clone(),
                         })
                     }
                     _ => None,
@@ -998,7 +1037,7 @@ impl<'a> Parser<'a> {
                         Some(ExpressionSyntaxTree::FunctionalExpression(
                             FunctionalExpressionSyntaxTree::ReturnExpression(ReturnSyntaxTree {
                                 return_keyword: return_keyword.clone(),
-                                expression:     None,
+                                expression: None,
                             }),
                         ))
                     }
@@ -1012,7 +1051,7 @@ impl<'a> Parser<'a> {
                                 FunctionalExpressionSyntaxTree::ReturnExpression(
                                     ReturnSyntaxTree {
                                         return_keyword: return_keyword.clone(),
-                                        expression:     None,
+                                        expression: None,
                                     },
                                 ),
                             ))
@@ -1023,7 +1062,7 @@ impl<'a> Parser<'a> {
                                 FunctionalExpressionSyntaxTree::ReturnExpression(
                                     ReturnSyntaxTree {
                                         return_keyword: return_keyword.clone(),
-                                        expression:     Some(Box::new(expression)),
+                                        expression: Some(Box::new(expression)),
                                     },
                                 ),
                             ))
@@ -1074,7 +1113,7 @@ impl<'a> Parser<'a> {
 
                                 Some(FieldInitializeSyntaxTree {
                                     identifier: identifier.clone(),
-                                    colon:      colon.clone(),
+                                    colon: colon.clone(),
                                     expression: Box::new(expression),
                                 })
                             })?;
@@ -1121,7 +1160,7 @@ impl<'a> Parser<'a> {
                             '-' => PerfixOperatorSyntaxTree::Negate(punc.clone()),
                             _ => unreachable!(),
                         },
-                        operand:  Box::new(operand),
+                        operand: Box::new(operand),
                     }),
                 ));
             }

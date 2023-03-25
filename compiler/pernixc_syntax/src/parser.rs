@@ -19,10 +19,10 @@ use crate::{
 /// of syntax trees.
 #[derive(Debug, Getters)]
 pub struct Parser<'a> {
-    pub(super) cursor:  TokenStreamCursor<'a>,
+    pub(super) cursor: TokenStreamCursor<'a>,
     /// Gets the list of errors that have been produced by the parser.
     #[get = "pub"]
-    pub(crate) errors:  Vec<SyntacticError>,
+    pub(crate) errors: Vec<SyntacticError>,
     pub produce_errors: bool,
 }
 
@@ -244,6 +244,18 @@ impl<'a> Parser<'a> {
         let mut first = None;
         let mut rest = Vec::new();
 
+        match self.peek_significant_token() {
+            Some(Token::Punctuation(punc)) if punc.punctuation == delimiter => {
+                self.next_token();
+                return Some((None, punc.clone()));
+            }
+            None => self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
+                expected: delimiter,
+                found: None,
+            })),
+            _ => (),
+        };
+
         if let Some(value) = parse_item(self) {
             first = Some(value);
         } else {
@@ -304,7 +316,7 @@ impl<'a> Parser<'a> {
                 token => {
                     self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
                         expected: delimiter,
-                        found:    token.cloned(),
+                        found: token.cloned(),
                     }));
                     return None;
                 }
@@ -341,6 +353,80 @@ impl<'a> Parser<'a> {
 
         result
     }
+
+    /// Tries to parse a syntax tree that has an ambiguity between two possible syntaxes.
+    pub(super) fn ambiguity_resolution<T1, T2>(
+        &mut self,
+        first: impl FnOnce(&mut Self) -> Option<T1>,
+        second: impl FnOnce(&mut Self) -> Option<T2>,
+    ) -> Option<FirstOrSecond<T1, T2>> {
+        // count the number of significant tokens that are eaten by each parser
+        fn count_fn(
+            original_cursor: &mut TokenStreamCursor,
+            comparing_cursor: &TokenStreamCursor,
+        ) -> usize {
+            let mut significant_token_eaten = 0;
+            let starting_cursor_position = original_cursor.position();
+            while original_cursor.position() < comparing_cursor.position() {
+                if let Some(token) = original_cursor.next_token() {
+                    if !matches!(token, Token::WhiteSpace(_) | Token::Comment(_)) {
+                        significant_token_eaten += 1;
+                    }
+                }
+            }
+            original_cursor.set_position(starting_cursor_position);
+            significant_token_eaten
+        }
+
+        let mut first_parser = Parser {
+            cursor: self.cursor,
+            produce_errors: self.produce_errors,
+            errors: Vec::new(),
+        };
+        let mut second_parser = Parser {
+            cursor: self.cursor,
+            produce_errors: self.produce_errors,
+            errors: Vec::new(),
+        };
+
+        let (first_result, second_result) = (first(&mut first_parser), second(&mut second_parser));
+        let (first_token_eaten, second_token_eaten) = (
+            count_fn(&mut self.cursor, &first_parser.cursor),
+            count_fn(&mut self.cursor, &second_parser.cursor),
+        );
+
+        match (first_result, second_result) {
+            (Some(first_result), None) if second_token_eaten + 1 == first_token_eaten => {
+                // choose first
+                self.cursor = first_parser.cursor;
+                self.errors.append(&mut first_parser.errors);
+                Some(FirstOrSecond::First(first_result))
+            }
+            (None, Some(second_result)) if first_token_eaten + 1 == second_token_eaten => {
+                // choose second
+                self.cursor = second_parser.cursor;
+                self.errors.append(&mut second_parser.errors);
+                Some(FirstOrSecond::Second(second_result))
+            }
+            (first_result, second_result) => {
+                // choose the one that has the most significant tokens eaten
+                if first_token_eaten > second_token_eaten {
+                    self.cursor = first_parser.cursor;
+                    self.errors.append(&mut first_parser.errors);
+                    first_result.map(FirstOrSecond::First)
+                } else {
+                    self.cursor = second_parser.cursor;
+                    self.errors.append(&mut second_parser.errors);
+                    second_result.map(FirstOrSecond::Second)
+                }
+            }
+        }
+    }
+}
+
+pub(super) enum FirstOrSecond<T1, T2> {
+    First(T1),
+    Second(T2),
 }
 
 #[cfg(test)]

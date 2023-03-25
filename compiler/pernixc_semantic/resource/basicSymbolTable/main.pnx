@@ -1,0 +1,10 @@
+public module sub;
+
+public struct SomeType 
+{
+public:
+    int32 someNumber;
+    sub::SomeType someType;
+}
+
+public void Test(SomeType a, test::SomeType b, sub::SomeType c, test::sub::SomeType d) {}
