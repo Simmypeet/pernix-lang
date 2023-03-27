@@ -12,3 +12,5 @@ pernixc_lexical = { path = "../pernixc_lexical" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 derive-new = { workspace = true }
+getset = { workspace = true }
+derive_more = { workspace = true }

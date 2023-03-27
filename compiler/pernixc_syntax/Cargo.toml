@@ -12,6 +12,7 @@ enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 getset = { workspace = true }
 lazy_static = { workspace = true }
+derive_more = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

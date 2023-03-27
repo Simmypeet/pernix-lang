@@ -1,54 +1,28 @@
+//! Contains the definition of the syntax tree nodes.
+//!
+//! The syntax tree nodes can be classified into three categories:
+//! - *Item*: A syntax tree node that represents a top-level item in the source code.
+//! - *Statement*: A syntax tree node that represents a statement in the function body.
+//! - *Expression*: A syntax tree node that represents an expression in the function body.
+
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::source_file::Span;
+use pernixc_common::source_file::{SourceElement, Span};
 use pernixc_lexical::{
-    token::{
-        CharacterLiteralToken, IdentifierToken, Keyword, KeywordToken, NumericLiteralToken,
-        PunctuationToken, StringLiteralToken, Token,
-    },
+    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::TokenStream,
 };
 
-use self::item::ItemSyntaxTree;
-use crate::{errors::SyntacticError, parser::Parser};
+use self::item::Item;
+use crate::{
+    errors::{SyntacticError, TypeSpecifierExpected},
+    parser::Parser,
+};
 
 pub mod expression;
 pub mod item;
 pub mod statement;
-
-/// Is a trait that all syntax tree types must implement.
-pub trait SyntaxTree {
-    /// Returns a [`Span`] representing the location of the syntax tree node in the source code.
-    fn span(&self) -> Span;
-}
-
-impl<T: SyntaxTree> SyntaxTree for Box<T> {
-    fn span(&self) -> Span { self.as_ref().span() }
-}
-
-impl SyntaxTree for IdentifierToken {
-    fn span(&self) -> Span { self.span }
-}
-
-impl SyntaxTree for KeywordToken {
-    fn span(&self) -> Span { self.span }
-}
-
-impl SyntaxTree for PunctuationToken {
-    fn span(&self) -> Span { self.span }
-}
-
-impl SyntaxTree for CharacterLiteralToken {
-    fn span(&self) -> Span { self.span }
-}
-
-impl SyntaxTree for StringLiteralToken {
-    fn span(&self) -> Span { self.span }
-}
-
-impl SyntaxTree for NumericLiteralToken {
-    fn span(&self) -> Span { self.span }
-}
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
 ///
@@ -67,7 +41,9 @@ pub struct ConnectedList<Element, Separator> {
     pub rest: Vec<(Separator, Element)>,
 }
 
-impl<Element: SyntaxTree, Separator: SyntaxTree> SyntaxTree for ConnectedList<Element, Separator> {
+impl<Element: SourceElement, Separator: SourceElement> SourceElement
+    for ConnectedList<Element, Separator>
+{
     fn span(&self) -> Span {
         Span::new(
             self.first.span().start,
@@ -83,16 +59,24 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
     pub fn elements(&self) -> impl Iterator<Item = &Element> {
         std::iter::once(&self.first).chain(self.rest.iter().map(|(_, element)| element))
     }
+
+    /// Gets the number of elements in the list.
+    pub fn len(&self) -> usize { self.rest.len() + 1 }
+
+    /// Returns `true` if the list is empty.
+    ///
+    /// The function will never return `false`.
+    pub fn is_empty(&self) -> bool { false }
 }
 
 /// Represents a syntax tree node of two consecutive colon tokens.
 ///
 /// This syntax tree is used to represent the scope separator `::` in the qualified identifier
 /// syntax
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ScopeSeparatorSyntaxTree(pub PunctuationToken, pub PunctuationToken);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopeSeparator(pub Punctuation, pub Punctuation);
 
-impl SyntaxTree for ScopeSeparatorSyntaxTree {
+impl SourceElement for ScopeSeparator {
     fn span(&self) -> Span { Span::new(self.0.span.start, self.1.span.end) }
 }
 
@@ -100,62 +84,63 @@ impl SyntaxTree for ScopeSeparatorSyntaxTree {
 ///
 /// Syntax Synopsis:
 /// ``` txt
-/// QualifiedIdentifierSyntaxTree:
-///     IdentifierSyntaxTree ('::' IdentifierSyntaxTree)*
+/// QualifiedIdentifier:
+///     Identifier ('::' Identifier)*
 ///     ;
 /// ```
-pub type QualifiedIdentifierSyntaxTree = ConnectedList<IdentifierToken, ScopeSeparatorSyntaxTree>;
+pub type QualifiedIdentifier = ConnectedList<Identifier, ScopeSeparator>;
 
-/// Represents a syntax tree node of primitive type identifiers.
+/// Represents a syntax tree node of primitive type specifier.
 ///
 /// Syntax Synopsis:
 /// ``` txt
-/// PrimitiveTypeIdentifierSyntaxTree:
-///     Bool
-///     | Void
-///     | Float32
-///     | Float64
-///     | Int8
-///     | Int16
-///     | Int32
-///     | Int64
-///     | Uint8
-///     | Uint16
-///     | Uint32
-///     | Uint64
+/// PrimitiveTypeSpecifier:
+///     'bool'
+///     | 'void'
+///     | 'float32'
+///     | 'float64'
+///     | 'int8'
+///     | 'int16'
+///     | 'int32'
+///     | 'int64'
+///     | 'uint8'
+///     | 'uint16'
+///     | 'uint32'
+///     | 'uint64'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum PrimitiveTypeSpecifierSyntaxTree {
-    Bool(KeywordToken),
-    Void(KeywordToken),
-    Float32(KeywordToken),
-    Float64(KeywordToken),
-    Int8(KeywordToken),
-    Int16(KeywordToken),
-    Int32(KeywordToken),
-    Int64(KeywordToken),
-    Uint8(KeywordToken),
-    Uint16(KeywordToken),
-    Uint32(KeywordToken),
-    Uint64(KeywordToken),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum PrimitiveTypeSpecifier {
+    Bool(Keyword),
+    Void(Keyword),
+    Float32(Keyword),
+    Float64(Keyword),
+    Int8(Keyword),
+    Int16(Keyword),
+    Int32(Keyword),
+    Int64(Keyword),
+    Uint8(Keyword),
+    Uint16(Keyword),
+    Uint32(Keyword),
+    Uint64(Keyword),
 }
 
-impl SyntaxTree for PrimitiveTypeSpecifierSyntaxTree {
+impl SourceElement for PrimitiveTypeSpecifier {
     fn span(&self) -> Span {
         match self {
-            Self::Bool(token) => token.span,
-            Self::Void(token) => token.span,
-            Self::Float32(token) => token.span,
-            Self::Float64(token) => token.span,
-            Self::Int8(token) => token.span,
-            Self::Int16(token) => token.span,
-            Self::Int32(token) => token.span,
-            Self::Int64(token) => token.span,
-            Self::Uint8(token) => token.span,
-            Self::Uint16(token) => token.span,
-            Self::Uint32(token) => token.span,
-            Self::Uint64(token) => token.span,
+            Self::Bool(token)
+            | Self::Void(token)
+            | Self::Float32(token)
+            | Self::Float64(token)
+            | Self::Int8(token)
+            | Self::Int16(token)
+            | Self::Int32(token)
+            | Self::Int64(token)
+            | Self::Uint8(token)
+            | Self::Uint16(token)
+            | Self::Uint32(token)
+            | Self::Uint64(token) => token.span,
         }
     }
 }
@@ -166,22 +151,23 @@ impl SyntaxTree for PrimitiveTypeSpecifierSyntaxTree {
 ///
 /// Syntax Synopsis:
 /// ``` txt
-/// TypeSpecifierSyntaxTree:
-///     PrimitiveTypeIdentifierSyntaxTree
-///     | QualifiedIdentifierSyntaxTree
+/// TypeSpecifier:
+///     PrimitiveTypeIdentifier
+///     | QualifiedIdentifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum TypeSpecifierSyntaxTree {
-    Primitive(PrimitiveTypeSpecifierSyntaxTree),
-    Qualified(QualifiedIdentifierSyntaxTree),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum TypeSpecifier {
+    PrimitiveTypeSpecifier(PrimitiveTypeSpecifier),
+    QualifiedIdentifier(QualifiedIdentifier),
 }
 
-impl SyntaxTree for TypeSpecifierSyntaxTree {
+impl SourceElement for TypeSpecifier {
     fn span(&self) -> Span {
         match self {
-            Self::Primitive(primitive) => primitive.span(),
-            Self::Qualified(qualified) => qualified.span(),
+            Self::PrimitiveTypeSpecifier(primitive) => primitive.span(),
+            Self::QualifiedIdentifier(qualified) => qualified.span(),
         }
     }
 }
@@ -190,17 +176,18 @@ impl SyntaxTree for TypeSpecifierSyntaxTree {
 ///
 /// Syntax Synopsis:
 /// ``` txt
-/// LabelSyntaxTree:
-///     '\'' IdentifierSyntaxTree
+/// Label:
+///     '\'' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LabelSyntaxTree {
-    pub single_quote: PunctuationToken,
-    pub identifier:   IdentifierToken,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub struct Label {
+    pub single_quote: Punctuation,
+    pub identifier: Identifier,
 }
 
-impl SyntaxTree for LabelSyntaxTree {
+impl SourceElement for Label {
     fn span(&self) -> Span { Span::new(self.single_quote.span.start, self.identifier.span.end) }
 }
 
@@ -210,17 +197,18 @@ impl SyntaxTree for LabelSyntaxTree {
 ///
 /// Syntax Sypnosis:
 /// ``` txt
-/// TypeBindingSyntaxTree:
-///     'mutable'? TypeSpecifierSyntaxTree
+/// TypeBinding:
+///     'mutable'? TypeSpecifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeBindingSyntaxTree {
-    pub mutable_keyword: Option<KeywordToken>,
-    pub type_specifier:  TypeSpecifierSyntaxTree,
+#[allow(missing_docs)]
+pub struct TypeBindingSpecifier {
+    pub mutable_keyword: Option<Keyword>,
+    pub type_specifier: TypeSpecifier,
 }
 
-impl SyntaxTree for TypeBindingSyntaxTree {
+impl SourceElement for TypeBindingSpecifier {
     fn span(&self) -> Span {
         Span::new(
             self.mutable_keyword
@@ -234,10 +222,10 @@ impl SyntaxTree for TypeBindingSyntaxTree {
 }
 
 impl<'a> Parser<'a> {
-    /// Parses a [QualifiedIdentifierSyntaxTree]
-    pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifierSyntaxTree> {
+    /// Parses a [`QualifiedIdentifier`]
+    pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifier> {
         // expect the first identifier
-        let first_identifier = self.expect_identifier()?.clone();
+        let first_identifier = *self.expect_identifier()?;
 
         let mut rest = Vec::new();
         let mut cursor = self.cursor;
@@ -265,28 +253,27 @@ impl<'a> Parser<'a> {
                 None
             }
         } {
-            let scope_separator =
-                ScopeSeparatorSyntaxTree(first_colon.clone(), second_colon.clone());
+            let scope_separator = ScopeSeparator(*first_colon, *second_colon);
 
             // must be followed by an identifier
             let identifier = self.expect_identifier()?;
 
-            rest.push((scope_separator, identifier.clone()));
+            rest.push((scope_separator, *identifier));
 
             cursor = self.cursor;
         }
 
-        Some(QualifiedIdentifierSyntaxTree {
+        Some(QualifiedIdentifier {
             first: first_identifier,
             rest,
         })
     }
 
-    /// Parses a [TypeSpecifierSyntaxTree]
-    pub fn parse_type_specifier(&mut self) -> Option<TypeSpecifierSyntaxTree> {
-        match self.peek_significant_token() {
-            Some(token) => match token {
-                Token::Identifier(_) => Some(TypeSpecifierSyntaxTree::Qualified(
+    /// Parses a [`TypeSpecifier`]
+    pub fn parse_type_specifier(&mut self) -> Option<TypeSpecifier> {
+        if let Some(token) = self.peek_significant_token() {
+            match token {
+                Token::Identifier(..) => Some(TypeSpecifier::QualifiedIdentifier(
                     self.parse_qualified_identifier()?,
                 )),
                 Token::Keyword(keyword) => {
@@ -294,71 +281,67 @@ impl<'a> Parser<'a> {
                     self.next_token();
 
                     let primitive_type = match keyword.keyword {
-                        Keyword::Bool => PrimitiveTypeSpecifierSyntaxTree::Bool(keyword.clone()),
-                        Keyword::Void => PrimitiveTypeSpecifierSyntaxTree::Void(keyword.clone()),
-                        Keyword::Float32 => {
-                            PrimitiveTypeSpecifierSyntaxTree::Float32(keyword.clone())
-                        }
-                        Keyword::Float64 => {
-                            PrimitiveTypeSpecifierSyntaxTree::Float64(keyword.clone())
-                        }
-                        Keyword::Int8 => PrimitiveTypeSpecifierSyntaxTree::Int8(keyword.clone()),
-                        Keyword::Int16 => PrimitiveTypeSpecifierSyntaxTree::Int16(keyword.clone()),
-                        Keyword::Int32 => PrimitiveTypeSpecifierSyntaxTree::Int32(keyword.clone()),
-                        Keyword::Int64 => PrimitiveTypeSpecifierSyntaxTree::Int64(keyword.clone()),
-                        Keyword::Uint8 => PrimitiveTypeSpecifierSyntaxTree::Uint8(keyword.clone()),
-                        Keyword::Uint16 => {
-                            PrimitiveTypeSpecifierSyntaxTree::Uint16(keyword.clone())
-                        }
-                        Keyword::Uint32 => {
-                            PrimitiveTypeSpecifierSyntaxTree::Uint32(keyword.clone())
-                        }
-                        Keyword::Uint64 => {
-                            PrimitiveTypeSpecifierSyntaxTree::Uint64(keyword.clone())
-                        }
+                        KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(*keyword),
+                        KeywordKind::Void => PrimitiveTypeSpecifier::Void(*keyword),
+                        KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(*keyword),
+                        KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(*keyword),
+                        KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(*keyword),
+                        KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(*keyword),
+                        KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(*keyword),
+                        KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(*keyword),
+                        KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(*keyword),
+                        KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(*keyword),
+                        KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(*keyword),
+                        KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(*keyword),
                         _ => return None,
                     };
 
-                    Some(TypeSpecifierSyntaxTree::Primitive(primitive_type))
+                    Some(primitive_type.into())
                 }
                 token => {
                     // eat the token, make progress
                     self.next_token();
 
-                    self.report_error(SyntacticError::TypeSpecifierExpected(Some(token.clone())));
+                    self.report_error(
+                        TypeSpecifierExpected {
+                            found: Some(*token),
+                        }
+                        .into(),
+                    );
                     None
                 }
-            },
-            None => {
-                // make progress
-                self.next_token();
-
-                self.report_error(SyntacticError::TypeSpecifierExpected(None));
-                None
             }
+        } else {
+            // make progress
+            self.next_token();
+
+            self.report_error(TypeSpecifierExpected { found: None }.into());
+            None
         }
     }
 }
 
 /// Is a syntax tree node that represents a list of items in a file.
-/// 
+///
 /// Syntax Synopsis:
 /// ``` txt
-/// FileSyntaxTree:
-///     ItemSyntaxTree*
+/// File:
+///     Item*
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct FileSyntaxTree {
-    pub items: Vec<ItemSyntaxTree>,
+pub struct File {
+    /// Is a list of item declarations in the file.
+    pub items: Vec<Item>,
 }
 
-impl FileSyntaxTree {
-    /// Parses a file syntax tree from a token stream.
-    pub fn parse(tokens: &TokenStream) -> (FileSyntaxTree, Vec<SyntacticError>) {
+impl File {
+    /// Parses a [`File`] from a token stream.
+    #[must_use]
+    pub fn parse(tokens: &TokenStream) -> (Self, Vec<SyntacticError>) {
         // empty token stream
         if tokens.is_empty() {
-            return (FileSyntaxTree { items: Vec::new() }, Vec::new());
+            return (Self { items: Vec::new() }, Vec::new());
         }
 
         let mut cursor = tokens.cursor();
@@ -372,20 +355,17 @@ impl FileSyntaxTree {
         // parse items
         while parser.peek_significant_token().is_some() {
             let item = parser.parse_item();
-            match item {
-                Some(item) => items.push(item),
-                None => {
+            item.map_or_else(|| {
                     // look for the next access modifier
-                    parser.forward_until(|token| 
-                        matches!(token, Token::Keyword(keyword) if keyword.keyword == Keyword::Public 
-                            || keyword.keyword == Keyword::Private)
+                    parser.forward_until(|token|
+                        matches!(token, Token::Keyword(keyword) if keyword.keyword == KeywordKind::Public
+                            || keyword.keyword == KeywordKind::Private)
                         );
-                }
-            }
+                }, |item| items.push(item));
         }
 
         // return the syntax tree and the errors
-        (FileSyntaxTree { items }, parser.take_errors())
+        (Self { items }, parser.take_errors())
     }
 }
 

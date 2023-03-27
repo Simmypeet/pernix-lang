@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use pernixc_common::source_file::SourceFile;
-use pernixc_semantic::symbol::ItemSymbolTable;
+use pernixc_semantic::symbol::GlobalSymbolTable;
 use pernixc_syntax::file_parsing::FileParsing;
 
 #[derive(clap::Parser, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -11,7 +11,7 @@ pub struct CompilationArgument {
 }
 
 fn late_frontend_compilation(syntax_trees: Vec<FileParsing>) {
-    let result = ItemSymbolTable::analyze(syntax_trees.into_iter());
+    let result = GlobalSymbolTable::analyze(syntax_trees.into_iter());
 }
 
 pub fn compile(args: CompilationArgument) {
@@ -21,7 +21,7 @@ pub fn compile(args: CompilationArgument) {
             None => "untitled".to_string(),
         }]) {
             Ok(source_file) => source_file,
-            Err(_) => std::process::exit(1), // TODO: Better error handling
+            Err(..) => std::process::exit(1), // TODO: Better error handling
         };
 
     let syntax_trees =

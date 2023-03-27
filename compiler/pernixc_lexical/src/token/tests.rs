@@ -2,9 +2,11 @@ use std::path::PathBuf;
 
 use pernixc_common::source_file::{Location, SourceFile, Span, SpanEnding};
 
-use crate::token::{CommentKind, Keyword, Token};
+use crate::token::{CommentKind, KeywordKind, Token};
 
 #[test]
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::cognitive_complexity)]
 fn token_test() -> Result<(), Box<dyn std::error::Error>> {
     let source_file = SourceFile::load(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -21,7 +23,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_identifier()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -35,7 +37,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -49,7 +51,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_identifier()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -63,7 +65,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -77,7 +79,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_identifier()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -91,7 +93,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -105,9 +107,9 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_keyword()
-            .cloned()
+            .copied()
             .unwrap();
-        assert_eq!(token.keyword, Keyword::Public);
+        assert_eq!(token.keyword, KeywordKind::Public);
         assert_eq!(
             token.span,
             Span::new(
@@ -120,7 +122,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
 
         assert_eq!(
@@ -135,9 +137,9 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_keyword()
-            .cloned()
+            .copied()
             .unwrap();
-        assert_eq!(token.keyword, Keyword::Void);
+        assert_eq!(token.keyword, KeywordKind::Void);
         assert_eq!(
             token.span,
             Span::new(
@@ -151,7 +153,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
     let token = Token::tokenize(&mut iter)
         .unwrap()
         .as_white_space()
-        .cloned()
+        .copied()
         .unwrap();
     assert_eq!(
         token.span,
@@ -165,7 +167,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_comment()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(token.kind, CommentKind::SingleLine);
         assert_eq!(
@@ -179,7 +181,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_comment()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(token.kind, CommentKind::Delimited);
         assert_eq!(
@@ -196,7 +198,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -212,7 +214,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_numeric_literal()
-            .cloned()
+            .copied()
             .unwrap();
 
         assert_eq!(
@@ -239,7 +241,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -255,7 +257,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_numeric_literal()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -285,7 +287,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -301,7 +303,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_numeric_literal()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -325,7 +327,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_punctuation()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(token.punctuation, '.');
         assert_eq!(
@@ -342,7 +344,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_identifier()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -358,7 +360,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -374,7 +376,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_character_literal()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -391,7 +393,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -407,7 +409,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_punctuation()
-            .cloned()
+            .copied()
             .unwrap();
 
         assert_eq!(token.punctuation, '\'');
@@ -422,7 +424,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_identifier()
-            .cloned()
+            .copied()
             .unwrap();
 
         assert_eq!(
@@ -436,7 +438,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_punctuation()
-            .cloned()
+            .copied()
             .unwrap();
 
         assert_eq!(token.punctuation, '\'');
@@ -454,7 +456,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -470,7 +472,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_character_literal()
-            .cloned()
+            .copied()
             .unwrap();
 
         assert_eq!(
@@ -488,7 +490,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -503,14 +505,14 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
     {
         let errs = Token::tokenize(&mut iter)
             .unwrap_err()
-            .into_lexical()
+            .into_lexical_error()
             .unwrap()
             .into_invalid_escape_character_sequences()
             .unwrap();
 
-        assert_eq!(errs.len(), 1);
+        assert_eq!(errs.spans.len(), 1);
         assert_eq!(
-            errs[0],
+            errs.spans[0],
             Span::new(
                 Location::new(11, 3, 94),
                 SpanEnding::Location(Location::new(11, 4, 95))
@@ -523,7 +525,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -539,7 +541,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_string_literal()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -555,7 +557,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -571,7 +573,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_string_literal()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -587,7 +589,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         let token = Token::tokenize(&mut iter)
             .unwrap()
             .as_white_space()
-            .cloned()
+            .copied()
             .unwrap();
         assert_eq!(
             token.span,
@@ -602,15 +604,15 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
     {
         let errs = Token::tokenize(&mut iter)
             .unwrap_err()
-            .into_lexical()
+            .into_lexical_error()
             .unwrap()
             .into_invalid_escape_character_sequences()
             .unwrap();
 
-        assert_eq!(errs.len(), 3);
+        assert_eq!(errs.spans.len(), 3);
 
         assert_eq!(
-            errs[0],
+            errs.spans[0],
             Span::new(
                 Location::new(14, 8, 148),
                 SpanEnding::Location(Location::new(14, 9, 149))
@@ -618,7 +620,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         assert_eq!(
-            errs[1],
+            errs.spans[1],
             Span::new(
                 Location::new(14, 19, 159),
                 SpanEnding::Location(Location::new(14, 20, 160))
@@ -626,7 +628,7 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         assert_eq!(
-            errs[2],
+            errs.spans[2],
             Span::new(
                 Location::new(14, 29, 169),
                 SpanEnding::Location(Location::new(14, 30, 170))

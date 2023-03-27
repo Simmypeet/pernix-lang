@@ -1,6 +1,4 @@
-use std::error::Error;
-
-use pernixc_common::source_file::{SourceFileIterator, Span, SpanEnding};
+use pernixc_common::source_file::{Iterator, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 use proptest::{
     prop_assert_eq, prop_oneof, proptest,
@@ -9,10 +7,7 @@ use proptest::{
 
 use crate::{
     parser::Parser,
-    syntax_tree::{
-        expression::{BinaryOperatorSyntaxTree, PerfixOperatorSyntaxTree},
-        SyntaxTree,
-    },
+    syntax_tree::{expression::BinaryOperator, SourceElement},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,7 +49,7 @@ proptest! {
         }).collect::<String>();
         string.push('1');
 
-        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(&string));
+        let (token_stream, _) = TokenStream::tokenize(Iterator::new(&string));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
@@ -62,21 +57,24 @@ proptest! {
         let mut expression = parser.parse_primary_expression().unwrap();
 
         for original_operator in operators {
-            let prefix_expr = expression.into_functional_expression().unwrap().into_prefix_expression().unwrap();
+            let prefix_expr = expression.into_functional()
+                .unwrap()
+                .into_prefix()
+                .unwrap();
             match prefix_expr.operator {
-                PerfixOperatorSyntaxTree::LogicalNot(_) => prop_assert_eq!(original_operator, PrefixOperator::LogicalNot),
-                PerfixOperatorSyntaxTree::Negate(_) => prop_assert_eq!(original_operator, PrefixOperator::Negate),
+                super::PrefixOperator::LogicalNot(..) => prop_assert_eq!(original_operator, PrefixOperator::LogicalNot),
+                super::PrefixOperator::Negate(..) => prop_assert_eq!(original_operator, PrefixOperator::Negate),
             }
             expression = *prefix_expr.operand;
         }
 
-        expression.into_functional_expression().unwrap().into_numeric_literal().unwrap();
+        expression.into_functional().unwrap().into_numeric_literal().unwrap();
     }
 
     #[test]
     fn member_access_test(identifiers in member_access_strategy()) {
         let string = format!("1.{}", identifiers.join("."));
-        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(&string));
+        let (token_stream, _) = TokenStream::tokenize(Iterator::new(&string));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
@@ -84,17 +82,18 @@ proptest! {
         let mut expression = parser.parse_primary_expression().unwrap();
 
         for original_identifier in identifiers.iter().rev() {
-            let member_access_expr = expression.into_functional_expression().unwrap().into_member_access_expression().unwrap();
+            let member_access_expr = expression.into_functional().unwrap().into_member_access().unwrap();
             prop_assert_eq!(original_identifier, substr_span(&string, member_access_expr.identifier.span));
             expression = *member_access_expr.expression;
         }
 
-        expression.into_functional_expression().unwrap().into_numeric_literal().unwrap();
+        expression.into_functional().unwrap().into_numeric_literal().unwrap();
     }
 }
 
 #[test]
-fn binary_operator_test() -> Result<(), Box<dyn Error>> {
+#[allow(clippy::too_many_lines)]
+fn binary_operator_test() {
     let source_code = "!1 + 2 * 3 - 4 / 5 % 6";
     /*
     Expected Tree:
@@ -118,7 +117,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
             - NumericLiteral: 6
     */
 
-    let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(source_code));
+    let (token_stream, _) = TokenStream::tokenize(Iterator::new(source_code));
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
@@ -127,45 +126,39 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
     let expression = parser
         .parse_expression()
         .unwrap()
-        .into_functional_expression()
+        .into_functional()
         .unwrap()
-        .into_binary_expression()
+        .into_binary()
         .unwrap();
 
-    assert!(matches!(
-        expression.operator,
-        BinaryOperatorSyntaxTree::Subtract(_)
-    ));
+    assert!(matches!(expression.operator, BinaryOperator::Subtract(..)));
 
     let left = expression
         .left
-        .into_functional_expression()
+        .into_functional()
         .unwrap()
-        .into_binary_expression()
+        .into_binary()
         .unwrap();
     {
         let expression = left;
 
-        assert!(matches!(
-            expression.operator,
-            BinaryOperatorSyntaxTree::Add(_)
-        ));
+        assert!(matches!(expression.operator, BinaryOperator::Add(..)));
 
         let left = expression
             .left
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_prefix_expression()
+            .into_prefix()
             .unwrap();
         {
             let expression = left;
             assert!(matches!(
                 expression.operator,
-                PerfixOperatorSyntaxTree::LogicalNot(_)
+                super::PrefixOperator::LogicalNot(..)
             ));
             let operand = expression
                 .operand
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
@@ -174,21 +167,18 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
 
         let right = expression
             .right
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_binary_expression()
+            .into_binary()
             .unwrap();
         {
             let expression = right;
 
-            assert!(matches!(
-                expression.operator,
-                BinaryOperatorSyntaxTree::Multiply(_)
-            ));
+            assert!(matches!(expression.operator, BinaryOperator::Multiply(..)));
 
             let left = expression
                 .left
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
@@ -196,7 +186,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
 
             let right = expression
                 .right
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
@@ -205,35 +195,29 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
     }
     let right = expression
         .right
-        .into_functional_expression()
+        .into_functional()
         .unwrap()
-        .into_binary_expression()
+        .into_binary()
         .unwrap();
     {
         let expression = right;
 
-        assert!(matches!(
-            expression.operator,
-            BinaryOperatorSyntaxTree::Modulo(_)
-        ));
+        assert!(matches!(expression.operator, BinaryOperator::Modulo(..)));
 
         let left = expression
             .left
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_binary_expression()
+            .into_binary()
             .unwrap();
         {
             let expression = left;
 
-            assert!(matches!(
-                expression.operator,
-                BinaryOperatorSyntaxTree::Divide(_)
-            ));
+            assert!(matches!(expression.operator, BinaryOperator::Divide(..)));
 
             let left = expression
                 .left
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
@@ -241,7 +225,7 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
 
             let right = expression
                 .right
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
@@ -250,20 +234,18 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
 
         let right = expression
             .right
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
             .into_numeric_literal()
             .unwrap();
         assert_eq!(substr_span(source_code, right.span()), "6");
     }
-
-    Ok(())
 }
 
 #[test]
-fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
+fn identifier_expression_test() {
     let source_code = "Qualified::Identifier Hello(1, 2) World() Test { yeah: 1 }";
-    let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(source_code));
+    let (token_stream, _) = TokenStream::tokenize(Iterator::new(source_code));
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
@@ -274,9 +256,9 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
         let expression = parser
             .parse_primary_expression()
             .unwrap()
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_identifier_expression()
+            .into_named()
             .unwrap();
 
         assert_eq!(
@@ -290,9 +272,9 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
         let mut expression = parser
             .parse_primary_expression()
             .unwrap()
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_function_call_expression()
+            .into_function_call()
             .unwrap();
 
         assert_eq!(
@@ -306,7 +288,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
         let expression = iter
             .next()
             .unwrap()
-            .as_functional_expression()
+            .as_functional()
             .unwrap()
             .as_numeric_literal()
             .unwrap();
@@ -316,7 +298,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
         let expression = iter
             .next()
             .unwrap()
-            .as_functional_expression()
+            .as_functional()
             .unwrap()
             .as_numeric_literal()
             .unwrap();
@@ -331,9 +313,9 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
         let expression = parser
             .parse_primary_expression()
             .unwrap()
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_function_call_expression()
+            .into_function_call()
             .unwrap();
 
         assert_eq!(
@@ -349,9 +331,9 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
         let mut expression = parser
             .parse_primary_expression()
             .unwrap()
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_struct_literal_syntax_tree()
+            .into_struct_literal()
             .unwrap();
 
         assert_eq!(
@@ -371,7 +353,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
 
         let expression = field
             .expression
-            .as_functional_expression()
+            .as_functional()
             .unwrap()
             .as_numeric_literal()
             .unwrap();
@@ -380,6 +362,4 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
 
         assert!(iter.next().is_none());
     }
-
-    Ok(())
 }

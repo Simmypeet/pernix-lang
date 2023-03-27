@@ -1,14 +1,11 @@
 use std::error::Error;
 
-use pernixc_common::source_file::{SourceFileIterator, Span, SpanEnding};
+use pernixc_common::source_file::{Iterator, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
     parser::Parser,
-    syntax_tree::{
-        item::AccessModifierSyntaxTree, PrimitiveTypeSpecifierSyntaxTree, SyntaxTree,
-        TypeSpecifierSyntaxTree,
-    },
+    syntax_tree::{item::AccessModifier, PrimitiveTypeSpecifier, SourceElement, TypeSpecifier},
 };
 
 const STRUCT_SOURCE_CODE: &str = "
@@ -30,7 +27,7 @@ fn substr_span(source_code: &str, span: Span) -> &str {
 
 #[test]
 fn struct_item_test() -> Result<(), Box<dyn Error>> {
-    let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(STRUCT_SOURCE_CODE));
+    let (token_stream, _) = TokenStream::tokenize(Iterator::new(STRUCT_SOURCE_CODE));
     let mut cursor = token_stream.cursor();
     cursor.next_token();
     let mut parser = Parser::new(cursor)?;
@@ -39,7 +36,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
 
     assert!(matches!(
         struct_item.access_modifier,
-        AccessModifierSyntaxTree::Public(_)
+        AccessModifier::Public(..)
     ));
 
     assert_eq!(
@@ -53,7 +50,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
         let field_group = field_group_iter.next().unwrap();
         assert!(matches!(
             field_group.access_modifier,
-            AccessModifierSyntaxTree::Public(_)
+            AccessModifier::Public(..)
         ));
         let mut field_iter = field_group.fields.iter();
         assert!(field_iter.next().is_none());
@@ -63,7 +60,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
         let field_group = field_group_iter.next().unwrap();
         assert!(matches!(
             field_group.access_modifier,
-            AccessModifierSyntaxTree::Private(_)
+            AccessModifier::Private(..)
         ));
         let mut field_iter = field_group.fields.into_iter();
         {
@@ -74,7 +71,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
             );
             assert!(matches!(
                 field.type_specifier,
-                TypeSpecifierSyntaxTree::Primitive(PrimitiveTypeSpecifierSyntaxTree::Int32(_))
+                TypeSpecifier::PrimitiveTypeSpecifier(PrimitiveTypeSpecifier::Int32(..))
             ));
         }
         {
@@ -86,7 +83,11 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
             assert_eq!(
                 substr_span(
                     STRUCT_SOURCE_CODE,
-                    field.type_specifier.into_qualified().unwrap().span()
+                    field
+                        .type_specifier
+                        .into_qualified_identifier()
+                        .unwrap()
+                        .span()
                 ),
                 "some::other::type"
             );

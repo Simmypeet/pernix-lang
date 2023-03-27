@@ -1,8 +1,8 @@
-use pernixc_common::source_file::{SourceFileIterator, Span, SpanEnding};
+use pernixc_common::source_file::{Iterator, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 use proptest::{prop_assert, prop_assert_eq, proptest, strategy::Strategy};
 
-use crate::{parser::Parser, syntax_tree::SyntaxTree};
+use crate::{parser::Parser, syntax_tree::SourceElement};
 
 fn substr_span(source_file: &str, span: Span) -> &str {
     match span.end {
@@ -40,7 +40,7 @@ proptest! {
             string
         }).collect::<Vec<_>>().join("::");
 
-        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(&source_code));
+        let (token_stream, _) = TokenStream::tokenize(Iterator::new(&source_code));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
@@ -49,7 +49,7 @@ proptest! {
         let qualified_identifier = parser.parse_qualified_identifier().unwrap();
 
         for (original_identifier, parsed_identifier) in identifiers.iter().zip(qualified_identifier.elements()) {
-            prop_assert_eq!(&original_identifier.1, substr_span(&source_code, parsed_identifier.span()))
+            prop_assert_eq!(&original_identifier.1, substr_span(&source_code, parsed_identifier.span()));
         }
     }
 }
@@ -89,13 +89,13 @@ proptest! {
         primitive_type in primitive_type_specifier_strategy(),
         qualified_type in qualified_type_specifier_strategy(),
     ) {
-        let source_code = format!("{} {}", primitive_type, qualified_type);
-        let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(&source_code));
+        let source_code = format!("{primitive_type} {qualified_type}");
+        let (token_stream, _) = TokenStream::tokenize(Iterator::new(&source_code));
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
 
-        prop_assert!(parser.parse_type_specifier().unwrap().into_primitive().is_ok());
-        prop_assert!(parser.parse_type_specifier().unwrap().into_qualified().is_ok());
+        prop_assert!(parser.parse_type_specifier().unwrap().into_primitive_type_specifier().is_ok());
+        prop_assert!(parser.parse_type_specifier().unwrap().into_qualified_identifier().is_ok());
     }
 }

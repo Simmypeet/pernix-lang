@@ -1,11 +1,11 @@
 use std::error::Error;
 
-use pernixc_common::source_file::{SourceFileIterator, Span, SpanEnding};
+use pernixc_common::source_file::{Iterator, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
     parser::Parser,
-    syntax_tree::{expression::BinaryOperatorSyntaxTree, SyntaxTree},
+    syntax_tree::{expression::BinaryOperator, SourceElement},
 };
 
 fn substr_span(source_code: &str, span: Span) -> &str {
@@ -36,8 +36,9 @@ const SOURCE_CODE: &str = "
 ";
 
 #[test]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
-    let (token_stream, _) = TokenStream::tokenize(SourceFileIterator::new(SOURCE_CODE));
+    let (token_stream, _) = TokenStream::tokenize(Iterator::new(SOURCE_CODE));
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
@@ -46,9 +47,9 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
     let block = parser
         .parse_expression()
         .unwrap()
-        .into_imperative_expression()
+        .into_imperative()
         .unwrap()
-        .into_block_expression()
+        .into_block()
         .unwrap();
 
     assert_eq!(
@@ -63,18 +64,21 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         let variable_declaration = statement_iter
             .next()
             .unwrap()
-            .into_declaration()
+            .into_declarative()
             .unwrap()
             .into_variable_declaration()
             .unwrap();
 
-        let type_binding = variable_declaration
-            .variable_type_binding
-            .into_type_binding()
+        let type_binding_specifier = variable_declaration
+            .variable_type_binding_specifier
+            .into_type_binding_specifier()
             .unwrap();
 
-        assert!(type_binding.mutable_keyword.is_none());
-        let type_specifier = type_binding.type_specifier.into_qualified().unwrap();
+        assert!(type_binding_specifier.mutable_keyword.is_none());
+        let type_specifier = type_binding_specifier
+            .type_specifier
+            .into_qualified_identifier()
+            .unwrap();
         assert_eq!(
             substr_span(SOURCE_CODE, type_specifier.span()),
             "Some::Struct::Name"
@@ -89,11 +93,10 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         // check expression
         let expression = variable_declaration
             .expression
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
             .into_numeric_literal()
-            .unwrap()
-            .0;
+            .unwrap();
         assert_eq!(substr_span(SOURCE_CODE, expression.span), "32");
     }
 
@@ -101,12 +104,12 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         let identifier_expression = statement_iter
             .next()
             .unwrap()
-            .into_expression()
+            .into_expressive()
             .unwrap()
-            .into_functional_expresion()
+            .into_semi()
             .unwrap()
             .expression
-            .into_identifier_expression()
+            .into_named()
             .unwrap();
 
         assert_eq!(
@@ -119,38 +122,36 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         let binary_expression = statement_iter
             .next()
             .unwrap()
-            .into_expression()
+            .into_expressive()
             .unwrap()
-            .into_functional_expresion()
+            .into_semi()
             .unwrap()
             .expression
-            .into_binary_expression()
+            .into_binary()
             .unwrap();
 
         // check lhs expression
         let left = binary_expression
             .left
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_identifier_expression()
-            .unwrap()
-            .0;
+            .into_named()
+            .unwrap();
         assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
 
         // check assignment operator
         assert!(matches!(
             binary_expression.operator,
-            BinaryOperatorSyntaxTree::Assign(_)
+            BinaryOperator::Assign(..)
         ));
 
         // check rhs expression
         let right = binary_expression
             .right
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
             .into_numeric_literal()
-            .unwrap()
-            .0;
+            .unwrap();
         assert_eq!(substr_span(SOURCE_CODE, right.span()), "64");
     }
 
@@ -158,43 +159,38 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         let if_else_expression = statement_iter
             .next()
             .unwrap()
-            .into_expression()
+            .into_expressive()
             .unwrap()
-            .into_imperative_expression()
+            .into_imperative()
             .unwrap()
-            .into_if_else_expression()
+            .into_if_else()
             .unwrap();
 
         // check condition
         {
             let condition = if_else_expression
                 .condition
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
-                .into_binary_expression()
+                .into_binary()
                 .unwrap();
 
             let left = condition
                 .left
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
-                .into_identifier_expression()
-                .unwrap()
-                .0;
+                .into_named()
+                .unwrap();
             assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
 
-            assert!(matches!(
-                condition.operator,
-                BinaryOperatorSyntaxTree::Equal(..)
-            ));
+            assert!(matches!(condition.operator, BinaryOperator::Equal(..)));
 
             let right = condition
                 .right
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
                 .into_numeric_literal()
-                .unwrap()
-                .0;
+                .unwrap();
             assert_eq!(substr_span(SOURCE_CODE, right.span()), "64");
         }
 
@@ -202,9 +198,9 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         {
             let then_expression = if_else_expression
                 .then_expression
-                .into_imperative_expression()
+                .into_imperative()
                 .unwrap()
-                .into_block_expression()
+                .into_block()
                 .unwrap();
 
             let mut statement_iter = then_expression.statements.into_iter();
@@ -214,35 +210,33 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             let binary_expression = statement_iter
                 .next()
                 .unwrap()
-                .into_expression()
+                .into_expressive()
                 .unwrap()
-                .into_functional_expresion()
+                .into_semi()
                 .unwrap()
                 .expression
-                .into_binary_expression()
+                .into_binary()
                 .unwrap();
 
             let left = binary_expression
                 .left
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
-                .into_identifier_expression()
-                .unwrap()
-                .0;
+                .into_named()
+                .unwrap();
             assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
 
             assert!(matches!(
                 binary_expression.operator,
-                BinaryOperatorSyntaxTree::Assign(..)
+                BinaryOperator::Assign(..)
             ));
 
             let right = binary_expression
                 .right
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
                 .into_numeric_literal()
-                .unwrap()
-                .0;
+                .unwrap();
             assert_eq!(substr_span(SOURCE_CODE, right.span()), "128");
         }
 
@@ -252,9 +246,9 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .else_expression
                 .unwrap()
                 .expression
-                .into_imperative_expression()
+                .into_imperative()
                 .unwrap()
-                .into_block_expression()
+                .into_block()
                 .unwrap();
 
             let mut statement_iter = else_expression.statements.into_iter();
@@ -264,35 +258,33 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             let binary_expression = statement_iter
                 .next()
                 .unwrap()
-                .into_expression()
+                .into_expressive()
                 .unwrap()
-                .into_functional_expresion()
+                .into_semi()
                 .unwrap()
                 .expression
-                .into_binary_expression()
+                .into_binary()
                 .unwrap();
 
             let left = binary_expression
                 .left
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
-                .into_identifier_expression()
-                .unwrap()
-                .0;
+                .into_named()
+                .unwrap();
             assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
 
             assert!(matches!(
                 binary_expression.operator,
-                BinaryOperatorSyntaxTree::Assign(..)
+                BinaryOperator::Assign(..)
             ));
 
             let right = binary_expression
                 .right
-                .into_functional_expression()
+                .into_functional()
                 .unwrap()
                 .into_numeric_literal()
-                .unwrap()
-                .0;
+                .unwrap();
             assert_eq!(substr_span(SOURCE_CODE, right.span()), "256");
         }
     }
@@ -301,18 +293,18 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         let loop_expression = statement_iter
             .next()
             .unwrap()
-            .into_expression()
+            .into_expressive()
             .unwrap()
-            .into_imperative_expression()
+            .into_imperative()
             .unwrap()
-            .into_loop_expression()
+            .into_loop()
             .unwrap();
 
         let function_call = loop_expression
             .expression
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_function_call_expression()
+            .into_function_call()
             .unwrap();
 
         assert!(function_call.arguments.is_none());
@@ -327,12 +319,12 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         let express_statement = statement_iter
             .next()
             .unwrap()
-            .into_expression()
+            .into_expressive()
             .unwrap()
-            .into_functional_expresion()
+            .into_semi()
             .unwrap()
             .expression
-            .into_express_expression()
+            .into_express()
             .unwrap();
 
         assert_eq!(
@@ -346,11 +338,10 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         let identifier_expression = express_statement
             .expression
             .unwrap()
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
-            .into_identifier_expression()
-            .unwrap()
-            .0;
+            .into_named()
+            .unwrap();
 
         assert_eq!(
             substr_span(SOURCE_CODE, identifier_expression.span()),
@@ -362,12 +353,12 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         let cast_expression = statement_iter
             .next()
             .unwrap()
-            .into_expression()
+            .into_expressive()
             .unwrap()
-            .into_functional_expresion()
+            .into_semi()
             .unwrap()
             .expression
-            .into_cast_expression()
+            .into_cast()
             .unwrap();
 
         assert_eq!(
@@ -375,7 +366,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 SOURCE_CODE,
                 cast_expression
                     .type_specifier
-                    .into_qualified()
+                    .into_qualified_identifier()
                     .unwrap()
                     .span()
             ),
@@ -384,11 +375,10 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
 
         let numeric_literal_expression = cast_expression
             .expression
-            .into_functional_expression()
+            .into_functional()
             .unwrap()
             .into_numeric_literal()
-            .unwrap()
-            .0;
+            .unwrap();
 
         assert_eq!(
             substr_span(SOURCE_CODE, numeric_literal_expression.span()),

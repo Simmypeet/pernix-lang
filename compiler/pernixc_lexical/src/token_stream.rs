@@ -1,10 +1,10 @@
-//! Contains the definition of the [`TokenStream`] and its iterators.
+//! Contains the [`TokenStream`] struct and its related types.
 
 use std::ops::Index;
 
 use delegate::delegate;
 use enum_as_inner::EnumAsInner;
-use pernixc_common::source_file::SourceFileIterator;
+use pernixc_common::source_file::Iterator;
 
 use crate::{
     errors::LexicalError,
@@ -21,13 +21,28 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TokenStream(Vec<Token>);
 
+#[allow(clippy::inline_always)]
 impl TokenStream {
     delegate! {
         to self.0 {
+            /// Checks if the token stream is empty.
+            #[must_use]
             pub fn is_empty(&self) -> bool;
+
+            /// Returns the number of tokens in the token stream.
+            #[must_use]
             pub fn len(&self) -> usize;
+
+            /// Returns a reference to the token at the given index.
+            #[must_use]
             pub fn get(&self, index: usize) -> Option<&Token>;
+
+            /// Returns a reference to the first token in the token stream.
+            #[must_use]
             pub fn first(&self) -> Option<&Token>;
+
+            /// Returns a reference to the last token in the token stream.
+            #[must_use]
             pub fn last(&self) -> Option<&Token>;
         }
     }
@@ -43,7 +58,8 @@ impl TokenStream {
     /// # Returns
     /// A tuple containing the stream of successfully tokenized tokens and a list of lexical errors
     /// encountered during tokenization.
-    pub fn tokenize(mut source_file_iterator: SourceFileIterator) -> (Self, Vec<LexicalError>) {
+    #[must_use]
+    pub fn tokenize(mut source_file_iterator: Iterator) -> (Self, Vec<LexicalError>) {
         // list of tokens to return
         let mut tokens = Vec::new();
 
@@ -54,8 +70,8 @@ impl TokenStream {
             // Tokenizes the next token
             match Token::tokenize(&mut source_file_iterator) {
                 Ok(token) => tokens.push(token),
-                Err(TokenizationError::Lexical(lexical_error)) => {
-                    lexical_errors.push(lexical_error)
+                Err(TokenizationError::LexicalError(lexical_error)) => {
+                    lexical_errors.push(lexical_error);
                 }
                 Err(TokenizationError::EndOfSourceCodeIteratorArgument) => {
                     break (Self(tokens), lexical_errors)
@@ -65,10 +81,11 @@ impl TokenStream {
     }
 
     /// Returns a cursor over the token stream.
-    pub fn cursor(&self) -> TokenStreamCursor {
-        TokenStreamCursor {
+    #[must_use]
+    pub fn cursor(&self) -> Cursor {
+        Cursor {
             token_stream: &self.0,
-            position:     CursorPosition::Before,
+            position: CursorPosition::Before,
         }
     }
 }
@@ -101,20 +118,18 @@ pub enum CursorPosition {
 impl PartialOrd for CursorPosition {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self {
-            CursorPosition::Before => match other {
-                CursorPosition::Before => Some(std::cmp::Ordering::Equal),
-                CursorPosition::Valid(_) => Some(std::cmp::Ordering::Less),
-                CursorPosition::After => Some(std::cmp::Ordering::Less),
+            Self::Before => match other {
+                Self::Before => Some(std::cmp::Ordering::Equal),
+                Self::Valid(..) | Self::After => Some(std::cmp::Ordering::Less),
             },
-            CursorPosition::Valid(index) => match other {
-                CursorPosition::Before => Some(std::cmp::Ordering::Greater),
-                CursorPosition::Valid(other_index) => index.partial_cmp(other_index),
-                CursorPosition::After => Some(std::cmp::Ordering::Less),
+            Self::Valid(index) => match other {
+                Self::Before => Some(std::cmp::Ordering::Greater),
+                Self::Valid(other_index) => index.partial_cmp(other_index),
+                Self::After => Some(std::cmp::Ordering::Less),
             },
-            CursorPosition::After => match other {
-                CursorPosition::Before => Some(std::cmp::Ordering::Greater),
-                CursorPosition::Valid(_) => Some(std::cmp::Ordering::Greater),
-                CursorPosition::After => Some(std::cmp::Ordering::Equal),
+            Self::After => match other {
+                Self::Before => Some(std::cmp::Ordering::Greater),
+                Self::Valid(..) | Self::After => Some(std::cmp::Ordering::Equal),
             },
         }
     }
@@ -122,13 +137,14 @@ impl PartialOrd for CursorPosition {
 
 /// Represents a bidirectional cursor over a [`TokenStream`].
 #[derive(Debug, Clone, Copy)]
-pub struct TokenStreamCursor<'a> {
+pub struct Cursor<'a> {
     token_stream: &'a [Token],
-    position:     CursorPosition,
+    position: CursorPosition,
 }
 
-impl<'a> TokenStreamCursor<'a> {
+impl<'a> Cursor<'a> {
     /// Returns the current token pointed by the cursor.
+    #[must_use]
     pub fn read(&self) -> Option<&'a Token> {
         match self.position {
             CursorPosition::Valid(index) => Some(&self.token_stream[index]),
@@ -189,19 +205,16 @@ impl<'a> TokenStreamCursor<'a> {
     /// If the given position is valid, the cursor will be moved to the given position and `true`
     /// will be returned. Otherwise, the cursor will not be moved and `false` will be returned.
     pub fn set_position(&mut self, position: CursorPosition) -> bool {
-        match position {
-            CursorPosition::Valid(index) => {
-                if index < self.token_stream.len() {
-                    self.position = position;
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => {
+        if let CursorPosition::Valid(index) = position {
+            if index < self.token_stream.len() {
                 self.position = position;
                 true
+            } else {
+                false
             }
+        } else {
+            self.position = position;
+            true
         }
     }
 
@@ -275,5 +288,6 @@ impl<'a> TokenStreamCursor<'a> {
     }
 
     /// Returns the position of the cursor.
+    #[must_use]
     pub fn position(&self) -> CursorPosition { self.position }
 }

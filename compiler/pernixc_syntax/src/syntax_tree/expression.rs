@@ -1,249 +1,377 @@
+//! Contains the syntax tree for expressions.
+
 use std::cmp::Ordering;
 
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{
-    IdentifierToken, Keyword, KeywordToken, NumericLiteralToken, PunctuationToken, Token,
+    Identifier, Keyword, KeywordKind, NumericLiteral, Punctuation, Token,
 };
 
 use super::{
-    statement::StatementSyntaxTree, ConnectedList, LabelSyntaxTree, QualifiedIdentifierSyntaxTree,
-    SyntaxTree, TypeSpecifierSyntaxTree,
+    statement::Statement, ConnectedList, Label, QualifiedIdentifier, SourceElement, TypeSpecifier,
 };
 use crate::{
-    errors::{PunctuationExpected, SyntacticError},
+    errors::{ExpressionExpected, PunctuationExpected, SyntacticError},
     parser::{FirstOrSecond, Parser},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum ExpressionSyntaxTree {
-    FunctionalExpression(FunctionalExpressionSyntaxTree),
-    ImperativeExpression(ImperativeExpressionSyntaxTree),
+/// Is an enumeration of all kinds of expressions.
+///
+/// ``` txt
+/// Expression:
+///     Functional
+///     | ImperativeExpression
+///     ;
+///  ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum Expression {
+    Functional(Functional),
+    Imperative(Imperative),
 }
 
-impl SyntaxTree for ExpressionSyntaxTree {
+impl SourceElement for Expression {
     fn span(&self) -> Span {
         match self {
-            Self::FunctionalExpression(expression) => expression.span(),
-            Self::ImperativeExpression(expression) => expression.span(),
+            Self::Functional(functional_expression) => functional_expression.span(),
+            Self::Imperative(imperative_expression) => imperative_expression.span(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum FunctionalExpressionSyntaxTree {
-    NumericLiteral(NumericLiteralSyntaxTree),
-    BooleanLiteral(BooleanLiteralSyntaxTree),
-    BinaryExpression(BinaryExpressionSyntaxTree),
-    PrefixExpression(PrefixExpressionSyntaxTree),
-    IdentifierExpression(IdentifierExpressionSyntaxTree),
-    FunctionCallExpression(FunctionCallExpressionSyntaxTree),
-    ParenthesizedExpression(ParenthesizedExpressionSyntaxTree),
-    StructLiteralSyntaxTree(StructLiteralSyntaxTree),
-    MemberAccessExpression(MemberAccessExpressionSyntaxTree),
-    ContinueExpression(ContinueSyntaxTree),
-    BreakExpression(BreakSyntaxTree),
-    ReturnExpression(ReturnSyntaxTree),
-    ExpressExpression(ExpressSyntaxTree),
-    CastExpression(CastSyntaxTree),
+/// Is an enumeration of all kinds of functional expressions.
+///
+/// Functional epxressions are expressions immediately evaluated to a value without introducing
+/// control flow.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Functional:
+///     NumericLiteral
+///     | BooleanLiteral
+///     | Binary
+///     | Prefix
+///     | Named
+///     | FunctionCall
+///     | Parenthesized
+///     | StructLiteral
+///     | MemberAccess
+///     | Continue
+///     | Break
+///     | Return
+///     | Express
+///     | Cast
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum Functional {
+    NumericLiteral(NumericLiteral),
+    BooleanLiteral(BooleanLiteral),
+    Binary(Binary),
+    Prefix(Prefix),
+    Named(Named),
+    FunctionCall(FunctionCall),
+    Parenthesized(Parenthesized),
+    StructLiteral(StructLiteral),
+    MemberAccess(MemberAccess),
+    Continue(Continue),
+    Break(Break),
+    Return(Return),
+    Express(Express),
+    Cast(Cast),
 }
 
-impl SyntaxTree for FunctionalExpressionSyntaxTree {
+impl SourceElement for Functional {
     fn span(&self) -> Span {
         match self {
-            Self::NumericLiteral(literal) => literal.span(),
-            Self::BooleanLiteral(literal) => literal.span(),
-            Self::BinaryExpression(expression) => expression.span(),
-            Self::PrefixExpression(expression) => expression.span(),
-            Self::IdentifierExpression(expression) => expression.span(),
-            Self::FunctionCallExpression(expression) => expression.span(),
-            Self::ParenthesizedExpression(expression) => expression.span(),
-            Self::StructLiteralSyntaxTree(expression) => expression.span(),
-            Self::MemberAccessExpression(expression) => expression.span(),
-            Self::ContinueExpression(expression) => expression.span(),
-            Self::BreakExpression(expression) => expression.span(),
-            Self::ReturnExpression(expression) => expression.span(),
-            Self::ExpressExpression(expression) => expression.span(),
-            Self::CastExpression(expression) => expression.span(),
+            Self::NumericLiteral(numeric_literal) => numeric_literal.span(),
+            Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
+            Self::Binary(binary_expression) => binary_expression.span(),
+            Self::Prefix(prefix_expression) => prefix_expression.span(),
+            Self::Named(identifier_expression) => identifier_expression.span(),
+            Self::FunctionCall(function_call_expression) => function_call_expression.span(),
+            Self::Parenthesized(parenthesized_expression) => parenthesized_expression.span(),
+            Self::StructLiteral(struct_literal) => struct_literal.span(),
+            Self::MemberAccess(member_access_expression) => member_access_expression.span(),
+            Self::Continue(continue_) => continue_.span(),
+            Self::Break(break_) => break_.span(),
+            Self::Return(return_) => return_.span(),
+            Self::Express(express) => express.span(),
+            Self::Cast(cast) => cast.span(),
         }
     }
 }
 
+/// Represents a cast expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// CastExpression:
+///     '(' TypeSpecifier ')' Expression
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CastSyntaxTree {
-    pub left_paren: PunctuationToken,
-    pub type_specifier: TypeSpecifierSyntaxTree,
-    pub right_paren: PunctuationToken,
-    pub expression: Box<ExpressionSyntaxTree>,
+#[allow(missing_docs)]
+pub struct Cast {
+    pub left_paren: Punctuation,
+    pub type_specifier: TypeSpecifier,
+    pub right_paren: Punctuation,
+    pub expression: Box<Expression>,
 }
 
-impl SyntaxTree for CastSyntaxTree {
+impl SourceElement for Cast {
     fn span(&self) -> Span { Span::new(self.left_paren.span.start, self.expression.span().end) }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NumericLiteralSyntaxTree(pub NumericLiteralToken);
-
-impl SyntaxTree for NumericLiteralSyntaxTree {
-    fn span(&self) -> Span { self.0.span }
+/// Represents a boolean literal syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// BooleanLiteral:
+///     'true'
+///     | 'false'
+///     ;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum BooleanLiteral {
+    True(Keyword),
+    False(Keyword),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum BooleanLiteralSyntaxTree {
-    True(KeywordToken),
-    False(KeywordToken),
-}
-
-impl SyntaxTree for BooleanLiteralSyntaxTree {
+impl SourceElement for BooleanLiteral {
     fn span(&self) -> Span {
         match self {
-            Self::True(keyword) => keyword.span,
-            Self::False(keyword) => keyword.span,
+            Self::True(keyword) | Self::False(keyword) => keyword.span,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum BinaryOperatorSyntaxTree {
-    Add(PunctuationToken),
-    Subtract(PunctuationToken),
-    Multiply(PunctuationToken),
-    Divide(PunctuationToken),
-    Modulo(PunctuationToken),
-    Assign(PunctuationToken),
-    CompoundAdd(PunctuationToken, PunctuationToken),
-    CompoundSubtract(PunctuationToken, PunctuationToken),
-    CompoundMultiply(PunctuationToken, PunctuationToken),
-    CompoundDivide(PunctuationToken, PunctuationToken),
-    CompoundModulo(PunctuationToken, PunctuationToken),
-    Equal(PunctuationToken, PunctuationToken),
-    NotEqual(PunctuationToken, PunctuationToken),
-    LessThan(PunctuationToken),
-    LessThanOrEqual(PunctuationToken, PunctuationToken),
-    GreaterThan(PunctuationToken),
-    GreaterThanOrEqual(PunctuationToken, PunctuationToken),
-    LogicalAnd(KeywordToken),
-    LogicalOr(KeywordToken),
+/// Represents a binary operator syntax tree
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// BinaryOperator:
+///     '+'
+///     | '-'
+///     | '*'
+///     | '/'
+///     | '%'
+///     | '='
+///     | '+='
+///     | '-='
+///     | '*='
+///     | '/='
+///     | '%='
+///     | '=='
+///     | '!='
+///     | '<'
+///     | '<='
+///     | '>'
+///     | '>='
+///     | 'and'
+///     | 'or'
+///     ;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum BinaryOperator {
+    Add(Punctuation),
+    Subtract(Punctuation),
+    Multiply(Punctuation),
+    Divide(Punctuation),
+    Modulo(Punctuation),
+    Assign(Punctuation),
+    CompoundAdd(Punctuation, Punctuation),
+    CompoundSubtract(Punctuation, Punctuation),
+    CompoundMultiply(Punctuation, Punctuation),
+    CompoundDivide(Punctuation, Punctuation),
+    CompoundModulo(Punctuation, Punctuation),
+    Equal(Punctuation, Punctuation),
+    NotEqual(Punctuation, Punctuation),
+    LessThan(Punctuation),
+    LessThanOrEqual(Punctuation, Punctuation),
+    GreaterThan(Punctuation),
+    GreaterThanOrEqual(Punctuation, Punctuation),
+    LogicalAnd(Keyword),
+    LogicalOr(Keyword),
 }
 
-impl BinaryOperatorSyntaxTree {
+impl BinaryOperator {
     /// Returns `true` if the operator is assignment (including compound assignment)
+    #[must_use]
     pub fn is_assignment(&self) -> bool {
         matches!(
             self,
-            Self::Assign(_)
-                | Self::CompoundAdd(_, _)
-                | Self::CompoundSubtract(_, _)
-                | Self::CompoundMultiply(_, _)
-                | Self::CompoundDivide(_, _)
-                | Self::CompoundModulo(_, _)
+            Self::Assign(..)
+                | Self::CompoundAdd(..)
+                | Self::CompoundSubtract(..)
+                | Self::CompoundMultiply(..)
+                | Self::CompoundDivide(..)
+                | Self::CompoundModulo(..)
         )
     }
 
     /// Gets the precedence of the operator (the higher the number, the first it will be evaluated)
     ///
     /// The least operator has precedence 1.
+    #[must_use]
     pub fn get_precedence(&self) -> u32 {
         match self {
-            Self::Assign(_)
-            | Self::CompoundAdd(_, _)
-            | Self::CompoundSubtract(_, _)
-            | Self::CompoundMultiply(_, _)
-            | Self::CompoundDivide(_, _)
-            | Self::CompoundModulo(_, _) => 1,
-            Self::LogicalOr(_) => 2,
-            Self::LogicalAnd(_) => 3,
-            Self::Equal(_, _) | Self::NotEqual(_, _) => 4,
-            Self::LessThan(_)
-            | Self::LessThanOrEqual(_, _)
-            | Self::GreaterThan(_)
-            | Self::GreaterThanOrEqual(_, _) => 5,
-            Self::Add(_) | Self::Subtract(_) => 6,
-            Self::Multiply(_) | Self::Divide(_) | Self::Modulo(_) => 7,
+            Self::Assign(..)
+            | Self::CompoundAdd(..)
+            | Self::CompoundSubtract(..)
+            | Self::CompoundMultiply(..)
+            | Self::CompoundDivide(..)
+            | Self::CompoundModulo(..) => 1,
+            Self::LogicalOr(..) => 2,
+            Self::LogicalAnd(..) => 3,
+            Self::Equal(..) | Self::NotEqual(..) => 4,
+            Self::LessThan(..)
+            | Self::LessThanOrEqual(..)
+            | Self::GreaterThan(..)
+            | Self::GreaterThanOrEqual(..) => 5,
+            Self::Add(..) | Self::Subtract(..) => 6,
+            Self::Multiply(..) | Self::Divide(..) | Self::Modulo(..) => 7,
         }
     }
 }
 
-impl SyntaxTree for BinaryOperatorSyntaxTree {
+impl SourceElement for BinaryOperator {
     fn span(&self) -> Span {
         match self {
-            Self::Add(token) => token.span,
-            Self::Subtract(token) => token.span,
-            Self::Multiply(token) => token.span,
-            Self::Divide(token) => token.span,
-            Self::Modulo(token) => token.span,
-            Self::Assign(token) => token.span,
-            Self::CompoundAdd(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::CompoundSubtract(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::CompoundMultiply(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::CompoundDivide(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::CompoundModulo(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::Equal(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::NotEqual(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::LessThan(token) => token.span,
-            Self::LessThanOrEqual(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::GreaterThan(token) => token.span,
-            Self::GreaterThanOrEqual(token, token1) => Span::new(token.span.start, token1.span.end),
-            Self::LogicalAnd(token) => token.span,
-            Self::LogicalOr(token) => token.span,
+            Self::Add(token)
+            | Self::Subtract(token)
+            | Self::Multiply(token)
+            | Self::Divide(token)
+            | Self::Modulo(token)
+            | Self::Assign(token)
+            | Self::LessThan(token)
+            | Self::GreaterThan(token) => token.span,
+            Self::CompoundAdd(token, token1)
+            | Self::CompoundSubtract(token, token1)
+            | Self::CompoundMultiply(token, token1)
+            | Self::CompoundDivide(token, token1)
+            | Self::CompoundModulo(token, token1)
+            | Self::Equal(token, token1)
+            | Self::NotEqual(token, token1)
+            | Self::LessThanOrEqual(token, token1)
+            | Self::GreaterThanOrEqual(token, token1) => {
+                Span::new(token.span.start, token1.span.end)
+            }
+            Self::LogicalAnd(token) | Self::LogicalOr(token) => token.span,
         }
     }
 }
 
+/// Represents a binary expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Binary:
+///     Expression BinaryOperator Expression
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BinaryExpressionSyntaxTree {
-    pub left: Box<ExpressionSyntaxTree>,
-    pub operator: BinaryOperatorSyntaxTree,
-    pub right: Box<ExpressionSyntaxTree>,
+#[allow(missing_docs)]
+pub struct Binary {
+    pub left: Box<Expression>,
+    pub operator: BinaryOperator,
+    pub right: Box<Expression>,
 }
 
-impl SyntaxTree for BinaryExpressionSyntaxTree {
+impl SourceElement for Binary {
     fn span(&self) -> Span { Span::new(self.left.span().start, self.right.span().end) }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum PerfixOperatorSyntaxTree {
-    LogicalNot(PunctuationToken),
-    Negate(PunctuationToken),
+/// Represents a prefix operator syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// PrefixOperator:
+///     '!'
+///     | '-'
+///     ;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum PrefixOperator {
+    LogicalNot(Punctuation),
+    Negate(Punctuation),
 }
 
-impl SyntaxTree for PerfixOperatorSyntaxTree {
+impl SourceElement for PrefixOperator {
     fn span(&self) -> Span {
         match self {
-            Self::LogicalNot(token) => token.span,
-            Self::Negate(token) => token.span,
+            Self::LogicalNot(token) | Self::Negate(token) => token.span,
         }
     }
 }
 
+/// Represents a prefix expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Prefix:
+///     PrefixOperator Expression
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PrefixExpressionSyntaxTree {
-    pub operator: PerfixOperatorSyntaxTree,
-    pub operand: Box<ExpressionSyntaxTree>,
+#[allow(missing_docs)]
+pub struct Prefix {
+    pub operator: PrefixOperator,
+    pub operand: Box<Expression>,
 }
 
-impl SyntaxTree for PrefixExpressionSyntaxTree {
+impl SourceElement for Prefix {
     fn span(&self) -> Span { Span::new(self.operator.span().start, self.operand.span().end) }
 }
 
+/// Represents a postfix operator syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Named:
+///     QualifiedIdentifier
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IdentifierExpressionSyntaxTree(pub QualifiedIdentifierSyntaxTree);
+pub struct Named(pub QualifiedIdentifier);
 
-impl SyntaxTree for IdentifierExpressionSyntaxTree {
+impl SourceElement for Named {
     fn span(&self) -> Span { self.0.span() }
 }
 
-pub type ArgumentListSyntaxTree = ConnectedList<Box<ExpressionSyntaxTree>, PunctuationToken>;
+/// Represents a list of expressions separated by commas.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ArgumentList:
+///     Expression (',' Expression)*
+///     ;
+/// ```
+pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 
+/// Represents a function call syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// FunctionCall:
+///     QualifiedIdentifier '(' ArgumentList? ')'
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FunctionCallExpressionSyntaxTree {
-    pub qualified_identifier: QualifiedIdentifierSyntaxTree,
-    pub left_paren: PunctuationToken,
-    pub arguments: Option<ArgumentListSyntaxTree>,
-    pub right_paren: PunctuationToken,
+#[allow(missing_docs)]
+pub struct FunctionCall {
+    pub qualified_identifier: QualifiedIdentifier,
+    pub left_paren: Punctuation,
+    pub arguments: Option<ArgumentList>,
+    pub right_paren: Punctuation,
 }
 
-impl SyntaxTree for FunctionCallExpressionSyntaxTree {
+impl SourceElement for FunctionCall {
     fn span(&self) -> Span {
         Span::new(
             self.qualified_identifier.span().start,
@@ -252,39 +380,74 @@ impl SyntaxTree for FunctionCallExpressionSyntaxTree {
     }
 }
 
+/// Represents an expression that is surrounded by parentheses.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Parenthesized:
+///     '(' Expression ')'
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ParenthesizedExpressionSyntaxTree {
-    pub left_paren: PunctuationToken,
-    pub expression: Box<ExpressionSyntaxTree>,
-    pub right_paren: PunctuationToken,
+#[allow(missing_docs)]
+pub struct Parenthesized {
+    pub left_paren: Punctuation,
+    pub expression: Box<Expression>,
+    pub right_paren: Punctuation,
 }
 
-impl SyntaxTree for ParenthesizedExpressionSyntaxTree {
+impl SourceElement for Parenthesized {
     fn span(&self) -> Span { Span::new(self.left_paren.span.start, self.right_paren.span.end) }
 }
 
+/// Represents a field initializer syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// FieldInitializer:
+///     Identifier ':' Expression
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FieldInitializeSyntaxTree {
-    pub identifier: IdentifierToken,
-    pub colon: PunctuationToken,
-    pub expression: Box<ExpressionSyntaxTree>,
+#[allow(missing_docs)]
+pub struct FieldInitializer {
+    pub identifier: Identifier,
+    pub colon: Punctuation,
+    pub expression: Box<Expression>,
 }
 
-impl SyntaxTree for FieldInitializeSyntaxTree {
+impl SourceElement for FieldInitializer {
     fn span(&self) -> Span { Span::new(self.identifier.span().start, self.expression.span().end) }
 }
 
-pub type FieldInitializeListSyntaxTree = ConnectedList<FieldInitializeSyntaxTree, PunctuationToken>;
+/// Represents a list of field initializers separated by commas.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// FieldInitializeList:
+///     FieldInitializer (',' FieldInitializer)*
+///     ;
+/// ```
+pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 
+/// Represents a struct literal syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// StructLiteral:
+///     QualifiedIdentifier '{' FieldInitializerList? '}'
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StructLiteralSyntaxTree {
-    pub qualified_identifier: QualifiedIdentifierSyntaxTree,
-    pub left_brace: PunctuationToken,
-    pub field_initializations: Option<FieldInitializeListSyntaxTree>,
-    pub right_brace: PunctuationToken,
+#[allow(missing_docs)]
+pub struct StructLiteral {
+    pub qualified_identifier: QualifiedIdentifier,
+    pub left_brace: Punctuation,
+    pub field_initializations: Option<FieldInitializerList>,
+    pub right_brace: Punctuation,
 }
 
-impl SyntaxTree for StructLiteralSyntaxTree {
+impl SourceElement for StructLiteral {
     fn span(&self) -> Span {
         Span::new(
             self.qualified_identifier.span().start,
@@ -293,193 +456,293 @@ impl SyntaxTree for StructLiteralSyntaxTree {
     }
 }
 
+/// Represents a member access syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// MemberAccess:
+///     Expression '.' Identifier
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MemberAccessExpressionSyntaxTree {
-    pub expression: Box<ExpressionSyntaxTree>,
-    pub dot: PunctuationToken,
-    pub identifier: IdentifierToken,
+#[allow(missing_docs)]
+pub struct MemberAccess {
+    pub expression: Box<Expression>,
+    pub dot: Punctuation,
+    pub identifier: Identifier,
 }
 
-impl SyntaxTree for MemberAccessExpressionSyntaxTree {
+impl SourceElement for MemberAccess {
     fn span(&self) -> Span { Span::new(self.expression.span().start, self.identifier.span.end) }
 }
 
+/// Is an enumeration of all kinds of imperative expressions.
+///
+/// Imperative expressions are expressions that yield a value by executing a list of statements.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Imperative:
+///     Block
+///     | IfElse
+///     | Loop
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum ImperativeExpressionSyntaxTree {
-    BlockExpression(BlockExpressionSyntaxTree),
-    IfElseExpression(IfElseExpressionSyntaxTree),
-    LoopExpression(LoopExpressionSyntaxTree),
+#[allow(missing_docs)]
+pub enum Imperative {
+    Block(Block),
+    IfElse(IfElse),
+    Loop(Loop),
 }
 
-impl SyntaxTree for ImperativeExpressionSyntaxTree {
+impl SourceElement for Imperative {
     fn span(&self) -> Span {
         match self {
-            Self::BlockExpression(block) => block.span(),
-            Self::IfElseExpression(if_else) => if_else.span(),
-            Self::LoopExpression(loop_) => loop_.span(),
+            Self::Block(block) => block.span(),
+            Self::IfElse(if_else) => if_else.span(),
+            Self::Loop(loop_) => loop_.span(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LabelSpecifierSyntaxTree {
-    pub label: LabelSyntaxTree,
-    pub colon: PunctuationToken,
+/// Represents a label specifier syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// LabelSpecifier:
+///     Label ':'
+///     ;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub struct LabelSpecifier {
+    pub label: Label,
+    pub colon: Punctuation,
 }
 
-impl SyntaxTree for LabelSpecifierSyntaxTree {
+impl SourceElement for LabelSpecifier {
     fn span(&self) -> Span { Span::new(self.label.single_quote.span.start, self.colon.span.end) }
 }
 
+/// Represents a block syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Block:
+///     LabelSpecifier? '{' Statement* '}'
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BlockExpressionSyntaxTree {
-    pub label_specifier: Option<LabelSpecifierSyntaxTree>,
-    pub left_brace: PunctuationToken,
-    pub statements: Vec<StatementSyntaxTree>,
-    pub right_brace: PunctuationToken,
+#[allow(missing_docs)]
+pub struct Block {
+    pub label_specifier: Option<LabelSpecifier>,
+    pub left_brace: Punctuation,
+    pub statements: Vec<Statement>,
+    pub right_brace: Punctuation,
 }
 
-impl SyntaxTree for BlockExpressionSyntaxTree {
+impl SourceElement for Block {
     fn span(&self) -> Span { Span::new(self.left_brace.span.start, self.right_brace.span.end) }
 }
 
+/// Represents an else portion of an if-else expression.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Else:
+///     'else' Expression
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ElseExpressionSyntaxTree {
-    pub else_keyword: KeywordToken,
-    pub expression: Box<ExpressionSyntaxTree>,
+#[allow(missing_docs)]
+pub struct Else {
+    pub else_keyword: Keyword,
+    pub expression: Box<Expression>,
 }
 
-impl SyntaxTree for ElseExpressionSyntaxTree {
+impl SourceElement for Else {
     fn span(&self) -> Span { Span::new(self.else_keyword.span.start, self.expression.span().end) }
 }
 
+/// Represents an if-else expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// IfElse:
+///     'if' '(' Expression ')' Expression Else?
+///     ;
+/// ```    
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IfElseExpressionSyntaxTree {
-    pub if_keyword: KeywordToken,
-    pub left_paren: PunctuationToken,
-    pub condition: Box<ExpressionSyntaxTree>,
-    pub right_paren: PunctuationToken,
-    pub then_expression: Box<ExpressionSyntaxTree>,
-    pub else_expression: Option<ElseExpressionSyntaxTree>,
+#[allow(missing_docs)]
+pub struct IfElse {
+    pub if_keyword: Keyword,
+    pub left_paren: Punctuation,
+    pub condition: Box<Expression>,
+    pub right_paren: Punctuation,
+    pub then_expression: Box<Expression>,
+    pub else_expression: Option<Else>,
 }
 
-impl SyntaxTree for IfElseExpressionSyntaxTree {
+impl SourceElement for IfElse {
     fn span(&self) -> Span {
         Span::new(
             self.if_keyword.span.start,
-            self.else_expression
-                .as_ref()
-                .map(|else_expression| else_expression.span().end)
-                .unwrap_or_else(|| self.then_expression.span().end),
+            self.else_expression.as_ref().map_or_else(
+                || self.then_expression.span().end,
+                |else_expression| else_expression.span().end,
+            ),
         )
     }
 }
 
+/// Represents a loop expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Loop:
+///     LabelSpecifier? 'loop' Expression
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LoopExpressionSyntaxTree {
-    pub label_specifier: Option<LabelSpecifierSyntaxTree>,
-    pub loop_keyword: KeywordToken,
-    pub expression: Box<ExpressionSyntaxTree>,
+#[allow(missing_docs)]
+pub struct Loop {
+    pub label_specifier: Option<LabelSpecifier>,
+    pub loop_keyword: Keyword,
+    pub expression: Box<Expression>,
 }
 
-impl SyntaxTree for LoopExpressionSyntaxTree {
+impl SourceElement for Loop {
     fn span(&self) -> Span {
         let start = self
             .label_specifier
             .as_ref()
-            .map(|label| label.span().start)
-            .unwrap_or(self.loop_keyword.span.start);
+            .map_or(self.loop_keyword.span.start, |label| label.span().start);
         Span::new(start, self.expression.span().end)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ContinueSyntaxTree {
-    pub continue_keyword: KeywordToken,
-    pub label: Option<LabelSyntaxTree>,
+/// Represents a continue expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Continue:
+///     'continue' Label?
+///     ;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub struct Continue {
+    pub continue_keyword: Keyword,
+    pub label: Option<Label>,
 }
 
-impl SyntaxTree for ContinueSyntaxTree {
+impl SourceElement for Continue {
     fn span(&self) -> Span {
         Span::new(
             self.continue_keyword.span.start,
             self.label
                 .as_ref()
-                .map(|label| label.span().end)
-                .unwrap_or(self.continue_keyword.span.end),
+                .map_or(self.continue_keyword.span.end, |label| label.span().end),
         )
     }
 }
 
+/// Represents an express expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Express:
+///     'express' Label? Expression?
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpressSyntaxTree {
-    pub express_keyword: KeywordToken,
-    pub label: Option<LabelSyntaxTree>,
-    pub expression: Option<Box<ExpressionSyntaxTree>>,
+#[allow(missing_docs)]
+pub struct Express {
+    pub express_keyword: Keyword,
+    pub label: Option<Label>,
+    pub expression: Option<Box<Expression>>,
 }
 
-impl SyntaxTree for ExpressSyntaxTree {
+impl SourceElement for Express {
     fn span(&self) -> Span {
         Span::new(
             self.express_keyword.span.start,
-            self.expression
-                .as_ref()
-                .map(|expression| expression.span().end)
-                .unwrap_or_else(|| {
+            self.expression.as_ref().map_or_else(
+                || {
                     self.label
                         .as_ref()
-                        .map(|label| label.span().end)
-                        .unwrap_or(self.express_keyword.span.end)
-                }),
+                        .map_or(self.express_keyword.span.end, |label| label.span().end)
+                },
+                |expression| expression.span().end,
+            ),
         )
     }
 }
 
+/// Represents a break expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Break:
+///     'break' Label? Expression?
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BreakSyntaxTree {
-    pub break_keyword: KeywordToken,
-    pub label: Option<LabelSyntaxTree>,
-    pub expression: Option<Box<ExpressionSyntaxTree>>,
+#[allow(missing_docs)]
+pub struct Break {
+    pub break_keyword: Keyword,
+    pub label: Option<Label>,
+    pub expression: Option<Box<Expression>>,
 }
 
-impl SyntaxTree for BreakSyntaxTree {
+impl SourceElement for Break {
     fn span(&self) -> Span {
         Span::new(
             self.break_keyword.span.start,
-            self.expression
-                .as_ref()
-                .map(|expression| expression.span().end)
-                .unwrap_or_else(|| {
+            self.expression.as_ref().map_or_else(
+                || {
                     self.label
                         .as_ref()
-                        .map(|label| label.span().end)
-                        .unwrap_or(self.break_keyword.span.end)
-                }),
+                        .map_or(self.break_keyword.span.end, |label| label.span().end)
+                },
+                |expression| expression.span().end,
+            ),
         )
     }
 }
 
+/// Represents a return expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Return:
+///     'return' Expression?
+///     ;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReturnSyntaxTree {
-    pub return_keyword: KeywordToken,
-    pub expression: Option<Box<ExpressionSyntaxTree>>,
+#[allow(missing_docs)]
+pub struct Return {
+    pub return_keyword: Keyword,
+    pub expression: Option<Box<Expression>>,
 }
 
-impl SyntaxTree for ReturnSyntaxTree {
+impl SourceElement for Return {
     fn span(&self) -> Span {
         Span::new(
             self.return_keyword.span.start,
             self.expression
                 .as_ref()
-                .map(|expression| expression.span().end)
-                .unwrap_or(self.return_keyword.span.end),
+                .map_or(self.return_keyword.span.end, |expression| {
+                    expression.span().end
+                }),
         )
     }
 }
 
 impl<'a> Parser<'a> {
-    /// Parses an [ExpressionSyntaxTree].
-    pub fn parse_expression(&mut self) -> Option<ExpressionSyntaxTree> {
+    /// Parses an [`Expression`].
+    pub fn parse_expression(&mut self) -> Option<Expression> {
         // Gets the first primary expression
         let mut first_expression = self.parse_primary_expression()?;
 
@@ -518,7 +781,7 @@ impl<'a> Parser<'a> {
                         candidate_index = index;
                     }
 
-                    _ => (),
+                    Ordering::Less => (),
                 }
             }
 
@@ -529,64 +792,60 @@ impl<'a> Parser<'a> {
                 let (binary_operator, right_expression) = expressions.remove(0);
 
                 // Replace the first expression with the folded expression.
-                first_expression = ExpressionSyntaxTree::FunctionalExpression(
-                    FunctionalExpressionSyntaxTree::BinaryExpression(BinaryExpressionSyntaxTree {
+                first_expression = Expression::Functional(
+                    Binary {
                         left: Box::new(first_expression),
                         operator: binary_operator,
                         right: Box::new(right_expression.unwrap()),
-                    }),
-                )
+                    }
+                    .into(),
+                );
             } else {
                 let (binary_operator, right_expression) = expressions.remove(candidate_index);
 
                 // Replace the expression at the index with the folded expression.
-                expressions[candidate_index - 1].1 =
-                    Some(ExpressionSyntaxTree::FunctionalExpression(
-                        FunctionalExpressionSyntaxTree::BinaryExpression(
-                            BinaryExpressionSyntaxTree {
-                                left: Box::new(expressions[candidate_index - 1].1.take().unwrap()),
-                                operator: binary_operator,
-                                right: Box::new(right_expression.unwrap()),
-                            },
-                        ),
-                    ))
+                expressions[candidate_index - 1].1 = Some(Expression::Functional(
+                    Binary {
+                        left: Box::new(expressions[candidate_index - 1].1.take().unwrap()),
+                        operator: binary_operator,
+                        right: Box::new(right_expression.unwrap()),
+                    }
+                    .into(),
+                ));
             }
         }
 
         Some(first_expression)
     }
 
-    fn try_parse_first_punctuation_binary_operator(&mut self) -> Option<BinaryOperatorSyntaxTree> {
+    fn try_parse_first_punctuation_binary_operator(&mut self) -> Option<BinaryOperator> {
         let starting_cursor_position = self.cursor.position();
         let next_token = self.next_significant_token();
         match next_token {
             Some(Token::Punctuation(punctuation)) => match punctuation.punctuation {
-                '+' => return Some(BinaryOperatorSyntaxTree::Add(punctuation.clone())),
-                '-' => return Some(BinaryOperatorSyntaxTree::Subtract(punctuation.clone())),
-                '*' => return Some(BinaryOperatorSyntaxTree::Multiply(punctuation.clone())),
-                '/' => return Some(BinaryOperatorSyntaxTree::Divide(punctuation.clone())),
-                '%' => return Some(BinaryOperatorSyntaxTree::Modulo(punctuation.clone())),
-                '=' => return Some(BinaryOperatorSyntaxTree::Assign(punctuation.clone())),
+                '+' => return Some(BinaryOperator::Add(*punctuation)),
+                '-' => return Some(BinaryOperator::Subtract(*punctuation)),
+                '*' => return Some(BinaryOperator::Multiply(*punctuation)),
+                '/' => return Some(BinaryOperator::Divide(*punctuation)),
+                '%' => return Some(BinaryOperator::Modulo(*punctuation)),
+                '=' => return Some(BinaryOperator::Assign(*punctuation)),
                 '!' => {
                     if let Some(Token::Punctuation(punctuation1)) = self.peek_significant_token() {
                         if punctuation1.punctuation == '=' {
                             self.next_significant_token();
-                            return Some(BinaryOperatorSyntaxTree::NotEqual(
-                                punctuation.clone(),
-                                punctuation1.clone(),
-                            ));
+                            return Some(BinaryOperator::NotEqual(*punctuation, *punctuation1));
                         }
                     }
                 }
-                '<' => return Some(BinaryOperatorSyntaxTree::LessThan(punctuation.clone())),
-                '>' => return Some(BinaryOperatorSyntaxTree::GreaterThan(punctuation.clone())),
+                '<' => return Some(BinaryOperator::LessThan(*punctuation)),
+                '>' => return Some(BinaryOperator::GreaterThan(*punctuation)),
                 _ => (),
             },
-            Some(Token::Keyword(and_keyword)) if and_keyword.keyword == Keyword::And => {
-                return Some(BinaryOperatorSyntaxTree::LogicalAnd(and_keyword.clone()))
+            Some(Token::Keyword(and_keyword)) if and_keyword.keyword == KeywordKind::And => {
+                return Some(BinaryOperator::LogicalAnd(*and_keyword))
             }
-            Some(Token::Keyword(or_keyword)) if or_keyword.keyword == Keyword::Or => {
-                return Some(BinaryOperatorSyntaxTree::LogicalOr(or_keyword.clone()))
+            Some(Token::Keyword(or_keyword)) if or_keyword.keyword == KeywordKind::Or => {
+                return Some(BinaryOperator::LogicalOr(*or_keyword))
             }
             _ => (),
         }
@@ -596,54 +855,36 @@ impl<'a> Parser<'a> {
 
     fn try_parse_second_punctuation_binary_operator(
         &mut self,
-        first_punctuation_binary_operator: BinaryOperatorSyntaxTree,
-    ) -> BinaryOperatorSyntaxTree {
+        first_punctuation_binary_operator: BinaryOperator,
+    ) -> BinaryOperator {
         let starting_cursor_position = self.cursor.position();
 
         match self.next_significant_token() {
             Some(Token::Punctuation(punctuation)) if punctuation.punctuation == '=' => {
                 match first_punctuation_binary_operator {
-                    BinaryOperatorSyntaxTree::Add(prev_punctuation) => {
-                        BinaryOperatorSyntaxTree::CompoundAdd(prev_punctuation, punctuation.clone())
+                    BinaryOperator::Add(prev_punctuation) => {
+                        BinaryOperator::CompoundAdd(prev_punctuation, *punctuation)
                     }
-                    BinaryOperatorSyntaxTree::Subtract(prev_punctuation) => {
-                        BinaryOperatorSyntaxTree::CompoundSubtract(
-                            prev_punctuation,
-                            punctuation.clone(),
-                        )
+                    BinaryOperator::Subtract(prev_punctuation) => {
+                        BinaryOperator::CompoundSubtract(prev_punctuation, *punctuation)
                     }
-                    BinaryOperatorSyntaxTree::Multiply(prev_punctuation) => {
-                        BinaryOperatorSyntaxTree::CompoundMultiply(
-                            prev_punctuation,
-                            punctuation.clone(),
-                        )
+                    BinaryOperator::Multiply(prev_punctuation) => {
+                        BinaryOperator::CompoundMultiply(prev_punctuation, *punctuation)
                     }
-                    BinaryOperatorSyntaxTree::Divide(prev_punctuation) => {
-                        BinaryOperatorSyntaxTree::CompoundDivide(
-                            prev_punctuation,
-                            punctuation.clone(),
-                        )
+                    BinaryOperator::Divide(prev_punctuation) => {
+                        BinaryOperator::CompoundDivide(prev_punctuation, *punctuation)
                     }
-                    BinaryOperatorSyntaxTree::Modulo(prev_punctuation) => {
-                        BinaryOperatorSyntaxTree::CompoundModulo(
-                            prev_punctuation,
-                            punctuation.clone(),
-                        )
+                    BinaryOperator::Modulo(prev_punctuation) => {
+                        BinaryOperator::CompoundModulo(prev_punctuation, *punctuation)
                     }
-                    BinaryOperatorSyntaxTree::Assign(prev_punctuation) => {
-                        BinaryOperatorSyntaxTree::Equal(prev_punctuation, punctuation.clone())
+                    BinaryOperator::Assign(prev_punctuation) => {
+                        BinaryOperator::Equal(prev_punctuation, *punctuation)
                     }
-                    BinaryOperatorSyntaxTree::LessThan(prev_punctuation) => {
-                        BinaryOperatorSyntaxTree::LessThanOrEqual(
-                            prev_punctuation,
-                            punctuation.clone(),
-                        )
+                    BinaryOperator::LessThan(prev_punctuation) => {
+                        BinaryOperator::LessThanOrEqual(prev_punctuation, *punctuation)
                     }
-                    BinaryOperatorSyntaxTree::GreaterThan(prev_punctuation) => {
-                        BinaryOperatorSyntaxTree::GreaterThanOrEqual(
-                            prev_punctuation,
-                            punctuation.clone(),
-                        )
+                    BinaryOperator::GreaterThan(prev_punctuation) => {
+                        BinaryOperator::GreaterThanOrEqual(prev_punctuation, *punctuation)
                     }
                     _ => {
                         self.cursor.set_position(starting_cursor_position);
@@ -658,7 +899,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_parse_binary_operator(&mut self) -> Option<BinaryOperatorSyntaxTree> {
+    fn try_parse_binary_operator(&mut self) -> Option<BinaryOperator> {
         let first_punctuation_binary_operator =
             self.try_parse_first_punctuation_binary_operator()?;
         Some(self.try_parse_second_punctuation_binary_operator(first_punctuation_binary_operator))
@@ -667,22 +908,20 @@ impl<'a> Parser<'a> {
     // Parses either a block expression or a loop expression.
     fn parse_block_or_loop_expression(
         &mut self,
-        label_specifier: Option<LabelSpecifierSyntaxTree>,
-    ) -> Option<ExpressionSyntaxTree> {
+        label_specifier: Option<LabelSpecifier>,
+    ) -> Option<Expression> {
         match self.peek_significant_token() {
             // Handles loop
-            Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == Keyword::Loop => {
+            Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == KeywordKind::Loop => {
                 self.next_token();
 
                 let expression = self.parse_expression()?;
 
-                Some(ExpressionSyntaxTree::ImperativeExpression(
-                    ImperativeExpressionSyntaxTree::LoopExpression(LoopExpressionSyntaxTree {
-                        label_specifier: None,
-                        loop_keyword: loop_keyword.clone(),
-                        expression: Box::new(expression),
-                    }),
-                ))
+                Some(Expression::Imperative(Imperative::Loop(Loop {
+                    label_specifier: None,
+                    loop_keyword: *loop_keyword,
+                    expression: Box::new(expression),
+                })))
             }
             // Handles block
             Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
@@ -743,117 +982,205 @@ impl<'a> Parser<'a> {
                     }
                 };
 
-                Some(ExpressionSyntaxTree::ImperativeExpression(
-                    ImperativeExpressionSyntaxTree::BlockExpression(BlockExpressionSyntaxTree {
-                        label_specifier,
-                        left_brace: left_brace.clone(),
-                        statements,
-                        right_brace: right_brace.clone(),
-                    }),
-                ))
+                Some(Expression::Imperative(Imperative::Block(Block {
+                    label_specifier,
+                    left_brace: *left_brace,
+                    statements,
+                    right_brace: *right_brace,
+                })))
             }
             token => {
-                self.report_error(SyntacticError::ExpressionExpected(token.cloned()));
+                self.report_error(
+                    ExpressionExpected {
+                        found: token.copied(),
+                    }
+                    .into(),
+                );
                 None
             }
         }
     }
 
-    // Parses an primary expression without any prefix operators.
-    fn parse_primary_expression_raw(&mut self) -> Option<ExpressionSyntaxTree> {
-        match self.peek_significant_token() {
-            // Handles if expressions
-            Some(Token::Keyword(if_keyword)) if if_keyword.keyword == Keyword::If => {
+    fn handle_if_keyword(&mut self, if_keyword: Keyword) -> Option<Expression> {
+        let left_paren = self.expect_punctuation('(')?;
+        let condition = self.parse_expression()?;
+        let right_paren = self.expect_punctuation(')')?;
+
+        let then_expression = self.parse_expression()?;
+
+        // Parses an else expression if it exists.
+        let else_expression = match self.peek_significant_token() {
+            Some(Token::Keyword(else_keyword)) if else_keyword.keyword == KeywordKind::Else => {
                 self.next_token();
 
-                let left_paren = self.expect_punctuation('(')?;
-                let condition = self.parse_expression()?;
-                let right_paren = self.expect_punctuation(')')?;
+                let else_expression = self.parse_expression()?;
 
-                let then_expression = self.parse_expression()?;
+                Some(Else {
+                    else_keyword: *else_keyword,
+                    expression: Box::new(else_expression),
+                })
+            }
+            _ => None,
+        };
 
-                // Parses an else expression if it exists.
-                let else_expression = match self.peek_significant_token() {
-                    Some(Token::Keyword(else_keyword)) if else_keyword.keyword == Keyword::Else => {
-                        self.next_token();
+        Some(Expression::Imperative(Imperative::IfElse(IfElse {
+            if_keyword,
+            left_paren: *left_paren,
+            condition: Box::new(condition),
+            right_paren: *right_paren,
+            then_expression: Box::new(then_expression),
+            else_expression,
+        })))
+    }
 
-                        let else_expression = self.parse_expression()?;
+    fn handle_parenthesis_punctuation(&mut self, left_paren: Punctuation) -> Option<Expression> {
+        let result = self.ambiguity_resolution(
+            |this: &mut Self| {
+                let expression = this.parse_expression()?;
+                let right_paren = this.expect_punctuation(')')?;
 
-                        Some(ElseExpressionSyntaxTree {
-                            else_keyword: else_keyword.clone(),
-                            expression: Box::new(else_expression),
-                        })
+                Some(Expression::Functional(
+                    Parenthesized {
+                        left_paren,
+                        expression: Box::new(expression),
+                        right_paren: *right_paren,
                     }
-                    _ => None,
-                };
-
-                Some(ExpressionSyntaxTree::ImperativeExpression(
-                    ImperativeExpressionSyntaxTree::IfElseExpression(IfElseExpressionSyntaxTree {
-                        if_keyword: if_keyword.clone(),
-                        left_paren: left_paren.clone(),
-                        condition: Box::new(condition),
-                        right_paren: right_paren.clone(),
-                        then_expression: Box::new(then_expression),
-                        else_expression,
-                    }),
+                    .into(),
                 ))
+            },
+            |this: &mut Self| {
+                let type_specifier = this.parse_type_specifier()?;
+                let right_paren = this.expect_punctuation(')')?;
+                let expression = this.parse_expression()?;
+
+                Some(Expression::Functional(
+                    Cast {
+                        left_paren,
+                        type_specifier,
+                        right_paren: *right_paren,
+                        expression: Box::new(expression),
+                    }
+                    .into(),
+                ))
+            },
+        );
+
+        result.map(|x| match x {
+            FirstOrSecond::First(x) | FirstOrSecond::Second(x) => x,
+        })
+    }
+
+    fn handle_identifier(&mut self) -> Option<Expression> {
+        let qualified_identifier = self.parse_qualified_identifier()?;
+
+        match self.peek_significant_token() {
+            // Function call
+            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
+                // eat the left parenthesis
+                self.next_token();
+
+                let (arguments, right_paren) = self
+                    .parse_enclosed_list(')', ',', |this| this.parse_expression().map(Box::new))?;
+
+                Some(Expression::Functional(
+                    FunctionCall {
+                        qualified_identifier,
+                        left_paren: *left_paren,
+                        arguments,
+                        right_paren,
+                    }
+                    .into(),
+                ))
+            }
+
+            // Struct literal
+            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
+                // eat the left brace
+                self.next_token();
+
+                let (field_initializations, right_brace) =
+                    self.parse_enclosed_list('}', ',', |this| {
+                        let identifier = this.expect_identifier()?;
+
+                        let colon = this.expect_punctuation(':')?;
+
+                        let expression = this.parse_expression()?;
+
+                        Some(FieldInitializer {
+                            identifier: *identifier,
+                            colon: *colon,
+                            expression: Box::new(expression),
+                        })
+                    })?;
+
+                Some(Expression::Functional(
+                    StructLiteral {
+                        qualified_identifier,
+                        left_brace: *left_brace,
+                        field_initializations,
+                        right_brace,
+                    }
+                    .into(),
+                ))
+            }
+
+            // Simple identifier expression
+            _ => Some(Expression::Functional(Named(qualified_identifier).into())),
+        }
+    }
+
+    fn try_parse_label(&mut self) -> Option<Label> {
+        match self.peek_significant_token() {
+            Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
+                // eat the single quote
+                self.next_token();
+
+                let name = self.expect_identifier()?;
+
+                Some(Label {
+                    single_quote: *single_quote,
+                    identifier: *name,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn try_parse_expression_for_control_expression(&mut self) -> Option<Box<Expression>> {
+        match self.peek_significant_token() {
+            Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => None,
+            _ => {
+                let current_position = self.cursor.position();
+
+                if self.try_parse_binary_operator().is_some() {
+                    self.cursor.set_position(current_position);
+                    None
+                } else {
+                    Some(Box::new(self.parse_expression()?))
+                }
+            }
+        }
+    }
+
+    // Parses an primary expression without any prefix operators.
+    fn parse_primary_expression_raw(&mut self) -> Option<Expression> {
+        match self.peek_significant_token() {
+            // Handles if expressions
+            Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
+                self.next_token();
+                self.handle_if_keyword(*if_keyword)
             }
 
             // Handles numeric literal
             Some(Token::NumericLiteral(numeric_literal)) => {
                 self.next_token();
-
-                Some(ExpressionSyntaxTree::FunctionalExpression(
-                    FunctionalExpressionSyntaxTree::NumericLiteral(NumericLiteralSyntaxTree(
-                        numeric_literal.clone(),
-                    )),
-                ))
+                Some(Expression::Functional((*numeric_literal).into()))
             }
 
             // Handles parenthesis
             Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
-                let result = self.ambiguity_resolution(
-                    |this: &mut Self| {
-                        this.next_token();
-
-                        let expression = this.parse_expression()?;
-
-                        let right_paren = this.expect_punctuation(')')?;
-
-                        Some(ExpressionSyntaxTree::FunctionalExpression(
-                            FunctionalExpressionSyntaxTree::ParenthesizedExpression(
-                                ParenthesizedExpressionSyntaxTree {
-                                    left_paren: left_paren.clone(),
-                                    expression: Box::new(expression),
-                                    right_paren: right_paren.clone(),
-                                },
-                            ),
-                        ))
-                    },
-                    |this: &mut Self| {
-                        this.next_token();
-
-                        let type_specifier = this.parse_type_specifier()?;
-
-                        let right_paren = this.expect_punctuation(')')?;
-
-                        let expression = this.parse_expression()?;
-
-                        Some(ExpressionSyntaxTree::FunctionalExpression(
-                            FunctionalExpressionSyntaxTree::CastExpression(CastSyntaxTree {
-                                left_paren: left_paren.clone(),
-                                type_specifier,
-                                right_paren: right_paren.clone(),
-                                expression: Box::new(expression),
-                            }),
-                        ))
-                    },
-                );
-
-                result.map(|x| match x {
-                    FirstOrSecond::First(x) => x,
-                    FirstOrSecond::Second(x) => x,
-                })
+                self.next_token();
+                self.handle_parenthesis_punctuation(*left_paren)
             }
 
             // Handles label specifier
@@ -861,15 +1188,14 @@ impl<'a> Parser<'a> {
                 self.next_token();
 
                 let name = self.expect_identifier()?;
-
                 let colon = self.expect_punctuation(':')?;
 
-                let label = LabelSpecifierSyntaxTree {
-                    label: LabelSyntaxTree {
-                        single_quote: single_quote.clone(),
-                        identifier: name.clone(),
+                let label = LabelSpecifier {
+                    label: Label {
+                        single_quote: *single_quote,
+                        identifier: *name,
                     },
-                    colon: colon.clone(),
+                    colon: *colon,
                 };
 
                 self.parse_block_or_loop_expression(Some(label))
@@ -877,274 +1203,87 @@ impl<'a> Parser<'a> {
 
             // Handle continue expression
             Some(Token::Keyword(continue_keyword))
-                if continue_keyword.keyword == Keyword::Continue =>
+                if continue_keyword.keyword == KeywordKind::Continue =>
             {
                 // eat the continue keyword
                 self.next_token();
 
-                let label = match self.peek_significant_token() {
-                    Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
-                        // eat the single quote
-                        self.next_token();
+                let label = self.try_parse_label();
 
-                        let name = self.expect_identifier()?;
-
-                        Some(LabelSyntaxTree {
-                            single_quote: single_quote.clone(),
-                            identifier: name.clone(),
-                        })
-                    }
-                    _ => None,
-                };
-
-                Some(ExpressionSyntaxTree::FunctionalExpression(
-                    FunctionalExpressionSyntaxTree::ContinueExpression(ContinueSyntaxTree {
-                        continue_keyword: continue_keyword.clone(),
+                Some(Expression::Functional(
+                    Continue {
+                        continue_keyword: *continue_keyword,
                         label,
-                    }),
+                    }
+                    .into(),
                 ))
             }
 
             // Handle break expression
-            Some(Token::Keyword(break_keyword)) if break_keyword.keyword == Keyword::Break => {
+            Some(Token::Keyword(break_keyword)) if break_keyword.keyword == KeywordKind::Break => {
                 // eat the break keyword
                 self.next_token();
 
-                let label = match self.peek_significant_token() {
-                    Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
-                        // eat the single quote
-                        self.next_token();
+                let label = self.try_parse_label();
+                let expression = self.try_parse_expression_for_control_expression();
 
-                        let name = self.expect_identifier()?;
-
-                        Some(LabelSyntaxTree {
-                            single_quote: single_quote.clone(),
-                            identifier: name.clone(),
-                        })
+                Some(Expression::Functional(
+                    Break {
+                        break_keyword: *break_keyword,
+                        label,
+                        expression,
                     }
-                    _ => None,
-                };
-
-                match self.peek_significant_token() {
-                    Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => {
-                        Some(ExpressionSyntaxTree::FunctionalExpression(
-                            FunctionalExpressionSyntaxTree::BreakExpression(BreakSyntaxTree {
-                                break_keyword: break_keyword.clone(),
-                                label,
-                                expression: None,
-                            }),
-                        ))
-                    }
-                    _ => {
-                        let current_position = self.cursor.position();
-
-                        if self.try_parse_binary_operator().is_some() {
-                            self.cursor.set_position(current_position);
-
-                            Some(ExpressionSyntaxTree::FunctionalExpression(
-                                FunctionalExpressionSyntaxTree::BreakExpression(BreakSyntaxTree {
-                                    break_keyword: break_keyword.clone(),
-                                    label,
-                                    expression: None,
-                                }),
-                            ))
-                        } else {
-                            let expression = self.parse_expression()?;
-
-                            Some(ExpressionSyntaxTree::FunctionalExpression(
-                                FunctionalExpressionSyntaxTree::BreakExpression(BreakSyntaxTree {
-                                    break_keyword: break_keyword.clone(),
-                                    label,
-                                    expression: Some(Box::new(expression)),
-                                }),
-                            ))
-                        }
-                    }
-                }
+                    .into(),
+                ))
             }
 
             // Handle express expression
             Some(Token::Keyword(express_keyword))
-                if express_keyword.keyword == Keyword::Express =>
+                if express_keyword.keyword == KeywordKind::Express =>
             {
                 // eat the express keyword
                 self.next_token();
 
-                let label = match self.peek_significant_token() {
-                    Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
-                        // eat the single quote
-                        self.next_token();
+                let label = self.try_parse_label();
+                let expression = self.try_parse_expression_for_control_expression();
 
-                        let name = self.expect_identifier()?;
-
-                        Some(LabelSyntaxTree {
-                            single_quote: single_quote.clone(),
-                            identifier: name.clone(),
-                        })
+                Some(Expression::Functional(
+                    Express {
+                        express_keyword: *express_keyword,
+                        label,
+                        expression,
                     }
-                    _ => None,
-                };
-
-                match self.peek_significant_token() {
-                    Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => {
-                        Some(ExpressionSyntaxTree::FunctionalExpression(
-                            FunctionalExpressionSyntaxTree::ExpressExpression(ExpressSyntaxTree {
-                                express_keyword: express_keyword.clone(),
-                                label,
-                                expression: None,
-                            }),
-                        ))
-                    }
-                    _ => {
-                        let current_position = self.cursor.position();
-
-                        if self.try_parse_binary_operator().is_some() {
-                            self.cursor.set_position(current_position);
-
-                            Some(ExpressionSyntaxTree::FunctionalExpression(
-                                FunctionalExpressionSyntaxTree::ExpressExpression(
-                                    ExpressSyntaxTree {
-                                        express_keyword: express_keyword.clone(),
-                                        label,
-                                        expression: None,
-                                    },
-                                ),
-                            ))
-                        } else {
-                            let expression = self.parse_expression()?;
-
-                            Some(ExpressionSyntaxTree::FunctionalExpression(
-                                FunctionalExpressionSyntaxTree::ExpressExpression(
-                                    ExpressSyntaxTree {
-                                        express_keyword: express_keyword.clone(),
-                                        label,
-                                        expression: Some(Box::new(expression)),
-                                    },
-                                ),
-                            ))
-                        }
-                    }
-                }
+                    .into(),
+                ))
             }
 
             // Handles return expression
-            Some(Token::Keyword(return_keyword)) if return_keyword.keyword == Keyword::Return => {
+            Some(Token::Keyword(return_keyword))
+                if return_keyword.keyword == KeywordKind::Return =>
+            {
                 // eat the return keyword
                 self.next_token();
 
-                match self.peek_significant_token() {
-                    Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => {
-                        Some(ExpressionSyntaxTree::FunctionalExpression(
-                            FunctionalExpressionSyntaxTree::ReturnExpression(ReturnSyntaxTree {
-                                return_keyword: return_keyword.clone(),
-                                expression: None,
-                            }),
-                        ))
+                let expression = self.try_parse_expression_for_control_expression();
+
+                Some(Expression::Functional(
+                    Return {
+                        return_keyword: *return_keyword,
+                        expression,
                     }
-                    _ => {
-                        let current_position = self.cursor.position();
-
-                        if self.try_parse_binary_operator().is_some() {
-                            self.cursor.set_position(current_position);
-
-                            Some(ExpressionSyntaxTree::FunctionalExpression(
-                                FunctionalExpressionSyntaxTree::ReturnExpression(
-                                    ReturnSyntaxTree {
-                                        return_keyword: return_keyword.clone(),
-                                        expression: None,
-                                    },
-                                ),
-                            ))
-                        } else {
-                            let expression = self.parse_expression()?;
-
-                            Some(ExpressionSyntaxTree::FunctionalExpression(
-                                FunctionalExpressionSyntaxTree::ReturnExpression(
-                                    ReturnSyntaxTree {
-                                        return_keyword: return_keyword.clone(),
-                                        expression: Some(Box::new(expression)),
-                                    },
-                                ),
-                            ))
-                        }
-                    }
-                }
+                    .into(),
+                ))
             }
 
             // Handles identifier
-            Some(Token::Identifier(_)) => {
-                let qualified_identifier = self.parse_qualified_identifier()?;
-
-                match self.peek_significant_token() {
-                    // Function call
-                    Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
-                        // eat the left parenthesis
-                        self.next_token();
-
-                        let (arguments, right_paren) =
-                            self.parse_enclosed_list(')', ',', |this| {
-                                this.parse_expression().map(Box::new)
-                            })?;
-
-                        Some(ExpressionSyntaxTree::FunctionalExpression(
-                            FunctionalExpressionSyntaxTree::FunctionCallExpression(
-                                FunctionCallExpressionSyntaxTree {
-                                    qualified_identifier,
-                                    left_paren: left_paren.clone(),
-                                    arguments,
-                                    right_paren,
-                                },
-                            ),
-                        ))
-                    }
-
-                    // Struct literal
-                    Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
-                        // eat the left brace
-                        self.next_token();
-
-                        let (field_initializations, right_brace) =
-                            self.parse_enclosed_list('}', ',', |this| {
-                                let identifier = this.expect_identifier()?;
-
-                                let colon = this.expect_punctuation(':')?;
-
-                                let expression = this.parse_expression()?;
-
-                                Some(FieldInitializeSyntaxTree {
-                                    identifier: identifier.clone(),
-                                    colon: colon.clone(),
-                                    expression: Box::new(expression),
-                                })
-                            })?;
-
-                        Some(ExpressionSyntaxTree::FunctionalExpression(
-                            FunctionalExpressionSyntaxTree::StructLiteralSyntaxTree(
-                                StructLiteralSyntaxTree {
-                                    qualified_identifier,
-                                    left_brace: left_brace.clone(),
-                                    field_initializations,
-                                    right_brace,
-                                },
-                            ),
-                        ))
-                    }
-
-                    // Simple identifier expression
-                    _ => Some(ExpressionSyntaxTree::FunctionalExpression(
-                        FunctionalExpressionSyntaxTree::IdentifierExpression(
-                            IdentifierExpressionSyntaxTree(qualified_identifier),
-                        ),
-                    )),
-                }
-            }
+            Some(Token::Identifier(..)) => self.handle_identifier(),
 
             _ => self.parse_block_or_loop_expression(None),
         }
     }
 
     // Parses a primary expression with prefix operators and postfix operators.
-    fn parse_primary_expression(&mut self) -> Option<ExpressionSyntaxTree> {
+    fn parse_primary_expression(&mut self) -> Option<Expression> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(punc))
                 if punc.punctuation == '!' || punc.punctuation == '-' =>
@@ -1153,15 +1292,16 @@ impl<'a> Parser<'a> {
 
                 let operand = self.parse_primary_expression()?;
 
-                return Some(ExpressionSyntaxTree::FunctionalExpression(
-                    FunctionalExpressionSyntaxTree::PrefixExpression(PrefixExpressionSyntaxTree {
+                return Some(Expression::Functional(
+                    Prefix {
                         operator: match punc.punctuation {
-                            '!' => PerfixOperatorSyntaxTree::LogicalNot(punc.clone()),
-                            '-' => PerfixOperatorSyntaxTree::Negate(punc.clone()),
+                            '!' => PrefixOperator::LogicalNot(*punc),
+                            '-' => PrefixOperator::Negate(*punc),
                             _ => unreachable!(),
                         },
                         operand: Box::new(operand),
-                    }),
+                    }
+                    .into(),
                 ));
             }
             _ => (),
@@ -1174,16 +1314,15 @@ impl<'a> Parser<'a> {
                 Some(Token::Punctuation(dot)) if dot.punctuation == '.' => {
                     self.next_token();
 
-                    let identifier = self.expect_identifier()?.clone();
+                    let identifier = *self.expect_identifier()?;
 
-                    primary_expression = ExpressionSyntaxTree::FunctionalExpression(
-                        FunctionalExpressionSyntaxTree::MemberAccessExpression(
-                            MemberAccessExpressionSyntaxTree {
-                                expression: Box::new(primary_expression),
-                                dot: dot.clone(),
-                                identifier,
-                            },
-                        ),
+                    primary_expression = Expression::Functional(
+                        MemberAccess {
+                            expression: Box::new(primary_expression),
+                            dot: *dot,
+                            identifier,
+                        }
+                        .into(),
                     );
                 }
                 _ => break Some(primary_expression),

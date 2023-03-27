@@ -1,1 +1,4 @@
-public enum SomeType {}
+public enum SomeType {
+    First,
+    Second
+}
