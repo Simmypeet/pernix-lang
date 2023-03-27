@@ -16,10 +16,7 @@ pub enum DeclarationBinding {
 
 #[derive(Debug, Clone, PartialEq, Getters, CopyGetters)]
 pub struct VariableDeclarationBinding {
-    #[get_copy = "pub"]
-    pub(super) type_binding_specifier: TypeBinding,
-    #[get_copy = "pub"]
-    pub(super) local_variable_id: usize,
-    #[get = "pub"]
-    pub(super) expression_binding: Option<Box<ExpressionBinding>>,
+    pub type_binding_specifier: TypeBinding,
+    pub local_variable_id: usize,
+    pub expression_binding: Option<Box<ExpressionBinding>>,
 }

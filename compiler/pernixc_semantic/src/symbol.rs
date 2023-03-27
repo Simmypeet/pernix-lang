@@ -1,3 +1,11 @@
+//! Contains the definition of the [`GlobalSymbolTable`] and all the symbols that can be defined in
+//! it.
+//!
+//! Since the symbol table will likely involve a lot of graph and tree structure, it is implemented
+//! in index-based fashion. This means that all the symbols are stored in a vector and each edge in
+//! the graph is represented by an index. This is done to cope with the borrow checker and to avoid
+//! having to use `Rc` and `RefCell` everywhere.
+
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     hash::Hash,
@@ -6,14 +14,11 @@ use std::{
 
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
-use pernixc_common::source_file::SourceFile;
+use pernixc_common::source_file::{SourceElement, SourceFile};
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::{
-    file_parsing::{FileParsing, FileParsingError},
-    syntax_tree::{
-        item::{AccessModifier, Enum, Function, Item, Struct},
-        FileSyntaxTree, PrimitiveTypeSpecifierSyntaxTree, SourceElement, TypeSpecifierSyntaxTree,
-    },
+    file_parsing::{FileParsing, ParsingError},
+    syntax_tree,
 };
 
 use self::ty::{PrimitiveType, Type, TypeBinding};
@@ -47,84 +52,109 @@ impl AccessModifier {
     /// The higher the number, the higher the rank.
     ///
     /// The rank starts at 0.
+    #[must_use]
     pub fn rank(self) -> u32 {
         match self {
-            AccessModifier::Public => 0,
-            AccessModifier::Private => 1,
-            AccessModifier::Internal => 2,
+            Self::Public => 0,
+            Self::Private => 1,
+            Self::Internal => 2,
         }
     }
 
-    /// Converts [`AccessModifier`] to [`AccessModifier`].
-    pub fn from_syntax_tree(access_modifier_syntax_tree: &AccessModifier) -> Self {
+    /// Converts [`pernixc_syntax::syntax_tree::item::AccessModifier`] to [`AccessModifier`].
+    #[must_use]
+    pub fn from_syntax_tree(
+        access_modifier_syntax_tree: &syntax_tree::item::AccessModifier,
+    ) -> Self {
         match access_modifier_syntax_tree {
-            AccessModifier::Public(..) => AccessModifier::Public,
-            AccessModifier::Private(..) => AccessModifier::Private,
-            AccessModifier::Internal(..) => AccessModifier::Internal,
+            syntax_tree::item::AccessModifier::Public(..) => Self::Public,
+            syntax_tree::item::AccessModifier::Private(..) => Self::Private,
+            syntax_tree::item::AccessModifier::Internal(..) => Self::Internal,
         }
     }
 }
 
-/// Is an enumeration of all item symbols that can be defined in a namespace.
+/// Is an enumeration of all item symbols that can be stored in the [`GlobalSymbolTable`].
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
-pub enum GlobalSymbol {
-    ModuleSymbol(ModuleSymbol),
-    StructSymbol(StructSymbol),
-    EnumSymbol(EnumSymbol),
-    FunctionSymbol(FunctionSymbol),
-    EnumVariantSymbol(EnumVariantSymbol),
+#[allow(missing_docs)]
+pub enum Symbol {
+    Module(Module),
+    Struct(Struct),
+    Enum(Enum),
+    Function(Function),
+    EnumVariant(EnumVariant),
 }
 
+/// Represents a variant defined in an enum.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct EnumVariantSymbol {
+pub struct EnumVariant {
+    /// The name of the variant.
     pub name: String,
+
+    /// The declaration order of the variant (starting at 0).
     pub variant_number: usize,
+
+    /// The index of the parent enum symbol.
     pub parent_index: usize,
+
+    /// The access modifier of the variant.
     pub access_modifier: AccessModifier,
 }
 
+/// Represents a variable symbol.
+///
+/// This symbol doesn't necessarily only represent a local variable. It represents all the l-values
+/// that can be assigned to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct VariableSymbol {
+pub struct Variable {
+    /// The name of the variable.
     pub name: String,
-    pub type_binding_specifier: TypeBinding,
+
+    /// The type binding of the variable.
+    pub type_binding: TypeBinding,
 }
 
-impl GlobalSymbol {
+impl Symbol {
     /// Gets the name of the item.
+    #[must_use]
     pub fn name(&self) -> &str {
         match self {
-            GlobalSymbol::ModuleSymbol(symbol) => &symbol.name,
-            GlobalSymbol::StructSymbol(symbol) => &symbol.name,
-            GlobalSymbol::EnumSymbol(symbol) => &symbol.name,
-            GlobalSymbol::FunctionSymbol(symbol) => &symbol.name,
-            GlobalSymbol::EnumVariantSymbol(symbol) => &symbol.name,
+            Self::Module(symbol) => &symbol.name,
+            Self::Struct(symbol) => &symbol.name,
+            Self::Enum(symbol) => &symbol.name,
+            Self::Function(symbol) => &symbol.name,
+            Self::EnumVariant(symbol) => &symbol.name,
         }
     }
 
-    /// Gets the access modifier of the tiem.
+    /// Gets the [`AccessModifier`] of the tiem.
+    #[must_use]
     pub fn access_modifier(&self) -> AccessModifier {
         match self {
-            GlobalSymbol::ModuleSymbol(symbol) => symbol.access_modifier,
-            GlobalSymbol::StructSymbol(symbol) => symbol.access_modifier,
-            GlobalSymbol::EnumSymbol(symbol) => symbol.access_modifier,
-            GlobalSymbol::FunctionSymbol(symbol) => symbol.access_modifier,
-            GlobalSymbol::EnumVariantSymbol(symbol) => symbol.access_modifier,
+            Self::Module(symbol) => symbol.access_modifier,
+            Self::Struct(symbol) => symbol.access_modifier,
+            Self::Enum(symbol) => symbol.access_modifier,
+            Self::Function(symbol) => symbol.access_modifier,
+            Self::EnumVariant(symbol) => symbol.access_modifier,
         }
     }
 
+    /// Gets the index of the symbol that this symbol is defined in.
+    ///
+    /// Returns `None` if the symbol is defined in the root of namespace.
+    #[must_use]
     pub fn parent_index(&self) -> Option<usize> {
         match self {
-            GlobalSymbol::ModuleSymbol(symbol) => symbol.parent_index,
-            GlobalSymbol::StructSymbol(symbol) => Some(symbol.parent_index),
-            GlobalSymbol::EnumSymbol(symbol) => Some(symbol.parent_index),
-            GlobalSymbol::FunctionSymbol(symbol) => Some(symbol.parent_index),
-            GlobalSymbol::EnumVariantSymbol(symbol) => Some(symbol.parent_index),
+            Self::Module(symbol) => symbol.parent_index,
+            Self::Struct(symbol) => Some(symbol.parent_index),
+            Self::Enum(symbol) => Some(symbol.parent_index),
+            Self::Function(symbol) => Some(symbol.parent_index),
+            Self::EnumVariant(symbol) => Some(symbol.parent_index),
         }
     }
 }
 
-/// Is a container that works similar to a hash map -- allows fast access to items by name -- but
-/// also allows fast access to items by index.
+/// Is a container that allows access to items by both name and index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VecNameMap<T> {
     vec: Vec<T>,
@@ -133,6 +163,7 @@ pub struct VecNameMap<T> {
 
 impl<T> VecNameMap<T> {
     /// Creates a new empty [`VecNameMap`].
+    #[must_use]
     pub fn new() -> Self {
         Self {
             vec: Vec::new(),
@@ -145,6 +176,7 @@ impl<T> VecNameMap<T> {
     /// # Returns
     /// - `Ok(index)` if the item was added successfully.
     /// - `Err(index)` if the item already with the same name exists.
+    #[allow(clippy::missing_errors_doc)]
     pub fn add_item(&mut self, name: String, item: T) -> Result<usize, usize> {
         match self.map.entry(name) {
             // If the item already exists, return the index of the existing item.
@@ -164,15 +196,18 @@ impl<T> VecNameMap<T> {
     }
 
     /// Returns an index of the item with the given name.
+    #[must_use]
     pub fn map_name_to_index(&self, name: &str) -> Option<usize> { self.map.get(name).copied() }
 
     /// Returns a reference to the item with the given name.
+    #[must_use]
     pub fn get_by_index(&self, index: usize) -> Option<&T> { self.vec.get(index) }
 
     /// Returns a mutable reference to the item with the given name.
     pub fn get_mut_by_index(&mut self, index: usize) -> Option<&mut T> { self.vec.get_mut(index) }
 
     /// Returns a reference to the item with the given name.
+    #[must_use]
     pub fn get_by_name(&self, name: &str) -> Option<&T> {
         self.map_name_to_index(name)
             .and_then(|index| self.get_by_index(index))
@@ -191,9 +226,11 @@ impl<T> VecNameMap<T> {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> { self.vec.iter_mut() }
 
     /// Returns the number of items in the container.
+    #[must_use]
     pub fn len(&self) -> usize { self.vec.len() }
 
     /// Returns `true` if the container is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool { self.vec.is_empty() }
 }
 
@@ -201,66 +238,125 @@ impl<T> Default for VecNameMap<T> {
     fn default() -> Self { Self::new() }
 }
 
+/// Is a structure that contains the syntax tree and the source file where it was parsed from.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, new)]
 pub struct SyntaxTreeWithSource<T> {
+    /// The source file where the syntax tree was parsed from.
     pub source_file: Arc<SourceFile>,
+
+    /// The syntax tree.
     pub syntax_tree: T,
 }
 
+/// Represents a function symbol.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionSymbol {
+pub struct Function {
+    /// The name of the function.
     pub name: String,
-    pub parent: usize,
+
+    /// The access modifier of the function.
     pub access_modifier: AccessModifier,
+
+    /// The return type of the function.
     pub return_type: Type,
+
+    /// The index of the symbol that this function is defined in.
     pub parent_index: usize,
-    pub parameters: VecNameMap<VariableSymbol>,
-    pub syntax_tree: SyntaxTreeWithSource<Function>,
+
+    /// The list of parameters of the function.
+    pub parameters: VecNameMap<Variable>,
+
+    /// The syntax tree that was used to create this symbol.
+    pub syntax_tree: SyntaxTreeWithSource<syntax_tree::item::Function>,
 }
 
+/// Represents a field symbol in a struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FieldSymbol {
+pub struct Field {
+    /// The access modifier of the field.
     pub access_modifier: AccessModifier,
+
+    /// The name of the field.
     pub name: String,
+
+    /// The type of the field.
     pub ty: Type,
 }
 
+/// Represents a struct symbol.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StructSymbol {
+pub struct Struct {
+    /// The name of the struct.
     pub name: String,
+
+    /// The index of the symbol that this struct is defined in.
     pub parent_index: usize,
+
+    /// The access modifier of the struct.
     pub access_modifier: AccessModifier,
-    pub fields: VecNameMap<FieldSymbol>,
-    pub syntax_tree: SyntaxTreeWithSource<Struct>,
+
+    /// The list of fields defined in the struct.
+    pub fields: VecNameMap<Field>,
+
+    /// The syntax tree that was used to create this symbol.
+    pub syntax_tree: SyntaxTreeWithSource<syntax_tree::item::Struct>,
 }
 
+/// Represents an enum symbol.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnumSymbol {
+pub struct Enum {
+    /// The name of the enum.
     pub name: String,
+
+    /// The index of the symbol that this enum is defined in.
     pub parent_index: usize,
+
+    /// The access modifier of the enum.
     pub access_modifier: AccessModifier,
+
+    /// The list of variants defined in the enum.
+    ///
+    /// The key is the name of the variant and the value is the index symbol of it.
     pub variant_symbol_indices_by_name: HashMap<String, usize>,
-    pub syntax_tree: SyntaxTreeWithSource<Enum>,
+
+    /// The syntax tree that was used to create this symbol.
+    pub syntax_tree: SyntaxTreeWithSource<syntax_tree::item::Enum>,
 }
 
+/// Represents a module symbol.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModuleSymbol {
+pub struct Module {
+    /// The name of the module.
     pub name: String,
+
+    /// The index of the symbol that this module is defined in.
+    ///
+    /// If this is `None`, then this module is the root module.
     pub parent_index: Option<usize>,
+
+    /// The list of children symbols of this module.
+    ///
+    /// The key is the name of the child symbol and the value is the index symbol of it.
     pub children_sybol_indices_by_name: HashMap<String, usize>,
+
+    /// The syntax tree that was used to create this symbol.
     pub access_modifier: AccessModifier,
 }
 
+/// Is a structure that contains all the symbols that can be accessed in a global scope.
+///
+/// This structure represnts the output of the first pass in the semantic analysis -- the symbol
+/// generation pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalSymbolTable {
-    symbols: Vec<GlobalSymbol>,
+    symbols: Vec<Symbol>,
     root_indices_by_name: HashMap<String, usize>,
 }
 
 impl GlobalSymbolTable {
     /// Creates a new [`GlobalSymbolTable`] from the given file inputs.
     pub fn analyze(files: impl Iterator<Item = FileParsing>) -> (Self, Vec<SemanticError>) {
-        let mut item_symbol_table = GlobalSymbolTable {
+        let mut item_symbol_table = Self {
             symbols: Vec::new(),
             root_indices_by_name: HashMap::new(),
         };
@@ -272,7 +368,7 @@ impl GlobalSymbolTable {
 
         let mut files = files
             .into_iter()
-            .map(|file_parsing| file_parsing.destruct())
+            .map(pernixc_syntax::file_parsing::FileParsing::destruct)
             .collect::<Vec<_>>();
 
         // populates the enum symbols
@@ -280,17 +376,17 @@ impl GlobalSymbolTable {
             &mut files,
             &mut errors,
             // filter enum
-            |syntax_tree| matches!(syntax_tree, Item::Enum(..)),
+            |syntax_tree| matches!(syntax_tree, syntax_tree::item::Item::Enum(..)),
             // get enum name
             |syntax_tree| match syntax_tree {
-                Item::Enum(enum_syntax_tree) => &enum_syntax_tree.identifier,
+                syntax_tree::item::Item::Enum(enum_syntax_tree) => &enum_syntax_tree.identifier,
                 _ => unreachable!(),
             },
             // create enum symbol
             |source_file, parent_symbol_index, _, _, syntax_tree| {
-                let enum_syntax_tree = syntax_tree.into_enum_syntax_tree().expect("should be enum");
+                let enum_syntax_tree = syntax_tree.into_enum().expect("should be enum");
 
-                GlobalSymbol::EnumSymbol(EnumSymbol {
+                Symbol::Enum(Enum {
                     name: source_file[enum_syntax_tree.identifier.span].to_string(),
                     parent_index: parent_symbol_index,
                     access_modifier: AccessModifier::from_syntax_tree(
@@ -307,19 +403,19 @@ impl GlobalSymbolTable {
             &mut files,
             &mut errors,
             // filter struct
-            |syntax_tree| matches!(syntax_tree, Item::Struct(..)),
+            |syntax_tree| matches!(syntax_tree, syntax_tree::item::Item::Struct(..)),
             // get struct name
             |syntax_tree| match syntax_tree {
-                Item::Struct(struct_syntax_tree) => &struct_syntax_tree.identifier,
+                syntax_tree::item::Item::Struct(struct_syntax_tree) => {
+                    &struct_syntax_tree.identifier
+                }
                 _ => unreachable!(),
             },
             // create struct symbol
             |source_file, parent_symbol_index, _, _, syntax_tree| {
-                let struct_syntax_tree = syntax_tree
-                    .into_struct_syntax_tree()
-                    .expect("should be struct");
+                let struct_syntax_tree = syntax_tree.into_struct().expect("should be struct");
 
-                GlobalSymbol::StructSymbol(StructSymbol {
+                Symbol::Struct(Struct {
                     name: source_file[struct_syntax_tree.identifier.span].to_string(),
                     parent_index: parent_symbol_index,
                     access_modifier: AccessModifier::from_syntax_tree(
@@ -336,21 +432,20 @@ impl GlobalSymbolTable {
             &mut files,
             &mut errors,
             // filter function
-            |syntax_tree| matches!(syntax_tree, Item::Function(..)),
+            |syntax_tree| matches!(syntax_tree, syntax_tree::item::Item::Function(..)),
             // get function name
             |syntax_tree| match syntax_tree {
-                Item::Function(function_syntax_tree) => &function_syntax_tree.identifier,
+                syntax_tree::item::Item::Function(function_syntax_tree) => {
+                    &function_syntax_tree.identifier
+                }
                 _ => unreachable!(),
             },
             // create function symbol
             |source_file, parent_symbol_index, _, _, syntax_tree| {
-                let function_syntax_tree = syntax_tree
-                    .into_function_syntax_tree()
-                    .expect("should be function");
+                let function_syntax_tree = syntax_tree.into_function().expect("should be function");
 
-                GlobalSymbol::FunctionSymbol(FunctionSymbol {
+                Symbol::Function(Function {
                     name: source_file[function_syntax_tree.identifier.span].to_string(),
-                    parent: parent_symbol_index,
                     access_modifier: AccessModifier::from_syntax_tree(
                         &function_syntax_tree.access_modifier,
                     ),
@@ -388,14 +483,14 @@ impl GlobalSymbolTable {
             if let Some(index) = current_index {
                 let symbol = self.symbols.get(index).expect("must exist");
                 match symbol {
-                    GlobalSymbol::ModuleSymbol(module) => {
+                    Symbol::Module(module) => {
                         if let Some(index) = module.children_sybol_indices_by_name.get(name) {
                             current_index = Some(*index);
                         } else {
                             return None;
                         }
                     }
-                    GlobalSymbol::EnumSymbol(enum_symbol) => {
+                    Symbol::Enum(enum_symbol) => {
                         if let Some(index) = enum_symbol.variant_symbol_indices_by_name.get(name) {
                             current_index = Some(*index);
                         } else {
@@ -414,11 +509,14 @@ impl GlobalSymbolTable {
         current_index
     }
 
-    /// Gets a reference to the [GlobalSymbol] with the given fully qualified name.
-    pub fn get_by_qualified_name<'a>(
+    /// Gets a reference to the [`Symbol`] with the given full name.
+    ///
+    /// The table is searched from the root -- iterating through the given `qualified_name` -- and
+    /// returns the symbol if it exists.
+    pub fn get_by_full_name<'a>(
         &self,
         qualified_name: impl Iterator<Item = &'a str>,
-    ) -> Option<(usize, &GlobalSymbol)> {
+    ) -> Option<(usize, &Symbol)> {
         let symbol_index = self.get_index_by_qualified_name(qualified_name)?;
         Some((
             symbol_index,
@@ -426,12 +524,17 @@ impl GlobalSymbolTable {
         ))
     }
 
-    /// Gets a reference to the [GlobalSymbol] with the given [usize].
-    pub fn get_by_index(&self, index: usize) -> Option<&GlobalSymbol> { self.symbols.get(index) }
+    /// Gets a reference to the [`Symbol`] with the given [usize].
+    #[must_use]
+    pub fn get_by_index(&self, index: usize) -> Option<&Symbol> { self.symbols.get(index) }
 
-    /// Applies symbol resolution from the given [referring_site] to the given [qualified_name].
+    /// Applies the symbol resolution from the given qualified identifier syntax.
     ///
-    /// Returns the [usize] of the symbol if it exists.
+    /// # Panics
+    /// [`qualified_identifier`] must at least have one identifier.
+    ///
+    /// # Errors
+    /// Returns [`SemanticError::SymbolNotFound`] if the symbol could not be found.
     pub fn resolve_symbol<'a>(
         &self,
         parent_index: usize,
@@ -447,20 +550,20 @@ impl GlobalSymbolTable {
             let mut current_index = parent_index;
             loop {
                 // found module, break
-                if let GlobalSymbol::ModuleSymbol(module) = current_symbol {
+                if let Symbol::Module(module) = current_symbol {
                     break (module, current_index);
                 }
 
-                match current_symbol.parent_index() {
-                    Some(parent_index) => {
+                current_symbol.parent_index().map_or_else(
+                    || panic!("must have a parent module!"),
+                    |parent_index| {
                         current_symbol = self
                             .symbols
                             .get(parent_index)
                             .expect("invalid parent index!");
                         current_index = parent_index;
-                    }
-                    None => panic!("must have a parent module!"),
-                }
+                    },
+                );
             }
         };
 
@@ -504,12 +607,8 @@ impl GlobalSymbolTable {
 
                     // must be module symbol to continue
                     let child_indices_by_name = match current_symbol {
-                        GlobalSymbol::ModuleSymbol(module) => {
-                            &module.children_sybol_indices_by_name
-                        }
-                        GlobalSymbol::EnumSymbol(enum_sym) => {
-                            &enum_sym.variant_symbol_indices_by_name
-                        }
+                        Symbol::Module(module) => &module.children_sybol_indices_by_name,
+                        Symbol::Enum(enum_sym) => &enum_sym.variant_symbol_indices_by_name,
                         _ => {
                             return Err(SemanticError::SymbolNotFound(SymbolNotFound {
                                 referencing_site: SourceSpan::new(
@@ -568,7 +667,7 @@ impl GlobalSymbolTable {
     fn populate_struct_data(&mut self, errors: &mut Vec<SemanticError>) {
         for index in 0..self.symbols.len() {
             let fields = match self.symbols.get(index).expect("must exist") {
-                GlobalSymbol::StructSymbol(struct_symbol) => {
+                Symbol::Struct(struct_symbol) => {
                     let mut fields = VecNameMap::new();
 
                     for field_group in &struct_symbol.syntax_tree.syntax_tree.field_groups {
@@ -576,14 +675,16 @@ impl GlobalSymbolTable {
                             AccessModifier::from_syntax_tree(&field_group.access_modifier);
 
                         if group_access_modifier.rank() < struct_symbol.access_modifier.rank() {
-                            errors.push(SemanticError::AccessibilityLeaking(AccessibilityLeaking {
-                                symbol_span: SourceSpan::new(
-                                    struct_symbol.syntax_tree.source_file.clone(),
-                                    field_group.access_modifier.span(),
-                                ),
-                                symbol_access_modifier: group_access_modifier,
-                                parent_access_modifier: struct_symbol.access_modifier,
-                            }))
+                            errors.push(SemanticError::AccessibilityLeaking(
+                                AccessibilityLeaking {
+                                    symbol_span: SourceSpan::new(
+                                        struct_symbol.syntax_tree.source_file.clone(),
+                                        field_group.access_modifier.span(),
+                                    ),
+                                    symbol_access_modifier: group_access_modifier,
+                                    parent_access_modifier: struct_symbol.access_modifier,
+                                },
+                            ));
                         }
 
                         for field in &field_group.fields {
@@ -614,7 +715,7 @@ impl GlobalSymbolTable {
                                                     parent_access_modifier: struct_symbol
                                                         .access_modifier,
                                                 },
-                                            ))
+                                            ));
                                         }
                                     }
                                     ty
@@ -629,7 +730,7 @@ impl GlobalSymbolTable {
                                 .to_string();
 
                             if fields
-                                .add_item(name.clone(), FieldSymbol {
+                                .add_item(name.clone(), Field {
                                     access_modifier: group_access_modifier,
                                     name,
                                     ty,
@@ -641,7 +742,7 @@ impl GlobalSymbolTable {
                                         struct_symbol.syntax_tree.source_file.clone(),
                                         field.identifier.span,
                                     ),
-                                }))
+                                }));
                             }
                         }
                     }
@@ -652,7 +753,7 @@ impl GlobalSymbolTable {
             };
 
             match self.symbols.get_mut(index).expect("must exist") {
-                GlobalSymbol::StructSymbol(struct_symbol) => struct_symbol.fields = fields,
+                Symbol::Struct(struct_symbol) => struct_symbol.fields = fields,
                 _ => unreachable!(),
             }
         }
@@ -661,13 +762,11 @@ impl GlobalSymbolTable {
     fn populate_enum_data(&mut self, errors: &mut Vec<SemanticError>) {
         for index in 0..self.symbols.len() {
             let (access_modifier, variants) = match self.symbols.get(index).expect("should exist") {
-                GlobalSymbol::EnumSymbol(enum_sym) => (enum_sym.access_modifier, 'ret: {
-                    let variants =
-                        if let Some(variants) = &enum_sym.syntax_tree.syntax_tree.variants {
-                            variants
-                        } else {
-                            break 'ret Vec::new();
-                        };
+                Symbol::Enum(enum_sym) => (enum_sym.access_modifier, 'ret: {
+                    // check if the variants are empty.
+                    let Some(variants) = &enum_sym.syntax_tree.syntax_tree.variants  else {
+                        break 'ret Vec::new();
+                    };
 
                     let mut return_variants = Vec::with_capacity(variants.len());
                     let mut inserted_variants = HashSet::with_capacity(variants.len());
@@ -701,7 +800,7 @@ impl GlobalSymbolTable {
             for (index, variant) in variants.iter().enumerate() {
                 variant_indices_by_name.insert(
                     variant.clone(),
-                    self.add_symbol(GlobalSymbol::EnumVariantSymbol(EnumVariantSymbol {
+                    self.add_symbol(Symbol::EnumVariant(EnumVariant {
                         name: variant.clone(),
                         parent_index: index,
                         access_modifier,
@@ -711,8 +810,8 @@ impl GlobalSymbolTable {
             }
 
             match self.symbols.get_mut(index).expect("should exist") {
-                GlobalSymbol::EnumSymbol(enum_sym) => {
-                    enum_sym.variant_symbol_indices_by_name = variant_indices_by_name
+                Symbol::Enum(enum_sym) => {
+                    enum_sym.variant_symbol_indices_by_name = variant_indices_by_name;
                 }
                 _ => unreachable!(),
             }
@@ -739,147 +838,140 @@ impl GlobalSymbolTable {
         return_string
     }
 
+    fn create_function_arguments(
+        &self,
+        function: &Function,
+        errors: &mut Vec<SemanticError>,
+    ) -> VecNameMap<Variable> {
+        // get arguments
+        function
+            .syntax_tree
+            .syntax_tree
+            .parameters
+            .as_ref()
+            .map_or_else(VecNameMap::default, |parameters_syntax| {
+                let mut parameters = VecNameMap::new();
+
+                for parameter in parameters_syntax.elements() {
+                    let name =
+                        function.syntax_tree.source_file[parameter.identifier.span].to_string();
+
+                    let type_binding_specifier = TypeBinding {
+                        ty: match self.get_type(
+                            function.parent_index,
+                            &parameter.type_binding_specifier.type_specifier,
+                            &function.syntax_tree.source_file,
+                        ) {
+                            Ok(type_index) => {
+                                if let Type::UserDefinedSymbolIndex(type_index) = type_index {
+                                    // accessibility leak
+                                    let type_symbol =
+                                        self.symbols.get(type_index).expect("should exist");
+
+                                    if type_symbol.access_modifier().rank()
+                                        > function.access_modifier.rank()
+                                    {
+                                        errors.push(SemanticError::AccessibilityLeaking(
+                                            AccessibilityLeaking {
+                                                symbol_span: SourceSpan::new(
+                                                    function.syntax_tree.source_file.clone(),
+                                                    function
+                                                        .syntax_tree
+                                                        .syntax_tree
+                                                        .type_specifier
+                                                        .span(),
+                                                ),
+                                                symbol_access_modifier: type_symbol
+                                                    .access_modifier(),
+                                                parent_access_modifier: function.access_modifier,
+                                            },
+                                        ));
+                                    }
+                                }
+                                type_index
+                            }
+                            Err(err) => {
+                                errors.push(err);
+                                Type::default()
+                            }
+                        },
+                        is_mutable: parameter.type_binding_specifier.mutable_keyword.is_some(),
+                    };
+
+                    // parameter redefinition
+                    if parameters
+                        .add_item(name.clone(), Variable {
+                            name,
+                            type_binding: type_binding_specifier,
+                        })
+                        .is_err()
+                    {
+                        errors.push(SemanticError::ParameterRedifinition(
+                            ParameterRedifinition {
+                                new_parameter_span: SourceSpan::new(
+                                    function.syntax_tree.source_file.clone(),
+                                    parameter.identifier.span(),
+                                ),
+                            },
+                        ));
+                    }
+                }
+
+                parameters
+            })
+    }
+
+    fn create_function_return_type(
+        &self,
+        function: &Function,
+        errors: &mut Vec<SemanticError>,
+    ) -> Type {
+        match self.get_type(
+            function.parent_index,
+            &function.syntax_tree.syntax_tree.type_specifier,
+            &function.syntax_tree.source_file,
+        ) {
+            Ok(type_index) => {
+                if let Type::UserDefinedSymbolIndex(type_index) = type_index {
+                    // accessibility leak
+                    let type_symbol = self.symbols.get(type_index).expect("should exist");
+
+                    if type_symbol.access_modifier().rank() > function.access_modifier.rank() {
+                        errors.push(SemanticError::AccessibilityLeaking(AccessibilityLeaking {
+                            symbol_span: SourceSpan::new(
+                                function.syntax_tree.source_file.clone(),
+                                function.syntax_tree.syntax_tree.type_specifier.span(),
+                            ),
+                            symbol_access_modifier: type_symbol.access_modifier(),
+                            parent_access_modifier: function.access_modifier,
+                        }));
+                    }
+                }
+                type_index
+            }
+            Err(err) => {
+                errors.push(err);
+                Type::default()
+            }
+        }
+    }
+
     fn populate_function_data(&mut self, errors: &mut Vec<SemanticError>) {
         for index in 0..self.symbols.len() {
             let (arguments, return_type_specifier) = {
-                let function = match self.symbols.get(index).expect("must exist") {
-                    GlobalSymbol::FunctionSymbol(func) => func,
-                    _ => continue,
+                let Symbol::Function(function) = self.symbols.get(index).expect("must exist") else {
+                    continue;
                 };
 
                 (
-                    // get arguments
-                    match &function.syntax_tree.syntax_tree.parameters {
-                        Some(parameters_syntax) => {
-                            let mut parameters = VecNameMap::new();
-
-                            for parameter in parameters_syntax.elements() {
-                                let name = function.syntax_tree.source_file
-                                    [parameter.identifier.span]
-                                    .to_string();
-
-                                let type_binding_specifier = TypeBinding {
-                                    ty: match self.get_type(
-                                        function.parent_index,
-                                        &parameter.type_binding_specifier.type_specifier,
-                                        &function.syntax_tree.source_file,
-                                    ) {
-                                        Ok(type_index) => {
-                                            if let Type::UserDefinedSymbolIndex(type_index) =
-                                                type_index
-                                            {
-                                                // accessibility leak
-                                                let type_symbol = self
-                                                    .symbols
-                                                    .get(type_index)
-                                                    .expect("should exist");
-
-                                                if type_symbol.access_modifier().rank()
-                                                    > function.access_modifier.rank()
-                                                {
-                                                    errors.push(
-                                                        SemanticError::AccessibilityLeaking(
-                                                            AccessibilityLeaking {
-                                                                symbol_span: SourceSpan::new(
-                                                                    function
-                                                                        .syntax_tree
-                                                                        .source_file
-                                                                        .clone(),
-                                                                    function
-                                                                        .syntax_tree
-                                                                        .syntax_tree
-                                                                        .type_specifier
-                                                                        .span(),
-                                                                ),
-                                                                symbol_access_modifier: type_symbol
-                                                                    .access_modifier(),
-                                                                parent_access_modifier: function
-                                                                    .access_modifier,
-                                                            },
-                                                        ),
-                                                    )
-                                                }
-                                            }
-                                            type_index
-                                        }
-                                        Err(err) => {
-                                            errors.push(err);
-                                            Type::default()
-                                        }
-                                    },
-                                    is_mutable: parameter
-                                        .type_binding_specifier
-                                        .mutable_keyword
-                                        .is_some(),
-                                };
-
-                                // parameter redefinition
-                                if parameters
-                                    .add_item(name.clone(), VariableSymbol {
-                                        name,
-                                        type_binding_specifier,
-                                    })
-                                    .is_err()
-                                {
-                                    errors.push(SemanticError::ParameterRedifinition(
-                                        ParameterRedifinition {
-                                            new_parameter_span: SourceSpan::new(
-                                                function.syntax_tree.source_file.clone(),
-                                                parameter.identifier.span(),
-                                            ),
-                                        },
-                                    ))
-                                }
-                            }
-
-                            parameters
-                        }
-                        None => VecNameMap::default(),
-                    },
-                    // get function return type
-                    match self.get_type(
-                        function.parent_index,
-                        &function.syntax_tree.syntax_tree.type_specifier,
-                        &function.syntax_tree.source_file,
-                    ) {
-                        Ok(type_index) => {
-                            if let Type::UserDefinedSymbolIndex(type_index) = type_index {
-                                // accessibility leak
-                                let type_symbol =
-                                    self.symbols.get(type_index).expect("should exist");
-
-                                if type_symbol.access_modifier().rank()
-                                    > function.access_modifier.rank()
-                                {
-                                    errors.push(SemanticError::AccessibilityLeaking(
-                                        AccessibilityLeaking {
-                                            symbol_span: SourceSpan::new(
-                                                function.syntax_tree.source_file.clone(),
-                                                function
-                                                    .syntax_tree
-                                                    .syntax_tree
-                                                    .type_specifier
-                                                    .span(),
-                                            ),
-                                            symbol_access_modifier: type_symbol.access_modifier(),
-                                            parent_access_modifier: function.access_modifier,
-                                        },
-                                    ))
-                                }
-                            }
-                            type_index
-                        }
-                        Err(err) => {
-                            errors.push(err);
-                            Type::default()
-                        }
-                    },
+                    self.create_function_arguments(function, errors),
+                    self.create_function_return_type(function, errors),
                 )
             };
 
             // update the function symbol
             match self.symbols.get_mut(index).expect("must exist") {
-                GlobalSymbol::FunctionSymbol(func) => {
+                Symbol::Function(func) => {
                     func.parameters = arguments;
                     func.return_type = return_type_specifier;
                 }
@@ -891,51 +983,51 @@ impl GlobalSymbolTable {
     fn get_type(
         &self,
         parent_index: usize,
-        type_specifier_syntax_tree: &TypeSpecifierSyntaxTree,
+        type_specifier_syntax_tree: &syntax_tree::TypeSpecifier,
         source_file: &Arc<SourceFile>,
     ) -> Result<Type, SemanticError> {
         match type_specifier_syntax_tree {
-            TypeSpecifierSyntaxTree::PrimitiveTypeSpecifierSyntaxTree(primitive_type) => {
+            syntax_tree::TypeSpecifier::PrimitiveTypeSpecifier(primitive_type) => {
                 Ok(match primitive_type {
-                    PrimitiveTypeSpecifierSyntaxTree::Bool(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Bool(..) => {
                         Type::Primitive(PrimitiveType::Bool)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Float32(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Float32(..) => {
                         Type::Primitive(PrimitiveType::Float32)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Float64(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Float64(..) => {
                         Type::Primitive(PrimitiveType::Float64)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Int8(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Int8(..) => {
                         Type::Primitive(PrimitiveType::Int8)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Int16(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Int16(..) => {
                         Type::Primitive(PrimitiveType::Int16)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Int32(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Int32(..) => {
                         Type::Primitive(PrimitiveType::Int32)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Int64(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Int64(..) => {
                         Type::Primitive(PrimitiveType::Int64)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Uint8(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Uint8(..) => {
                         Type::Primitive(PrimitiveType::Uint8)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Uint16(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Uint16(..) => {
                         Type::Primitive(PrimitiveType::Uint16)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Uint32(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Uint32(..) => {
                         Type::Primitive(PrimitiveType::Uint32)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Uint64(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Uint64(..) => {
                         Type::Primitive(PrimitiveType::Uint64)
                     }
-                    PrimitiveTypeSpecifierSyntaxTree::Void(..) => {
+                    syntax_tree::PrimitiveTypeSpecifier::Void(..) => {
                         Type::Primitive(PrimitiveType::Void)
                     }
                 })
             }
-            TypeSpecifierSyntaxTree::QualifiedIdentifierSyntaxTree(qualified_indexentifier) => {
+            syntax_tree::TypeSpecifier::QualifiedIdentifier(qualified_indexentifier) => {
                 let symbol_index = self.resolve_symbol(
                     parent_index,
                     source_file,
@@ -943,7 +1035,7 @@ impl GlobalSymbolTable {
                 )?;
 
                 match self.symbols.get(symbol_index).expect("must exist") {
-                    GlobalSymbol::StructSymbol(..) | GlobalSymbol::EnumSymbol(..) => {
+                    Symbol::Struct(..) | Symbol::Enum(..) => {
                         Ok(Type::UserDefinedSymbolIndex(symbol_index))
                     }
                     _ => Err(SemanticError::TypeExpected(TypeExpected {
@@ -979,7 +1071,7 @@ impl GlobalSymbolTable {
         }
     }
 
-    fn add_symbol(&mut self, symbol: GlobalSymbol) -> usize {
+    fn add_symbol(&mut self, symbol: Symbol) -> usize {
         let index = self.symbols.len();
         self.symbols.push(symbol);
         index
@@ -987,17 +1079,17 @@ impl GlobalSymbolTable {
 
     fn populate_symbol(
         &mut self,
-        files: &mut Vec<(Arc<SourceFile>, FileSyntaxTree, Vec<FileParsingError>)>,
+        files: &mut Vec<(Arc<SourceFile>, syntax_tree::File, Vec<ParsingError>)>,
         errors: &mut Vec<SemanticError>,
-        syntax_tree_predicate: impl Fn(&Item) -> bool,
-        syntax_tree_indexentifier_getter: impl Fn(&Item) -> &Identifier,
+        syntax_tree_predicate: impl Fn(&syntax_tree::item::Item) -> bool,
+        syntax_tree_indexentifier_getter: impl Fn(&syntax_tree::item::Item) -> &Identifier,
         symbol_creator: impl Fn(
             Arc<SourceFile>,         // the source file
             usize,                   // the parent symbol index
             &mut Self,               // the symbol table
             &mut Vec<SemanticError>, // the error list for reporting the errors
-            Item,                    // the syntax tree
-        ) -> GlobalSymbol,
+            syntax_tree::item::Item, // the syntax tree
+        ) -> Symbol,
     ) {
         for (source_file, file_syntax_tree, _) in files {
             let mut index = 0;
@@ -1020,7 +1112,7 @@ impl GlobalSymbolTable {
                         )
                         .map(|idx| self.symbols.get_mut(idx).expect("should exist"))
                         .expect("should exist")
-                        .as_module_symbol_mut()
+                        .as_module()
                         .expect("should be module")
                         .children_sybol_indices_by_name
                         .get(&source_file[identifier_token.span])
@@ -1060,7 +1152,7 @@ impl GlobalSymbolTable {
                 self.symbols
                     .get_mut(parent_symbol_index)
                     .expect("should exist")
-                    .as_module_symbol_mut()
+                    .as_module_mut()
                     .expect("should be module")
                     .children_sybol_indices_by_name
                     .insert(symbol_name, symbol_index);
@@ -1079,7 +1171,7 @@ impl GlobalSymbolTable {
                         .symbols
                         .get_mut(parent_module_index)
                         .expect("should exist")
-                        .as_module_symbol_mut()
+                        .as_module()
                         .expect("should be module")
                         .children_sybol_indices_by_name
                         .get(module_name)
@@ -1087,7 +1179,7 @@ impl GlobalSymbolTable {
                         parent_module = Some(*children_indexx);
                     } else {
                         // create the module
-                        let module_symbol = GlobalSymbol::ModuleSymbol(ModuleSymbol {
+                        let module_symbol = Symbol::Module(Module {
                             name: module_name.to_string(),
                             parent_index: Some(parent_module_index),
                             children_sybol_indices_by_name: HashMap::new(),
@@ -1104,7 +1196,7 @@ impl GlobalSymbolTable {
                         self.symbols
                             .get_mut(parent_module_index)
                             .expect("should exist")
-                            .as_module_symbol_mut()
+                            .as_module_mut()
                             .expect("should be module")
                             .children_sybol_indices_by_name
                             .insert(module_name.to_string(), module_index);
@@ -1115,7 +1207,7 @@ impl GlobalSymbolTable {
                         parent_module = Some(*idx);
                     } else {
                         // create the module
-                        let module_symbol = GlobalSymbol::ModuleSymbol(ModuleSymbol {
+                        let module_symbol = Symbol::Module(Module {
                             name: module_name.to_string(),
                             parent_index: None,
                             children_sybol_indices_by_name: HashMap::new(),

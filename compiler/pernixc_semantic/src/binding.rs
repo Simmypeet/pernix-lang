@@ -1,15 +1,11 @@
+//! Contains the binding tree of the syntax tree.
+
 use std::sync::Arc;
 
 use derive_more::From;
-use pernixc_common::source_file::SourceFile;
-use pernixc_syntax::syntax_tree::{
-    expression::{
-        Binary, BinaryOperatorSyntaxTree, BooleanLiteral, ExpressionSyntaxTree, FunctionCall,
-        Functional, Imperative, Named, NumericLiteralSyntaxTree, Prefix, PrefixOperator,
-        StructLiteral,
-    },
-    SourceElement,
-};
+use pernixc_common::source_file::{SourceElement, SourceFile};
+use pernixc_lexical::token::NumericLiteral;
+use pernixc_syntax::syntax_tree;
 use thiserror::Error;
 
 use self::{
@@ -33,7 +29,7 @@ use crate::{
     },
     symbol::{
         ty::{PrimitiveType, Type},
-        FunctionSymbol, GlobalSymbol, GlobalSymbolTable, VariableSymbol,
+        Function, GlobalSymbolTable, Symbol, Variable,
     },
     SourceSpan,
 };
@@ -45,19 +41,19 @@ pub mod statement;
 #[derive(Debug, Clone, Error, From)]
 pub enum FunctionBindError {
     #[error("Invalid `function_symbol_index` argument.")]
-    InvalidFunctionSymbolIndex,
+    InvalidFunctionIndex,
 
     #[error("{0}")]
     Semantic(SemanticError),
 }
 
-pub struct FunctionBinding {}
+pub struct Binding {}
 
 pub struct FunctionBinder<'a> {
     symbol_table: &'a GlobalSymbolTable,
-    function_symbol: &'a FunctionSymbol,
+    function_symbol: &'a Function,
     current_block_id: usize,
-    variable_symbols: Vec<VariableSymbol>,
+    variable_symbols: Vec<Variable>,
     variable_name_stack: NameStack<usize>,
     errors: Vec<SemanticError>,
 }
@@ -65,58 +61,64 @@ pub struct FunctionBinder<'a> {
 impl<'a> FunctionBinder<'a> {
     fn bind_expression(
         &mut self,
-        exression_syntax: &ExpressionSyntaxTree,
+        exression_syntax: &syntax_tree::expression::Expression,
     ) -> Option<ExpressionBinding> {
         match exression_syntax {
-            ExpressionSyntaxTree::Functional(expr) => match expr {
-                Functional::NumericLiteralSyntaxTree(expr) => self.bind_numeric_literal(expr),
-                Functional::BooleanLiteral(expr) => self.bind_boolean_literal(expr),
-                Functional::Binary(expr) => self.bind_binary(expr),
-                Functional::Prefix(expr) => self.bind_prefix(expr),
-                Functional::Named(expr) => self.bind_identifier(expr),
-                Functional::FunctionCall(expr) => self.bind_function_call(expr),
-                Functional::Parenthesized(expr) => self.bind_expression(&expr.expression),
-                Functional::StructLiteral(expr) => todo!(),
-                Functional::MemberAccess(..) => todo!(),
-                Functional::Continue(..) => todo!(),
-                Functional::Break(..) => todo!(),
-                Functional::Return(..) => todo!(),
-                Functional::Express(..) => todo!(),
-                Functional::Cast(..) => todo!(),
+            syntax_tree::expression::Expression::Functional(expr) => match expr {
+                syntax_tree::expression::Functional::NumericLiteral(expr) => {
+                    self.bind_numeric_literal(expr)
+                }
+                syntax_tree::expression::Functional::BooleanLiteral(expr) => {
+                    Some(self.bind_boolean_literal(expr))
+                }
+                syntax_tree::expression::Functional::Binary(expr) => self.bind_binary(expr),
+                syntax_tree::expression::Functional::Prefix(expr) => self.bind_prefix(expr),
+                syntax_tree::expression::Functional::Named(expr) => self.bind_identifier(expr),
+                syntax_tree::expression::Functional::FunctionCall(expr) => {
+                    self.bind_function_call(expr)
+                }
+                syntax_tree::expression::Functional::Parenthesized(expr) => {
+                    self.bind_expression(&expr.expression)
+                }
+                syntax_tree::expression::Functional::StructLiteral(expr) => todo!(),
+                syntax_tree::expression::Functional::MemberAccess(..) => todo!(),
+                syntax_tree::expression::Functional::Continue(..) => todo!(),
+                syntax_tree::expression::Functional::Break(..) => todo!(),
+                syntax_tree::expression::Functional::Return(..) => todo!(),
+                syntax_tree::expression::Functional::Express(..) => todo!(),
+                syntax_tree::expression::Functional::Cast(..) => todo!(),
             },
-            ExpressionSyntaxTree::Imperative(expr) => match expr {
-                Imperative::Block(..) => todo!(),
-                Imperative::IfElse(..) => todo!(),
-                Imperative::Loop(..) => todo!(),
+            syntax_tree::expression::Expression::Imperative(expr) => match expr {
+                syntax_tree::expression::Imperative::Block(..) => todo!(),
+                syntax_tree::expression::Imperative::IfElse(..) => todo!(),
+                syntax_tree::expression::Imperative::Loop(..) => todo!(),
             },
         }
     }
 
     fn expect_expression(
         &mut self,
-        expression_syntax: &ExpressionSyntaxTree,
+        expression_syntax: &syntax_tree::expression::Expression,
         expected_type: Type,
     ) -> Option<ExpressionBinding> {
         let expression = self.bind_expression(expression_syntax)?;
 
         // try to perform implicit cast
-        if expression.expression_type().ty != expected_type {
-            if Self::is_implicitly_castable(expression.expression_type().ty, expected_type) {
-                Some(ExpressionBinding::CastBinding(CastBinding {
-                    span: expression.span().clone(),
-                    expression: Box::new(expression),
-                    target_type: expected_type,
-                }))
-            } else {
-                self.errors.push(SemanticError::TypeMismatch(TypeMismatch {
-                    expected: expected_type,
-                    actual: expression.expression_type().ty,
-                    span: expression.span().clone(),
-                }));
-                None
-            }
-        } else {
+        if expression.expression_type().ty == expected_type {
             Some(expression)
+        } else if Self::is_implicitly_castable(expression.expression_type().ty, expected_type) {
+            Some(ExpressionBinding::CastBinding(CastBinding {
+                span: expression.span().clone(),
+                expression: Box::new(expression),
+                target_type: expected_type,
+            }))
+        } else {
+            self.errors.push(SemanticError::TypeMismatch(TypeMismatch {
+                expected: expected_type,
+                actual: expression.expression_type().ty,
+                span: expression.span().clone(),
+            }));
+            None
         }
     }
 
@@ -135,12 +137,12 @@ impl<'a> FunctionBinder<'a> {
 
         fn primitive_rank(ty: PrimitiveType) -> u32 {
             match ty {
-                PrimitiveType::Int8 | PrimitiveType::Uint8 => 0,
-                PrimitiveType::Int16 | PrimitiveType::Uint16 => 1,
-                PrimitiveType::Int32 | PrimitiveType::Uint32 => 2,
-                PrimitiveType::Int64 | PrimitiveType::Uint64 => 3,
-                PrimitiveType::Float32 => 4,
-                PrimitiveType::Float64 => 5,
+                PrimitiveType::Int8 | PrimitiveType::Uint8 => 1,
+                PrimitiveType::Int16 | PrimitiveType::Uint16 => 2,
+                PrimitiveType::Int32 | PrimitiveType::Uint32 => 3,
+                PrimitiveType::Int64 | PrimitiveType::Uint64 => 4,
+                PrimitiveType::Float32 => 5,
+                PrimitiveType::Float64 => 6,
                 _ => 0,
             }
         }
@@ -171,7 +173,7 @@ impl<'a> FunctionBinder<'a> {
 
     fn bind_struct_literal(
         &mut self,
-        expression_syntax: &StructLiteral,
+        expression_syntax: &syntax_tree::expression::StructLiteral,
     ) -> Option<StructLiteralBinding> {
         let (struct_symbol, symbol_index) = self
             .symbol_table
@@ -188,9 +190,7 @@ impl<'a> FunctionBinder<'a> {
                 |idx| Some((self.symbol_table.get_by_index(idx).unwrap(), idx)),
             )?;
 
-        let struct_symbol = if let GlobalSymbol::StructSymbol(struct_symbol) = struct_symbol {
-            struct_symbol
-        } else {
+        let Symbol::Struct(struct_symbol) = struct_symbol else {
             self.errors
                 .push(SemanticError::StructExpected(StructExpected {
                     span: SourceSpan::new(
@@ -206,7 +206,7 @@ impl<'a> FunctionBinder<'a> {
 
     fn bind_function_call(
         &mut self,
-        expression_syntax: &FunctionCall,
+        expression_syntax: &syntax_tree::expression::FunctionCall,
     ) -> Option<ExpressionBinding> {
         let (symbol, symbol_idx) = self
             .symbol_table
@@ -224,9 +224,7 @@ impl<'a> FunctionBinder<'a> {
             )?;
 
         // expect function symbol
-        let function_symbol = if let GlobalSymbol::FunctionSymbol(func) = symbol {
-            func
-        } else {
+        let Symbol::Function(function_symbol) = symbol else {
             self.errors
                 .push(SemanticError::SymbolIsNotCallable(SymbolIsNotCallable {
                     span: SourceSpan::new(
@@ -239,7 +237,7 @@ impl<'a> FunctionBinder<'a> {
         let arg_count = expression_syntax
             .arguments
             .as_ref()
-            .map_or(0, |arg| arg.len());
+            .map_or(0, pernixc_syntax::syntax_tree::ConnectedList::len);
 
         // check argument count
         if function_symbol.parameters.len() != arg_count {
@@ -260,24 +258,25 @@ impl<'a> FunctionBinder<'a> {
             let mut found_error = false;
             let mut arguments = Vec::with_capacity(argument_syntaxes.len());
 
-            for (argument_syntax, argument_type) in argument_syntaxes.elements().zip(
-                function_symbol
-                    .parameters
-                    .iter()
-                    .map(|x| x.type_binding_specifier.ty),
-            ) {
-                if let Some(argument) = self.expect_expression(argument_syntax, argument_type) {
-                    arguments.push(argument);
-                } else {
-                    found_error = true;
-                }
+            for (argument_syntax, argument_type) in argument_syntaxes
+                .elements()
+                .zip(function_symbol.parameters.iter().map(|x| x.type_binding.ty))
+            {
+                self.expect_expression(argument_syntax, argument_type)
+                    .map_or_else(
+                        || {
+                            found_error = true;
+                        },
+                        |argument| {
+                            arguments.push(argument);
+                        },
+                    );
             }
 
             if found_error {
                 return None;
-            } else {
-                arguments
             }
+            arguments
         } else {
             Vec::new()
         };
@@ -298,7 +297,10 @@ impl<'a> FunctionBinder<'a> {
         ))
     }
 
-    fn bind_identifier(&mut self, expression_syntax: &Named) -> Option<ExpressionBinding> {
+    fn bind_identifier(
+        &mut self,
+        expression_syntax: &syntax_tree::expression::Named,
+    ) -> Option<ExpressionBinding> {
         if expression_syntax.0.rest.is_empty() {
             // try to find variable symbol first
             let variable = self
@@ -315,9 +317,9 @@ impl<'a> FunctionBinder<'a> {
                                 local_variable_index: variable_index,
                             },
                         expression_type: ExpressionType {
-                            ty: variable_symbol.type_binding_specifier.ty,
+                            ty: variable_symbol.type_binding.ty,
                             category: ExpressionCategory::LValue {
-                                is_mutable: variable_symbol.type_binding_specifier.is_mutable,
+                                is_mutable: variable_symbol.type_binding.is_mutable,
                             },
                         },
                         span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
@@ -345,7 +347,7 @@ impl<'a> FunctionBinder<'a> {
                                 local_argument_index: parameter_index,
                             },
                         expression_type: ExpressionType {
-                            ty: parameter_symbol.type_binding_specifier.ty,
+                            ty: parameter_symbol.type_binding.ty,
                             category: ExpressionCategory::RValue,
                         },
                         span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
@@ -370,9 +372,9 @@ impl<'a> FunctionBinder<'a> {
                 |symbol_idx| Some(self.symbol_table.get_by_index(symbol_idx).unwrap()),
             )?;
 
-        match result {
-            GlobalSymbol::EnumVariantSymbol(enum_sym) => Some(
-                ExpressionBinding::IdentifierExpressionBinding(IdentifierExpressionBinding {
+        if let Symbol::EnumVariant(enum_sym) = result {
+            Some(ExpressionBinding::IdentifierExpressionBinding(
+                IdentifierExpressionBinding {
                     identifier_expression_binding_kind:
                         IdentifierExpressionBindingKind::EnumVariantIndex {
                             enum_symbol_index: enum_sym.parent_index,
@@ -383,21 +385,23 @@ impl<'a> FunctionBinder<'a> {
                         ty: Type::UserDefinedSymbolIndex(enum_sym.parent_index),
                         category: ExpressionCategory::RValue,
                     },
-                }),
-            ),
-            _ => {
-                self.errors
-                    .push(SemanticError::ExpressionExpected(ExpressionExpected {
-                        span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
-                    }));
-                None
-            }
+                },
+            ))
+        } else {
+            self.errors
+                .push(SemanticError::ExpressionExpected(ExpressionExpected {
+                    span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
+                }));
+            None
         }
     }
 
-    fn bind_prefix(&mut self, expression_syntax: &Prefix) -> Option<ExpressionBinding> {
+    fn bind_prefix(
+        &mut self,
+        expression_syntax: &syntax_tree::expression::Prefix,
+    ) -> Option<ExpressionBinding> {
         match expression_syntax.operator {
-            PrefixOperator::LogicalNot(..) => {
+            syntax_tree::expression::PrefixOperator::LogicalNot(..) => {
                 let expression = self.expect_expression(
                     expression_syntax.operand.as_ref(),
                     Type::Primitive(PrimitiveType::Bool),
@@ -414,7 +418,7 @@ impl<'a> FunctionBinder<'a> {
                     },
                 ))
             }
-            PrefixOperator::Negate(..) => {
+            syntax_tree::expression::PrefixOperator::Negate(..) => {
                 let mut expression = self.bind_expression(&expression_syntax.operand)?;
 
                 if !expression.expression_type().ty.is_arithmetic() {
@@ -434,12 +438,14 @@ impl<'a> FunctionBinder<'a> {
                 // if not signed type, try to promote to higher-rank signed type
                 if !matches!(
                     expression.expression_type().ty,
-                    Type::Primitive(PrimitiveType::Int8)
-                        | Type::Primitive(PrimitiveType::Int16)
-                        | Type::Primitive(PrimitiveType::Int32)
-                        | Type::Primitive(PrimitiveType::Int64)
-                        | Type::Primitive(PrimitiveType::Float32)
-                        | Type::Primitive(PrimitiveType::Float64)
+                    Type::Primitive(
+                        PrimitiveType::Int8
+                            | PrimitiveType::Int16
+                            | PrimitiveType::Int32
+                            | PrimitiveType::Int64
+                            | PrimitiveType::Float32
+                            | PrimitiveType::Float64
+                    )
                 ) {
                     match expression.expression_type().ty {
                         Type::Primitive(PrimitiveType::Uint8) => {
@@ -447,21 +453,21 @@ impl<'a> FunctionBinder<'a> {
                                 span: expression.span().clone(),
                                 expression: Box::new(expression),
                                 target_type: Type::Primitive(PrimitiveType::Int8),
-                            })
+                            });
                         }
                         Type::Primitive(PrimitiveType::Uint16) => {
                             expression = ExpressionBinding::CastBinding(CastBinding {
                                 span: expression.span().clone(),
                                 expression: Box::new(expression),
                                 target_type: Type::Primitive(PrimitiveType::Int16),
-                            })
+                            });
                         }
                         Type::Primitive(PrimitiveType::Uint32) => {
                             expression = ExpressionBinding::CastBinding(CastBinding {
                                 span: expression.span().clone(),
                                 expression: Box::new(expression),
                                 target_type: Type::Primitive(PrimitiveType::Int32),
-                            })
+                            });
                         }
                         _ => {
                             self.errors.push(SemanticError::InvalidPrefixOperation(
@@ -494,27 +500,42 @@ impl<'a> FunctionBinder<'a> {
         }
     }
 
-    fn bind_binary(&mut self, expression_syntax: &Binary) -> Option<ExpressionBinding> {
+    fn bind_binary(
+        &mut self,
+        expression_syntax: &syntax_tree::expression::Binary,
+    ) -> Option<ExpressionBinding> {
         let operator = match expression_syntax.operator {
-            BinaryOperatorSyntaxTree::Add(..) => BinaryOperator::Add,
-            BinaryOperatorSyntaxTree::Subtract(..) => BinaryOperator::Subtract,
-            BinaryOperatorSyntaxTree::Multiply(..) => BinaryOperator::Multiply,
-            BinaryOperatorSyntaxTree::Divide(..) => BinaryOperator::Divide,
-            BinaryOperatorSyntaxTree::Modulo(..) => BinaryOperator::Modulo,
-            BinaryOperatorSyntaxTree::Equal(..) => BinaryOperator::Equal,
-            BinaryOperatorSyntaxTree::NotEqual(..) => BinaryOperator::NotEqual,
-            BinaryOperatorSyntaxTree::LessThan(..) => BinaryOperator::LessThan,
-            BinaryOperatorSyntaxTree::LessThanOrEqual(..) => BinaryOperator::LessThanOrEqual,
-            BinaryOperatorSyntaxTree::GreaterThan(..) => BinaryOperator::GreaterThan,
-            BinaryOperatorSyntaxTree::GreaterThanOrEqual(..) => BinaryOperator::GreaterThanOrEqual,
-            BinaryOperatorSyntaxTree::LogicalAnd(..) => BinaryOperator::LogicalAnd,
-            BinaryOperatorSyntaxTree::LogicalOr(..) => BinaryOperator::LogicalOr,
-            BinaryOperatorSyntaxTree::Assign(..) => BinaryOperator::Assign,
-            BinaryOperatorSyntaxTree::CompoundAdd(..) => BinaryOperator::CompoundAdd,
-            BinaryOperatorSyntaxTree::CompoundSubtract(..) => BinaryOperator::CompoundSubtract,
-            BinaryOperatorSyntaxTree::CompoundMultiply(..) => BinaryOperator::CompoundMultiply,
-            BinaryOperatorSyntaxTree::CompoundDivide(..) => BinaryOperator::CompoundDivide,
-            BinaryOperatorSyntaxTree::CompoundModulo(..) => BinaryOperator::CompoundModulo,
+            syntax_tree::expression::BinaryOperator::Add(..) => BinaryOperator::Add,
+            syntax_tree::expression::BinaryOperator::Subtract(..) => BinaryOperator::Subtract,
+            syntax_tree::expression::BinaryOperator::Multiply(..) => BinaryOperator::Multiply,
+            syntax_tree::expression::BinaryOperator::Divide(..) => BinaryOperator::Divide,
+            syntax_tree::expression::BinaryOperator::Modulo(..) => BinaryOperator::Modulo,
+            syntax_tree::expression::BinaryOperator::Equal(..) => BinaryOperator::Equal,
+            syntax_tree::expression::BinaryOperator::NotEqual(..) => BinaryOperator::NotEqual,
+            syntax_tree::expression::BinaryOperator::LessThan(..) => BinaryOperator::LessThan,
+            syntax_tree::expression::BinaryOperator::LessThanOrEqual(..) => {
+                BinaryOperator::LessThanOrEqual
+            }
+            syntax_tree::expression::BinaryOperator::GreaterThan(..) => BinaryOperator::GreaterThan,
+            syntax_tree::expression::BinaryOperator::GreaterThanOrEqual(..) => {
+                BinaryOperator::GreaterThanOrEqual
+            }
+            syntax_tree::expression::BinaryOperator::LogicalAnd(..) => BinaryOperator::LogicalAnd,
+            syntax_tree::expression::BinaryOperator::LogicalOr(..) => BinaryOperator::LogicalOr,
+            syntax_tree::expression::BinaryOperator::Assign(..) => BinaryOperator::Assign,
+            syntax_tree::expression::BinaryOperator::CompoundAdd(..) => BinaryOperator::CompoundAdd,
+            syntax_tree::expression::BinaryOperator::CompoundSubtract(..) => {
+                BinaryOperator::CompoundSubtract
+            }
+            syntax_tree::expression::BinaryOperator::CompoundMultiply(..) => {
+                BinaryOperator::CompoundMultiply
+            }
+            syntax_tree::expression::BinaryOperator::CompoundDivide(..) => {
+                BinaryOperator::CompoundDivide
+            }
+            syntax_tree::expression::BinaryOperator::CompoundModulo(..) => {
+                BinaryOperator::CompoundModulo
+            }
         };
 
         match operator {
@@ -590,7 +611,7 @@ impl<'a> FunctionBinder<'a> {
                                             expression_syntax.span(),
                                         ),
                                     },
-                                ))
+                                ));
                         }
                         // left is implicitly castable to right
                         (true, false) => {
@@ -601,7 +622,7 @@ impl<'a> FunctionBinder<'a> {
                                     self.source_file().clone(),
                                     expression_syntax.span(),
                                 ),
-                            })
+                            });
                         }
                         // right is implicitly castable to left
                         (false, true) => {
@@ -612,7 +633,7 @@ impl<'a> FunctionBinder<'a> {
                                     self.source_file().clone(),
                                     expression_syntax.span(),
                                 ),
-                            })
+                            });
                         }
                         // mismatched types
                         (false, false) => {
@@ -623,7 +644,7 @@ impl<'a> FunctionBinder<'a> {
                                     self.source_file().clone(),
                                     expression_syntax.span(),
                                 ),
-                            }))
+                            }));
                         }
                     }
                 }
@@ -748,7 +769,7 @@ impl<'a> FunctionBinder<'a> {
                                     expression_syntax.span(),
                                 ),
                             },
-                        ))
+                        ));
                     }
 
                     // float modulo is not allowed
@@ -765,7 +786,7 @@ impl<'a> FunctionBinder<'a> {
                                     expression_syntax.span(),
                                 ),
                             },
-                        ))
+                        ));
                     }
                 }
 
@@ -811,23 +832,20 @@ impl<'a> FunctionBinder<'a> {
 
     fn bind_boolean_literal(
         &mut self,
-        expression_syntax: &BooleanLiteral,
-    ) -> Option<ExpressionBinding> {
-        Some(ExpressionBinding::BooleanLiteralBinding(
-            BooleanLiteralBinding {
-                span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
-                value: expression_syntax.as_true().is_some(),
-            },
-        ))
+        expression_syntax: &syntax_tree::expression::BooleanLiteral,
+    ) -> ExpressionBinding {
+        ExpressionBinding::BooleanLiteralBinding(BooleanLiteralBinding {
+            span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
+            value: expression_syntax.as_true().is_some(),
+        })
     }
 
     fn bind_numeric_literal(
         &mut self,
-        expression_syntax: &NumericLiteralSyntaxTree,
+        expression_syntax: &NumericLiteral,
     ) -> Option<ExpressionBinding> {
-        let numeric_string = &self.source_file()[expression_syntax.0.value_span];
+        let numeric_string = &self.source_file()[expression_syntax.value_span];
         let suffix_string = expression_syntax
-            .0
             .suffix_span
             .map(|span| &self.source_file()[span]);
         let is_float = numeric_string.contains('.');
@@ -850,7 +868,7 @@ impl<'a> FunctionBinder<'a> {
                         InvalidNumericLiteralSuffix {
                             span: SourceSpan::new(
                                 self.source_file().clone(),
-                                expression_syntax.0.suffix_span.unwrap(),
+                                expression_syntax.suffix_span.unwrap(),
                             ),
                         },
                     ));
@@ -867,7 +885,7 @@ impl<'a> FunctionBinder<'a> {
                     InvalidNumericLiteralSuffix {
                         span: SourceSpan::new(
                             self.source_file().clone(),
-                            expression_syntax.0.suffix_span.unwrap(),
+                            expression_syntax.suffix_span.unwrap(),
                         ),
                     },
                 ));
@@ -1004,15 +1022,15 @@ impl<'a> FunctionBinder<'a> {
 pub fn bind(
     symbol_table: &GlobalSymbolTable,
     function_symbol_index: usize,
-) -> Result<FunctionBinding, FunctionBindError> {
+) -> Result<Binding, FunctionBindError> {
     // Find the function symbol
     let function_symbol = symbol_table
         .get_by_index(function_symbol_index)
-        .map_or_else(|| Err(FunctionBindError::InvalidFunctionSymbolIndex), Ok)?;
+        .map_or_else(|| Err(FunctionBindError::InvalidFunctionIndex), Ok)?;
 
     let function_symbol = function_symbol
-        .as_function_symbol()
-        .map_or_else(|| Err(FunctionBindError::InvalidFunctionSymbolIndex), Ok)?;
+        .as_function()
+        .map_or_else(|| Err(FunctionBindError::InvalidFunctionIndex), Ok)?;
 
     let mut function_binder = FunctionBinder {
         symbol_table,

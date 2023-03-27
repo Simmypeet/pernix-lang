@@ -4,7 +4,7 @@ use pernixc_common::source_file::SourceFile;
 
 use crate::symbol::{
     ty::{PrimitiveType, Type, TypeBinding},
-    AccessModifier, FieldSymbol, VariableSymbol,
+    AccessModifier, Field, Variable,
 };
 
 #[test]
@@ -21,7 +21,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
     assert!(errors.is_empty());
 
     let (test_module_symbol_index, test_module_symbol) = symbol_table
-        .get_by_qualified_name(["test"].into_iter())
+        .get_by_full_name(["test"].into_iter())
         .expect("test should be found");
     let test_module_symbol = test_module_symbol
         .as_module_symbol()
@@ -94,7 +94,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
     assert_eq!(struct_symbol.fields.len(), 2);
     assert_eq!(
         *struct_symbol.fields.get_by_index(0).expect("should exist"),
-        FieldSymbol {
+        Field {
             name: "someNumber".to_string(),
             ty: Type::Primitive(PrimitiveType::Int32),
             access_modifier: AccessModifier::Public,
@@ -102,7 +102,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
     );
     assert_eq!(
         *struct_symbol.fields.get_by_index(1).expect("should exist"),
-        FieldSymbol {
+        Field {
             name: "someType".to_string(),
             ty: Type::UserDefinedSymbolIndex(sub_some_type_enum_symbol_index),
             access_modifier: AccessModifier::Public,
@@ -133,9 +133,9 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
             .parameters
             .get_by_index(0)
             .expect("should exist"),
-        VariableSymbol {
+        Variable {
             name: "a".to_string(),
-            type_binding_specifier: TypeBinding {
+            type_binding: TypeBinding {
                 is_mutable: false,
                 ty: Type::UserDefinedSymbolIndex(struct_symbol_index),
             },
@@ -146,9 +146,9 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
             .parameters
             .get_by_index(1)
             .expect("should exist"),
-        VariableSymbol {
+        Variable {
             name: "b".to_string(),
-            type_binding_specifier: TypeBinding {
+            type_binding: TypeBinding {
                 is_mutable: false,
                 ty: Type::UserDefinedSymbolIndex(struct_symbol_index),
             },
@@ -159,9 +159,9 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
             .parameters
             .get_by_index(2)
             .expect("should exist"),
-        VariableSymbol {
+        Variable {
             name: "c".to_string(),
-            type_binding_specifier: TypeBinding {
+            type_binding: TypeBinding {
                 is_mutable: false,
                 ty: Type::UserDefinedSymbolIndex(sub_some_type_enum_symbol_index),
             },
@@ -172,9 +172,9 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
             .parameters
             .get_by_index(3)
             .expect("should exist"),
-        VariableSymbol {
+        Variable {
             name: "d".to_string(),
-            type_binding_specifier: TypeBinding {
+            type_binding: TypeBinding {
                 is_mutable: false,
                 ty: Type::UserDefinedSymbolIndex(sub_some_type_enum_symbol_index)
             },

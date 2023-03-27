@@ -283,6 +283,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernixc_semantic"
+version = "0.1.0"
+dependencies = [
+ "derive-new",
+ "derive_more",
+ "enum-as-inner",
+ "getset",
+ "pernixc_common",
+ "pernixc_lexical",
+ "pernixc_syntax",
+ "thiserror",
+]
+
+[[package]]
 name = "pernixc_syntax"
 version = "0.1.0"
 dependencies = [
