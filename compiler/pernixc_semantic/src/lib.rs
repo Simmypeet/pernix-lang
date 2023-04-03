@@ -19,6 +19,7 @@ use derive_new::new;
 use pernixc_common::source_file::{SourceFile, Span};
 
 pub mod binding;
+pub mod control_flow_graph;
 pub mod errors;
 pub mod symbol;
 

@@ -529,6 +529,26 @@ impl SourceElement for LabelSpecifier {
 ///
 /// Syntax Synopsis:
 /// ``` txt
+/// BlockWithoutLabel:
+///     '{' Statement* '}'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub struct BlockWithoutLabel {
+    pub left_brace: Punctuation,
+    pub statements: Vec<Statement>,
+    pub right_brace: Punctuation,
+}
+
+impl SourceElement for BlockWithoutLabel {
+    fn span(&self) -> Span { Span::new(self.left_brace.span.start, self.right_brace.span.end) }
+}
+
+/// Represents a block syntax tree with an optional label specifier.
+///
+/// Syntax Synopsis:
+/// ``` txt
 /// Block:
 ///     LabelSpecifier? '{' Statement* '}'
 ///     ;
@@ -537,13 +557,21 @@ impl SourceElement for LabelSpecifier {
 #[allow(missing_docs)]
 pub struct Block {
     pub label_specifier: Option<LabelSpecifier>,
-    pub left_brace: Punctuation,
-    pub statements: Vec<Statement>,
-    pub right_brace: Punctuation,
+    pub block_without_label: BlockWithoutLabel,
 }
 
 impl SourceElement for Block {
-    fn span(&self) -> Span { Span::new(self.left_brace.span.start, self.right_brace.span.end) }
+    fn span(&self) -> Span {
+        self.label_specifier.map_or_else(
+            || self.block_without_label.span(),
+            |label_specifier| {
+                Span::new(
+                    label_specifier.span().start,
+                    self.block_without_label.span().end,
+                )
+            },
+        )
+    }
 }
 
 /// Represents an else portion of an if-else expression.
@@ -905,6 +933,69 @@ impl<'a> Parser<'a> {
         Some(self.try_parse_second_punctuation_binary_operator(first_punctuation_binary_operator))
     }
 
+    pub(super) fn parse_block_without_label(&mut self) -> Option<BlockWithoutLabel> {
+        let left_brace = self.expect_punctuation('{')?;
+
+        let mut statements = Vec::new();
+
+        // Parses statements until a right brace is found.
+        let right_brace = loop {
+            match self.peek_significant_token() {
+                Some(Token::Punctuation(punc)) if punc.punctuation == '}' => {
+                    self.next_token();
+                    break punc;
+                }
+
+                None => {
+                    self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
+                        expected: '}',
+                        found: None,
+                    }));
+                    return None;
+                }
+
+                _ => {
+                    let statement = self.parse_statement();
+
+                    if let Some(statement) = statement {
+                        statements.push(statement);
+                    } else {
+                        // Skips to either the next semicolon or the next right brace.
+                        let token = self.next_token_until(|token| {
+                            matches!(
+                                token,
+                                Token::Punctuation(punc)
+                                    if punc.punctuation == ';' || punc.punctuation == '}'
+                            )
+                        });
+
+                        match token {
+                            Some(Token::Punctuation(punc)) if punc.punctuation == '}' => {
+                                break punc
+                            }
+                            None => {
+                                self.report_error(SyntacticError::PunctuationExpected(
+                                    PunctuationExpected {
+                                        expected: '}',
+                                        found: None,
+                                    },
+                                ));
+                                return None;
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+            }
+        };
+
+        Some(BlockWithoutLabel {
+            left_brace: *left_brace,
+            statements,
+            right_brace: *right_brace,
+        })
+    }
+
     // Parses either a block expression or a loop expression.
     fn parse_block_or_loop_expression(
         &mut self,
@@ -925,68 +1016,10 @@ impl<'a> Parser<'a> {
             }
             // Handles block
             Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
-                self.next_token();
-
-                let mut statements = Vec::new();
-
-                // Parses statements until a right brace is found.
-                let right_brace = loop {
-                    match self.peek_significant_token() {
-                        Some(Token::Punctuation(punc)) if punc.punctuation == '}' => {
-                            self.next_token();
-                            break punc;
-                        }
-
-                        None => {
-                            self.report_error(SyntacticError::PunctuationExpected(
-                                PunctuationExpected {
-                                    expected: '}',
-                                    found: None,
-                                },
-                            ));
-                            return None;
-                        }
-
-                        _ => {
-                            let statement = self.parse_statement();
-
-                            if let Some(statement) = statement {
-                                statements.push(statement);
-                            } else {
-                                // Skips to either the next semicolon or the next right brace.
-                                let token = self.next_token_until(|token| {
-                                    matches!(
-                                        token,
-                                        Token::Punctuation(punc)
-                                            if punc.punctuation == ';' || punc.punctuation == '}'
-                                    )
-                                });
-
-                                match token {
-                                    Some(Token::Punctuation(punc)) if punc.punctuation == '}' => {
-                                        break punc
-                                    }
-                                    None => {
-                                        self.report_error(SyntacticError::PunctuationExpected(
-                                            PunctuationExpected {
-                                                expected: '}',
-                                                found: None,
-                                            },
-                                        ));
-                                        return None;
-                                    }
-                                    _ => (),
-                                }
-                            }
-                        }
-                    }
-                };
-
+                let block_without_label = self.parse_block_without_label()?;
                 Some(Expression::Imperative(Imperative::Block(Block {
                     label_specifier,
-                    left_brace: *left_brace,
-                    statements,
-                    right_brace: *right_brace,
+                    block_without_label,
                 })))
             }
             token => {

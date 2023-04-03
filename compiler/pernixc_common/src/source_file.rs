@@ -167,6 +167,17 @@ impl SourceFile {
             byte: 0,
         }
     }
+
+    /// Gets the string slice of the source file at the given span.
+    ///
+    /// The slicing is done using the byte index of the span.
+    #[must_use]
+    pub fn get(&self, span: Span) -> Option<&str> {
+        match span.end {
+            SpanEnding::Location(end) => self.content.get(span.start.byte..end.byte),
+            SpanEnding::EndOfFile => self.content.get(span.start.byte..),
+        }
+    }
 }
 
 /// Represents an iterator over the characters of a source file.

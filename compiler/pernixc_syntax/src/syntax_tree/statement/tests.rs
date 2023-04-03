@@ -22,8 +22,7 @@ const SOURCE_CODE: &str = "
     test = 64;
     if (test == 64) {
         test = 128;
-    }
-    else {
+    } else {
         test = 256;
     }
 
@@ -59,7 +58,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         ),
         "test"
     );
-    let mut statement_iter = block.statements.into_iter();
+    let mut statement_iter = block.block_without_label.statements.into_iter();
     {
         let variable_declaration = statement_iter
             .next()
@@ -203,7 +202,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .into_block()
                 .unwrap();
 
-            let mut statement_iter = then_expression.statements.into_iter();
+            let mut statement_iter = then_expression.block_without_label.statements.into_iter();
 
             assert!(then_expression.label_specifier.is_none());
 
@@ -251,7 +250,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .into_block()
                 .unwrap();
 
-            let mut statement_iter = else_expression.statements.into_iter();
+            let mut statement_iter = else_expression.block_without_label.statements.into_iter();
 
             assert!(else_expression.label_specifier.is_none());
 

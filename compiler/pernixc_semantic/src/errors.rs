@@ -1,11 +1,12 @@
 //! Contains all kinds of errors that can be encountered during the semantic analysis phase.
 
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use thiserror::Error;
 
 use crate::{
-    binding::expression::{BinaryOperator, ExpressionType, PrefixOperator},
-    symbol::{ty::Type, AccessModifier},
+    binding::{BinaryOperator, PrefixOperator, ValueType},
+    symbol::{ty::Type, AccessModifier, ID},
     SourceSpan,
 };
 
@@ -40,7 +41,7 @@ pub struct FieldRedefinition {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SymbolRedifinition {
     /// The index of the symbol that is being redefined.
-    pub available_symbol_index: usize,
+    pub available_symbol_id: ID,
 
     /// The span of the symbol that redefines another symbol.
     pub new_symbol_span: SourceSpan,
@@ -53,7 +54,7 @@ pub struct SymbolIsNotAccessible {
     pub referencing_site: SourceSpan,
 
     /// The index of the symbol that is not accessible.
-    pub symbol_index: usize,
+    pub symbol_id: ID,
 }
 
 /// The symbol can not be found in a particular scope.
@@ -63,7 +64,7 @@ pub struct SymbolNotFound {
     pub referencing_site: SourceSpan,
 
     /// The location where the symbol was expected to be found.
-    pub in_scope: Option<usize>,
+    pub in_scope: Option<ID>,
 }
 
 /// Expected the symbol to be a type.
@@ -73,7 +74,7 @@ pub struct TypeExpected {
     pub span: SourceSpan,
 
     /// The index of the symbol that is not a type.
-    pub symbol_index: usize,
+    pub symbol_id: ID,
 }
 
 /// Parameter redefinition.
@@ -128,13 +129,13 @@ pub struct AssignToImmutable {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InvalidBinaryOperation {
     /// The type of the left-hand side operand.
-    pub lhs_type: ExpressionType,
+    pub lhs_type: ValueType,
 
     /// The operator.
     pub operator: BinaryOperator,
 
     /// The type of the right-hand side operand.
-    pub rhs_type: ExpressionType,
+    pub rhs_type: ValueType,
 
     /// The span of the binary expression.
     pub span: SourceSpan,
@@ -144,13 +145,13 @@ pub struct InvalidBinaryOperation {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AmbiguousConversionInBinaryOperation {
     /// The type of the left-hand side operand.
-    pub lhs_type: ExpressionType,
+    pub lhs_type: ValueType,
 
     /// The operator.
     pub operator: BinaryOperator,
 
     /// The type of the right-hand side operand.
-    pub rhs_type: ExpressionType,
+    pub rhs_type: ValueType,
 
     /// The span of the binary expression.
     pub span: SourceSpan,
@@ -163,7 +164,7 @@ pub struct InvalidPrefixOperation {
     pub operator: PrefixOperator,
 
     /// The type of the operand.
-    pub operand_type: ExpressionType,
+    pub operand_type: ValueType,
 
     /// The span of the prefix expression.
     pub span: SourceSpan,
@@ -203,8 +204,93 @@ pub struct StructExpected {
     pub span: SourceSpan,
 }
 
+/// The field with the given could not be found in the struct.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FieldNotFound {
+    /// The span of the field name.
+    pub span: SourceSpan,
+
+    /// The index of the struct symbol that does not contain the field.
+    pub struct_symbol_index: usize,
+}
+
+/// The field is already initialized in the struct literal.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DuplicateFieldInitialization {
+    /// The span of the field name.
+    pub span: SourceSpan,
+}
+
+/// The struct member is not accessible.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MemberNotAccessible {
+    /// The span of the field name.
+    pub span: SourceSpan,
+
+    /// The index of the struct symbol that does not contain the field.
+    pub struct_symbol_index: usize,
+
+    /// The index of the field in the struct.
+    pub field_index: usize,
+}
+
+/// The field is not accessible.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FieldIsNotAccessible {
+    /// The span of the field name.
+    pub span: SourceSpan,
+
+    /// The index of the struct symbol that does not contain the field.
+    pub struct_symbol_index: usize,
+
+    /// The index of the field in the struct.
+    pub field_index: usize,
+}
+
+/// Field access on a non-struct expression.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MemberAccessOnNonStruct {
+    /// The span of the field name.
+    pub span: SourceSpan,
+}
+
+/// Loop control is used outside of a loop.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LoopControlOutsideLoop {
+    /// The span of the loop control.
+    pub span: SourceSpan,
+}
+
+/// The label does not refer to any block or loop.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LabelNotFound {
+    /// The span of the label name.
+    pub span: SourceSpan,
+}
+
+/// The label does not refer to a loop.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LabelDoesNotReferToLoop {
+    /// The span of the label name.
+    pub span: SourceSpan,
+}
+
+/// The `express` expression is used outside of a block.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExpressOutsideBlock {
+    /// The span of the expression.
+    pub span: SourceSpan,
+}
+
+/// The label does not refer to a block.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LabelDoesNotReferToBlock {
+    /// The span of the label name.
+    pub span: SourceSpan,
+}
+
 /// Is an enumeration of all kinds of errors that can occur during semantic analysis.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Error, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Error, EnumAsInner, From)]
 #[error("Encountered a semantic error while analyzing the program")]
 #[allow(missing_docs)]
 pub enum SemanticError {
@@ -228,4 +314,14 @@ pub enum SemanticError {
     ArgumentCountMismatch(ArgumentCountMismatch),
     SymbolIsNotCallable(SymbolIsNotCallable),
     StructExpected(StructExpected),
+    FieldNotFound(FieldNotFound),
+    DuplicateFieldInitialization(DuplicateFieldInitialization),
+    MemberNotAccessible(MemberNotAccessible),
+    FieldIsNotAccessible(FieldIsNotAccessible),
+    MemberAccessOnNonStruct(MemberAccessOnNonStruct),
+    LoopControlOutsideLoop(LoopControlOutsideLoop),
+    LabelNotFound(LabelNotFound),
+    LabelDoesNotReferToLoop(LabelDoesNotReferToLoop),
+    ExpressOutsideBlock(ExpressOutsideBlock),
+    LabelDoesNotReferToBlock(LabelDoesNotReferToBlock),
 }

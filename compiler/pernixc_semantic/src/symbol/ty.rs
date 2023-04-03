@@ -1,6 +1,10 @@
 //! Contains the type system for Pernix.
 
+use derive_more::From;
+use derive_new::new;
 use enum_as_inner::EnumAsInner;
+
+use super::TypedID;
 
 /// Is an enumeration of all the primitive types in Pernix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
@@ -33,13 +37,16 @@ pub enum PrimitiveType {
 }
 
 /// Represents a type in Pernix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, EnumAsInner)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, EnumAsInner, From)]
 pub enum Type {
     /// The type is a primitive type.
     Primitive(PrimitiveType),
 
     /// The type refers to a particular typed symbol in the symbol table.
-    UserDefinedSymbolIndex(usize),
+    TypedID(TypedID),
+
+    /// The type that yields from an expression that jumps the flow out of the current procedure.
+    Never,
 }
 
 impl Type {
@@ -94,7 +101,7 @@ impl Default for Type {
 }
 
 /// Represents a type used to represent a type binding of an l-value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, new)]
 pub struct TypeBinding {
     /// The type of the binding.
     pub ty: Type,
