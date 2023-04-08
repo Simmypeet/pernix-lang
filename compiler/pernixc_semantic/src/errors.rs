@@ -5,8 +5,8 @@ use enum_as_inner::EnumAsInner;
 use thiserror::Error;
 
 use crate::{
-    binding::{BinaryOperator, PrefixOperator, ValueType},
-    symbol::{ty::Type, AccessModifier, ID},
+    hir::value::{ExpressionType, PrefixOperator},
+    symbol::{ty::Type, AccessModifier, FieldID, StructID, ID},
     SourceSpan,
 };
 
@@ -124,7 +124,7 @@ pub struct AssignToImmutable {
     /// The span of the binary expression that performs the assignment.
     pub span: SourceSpan,
 }
-
+/*
 /// The binary expression has an invalid combination of operands and operator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InvalidBinaryOperation {
@@ -156,6 +156,7 @@ pub struct AmbiguousConversionInBinaryOperation {
     /// The span of the binary expression.
     pub span: SourceSpan,
 }
+*/
 
 /// The prefix expression has an invalid combination of operands and operator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -164,7 +165,7 @@ pub struct InvalidPrefixOperation {
     pub operator: PrefixOperator,
 
     /// The type of the operand.
-    pub operand_type: ValueType,
+    pub operand_type: ExpressionType,
 
     /// The span of the prefix expression.
     pub span: SourceSpan,
@@ -247,6 +248,19 @@ pub struct FieldIsNotAccessible {
     pub field_index: usize,
 }
 
+/// All fields must be accessiible in a struct literal.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AllFieldIsNotAccessible {
+    /// The span of the struct literal.
+    pub span: SourceSpan,
+
+    /// The identifier of the struct that contains the inaccessible fields.
+    pub struct_id: StructID,
+
+    /// The fields that are not accessible.
+    pub inaccessible_fields: Vec<FieldID>,
+}
+
 /// Field access on a non-struct expression.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemberAccessOnNonStruct {
@@ -306,8 +320,10 @@ pub enum SemanticError {
     TypeMismatch(TypeMismatch),
     AssignToRValue(AssignToRValue),
     AssignToImmutable(AssignToImmutable),
+    /*
     InvalidBinaryOperation(InvalidBinaryOperation),
     AmbiguousConversionInBinaryOperation(AmbiguousConversionInBinaryOperation),
+    */
     InvalidPrefixOperation(InvalidPrefixOperation),
     EnumVariantRedefinition(EnumVariantRedefinition),
     ExpressionExpected(ExpressionExpected),
@@ -324,4 +340,5 @@ pub enum SemanticError {
     LabelDoesNotReferToLoop(LabelDoesNotReferToLoop),
     ExpressOutsideBlock(ExpressOutsideBlock),
     LabelDoesNotReferToBlock(LabelDoesNotReferToBlock),
+    AllFieldIsNotAccessible(AllFieldIsNotAccessible),
 }

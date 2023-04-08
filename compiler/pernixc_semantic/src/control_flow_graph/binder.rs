@@ -1,12 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
 use pernixc_common::source_file::{SourceElement, SourceFile, Span};
 use pernixc_lexical::token::NumericLiteral as NumericLiteralToken;
 use pernixc_syntax::syntax_tree::{
     expression::{
-        BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,
+        BooleanLiteral as BooleanLiteralSyntaxTree, Express, Expression as ExpressionSyntaxTree,
         Functional as FunctionalSyntaxTree, Imperative as ImperativeSyntaxTree,
-        Prefix as PrefixSyntaxTree, PrefixOperator as PrefixOperatorSyntaxTree,
+        Named as NamedSyntaxTree, Prefix as PrefixSyntaxTree,
+        PrefixOperator as PrefixOperatorSyntaxTree,
     },
     statement::{
         VariableDeclaration as VariableDeclarationSyntaxTree, VariableTypeBindingSpecifier,
@@ -19,8 +20,9 @@ use super::{
 };
 use crate::{
     binding::{
-        Binding, BooleanLiteral, Cast, Expression, NumericLiteral, NumericLiteralValue, Prefix,
-        PrefixOperator, ValueCategory, ValueType,
+        Binding, BooleanLiteral, Cast, Expression, LocalArgumentLoad, LocalVariableLoad, NamedLoad,
+        NamedLoadKind, NumericLiteral, NumericLiteralValue, Prefix, PrefixOperator, ValueCategory,
+        ValueType,
     },
     errors::{
         InvalidNumericLiteralSuffix, InvalidPrefixOperation, OutOfRangeNumericLiteral,
@@ -127,14 +129,12 @@ impl<T> ScopeMap<T> {
         index
     }
 
-    pub fn get(&self, name: &str) -> Option<&T> {
-        let index = *self.name_stack.get(name)?;
-        Some(&self.values[index])
-    }
+    pub fn get(&self, index: usize) -> Option<&T> { self.values.get(index) }
 
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut T> {
-        let index = *self.name_stack.get(name)?;
-        Some(&mut self.values[index])
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> { self.values.get_mut(index) }
+
+    pub fn map_name_to_index(&mut self, name: &str) -> Option<usize> {
+        self.name_stack.get(name).copied()
     }
 }
 
@@ -229,7 +229,7 @@ impl<'a> ControlFlowGraphBinder<'a> {
             }
             FunctionalSyntaxTree::Binary(_) => todo!(),
             FunctionalSyntaxTree::Prefix(prefix) => self.bind_prefix(prefix),
-            FunctionalSyntaxTree::Named(named) => todo!(),
+            FunctionalSyntaxTree::Named(named) => self.bind_named(named),
             FunctionalSyntaxTree::FunctionCall(_) => todo!(),
             FunctionalSyntaxTree::Parenthesized(_) => todo!(),
             FunctionalSyntaxTree::StructLiteral(_) => todo!(),
@@ -240,6 +240,81 @@ impl<'a> ControlFlowGraphBinder<'a> {
             FunctionalSyntaxTree::Express(_) => todo!(),
             FunctionalSyntaxTree::Cast(_) => todo!(),
         }
+    }
+
+    fn bind_named(&mut self, expression_syntax: &NamedSyntaxTree) -> Option<Expression> {
+        if expression_syntax.0.rest.is_empty() {
+            // try to find variable symbol first
+            let variable = self
+                .variable_map
+                .map_name_to_index(&self.source_file()[expression_syntax.0.first.span])
+                .map(|idx| (idx, self.variable_map.get(idx).unwrap()));
+
+            if let Some((variable_index, variable_symbol)) = variable {
+                return Some(
+                    NamedLoad {
+                        kind: LocalVariableLoad {
+                            local_variable_index: variable_index,
+                            type_binding: variable_symbol.type_binding,
+                        }
+                        .into(),
+                        span: SourceSpan {
+                            source_file: self.source_file().clone(),
+                            span: expression_syntax.span(),
+                        },
+                    }
+                    .into(),
+                );
+            }
+
+            // try to find parameter symbol
+            let parameter = self
+                .function_symbol
+                .parameters
+                .map_name_to_id(&self.source_file()[expression_syntax.0.first.span])
+                .map(|index| {
+                    (
+                        index,
+                        self.function_symbol.parameters.get_by_id(index).unwrap(),
+                    )
+                });
+
+            if let Some((parameter_id, parameter_symbol)) = parameter {
+                return Some(
+                    NamedLoad {
+                        kind: LocalArgumentLoad {
+                            variable_id: parameter_id,
+                            ty: parameter_symbol.type_binding.ty,
+                        }
+                        .into(),
+                        span: SourceSpan {
+                            source_file: self.source_file().clone(),
+                            span: expression_syntax.span(),
+                        },
+                    }
+                    .into(),
+                );
+            }
+        }
+
+        // try to find enum member
+        let symbol_id = self
+            .symbol_table
+            .resolve_symbol(
+                self.function_symbol_id.into(),
+                expression_syntax.0.elements(),
+                &self.function_symbol.syntax_tree.source_file,
+            )
+            .map_or_else(
+                |err| {
+                    // only semantic errors are possible here
+                    self.errors.push(err.into_semantic_error().unwrap());
+                    None
+                },
+                Some,
+            )?;
+
+        todo!()
     }
 
     fn numeric_literal_suffix_to_numeric_type(
@@ -260,7 +335,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
             _ => {
                 self.errors.push(
                     InvalidNumericLiteralSuffix {
-                        span: SourceSpan::new(self.source_file().clone(), *suffix_span),
+                        span: SourceSpan {
+                            source_file: self.source_file().clone(),
+                            span: *suffix_span,
+                        },
                     }
                     .into(),
                 );
@@ -283,7 +361,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
         if is_float && !suffix_type_is_float {
             self.errors.push(SemanticError::InvalidNumericLiteralSuffix(
                 InvalidNumericLiteralSuffix {
-                    span: SourceSpan::new(self.source_file().clone(), *span),
+                    span: SourceSpan {
+                        source_file: self.source_file().clone(),
+                        span: *span,
+                    },
                 },
             ));
             return None;
@@ -337,7 +418,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
             || {
                 self.errors.push(
                     OutOfRangeNumericLiteral {
-                        span: SourceSpan::new(self.source_file().clone(), *span),
+                        span: SourceSpan {
+                            source_file: self.source_file().clone(),
+                            span: *span,
+                        },
                     }
                     .into(),
                 );
@@ -363,7 +447,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
             Some(
                 NumericLiteral {
                     value: numeric_value,
-                    span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
+                    span: SourceSpan {
+                        source_file: self.source_file().clone(),
+                        span: expression_syntax.span(),
+                    },
                 }
                 .into(),
             )
@@ -376,10 +463,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
                     || {
                         self.errors.push(SemanticError::OutOfRangeNumericLiteral(
                             OutOfRangeNumericLiteral {
-                                span: SourceSpan::new(
-                                    self.source_file().clone(),
-                                    expression_syntax.span(),
-                                ),
+                                span: SourceSpan {
+                                    source_file: self.source_file().clone(),
+                                    span: expression_syntax.span(),
+                                },
                             },
                         ));
                         None
@@ -390,7 +477,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
             Some(
                 NumericLiteral {
                     value: numeric_value,
-                    span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
+                    span: SourceSpan {
+                        source_file: self.source_file().clone(),
+                        span: expression_syntax.span(),
+                    },
                 }
                 .into(),
             )
@@ -399,10 +489,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
                 || {
                     self.errors.push(SemanticError::OutOfRangeNumericLiteral(
                         OutOfRangeNumericLiteral {
-                            span: SourceSpan::new(
-                                self.source_file().clone(),
-                                expression_syntax.span(),
-                            ),
+                            span: SourceSpan {
+                                source_file: self.source_file().clone(),
+                                span: expression_syntax.span(),
+                            },
                         },
                     ));
                     None
@@ -415,10 +505,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
                     Some(
                         NumericLiteral {
                             value: NumericLiteralValue::Int64(numeric_value),
-                            span: SourceSpan::new(
-                                self.source_file().clone(),
-                                expression_syntax.span(),
-                            ),
+                            span: SourceSpan {
+                                source_file: self.source_file().clone(),
+                                span: expression_syntax.span(),
+                            },
                         }
                         .into(),
                     )
@@ -427,10 +517,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
                     Some(
                         NumericLiteral {
                             value: NumericLiteralValue::Int32(i32_value),
-                            span: SourceSpan::new(
-                                self.source_file().clone(),
-                                expression_syntax.span(),
-                            ),
+                            span: SourceSpan {
+                                source_file: self.source_file().clone(),
+                                span: expression_syntax.span(),
+                            },
                         }
                         .into(),
                     )
@@ -525,107 +615,117 @@ impl<'a> ControlFlowGraphBinder<'a> {
         }
     }
 
-    fn bind_prefix(&mut self, expression_syntax: &PrefixSyntaxTree) -> Option<Expression> {
-        match expression_syntax.operator {
-            PrefixOperatorSyntaxTree::LogicalNot(..) => {
-                let expression = self.expect_expression(
-                    expression_syntax.operand.as_ref(),
-                    Type::Primitive(PrimitiveType::Bool),
-                )?;
-                Some(
-                    Prefix {
-                        span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
-                        operator: PrefixOperator::LogicalNot,
-                        operand: Box::new(expression),
-                        value_type: ValueType::new(
-                            Type::Primitive(PrimitiveType::Bool),
-                            ValueCategory::RValue,
-                        ),
-                    }
-                    .into(),
-                )
+    fn bind_logical_not(&mut self, expression_syntax: &PrefixSyntaxTree) -> Option<Expression> {
+        let expression = self.expect_expression(
+            expression_syntax.operand.as_ref(),
+            Type::Primitive(PrimitiveType::Bool),
+        )?;
+        Some(
+            Prefix {
+                span: SourceSpan {
+                    source_file: self.source_file().clone(),
+                    span: expression_syntax.span(),
+                },
+                operator: PrefixOperator::LogicalNot,
+                operand: Box::new(expression),
+                value_type: ValueType {
+                    ty: PrimitiveType::Bool.into(),
+                    category: ValueCategory::RValue,
+                },
             }
-            PrefixOperatorSyntaxTree::Negate(..) => {
-                let mut expression = self.bind_expression(&expression_syntax.operand, None)?;
+            .into(),
+        )
+    }
 
-                if !expression.value_type().ty.is_arithmetic() {
-                    self.errors.push(
+    fn bind_negate(&mut self, expression_syntax: &PrefixSyntaxTree) -> Option<Expression> {
+        let mut expression = self.bind_expression(&expression_syntax.operand, None)?;
+
+        if !expression.value_type().ty.is_arithmetic() {
+            self.errors.push(
+                InvalidPrefixOperation {
+                    span: SourceSpan {
+                        source_file: self.source_file().clone(),
+                        span: expression_syntax.span(),
+                    },
+                    operator: PrefixOperator::Negate,
+                    operand_type: expression.value_type(),
+                }
+                .into(),
+            );
+            return None;
+        }
+
+        // if not signed type, try to promote to higher-rank signed type
+        if !matches!(
+            expression.value_type().ty,
+            Type::Primitive(
+                PrimitiveType::Int8
+                    | PrimitiveType::Int16
+                    | PrimitiveType::Int32
+                    | PrimitiveType::Int64
+                    | PrimitiveType::Float32
+                    | PrimitiveType::Float64
+            )
+        ) {
+            match expression.value_type().ty {
+                Type::Primitive(PrimitiveType::Uint8) => {
+                    expression = Expression::Cast(Cast {
+                        span: expression.span().clone(),
+                        expression: Box::new(expression),
+                        target_type: Type::Primitive(PrimitiveType::Int8),
+                    });
+                }
+                Type::Primitive(PrimitiveType::Uint16) => {
+                    expression = Expression::Cast(Cast {
+                        span: expression.span().clone(),
+                        expression: Box::new(expression),
+                        target_type: Type::Primitive(PrimitiveType::Int16),
+                    });
+                }
+                Type::Primitive(PrimitiveType::Uint32) => {
+                    expression = Expression::Cast(Cast {
+                        span: expression.span().clone(),
+                        expression: Box::new(expression),
+                        target_type: Type::Primitive(PrimitiveType::Int32),
+                    });
+                }
+                _ => {
+                    self.errors.push(SemanticError::InvalidPrefixOperation(
                         InvalidPrefixOperation {
-                            span: SourceSpan::new(
-                                self.source_file().clone(),
-                                expression_syntax.span(),
-                            ),
+                            span: SourceSpan {
+                                source_file: self.source_file().clone(),
+                                span: expression_syntax.span(),
+                            },
                             operator: PrefixOperator::Negate,
                             operand_type: expression.value_type(),
-                        }
-                        .into(),
-                    );
+                        },
+                    ));
                     return None;
                 }
-
-                // if not signed type, try to promote to higher-rank signed type
-                if !matches!(
-                    expression.value_type().ty,
-                    Type::Primitive(
-                        PrimitiveType::Int8
-                            | PrimitiveType::Int16
-                            | PrimitiveType::Int32
-                            | PrimitiveType::Int64
-                            | PrimitiveType::Float32
-                            | PrimitiveType::Float64
-                    )
-                ) {
-                    match expression.value_type().ty {
-                        Type::Primitive(PrimitiveType::Uint8) => {
-                            expression = Expression::Cast(Cast {
-                                span: expression.span().clone(),
-                                expression: Box::new(expression),
-                                target_type: Type::Primitive(PrimitiveType::Int8),
-                            });
-                        }
-                        Type::Primitive(PrimitiveType::Uint16) => {
-                            expression = Expression::Cast(Cast {
-                                span: expression.span().clone(),
-                                expression: Box::new(expression),
-                                target_type: Type::Primitive(PrimitiveType::Int16),
-                            });
-                        }
-                        Type::Primitive(PrimitiveType::Uint32) => {
-                            expression = Expression::Cast(Cast {
-                                span: expression.span().clone(),
-                                expression: Box::new(expression),
-                                target_type: Type::Primitive(PrimitiveType::Int32),
-                            });
-                        }
-                        _ => {
-                            self.errors.push(SemanticError::InvalidPrefixOperation(
-                                InvalidPrefixOperation {
-                                    span: SourceSpan::new(
-                                        self.source_file().clone(),
-                                        expression_syntax.span(),
-                                    ),
-                                    operator: PrefixOperator::Negate,
-                                    operand_type: expression.value_type(),
-                                },
-                            ));
-                            return None;
-                        }
-                    }
-                }
-
-                Some(
-                    Prefix {
-                        span: SourceSpan::new(self.source_file().clone(), expression_syntax.span()),
-                        operator: PrefixOperator::Negate,
-                        value_type: ValueType {
-                            ty: expression.value_type().ty,
-                            category: ValueCategory::RValue,
-                        },
-                        operand: Box::new(expression),
-                    }
-                    .into(),
-                )
             }
+        }
+
+        Some(
+            Prefix {
+                span: SourceSpan {
+                    source_file: self.source_file().clone(),
+                    span: expression_syntax.span(),
+                },
+                operator: PrefixOperator::Negate,
+                value_type: ValueType {
+                    ty: expression.value_type().ty,
+                    category: ValueCategory::RValue,
+                },
+                operand: Box::new(expression),
+            }
+            .into(),
+        )
+    }
+
+    fn bind_prefix(&mut self, expression_syntax: &PrefixSyntaxTree) -> Option<Expression> {
+        match expression_syntax.operator {
+            PrefixOperatorSyntaxTree::LogicalNot(..) => self.bind_logical_not(expression_syntax),
+            PrefixOperatorSyntaxTree::Negate(..) => self.bind_negate(expression_syntax),
         }
     }
 
@@ -633,7 +733,10 @@ impl<'a> ControlFlowGraphBinder<'a> {
         &mut self,
         expression_syntax: &BooleanLiteralSyntaxTree,
     ) -> Expression {
-        let span = SourceSpan::new(self.source_file().clone(), expression_syntax.span());
+        let span = SourceSpan {
+            source_file: self.source_file().clone(),
+            span: expression_syntax.span(),
+        };
         match expression_syntax {
             BooleanLiteralSyntaxTree::True(_) => BooleanLiteral { value: true, span }.into(),
             BooleanLiteralSyntaxTree::False(_) => BooleanLiteral { value: false, span }.into(),

@@ -1,0 +1,19 @@
+public enum SomeEnum {
+    First,
+    Second
+}
+
+public void main(mutable int32 someParameter) {
+    let value = 32;
+
+    someParameter;
+    value;
+    SomeEnum; // Error - cannot access enum type directly
+    SomeEnum::First;
+
+    // shadow the parameter
+    mutable let someParameter = 32;
+
+    someParameter;
+}
+

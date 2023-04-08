@@ -45,12 +45,13 @@ impl<Element: SourceElement, Separator: SourceElement> SourceElement
     for ConnectedList<Element, Separator>
 {
     fn span(&self) -> Span {
-        Span::new(
-            self.first.span().start,
-            self.rest
+        Span {
+            start: self.first.span().start,
+            end: self
+                .rest
                 .last()
                 .map_or(self.first.span().end, |(_, element)| element.span().end),
-        )
+        }
     }
 }
 
@@ -77,7 +78,12 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
 pub struct ScopeSeparator(pub Punctuation, pub Punctuation);
 
 impl SourceElement for ScopeSeparator {
-    fn span(&self) -> Span { Span::new(self.0.span.start, self.1.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.0.span.start,
+            end: self.1.span.end,
+        }
+    }
 }
 
 /// Represents a syntax tree node of identifiers separated by scope separators.
@@ -188,7 +194,12 @@ pub struct Label {
 }
 
 impl SourceElement for Label {
-    fn span(&self) -> Span { Span::new(self.single_quote.span.start, self.identifier.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.single_quote.span.start,
+            end: self.identifier.span.end,
+        }
+    }
 }
 
 /// Is a syntax tree node that represents a type binding.
@@ -210,14 +221,15 @@ pub struct TypeBindingSpecifier {
 
 impl SourceElement for TypeBindingSpecifier {
     fn span(&self) -> Span {
-        Span::new(
-            self.mutable_keyword
+        Span {
+            start: self
+                .mutable_keyword
                 .as_ref()
                 .map_or(self.type_specifier.span().start, |keyword| {
                     keyword.span.start
                 }),
-            self.type_specifier.span().end,
-        )
+            end: self.type_specifier.span().end,
+        }
     }
 }
 
@@ -354,8 +366,7 @@ impl File {
 
         // parse items
         while parser.peek_significant_token().is_some() {
-            let item = parser.parse_item();
-            item.map_or_else(|| {
+            parser.parse_item().map_or_else(|| {
                     // look for the next access modifier
                     parser.forward_until(|token|
                         matches!(token, Token::Keyword(keyword) if keyword.keyword == KeywordKind::Public

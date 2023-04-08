@@ -13,6 +13,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
     let file_parsing = pernixc_syntax::file_parsing::parse_files(SourceFile::load(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resource")
+            .join("symbol")
             .join("basicSymbolTable")
             .join("main.pnx"),
         vec!["test".to_string()],
@@ -79,7 +80,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
         access_modifier: AccessModifier::Public,
     });
     assert_eq!(struct_symbol.fields[1.into()], Field {
-        name: "someType".to_string(),   
+        name: "someType".to_string(),
         ty: Type::TypedID(sub_some_type_enum_symbol_id.into()),
         access_modifier: AccessModifier::Public,
     });

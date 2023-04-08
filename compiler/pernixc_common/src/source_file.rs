@@ -7,7 +7,6 @@ use std::{
     str::Chars,
 };
 
-use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use thiserror::Error;
@@ -249,7 +248,7 @@ impl<'a> Iterator<'a> {
 }
 
 /// Represents a particular location in a source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, new)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Location {
     /// The additional line number data of the location.
     ///
@@ -276,7 +275,7 @@ pub enum SpanEnding {
 }
 
 /// Represents a range of characters in a source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
     /// The starting location of the span.
     pub start: Location,

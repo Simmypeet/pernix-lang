@@ -66,7 +66,7 @@ pub struct KeywordExpected {
 }
 
 /// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
-/// source code.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, Error, From)]
 #[error("Encountered a syntactic error while parsing the source code.")]
 #[allow(missing_docs)]

@@ -78,8 +78,9 @@ impl SourceElement for LetBindingSpecifier {
     fn span(&self) -> Span {
         self.mutable_keyword
             .as_ref()
-            .map_or(self.let_keyword.span, |keyword| {
-                Span::new(keyword.span.start, self.let_keyword.span.end)
+            .map_or(self.let_keyword.span, |keyword| Span {
+                start: keyword.span.start,
+                end: self.let_keyword.span.end,
             })
     }
 }
@@ -129,10 +130,10 @@ pub struct VariableDeclaration {
 
 impl SourceElement for VariableDeclaration {
     fn span(&self) -> Span {
-        Span::new(
-            self.variable_type_binding_specifier.span().start,
-            self.semicolon.span.end,
-        )
+        Span {
+            start: self.variable_type_binding_specifier.span().start,
+            end: self.semicolon.span.end,
+        }
     }
 }
 
@@ -182,7 +183,12 @@ pub struct Semi {
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Span { Span::new(self.expression.span().start, self.semicolon.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.expression.span().start,
+            end: self.semicolon.span.end,
+        }
+    }
 }
 
 impl<'a> Parser<'a> {

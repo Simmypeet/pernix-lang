@@ -23,16 +23,31 @@ fn next_token_until_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
         assert_eq!(*token, Punctuation {
             punctuation: '+',
-            span: Span::new(
-                Location::new(1, 11, 10),
-                SpanEnding::Location(Location::new(1, 12, 11))
-            ),
+            span: Span {
+                start: Location {
+                    line: 1,
+                    column: 11,
+                    byte: 10,
+                },
+                end: SpanEnding::Location(Location {
+                    line: 1,
+                    column: 12,
+                    byte: 11,
+                }),
+            },
         });
 
         let token = parser.next_token().unwrap().as_punctuation().unwrap();
         assert_eq!(*token, Punctuation {
             punctuation: '-',
-            span: Span::new(Location::new(1, 12, 11), SpanEnding::EndOfFile),
+            span: Span {
+                start: Location {
+                    line: 1,
+                    column: 12,
+                    byte: 11
+                },
+                end: SpanEnding::EndOfFile
+            }
         });
     }
 

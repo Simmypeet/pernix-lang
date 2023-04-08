@@ -5,20 +5,19 @@
 //! of the program such as the type of an expression, the type of a variable, etc.
 
 use derive_more::From;
-use derive_new::new;
 use enum_as_inner::EnumAsInner;
 
 use crate::{
     control_flow_graph::BasicBlockID,
     symbol::{
-        ty::{PrimitiveType, Type},
+        ty::{PrimitiveType, Type, TypeBinding},
         EnumID, FieldID, FunctionID, StructID, VariableID,
     },
     SourceSpan,
 };
 
 /// Contains the type of the expression and its category.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ValueType {
     /// The type of the expression.
     pub ty: Type,
@@ -28,7 +27,7 @@ pub struct ValueType {
 }
 
 /// Is a struct containing the information of an l-value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LValue {
     /// The address of the lvalue.
     pub address: Address,
@@ -70,6 +69,7 @@ pub enum Expression {
     MemberAccess(MemberAccess),
     TemporaryLoad(TemporaryLoad),
     PhiNodeShortCircuit(PhiNodeShortCircuit),
+    NamedLoad(NamedLoad),
     Cast(Cast),
 }
 
@@ -85,6 +85,7 @@ impl Binding for Expression {
             Self::FunctionCall(binding) => binding.span(),
             Self::MemberAccess(binding) => binding.span(),
             Self::TemporaryLoad(binding) => binding.span(),
+            Self::NamedLoad(binding) => binding.span(),
             Self::Cast(binding) => binding.span(),
             Self::PhiNodeShortCircuit(binding) => binding.span(),
         }
@@ -103,26 +104,27 @@ impl Binding for Expression {
             Self::TemporaryLoad(binding) => binding.value_type(),
             Self::Cast(binding) => binding.value_type(),
             Self::PhiNodeShortCircuit(binding) => binding.value_type(),
+            Self::NamedLoad(binding) => binding.value_type(),
         }
     }
 }
 
 /// Represents an address to a local variable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LocalVariableAddress {
     /// The index of the local variable in the symbol table.
     pub local_variable_symbol_index: usize,
 }
 
 /// Represents an address to a local argument.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LocalArgumentAddress {
     /// The index of the local argument in the symbol table.
     pub variable_id: VariableID,
 }
 
 /// Represents an address to a struct field.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructFieldAddress {
     /// The address of the struct.
     pub struct_address: Box<Address>,
@@ -132,7 +134,7 @@ pub struct StructFieldAddress {
 }
 
 /// Represents an address of a particular l-value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, new)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
 #[allow(missing_docs)]
 pub enum Address {
     LocalVariableAddress(LocalVariableAddress),
@@ -150,8 +152,81 @@ pub struct NumericLiteral {
     pub span: SourceSpan,
 }
 
+/// Represents a load to the local variable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LocalVariableLoad {
+    /// The index of the local variable in the control flow graph binding.
+    pub local_variable_index: usize,
+
+    /// The type binding of the local variable.
+    pub type_binding: TypeBinding,
+}
+
+/// Represents a load to the local argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LocalArgumentLoad {
+    /// The id of the local argument.
+    pub variable_id: VariableID,
+
+    /// The type binding of the local argument.
+    pub ty: Type,
+}
+
+/// Is an enumeration of how a named load can be performed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum NamedLoadKind {
+    LocalVariableLoad(LocalVariableLoad),
+    LocalArgumentLoad(LocalArgumentLoad),
+}
+
+/// Represents a load to a named value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NamedLoad {
+    /// The name of the value to load.
+    pub kind: NamedLoadKind,
+
+    /// The [`SourceSpan`] of the binding.
+    pub span: SourceSpan,
+}
+
+impl Binding for NamedLoad {
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
+
+    fn value_type(&self) -> ValueType {
+        match &self.kind {
+            NamedLoadKind::LocalVariableLoad(load) => ValueType {
+                ty: load.type_binding.ty,
+                category: LValue {
+                    address: LocalVariableAddress {
+                        local_variable_symbol_index: load.local_variable_index,
+                    }
+                    .into(),
+                    is_mutable: load.type_binding.is_mutable,
+                }
+                .into(),
+            },
+            NamedLoadKind::LocalArgumentLoad(load) => ValueType {
+                ty: load.ty,
+                category: LValue {
+                    address: LocalArgumentAddress {
+                        variable_id: load.variable_id,
+                    }
+                    .into(),
+                    is_mutable: false,
+                }
+                .into(),
+            },
+        }
+    }
+}
+
 impl Binding for NumericLiteral {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -183,7 +258,9 @@ pub struct BooleanLiteral {
 }
 
 impl Binding for BooleanLiteral {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -285,9 +362,13 @@ pub struct Binary {
 }
 
 impl Binding for Binary {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
-    fn value_type(&self) -> ValueType { self.value_type.clone() }
+    fn value_type(&self) -> ValueType {
+        self.value_type.clone()
+    }
 }
 
 /// Is an enumeration of prefix operators.
@@ -315,9 +396,13 @@ pub struct Prefix {
 }
 
 impl Binding for Prefix {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
-    fn value_type(&self) -> ValueType { self.value_type.clone() }
+    fn value_type(&self) -> ValueType {
+        self.value_type.clone()
+    }
 }
 
 /// Represents an enumeration literal binding.
@@ -334,13 +419,15 @@ pub struct EnumLiteral {
 }
 
 impl Binding for EnumLiteral {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
     fn value_type(&self) -> ValueType {
-        ValueType::new(
-            Type::TypedID(self.enum_symbol_id.into()),
-            ValueCategory::RValue,
-        )
+        ValueType {
+            ty: Type::TypedID(self.enum_symbol_id.into()),
+            category: ValueCategory::RValue,
+        }
     }
 }
 
@@ -361,9 +448,13 @@ pub struct FunctionCall {
 }
 
 impl Binding for FunctionCall {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
-    fn value_type(&self) -> ValueType { self.value_type.clone() }
+    fn value_type(&self) -> ValueType {
+        self.value_type.clone()
+    }
 }
 
 /// Represents a struct literal binding.
@@ -383,10 +474,15 @@ pub struct StructLiteral {
 }
 
 impl Binding for StructLiteral {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
     fn value_type(&self) -> ValueType {
-        ValueType::new(Type::TypedID(self.struct_id.into()), ValueCategory::RValue)
+        ValueType {
+            ty: Type::TypedID(self.struct_id.into()),
+            category: ValueCategory::RValue,
+        }
     }
 }
 
@@ -410,20 +506,29 @@ pub struct MemberAccess {
 }
 
 impl Binding for MemberAccess {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
     fn value_type(&self) -> ValueType {
         let struct_expression_value_type = self.struct_expression.value_type();
         match struct_expression_value_type.category {
-            ValueCategory::RValue => ValueType::new(self.field_type, ValueCategory::RValue),
-            ValueCategory::LValue(lvalue) => ValueType::new(
-                self.field_type,
-                LValue::new(
-                    StructFieldAddress::new(Box::new(lvalue.address), self.field_id).into(),
-                    lvalue.is_mutable,
-                )
+            ValueCategory::RValue => ValueType {
+                ty: self.field_type,
+                category: ValueCategory::RValue,
+            },
+            ValueCategory::LValue(lvalue) => ValueType {
+                ty: self.field_type,
+                category: LValue {
+                    address: StructFieldAddress {
+                        struct_address: Box::new(lvalue.address),
+                        field_id: self.field_id,
+                    }
+                    .into(),
+                    is_mutable: lvalue.is_mutable,
+                }
                 .into(),
-            ),
+            },
         }
     }
 }
@@ -442,7 +547,9 @@ pub struct Cast {
 }
 
 impl Binding for Cast {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -467,7 +574,9 @@ pub struct TemporaryLoad {
 }
 
 impl Binding for TemporaryLoad {
-    fn span(&self) -> &SourceSpan { &self.span }
+    fn span(&self) -> &SourceSpan {
+        &self.span
+    }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -573,7 +682,9 @@ pub struct PhiNodeShortCircuit {
 }
 
 impl Binding for PhiNodeShortCircuit {
-    fn span(&self) -> &SourceSpan { &self.binary_short_circuit_expression_span }
+    fn span(&self) -> &SourceSpan {
+        &self.binary_short_circuit_expression_span
+    }
 
     fn value_type(&self) -> ValueType {
         ValueType {

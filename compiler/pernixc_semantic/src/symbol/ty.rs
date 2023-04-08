@@ -1,7 +1,6 @@
 //! Contains the type system for Pernix.
 
 use derive_more::From;
-use derive_new::new;
 use enum_as_inner::EnumAsInner;
 
 use super::TypedID;
@@ -101,7 +100,7 @@ impl Default for Type {
 }
 
 /// Represents a type used to represent a type binding of an l-value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, new)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeBinding {
     /// The type of the binding.
     pub ty: Type,

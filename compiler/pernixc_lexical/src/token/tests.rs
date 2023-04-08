@@ -25,13 +25,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_identifier()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 1, 0),
-                SpanEnding::Location(Location::new(1, 11, 10))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 1,
+                byte: 0
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 11,
+                byte: 10
+            })
+        });
 
         // WHITESPACE
         let token = Token::tokenize(&mut iter)
@@ -39,13 +44,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 11, 10),
-                SpanEnding::Location(Location::new(1, 12, 11))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 11,
+                byte: 10
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 12,
+                byte: 11
+            })
+        });
 
         // @Test
         let token = Token::tokenize(&mut iter)
@@ -53,13 +63,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_identifier()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 12, 11),
-                SpanEnding::Location(Location::new(1, 17, 16))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 12,
+                byte: 11
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 17,
+                byte: 16
+            })
+        });
 
         // WHITESPACE
         let token = Token::tokenize(&mut iter)
@@ -67,13 +82,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 17, 16),
-                SpanEnding::Location(Location::new(1, 18, 17))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 17,
+                byte: 16
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 18,
+                byte: 17
+            })
+        });
 
         // _1
         let token = Token::tokenize(&mut iter)
@@ -81,13 +101,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_identifier()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 18, 17),
-                SpanEnding::Location(Location::new(1, 20, 19))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 18,
+                byte: 17
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 20,
+                byte: 19
+            })
+        });
 
         // WHITESPACE
         let token = Token::tokenize(&mut iter)
@@ -95,13 +120,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 20, 19),
-                SpanEnding::Location(Location::new(1, 21, 20))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 20,
+                byte: 19
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 21,
+                byte: 20
+            })
+        });
 
         // public
         let token = Token::tokenize(&mut iter)
@@ -110,13 +140,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
         assert_eq!(token.keyword, KeywordKind::Public);
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 21, 20),
-                SpanEnding::Location(Location::new(1, 27, 26))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 21,
+                byte: 20
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 27,
+                byte: 26
+            })
+        });
 
         // WHITESPACE
         let token = Token::tokenize(&mut iter)
@@ -125,13 +160,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
 
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 27, 26),
-                SpanEnding::Location(Location::new(1, 28, 27))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 27,
+                byte: 26
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 28,
+                byte: 27
+            })
+        });
 
         // void
         let token = Token::tokenize(&mut iter)
@@ -140,13 +180,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
         assert_eq!(token.keyword, KeywordKind::Void);
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(1, 28, 27),
-                SpanEnding::Location(Location::new(1, 32, 31))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 1,
+                column: 28,
+                byte: 27
+            },
+            end: SpanEnding::Location(Location {
+                line: 1,
+                column: 32,
+                byte: 31
+            })
+        });
     }
 
     // line ends
@@ -155,13 +200,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
         .as_white_space()
         .copied()
         .unwrap();
-    assert_eq!(
-        token.span,
-        Span::new(
-            Location::new(1, 32, 31),
-            SpanEnding::Location(Location::new(2, 1, 32))
-        )
-    );
+    assert_eq!(token.span, Span {
+        start: Location {
+            line: 1,
+            column: 32,
+            byte: 31
+        },
+        end: SpanEnding::Location(Location {
+            line: 2,
+            column: 1,
+            byte: 32
+        })
+    });
 
     {
         let token = Token::tokenize(&mut iter)
@@ -170,13 +220,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
         assert_eq!(token.kind, CommentKind::SingleLine);
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(2, 1, 32),
-                SpanEnding::Location(Location::new(3, 1, 40))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 2,
+                column: 1,
+                byte: 32
+            },
+            end: SpanEnding::Location(Location {
+                line: 3,
+                column: 1,
+                byte: 40
+            })
+        });
 
         let token = Token::tokenize(&mut iter)
             .unwrap()
@@ -184,13 +239,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
         assert_eq!(token.kind, CommentKind::Delimited);
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(3, 1, 40),
-                SpanEnding::Location(Location::new(4, 7, 54))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 3,
+                column: 1,
+                byte: 40
+            },
+            end: SpanEnding::Location(Location {
+                line: 4,
+                column: 7,
+                byte: 54
+            })
+        });
     }
 
     // line ends
@@ -200,13 +260,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(4, 7, 54),
-                SpanEnding::Location(Location::new(5, 1, 55))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 4,
+                column: 7,
+                byte: 54
+            },
+            end: SpanEnding::Location(Location {
+                line: 5,
+                column: 1,
+                byte: 55
+            })
+        });
     }
 
     // 1231
@@ -217,21 +282,31 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
 
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(5, 1, 55),
-                SpanEnding::Location(Location::new(5, 5, 59))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 5,
+                column: 1,
+                byte: 55
+            },
+            end: SpanEnding::Location(Location {
+                line: 5,
+                column: 5,
+                byte: 59
+            })
+        });
 
-        assert_eq!(
-            token.value_span,
-            Span::new(
-                Location::new(5, 1, 55),
-                SpanEnding::Location(Location::new(5, 5, 59))
-            )
-        );
+        assert_eq!(token.value_span, Span {
+            start: Location {
+                line: 5,
+                column: 1,
+                byte: 55
+            },
+            end: SpanEnding::Location(Location {
+                line: 5,
+                column: 5,
+                byte: 59
+            })
+        });
 
         assert!(token.suffix_span.is_none());
     }
@@ -243,13 +318,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(5, 5, 59),
-                SpanEnding::Location(Location::new(6, 1, 60))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 5,
+                column: 5,
+                byte: 59
+            },
+            end: SpanEnding::Location(Location {
+                line: 6,
+                column: 1,
+                byte: 60
+            })
+        });
     }
 
     // 12.42f32
@@ -259,27 +339,42 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_numeric_literal()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(6, 1, 60),
-                SpanEnding::Location(Location::new(6, 9, 68))
-            )
-        );
-        assert_eq!(
-            token.value_span,
-            Span::new(
-                Location::new(6, 1, 60),
-                SpanEnding::Location(Location::new(6, 6, 65))
-            )
-        );
-        assert_eq!(
-            token.suffix_span.unwrap(),
-            Span::new(
-                Location::new(6, 6, 65),
-                SpanEnding::Location(Location::new(6, 9, 68))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 6,
+                column: 1,
+                byte: 60
+            },
+            end: SpanEnding::Location(Location {
+                line: 6,
+                column: 9,
+                byte: 68
+            })
+        });
+        assert_eq!(token.value_span, Span {
+            start: Location {
+                line: 6,
+                column: 1,
+                byte: 60
+            },
+            end: SpanEnding::Location(Location {
+                line: 6,
+                column: 6,
+                byte: 65
+            })
+        });
+        assert_eq!(token.suffix_span.unwrap(), Span {
+            start: Location {
+                line: 6,
+                column: 6,
+                byte: 65
+            },
+            end: SpanEnding::Location(Location {
+                line: 6,
+                column: 9,
+                byte: 68
+            })
+        });
     }
 
     // line ends
@@ -289,13 +384,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(6, 9, 68),
-                SpanEnding::Location(Location::new(7, 1, 69))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 6,
+                column: 9,
+                byte: 68
+            },
+            end: SpanEnding::Location(Location {
+                line: 7,
+                column: 1,
+                byte: 69
+            })
+        });
     }
 
     // 123
@@ -305,20 +405,30 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_numeric_literal()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(7, 1, 69),
-                SpanEnding::Location(Location::new(7, 4, 72))
-            )
-        );
-        assert_eq!(
-            token.value_span,
-            Span::new(
-                Location::new(7, 1, 69),
-                SpanEnding::Location(Location::new(7, 4, 72))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 7,
+                column: 1,
+                byte: 69
+            },
+            end: SpanEnding::Location(Location {
+                line: 7,
+                column: 4,
+                byte: 72
+            })
+        });
+        assert_eq!(token.value_span, Span {
+            start: Location {
+                line: 7,
+                column: 1,
+                byte: 69
+            },
+            end: SpanEnding::Location(Location {
+                line: 7,
+                column: 4,
+                byte: 72
+            })
+        });
         assert!(token.suffix_span.is_none());
     }
 
@@ -330,13 +440,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
         assert_eq!(token.punctuation, '.');
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(7, 4, 72),
-                SpanEnding::Location(Location::new(7, 5, 73))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 7,
+                column: 4,
+                byte: 72
+            },
+            end: SpanEnding::Location(Location {
+                line: 7,
+                column: 5,
+                byte: 73
+            })
+        });
     }
 
     // f32
@@ -346,13 +461,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_identifier()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(7, 5, 73),
-                SpanEnding::Location(Location::new(7, 8, 76))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 7,
+                column: 5,
+                byte: 73
+            },
+            end: SpanEnding::Location(Location {
+                line: 7,
+                column: 8,
+                byte: 76
+            })
+        });
     }
 
     // line ends
@@ -362,13 +482,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(7, 8, 76),
-                SpanEnding::Location(Location::new(8, 1, 77))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 7,
+                column: 8,
+                byte: 76
+            },
+            end: SpanEnding::Location(Location {
+                line: 8,
+                column: 1,
+                byte: 77
+            })
+        });
     }
 
     // 'a'
@@ -378,13 +503,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_character_literal()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(8, 1, 77),
-                SpanEnding::Location(Location::new(8, 4, 80))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 8,
+                column: 1,
+                byte: 77
+            },
+            end: SpanEnding::Location(Location {
+                line: 8,
+                column: 4,
+                byte: 80
+            })
+        });
         assert_eq!(token.character, 'a');
     }
 
@@ -395,13 +525,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(8, 4, 80),
-                SpanEnding::Location(Location::new(9, 1, 81))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 8,
+                column: 4,
+                byte: 80
+            },
+            end: SpanEnding::Location(Location {
+                line: 9,
+                column: 1,
+                byte: 81
+            })
+        });
     }
 
     // 'ab'
@@ -413,13 +548,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         assert_eq!(token.punctuation, '\'');
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(9, 1, 81),
-                SpanEnding::Location(Location::new(9, 2, 82))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 9,
+                column: 1,
+                byte: 81
+            },
+            end: SpanEnding::Location(Location {
+                line: 9,
+                column: 2,
+                byte: 82
+            })
+        });
 
         let token = Token::tokenize(&mut iter)
             .unwrap()
@@ -427,13 +567,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
 
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(9, 2, 82),
-                SpanEnding::Location(Location::new(9, 4, 84))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 9,
+                column: 2,
+                byte: 82
+            },
+            end: SpanEnding::Location(Location {
+                line: 9,
+                column: 4,
+                byte: 84
+            })
+        });
 
         let token = Token::tokenize(&mut iter)
             .unwrap()
@@ -442,13 +587,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         assert_eq!(token.punctuation, '\'');
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(9, 4, 84),
-                SpanEnding::Location(Location::new(9, 5, 85))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 9,
+                column: 4,
+                byte: 84
+            },
+            end: SpanEnding::Location(Location {
+                line: 9,
+                column: 5,
+                byte: 85
+            })
+        });
     }
 
     // line ends and a space
@@ -458,13 +608,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(9, 5, 85),
-                SpanEnding::Location(Location::new(10, 2, 87))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 9,
+                column: 5,
+                byte: 85
+            },
+            end: SpanEnding::Location(Location {
+                line: 10,
+                column: 2,
+                byte: 87
+            })
+        });
     }
 
     // '\0'
@@ -475,13 +630,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .unwrap();
 
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(10, 2, 87),
-                SpanEnding::Location(Location::new(10, 6, 91))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 10,
+                column: 2,
+                byte: 87
+            },
+            end: SpanEnding::Location(Location {
+                line: 10,
+                column: 6,
+                byte: 91
+            })
+        });
         assert_eq!(token.character, '\0');
     }
 
@@ -492,13 +652,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(10, 6, 91),
-                SpanEnding::Location(Location::new(11, 1, 92))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 10,
+                column: 6,
+                byte: 91
+            },
+            end: SpanEnding::Location(Location {
+                line: 11,
+                column: 1,
+                byte: 92
+            })
+        });
     }
 
     // '\1' invaid escape character
@@ -511,13 +676,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         assert_eq!(errs.spans.len(), 1);
-        assert_eq!(
-            errs.spans[0],
-            Span::new(
-                Location::new(11, 3, 94),
-                SpanEnding::Location(Location::new(11, 4, 95))
-            )
-        );
+        assert_eq!(errs.spans[0], Span {
+            start: Location {
+                line: 11,
+                column: 3,
+                byte: 94
+            },
+            end: SpanEnding::Location(Location {
+                line: 11,
+                column: 4,
+                byte: 95
+            })
+        });
     }
 
     // line ends
@@ -527,13 +697,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(11, 5, 96),
-                SpanEnding::Location(Location::new(12, 1, 97))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 11,
+                column: 5,
+                byte: 96
+            },
+            end: SpanEnding::Location(Location {
+                line: 12,
+                column: 1,
+                byte: 97
+            })
+        });
     }
 
     // "Hello, world!"
@@ -543,13 +718,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_string_literal()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(12, 1, 97),
-                SpanEnding::Location(Location::new(12, 16, 112))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 12,
+                column: 1,
+                byte: 97
+            },
+            end: SpanEnding::Location(Location {
+                line: 12,
+                column: 16,
+                byte: 112
+            })
+        });
     }
 
     // line ends
@@ -559,13 +739,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(12, 16, 112),
-                SpanEnding::Location(Location::new(13, 1, 113))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 12,
+                column: 16,
+                byte: 112
+            },
+            end: SpanEnding::Location(Location {
+                line: 13,
+                column: 1,
+                byte: 113
+            })
+        });
     }
 
     // "\"With escape sequences\""
@@ -575,13 +760,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_string_literal()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(13, 1, 113),
-                SpanEnding::Location(Location::new(13, 28, 140))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 13,
+                column: 1,
+                byte: 113
+            },
+            end: SpanEnding::Location(Location {
+                line: 13,
+                column: 28,
+                byte: 140
+            })
+        });
     }
 
     // line ends
@@ -591,13 +781,18 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
             .as_white_space()
             .copied()
             .unwrap();
-        assert_eq!(
-            token.span,
-            Span::new(
-                Location::new(13, 28, 140),
-                SpanEnding::Location(Location::new(14, 1, 141))
-            )
-        );
+        assert_eq!(token.span, Span {
+            start: Location {
+                line: 13,
+                column: 28,
+                byte: 140
+            },
+            end: SpanEnding::Location(Location {
+                line: 14,
+                column: 1,
+                byte: 141
+            })
+        });
     }
 
     // "With \1 invalid \2 escape \3 sequences"
@@ -611,29 +806,44 @@ fn token_test() -> Result<(), Box<dyn std::error::Error>> {
 
         assert_eq!(errs.spans.len(), 3);
 
-        assert_eq!(
-            errs.spans[0],
-            Span::new(
-                Location::new(14, 8, 148),
-                SpanEnding::Location(Location::new(14, 9, 149))
-            )
-        );
+        assert_eq!(errs.spans[0], Span {
+            start: Location {
+                line: 14,
+                column: 8,
+                byte: 148
+            },
+            end: SpanEnding::Location(Location {
+                line: 14,
+                column: 9,
+                byte: 149
+            })
+        });
 
-        assert_eq!(
-            errs.spans[1],
-            Span::new(
-                Location::new(14, 19, 159),
-                SpanEnding::Location(Location::new(14, 20, 160))
-            )
-        );
+        assert_eq!(errs.spans[1], Span {
+            start: Location {
+                line: 14,
+                column: 19,
+                byte: 159
+            },
+            end: SpanEnding::Location(Location {
+                line: 14,
+                column: 20,
+                byte: 160
+            })
+        });
 
-        assert_eq!(
-            errs.spans[2],
-            Span::new(
-                Location::new(14, 29, 169),
-                SpanEnding::Location(Location::new(14, 30, 170))
-            )
-        );
+        assert_eq!(errs.spans[2], Span {
+            start: Location {
+                line: 14,
+                column: 29,
+                byte: 169
+            },
+            end: SpanEnding::Location(Location {
+                line: 14,
+                column: 30,
+                byte: 170
+            })
+        });
     }
 
     // end of file err

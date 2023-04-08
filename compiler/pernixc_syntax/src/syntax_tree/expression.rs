@@ -122,7 +122,12 @@ pub struct Cast {
 }
 
 impl SourceElement for Cast {
-    fn span(&self) -> Span { Span::new(self.left_paren.span.start, self.expression.span().end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.left_paren.span.start,
+            end: self.expression.span().end,
+        }
+    }
 }
 
 /// Represents a boolean literal syntax tree.
@@ -258,9 +263,10 @@ impl SourceElement for BinaryOperator {
             | Self::Equal(token, token1)
             | Self::NotEqual(token, token1)
             | Self::LessThanOrEqual(token, token1)
-            | Self::GreaterThanOrEqual(token, token1) => {
-                Span::new(token.span.start, token1.span.end)
-            }
+            | Self::GreaterThanOrEqual(token, token1) => Span {
+                start: token.span.start,
+                end: token1.span.end,
+            },
             Self::LogicalAnd(token) | Self::LogicalOr(token) => token.span,
         }
     }
@@ -283,7 +289,12 @@ pub struct Binary {
 }
 
 impl SourceElement for Binary {
-    fn span(&self) -> Span { Span::new(self.left.span().start, self.right.span().end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.left.span().start,
+            end: self.right.span().end,
+        }
+    }
 }
 
 /// Represents a prefix operator syntax tree.
@@ -326,7 +337,12 @@ pub struct Prefix {
 }
 
 impl SourceElement for Prefix {
-    fn span(&self) -> Span { Span::new(self.operator.span().start, self.operand.span().end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.operator.span().start,
+            end: self.operand.span().end,
+        }
+    }
 }
 
 /// Represents a postfix operator syntax tree.
@@ -373,10 +389,10 @@ pub struct FunctionCall {
 
 impl SourceElement for FunctionCall {
     fn span(&self) -> Span {
-        Span::new(
-            self.qualified_identifier.span().start,
-            self.right_paren.span.end,
-        )
+        Span {
+            start: self.qualified_identifier.span().start,
+            end: self.right_paren.span.end,
+        }
     }
 }
 
@@ -397,7 +413,12 @@ pub struct Parenthesized {
 }
 
 impl SourceElement for Parenthesized {
-    fn span(&self) -> Span { Span::new(self.left_paren.span.start, self.right_paren.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.left_paren.span.start,
+            end: self.right_paren.span.end,
+        }
+    }
 }
 
 /// Represents a field initializer syntax tree.
@@ -417,7 +438,12 @@ pub struct FieldInitializer {
 }
 
 impl SourceElement for FieldInitializer {
-    fn span(&self) -> Span { Span::new(self.identifier.span().start, self.expression.span().end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.identifier.span().start,
+            end: self.expression.span().end,
+        }
+    }
 }
 
 /// Represents a list of field initializers separated by commas.
@@ -449,10 +475,10 @@ pub struct StructLiteral {
 
 impl SourceElement for StructLiteral {
     fn span(&self) -> Span {
-        Span::new(
-            self.qualified_identifier.span().start,
-            self.right_brace.span.end,
-        )
+        Span {
+            start: self.qualified_identifier.span().start,
+            end: self.right_brace.span.end,
+        }
     }
 }
 
@@ -473,7 +499,12 @@ pub struct MemberAccess {
 }
 
 impl SourceElement for MemberAccess {
-    fn span(&self) -> Span { Span::new(self.expression.span().start, self.identifier.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.expression.span().start,
+            end: self.identifier.span().end,
+        }
+    }
 }
 
 /// Is an enumeration of all kinds of imperative expressions.
@@ -522,7 +553,12 @@ pub struct LabelSpecifier {
 }
 
 impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Span { Span::new(self.label.single_quote.span.start, self.colon.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.label.single_quote.span.start,
+            end: self.colon.span.end,
+        }
+    }
 }
 
 /// Represents a block syntax tree.
@@ -542,7 +578,12 @@ pub struct BlockWithoutLabel {
 }
 
 impl SourceElement for BlockWithoutLabel {
-    fn span(&self) -> Span { Span::new(self.left_brace.span.start, self.right_brace.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.left_brace.span.start,
+            end: self.right_brace.span.end,
+        }
+    }
 }
 
 /// Represents a block syntax tree with an optional label specifier.
@@ -564,11 +605,9 @@ impl SourceElement for Block {
     fn span(&self) -> Span {
         self.label_specifier.map_or_else(
             || self.block_without_label.span(),
-            |label_specifier| {
-                Span::new(
-                    label_specifier.span().start,
-                    self.block_without_label.span().end,
-                )
+            |label_specifier| Span {
+                start: label_specifier.span().start,
+                end: self.block_without_label.span().end,
             },
         )
     }
@@ -590,7 +629,12 @@ pub struct Else {
 }
 
 impl SourceElement for Else {
-    fn span(&self) -> Span { Span::new(self.else_keyword.span.start, self.expression.span().end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.else_keyword.span.start,
+            end: self.expression.span().end,
+        }
+    }
 }
 
 /// Represents an if-else expression syntax tree.
@@ -614,13 +658,13 @@ pub struct IfElse {
 
 impl SourceElement for IfElse {
     fn span(&self) -> Span {
-        Span::new(
-            self.if_keyword.span.start,
-            self.else_expression.as_ref().map_or_else(
+        Span {
+            start: self.if_keyword.span.start,
+            end: self.else_expression.as_ref().map_or_else(
                 || self.then_expression.span().end,
                 |else_expression| else_expression.span().end,
             ),
-        )
+        }
     }
 }
 
@@ -642,11 +686,13 @@ pub struct Loop {
 
 impl SourceElement for Loop {
     fn span(&self) -> Span {
-        let start = self
-            .label_specifier
-            .as_ref()
-            .map_or(self.loop_keyword.span.start, |label| label.span().start);
-        Span::new(start, self.expression.span().end)
+        Span {
+            start: self
+                .label_specifier
+                .as_ref()
+                .map_or(self.loop_keyword.span.start, |label| label.span().start),
+            end: self.expression.span().end,
+        }
     }
 }
 
@@ -667,12 +713,13 @@ pub struct Continue {
 
 impl SourceElement for Continue {
     fn span(&self) -> Span {
-        Span::new(
-            self.continue_keyword.span.start,
-            self.label
+        Span {
+            start: self.continue_keyword.span.start,
+            end: self
+                .label
                 .as_ref()
                 .map_or(self.continue_keyword.span.end, |label| label.span().end),
-        )
+        }
     }
 }
 
@@ -694,9 +741,9 @@ pub struct Express {
 
 impl SourceElement for Express {
     fn span(&self) -> Span {
-        Span::new(
-            self.express_keyword.span.start,
-            self.expression.as_ref().map_or_else(
+        Span {
+            start: self.express_keyword.span.start,
+            end: self.expression.as_ref().map_or_else(
                 || {
                     self.label
                         .as_ref()
@@ -704,7 +751,7 @@ impl SourceElement for Express {
                 },
                 |expression| expression.span().end,
             ),
-        )
+        }
     }
 }
 
@@ -726,9 +773,9 @@ pub struct Break {
 
 impl SourceElement for Break {
     fn span(&self) -> Span {
-        Span::new(
-            self.break_keyword.span.start,
-            self.expression.as_ref().map_or_else(
+        Span {
+            start: self.break_keyword.span.start,
+            end: self.expression.as_ref().map_or_else(
                 || {
                     self.label
                         .as_ref()
@@ -736,7 +783,7 @@ impl SourceElement for Break {
                 },
                 |expression| expression.span().end,
             ),
-        )
+        }
     }
 }
 
@@ -757,14 +804,15 @@ pub struct Return {
 
 impl SourceElement for Return {
     fn span(&self) -> Span {
-        Span::new(
-            self.return_keyword.span.start,
-            self.expression
+        Span {
+            start: self.return_keyword.span.start,
+            end: self
+                .expression
                 .as_ref()
                 .map_or(self.return_keyword.span.end, |expression| {
                     expression.span().end
                 }),
-        )
+        }
     }
 }
 
@@ -1310,6 +1358,20 @@ impl<'a> Parser<'a> {
 
             // Handles identifier
             Some(Token::Identifier(..)) => self.handle_identifier(),
+
+            // Handles boolean literal
+            Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::True => {
+                self.next_token();
+                Some(Expression::Functional(
+                    BooleanLiteral::True(*keyword).into(),
+                ))
+            }
+            Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::False => {
+                self.next_token();
+                Some(Expression::Functional(
+                    BooleanLiteral::False(*keyword).into(),
+                ))
+            }
 
             _ => self.parse_block_or_loop_expression(None),
         }

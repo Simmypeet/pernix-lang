@@ -299,10 +299,8 @@ impl<'a> Parser<'a> {
                     // eat the separator
                     self.next_token();
 
-                    let value = parse_item(self);
-
                     // add value to the list
-                    value.map_or_else(
+                    parse_item(self).map_or_else(
                         || {
                             // skip to either the next separator or the delimiter
                             self.forward_until(|token| {

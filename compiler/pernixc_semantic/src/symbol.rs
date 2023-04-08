@@ -16,7 +16,6 @@ use std::{
 };
 
 use derive_more::{From, Into};
-use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::{SourceElement, SourceFile};
 use pernixc_lexical::token::Identifier as IdentifierToken;
@@ -37,7 +36,7 @@ use crate::{
         AccessibilityLeaking, EnumVariantRedefinition, FieldRedefinition, ParameterRedifinition,
         SemanticError, SymbolIsNotAccessible, SymbolNotFound, SymbolRedifinition, TypeExpected,
     },
-    SourceSpan,
+    OkResult, SemanticResult, SourceSpan,
 };
 
 pub mod ty;
@@ -483,7 +482,11 @@ impl<T, IDKey: Into<usize> + From<usize> + Copy, NameKey: Eq + Hash> VecNameMap<
 
     /// Returns an index of the item with the given name.
     #[must_use]
-    pub fn map_name_to_id(&self, name: impl Borrow<NameKey>) -> Option<IDKey> {
+    pub fn map_name_to_id<Q>(&self, name: &Q) -> Option<IDKey>
+    where
+        NameKey: Borrow<Q>,
+        Q: ?Sized + Eq + Hash,
+    {
         self.map.get(name.borrow()).copied()
     }
 
@@ -496,13 +499,21 @@ impl<T, IDKey: Into<usize> + From<usize> + Copy, NameKey: Eq + Hash> VecNameMap<
 
     /// Returns a reference to the item with the given name.
     #[must_use]
-    pub fn get_by_name(&self, name: impl Borrow<NameKey>) -> Option<&T> {
+    pub fn get_by_name<Q>(&self, name: &Q) -> Option<&T>
+    where
+        NameKey: Borrow<Q>,
+        Q: ?Sized + Eq + Hash,
+    {
         self.map_name_to_id(name)
             .and_then(|index| self.get_by_id(index))
     }
 
     /// Returns a mutable reference to the item with the given name.
-    pub fn get_mut_by_name(&mut self, name: impl Borrow<NameKey>) -> Option<&mut T> {
+    pub fn get_mut_by_name<Q>(&mut self, name: &Q) -> Option<&mut T>
+    where
+        NameKey: Borrow<Q>,
+        Q: ?Sized + Eq + Hash,
+    {
         self.map_name_to_id(name)
             .and_then(move |index| self.get_mut_by_id(index))
     }
@@ -512,6 +523,16 @@ impl<T, IDKey: Into<usize> + From<usize> + Copy, NameKey: Eq + Hash> VecNameMap<
 
     /// Returns a mutable iterator over all items in the container.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> { self.vec.iter_mut() }
+
+    /// Returns an iterator over all items in the container with their ID key.
+    pub fn iter_with_id(&self) -> impl Iterator<Item = (IDKey, &T)> {
+        self.vec.iter().enumerate().map(|(i, v)| (i.into(), v))
+    }
+
+    /// Returns a mutable iterator over all items in the container with their ID key.
+    pub fn iter_mut_with_id(&mut self) -> impl Iterator<Item = (IDKey, &mut T)> {
+        self.vec.iter_mut().enumerate().map(|(i, v)| (i.into(), v))
+    }
 
     /// Returns the number of items in the container.
     #[must_use]
@@ -543,7 +564,7 @@ impl<T, IDKey: Into<usize> + From<usize> + Copy, NameKey: Eq + Hash> Default
 }
 
 /// Is a structure that contains the syntax tree and the source file where it was parsed from.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, new)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SyntaxTreeWithSource<T> {
     /// The source file where the syntax tree was parsed from.
     pub source_file: Arc<SourceFile>,
@@ -907,7 +928,7 @@ impl Table {
         referring_site_symbol_id: ID,
         type_specifier_syntax_tree: &TypeSpecifier,
         source_file: &Arc<SourceFile>,
-    ) -> Result<Type, TypeResolveError> {
+    ) -> SemanticResult<Type, TypeResolveError, SemanticError> {
         match type_specifier_syntax_tree {
             TypeSpecifier::PrimitiveTypeSpecifier(primitive_type) => Ok(match primitive_type {
                 PrimitiveTypeSpecifier::Bool(..) => Type::Primitive(PrimitiveType::Bool),
@@ -922,35 +943,55 @@ impl Table {
                 PrimitiveTypeSpecifier::Uint32(..) => Type::Primitive(PrimitiveType::Uint32),
                 PrimitiveTypeSpecifier::Uint64(..) => Type::Primitive(PrimitiveType::Uint64),
                 PrimitiveTypeSpecifier::Void(..) => Type::Primitive(PrimitiveType::Void),
-            }),
-            TypeSpecifier::QualifiedIdentifier(qualified_indexentifier) => {
-                let symbol_id = self
-                    .resolve_symbol(
-                        referring_site_symbol_id,
-                        qualified_indexentifier.elements(),
-                        source_file,
-                    )
-                    .map_err(|error| match error {
-                        ResolveError::SemanticError(err) => TypeResolveError::SemanticError(err),
+            }
+            .into()),
+            TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
+                fn error_map(resolve: ResolveError) -> TypeResolveError {
+                    match resolve {
+                        ResolveError::SemanticError(semantic_error) => {
+                            TypeResolveError::SemanticError(semantic_error)
+                        }
                         ResolveError::InvalidSymbolID => TypeResolveError::InvalidSymbolID,
                         ResolveError::InvalidQualifiedIdentifierIterator => {
                             TypeResolveError::InvalidSyntaxTree
                         }
-                    })?;
+                    }
+                }
+
+                let OkResult {
+                    value: symbol_id,
+                    errors,
+                } = self
+                    .resolve_symbol(
+                        referring_site_symbol_id,
+                        qualified_identifier.elements(),
+                        source_file,
+                    )
+                    .map_err(|err| err.into_iter().map(error_map).collect::<Vec<_>>())?;
 
                 match symbol_id {
-                    ID::Struct(struct_id) => Ok(Type::TypedID(struct_id.into())),
-                    ID::Enum(enum_id) => Ok(Type::TypedID(enum_id.into())),
-                    _ => Err(TypeResolveError::SemanticError(
-                        TypeExpected {
-                            span: SourceSpan::new(
-                                source_file.clone(),
-                                type_specifier_syntax_tree.span(),
-                            ),
-                            symbol_id,
-                        }
-                        .into(),
-                    )),
+                    ID::Struct(struct_id) => Ok(OkResult {
+                        value: Type::TypedID(struct_id.into()),
+                        errors,
+                    }),
+                    ID::Enum(enum_id) => Ok(OkResult {
+                        value: Type::TypedID(enum_id.into()),
+                        errors,
+                    }),
+                    _ => Err(errors
+                        .into_iter()
+                        .map(TypeResolveError::SemanticError)
+                        .chain(std::iter::once(TypeResolveError::SemanticError(
+                            TypeExpected {
+                                span: SourceSpan {
+                                    source_file: source_file.clone(),
+                                    span: qualified_identifier.span(),
+                                },
+                                symbol_id,
+                            }
+                            .into(),
+                        )))
+                        .collect()),
                 }
             }
         }
@@ -1001,12 +1042,12 @@ impl Table {
         referring_site_symbol_id: ID,
         mut qualified_identifier: impl Iterator<Item = &'a IdentifierToken>,
         source_file: &Arc<SourceFile>,
-    ) -> Result<ID, ResolveError> {
+    ) -> SemanticResult<ID, ResolveError, SemanticError> {
         // the closest parent module symbol from the given `parent_index`
         let (parent_module_symbol, parent_module_id) = {
             let mut current_symbol = self
                 .get(referring_site_symbol_id)
-                .ok_or(ResolveError::InvalidSymbolID)?;
+                .ok_or(vec![ResolveError::InvalidSymbolID])?;
 
             let mut current_id = referring_site_symbol_id;
             loop {
@@ -1028,9 +1069,9 @@ impl Table {
 
         let first_name = qualified_identifier
             .next()
-            .ok_or(ResolveError::InvalidQualifiedIdentifierIterator)?;
+            .ok_or(vec![ResolveError::InvalidQualifiedIdentifierIterator])?;
 
-        let (mut current_symbol, mut current_index) = match parent_module_symbol
+        let (mut current_symbol, mut current_id) = match parent_module_symbol
             .children_symbol_ids_by_name
             .get(&source_file[first_name.span])
             .copied()
@@ -1048,28 +1089,37 @@ impl Table {
                 {
                     Some(symbol_id) => (self.index(symbol_id) as _, symbol_id.into()),
                     None => {
-                        return Err(ResolveError::SemanticError(
+                        return Err(vec![ResolveError::SemanticError(
                             SymbolNotFound {
-                                referencing_site: SourceSpan::new(
-                                    source_file.clone(),
-                                    first_name.span,
-                                ),
+                                referencing_site: SourceSpan {
+                                    source_file: source_file.clone(),
+                                    span: first_name.span,
+                                },
                                 in_scope: None,
                             }
                             .into(),
-                        ));
+                        )]);
                     }
                 }
             }
         };
 
+        // the list of recoverable errors
+        let mut errors = Vec::new();
+
         // loop through the rest of the identifiers
         loop {
             match qualified_identifier.next() {
                 Some(identifier) => {
-                    let name = source_file
-                        .get(identifier.span)
-                        .ok_or(ResolveError::InvalidQualifiedIdentifierIterator)?;
+                    let Some(name) = source_file.get(identifier.span) else {
+                        return Err(errors
+                            .into_iter()
+                            .map(ResolveError::SemanticError)
+                            .chain(std::iter::once(
+                                ResolveError::InvalidQualifiedIdentifierIterator,
+                            ))
+                            .collect::<Vec<_>>());
+                    };
 
                     // must be module symbol to continue
                     let child_id = if let Some(module_symbol) =
@@ -1084,16 +1134,20 @@ impl Table {
                             .copied()
                             .map(ID::EnumVariant)
                     } else {
-                        return Err(ResolveError::SemanticError(
-                            SymbolNotFound {
-                                referencing_site: SourceSpan::new(
-                                    source_file.clone(),
-                                    identifier.span,
-                                ),
-                                in_scope: Some(current_index),
-                            }
-                            .into(),
-                        ));
+                        return Err(errors
+                            .into_iter()
+                            .map(ResolveError::SemanticError)
+                            .chain(std::iter::once(ResolveError::SemanticError(
+                                SymbolNotFound {
+                                    referencing_site: SourceSpan {
+                                        source_file: source_file.clone(),
+                                        span: identifier.span,
+                                    },
+                                    in_scope: Some(current_id),
+                                }
+                                .into(),
+                            )))
+                            .collect());
                     };
 
                     // look for the child symbol in the current module
@@ -1106,38 +1160,47 @@ impl Table {
                             if symbol.access_modifier() == AccessModifier::Private
                                 && !self.is_parent(parent_module_id.into(), symbol_index)
                             {
-                                return Err(ResolveError::SemanticError(
+                                errors.push(
                                     SymbolIsNotAccessible {
-                                        referencing_site: SourceSpan::new(
-                                            source_file.clone(),
-                                            identifier.span,
-                                        ),
+                                        referencing_site: SourceSpan {
+                                            source_file: source_file.clone(),
+                                            span: identifier.span,
+                                        },
                                         symbol_id: symbol_index,
                                     }
                                     .into(),
-                                ));
+                                );
                             }
 
                             // continue to the next symbol
                             current_symbol = symbol;
-                            current_index = symbol_index;
+                            current_id = symbol_index;
                         }
                         None => {
                             // symbol not found
-                            return Err(ResolveError::SemanticError(
-                                SymbolNotFound {
-                                    referencing_site: SourceSpan::new(
-                                        source_file.clone(),
-                                        identifier.span,
-                                    ),
-                                    in_scope: Some(current_index),
-                                }
-                                .into(),
-                            ));
+                            return Err(errors
+                                .into_iter()
+                                .map(ResolveError::SemanticError)
+                                .chain(std::iter::once(ResolveError::SemanticError(
+                                    SymbolNotFound {
+                                        referencing_site: SourceSpan {
+                                            source_file: source_file.clone(),
+                                            span: identifier.span,
+                                        },
+                                        in_scope: Some(current_id),
+                                    }
+                                    .into(),
+                                )))
+                                .collect());
                         }
                     }
                 }
-                None => break Ok(current_index),
+                None => {
+                    break Ok(OkResult {
+                        value: current_id,
+                        errors,
+                    })
+                }
             }
         }
     }
@@ -1191,7 +1254,10 @@ impl Table {
                         &enum_syntax_tree.access_modifier,
                     ),
                     variant_symbol_ids_by_name: HashMap::new(),
-                    syntax_tree: SyntaxTreeWithSource::new(source_file.clone(), enum_syntax_tree),
+                    syntax_tree: SyntaxTreeWithSource {
+                        source_file: source_file.clone(),
+                        syntax_tree: enum_syntax_tree,
+                    },
                 }
             },
         );
@@ -1218,7 +1284,10 @@ impl Table {
                         &struct_syntax_tree.access_modifier,
                     ),
                     fields: VecNameMap::default(), // will be added later
-                    syntax_tree: SyntaxTreeWithSource::new(source_file.clone(), struct_syntax_tree),
+                    syntax_tree: SyntaxTreeWithSource {
+                        source_file: source_file.clone(),
+                        syntax_tree: struct_syntax_tree,
+                    },
                 }
             },
         );
@@ -1248,10 +1317,10 @@ impl Table {
                     return_type: Type::Primitive(PrimitiveType::Void), // Will be determined later
                     parent_id,
                     parameters: VecNameMap::default(), // Will be determined later
-                    syntax_tree: SyntaxTreeWithSource::new(
-                        source_file.clone(),
-                        function_syntax_tree,
-                    ),
+                    syntax_tree: SyntaxTreeWithSource {
+                        source_file: source_file.clone(),
+                        syntax_tree: function_syntax_tree,
+                    },
                 }
             },
         );
@@ -1301,11 +1370,12 @@ impl Table {
                     let type_binding_specifier = TypeBinding {
                         ty: match self.resolve_type(
                             function.parent_id.into(),
-                            &parameter.type_specifier,
+                            &parameter.type_binding_specifier.type_specifier,
                             &function.syntax_tree.source_file,
                         ) {
-                            Ok(typed_id) => {
-                                if let Type::TypedID(typed_id) = typed_id {
+                            Ok(ty) => {
+                                let ty = ty.unwrap_extend(errors);
+                                if let Type::TypedID(typed_id) = ty {
                                     // accessibility leak
                                     let type_symbol = self.index(typed_id);
 
@@ -1314,14 +1384,17 @@ impl Table {
                                     {
                                         errors.push(
                                             AccessibilityLeaking {
-                                                symbol_span: SourceSpan::new(
-                                                    function.syntax_tree.source_file.clone(),
-                                                    function
+                                                symbol_span: SourceSpan {
+                                                    source_file: function
+                                                        .syntax_tree
+                                                        .source_file
+                                                        .clone(),
+                                                    span: function
                                                         .syntax_tree
                                                         .syntax_tree
                                                         .type_specifier
                                                         .span(),
-                                                ),
+                                                },
                                                 symbol_access_modifier: type_symbol
                                                     .access_modifier(),
                                                 parent_access_modifier: function.access_modifier,
@@ -1330,15 +1403,18 @@ impl Table {
                                         );
                                     }
                                 }
-                                typed_id
+                                ty
                             }
                             Err(err) => {
                                 // should be only a semantic error
-                                errors.push(err.into_semantic_error().unwrap());
+                                errors.extend(
+                                    err.into_iter()
+                                        .map(|err| err.into_semantic_error().unwrap()),
+                                );
                                 Type::default()
                             }
                         },
-                        is_mutable: false,
+                        is_mutable: parameter.type_binding_specifier.mutable_keyword.is_some(),
                     };
 
                     // parameter redefinition
@@ -1351,10 +1427,10 @@ impl Table {
                     {
                         errors.push(
                             ParameterRedifinition {
-                                new_parameter_span: SourceSpan::new(
-                                    function.syntax_tree.source_file.clone(),
-                                    parameter.identifier.span(),
-                                ),
+                                new_parameter_span: SourceSpan {
+                                    source_file: function.syntax_tree.source_file.clone(),
+                                    span: parameter.identifier.span(),
+                                },
                             }
                             .into(),
                         );
@@ -1375,18 +1451,19 @@ impl Table {
             &function.syntax_tree.syntax_tree.type_specifier,
             &function.syntax_tree.source_file,
         ) {
-            Ok(type_id) => {
-                if let Type::TypedID(type_index) = type_id {
+            Ok(ty) => {
+                let ty = ty.unwrap_extend(errors);
+                if let Type::TypedID(typed_id) = ty {
                     // accessibility leak
-                    let type_symbol = self.index(type_index);
+                    let type_symbol = self.index(typed_id);
 
                     if type_symbol.access_modifier().rank() > function.access_modifier.rank() {
                         errors.push(
                             AccessibilityLeaking {
-                                symbol_span: SourceSpan::new(
-                                    function.syntax_tree.source_file.clone(),
-                                    function.syntax_tree.syntax_tree.type_specifier.span(),
-                                ),
+                                symbol_span: SourceSpan {
+                                    source_file: function.syntax_tree.source_file.clone(),
+                                    span: function.syntax_tree.syntax_tree.type_specifier.span(),
+                                },
                                 symbol_access_modifier: type_symbol.access_modifier(),
                                 parent_access_modifier: function.access_modifier,
                             }
@@ -1394,11 +1471,14 @@ impl Table {
                         );
                     }
                 }
-                type_id
+                ty
             }
             Err(err) => {
                 // should be only a semantic error
-                errors.push(err.into_semantic_error().unwrap());
+                errors.extend(
+                    err.into_iter()
+                        .map(|err| err.into_semantic_error().unwrap()),
+                );
                 Type::default()
             }
         }
@@ -1433,10 +1513,10 @@ impl Table {
 
                     if group_access_modifier.rank() < struct_symbol.access_modifier.rank() {
                         errors.push(SemanticError::AccessibilityLeaking(AccessibilityLeaking {
-                            symbol_span: SourceSpan::new(
-                                struct_symbol.syntax_tree.source_file.clone(),
-                                field_group.access_modifier.span(),
-                            ),
+                            symbol_span: SourceSpan {
+                                source_file: struct_symbol.syntax_tree.source_file.clone(),
+                                span: field_group.access_modifier.span(),
+                            },
                             symbol_access_modifier: group_access_modifier,
                             parent_access_modifier: struct_symbol.access_modifier,
                         }));
@@ -1448,10 +1528,13 @@ impl Table {
                             &field.type_specifier,
                             &struct_symbol.syntax_tree.source_file,
                         ) {
-                            Ok(ty) => ty,
+                            Ok(ty) => ty.unwrap_extend(errors),
                             Err(err) => {
                                 // should be only a semantic error
-                                errors.push(err.into_semantic_error().unwrap());
+                                errors.extend(
+                                    err.into_iter()
+                                        .map(|err| err.into_semantic_error().unwrap()),
+                                );
                                 Type::default()
                             }
                         };
@@ -1469,10 +1552,10 @@ impl Table {
                         {
                             errors.push(
                                 FieldRedefinition {
-                                    new_field_span: SourceSpan::new(
-                                        struct_symbol.syntax_tree.source_file.clone(),
-                                        field.identifier.span,
-                                    ),
+                                    new_field_span: SourceSpan {
+                                        source_file: struct_symbol.syntax_tree.source_file.clone(),
+                                        span: field.identifier.span,
+                                    },
                                 }
                                 .into(),
                             );
@@ -1507,10 +1590,10 @@ impl Table {
                         if inserted_variants.contains(&variant_string) {
                             errors.push(
                                 EnumVariantRedefinition {
-                                    new_variant_span: SourceSpan::new(
-                                        enum_sym.syntax_tree.source_file.clone(),
-                                        variant.span,
-                                    ),
+                                    new_variant_span: SourceSpan {
+                                        source_file: enum_sym.syntax_tree.source_file.clone(),
+                                        span: variant.span,
+                                    },
                                 }
                                 .into(),
                             );
@@ -1655,10 +1738,10 @@ impl Table {
                         errors.push(
                             SymbolRedifinition {
                                 available_symbol_id,
-                                new_symbol_span: SourceSpan::new(
-                                    source_file.clone(),
-                                    identifier_token.span,
-                                ),
+                                new_symbol_span: SourceSpan {
+                                    source_file: source_file.clone(),
+                                    span: identifier_token.span,
+                                },
                             }
                             .into(),
                         );

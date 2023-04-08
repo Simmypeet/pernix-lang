@@ -5,7 +5,10 @@ use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
 
-use super::{expression::BlockWithoutLabel, ConnectedList, SourceElement, TypeSpecifier};
+use super::{
+    expression::BlockWithoutLabel, ConnectedList, SourceElement, TypeBindingSpecifier,
+    TypeSpecifier,
+};
 use crate::{
     errors::{AccessModifierExpected, FieldGroupExpected, ItemExpected},
     parser::Parser,
@@ -56,7 +59,12 @@ pub struct Field {
 }
 
 impl SourceElement for Field {
-    fn span(&self) -> Span { Span::new(self.type_specifier.span().start, self.semicolon.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.type_specifier.span().start,
+            end: self.semicolon.span.end,
+        }
+    }
 }
 
 /// Represents a syntax tree node for a field group.
@@ -77,10 +85,10 @@ pub struct FieldGroup {
 
 impl SourceElement for FieldGroup {
     fn span(&self) -> Span {
-        Span::new(
-            self.access_modifier.span().start,
-            self.fields.last().unwrap().span().end,
-        )
+        Span {
+            start: self.access_modifier.span().start,
+            end: self.fields.last().unwrap().span().end,
+        }
     }
 }
 
@@ -105,7 +113,10 @@ pub struct Struct {
 
 impl SourceElement for Struct {
     fn span(&self) -> Span {
-        Span::new(self.access_modifier.span().start, self.right_brace.span.end)
+        Span {
+            start: self.access_modifier.span().start,
+            end: self.right_brace.span.end,
+        }
     }
 }
 
@@ -140,7 +151,10 @@ pub struct Enum {
 
 impl SourceElement for Enum {
     fn span(&self) -> Span {
-        Span::new(self.access_modifier.span().start, self.right_brace.span.end)
+        Span {
+            start: self.access_modifier.span().start,
+            end: self.right_brace.span.end,
+        }
     }
 }
 
@@ -149,18 +163,23 @@ impl SourceElement for Enum {
 /// Syntax Synopsis:
 /// ``` text
 /// FunctionParameter:
-///     TypeSpecifier Identifier
+///     TypeBindingSpecifier Identifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub struct FunctionParameterSyntaxTree {
-    pub type_specifier: TypeSpecifier,
+    pub type_binding_specifier: TypeBindingSpecifier,
     pub identifier: Identifier,
 }
 
 impl SourceElement for FunctionParameterSyntaxTree {
-    fn span(&self) -> Span { Span::new(self.type_specifier.span().start, self.identifier.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.type_binding_specifier.span().start,
+            end: self.identifier.span.end,
+        }
+    }
 }
 
 /// Represents a list of function parameters separated by commas.
@@ -195,10 +214,10 @@ pub struct Function {
 
 impl SourceElement for Function {
     fn span(&self) -> Span {
-        Span::new(
-            self.type_specifier.span().start,
-            self.block_without_label.span().end,
-        )
+        Span {
+            start: self.access_modifier.span().start,
+            end: self.block_without_label.span().end,
+        }
     }
 }
 
@@ -220,7 +239,12 @@ pub struct Module {
 }
 
 impl SourceElement for Module {
-    fn span(&self) -> Span { Span::new(self.access_modifier.span().start, self.semicolon.span.end) }
+    fn span(&self) -> Span {
+        Span {
+            start: self.access_modifier.span().start,
+            end: self.semicolon.span.end,
+        }
+    }
 }
 
 /// Is an enumeration of all kinds of items.
@@ -345,11 +369,23 @@ impl<'a> Parser<'a> {
             let left_paren = self.expect_punctuation('(')?;
 
             let (parameters, right_paren) = self.parse_enclosed_list(')', ',', |parser| {
+                let mutable_keyword = match parser.peek_significant_token() {
+                    Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::Mutable => {
+                        // eat mutable keyword
+                        parser.next_token();
+
+                        Some(*keyword)
+                    }
+                    _ => None,
+                };
                 let type_specifier = parser.parse_type_specifier()?;
                 let identifier = parser.expect_identifier()?;
 
                 Some(FunctionParameterSyntaxTree {
-                    type_specifier,
+                    type_binding_specifier: TypeBindingSpecifier {
+                        mutable_keyword,
+                        type_specifier,
+                    },
                     identifier: *identifier,
                 })
             })?;

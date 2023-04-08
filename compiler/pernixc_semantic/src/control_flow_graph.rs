@@ -1,38 +1,46 @@
 //! Contains all the code for the control flow graph.
 
-use std::{collections::HashMap, ops::Index};
+use std::{
+    collections::HashMap,
+    ops::{Index, IndexMut},
+};
 
 use derive_more::From;
-use derive_new::new;
 use enum_as_inner::EnumAsInner;
-use getset::Getters;
-use pernixc_syntax::syntax_tree::statement::{
-    Declarative as DeclarativeSyntaxTree, Expressive as ExpressiveSyntaxTree,
-    Statement as StatementSyntaxTree,
-};
-use thiserror::Error;
-
-use self::binder::ControlFlowGraphBinder;
-use crate::{
-    binding::Expression,
-    errors::SemanticError,
-    symbol::{ty::Type, FunctionID, LocalVariable, Table},
-};
-
-mod binder;
+use getset::{CopyGetters, Getters};
 
 /// Is an identifier used to identify a basic block in the control flow graph.
 ///
 /// The identifier is only valid for the control flow graph that it was created from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BasicBlockID(usize);
 
+impl BasicBlockID {
+    /// Is the identifier of the entry basic block.
+    ///
+    /// Every control flow graph has at least one entry basic block that is the first basic block to
+    /// be executed.
+    pub const ENTRY_BLOCK_ID: Self = Self(0);
+}
+
 /// Represents a control-flow graph (CFG) for a function.
+///
+/// The control-flow graph is used as an intermediate representation for both the high-level and
+/// mid-level IRs.
+///
+/// # Generic Parameters
+///
+/// Based on the intermediate representation format, the control-flow graph takes different forms of
+/// instruction types via the generic parameters `Inst` and `Value`.
+///
+/// - `Inst` is the instruction type that the control-flow graph uses.
+/// - `Value` is the type that represents a value in the control-flow graph. It's used in such cases
+///   as the return value of a function.
 #[derive(Debug, Clone, Getters)]
-pub struct ControlFlowGraph {
+pub struct ControlFlowGraph<Inst, Value> {
     /// Is the list of basic blocks in the control flow graph.
     #[get = "pub"]
-    ids_by_basic_block: HashMap<BasicBlockID, BasicBlock>,
+    ids_by_basic_block: HashMap<BasicBlockID, BasicBlock<Inst, Value>>,
 
     /// Is the list of terminal blocks in the control flow graph.
     ///
@@ -40,37 +48,72 @@ pub struct ControlFlowGraph {
     #[get = "pub"]
     terminal_block_ids: Vec<BasicBlockID>,
 
-    /// Is the list of local variables that were used in the control flow graph.
-    #[get = "pub"]
-    variables: Vec<LocalVariable>,
-
-    /// Is the list of temporary variables that were used in the control flow graph.
-    #[get = "pub"]
-    temporary_variables: Vec<TemporaryVariable>,
+    // internally used to generate unique basic block ids.
+    id_counter: usize,
 }
 
-impl Index<BasicBlockID> for ControlFlowGraph {
-    type Output = BasicBlock;
+impl<Inst, Value> ControlFlowGraph<Inst, Value> {
+    /// Creates a new [`ControlFlowGraph`] with a single entry basic block.
+    #[must_use]
+    pub fn new() -> Self {
+        let mut cfg = Self {
+            ids_by_basic_block: HashMap::new(),
+            terminal_block_ids: Vec::new(),
+            id_counter: 0,
+        };
+
+        cfg.create_new_block();
+
+        cfg
+    }
+
+    /// Creates a new basic block in the control flow graph.
+    ///
+    /// The created basic block is not connected to any other basic blocks and contains no
+    /// instructions.
+    ///
+    /// # Returns
+    /// The [`BasicBlockID`] of the newly created basic block.
+    pub fn create_new_block(&mut self) -> BasicBlockID {
+        let id = BasicBlockID(self.id_counter);
+        self.id_counter += 1;
+
+        self.ids_by_basic_block.insert(id, BasicBlock {
+            basic_block_id: id,
+            successor_block_ids: Vec::new(),
+            predecessor_block_ids: Vec::new(),
+            instructions: Vec::new(),
+        });
+
+        id
+    }
+}
+
+impl<Inst, Value> Default for ControlFlowGraph<Inst, Value> {
+    fn default() -> Self { Self::new() }
+}
+
+impl<Inst, Value> Index<BasicBlockID> for ControlFlowGraph<Inst, Value> {
+    type Output = BasicBlock<Inst, Value>;
 
     fn index(&self, index: BasicBlockID) -> &Self::Output { &self.ids_by_basic_block[&index] }
 }
 
-/// Represents an expression storage that is used for storing the result of an expression in an
-/// imperative expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
-pub struct TemporaryVariable {
-    /// The type of the temporary expression storage.
-    pub ty: Type,
+impl<Inst, Value> IndexMut<BasicBlockID> for ControlFlowGraph<Inst, Value> {
+    fn index_mut(&mut self, index: BasicBlockID) -> &mut Self::Output {
+        self.ids_by_basic_block.get_mut(&index).unwrap()
+    }
 }
 
 /// Represents a basic block in the control flow graph.
 ///
 /// The basic block contains a sequence of instructions that are executed in order.
-#[derive(Debug, Clone)]
-pub struct BasicBlock {
-    /// The basic block id that is unique to the control flow graph that it was created
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+pub struct BasicBlock<Inst, Value> {
+    /// Gets the [`BasicBlockID`] that is unique to the control flow graph that it was created
     /// from.
-    pub basic_block_id: BasicBlockID,
+    #[get_copy = "pub"]
+    basic_block_id: BasicBlockID,
 
     /// The list of block ids that are predecessors of this block.
     ///
@@ -83,23 +126,37 @@ pub struct BasicBlock {
     pub successor_block_ids: Vec<BasicBlockID>,
 
     /// The list of instructions that will be executed in the basic block.
-    pub instructions: Vec<Instruction>,
+    instructions: Vec<Instruction<Inst, Value>>,
 }
 
-/// Is an instruction that simply evaluates an expression.
-#[derive(Debug, Clone, PartialEq, new)]
-pub struct EvaluateInstruction {
-    /// The expression that will be evaluated in the instruction.
-    pub expression: Expression,
+impl<Inst, Value> BasicBlock<Inst, Value> {
+    /// Checks whether the basic block is the entry block of the control flow graph.
+    #[must_use]
+    pub fn is_entry_block(&self) -> bool { self.basic_block_id.0 == 0 }
+
+    /// Adds an instruction to the basic block.
+    pub fn add_instruction(&mut self, instruction: Instruction<Inst, Value>) {
+        self.instructions.push(instruction);
+    }
+}
+
+impl<Inst, Value> Index<usize> for BasicBlock<Inst, Value> {
+    type Output = Instruction<Inst, Value>;
+
+    fn index(&self, index: usize) -> &Self::Output { &self.instructions[index] }
+}
+
+impl<Inst, Value> IndexMut<usize> for BasicBlock<Inst, Value> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output { &mut self.instructions[index] }
 }
 
 /// Is a return instruction that will be executed in the control flow graph.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ReturnInstruction {
-    /// The expression that will be returned in the return instruction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReturnInstruction<Value> {
+    /// The value that will be returned in the return instruction.
     ///
-    /// If the expression is `None`, then the return instruction will return void.
-    pub expression: Option<Expression>,
+    /// If the value is `None`, then the return instruction will return void.
+    pub value: Option<Value>,
 }
 
 /// Is a jump instruction that will be executed in the control flow graph.
@@ -110,10 +167,10 @@ pub struct JumpInstruction {
 }
 
 /// Is a conditional jump instruction that will be executed in the control flow graph.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ConditionalJumpInstruction {
-    /// The expression that will be evaluated to determine whether to jump to the target block.
-    pub condition: Expression,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConditionalJumpInstruction<Value> {
+    /// The value that will be evaluated to determine whether to jump to the target block.
+    pub condition: Value,
 
     /// The id of the basic block that will be jumped to if the condition is true.
     pub true_target_block_id: BasicBlockID,
@@ -122,122 +179,19 @@ pub struct ConditionalJumpInstruction {
     pub false_target_block_id: BasicBlockID,
 }
 
-/// Is an address that the store instruction will store to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum StoreAddress {
-    LocalVariableSymbolIndex(usize),
-    TemporaryVariableSymbolIndex(usize),
-}
-
-/// Repres ents an instruction that stores a value in a  variable.
-#[derive(Debug, Clone, PartialEq)]
-pub struct StoreInstruction {
-    /// The address of variable that the value will be stored in.
-    pub store_address: StoreAddress,
-
-    /// The expression that will be stored in the local variable.
-    pub expression: Expression,
-}
-
-/// Represents a non-terminal instruction that will be executed in the control flow graph.
-#[derive(Debug, Clone, PartialEq, EnumAsInner, From)]
-#[allow(missing_docs)]
-pub enum BasicInstruction {
-    EvaluateInstruction(EvaluateInstruction),
-    StoreInstruction(StoreInstruction),
-}
-
 /// Represents an instruction that will be executed in the control flow graph.
-#[derive(Debug, Clone, PartialEq, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum Instruction {
-    BasicInstruction(BasicInstruction),
-    TerminalInstruction(TerminalInstruction),
+pub enum Instruction<Inst, Value> {
+    IRInstruction(Inst),
+    TerminalInstruction(TerminalInstruction<Value>),
 }
 
 /// Represents an instruction that cause the control flow graph to terminate.
-#[derive(Debug, Clone, PartialEq, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
-pub enum TerminalInstruction {
-    ReturnInstruction(ReturnInstruction),
+pub enum TerminalInstruction<Value> {
+    ReturnInstruction(ReturnInstruction<Value>),
     JumpInstruction(JumpInstruction),
-    ConditionalJumpInstruction(ConditionalJumpInstruction),
-}
-
-/// Is an error that can occur when analyzing a control flow graph from
-/// [`ControlFlowGraph::analyze()`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash, From, EnumAsInner, Error)]
-#[allow(missing_docs)]
-pub enum FunctionAnalyzeError {
-    #[error("Semantic errors occurred while analyzing the control flow graph.")]
-    SemanticErrors(Vec<SemanticError>),
-
-    #[error("The symbol id argument is invalid.")]
-    InvalidFunctionSymbolIDArgument,
-}
-
-impl ControlFlowGraph {
-    /// Analyzes the control flow graph for the function from the given function symbol id.
-    ///
-    /// # Arguments
-    /// * `symbol_table` - The global symbol table that contains the function symbol.
-    /// * `function_symbol_id` - The id of the function symbol in the global symbol table.
-    ///
-    /// # Errors
-    /// - [`FunctionAnalyzeError::SemanticErrors`] - If semantic errors occurred while analyzing the
-    ///   control flow graph.
-    /// - [`FunctionAnalyzeError::InvalidFunctionSymbolIDArgument`] - If the symbol id is invalid
-    pub fn analyze(
-        symbol_table: &Table,
-        function_symbol_id: FunctionID,
-    ) -> Result<Self, FunctionAnalyzeError> {
-        let mut binder = ControlFlowGraphBinder::new(symbol_table, function_symbol_id)
-            .ok_or(FunctionAnalyzeError::InvalidFunctionSymbolIDArgument)?;
-
-        for statement in &binder
-            .function_symbol
-            .syntax_tree
-            .syntax_tree
-            .block_without_label
-            .statements
-        {
-            match statement {
-                StatementSyntaxTree::Declarative(DeclarativeSyntaxTree::VariableDeclaration(
-                    var,
-                )) => {
-                    let Some(instruction) = binder.bind_variable_declaration(var) else {
-                        return Err(binder.terminate());
-                    };
-
-                    binder
-                        .get_current_block_mut()
-                        .instructions
-                        .push(Instruction::BasicInstruction(instruction.into()));
-                }
-                StatementSyntaxTree::Expressive(expression) => {
-                    // bind the expression
-                    let result = match expression {
-                        ExpressiveSyntaxTree::Semi(expr) => {
-                            binder.bind_functional(&expr.expression, None)
-                        }
-                        ExpressiveSyntaxTree::Imperative(expr) => {
-                            binder.bind_imperative(expr, None)
-                        }
-                    };
-
-                    // `None` signals that fatal semantic errors occurred
-                    let Some(expression) = result else {
-                        return Err(binder.terminate());
-                    };
-
-                    binder.get_current_block_mut().instructions.push(
-                        Instruction::BasicInstruction(EvaluateInstruction::new(expression).into()),
-                    );
-                }
-            }
-        }
-
-        binder.into_control_flow_graph()
-    }
+    ConditionalJumpInstruction(ConditionalJumpInstruction<Value>),
 }
