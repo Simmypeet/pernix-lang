@@ -27,7 +27,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
         .map(|id| {
             (
                 id.into_module().unwrap(),
-                symbol_table.index(id.into_module().unwrap()),
+                symbol_table.get(id.into_module().unwrap()),
             )
         })
         .unwrap();
@@ -39,7 +39,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
     let sub_module_symbol_id = test_module_symbol.children_symbol_ids_by_name["sub"]
         .into_module()
         .unwrap();
-    let sub_module_symbol = symbol_table.index(sub_module_symbol_id);
+    let sub_module_symbol = symbol_table.get(sub_module_symbol_id);
 
     assert_eq!(sub_module_symbol.name, "sub");
     assert_eq!(sub_module_symbol.parent_id, Some(test_module_symbol_id));
@@ -50,7 +50,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
     let sub_some_type_enum_symbol_id = sub_module_symbol.children_symbol_ids_by_name["SomeType"]
         .into_enum()
         .unwrap();
-    let sub_some_type_enum_symbol = symbol_table.index(sub_some_type_enum_symbol_id);
+    let sub_some_type_enum_symbol = symbol_table.get(sub_some_type_enum_symbol_id);
 
     assert_eq!(sub_some_type_enum_symbol.name, "SomeType");
     assert_eq!(sub_some_type_enum_symbol.parent_id, sub_module_symbol_id);
@@ -67,7 +67,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
     let struct_symbol_id = test_module_symbol.children_symbol_ids_by_name["SomeType"]
         .into_struct()
         .unwrap();
-    let struct_symbol = symbol_table.index(struct_symbol_id);
+    let struct_symbol = symbol_table.get(struct_symbol_id);
 
     assert_eq!(struct_symbol.name, "SomeType");
     assert_eq!(struct_symbol.parent_id, test_module_symbol_id);
@@ -89,7 +89,7 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
     let test_function_symbol_id = test_module_symbol.children_symbol_ids_by_name["Test"]
         .into_function()
         .unwrap();
-    let test_function_symbol = symbol_table.index(test_function_symbol_id);
+    let test_function_symbol = symbol_table.get(test_function_symbol_id);
 
     assert_eq!(test_function_symbol.name, "Test");
     assert_eq!(test_function_symbol.parent_id, test_module_symbol_id);

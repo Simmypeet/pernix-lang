@@ -21,7 +21,7 @@ fn inference_test() {
 
     assert_eq!(
         infer_ctx
-            .get_type(expr_id1)
+            .get_inference(expr_id1)
             .as_type_variable()
             .unwrap()
             .constraint,
@@ -29,7 +29,7 @@ fn inference_test() {
     );
     assert_eq!(
         infer_ctx
-            .get_type(expr_id2)
+            .get_inference(expr_id2)
             .as_type_variable()
             .unwrap()
             .constraint,
@@ -37,7 +37,7 @@ fn inference_test() {
     );
     assert_eq!(
         infer_ctx
-            .get_type(expr_id3)
+            .get_inference(expr_id3)
             .as_type_variable()
             .unwrap()
             .constraint,
@@ -50,7 +50,7 @@ fn inference_test() {
 
     assert_eq!(
         infer_ctx
-            .get_type(expr_id1)
+            .get_inference(expr_id1)
             .as_inferred()
             .unwrap()
             .as_primitive()
@@ -59,7 +59,7 @@ fn inference_test() {
     );
     assert_eq!(
         infer_ctx
-            .get_type(expr_id2)
+            .get_inference(expr_id2)
             .as_inferred()
             .unwrap()
             .as_primitive()
@@ -69,7 +69,7 @@ fn inference_test() {
 
     assert_eq!(
         infer_ctx
-            .get_type(expr_id3)
+            .get_inference(expr_id3)
             .as_type_variable()
             .unwrap()
             .constraint,

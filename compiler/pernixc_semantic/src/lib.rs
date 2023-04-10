@@ -32,6 +32,12 @@ pub struct SourceSpan {
     pub span: Span,
 }
 
+impl SourceSpan {
+    /// Gets the string slice of the source code that is located in the span.
+    #[must_use]
+    pub fn source_code(&self) -> &str { &self.source_file[self.span] }
+}
+
 /// Is a structure used in [`SemanticResult`] [`Ok`] variant in order to return a value and a list
 /// of non-fatal errors.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

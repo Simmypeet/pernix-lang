@@ -12,9 +12,13 @@
 
 use getset::Getters;
 
-use self::{instruction::Instruction, value::HirValue};
-use crate::{control_flow_graph::ControlFlowGraph, symbol::LocalVariable};
+use self::{instruction::Instruction, value::Value};
+use crate::{
+    control_flow_graph::ControlFlowGraph,
+    symbol::{ty::Type, LocalVariable},
+};
 
+pub mod builder;
 pub mod instruction;
 pub mod value;
 
@@ -23,7 +27,7 @@ pub mod value;
 pub struct HIR {
     /// The control flow graph of the function.
     #[get = "pub"]
-    control_flow_graph: ControlFlowGraph<Instruction, HirValue>,
+    control_flow_graph: ControlFlowGraph<Instruction<Type>, Value<Type>>,
 
     /// Gets the list of local variables in the function.
     #[get = "pub"]

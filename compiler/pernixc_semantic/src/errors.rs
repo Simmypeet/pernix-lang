@@ -5,8 +5,8 @@ use enum_as_inner::EnumAsInner;
 use thiserror::Error;
 
 use crate::{
-    hir::value::{ExpressionType, PrefixOperator},
-    symbol::{ty::Type, AccessModifier, FieldID, StructID, ID},
+    hir::value::{BinaryOperator, InferrableType, PrefixOperator},
+    symbol::{AccessModifier, FieldID, StructID, ID},
     SourceSpan,
 };
 
@@ -28,6 +28,19 @@ pub struct AccessibilityLeaking {
 pub struct EnumVariantRedefinition {
     /// The span of the variant that redefines another variant.
     pub new_variant_span: SourceSpan,
+}
+
+/// The prefix operation cannot be applied to the operand type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct InvalidPrefixOperation {
+    /// The span of the prefix operation.
+    pub source_span: SourceSpan,
+
+    /// The prefix operator.
+    pub prefix_operator: PrefixOperator,
+
+    /// The type of the operand.
+    pub operand_type: InferrableType,
 }
 
 /// Field redefinition.
@@ -67,11 +80,18 @@ pub struct SymbolNotFound {
     pub in_scope: Option<ID>,
 }
 
+/// The given symbol cannot be used as an expression.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExpressionExpected {
+    /// The span of the symbol that is not an expression.
+    pub source_span: SourceSpan,
+}
+
 /// Expected the symbol to be a type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeExpected {
     /// The span of the symbol that is not a type.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 
     /// The index of the symbol that is not a type.
     pub symbol_id: ID,
@@ -88,59 +108,60 @@ pub struct ParameterRedifinition {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InvalidNumericLiteralSuffix {
     /// The span of the numeric literal suffix.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// The numeric literal is out of range.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct OutOfRangeNumericLiteral {
     /// The span of the numeric literal.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// Mismatch between the expected and the type of the expression.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeMismatch {
     /// The expected type.
-    pub expected: Type,
+    pub expected: InferrableType,
 
     /// The type of the expression.
-    pub actual: Type,
+    pub actual: InferrableType,
 
     /// The span of the expression.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// Assignment to an rvalue.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssignToRValue {
     /// The span of the binary expression that performs the assignment.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// Assignment to an immutable l-value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssignToImmutable {
     /// The span of the binary expression that performs the assignment.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
-/*
+
 /// The binary expression has an invalid combination of operands and operator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InvalidBinaryOperation {
     /// The type of the left-hand side operand.
-    pub lhs_type: ValueType,
+    pub left_operand_type: InferrableType,
 
-    /// The operator.
-    pub operator: BinaryOperator,
+    /// The binary operator.
+    pub binary_operator: BinaryOperator,
 
     /// The type of the right-hand side operand.
-    pub rhs_type: ValueType,
+    pub right_operand_type: InferrableType,
 
     /// The span of the binary expression.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
+/*
 /// The operands of the binary expression have an ambiguous conversion.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AmbiguousConversionInBinaryOperation {
@@ -158,26 +179,6 @@ pub struct AmbiguousConversionInBinaryOperation {
 }
 */
 
-/// The prefix expression has an invalid combination of operands and operator.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InvalidPrefixOperation {
-    /// The operator.
-    pub operator: PrefixOperator,
-
-    /// The type of the operand.
-    pub operand_type: ExpressionType,
-
-    /// The span of the prefix expression.
-    pub span: SourceSpan,
-}
-
-/// The symbol does not produce a value.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ExpressionExpected {
-    /// The span of the symbol referencing.
-    pub span: SourceSpan,
-}
-
 /// The number of arguments passed to a function call does not match the number of parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ArgumentCountMismatch {
@@ -188,21 +189,21 @@ pub struct ArgumentCountMismatch {
     pub found: usize,
 
     /// The span of the function call.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// The symbol is not callable.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SymbolIsNotCallable {
     /// The span of the function call.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// The symbol is not a struct for struct literal construction.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructExpected {
     /// The span of the struct literal.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// The field with the given could not be found in the struct.
@@ -320,13 +321,13 @@ pub enum SemanticError {
     TypeMismatch(TypeMismatch),
     AssignToRValue(AssignToRValue),
     AssignToImmutable(AssignToImmutable),
-    /*
     InvalidBinaryOperation(InvalidBinaryOperation),
+    /*
     AmbiguousConversionInBinaryOperation(AmbiguousConversionInBinaryOperation),
     */
+    ExpressionExpected(ExpressionExpected),
     InvalidPrefixOperation(InvalidPrefixOperation),
     EnumVariantRedefinition(EnumVariantRedefinition),
-    ExpressionExpected(ExpressionExpected),
     ArgumentCountMismatch(ArgumentCountMismatch),
     SymbolIsNotCallable(SymbolIsNotCallable),
     StructExpected(StructExpected),

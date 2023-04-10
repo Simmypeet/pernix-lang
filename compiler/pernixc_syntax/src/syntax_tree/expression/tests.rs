@@ -61,7 +61,7 @@ proptest! {
                 .unwrap()
                 .into_prefix()
                 .unwrap();
-            match prefix_expr.operator {
+            match prefix_expr.prefix_operator {
                 super::PrefixOperator::LogicalNot(..) => prop_assert_eq!(original_operator, PrefixOperator::LogicalNot),
                 super::PrefixOperator::Negate(..) => prop_assert_eq!(original_operator, PrefixOperator::Negate),
             }
@@ -84,7 +84,7 @@ proptest! {
         for original_identifier in identifiers.iter().rev() {
             let member_access_expr = expression.into_functional().unwrap().into_member_access().unwrap();
             prop_assert_eq!(original_identifier, substr_span(&string, member_access_expr.identifier.span));
-            expression = *member_access_expr.expression;
+            expression = *member_access_expr.operand;
         }
 
         expression.into_functional().unwrap().into_numeric_literal().unwrap();
@@ -131,10 +131,13 @@ fn binary_operator_test() {
         .into_binary()
         .unwrap();
 
-    assert!(matches!(expression.operator, BinaryOperator::Subtract(..)));
+    assert!(matches!(
+        expression.binary_operator,
+        BinaryOperator::Subtract(..)
+    ));
 
     let left = expression
-        .left
+        .left_operand
         .into_functional()
         .unwrap()
         .into_binary()
@@ -142,10 +145,13 @@ fn binary_operator_test() {
     {
         let expression = left;
 
-        assert!(matches!(expression.operator, BinaryOperator::Add(..)));
+        assert!(matches!(
+            expression.binary_operator,
+            BinaryOperator::Add(..)
+        ));
 
         let left = expression
-            .left
+            .left_operand
             .into_functional()
             .unwrap()
             .into_prefix()
@@ -153,7 +159,7 @@ fn binary_operator_test() {
         {
             let expression = left;
             assert!(matches!(
-                expression.operator,
+                expression.prefix_operator,
                 super::PrefixOperator::LogicalNot(..)
             ));
             let operand = expression
@@ -166,7 +172,7 @@ fn binary_operator_test() {
         }
 
         let right = expression
-            .right
+            .right_operand
             .into_functional()
             .unwrap()
             .into_binary()
@@ -174,10 +180,13 @@ fn binary_operator_test() {
         {
             let expression = right;
 
-            assert!(matches!(expression.operator, BinaryOperator::Multiply(..)));
+            assert!(matches!(
+                expression.binary_operator,
+                BinaryOperator::Multiply(..)
+            ));
 
             let left = expression
-                .left
+                .left_operand
                 .into_functional()
                 .unwrap()
                 .into_numeric_literal()
@@ -185,7 +194,7 @@ fn binary_operator_test() {
             assert_eq!(substr_span(source_code, left.span()), "2");
 
             let right = expression
-                .right
+                .right_operand
                 .into_functional()
                 .unwrap()
                 .into_numeric_literal()
@@ -194,7 +203,7 @@ fn binary_operator_test() {
         }
     }
     let right = expression
-        .right
+        .right_operand
         .into_functional()
         .unwrap()
         .into_binary()
@@ -202,10 +211,13 @@ fn binary_operator_test() {
     {
         let expression = right;
 
-        assert!(matches!(expression.operator, BinaryOperator::Modulo(..)));
+        assert!(matches!(
+            expression.binary_operator,
+            BinaryOperator::Modulo(..)
+        ));
 
         let left = expression
-            .left
+            .left_operand
             .into_functional()
             .unwrap()
             .into_binary()
@@ -213,10 +225,13 @@ fn binary_operator_test() {
         {
             let expression = left;
 
-            assert!(matches!(expression.operator, BinaryOperator::Divide(..)));
+            assert!(matches!(
+                expression.binary_operator,
+                BinaryOperator::Divide(..)
+            ));
 
             let left = expression
-                .left
+                .left_operand
                 .into_functional()
                 .unwrap()
                 .into_numeric_literal()
@@ -224,7 +239,7 @@ fn binary_operator_test() {
             assert_eq!(substr_span(source_code, left.span()), "4");
 
             let right = expression
-                .right
+                .right_operand
                 .into_functional()
                 .unwrap()
                 .into_numeric_literal()
@@ -233,7 +248,7 @@ fn binary_operator_test() {
         }
 
         let right = expression
-            .right
+            .right_operand
             .into_functional()
             .unwrap()
             .into_numeric_literal()

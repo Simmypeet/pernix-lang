@@ -12,7 +12,10 @@ use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     hash::Hash,
     ops::{Index, IndexMut},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use derive_more::{From, Into};
@@ -93,19 +96,9 @@ pub trait Indexer<'a> {
 
     /// Gets the symbol from the symbol table.
     ///
-    /// Returns `None` if the symbol is not found.
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output>;
-
-    /// Gets the symbol from the symbol table.
-    ///
     /// # Panics
-    /// Panics if the symbol is not found.
-    fn index(self, symbol_table: &'a Table) -> Self::Output
-    where
-        Self: Sized,
-    {
-        self.get(symbol_table).unwrap()
-    }
+    /// Panics if the indexer is an invalid index or indexing to the wrong table.
+    fn get(self, symbol_table: &'a Table) -> Self::Output;
 }
 
 /// Is a trait that all ID structs must implement in order to be able to retrieve symbols from the
@@ -118,19 +111,9 @@ pub trait IndexerMut<'a> {
 
     /// Gets the symbol from the symbol table.
     ///
-    /// Returns `None` if the symbol is not found.
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output>;
-
-    /// Gets the symbol from the symbol table.
-    ///
     /// # Panics
-    /// Panics if the symbol is not found.
-    fn index_mut(self, symbol_table: &'a mut Table) -> Self::Output
-    where
-        Self: Sized,
-    {
-        self.get_mut(symbol_table).unwrap()
-    }
+    /// Panics if the indexer is an invalid index or indexing to the wrong table.
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output;
 }
 
 /// Is a structure used to retrieve [`Module`] symbols from the [`Table`].
@@ -140,16 +123,16 @@ pub struct ModuleID(usize);
 impl<'a> Indexer<'a> for ModuleID {
     type Output = &'a Module;
 
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.modules.get(self.0)
+    fn get(self, symbol_table: &'a Table) -> Self::Output {
+        symbol_table.symbol_bundle.modules.get(&self).unwrap()
     }
 }
 
 impl<'a> IndexerMut<'a> for ModuleID {
     type Output = &'a mut Module;
 
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.modules.get_mut(self.0)
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output {
+        symbol_table.symbol_bundle.modules.get_mut(&self).unwrap()
     }
 }
 
@@ -160,16 +143,16 @@ pub struct StructID(usize);
 impl<'a> Indexer<'a> for StructID {
     type Output = &'a Struct;
 
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.structs.get(self.0)
+    fn get(self, symbol_table: &'a Table) -> Self::Output {
+        symbol_table.symbol_bundle.structs.get(&self).unwrap()
     }
 }
 
 impl<'a> IndexerMut<'a> for StructID {
     type Output = &'a mut Struct;
 
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.structs.get_mut(self.0)
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output {
+        symbol_table.symbol_bundle.structs.get_mut(&self).unwrap()
     }
 }
 
@@ -180,16 +163,16 @@ pub struct EnumID(usize);
 impl<'a> Indexer<'a> for EnumID {
     type Output = &'a Enum;
 
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.enums.get(self.0)
+    fn get(self, symbol_table: &'a Table) -> Self::Output {
+        symbol_table.symbol_bundle.enums.get(&self).unwrap()
     }
 }
 
 impl<'a> IndexerMut<'a> for EnumID {
     type Output = &'a mut Enum;
 
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.enums.get_mut(self.0)
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output {
+        symbol_table.symbol_bundle.enums.get_mut(&self).unwrap()
     }
 }
 
@@ -200,16 +183,16 @@ pub struct FunctionID(usize);
 impl<'a> Indexer<'a> for FunctionID {
     type Output = &'a Function;
 
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.functions.get(self.0)
+    fn get(self, symbol_table: &'a Table) -> Self::Output {
+        symbol_table.symbol_bundle.functions.get(&self).unwrap()
     }
 }
 
 impl<'a> IndexerMut<'a> for FunctionID {
     type Output = &'a mut Function;
 
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.functions.get_mut(self.0)
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output {
+        symbol_table.symbol_bundle.functions.get_mut(&self).unwrap()
     }
 }
 
@@ -220,16 +203,20 @@ pub struct EnumVariantID(usize);
 impl<'a> Indexer<'a> for EnumVariantID {
     type Output = &'a EnumVariant;
 
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.enum_variants.get(self.0)
+    fn get(self, symbol_table: &'a Table) -> Self::Output {
+        symbol_table.symbol_bundle.enum_variants.get(&self).unwrap()
     }
 }
 
 impl<'a> IndexerMut<'a> for EnumVariantID {
     type Output = &'a mut EnumVariant;
 
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output> {
-        symbol_table.symbol_bundle.enum_variants.get_mut(self.0)
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output {
+        symbol_table
+            .symbol_bundle
+            .enum_variants
+            .get_mut(&self)
+            .unwrap()
     }
 }
 
@@ -263,10 +250,10 @@ impl Scoped for Enum {}
 impl<'a> Indexer<'a> for ScopedID {
     type Output = &'a dyn Scoped;
 
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output> {
+    fn get(self, symbol_table: &'a Table) -> Self::Output {
         match self {
-            Self::Module(id) => symbol_table.symbol_bundle.modules.get(id.0).map(|s| s as _),
-            Self::Enum(id) => symbol_table.symbol_bundle.enums.get(id.0).map(|s| s as _),
+            Self::Module(id) => symbol_table.symbol_bundle.modules.get(&id).unwrap() as _,
+            Self::Enum(id) => symbol_table.symbol_bundle.enums.get(&id).unwrap() as _,
         }
     }
 }
@@ -274,18 +261,10 @@ impl<'a> Indexer<'a> for ScopedID {
 impl<'a> IndexerMut<'a> for ScopedID {
     type Output = &'a mut dyn Scoped;
 
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output> {
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output {
         match self {
-            Self::Module(id) => symbol_table
-                .symbol_bundle
-                .modules
-                .get_mut(id.0)
-                .map(|s| s as _),
-            Self::Enum(id) => symbol_table
-                .symbol_bundle
-                .enums
-                .get_mut(id.0)
-                .map(|s| s as _),
+            Self::Module(id) => symbol_table.symbol_bundle.modules.get_mut(&id).unwrap() as _,
+            Self::Enum(id) => symbol_table.symbol_bundle.enums.get_mut(&id).unwrap() as _,
         }
     }
 }
@@ -304,21 +283,15 @@ pub enum ID {
 impl<'a> Indexer<'a> for ID {
     type Output = &'a dyn Symbol;
 
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output> {
+    fn get(self, symbol_table: &'a Table) -> Self::Output {
         match self {
-            Self::Module(id) => symbol_table.symbol_bundle.modules.get(id.0).map(|s| s as _),
-            Self::Struct(id) => symbol_table.symbol_bundle.structs.get(id.0).map(|s| s as _),
-            Self::Enum(id) => symbol_table.symbol_bundle.enums.get(id.0).map(|s| s as _),
-            Self::Function(id) => symbol_table
-                .symbol_bundle
-                .functions
-                .get(id.0)
-                .map(|s| s as _),
-            Self::EnumVariant(id) => symbol_table
-                .symbol_bundle
-                .enum_variants
-                .get(id.0)
-                .map(|s| s as _),
+            Self::Module(id) => symbol_table.symbol_bundle.modules.get(&id).unwrap() as _,
+            Self::Struct(id) => symbol_table.symbol_bundle.structs.get(&id).unwrap() as _,
+            Self::Enum(id) => symbol_table.symbol_bundle.enums.get(&id).unwrap() as _,
+            Self::Function(id) => symbol_table.symbol_bundle.functions.get(&id).unwrap() as _,
+            Self::EnumVariant(id) => {
+                symbol_table.symbol_bundle.enum_variants.get(&id).unwrap() as _
+            }
         }
     }
 }
@@ -326,33 +299,17 @@ impl<'a> Indexer<'a> for ID {
 impl<'a> IndexerMut<'a> for ID {
     type Output = &'a mut dyn Symbol;
 
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output> {
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output {
         match self {
-            Self::Module(id) => symbol_table
-                .symbol_bundle
-                .modules
-                .get_mut(id.0)
-                .map(|s| s as _),
-            Self::Struct(id) => symbol_table
-                .symbol_bundle
-                .structs
-                .get_mut(id.0)
-                .map(|s| s as _),
-            Self::Enum(id) => symbol_table
-                .symbol_bundle
-                .enums
-                .get_mut(id.0)
-                .map(|s| s as _),
-            Self::Function(id) => symbol_table
-                .symbol_bundle
-                .functions
-                .get_mut(id.0)
-                .map(|s| s as _),
+            Self::Module(id) => symbol_table.symbol_bundle.modules.get_mut(&id).unwrap() as _,
+            Self::Struct(id) => symbol_table.symbol_bundle.structs.get_mut(&id).unwrap() as _,
+            Self::Enum(id) => symbol_table.symbol_bundle.enums.get_mut(&id).unwrap() as _,
+            Self::Function(id) => symbol_table.symbol_bundle.functions.get_mut(&id).unwrap() as _,
             Self::EnumVariant(id) => symbol_table
                 .symbol_bundle
                 .enum_variants
-                .get_mut(id.0)
-                .map(|s| s as _),
+                .get_mut(&id)
+                .unwrap() as _,
         }
     }
 }
@@ -376,10 +333,10 @@ impl Typed for Enum {}
 impl<'a> Indexer<'a> for TypedID {
     type Output = &'a dyn Typed;
 
-    fn get(self, symbol_table: &'a Table) -> Option<Self::Output> {
+    fn get(self, symbol_table: &'a Table) -> Self::Output {
         match self {
-            Self::Struct(id) => symbol_table.symbol_bundle.structs.get(id.0).map(|s| s as _),
-            Self::Enum(id) => symbol_table.symbol_bundle.enums.get(id.0).map(|s| s as _),
+            Self::Struct(id) => symbol_table.symbol_bundle.structs.get(&id).unwrap() as _,
+            Self::Enum(id) => symbol_table.symbol_bundle.enums.get(&id).unwrap() as _,
         }
     }
 }
@@ -387,18 +344,10 @@ impl<'a> Indexer<'a> for TypedID {
 impl<'a> IndexerMut<'a> for TypedID {
     type Output = &'a mut dyn Typed;
 
-    fn get_mut(self, symbol_table: &'a mut Table) -> Option<Self::Output> {
+    fn get_mut(self, symbol_table: &'a mut Table) -> Self::Output {
         match self {
-            Self::Struct(id) => symbol_table
-                .symbol_bundle
-                .structs
-                .get_mut(id.0)
-                .map(|s| s as _),
-            Self::Enum(id) => symbol_table
-                .symbol_bundle
-                .enums
-                .get_mut(id.0)
-                .map(|s| s as _),
+            Self::Struct(id) => symbol_table.symbol_bundle.structs.get_mut(&id).unwrap() as _,
+            Self::Enum(id) => symbol_table.symbol_bundle.enums.get_mut(&id).unwrap() as _,
         }
     }
 }
@@ -749,18 +698,20 @@ impl Symbol for EnumVariant {
 }
 
 mod private {
+    use std::collections::HashMap;
+
     use super::{
         Enum, EnumID, EnumVariant, EnumVariantID, Function, FunctionID, Module, ModuleID, Struct,
-        StructID, ID,
+        StructID, Table, ID,
     };
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct SymbolBundle {
-        pub(super) modules: Vec<Module>,
-        pub(super) structs: Vec<Struct>,
-        pub(super) enums: Vec<Enum>,
-        pub(super) functions: Vec<Function>,
-        pub(super) enum_variants: Vec<EnumVariant>,
+        pub(super) modules: HashMap<ModuleID, Module>,
+        pub(super) structs: HashMap<StructID, Struct>,
+        pub(super) enums: HashMap<EnumID, Enum>,
+        pub(super) functions: HashMap<FunctionID, Function>,
+        pub(super) enum_variants: HashMap<EnumVariantID, EnumVariant>,
     }
 
     pub trait SealedSymbol {
@@ -769,41 +720,41 @@ mod private {
 
     impl SealedSymbol for Module {
         fn add_to_symbol_bundle(self, symbol_bundle: &mut SymbolBundle) -> ID {
-            let id = symbol_bundle.modules.len();
-            symbol_bundle.modules.push(self);
-            ID::Module(ModuleID(id))
+            let id = ModuleID(Table::new_id());
+            symbol_bundle.modules.insert(id, self);
+            id.into()
         }
     }
 
     impl SealedSymbol for Struct {
         fn add_to_symbol_bundle(self, symbol_bundle: &mut SymbolBundle) -> ID {
-            let id = symbol_bundle.structs.len();
-            symbol_bundle.structs.push(self);
-            ID::Struct(StructID(id))
+            let id = StructID(Table::new_id());
+            symbol_bundle.structs.insert(id, self);
+            id.into()
         }
     }
 
     impl SealedSymbol for Enum {
         fn add_to_symbol_bundle(self, symbol_bundle: &mut SymbolBundle) -> ID {
-            let id = symbol_bundle.enums.len();
-            symbol_bundle.enums.push(self);
-            ID::Enum(EnumID(id))
+            let id = EnumID(Table::new_id());
+            symbol_bundle.enums.insert(id, self);
+            id.into()
         }
     }
 
     impl SealedSymbol for Function {
         fn add_to_symbol_bundle(self, symbol_bundle: &mut SymbolBundle) -> ID {
-            let id = symbol_bundle.functions.len();
-            symbol_bundle.functions.push(self);
-            ID::Function(FunctionID(id))
+            let id = FunctionID(Table::new_id());
+            symbol_bundle.functions.insert(id, self);
+            id.into()
         }
     }
 
     impl SealedSymbol for EnumVariant {
         fn add_to_symbol_bundle(self, symbol_bundle: &mut SymbolBundle) -> ID {
-            let id = symbol_bundle.enum_variants.len();
-            symbol_bundle.enum_variants.push(self);
-            ID::EnumVariant(EnumVariantID(id))
+            let id = EnumVariantID(Table::new_id());
+            symbol_bundle.enum_variants.insert(id, self);
+            id.into()
         }
     }
 }
@@ -814,9 +765,6 @@ mod private {
 pub enum ResolveError {
     #[error("{0}")]
     SemanticError(SemanticError),
-
-    #[error("The given `referring_site_symbol_id` argument is not a valid symbol id.")]
-    InvalidSymbolID,
 
     #[error("The given `qualified_identifier` argument is not a valid identifier token iterator.")]
     InvalidQualifiedIdentifierIterator,
@@ -847,19 +795,18 @@ pub struct Table {
 }
 
 impl Table {
-    /// Gets a reference to the symbol by its identifier.
-    ///
-    /// Returns `None` if the symbol does not exist.
-    pub fn get<'a, T: Indexer<'a>>(&'a self, id: T) -> Option<<T as Indexer<'a>>::Output> {
-        id.get(self)
+    fn new_id() -> usize {
+        // atomic increment
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+
+        NEXT_ID.fetch_add(1, Ordering::SeqCst)
     }
 
     /// Gets a reference to the symbol by its identifier.
     ///
-    /// Panics if the symbol does not exist.
-    pub fn index<'a, T: Indexer<'a>>(&'a self, id: T) -> <T as Indexer<'a>>::Output {
-        id.index(self)
-    }
+    /// # Panics
+    /// Panics if the given `id` is not a valid symbol id or the `id` was not created by this table.
+    pub fn get<'a, T: Indexer<'a>>(&'a self, id: T) -> <T as Indexer<'a>>::Output { id.get(self) }
 
     /// Gets the [`ID`] for the symbol with the given qualified name.
     ///
@@ -875,7 +822,7 @@ impl Table {
                 match index {
                     ID::Module(module_id) => {
                         if let Some(id) = self
-                            .index(module_id)
+                            .get(module_id)
                             .children_symbol_ids_by_name
                             .get(name)
                             .copied()
@@ -886,7 +833,7 @@ impl Table {
                     }
                     ID::Enum(enum_id) => {
                         if let Some(id) = self
-                            .index(enum_id)
+                            .get(enum_id)
                             .variant_symbol_ids_by_name
                             .get(name)
                             .copied()
@@ -951,7 +898,6 @@ impl Table {
                         ResolveError::SemanticError(semantic_error) => {
                             TypeResolveError::SemanticError(semantic_error)
                         }
-                        ResolveError::InvalidSymbolID => TypeResolveError::InvalidSymbolID,
                         ResolveError::InvalidQualifiedIdentifierIterator => {
                             TypeResolveError::InvalidSyntaxTree
                         }
@@ -983,7 +929,7 @@ impl Table {
                         .map(TypeResolveError::SemanticError)
                         .chain(std::iter::once(TypeResolveError::SemanticError(
                             TypeExpected {
-                                span: SourceSpan {
+                                source_span: SourceSpan {
                                     source_file: source_file.clone(),
                                     span: qualified_identifier.span(),
                                 },
@@ -1004,7 +950,7 @@ impl Table {
     /// `parent` must be a valid symbol index.
     #[must_use]
     pub fn is_parent(&self, parent: ScopedID, child: ID) -> bool {
-        let mut current_symbol = self.index(child);
+        let mut current_symbol = self.get(child);
 
         loop {
             match current_symbol.parent_id() {
@@ -1014,7 +960,7 @@ impl Table {
                     }
 
                     let parent_id: ID = parent_id.into();
-                    current_symbol = self.index(parent_id);
+                    current_symbol = self.get(parent_id);
                 }
                 None => return false,
             }
@@ -1031,7 +977,6 @@ impl Table {
     ///
     /// # Errors
     /// - [`ResolveError::SemanticError`]: any semantic error that occurs during the resolution.
-    /// - [`ResolveError::InvalidSymbolID`]: `referring_site_symbol_index` is not a valid symbol id.
     /// - [`ResolveError::InvalidQualifiedIdentifierIterator`]: `qualified_identifier` is not a
     ///   valid qualified identifier iterator.
     /// - [`ResolveError::InvalidQualifiedIdentifierIterator`]: `qualified_identifier` is an empty
@@ -1045,9 +990,7 @@ impl Table {
     ) -> SemanticResult<ID, ResolveError, SemanticError> {
         // the closest parent module symbol from the given `parent_index`
         let (parent_module_symbol, parent_module_id) = {
-            let mut current_symbol = self
-                .get(referring_site_symbol_id)
-                .ok_or(vec![ResolveError::InvalidSymbolID])?;
+            let mut current_symbol = self.get(referring_site_symbol_id);
 
             let mut current_id = referring_site_symbol_id;
             loop {
@@ -1060,7 +1003,7 @@ impl Table {
                     || panic!("must have a parent module!"),
                     |parent_id| {
                         let parent_id: ID = parent_id.into();
-                        current_symbol = self.index(parent_id);
+                        current_symbol = self.get(parent_id);
                         current_id = parent_id;
                     },
                 );
@@ -1078,7 +1021,7 @@ impl Table {
         {
             Some(symbol_id) => {
                 // start from this symbol
-                (self.index(symbol_id), symbol_id)
+                (self.get(symbol_id), symbol_id)
             }
             None => {
                 // start from the root
@@ -1087,7 +1030,7 @@ impl Table {
                     .get(&source_file[first_name.span])
                     .copied()
                 {
-                    Some(symbol_id) => (self.index(symbol_id) as _, symbol_id.into()),
+                    Some(symbol_id) => (self.get(symbol_id) as _, symbol_id.into()),
                     None => {
                         return Err(vec![ResolveError::SemanticError(
                             SymbolNotFound {
@@ -1153,7 +1096,7 @@ impl Table {
                     // look for the child symbol in the current module
                     match child_id {
                         Some(symbol_index) => {
-                            let symbol = self.index(symbol_index);
+                            let symbol = self.get(symbol_index);
 
                             // if symbol is defined as private, it must be a child of the parent
                             // module symbol
@@ -1209,11 +1152,11 @@ impl Table {
     pub fn analyze(files: impl Iterator<Item = FileParsing>) -> (Self, Vec<SemanticError>) {
         let mut symbol_table = Self {
             symbol_bundle: SymbolBundle {
-                modules: Vec::new(),
-                structs: Vec::new(),
-                enums: Vec::new(),
-                functions: Vec::new(),
-                enum_variants: Vec::new(),
+                modules: HashMap::new(),
+                structs: HashMap::new(),
+                enums: HashMap::new(),
+                functions: HashMap::new(),
+                enum_variants: HashMap::new(),
             },
             root_ids_by_name: HashMap::new(),
         };
@@ -1346,7 +1289,7 @@ struct FileParsingInternal {
 
 impl Table {
     fn index_mut<'a, T: IndexerMut<'a>>(&'a mut self, id: T) -> <T as IndexerMut<'a>>::Output {
-        id.index_mut(self)
+        id.get_mut(self)
     }
 
     fn create_function_parameters(
@@ -1377,7 +1320,7 @@ impl Table {
                                 let ty = ty.unwrap_extend(errors);
                                 if let Type::TypedID(typed_id) = ty {
                                     // accessibility leak
-                                    let type_symbol = self.index(typed_id);
+                                    let type_symbol = self.get(typed_id);
 
                                     if type_symbol.access_modifier().rank()
                                         > function.access_modifier.rank()
@@ -1455,7 +1398,7 @@ impl Table {
                 let ty = ty.unwrap_extend(errors);
                 if let Type::TypedID(typed_id) = ty {
                     // accessibility leak
-                    let type_symbol = self.index(typed_id);
+                    let type_symbol = self.get(typed_id);
 
                     if type_symbol.access_modifier().rank() > function.access_modifier.rank() {
                         errors.push(
@@ -1485,9 +1428,16 @@ impl Table {
     }
 
     fn populate_function_data(&mut self, errors: &mut Vec<SemanticError>) {
-        for index in 0..self.symbol_bundle.functions.len() {
+        // I have to make a whole new copy of keys because I can't borrow table twice, sucks
+        for index in self
+            .symbol_bundle
+            .functions
+            .keys()
+            .copied()
+            .collect::<Vec<_>>()
+        {
             let (parameters, return_type_specifier) = {
-                let function_symbol = &self.symbol_bundle.functions[index];
+                let function_symbol = &self.symbol_bundle.functions[&index];
 
                 (
                     self.create_function_parameters(function_symbol, errors),
@@ -1496,15 +1446,30 @@ impl Table {
             };
 
             // update the function symbol
-            self.symbol_bundle.functions[index].parameters = parameters;
-            self.symbol_bundle.functions[index].return_type = return_type_specifier;
+            self.symbol_bundle
+                .functions
+                .get_mut(&index)
+                .unwrap()
+                .parameters = parameters;
+            self.symbol_bundle
+                .functions
+                .get_mut(&index)
+                .unwrap()
+                .return_type = return_type_specifier;
         }
     }
 
     fn populate_struct_data(&mut self, errors: &mut Vec<SemanticError>) {
-        for index in 0..self.symbol_bundle.structs.len() {
+        // I have to make a whole new copy of keys because I can't borrow table twice, sucks
+        for index in self
+            .symbol_bundle
+            .structs
+            .keys()
+            .copied()
+            .collect::<Vec<_>>()
+        {
             let fields = {
-                let struct_symbol = &self.symbol_bundle.structs[index];
+                let struct_symbol = self.symbol_bundle.structs.get(&index).unwrap();
                 let mut fields = VecNameMap::new();
 
                 for field_group in &struct_symbol.syntax_tree.syntax_tree.field_groups {
@@ -1565,14 +1530,15 @@ impl Table {
 
                 fields
             };
-            self.symbol_bundle.structs[index].fields = fields;
+            self.symbol_bundle.structs.get_mut(&index).unwrap().fields = fields;
         }
     }
 
     fn populate_enum_data(&mut self, errors: &mut Vec<SemanticError>) {
-        for index in 0..self.symbol_bundle.enums.len() {
+        // I have to make a whole new copy of keys because I can't borrow table twice, sucks
+        for index in self.symbol_bundle.enums.keys().copied().collect::<Vec<_>>() {
             let (access_modifier, variants) = {
-                let enum_sym = &self.symbol_bundle.enums[index];
+                let enum_sym = self.symbol_bundle.enums.get(&index).unwrap();
 
                 (enum_sym.access_modifier, 'ret: {
                     // check if the variants are empty.
@@ -1614,7 +1580,7 @@ impl Table {
                     variant.clone(),
                     EnumVariant {
                         name: variant.clone(),
-                        parent_id: EnumID(index),
+                        parent_id: index,
                         access_modifier,
                         variant_number,
                     }
@@ -1624,7 +1590,11 @@ impl Table {
                 );
             }
 
-            self.symbol_bundle.enums[index].variant_symbol_ids_by_name = variant_indices_by_name;
+            self.symbol_bundle
+                .enums
+                .get_mut(&index)
+                .unwrap()
+                .variant_symbol_ids_by_name = variant_indices_by_name;
         }
     }
 
@@ -1636,7 +1606,7 @@ impl Table {
                 if let Some(parent_module_id) = parent_module {
                     // module heirarchy should not duplicate
                     if let Some(children_id) = self
-                        .index(parent_module_id)
+                        .get(parent_module_id)
                         .children_symbol_ids_by_name
                         .get(module_name)
                     {
