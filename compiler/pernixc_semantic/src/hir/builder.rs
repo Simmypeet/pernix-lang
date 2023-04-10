@@ -162,7 +162,7 @@ impl<'a> Builder<'a> {
             }
             FunctionalSyntaxTree::Binary(syntax) => self.bind_binary(syntax).map(Value::Binary),
             FunctionalSyntaxTree::Prefix(syntax) => self.bind_prefix(syntax).map(Value::Prefix),
-            FunctionalSyntaxTree::Named(_) => todo!(),
+            FunctionalSyntaxTree::Named(syntax) => self.bind_named(syntax).map(Value::Named),
             FunctionalSyntaxTree::FunctionCall(_) => todo!(),
             FunctionalSyntaxTree::Parenthesized(_) => todo!(),
             FunctionalSyntaxTree::StructLiteral(_) => todo!(),

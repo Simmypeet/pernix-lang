@@ -80,6 +80,7 @@ pub enum Value<T: ValueType> {
     BooleanLiteral(BooleanLiteral),
     Prefix(Prefix<T>),
     Binary(Binary<T>),
+    Named(Named<T>),
 }
 
 impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
@@ -89,6 +90,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
             Self::BooleanLiteral(literal) => literal.type_binding(),
             Self::Prefix(prefix) => prefix.type_binding(),
             Self::Binary(binary) => binary.type_binding(),
+            Self::Named(named) => named.type_binding(),
         }
     }
 
@@ -98,6 +100,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
             Self::BooleanLiteral(literal) => ValueTrait::<T>::source_span(literal),
             Self::Prefix(prefix) => ValueTrait::<T>::source_span(prefix),
             Self::Binary(binary) => ValueTrait::<T>::source_span(binary),
+            Self::Named(named) => ValueTrait::<T>::source_span(named),
         }
     }
 }
