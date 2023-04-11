@@ -577,7 +577,7 @@ impl<'a> Builder<'a> {
                 "f32" => PrimitiveType::Float32,
                 "f64" => PrimitiveType::Float64,
                 _ => {
-                      self.add_error(
+                    self.add_error(
                         InvalidNumericLiteralSuffix {
                             source_span: self.source_span(*suffix_span),
                         }
@@ -1591,7 +1591,6 @@ impl<'a> Builder<'a> {
                         // if jump to the successor, then the target variable is not initialized in
                         // this path
                         if jump_instruction.basic_block_id == successor {
-                            println!("UNREACHABLE FROM JUMP");
                             return InitializeCheckResult::Uninitialized;
                         }
 
@@ -1611,7 +1610,6 @@ impl<'a> Builder<'a> {
                         if conditional_jump_instruction.true_basic_block_id == successor
                             || conditional_jump_instruction.false_basic_block_id == successor
                         {
-                            println!("UNREACHABLE FROM CONDITIONAL JUMP");
                             return InitializeCheckResult::Uninitialized;
                         }
 
@@ -1628,8 +1626,6 @@ impl<'a> Builder<'a> {
                             visited,
                             target_variabl_id,
                         );
-
-                        println!("true: {true_result:?}, false: {false_result:?}");
 
                         // the result is the combination of the two results
                         return match (true_result, false_result) {
