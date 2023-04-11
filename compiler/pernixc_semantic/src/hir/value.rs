@@ -1,5 +1,7 @@
 //! Contains the definition of [`Value`] and its related types.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
@@ -7,7 +9,7 @@ use crate::{
     infer::{Constraint, InferenceID},
     symbol::{
         ty::{PrimitiveType, Type},
-        EnumID, FieldID, FunctionID, ParameterID, StructID, EnumVariantID,
+        EnumID, EnumVariantID, FieldID, FunctionID, ParameterID, StructID,
     },
     SourceSpan,
 };
@@ -84,6 +86,11 @@ pub enum Value<T: ValueType> {
     FunctionCall(FunctionCall<T>),
     StructLiteral(StructLiteral),
     MemberAccess(MemberAccess<T>),
+    Block(Block<T>),
+    Express(Express),
+    IfElse(IfElse<T>),
+    Return(Return),
+    ImplicitConversion(ImplicitConversion<T>),
 }
 
 impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
@@ -97,6 +104,11 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
             Self::FunctionCall(call) => call.type_binding(),
             Self::StructLiteral(literal) => literal.type_binding(),
             Self::MemberAccess(access) => access.type_binding(),
+            Self::Block(block) => block.type_binding(),
+            Self::Express(express) => express.type_binding(),
+            Self::IfElse(if_else) => if_else.type_binding(),
+            Self::Return(return_) => return_.type_binding(),
+            Self::ImplicitConversion(conversion) => conversion.type_binding(),
         }
     }
 
@@ -110,6 +122,11 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
             Self::FunctionCall(call) => ValueTrait::<T>::source_span(call),
             Self::StructLiteral(literal) => ValueTrait::<T>::source_span(literal),
             Self::MemberAccess(access) => ValueTrait::<T>::source_span(access),
+            Self::Block(block) => ValueTrait::<T>::source_span(block),
+            Self::Express(express) => ValueTrait::<T>::source_span(express),
+            Self::IfElse(if_else) => ValueTrait::<T>::source_span(if_else),
+            Self::Return(return_) => ValueTrait::<T>::source_span(return_),
+            Self::ImplicitConversion(conversion) => ValueTrait::<T>::source_span(conversion),
         }
     }
 }
@@ -127,7 +144,7 @@ pub struct StructLiteral {
     pub struct_id: StructID,
 
     /// Is the address of the variable that stores the struct.
-    pub struct_load_address: VariableAddress,
+    pub variable_id: VariableID,
 }
 
 impl<T: ValueType + Clone> ValueTrait<T> for StructLiteral {
@@ -155,6 +172,45 @@ impl<T: ValueType + Clone> ValueTrait<T> for NumericLiteral<T> {
     fn type_binding(&self) -> TypeBinding<T> {
         TypeBinding {
             ty: self.ty.clone(),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
+/// Represents an implicit conversion that is done by the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImplicitConversion<T: ValueType> {
+    /// The value that is being converted.
+    pub value: Box<Value<T>>,
+
+    /// The type that the value is being converted to.
+    pub ty: T,
+}
+
+impl<T: ValueType + Clone> ValueTrait<T> for ImplicitConversion<T> {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: self.ty.clone(),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.value.source_span() }
+}
+
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Prefix`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Return {
+    /// Specifies where the return is located in the source code.
+    pub source_span: SourceSpan,
+}
+
+impl<T: ValueType> ValueTrait<T> for Return {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: T::from_type(Type::Never),
             category: Category::RValue,
         }
     }
@@ -380,6 +436,24 @@ pub struct MemberAccess<T: ValueType> {
     pub field_ty: T,
 }
 
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Express`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Express {
+    /// Specifies where the expression is located in the source code.
+    pub source_span: SourceSpan,
+}
+
+impl<T: ValueType> ValueTrait<T> for Express {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: T::from_type(Type::Never),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
 impl<T: ValueType + Clone> ValueTrait<T> for MemberAccess<T> {
     fn type_binding(&self) -> TypeBinding<T> {
         let type_binding = self.operand.type_binding();
@@ -397,6 +471,73 @@ impl<T: ValueType + Clone> ValueTrait<T> for MemberAccess<T> {
                 }
                 .into(),
             },
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
+/// Is the value that a full if-else expression will be evaluated to.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IfElseLoad<T: ValueType> {
+    /// The variable ID of the variable that will be loaded.
+    pub variable_id: VariableID,
+
+    /// The type of the variable that will be loaded.
+    pub ty: T,
+}
+
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::IfElse`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IfElse<T: ValueType> {
+    /// Specifies where the if-else expression is located in the source code.
+    pub source_span: SourceSpan,
+
+    /// If the if-else expression has an else block, this is the value that the if-else expression
+    /// will be evaluated to as a whole.
+    pub if_else_load: Option<IfElseLoad<T>>,
+}
+
+impl<T: ValueType + Clone> ValueTrait<T> for IfElse<T> {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: self
+                .if_else_load
+                .as_ref()
+                .map_or_else(|| T::from_type(Type::Never), |f| f.ty.clone()),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
+/// Is an enumeration of either a block or an if-else expression.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum BlockOrIfElse<T: ValueType> {
+    Block(Block<T>),
+    IfElse(Box<IfElse<T>>),
+}
+
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Block`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Block<T: ValueType> {
+    /// Specifies where the block is located in the source code.
+    pub source_span: SourceSpan,
+
+    /// Is the type of the value that the block yields.   
+    pub ty: T,
+
+    /// Is the address that the result value of the block is stored at.
+    pub variable_id: Option<VariableID>,
+}
+
+impl<T: ValueType + Clone> ValueTrait<T> for Block<T> {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: self.ty.clone(),
+            category: Category::RValue,
         }
     }
 
@@ -485,4 +626,12 @@ pub struct Variable<T: ValueType> {
 
 /// Used for retrieving a [`Variable`] from the [`crate::hir::HIR`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct VariableID(pub(super) usize);
+pub struct VariableID(usize);
+
+impl VariableID {
+    /// Creates a new [`VariableID`] that is guaranteed to be unique from all other [`VariableID`]s.
+    pub fn fresh() -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        Self(COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+}

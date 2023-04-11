@@ -1,11 +1,11 @@
 use std::error::Error;
 
-use pernixc_common::source_file::{Iterator, Span, SpanEnding};
+use pernixc_common::source_file::{Iterator, SourceElement, Span, SpanEnding};
 use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
     parser::Parser,
-    syntax_tree::{item::AccessModifier, PrimitiveTypeSpecifier, SourceElement, TypeSpecifier},
+    syntax_tree::{item::AccessModifier, PrimitiveTypeSpecifier, TypeSpecifier},
 };
 
 const STRUCT_SOURCE_CODE: &str = "
@@ -13,8 +13,8 @@ public struct Test
 {
 public:
 private:
-    int32 test;
-    some::other::type test2;
+    test: int32;
+    test2: some::other::type;
 }
 ";
 
@@ -70,7 +70,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
                 "test"
             );
             assert!(matches!(
-                field.type_specifier,
+                field.type_annotation.type_specifier,
                 TypeSpecifier::PrimitiveTypeSpecifier(PrimitiveTypeSpecifier::Int32(..))
             ));
         }
@@ -84,6 +84,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
                 substr_span(
                     STRUCT_SOURCE_CODE,
                     field
+                        .type_annotation
                         .type_specifier
                         .into_qualified_identifier()
                         .unwrap()

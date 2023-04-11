@@ -1,0 +1,16 @@
+public function main(): int32 {
+    let a = 'outer: {
+        let b = 'inner: {
+            let b = 1i32;
+
+            if (b == 1) {
+                express 'outer 2i32;
+            } else {
+                express 'inner 3i32;
+            }
+        };
+
+        express b;
+    };
+    
+}

@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     errors::{ExpressionExpected, PunctuationExpected, SyntacticError},
-    parser::{FirstOrSecond, Parser},
+    parser::Parser,
 };
 
 /// Is an enumeration of all kinds of expressions.
@@ -109,23 +109,22 @@ impl SourceElement for Functional {
 /// Syntax Synopsis:
 /// ``` txt
 /// CastExpression:
-///     '(' TypeSpecifier ')' Expression
+///     Expression 'as' TypeSpecifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub struct Cast {
-    pub left_paren: Punctuation,
-    pub type_specifier: TypeSpecifier,
-    pub right_paren: Punctuation,
     pub operand: Box<Expression>,
+    pub as_keyword: Keyword,
+    pub type_specifier: TypeSpecifier,
 }
 
 impl SourceElement for Cast {
     fn span(&self) -> Span {
         Span {
-            start: self.left_paren.span.start,
-            end: self.operand.span().end,
+            start: self.operand.span().start,
+            end: self.type_specifier.span().end,
         }
     }
 }
@@ -613,19 +612,44 @@ impl SourceElement for Block {
     }
 }
 
+/// Is an enumeration of either a block or an if-else expression.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// BlockOrIfElse:
+///     Block
+///     | IfElse
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum BlockOrIfElse {
+    Block(Block),
+    IfElse(IfElse),
+}
+
+impl SourceElement for BlockOrIfElse {
+    fn span(&self) -> Span {
+        match self {
+            Self::Block(block) => block.span(),
+            Self::IfElse(if_else) => if_else.span(),
+        }
+    }
+}
+
 /// Represents an else portion of an if-else expression.
 ///
 /// Syntax Synopsis:
 /// ``` txt
 /// Else:
-///     'else' Block
+///     'else' BlockOrIfElse
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub struct Else {
     pub else_keyword: Keyword,
-    pub expression: Block,
+    pub expression: Box<BlockOrIfElse>,
 }
 
 impl SourceElement for Else {
@@ -1116,12 +1140,24 @@ impl<'a> Parser<'a> {
         let else_expression = match self.peek_significant_token() {
             Some(Token::Keyword(else_keyword)) if else_keyword.keyword == KeywordKind::Else => {
                 self.next_token();
+                let block_of_if_else = match self.peek_significant_token().copied() {
+                    Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
+                        self.next_token();
 
-                let else_expression = self.parse_block()?;
+                        BlockOrIfElse::IfElse(
+                            self.handle_if_keyword(if_keyword)?
+                                .into_imperative()
+                                .unwrap()
+                                .into_if_else()
+                                .unwrap(),
+                        )
+                    }
+                    _ => BlockOrIfElse::Block(self.parse_block()?),
+                };
 
                 Some(Else {
                     else_keyword: *else_keyword,
-                    expression: else_expression,
+                    expression: Box::new(block_of_if_else),
                 })
             }
             _ => None,
@@ -1135,43 +1171,6 @@ impl<'a> Parser<'a> {
             then_expression,
             else_expression,
         })))
-    }
-
-    fn handle_parenthesis_punctuation(&mut self, left_paren: Punctuation) -> Option<Expression> {
-        let result = self.ambiguity_resolution(
-            |this: &mut Self| {
-                let expression = this.parse_expression()?;
-                let right_paren = this.expect_punctuation(')')?;
-
-                Some(Expression::Functional(
-                    Parenthesized {
-                        left_paren,
-                        expression: Box::new(expression),
-                        right_paren: *right_paren,
-                    }
-                    .into(),
-                ))
-            },
-            |this: &mut Self| {
-                let type_specifier = this.parse_type_specifier()?;
-                let right_paren = this.expect_punctuation(')')?;
-                let expression = this.parse_expression()?;
-
-                Some(Expression::Functional(
-                    Cast {
-                        left_paren,
-                        type_specifier,
-                        right_paren: *right_paren,
-                        operand: Box::new(expression),
-                    }
-                    .into(),
-                ))
-            },
-        );
-
-        result.map(|x| match x {
-            FirstOrSecond::First(x) | FirstOrSecond::Second(x) => x,
-        })
     }
 
     fn handle_identifier(&mut self) -> Option<Expression> {
@@ -1266,6 +1265,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn handle_parenthesized(&mut self, left_paren: Punctuation) -> Option<Expression> {
+        let expression = self.parse_expression()?;
+        let right_paren = self.expect_punctuation(')')?;
+
+        Some(Expression::Functional(
+            Parenthesized {
+                left_paren,
+                expression: Box::new(expression),
+                right_paren: *right_paren,
+            }
+            .into(),
+        ))
+    }
+
     // Parses an primary expression without any prefix operators.
     fn parse_primary_expression_raw(&mut self) -> Option<Expression> {
         match self.peek_significant_token() {
@@ -1284,7 +1297,7 @@ impl<'a> Parser<'a> {
             // Handles parenthesis
             Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
                 self.next_token();
-                self.handle_parenthesis_punctuation(*left_paren)
+                self.handle_parenthesized(*left_paren)
             }
 
             // Handles label specifier
@@ -1439,6 +1452,20 @@ impl<'a> Parser<'a> {
                             operand: Box::new(primary_expression),
                             dot: *dot,
                             identifier,
+                        }
+                        .into(),
+                    );
+                }
+                Some(Token::Keyword(as_keyword)) if as_keyword.keyword == KeywordKind::As => {
+                    self.next_token();
+
+                    let type_specifier = self.parse_type_specifier()?;
+
+                    primary_expression = Expression::Functional(
+                        Cast {
+                            operand: Box::new(primary_expression),
+                            as_keyword: *as_keyword,
+                            type_specifier,
                         }
                         .into(),
                     );

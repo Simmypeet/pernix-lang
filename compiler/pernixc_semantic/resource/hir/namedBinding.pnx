@@ -3,7 +3,7 @@ public enum SomeEnum {
     Second
 }
 
-public void main(mutable int32 someParameter) {
+public function main(mutable someParameter: int32): void {
     let value = 32;
 
     someParameter;
@@ -12,7 +12,7 @@ public void main(mutable int32 someParameter) {
     SomeEnum::First;
 
     // shadow the parameter
-    mutable let someParameter = 32;
+    let mutable someParameter = 32;
 
     someParameter = 5i64;
 }

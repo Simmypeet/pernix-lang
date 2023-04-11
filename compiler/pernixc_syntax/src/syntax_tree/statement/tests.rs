@@ -17,7 +17,7 @@ fn substr_span(source_code: &str, span: Span) -> &str {
 
 const SOURCE_CODE: &str = "
 'test: {
-    Some::Struct::Name test = 32;
+    let test: Some::Struct::Name = 32;
     SomeFunction;
     test = 64;
     if (test == 64) {
@@ -30,7 +30,7 @@ const SOURCE_CODE: &str = "
 
     express 'test someValue;
 
-    (SomeType)42;
+    42 as SomeType;
 }
 ";
 
@@ -68,13 +68,10 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .into_variable_declaration()
             .unwrap();
 
-        let type_binding_specifier = variable_declaration
-            .variable_type_binding_specifier
-            .into_type_binding_specifier()
-            .unwrap();
-
-        assert!(type_binding_specifier.mutable_keyword.is_none());
-        let type_specifier = type_binding_specifier
+        assert!(variable_declaration.mutable_keyword.is_none());
+        let type_specifier = variable_declaration
+            .type_annotation
+            .unwrap()
             .type_specifier
             .into_qualified_identifier()
             .unwrap();
@@ -241,9 +238,10 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         {
             let else_expression = if_else_expression.else_expression.unwrap().expression;
 
-            let mut statement_iter = else_expression.block_without_label.statements.into_iter();
+            let block = else_expression.into_block().unwrap();
+            let mut statement_iter = block.block_without_label.statements.into_iter();
 
-            assert!(else_expression.label_specifier.is_none());
+            assert!(block.label_specifier.is_none());
 
             let binary_expression = statement_iter
                 .next()

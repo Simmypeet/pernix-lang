@@ -1,4 +1,4 @@
-public void main() {
+public function main(): void {
     -0;
     -1.0;
     -2.0f32;

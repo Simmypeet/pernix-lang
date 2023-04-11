@@ -13,15 +13,7 @@ use getset::{CopyGetters, Getters};
 ///
 /// The identifier is only valid for the control flow graph that it was created from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BasicBlockID(usize);
-
-impl BasicBlockID {
-    /// Is the identifier of the entry basic block.
-    ///
-    /// Every control flow graph has at least one entry basic block that is the first basic block to
-    /// be executed.
-    pub const ENTRY_BLOCK_ID: Self = Self(0);
-}
+pub struct BasicBlockID(pub usize);
 
 /// Represents a control-flow graph (CFG) for a function.
 ///
@@ -36,20 +28,15 @@ impl BasicBlockID {
 /// - `Inst` is the instruction type that the control-flow graph uses.
 /// - `Value` is the type that represents a value in the control-flow graph. It's used in such cases
 ///   as the return value of a function.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct ControlFlowGraph<Inst, Value> {
     /// Is the list of basic blocks in the control flow graph.
     #[get = "pub"]
     ids_by_basic_block: HashMap<BasicBlockID, BasicBlock<Inst, Value>>,
 
-    /// Is the list of terminal blocks in the control flow graph.
-    ///
-    /// Terminal blocks are blocks that do not have any outgoing edges.
-    #[get = "pub"]
-    terminal_block_ids: Vec<BasicBlockID>,
-
-    // internally used to generate unique basic block ids.
-    id_counter: usize,
+    /// Gets the [`BasicBlockID`] that points to the entry basic block.
+    #[get_copy = "pub"]
+    entry_block_id: BasicBlockID,
 }
 
 impl<Inst, Value> ControlFlowGraph<Inst, Value> {
@@ -58,11 +45,11 @@ impl<Inst, Value> ControlFlowGraph<Inst, Value> {
     pub fn new() -> Self {
         let mut cfg = Self {
             ids_by_basic_block: HashMap::new(),
-            terminal_block_ids: Vec::new(),
-            id_counter: 0,
+            entry_block_id: BasicBlockID(0),
         };
 
-        cfg.create_new_block();
+        let id = cfg.create_new_block();
+        cfg.entry_block_id = id;
 
         cfg
     }
@@ -75,8 +62,10 @@ impl<Inst, Value> ControlFlowGraph<Inst, Value> {
     /// # Returns
     /// The [`BasicBlockID`] of the newly created basic block.
     pub fn create_new_block(&mut self) -> BasicBlockID {
-        let id = BasicBlockID(self.id_counter);
-        self.id_counter += 1;
+        // use atomic as a counter
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+
+        let id = BasicBlockID(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
 
         self.ids_by_basic_block.insert(id, BasicBlock {
             basic_block_id: id,
@@ -86,6 +75,53 @@ impl<Inst, Value> ControlFlowGraph<Inst, Value> {
         });
 
         id
+    }
+
+    /// Adds a jump instruction to the end of `from` that jumps to `to`.
+    ///
+    /// # Panics
+    /// Panics if `from` or `to` are not valid basic block ids.
+    pub fn add_jump(&mut self, from: BasicBlockID, to: BasicBlockID) {
+        self[from].successor_block_ids.push(to);
+        self[to].predecessor_block_ids.push(from);
+        self[from]
+            .instructions
+            .push(Instruction::TerminalInstruction(
+                JumpInstruction { basic_block_id: to }.into(),
+            ));
+    }
+
+    /// Adds a conditional jump instruction to the end of `from` that jumps to `true_basic_block_id`
+    /// or `false_basic_block_id` depending on the value of `condition`.
+    ///
+    /// # Panics
+    /// Panics if any of the basic block ids are not valid.
+    pub fn add_conditional_jump(
+        &mut self,
+        from: BasicBlockID,
+        true_basic_block_id: BasicBlockID,
+        false_basic_block_id: BasicBlockID,
+        condition: Value,
+    ) {
+        // add successor block list
+        self[from].successor_block_ids.push(true_basic_block_id);
+        self[from].successor_block_ids.push(false_basic_block_id);
+
+        // add predecessor block list
+        self[true_basic_block_id].predecessor_block_ids.push(from);
+        self[false_basic_block_id].predecessor_block_ids.push(from);
+
+        // add jump instruction
+        self[from]
+            .instructions
+            .push(Instruction::TerminalInstruction(
+                ConditionalJumpInstruction {
+                    condition,
+                    true_basic_block_id,
+                    false_basic_block_id,
+                }
+                .into(),
+            ));
     }
 }
 
@@ -126,18 +162,31 @@ pub struct BasicBlock<Inst, Value> {
     pub successor_block_ids: Vec<BasicBlockID>,
 
     /// The list of instructions that will be executed in the basic block.
+    #[get = "pub"]
     instructions: Vec<Instruction<Inst, Value>>,
 }
 
 impl<Inst, Value> BasicBlock<Inst, Value> {
-    /// Checks whether the basic block is the entry block of the control flow graph.
-    #[must_use]
-    pub fn is_entry_block(&self) -> bool { self.basic_block_id.0 == 0 }
-
     /// Adds an instruction to the basic block.
-    pub fn add_instruction(&mut self, instruction: Instruction<Inst, Value>) {
-        self.instructions.push(instruction);
+    pub fn add_instruction(&mut self, instruction: Inst) {
+        self.instructions
+            .push(Instruction::IRInstruction(instruction));
     }
+
+    /// Adds a return instruction to the basic block.
+    pub fn return_value(&mut self, value: Option<Value>) {
+        self.instructions.push(Instruction::TerminalInstruction(
+            ReturnInstruction { value }.into(),
+        ));
+    }
+
+    /// Gets the number of instructions in the basic block.
+    #[must_use]
+    pub fn len(&self) -> usize { self.instructions.len() }
+
+    /// Checks if the basic block has no instructions.
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.instructions.is_empty() }
 }
 
 impl<Inst, Value> Index<usize> for BasicBlock<Inst, Value> {
@@ -163,7 +212,7 @@ pub struct ReturnInstruction<Value> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JumpInstruction {
     /// The index of the basic block that will be jumped to.
-    pub target_block_index: BasicBlockID,
+    pub basic_block_id: BasicBlockID,
 }
 
 /// Is a conditional jump instruction that will be executed in the control flow graph.
@@ -173,10 +222,10 @@ pub struct ConditionalJumpInstruction<Value> {
     pub condition: Value,
 
     /// The id of the basic block that will be jumped to if the condition is true.
-    pub true_target_block_id: BasicBlockID,
+    pub true_basic_block_id: BasicBlockID,
 
     /// The id of the basic block that will be jumped to if the condition is false.
-    pub false_target_block_id: BasicBlockID,
+    pub false_basic_block_id: BasicBlockID,
 }
 
 /// Represents an instruction that will be executed in the control flow graph.

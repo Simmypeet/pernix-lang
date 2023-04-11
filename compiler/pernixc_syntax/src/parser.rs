@@ -369,6 +369,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Tries to parse a syntax tree that has an ambiguity between two possible syntaxes.
+    #[allow(dead_code)]
     pub(super) fn ambiguity_resolution<T1, T2>(
         &mut self,
         first: impl FnOnce(&mut Self) -> Option<T1>,

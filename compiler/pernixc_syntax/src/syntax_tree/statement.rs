@@ -7,9 +7,9 @@ use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Toke
 
 use super::{
     expression::{Expression, Functional, Imperative},
-    SourceElement, TypeBindingSpecifier,
+    SourceElement, TypeAnnotation,
 };
-use crate::parser::{FirstOrSecond, Parser};
+use crate::parser::Parser;
 
 /// Represents a statement syntax tree node
 ///
@@ -59,57 +59,6 @@ impl SourceElement for Declarative {
     }
 }
 
-/// Represents a let binding specifier syntax tree node for variable declarations.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// LetBindingSpecifier:
-///     'mutable' 'let'
-///     ;
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub struct LetBindingSpecifier {
-    pub mutable_keyword: Option<Keyword>,
-    pub let_keyword: Keyword,
-}
-
-impl SourceElement for LetBindingSpecifier {
-    fn span(&self) -> Span {
-        self.mutable_keyword
-            .as_ref()
-            .map_or(self.let_keyword.span, |keyword| Span {
-                start: keyword.span.start,
-                end: self.let_keyword.span.end,
-            })
-    }
-}
-
-/// Represents a variable type binding specifier syntax tree node for variable declarations.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// VariableTypeBindingSpecifier:
-///     TypeBindingSpecifier
-///     | LetBindingSpecifier
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
-pub enum VariableTypeBindingSpecifier {
-    TypeBindingSpecifier(TypeBindingSpecifier),
-    LetBindingSpecifier(LetBindingSpecifier),
-}
-
-impl SourceElement for VariableTypeBindingSpecifier {
-    fn span(&self) -> Span {
-        match self {
-            Self::TypeBindingSpecifier(binding) => binding.span(),
-            Self::LetBindingSpecifier(binding) => binding.span(),
-        }
-    }
-}
-
 /// Represents a variable declaration syntax tree node
 ///
 /// Syntax Synopsis:
@@ -121,8 +70,10 @@ impl SourceElement for VariableTypeBindingSpecifier {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub struct VariableDeclaration {
-    pub variable_type_binding_specifier: VariableTypeBindingSpecifier,
+    pub let_keyword: Keyword,
+    pub mutable_keyword: Option<Keyword>,
     pub identifier: Identifier,
+    pub type_annotation: Option<TypeAnnotation>,
     pub equals: Punctuation,
     pub expression: Expression,
     pub semicolon: Punctuation,
@@ -131,7 +82,7 @@ pub struct VariableDeclaration {
 impl SourceElement for VariableDeclaration {
     fn span(&self) -> Span {
         Span {
-            start: self.variable_type_binding_specifier.span().start,
+            start: self.let_keyword.span.start,
             end: self.semicolon.span.end,
         }
     }
@@ -196,98 +147,62 @@ impl<'a> Parser<'a> {
     pub fn parse_statement(&mut self) -> Option<Statement> {
         match self.peek_significant_token() {
             // Handles variable declaration statements
-            Some(Token::Keyword(mutable_keyword))
-                if mutable_keyword.keyword == KeywordKind::Mutable =>
-            {
-                // eat mutable keyword
-                self.next_token();
-
-                match self.peek_significant_token() {
-                    Some(Token::Keyword(let_keyword))
-                        if let_keyword.keyword == KeywordKind::Let =>
-                    {
-                        // eat let keyword
-                        self.next_token();
-
-                        self.parse_variable_declaration_statement(
-                            VariableTypeBindingSpecifier::LetBindingSpecifier(
-                                LetBindingSpecifier {
-                                    mutable_keyword: Some(*mutable_keyword),
-                                    let_keyword: *let_keyword,
-                                },
-                            ),
-                        )
-                    }
-                    _ => {
-                        let type_specifier = self.parse_type_specifier()?;
-                        self.parse_variable_declaration_statement(
-                            VariableTypeBindingSpecifier::TypeBindingSpecifier(
-                                TypeBindingSpecifier {
-                                    mutable_keyword: Some(*mutable_keyword),
-                                    type_specifier,
-                                },
-                            ),
-                        )
-                    }
-                }
-            }
-
-            // Handles variable declaration statements
             Some(Token::Keyword(let_keyword)) if let_keyword.keyword == KeywordKind::Let => {
                 // eat let keyword
                 self.next_token();
 
-                self.parse_variable_declaration_statement(
-                    VariableTypeBindingSpecifier::LetBindingSpecifier(LetBindingSpecifier {
-                        mutable_keyword: None,
-                        let_keyword: *let_keyword,
-                    }),
-                )
-            }
-            // Might be either a variable declaration statement or identifier expression statement
-            Some(Token::Identifier(..)) => self.handle_identiier_statement(),
-            // Handles variable declaration statements
-            Some(Token::Keyword(primitive_type))
-                if matches!(
-                    primitive_type.keyword,
-                    KeywordKind::Void
-                        | KeywordKind::Float32
-                        | KeywordKind::Float64
-                        | KeywordKind::Int8
-                        | KeywordKind::Int16
-                        | KeywordKind::Int32
-                        | KeywordKind::Int64
-                        | KeywordKind::Uint8
-                        | KeywordKind::Uint16
-                        | KeywordKind::Uint32
-                        | KeywordKind::Uint64
-                        | KeywordKind::Bool
-                ) =>
-            {
-                // parse variable declaration statement
-                let type_specifier = self
-                    .parse_type_specifier()
-                    .expect("should be a valid primitive type of something.");
+                let mutable_keyword = match self.peek_significant_token() {
+                    Some(Token::Keyword(mutable_keyword))
+                        if mutable_keyword.keyword == KeywordKind::Mutable =>
+                    {
+                        // eat mutable keyword
+                        self.next_token();
 
+                        Some(*mutable_keyword)
+                    }
+                    _ => None,
+                };
+
+                // expect identifier
+                let identifier = self.expect_identifier()?;
+
+                // parse optional type annotation
+                let type_annotation = match self.peek_significant_token() {
+                    Some(Token::Punctuation(punctuation)) if punctuation.punctuation == ':' => {
+                        // eat colon
+                        self.next_token();
+
+                        let type_specifier = self.parse_type_specifier()?;
+
+                        Some(TypeAnnotation {
+                            colon: *punctuation,
+                            type_specifier,
+                        })
+                    }
+                    _ => None,
+                };
+
+                // expect equals
                 let equals = self.expect_punctuation('=')?;
+
+                // parse expression
                 let expression = self.parse_expression()?;
+
+                // expect semi-colon
                 let semicolon = self.expect_punctuation(';')?;
 
-                Some(Statement::Declarative(Declarative::VariableDeclaration(
+                Some(Statement::Declarative(
                     VariableDeclaration {
-                        variable_type_binding_specifier:
-                            VariableTypeBindingSpecifier::TypeBindingSpecifier(
-                                TypeBindingSpecifier {
-                                    mutable_keyword: None,
-                                    type_specifier,
-                                },
-                            ),
-                        identifier: *self.expect_identifier()?,
+                        let_keyword: *let_keyword,
+                        mutable_keyword,
+                        identifier: *identifier,
+                        type_annotation,
                         equals: *equals,
                         expression,
                         semicolon: *semicolon,
-                    },
-                )))
+                    }
+                    .into(),
+                ))
             }
             _ => {
                 let expression = self.parse_expression()?;
@@ -308,65 +223,6 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-    }
-
-    fn handle_identiier_statement(&mut self) -> Option<Statement> {
-        // try to parse either a variable declaration statement or identifier expression
-        // statement.
-        //
-        // the syntax tree that eats most tokens will be the one that is returned.
-        let result = self.ambiguity_resolution(
-            |this: &mut Self| -> Option<Statement> {
-                let type_specifier = this.parse_type_specifier()?;
-                this.parse_variable_declaration_statement(
-                    VariableTypeBindingSpecifier::TypeBindingSpecifier(TypeBindingSpecifier {
-                        mutable_keyword: None,
-                        type_specifier,
-                    }),
-                )
-            },
-            |this: &mut Self| -> Option<Statement> {
-                let expression = this.parse_expression()?;
-                match expression {
-                    Expression::Functional(expression) => {
-                        // expect semi-colon
-                        let semicolon = this.expect_punctuation(';')?;
-
-                        Some(Statement::Expressive(Expressive::Semi(Semi {
-                            expression,
-                            semicolon: *semicolon,
-                        })))
-                    }
-                    Expression::Imperative(expression) => {
-                        Some(Statement::Expressive(Expressive::Imperative(expression)))
-                    }
-                }
-            },
-        );
-
-        result.map(|x| match x {
-            FirstOrSecond::First(x) | FirstOrSecond::Second(x) => x,
-        })
-    }
-
-    fn parse_variable_declaration_statement(
-        &mut self,
-        variable_type_binding_specifier: VariableTypeBindingSpecifier,
-    ) -> Option<Statement> {
-        let identifier = self.expect_identifier()?;
-        let equals = self.expect_punctuation('=')?;
-        let expression = self.parse_expression()?;
-        let semicolon = self.expect_punctuation(';')?;
-
-        Some(Statement::Declarative(Declarative::VariableDeclaration(
-            VariableDeclaration {
-                variable_type_binding_specifier,
-                identifier: *identifier,
-                equals: *equals,
-                expression,
-                semicolon: *semicolon,
-            },
-        )))
     }
 }
 

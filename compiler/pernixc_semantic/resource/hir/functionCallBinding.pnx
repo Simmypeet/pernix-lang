@@ -1,0 +1,11 @@
+public function add(a: int32, b: int32): int32 {
+    return a + b;
+}
+
+public function main(): void {
+    add(1, 2);
+    add(true, false);
+    add(3.0, 4);
+    add();
+    add(true, false, 5.0f32);
+}

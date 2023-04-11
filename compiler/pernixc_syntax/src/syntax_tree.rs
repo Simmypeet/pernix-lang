@@ -202,32 +202,25 @@ impl SourceElement for Label {
     }
 }
 
-/// Is a syntax tree node that represents a type binding.
+/// Represents a type annotation used to annotate the type of a symbol.
 ///
-/// It's commonly used to annotate the type of lvalues in the syntax tree.
-///
-/// Syntax Sypnosis:
+/// Syntax Synopsis:
 /// ``` txt
-/// TypeBinding:
-///     'mutable'? TypeSpecifier
+/// TypeAnnotation:
+///     ':' TypeSpecifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub struct TypeBindingSpecifier {
-    pub mutable_keyword: Option<Keyword>,
+pub struct TypeAnnotation {
+    pub colon: Punctuation,
     pub type_specifier: TypeSpecifier,
 }
 
-impl SourceElement for TypeBindingSpecifier {
+impl SourceElement for TypeAnnotation {
     fn span(&self) -> Span {
         Span {
-            start: self
-                .mutable_keyword
-                .as_ref()
-                .map_or(self.type_specifier.span().start, |keyword| {
-                    keyword.span.start
-                }),
+            start: self.colon.span.start,
             end: self.type_specifier.span().end,
         }
     }
@@ -330,6 +323,17 @@ impl<'a> Parser<'a> {
             self.report_error(TypeSpecifierExpected { found: None }.into());
             None
         }
+    }
+
+    /// Parses a [`TypeAnnotation`]
+    pub fn parse_type_annotation(&mut self) -> Option<TypeAnnotation> {
+        let colon = self.expect_punctuation(':')?;
+        let type_specifier = self.parse_type_specifier()?;
+
+        Some(TypeAnnotation {
+            colon: *colon,
+            type_specifier,
+        })
     }
 }
 

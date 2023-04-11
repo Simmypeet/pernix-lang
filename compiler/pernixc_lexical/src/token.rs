@@ -98,6 +98,8 @@ pub enum KeywordKind {
     Internal,
     /// `module` keyword.
     Module,
+    /// `as` keyword.
+    As,
 }
 
 impl ToString for KeywordKind {
@@ -135,6 +137,7 @@ impl KeywordKind {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::As => "as",
             Self::Enum => "enum",
             Self::Struct => "struct",
             Self::Express => "express",

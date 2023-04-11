@@ -799,7 +799,7 @@ impl Table {
         // atomic increment
         static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
-        NEXT_ID.fetch_add(1, Ordering::SeqCst)
+        NEXT_ID.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Gets a reference to the symbol by its identifier.
@@ -1313,7 +1313,7 @@ impl Table {
                     let type_binding_specifier = TypeBinding {
                         ty: match self.resolve_type(
                             function.parent_id.into(),
-                            &parameter.type_binding_specifier.type_specifier,
+                            &parameter.type_annotation.type_specifier,
                             &function.syntax_tree.source_file,
                         ) {
                             Ok(ty) => {
@@ -1335,7 +1335,7 @@ impl Table {
                                                     span: function
                                                         .syntax_tree
                                                         .syntax_tree
-                                                        .type_specifier
+                                                        .type_annotation
                                                         .span(),
                                                 },
                                                 symbol_access_modifier: type_symbol
@@ -1357,7 +1357,7 @@ impl Table {
                                 Type::default()
                             }
                         },
-                        is_mutable: parameter.type_binding_specifier.mutable_keyword.is_some(),
+                        is_mutable: parameter.mutable_keyword.is_some(),
                     };
 
                     // parameter redefinition
@@ -1391,7 +1391,11 @@ impl Table {
     ) -> Type {
         match self.resolve_type(
             function.parent_id.into(),
-            &function.syntax_tree.syntax_tree.type_specifier,
+            &function
+                .syntax_tree
+                .syntax_tree
+                .type_annotation
+                .type_specifier,
             &function.syntax_tree.source_file,
         ) {
             Ok(ty) => {
@@ -1405,7 +1409,12 @@ impl Table {
                             AccessibilityLeaking {
                                 symbol_span: SourceSpan {
                                     source_file: function.syntax_tree.source_file.clone(),
-                                    span: function.syntax_tree.syntax_tree.type_specifier.span(),
+                                    span: function
+                                        .syntax_tree
+                                        .syntax_tree
+                                        .type_annotation
+                                        .type_specifier
+                                        .span(),
                                 },
                                 symbol_access_modifier: type_symbol.access_modifier(),
                                 parent_access_modifier: function.access_modifier,
@@ -1490,7 +1499,7 @@ impl Table {
                     for field in &field_group.fields {
                         let ty = match self.resolve_type(
                             struct_symbol.parent_id.into(),
-                            &field.type_specifier,
+                            &field.type_annotation.type_specifier,
                             &struct_symbol.syntax_tree.source_file,
                         ) {
                             Ok(ty) => ty.unwrap_extend(errors),

@@ -3,8 +3,12 @@ public module sub;
 public struct SomeType 
 {
 public:
-    int32 someNumber;
-    sub::SomeType someType;
+    someNumber: int32;
+    someType: sub::SomeType;
 }
 
-public void Test(SomeType a, test::SomeType b, sub::SomeType c, test::sub::SomeType d) {}
+public function Test(
+    a: SomeType, 
+    b: test::SomeType, 
+    c: sub::SomeType, 
+    d: test::sub::SomeType): void {}

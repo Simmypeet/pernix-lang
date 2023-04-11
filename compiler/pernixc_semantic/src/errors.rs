@@ -161,24 +161,6 @@ pub struct InvalidBinaryOperation {
     pub source_span: SourceSpan,
 }
 
-/*
-/// The operands of the binary expression have an ambiguous conversion.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AmbiguousConversionInBinaryOperation {
-    /// The type of the left-hand side operand.
-    pub lhs_type: ValueType,
-
-    /// The operator.
-    pub operator: BinaryOperator,
-
-    /// The type of the right-hand side operand.
-    pub rhs_type: ValueType,
-
-    /// The span of the binary expression.
-    pub span: SourceSpan,
-}
-*/
-
 /// The number of arguments passed to a function call does not match the number of parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ArgumentCountMismatch {
@@ -267,14 +249,7 @@ pub struct LoopControlOutsideLoop {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LabelNotFound {
     /// The span of the label name.
-    pub span: SourceSpan,
-}
-
-/// The label does not refer to a loop.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct LabelDoesNotReferToLoop {
-    /// The span of the label name.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// The `express` expression is used outside of a block.
@@ -284,11 +259,11 @@ pub struct ExpressOutsideBlock {
     pub span: SourceSpan,
 }
 
-/// The label does not refer to a block.
+/// The return requires an expression but the expression is missing.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct LabelDoesNotReferToBlock {
-    /// The span of the label name.
-    pub span: SourceSpan,
+pub struct ReturnRequiredValue {
+    /// The span of the return statement.
+    pub source_span: SourceSpan,
 }
 
 /// The struct literal doesn't initialize all fields.
@@ -299,6 +274,13 @@ pub struct IncompleteFieldInitialization {
 
     /// The ID of the struct that contains the field.
     pub struct_id: StructID,
+}
+
+/// Not all paths in the block expression express the value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NotAllPathExpressTheValue {
+    /// Specifies the location of the block expression.
+    pub source_span: SourceSpan,
 }
 
 /// Is an enumeration of all kinds of errors that can occur during semantic analysis.
@@ -319,6 +301,7 @@ pub enum SemanticError {
     AssignToRValue(AssignToRValue),
     AssignToImmutable(AssignToImmutable),
     InvalidBinaryOperation(InvalidBinaryOperation),
+    NotAllPathExpressTheValue(NotAllPathExpressTheValue),
     /*
     AmbiguousConversionInBinaryOperation(AmbiguousConversionInBinaryOperation),
     */
@@ -335,8 +318,7 @@ pub enum SemanticError {
     MemberAccessOnNonStruct(MemberAccessOnNonStruct),
     LoopControlOutsideLoop(LoopControlOutsideLoop),
     LabelNotFound(LabelNotFound),
-    LabelDoesNotReferToLoop(LabelDoesNotReferToLoop),
     ExpressOutsideBlock(ExpressOutsideBlock),
-    LabelDoesNotReferToBlock(LabelDoesNotReferToBlock),
     IncompleteFieldInitialization(IncompleteFieldInitialization),
+    ReturnRequiredValue(ReturnRequiredValue),
 }

@@ -3,11 +3,11 @@ public module sub;
 public struct Test 
 {
 public:
-    int32 a;
-    int32 b;
+    a: int32;
+    b: int32;
 }
 
-public int32 Main() 
+public function main(): int32
 {
     let calculation = 'test: {
         let a = 1;

@@ -5,10 +5,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
 
-use super::{
-    expression::BlockWithoutLabel, ConnectedList, SourceElement, TypeBindingSpecifier,
-    TypeSpecifier,
-};
+use super::{expression::BlockWithoutLabel, ConnectedList, SourceElement, TypeAnnotation};
 use crate::{
     errors::{AccessModifierExpected, FieldGroupExpected, ItemExpected},
     parser::Parser,
@@ -47,21 +44,21 @@ impl SourceElement for AccessModifier {
 /// Syntax Synopsis:
 /// ``` text
 /// Field:
-///     TypeSpecifier Identifier ';'
+///     Identifier TypeAnnotation ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub struct Field {
-    pub type_specifier: TypeSpecifier,
     pub identifier: Identifier,
+    pub type_annotation: TypeAnnotation,
     pub semicolon: Punctuation,
 }
 
 impl SourceElement for Field {
     fn span(&self) -> Span {
         Span {
-            start: self.type_specifier.span().start,
+            start: self.identifier.span.start,
             end: self.semicolon.span.end,
         }
     }
@@ -162,22 +159,26 @@ impl SourceElement for Enum {
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// FunctionParameter:
-///     TypeBindingSpecifier Identifier
+/// Parameter:
+///     'mutable"? Identifier ':' TypeSpecifier     
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub struct FunctionParameterSyntaxTree {
-    pub type_binding_specifier: TypeBindingSpecifier,
+pub struct Parameter {
+    pub mutable_keyword: Option<Keyword>,
     pub identifier: Identifier,
+    pub type_annotation: TypeAnnotation,
 }
 
-impl SourceElement for FunctionParameterSyntaxTree {
+impl SourceElement for Parameter {
     fn span(&self) -> Span {
         Span {
-            start: self.type_binding_specifier.span().start,
-            end: self.identifier.span.end,
+            start: self
+                .mutable_keyword
+                .as_ref()
+                .map_or(self.identifier.span.start, |keyword| keyword.span.start),
+            end: self.type_annotation.span().end,
         }
     }
 }
@@ -186,29 +187,31 @@ impl SourceElement for FunctionParameterSyntaxTree {
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// FunctionParameterList:
-///     FunctionParameter (',' FunctionParameter)*
+/// ParameterList:
+///     Parameter (',' Parameter)*
 ///     ;
 /// ```
-pub type FunctionParameterListSyntaxTree = ConnectedList<FunctionParameterSyntaxTree, Punctuation>;
+pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 
 /// Represents a syntax tree node for a function.
 ///
 /// Syntax Synopsis:
 /// ``` text
 /// Function:
-///     AccessModifier TypeSpecifier Identifier '(' FunctionParameterList? ')' BlockWithoutLabel
+///     AccessModifier 'function' Identifier '(' ParameterList? ')'
+///     TypeAnnotation BlockWithoutLabel
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub struct Function {
     pub access_modifier: AccessModifier,
-    pub type_specifier: TypeSpecifier,
+    pub function_keyword: Keyword,
     pub identifier: Identifier,
     pub left_paren: Punctuation,
-    pub parameters: Option<FunctionParameterListSyntaxTree>,
+    pub parameters: Option<ParameterList>,
     pub right_paren: Punctuation,
+    pub type_annotation: TypeAnnotation,
     pub block_without_label: BlockWithoutLabel,
 }
 
@@ -299,9 +302,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
 
                 let identifier = self.expect_identifier()?;
-
                 let left_brace = self.expect_punctuation('{')?;
-
                 let (variants, right_brace) =
                     self.parse_enclosed_list('}', ',', |parse| parse.expect_identifier().copied())?;
 
@@ -337,82 +338,67 @@ impl<'a> Parser<'a> {
                     .into(),
                 )
             }
-            _ => self.handle_function(access_modifier),
-        }
-    }
+            // Handles function
+            Some(Token::Keyword(function_keyword))
+                if function_keyword.keyword == KeywordKind::Function =>
+            {
+                // eat function keyword
+                self.next_token();
 
-    fn handle_function(&mut self, access_modifier: AccessModifier) -> Option<Item> {
-        let peeked_token = self.peek_significant_token().copied();
-        if matches!(&peeked_token,
-            Some(Token::Keyword(keyword)) if
-                keyword.keyword == KeywordKind::Bool ||
-                keyword.keyword == KeywordKind::Void ||
-                keyword.keyword == KeywordKind::Float32 ||
-                keyword.keyword == KeywordKind::Float64 ||
-                keyword.keyword == KeywordKind::Int8 ||
-                keyword.keyword == KeywordKind::Int16 ||
-                keyword.keyword == KeywordKind::Int32 ||
-                keyword.keyword == KeywordKind::Int64 ||
-                keyword.keyword == KeywordKind::Uint8 ||
-                keyword.keyword == KeywordKind::Uint16 ||
-                keyword.keyword == KeywordKind::Uint32 ||
-                keyword.keyword == KeywordKind::Uint64
-        ) || matches!(&peeked_token, Some(Token::Identifier(..)))
-        {
-            // return type
-            let type_specifier = self.parse_type_specifier()?;
+                let identifier = *self.expect_identifier()?;
+                let left_paren = *self.expect_punctuation('(')?;
 
-            // function name
-            let identifier = self.expect_identifier()?;
+                let (parameters, right_paren) = self.parse_enclosed_list(')', ',', |parse| {
+                    let mutable_keyword = match parse.peek_significant_token() {
+                        Some(Token::Keyword(mutable_keyword))
+                            if mutable_keyword.keyword == KeywordKind::Mutable =>
+                        {
+                            // eat mutable keyword
+                            parse.next_token();
 
-            // left parenthesis
-            let left_paren = self.expect_punctuation('(')?;
+                            Some(*mutable_keyword)
+                        }
+                        _ => None,
+                    };
+                    let identifier = parse.expect_identifier()?;
+                    let type_annotation = parse.parse_type_annotation()?;
 
-            let (parameters, right_paren) = self.parse_enclosed_list(')', ',', |parser| {
-                let mutable_keyword = match parser.peek_significant_token() {
-                    Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::Mutable => {
-                        // eat mutable keyword
-                        parser.next_token();
-
-                        Some(*keyword)
-                    }
-                    _ => None,
-                };
-                let type_specifier = parser.parse_type_specifier()?;
-                let identifier = parser.expect_identifier()?;
-
-                Some(FunctionParameterSyntaxTree {
-                    type_binding_specifier: TypeBindingSpecifier {
+                    Some(Parameter {
                         mutable_keyword,
-                        type_specifier,
-                    },
-                    identifier: *identifier,
-                })
-            })?;
+                        identifier: *identifier,
+                        type_annotation,
+                    })
+                })?;
 
-            let block = self.parse_block_without_label()?;
+                let type_annotation = self.parse_type_annotation()?;
+                let block_without_label = self.parse_block_without_label()?;
 
-            Some(
-                Function {
-                    access_modifier,
-                    type_specifier,
-                    identifier: *identifier,
-                    left_paren: *left_paren,
-                    parameters,
-                    right_paren,
-                    block_without_label: block,
-                }
-                .into(),
-            )
-        } else {
-            // make progress
-            self.report_error(
-                ItemExpected {
-                    found: peeked_token,
-                }
-                .into(),
-            );
-            None
+                Some(
+                    Function {
+                        access_modifier,
+                        function_keyword: *function_keyword,
+                        identifier,
+                        left_paren,
+                        parameters,
+                        right_paren,
+                        type_annotation,
+                        block_without_label,
+                    }
+                    .into(),
+                )
+            }
+            token => {
+                // make progress
+                self.next_token();
+
+                self.report_error(
+                    ItemExpected {
+                        found: token.copied(),
+                    }
+                    .into(),
+                );
+                None
+            }
         }
     }
 
@@ -465,13 +451,17 @@ impl<'a> Parser<'a> {
                                 break;
                             }
                             _ => {
-                                let type_specifier = self.parse_type_specifier()?;
                                 let identifier = self.expect_identifier()?;
+                                let colon = self.expect_punctuation(':')?;
+                                let type_specifier = self.parse_type_specifier()?;
                                 let semicolon = self.expect_punctuation(';')?;
 
                                 fields.push(Field {
-                                    type_specifier,
                                     identifier: *identifier,
+                                    type_annotation: TypeAnnotation {
+                                        colon: *colon,
+                                        type_specifier,
+                                    },
                                     semicolon: *semicolon,
                                 });
                             }
