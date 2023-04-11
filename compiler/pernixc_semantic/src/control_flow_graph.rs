@@ -13,7 +13,7 @@ use getset::{CopyGetters, Getters};
 ///
 /// The identifier is only valid for the control flow graph that it was created from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BasicBlockID(pub usize);
+pub struct BasicBlockID(usize);
 
 /// Represents a control-flow graph (CFG) for a function.
 ///

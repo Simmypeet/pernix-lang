@@ -22,7 +22,7 @@ use pernixc_syntax::syntax_tree::{
 };
 
 use self::{
-    block_manager::{BlockInfo, BlockManager},
+    label_manager::{BlockInfo, BlockManager},
     variable_manager::VariableManager,
 };
 use super::{
@@ -55,7 +55,7 @@ use crate::{
     SemanticResult, SourceSpan,
 };
 
-mod block_manager;
+mod label_manager;
 mod variable_manager;
 
 /// Represents a build for the [`crate::hir::HIR`].
@@ -126,20 +126,8 @@ impl<'a> Builder<'a> {
                 // expect a valid value
                 let Some(value) = value else { return false; };
 
-                // These are list of evaluations that will not be added into the cfg
-                //
-                // 1.) Block Load
-                // 2.) IfElse Load
-                // 3.) Express
-                // 4.) Return
-                if !matches!(
-                    value,
-                    Value::Block(..) | Value::IfElse(..) | Value::Express(..) | Value::Return(..)
-                ) {
-                    // add value evalutation instruction
-                    self.control_flow_graph[self.current_basic_block_id]
-                        .add_instruction(value.into());
-                }
+                // add value evalutation instruction
+                self.control_flow_graph[self.current_basic_block_id].add_instruction(value.into());
 
                 true
             }
@@ -1431,8 +1419,8 @@ impl<'a> Builder<'a> {
 
         // add new scope
         self.variable_manager.new_scope();
-        let new_block_id = self.block_manager.new_scope(
-            BlockInfo::new(begin_basic_block_id, successor_basic_block_id, variable_id),
+        let new_block_id = self.block_manager.push(
+            BlockInfo::new(successor_basic_block_id, variable_id),
             syntax
                 .label_specifier
                 .map(|span| &self.source_file()[span.label.identifier.span]),
@@ -1454,7 +1442,7 @@ impl<'a> Builder<'a> {
 
         // pop scope
         self.variable_manager.pop_scope();
-        self.block_manager.pop_scope();
+        self.block_manager.pop();
 
         // If the `ty` field in the `BlockInfo` is not `None`, it means that the block has an
         // `express` statement and is required to generate a new variable
@@ -1658,7 +1646,7 @@ impl<'a> Builder<'a> {
             // search for the block
             let Some(block_id) = self
                 .block_manager
-                .search_scope(&self.source_file()[label.identifier.span]) else {
+                .get_with_name(&self.source_file()[label.identifier.span]) else {
                 self.add_error(LabelNotFound {
                     source_span: self.source_span(label.span()),
                 }.into());
@@ -1668,7 +1656,7 @@ impl<'a> Builder<'a> {
             block_id
         } else {
             // gets the topmost block
-            let Some(block_id) = self.block_manager.get_last_scope() else {
+            let Some(block_id) = self.block_manager.get() else {
                 self.add_error(ExpressOutsideBlock {
                     span: self.source_span(syntax.span()),
                 }.into());
