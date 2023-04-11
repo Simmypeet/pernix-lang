@@ -10,13 +10,15 @@
 //! - Transpiling to a lower-level language such as C.
 //! - Breaking down into a lower-level representation, MIR.
 
+use std::collections::HashMap;
+
 use getset::Getters;
 
-use self::{instruction::Instruction, value::Value};
-use crate::{
-    control_flow_graph::ControlFlowGraph,
-    symbol::{ty::Type, LocalVariable},
+use self::{
+    instruction::Instruction,
+    value::{Value, Variable, VariableID},
 };
+use crate::{control_flow_graph::ControlFlowGraph, symbol::ty::Type};
 
 pub mod builder;
 pub mod instruction;
@@ -29,14 +31,7 @@ pub struct HIR {
     #[get = "pub"]
     control_flow_graph: ControlFlowGraph<Instruction<Type>, Value<Type>>,
 
-    /// Gets the list of local variables in the function.
+    /// The list of local variables used in the function.
     #[get = "pub"]
-    local_variables: Vec<LocalVariable>,
-
-    /// Gets the list of required temporary variables in the function.
-    ///
-    /// This temporary variables are used to store intermediate values during the evaluation of
-    /// imperative expressions such as block and if expressions.
-    #[get = "pub"]
-    temporary_variables: Vec<LocalVariable>,
+    local_variables: HashMap<VariableID, Variable<Type>>,
 }

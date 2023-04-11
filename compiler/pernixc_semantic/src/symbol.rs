@@ -354,7 +354,7 @@ impl<'a> IndexerMut<'a> for TypedID {
 
 /// Represents a variable symbol.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct LocalVariable {
+pub struct Parameter {
     /// The name of the variable.
     pub name: String,
 
@@ -362,9 +362,9 @@ pub struct LocalVariable {
     pub type_binding: TypeBinding,
 }
 
-/// Is an identifier that can be used to retrieve a [`LocalVariable`]
+/// Is an identifier that can be used to retrieve a [`Variable`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Into)]
-pub struct VariableID(usize);
+pub struct ParameterID(usize);
 
 /// Is a trait that all symbols must implement.
 pub trait Symbol: Any + private::SealedSymbol {
@@ -538,7 +538,7 @@ pub struct Function {
     pub parent_id: ModuleID,
 
     /// The list of parameters of the function.
-    pub parameters: VecNameMap<LocalVariable, VariableID>,
+    pub parameters: VecNameMap<Parameter, ParameterID>,
 
     /// The syntax tree that was used to create this symbol.
     pub syntax_tree: SyntaxTreeWithSource<syntax_tree::item::Function>,
@@ -1296,7 +1296,7 @@ impl Table {
         &self,
         function: &Function,
         errors: &mut Vec<SemanticError>,
-    ) -> VecNameMap<LocalVariable, VariableID> {
+    ) -> VecNameMap<Parameter, ParameterID> {
         // get arguments
         function
             .syntax_tree
@@ -1362,7 +1362,7 @@ impl Table {
 
                     // parameter redefinition
                     if parameters
-                        .add_item(name.clone(), LocalVariable {
+                        .add_item(name.clone(), Parameter {
                             name,
                             type_binding: type_binding_specifier,
                         })

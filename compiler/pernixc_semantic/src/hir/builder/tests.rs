@@ -695,3 +695,272 @@ fn binary_binding_test() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[test]
+#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
+fn named_binding_test() -> Result<(), Box<dyn Error>> {
+    let file_parsing = pernixc_syntax::file_parsing::parse_files(SourceFile::load(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resource")
+            .join("hir")
+            .join("namedBinding.pnx"),
+        vec!["test".to_string()],
+    )?)?;
+
+    let (symbol_table, errors) = super::Table::analyze(file_parsing.into_iter());
+    assert!(errors.is_empty());
+
+    // targetting test::main
+    let mut builder = Builder::new(
+        &symbol_table,
+        symbol_table
+            .get_id_by_full_name(["test", "main"].into_iter())
+            .unwrap()
+            .into_function()
+            .unwrap(),
+    );
+
+    {
+        // let value = 32;
+        let variable_address = builder
+            .bind_variable_declaration(
+                builder
+                    .function
+                    .syntax_tree
+                    .syntax_tree
+                    .block_without_label
+                    .statements[0]
+                    .as_declarative()
+                    .unwrap()
+                    .as_variable_declaration()
+                    .unwrap(),
+            )
+            .unwrap();
+
+        // no error
+        assert!(builder.errors.is_empty());
+
+        assert_eq!(
+            builder.get_inferrable_type(
+                &builder
+                    .variables
+                    .get(&variable_address.variable_id)
+                    .unwrap()
+                    .ty
+            ),
+            InferrableType::Inferring(Constraint::Number)
+        );
+    }
+
+    {
+        // someParameter
+        let parameter = builder
+            .bind_named(
+                builder
+                    .function
+                    .syntax_tree
+                    .syntax_tree
+                    .block_without_label
+                    .statements[1]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression
+                    .as_named()
+                    .unwrap(),
+            )
+            .unwrap();
+
+        // no error
+        assert!(builder.errors.is_empty());
+
+        let parameter = parameter.into_load().unwrap();
+        assert_eq!(
+            parameter.ty.into_type().unwrap(),
+            PrimitiveType::Int32.into()
+        );
+        assert!(parameter.lvalue.is_mutable);
+        assert_eq!(
+            builder.function.parameters[parameter
+                .lvalue
+                .address
+                .into_argument_address()
+                .unwrap()
+                .parameter_id]
+                .name,
+            "someParameter"
+        );
+    }
+
+    {
+        // value
+        let variable = builder
+            .bind_named(
+                builder
+                    .function
+                    .syntax_tree
+                    .syntax_tree
+                    .block_without_label
+                    .statements[2]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression
+                    .as_named()
+                    .unwrap(),
+            )
+            .unwrap();
+
+        // no error
+        assert!(builder.errors.is_empty());
+
+        let variable = variable.into_load().unwrap();
+        assert_eq!(
+            builder
+                .get_inferrable_type(&variable.ty)
+                .into_inferring()
+                .unwrap(),
+            Constraint::Number
+        );
+    }
+
+    {
+        // SomeEnum
+        assert!(builder
+            .bind_named(
+                builder
+                    .function
+                    .syntax_tree
+                    .syntax_tree
+                    .block_without_label
+                    .statements[3]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression
+                    .as_named()
+                    .unwrap(),
+            )
+            .is_none());
+
+        // error
+        assert_eq!(builder.errors.len(), 1);
+        let err = builder
+            .errors
+            .pop()
+            .unwrap()
+            .into_expression_expected()
+            .unwrap();
+        assert_eq!(err.source_span.source_code(), "SomeEnum");
+    }
+
+    {
+        // SomeEnum::First
+        let named = builder
+            .bind_named(
+                builder
+                    .function
+                    .syntax_tree
+                    .syntax_tree
+                    .block_without_label
+                    .statements[4]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression
+                    .as_named()
+                    .unwrap(),
+            )
+            .unwrap();
+
+        let enum_literal = named.into_enum_literal().unwrap();
+        assert_eq!(symbol_table.get(enum_literal.enum_id).name, "SomeEnum");
+        assert_eq!(symbol_table.get(enum_literal.enum_variant_id).name, "First");
+    }
+
+    {
+        // mutable let someParameter = 32;
+        let variable_address = builder
+            .bind_variable_declaration(
+                builder
+                    .function
+                    .syntax_tree
+                    .syntax_tree
+                    .block_without_label
+                    .statements[5]
+                    .as_declarative()
+                    .unwrap()
+                    .as_variable_declaration()
+                    .unwrap(),
+            )
+            .unwrap();
+
+        // no error
+        assert!(builder.errors.is_empty());
+
+        assert_eq!(
+            builder.get_inferrable_type(
+                &builder
+                    .variables
+                    .get(&variable_address.variable_id)
+                    .unwrap()
+                    .ty
+            ),
+            InferrableType::Inferring(Constraint::Number)
+        );
+    }
+
+    {
+        // someParameter = 5i64;
+        let assignment = builder
+            .bind_binary(
+                builder
+                    .function
+                    .syntax_tree
+                    .syntax_tree
+                    .block_without_label
+                    .statements[6]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression
+                    .as_binary()
+                    .unwrap(),
+            )
+            .unwrap();
+
+        let left = assignment
+            .left_operand
+            .into_named()
+            .unwrap()
+            .into_load()
+            .unwrap();
+
+        assert_eq!(
+            builder.get_inferrable_type(&left.ty).into_type().unwrap(),
+            PrimitiveType::Int64.into()
+        );
+        assert!(left.lvalue.is_mutable);
+        let variable = &builder.variables[&left
+            .lvalue
+            .address
+            .into_variable_address()
+            .unwrap()
+            .variable_id];
+        assert_eq!(
+            builder
+                .get_inferrable_type(&variable.ty)
+                .into_type()
+                .unwrap(),
+            PrimitiveType::Int64.into()
+        );
+        assert_eq!(variable.name, Some("someParameter".to_string()));
+    }
+
+    Ok(())
+}

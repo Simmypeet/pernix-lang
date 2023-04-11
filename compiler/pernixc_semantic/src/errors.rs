@@ -210,63 +210,50 @@ pub struct StructExpected {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldNotFound {
     /// The span of the field name.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 
-    /// The index of the struct symbol that does not contain the field.
-    pub struct_symbol_index: usize,
+    /// The ID of the struct that does not contain the field.
+    pub struct_id: StructID,
 }
 
 /// The field is already initialized in the struct literal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DuplicateFieldInitialization {
-    /// The span of the field name.
-    pub span: SourceSpan,
+    /// The span of the duplicate field initialization.
+    pub source_span: SourceSpan,
 }
 
 /// The struct member is not accessible.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemberNotAccessible {
     /// The span of the field name.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 
-    /// The index of the struct symbol that does not contain the field.
-    pub struct_symbol_index: usize,
+    /// The ID of the struct symbol that does not contain the field.
+    pub struct_id: StructID,
 
-    /// The index of the field in the struct.
-    pub field_index: usize,
+    /// The ID of the field in the struct.
+    pub field_id: FieldID,
 }
 
 /// The field is not accessible.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldIsNotAccessible {
     /// The span of the field name.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 
-    /// The index of the struct symbol that does not contain the field.
-    pub struct_symbol_index: usize,
-
-    /// The index of the field in the struct.
-    pub field_index: usize,
-}
-
-/// All fields must be accessiible in a struct literal.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AllFieldIsNotAccessible {
-    /// The span of the struct literal.
-    pub span: SourceSpan,
-
-    /// The identifier of the struct that contains the inaccessible fields.
+    /// The ID of the struct that contains the inaccessible field.
     pub struct_id: StructID,
 
-    /// The fields that are not accessible.
-    pub inaccessible_fields: Vec<FieldID>,
+    /// The ID of the field in the struct.
+    pub field_id: FieldID,
 }
 
 /// Field access on a non-struct expression.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemberAccessOnNonStruct {
     /// The span of the field name.
-    pub span: SourceSpan,
+    pub source_span: SourceSpan,
 }
 
 /// Loop control is used outside of a loop.
@@ -302,6 +289,16 @@ pub struct ExpressOutsideBlock {
 pub struct LabelDoesNotReferToBlock {
     /// The span of the label name.
     pub span: SourceSpan,
+}
+
+/// The struct literal doesn't initialize all fields.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IncompleteFieldInitialization {
+    /// The span of the field name.
+    pub source_span: SourceSpan,
+
+    /// The ID of the struct that contains the field.
+    pub struct_id: StructID,
 }
 
 /// Is an enumeration of all kinds of errors that can occur during semantic analysis.
@@ -341,5 +338,5 @@ pub enum SemanticError {
     LabelDoesNotReferToLoop(LabelDoesNotReferToLoop),
     ExpressOutsideBlock(ExpressOutsideBlock),
     LabelDoesNotReferToBlock(LabelDoesNotReferToBlock),
-    AllFieldIsNotAccessible(AllFieldIsNotAccessible),
+    IncompleteFieldInitialization(IncompleteFieldInitialization),
 }

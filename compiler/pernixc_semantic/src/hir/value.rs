@@ -7,7 +7,7 @@ use crate::{
     infer::{Constraint, InferenceID},
     symbol::{
         ty::{PrimitiveType, Type},
-        EnumID, VariableID,
+        EnumID, FieldID, FunctionID, ParameterID, StructID, EnumVariantID,
     },
     SourceSpan,
 };
@@ -81,6 +81,9 @@ pub enum Value<T: ValueType> {
     Prefix(Prefix<T>),
     Binary(Binary<T>),
     Named(Named<T>),
+    FunctionCall(FunctionCall<T>),
+    StructLiteral(StructLiteral),
+    MemberAccess(MemberAccess<T>),
 }
 
 impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
@@ -91,6 +94,9 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
             Self::Prefix(prefix) => prefix.type_binding(),
             Self::Binary(binary) => binary.type_binding(),
             Self::Named(named) => named.type_binding(),
+            Self::FunctionCall(call) => call.type_binding(),
+            Self::StructLiteral(literal) => literal.type_binding(),
+            Self::MemberAccess(access) => access.type_binding(),
         }
     }
 
@@ -101,11 +107,41 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
             Self::Prefix(prefix) => ValueTrait::<T>::source_span(prefix),
             Self::Binary(binary) => ValueTrait::<T>::source_span(binary),
             Self::Named(named) => ValueTrait::<T>::source_span(named),
+            Self::FunctionCall(call) => ValueTrait::<T>::source_span(call),
+            Self::StructLiteral(literal) => ValueTrait::<T>::source_span(literal),
+            Self::MemberAccess(access) => ValueTrait::<T>::source_span(access),
         }
     }
 }
 
-/// Represents a bound representation of [`pernixc_lexical::token::NumericLiteral`]
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::StructLiteral`].
+///
+/// In order to get the value of the struct literal, the struct must be stored in a variable and
+/// loaded from the variable.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct StructLiteral {
+    /// Specifies where the literal is located in the source code.
+    pub source_span: SourceSpan,
+
+    /// Is the ID of the struct.
+    pub struct_id: StructID,
+
+    /// Is the address of the variable that stores the struct.
+    pub struct_load_address: VariableAddress,
+}
+
+impl<T: ValueType + Clone> ValueTrait<T> for StructLiteral {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: T::from_type(Type::TypedID(self.struct_id.into())),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
+/// Is a bound representation of [`pernixc_lexical::token::NumericLiteral`]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NumericLiteral<T: ValueType> {
     /// Specifies where the literal is located in the source code.
@@ -126,7 +162,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for NumericLiteral<T> {
     fn source_span(&self) -> SourceSpan { self.source_span.clone() }
 }
 
-/// Represents a bound representation of
+/// Is a bound representation of
 /// [`pernixc_syntax::syntax_tree::expression::BooleanLiteral`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BooleanLiteral {
@@ -155,6 +191,9 @@ pub struct EnumLiteral {
     /// Specifies where the literal is located in the source code.
     pub source_span: SourceSpan,
 
+    /// The ID of the enum variant.
+    pub enum_variant_id: EnumVariantID,
+
     /// Is the variant number in the enum.
     pub variant_number: usize,
 
@@ -170,7 +209,10 @@ pub struct Load<T: ValueType> {
     pub source_span: SourceSpan,
 
     /// Specifies the type of the load.
-    pub type_binding: TypeBinding<T>,
+    pub ty: T,
+
+    /// Contains the information about the variable that is loaded.
+    pub lvalue: LValue,
 }
 
 /// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Named`].
@@ -188,7 +230,10 @@ impl<T: ValueType + Clone> ValueTrait<T> for Named<T> {
                 ty: T::from_type(Type::TypedID(literal.enum_id.into())),
                 category: Category::RValue,
             },
-            Self::Load(load) => load.type_binding.clone(),
+            Self::Load(load) => TypeBinding {
+                ty: load.ty.clone(),
+                category: load.lvalue.clone().into(),
+            },
         }
     }
 
@@ -200,7 +245,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for Named<T> {
     }
 }
 
-/// Represents a bound representation of
+/// Is a bound representation of
 /// [`pernixc_syntax::syntax_tree::expression::PrefixOperator`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum PrefixOperator {
@@ -238,7 +283,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for Prefix<T> {
     fn source_span(&self) -> SourceSpan { self.source_span.clone() }
 }
 
-/// Represents a bound representation of
+/// Is a bound representation of
 /// [`pernixc_syntax::syntax_tree::expression::BinaryOperator`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
@@ -264,7 +309,7 @@ pub enum BinaryOperator {
     Assign,
 }
 
-/// Represents a bound representation of [`pernixc_syntax::syntax_tree::expression::Binary`].
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Binary`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Binary<T: ValueType> {
     /// Specifies where the binary expression is located in the source code.
@@ -285,6 +330,75 @@ pub struct Binary<T: ValueType> {
 
 impl<T: ValueType + Clone> ValueTrait<T> for Binary<T> {
     fn type_binding(&self) -> TypeBinding<T> { self.type_binding.clone() }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::FunctionCall`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FunctionCall<T: ValueType> {
+    /// Specifies where the function call is located in the source code.
+    pub source_span: SourceSpan,
+
+    /// Is the function ID of the function call.
+    pub function_id: FunctionID,
+
+    /// Is the arguments of the function call.
+    pub arguments: Vec<Value<T>>,
+
+    /// Is the return type of the function call.
+    pub return_type: T,
+}
+
+impl<T: ValueType + Clone> ValueTrait<T> for FunctionCall<T> {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: self.return_type.clone(),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::MemberAccess`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MemberAccess<T: ValueType> {
+    /// Specifies where the member access is located in the source code.
+    pub source_span: SourceSpan,
+
+    /// The value of the struct that the member access is being performed on.
+    pub operand: Box<Value<T>>,
+
+    /// The ID of the member that is being accessed.
+    pub field_id: FieldID,
+
+    /// The type of the member that is being accessed.
+    pub struct_id: StructID,
+
+    /// The type of the member that is being accessed.
+    pub field_ty: T,
+}
+
+impl<T: ValueType + Clone> ValueTrait<T> for MemberAccess<T> {
+    fn type_binding(&self) -> TypeBinding<T> {
+        let type_binding = self.operand.type_binding();
+        TypeBinding {
+            ty: self.field_ty.clone(),
+            category: match type_binding.category {
+                Category::RValue => Category::RValue,
+                Category::LValue(lvalue) => LValue {
+                    is_mutable: lvalue.is_mutable,
+                    address: StructFieldAddress {
+                        struct_address: Box::new(lvalue.address),
+                        field_id: self.field_id,
+                    }
+                    .into(),
+                }
+                .into(),
+            },
+        }
+    }
 
     fn source_span(&self) -> SourceSpan { self.source_span.clone() }
 }
@@ -328,22 +442,22 @@ pub struct LValue {
 #[allow(missing_docs)]
 pub enum Address {
     ArgumentAddress(ArgumentAddress),
-    LocalVariableAddress(LocalVariableAddress),
+    VariableAddress(VariableAddress),
     StructFieldAddress(StructFieldAddress),
 }
 
 /// Represents an address to a function argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArgumentAddress {
-    /// The [`VariableID`] used to identify the argument from the [`crate::symbol::Function`].
-    pub variable_id: VariableID,
+    /// The [`ParameterID`] used to identify the argument from the [`crate::symbol::Function`].
+    pub parameter_id: ParameterID,
 }
 
 /// Represents an address to a local variable
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LocalVariableAddress {
-    /// The variable index of the local variable in [`crate::hir::HIR::local_variables()`].
-    pub variable_index: usize,
+pub struct VariableAddress {
+    /// The [`VariableID`] used to retrieve the variable from the [`crate::hir::HIR`].
+    pub variable_id: VariableID,
 }
 
 /// Represents an address to a member access lvalue.
@@ -351,4 +465,24 @@ pub struct LocalVariableAddress {
 pub struct StructFieldAddress {
     /// The address of the struct value.
     pub struct_address: Box<Address>,
+
+    /// The [`FieldID`] identifying the field from the [`crate::symbol::Struct`].
+    pub field_id: FieldID,
 }
+
+/// Represents a local variable symbol in the [`crate::hir::HIR`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Variable<T: ValueType> {
+    /// The type of the variable.
+    pub ty: T,
+
+    /// Specifies whether the variable is mutable.
+    pub is_mutable: bool,
+
+    /// The name of the variable.
+    pub name: Option<String>,
+}
+
+/// Used for retrieving a [`Variable`] from the [`crate::hir::HIR`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VariableID(pub(super) usize);

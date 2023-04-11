@@ -1,39 +1,62 @@
 //! Contains the definition [`Builder`].
 
-use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    hash::Hash,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use pernixc_common::source_file::{SourceElement, SourceFile, Span};
 use pernixc_lexical::token::NumericLiteral as NumericLiteralToken;
-use pernixc_syntax::syntax_tree::expression::{
-    Binary as BinarySyntaxTree, BinaryOperator as BinaryOperatorSyntaxTree,
-    BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,
-    Functional as FunctionalSyntaxTree, Imperative as ImperativeSyntaxTree,
-    Named as NamedSyntaxTree, Prefix as PrefixSyntaxTree,
-    PrefixOperator as PrefixOperatorSyntaxTree,
+use pernixc_syntax::syntax_tree::{
+    expression::{
+        Binary as BinarySyntaxTree, BinaryOperator as BinaryOperatorSyntaxTree,
+        BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,
+        FieldInitializerList, FunctionCall as FunctionCallSyntaxTree,
+        Functional as FunctionalSyntaxTree, Imperative as ImperativeSyntaxTree,
+        MemberAccess as MemberAccessSyntaxTree, Named as NamedSyntaxTree,
+        Prefix as PrefixSyntaxTree, PrefixOperator as PrefixOperatorSyntaxTree,
+        StructLiteral as StructLiteralSyntaxTree,
+    },
+    statement::{
+        Declarative as DeclarativeSyntaxTree, Expressive as ExpressiveSyntaxTree,
+        Statement as StatementSyntaxTree, VariableDeclaration as VariableDeclarationSyntaxTree,
+        VariableTypeBindingSpecifier,
+    },
 };
 
 use super::{
     instruction::Instruction,
     value::{
         ArgumentAddress, Binary, BinaryOperator, BooleanLiteral, Category, EnumLiteral,
-        InferrableType, IntermediateType, LValue, Load, LocalVariableAddress, Named,
-        NumericLiteral, Prefix, TypeBinding, Value, ValueTrait,
+        FunctionCall, InferrableType, IntermediateType, LValue, Load, MemberAccess, Named,
+        NumericLiteral, Prefix, StructLiteral, TypeBinding, Value, ValueTrait, Variable,
+        VariableAddress, VariableID,
     },
 };
 use crate::{
-    control_flow_graph::ControlFlowGraph,
+    control_flow_graph::{BasicBlockID, ControlFlowGraph, Instruction as CFGInstruction},
     errors::{
-        AssignToImmutable, AssignToRValue, ExpressionExpected, InvalidBinaryOperation,
-        InvalidNumericLiteralSuffix, InvalidPrefixOperation, SemanticError, TypeMismatch,
+        ArgumentCountMismatch, AssignToImmutable, AssignToRValue, DuplicateFieldInitialization,
+        ExpressionExpected, FieldIsNotAccessible, FieldNotFound, IncompleteFieldInitialization,
+        InvalidBinaryOperation, InvalidNumericLiteralSuffix, InvalidPrefixOperation,
+        MemberAccessOnNonStruct, SemanticError, StructExpected, SymbolIsNotCallable, TypeMismatch,
     },
-    hir::value::PrefixOperator,
+    hir::{
+        instruction::Store,
+        value::{PrefixOperator, StructFieldAddress},
+    },
     infer::{Constraint, InferenceContext, InferenceID, Infererence, UnificationError},
     symbol::{
-        self,
         ty::{PrimitiveType, Type},
-        Function, FunctionID, Table, ID,
+        AccessModifier, FieldID, Function, FunctionID, ResolveError, StructID, Table,
+        TypeResolveError, TypedID, ID,
     },
-    SourceSpan,
+    SemanticResult, SourceSpan,
 };
 
 /// Is a data structure that emulates a stack of scopes in the form of a vector of [`HashMap`]s.
@@ -94,13 +117,6 @@ impl<K, V> Default for ScopeMap<K, V> {
     fn default() -> Self { Self::new() }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct LocalVariable<'a> {
-    pub name: &'a str,
-    pub ty: IntermediateType,
-    pub is_mutable: bool,
-}
-
 /// Represents a build for the [`crate::hir::HIR`].
 #[derive(Debug, Clone)]
 pub struct Builder<'a> {
@@ -111,9 +127,10 @@ pub struct Builder<'a> {
     inference_context: InferenceContext,
     errors: Vec<SemanticError>,
     produce_error: bool,
+    current_block_id: BasicBlockID,
 
-    variables: Vec<LocalVariable<'a>>,
-    variable_map: ScopeMap<&'a str, usize>,
+    variables: HashMap<VariableID, Variable<IntermediateType>>,
+    scope_map: ScopeMap<&'a str, VariableID>,
 }
 
 impl<'a> Builder<'a> {
@@ -130,21 +147,161 @@ impl<'a> Builder<'a> {
             function_symbol_id,
             control_flow_graph: ControlFlowGraph::new(),
             inference_context: InferenceContext::new(),
+            current_block_id: BasicBlockID::ENTRY_BLOCK_ID,
             errors: Vec::new(),
             produce_error: true,
-            variables: Vec::new(),
-            variable_map: ScopeMap::new(),
+            variables: HashMap::new(),
+            scope_map: ScopeMap::new(),
         }
+    }
+
+    /// Binds the given statement syntax tree into an instruction and adds it to the current basic
+    /// block.
+    pub fn bind_statement(&mut self, syntax: &StatementSyntaxTree) {
+        match syntax {
+            StatementSyntaxTree::Declarative(DeclarativeSyntaxTree::VariableDeclaration(var)) => {
+                self.bind_variable_declaration(var);
+            }
+            StatementSyntaxTree::Expressive(expressive) => {
+                let value = match expressive {
+                    ExpressiveSyntaxTree::Semi(semi) => {
+                        self.bind_functional(&semi.expression, None)
+                    }
+                    ExpressiveSyntaxTree::Imperative(imperative) => {
+                        self.bind_imperative(imperative, None)
+                    }
+                };
+
+                // expect a valid value
+                let Some(value) = value else { return; };
+
+                // add value evalutation instruction
+                self.control_flow_graph[self.current_block_id].add_instruction(
+                    CFGInstruction::IRInstruction(Instruction::EvaluateValue(value)),
+                );
+            }
+        }
+    }
+
+    fn handle_type_resolve_result(
+        &mut self,
+        resolve_result: SemanticResult<Type, TypeResolveError, SemanticError>,
+    ) -> Option<Type> {
+        match resolve_result {
+            Ok(mut ok) => {
+                if self.produce_error {
+                    self.errors.append(&mut ok.errors);
+                }
+
+                Some(ok.value)
+            }
+            Err(errors) => {
+                if self.produce_error {
+                    self.errors.extend(
+                        errors
+                            .into_iter()
+                            .filter_map(|err| err.into_semantic_error().ok()),
+                    );
+                }
+                None
+            }
+        }
+    }
+
+    fn new_variable_id() -> VariableID {
+        // use atomic variable to generate unique variable ids
+        static NEXT_VARIABLE_ID: AtomicUsize = AtomicUsize::new(0);
+
+        VariableID(NEXT_VARIABLE_ID.fetch_add(1, Ordering::SeqCst))
+    }
+
+    /// Binds the variable declaration statement into an appropriate [`Instruction`] and adds it to
+    /// the current basic block.
+    pub fn bind_variable_declaration(
+        &mut self,
+        variable_declaration: &VariableDeclarationSyntaxTree,
+    ) -> Option<VariableAddress> {
+        let (initializer, variable_id, ty, is_mutable) =
+            match &variable_declaration.variable_type_binding_specifier {
+                VariableTypeBindingSpecifier::TypeBindingSpecifier(type_binding) => {
+                    let ty = self.table.resolve_type(
+                        self.function_symbol_id.into(),
+                        &type_binding.type_specifier,
+                        self.source_file(),
+                    );
+                    let ty = self.handle_type_resolve_result(ty)?;
+
+                    let variable_id = Self::new_variable_id();
+                    let initializer_value = self.expect_value(
+                        &variable_declaration.expression,
+                        ty.into(),
+                        Some(VariableAddress { variable_id }),
+                    )?;
+
+                    (
+                        initializer_value,
+                        variable_id,
+                        ty.into(),
+                        type_binding.mutable_keyword.is_some(),
+                    )
+                }
+                VariableTypeBindingSpecifier::LetBindingSpecifier(let_binding) => {
+                    let variable_id = Self::new_variable_id();
+                    let initializer_value = self.bind_expression(
+                        &variable_declaration.expression,
+                        Some(VariableAddress { variable_id }),
+                    )?;
+
+                    let ty = initializer_value.type_binding().ty;
+                    (
+                        initializer_value,
+                        variable_id,
+                        ty,
+                        let_binding.mutable_keyword.is_some(),
+                    )
+                }
+            };
+
+        let variable_name = &self.source_file()[variable_declaration.identifier.span];
+        let variable = Variable {
+            name: Some(variable_name.to_string()),
+            ty,
+            is_mutable,
+        };
+
+        // insert variable into variable map
+        self.variables.insert(variable_id, variable);
+        self.scope_map.insert(variable_name, variable_id);
+
+        // if the value is not struct literal, add a store instruction
+        if !matches!(initializer, Value::StructLiteral(_)) {
+            self.control_flow_graph[self.current_block_id].add_instruction(
+                CFGInstruction::IRInstruction(
+                    Store {
+                        store_address: VariableAddress { variable_id }.into(),
+                        value: initializer,
+                    }
+                    .into(),
+                ),
+            );
+        }
+
+        Some(VariableAddress { variable_id })
     }
 
     /// Binds the given [`ExpressionSyntaxTree`] into the [`Value<IntermediateType>`].
     pub fn bind_expression(
         &mut self,
         syntax: &ExpressionSyntaxTree,
+        variable_address: Option<VariableAddress>,
     ) -> Option<Value<IntermediateType>> {
         match syntax {
-            ExpressionSyntaxTree::Functional(syntax) => self.bind_functional(syntax),
-            ExpressionSyntaxTree::Imperative(syntax) => self.bind_imperative(syntax),
+            ExpressionSyntaxTree::Functional(syntax) => {
+                self.bind_functional(syntax, variable_address)
+            }
+            ExpressionSyntaxTree::Imperative(syntax) => {
+                self.bind_imperative(syntax, variable_address)
+            }
         }
     }
 
@@ -152,6 +309,7 @@ impl<'a> Builder<'a> {
     pub fn bind_functional(
         &mut self,
         syntax: &FunctionalSyntaxTree,
+        variable_address: Option<VariableAddress>,
     ) -> Option<Value<IntermediateType>> {
         match syntax {
             FunctionalSyntaxTree::NumericLiteral(syntax) => {
@@ -163,10 +321,18 @@ impl<'a> Builder<'a> {
             FunctionalSyntaxTree::Binary(syntax) => self.bind_binary(syntax).map(Value::Binary),
             FunctionalSyntaxTree::Prefix(syntax) => self.bind_prefix(syntax).map(Value::Prefix),
             FunctionalSyntaxTree::Named(syntax) => self.bind_named(syntax).map(Value::Named),
-            FunctionalSyntaxTree::FunctionCall(_) => todo!(),
-            FunctionalSyntaxTree::Parenthesized(_) => todo!(),
-            FunctionalSyntaxTree::StructLiteral(_) => todo!(),
-            FunctionalSyntaxTree::MemberAccess(_) => todo!(),
+            FunctionalSyntaxTree::FunctionCall(syntax) => {
+                self.bind_function_call(syntax).map(Value::FunctionCall)
+            }
+            FunctionalSyntaxTree::Parenthesized(syntax) => {
+                self.bind_expression(&syntax.expression, None)
+            }
+            FunctionalSyntaxTree::StructLiteral(syntax) => self
+                .bind_struct_literal(syntax, variable_address)
+                .map(Value::StructLiteral),
+            FunctionalSyntaxTree::MemberAccess(syntax) => {
+                self.bind_member_access(syntax).map(Value::MemberAccess)
+            }
             FunctionalSyntaxTree::Continue(_) => todo!(),
             FunctionalSyntaxTree::Break(_) => todo!(),
             FunctionalSyntaxTree::Return(_) => todo!(),
@@ -179,6 +345,7 @@ impl<'a> Builder<'a> {
     pub fn bind_imperative(
         &mut self,
         syntax: &ImperativeSyntaxTree,
+        _variable_address: Option<VariableAddress>,
     ) -> Option<Value<IntermediateType>> {
         match syntax {
             ImperativeSyntaxTree::Block(_) => todo!(),
@@ -191,7 +358,7 @@ impl<'a> Builder<'a> {
     pub fn bind_prefix(&mut self, syntax: &PrefixSyntaxTree) -> Option<Prefix<IntermediateType>> {
         match syntax.prefix_operator {
             PrefixOperatorSyntaxTree::LogicalNot(_) => {
-                let value = self.bind_expression(&syntax.operand)?;
+                let value = self.bind_expression(&syntax.operand, None)?;
                 let ty = self.get_inferrable_type(&value.type_binding().ty);
                 if matches!(ty, InferrableType::Inferring(_))
                     || matches!(ty, InferrableType::Type(ty)
@@ -216,7 +383,7 @@ impl<'a> Builder<'a> {
                 })
             }
             PrefixOperatorSyntaxTree::Negate(_) => {
-                let value = self.bind_expression(&syntax.operand)?;
+                let value = self.bind_expression(&syntax.operand, None)?;
 
                 match value.type_binding().ty {
                     IntermediateType::Inference(ty) => {
@@ -300,6 +467,149 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn handle_symbol_resolve_result(
+        &mut self,
+        resolve_result: SemanticResult<ID, ResolveError, SemanticError>,
+    ) -> Option<ID> {
+        match resolve_result {
+            Ok(mut ok) => {
+                if self.produce_error {
+                    self.errors.append(&mut ok.errors);
+                }
+
+                Some(ok.value)
+            }
+            Err(errors) => {
+                if self.produce_error {
+                    self.errors.extend(
+                        errors
+                            .into_iter()
+                            .filter_map(|err| err.into_semantic_error().ok()),
+                    );
+                }
+                None
+            }
+        }
+    }
+
+    /// Binds the given [`MemberAccessSyntaxTree`] into the [`MemberAccess`].
+    pub fn bind_member_access(
+        &mut self,
+        syntax: &MemberAccessSyntaxTree,
+    ) -> Option<MemberAccess<IntermediateType>> {
+        let value = self.bind_expression(&syntax.operand, None)?;
+
+        // must be struct
+        let IntermediateType::Type(Type::TypedID(TypedID::Struct(struct_id)))
+            = value.type_binding().ty else {
+            self.add_error(
+                MemberAccessOnNonStruct {
+                    source_span: self.source_span(syntax.span()),
+                }.into()
+            );
+            return None;
+        };
+
+        // get the field of the struct
+        let struct_symbol = self.table.get(struct_id);
+        let Some(field_id) =
+            struct_symbol.fields.map_name_to_id(&self.source_file()[syntax.identifier.span]) else {
+            self.add_error(
+                FieldNotFound {
+                    source_span: self.source_span(syntax.span()),
+                    struct_id
+                }.into()
+            );
+            return None;
+        };
+
+        Some(MemberAccess {
+            source_span: self.source_span(syntax.span()),
+            operand: Box::new(value),
+            field_id,
+            struct_id,
+            field_ty: struct_symbol.fields[field_id].ty.into(),
+        })
+    }
+
+    /// Binds the given [`FunctionCallSyntaxTree`] into the [`FunctionCall`].
+    pub fn bind_function_call(
+        &mut self,
+        syntax: &FunctionCallSyntaxTree,
+    ) -> Option<FunctionCall<IntermediateType>> {
+        let symbol_id = self.table.resolve_symbol(
+            self.function_symbol_id.into(),
+            syntax.qualified_identifier.elements(),
+            self.source_file(),
+        );
+
+        // Handle errors
+        let symbol_id = self.handle_symbol_resolve_result(symbol_id)?;
+
+        // expect function id
+        let ID::Function(function_id) = symbol_id else {
+            self.add_error(
+                SymbolIsNotCallable {
+                    source_span: self.source_span(syntax.span()),
+                }.into()
+            );
+            return None;
+        };
+
+        let argument_count = syntax
+            .arguments
+            .as_ref()
+            .map_or(0, pernixc_syntax::syntax_tree::ConnectedList::len);
+
+        // argument count mismatch
+        if argument_count != self.table.get(function_id).parameters.len() {
+            self.add_error(
+                ArgumentCountMismatch {
+                    expected: self.table.get(function_id).parameters.len(),
+                    found: argument_count,
+                    source_span: self.source_span(syntax.span()),
+                }
+                .into(),
+            );
+        }
+
+        let mut arguments = Vec::with_capacity(argument_count);
+
+        for argument in syntax
+            .arguments
+            .iter()
+            .flat_map(pernixc_syntax::syntax_tree::ConnectedList::elements)
+        {
+            arguments.push(self.bind_expression(argument, None));
+        }
+
+        let mut arguments_checked = Vec::with_capacity(arguments.len());
+
+        for (argument, parameter) in arguments
+            .into_iter()
+            .zip(self.table.get(function_id).parameters.iter())
+        {
+            // only accepts arguments that are not errors
+            let Some(argument) = argument else {
+                continue;
+            };
+
+            // check if argument type is compatible with parameter type
+            let Some(argument) = self.verify_value(argument, parameter.type_binding.ty.into()) else {
+                continue;
+            };
+
+            arguments_checked.push(argument);
+        }
+
+        Some(FunctionCall {
+            source_span: self.source_span(syntax.span()),
+            function_id,
+            arguments: arguments_checked,
+            return_type: IntermediateType::Type(self.table.get(function_id).return_type),
+        })
+    }
+
     /// Gets the [`InferrableType`] of the given [`IntermediateType`] based on the current inference
     /// context state.
     #[must_use]
@@ -320,8 +630,8 @@ impl<'a> Builder<'a> {
         syntax: &BinarySyntaxTree,
         binary_operator: BinaryOperator,
     ) -> Option<Binary<IntermediateType>> {
-        let left = self.bind_expression(&syntax.left_operand)?;
-        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty)?;
+        let left = self.bind_expression(&syntax.left_operand, None)?;
+        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty, None)?;
 
         self.check_lvalue_assignment(&left.type_binding(), syntax.span())?;
 
@@ -339,8 +649,8 @@ impl<'a> Builder<'a> {
         syntax: &BinarySyntaxTree,
         binary_operator: BinaryOperator,
     ) -> Option<Binary<IntermediateType>> {
-        let left = self.bind_expression(&syntax.left_operand)?;
-        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty)?;
+        let left = self.bind_expression(&syntax.left_operand, None)?;
+        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty, None)?;
 
         let is_arithmetic_comparison = matches!(
             binary_operator,
@@ -402,22 +712,19 @@ impl<'a> Builder<'a> {
         if syntax.0.rest.is_empty() {
             // try to find variable symbol first
             let variable = self
-                .variable_map
+                .scope_map
                 .get(&self.source_file()[syntax.0.first.span])
                 .copied()
-                .map(|index| (index, self.variables.get(index).unwrap()));
+                .map(|index| (index, self.variables.get(&index).unwrap()));
 
-            if let Some((variable_index, variable_symbol)) = variable {
+            if let Some((variable_id, variable_symbol)) = variable {
                 return Some(
                     Load {
                         source_span: self.source_span(syntax.span()),
-                        type_binding: TypeBinding {
-                            ty: variable_symbol.ty,
-                            category: LValue {
-                                is_mutable: variable_symbol.is_mutable,
-                                address: LocalVariableAddress { variable_index }.into(),
-                            }
-                            .into(),
+                        ty: variable_symbol.ty,
+                        lvalue: LValue {
+                            is_mutable: variable_symbol.is_mutable,
+                            address: VariableAddress { variable_id }.into(),
                         },
                     }
                     .into(),
@@ -431,17 +738,14 @@ impl<'a> Builder<'a> {
                 .map_name_to_id(&self.source_file()[syntax.0.first.span])
                 .map(|index| (index, self.function.parameters.get_by_id(index).unwrap()));
 
-            if let Some((variable_id, parameter)) = parameter {
+            if let Some((parameter_id, parameter)) = parameter {
                 return Some(
                     Load {
                         source_span: self.source_span(syntax.span()),
-                        type_binding: TypeBinding {
-                            ty: IntermediateType::Type(parameter.type_binding.ty),
-                            category: LValue {
-                                is_mutable: parameter.type_binding.is_mutable,
-                                address: ArgumentAddress { variable_id }.into(),
-                            }
-                            .into(),
+                        ty: parameter.type_binding.ty.into(),
+                        lvalue: LValue {
+                            is_mutable: parameter.type_binding.is_mutable,
+                            address: ArgumentAddress { parameter_id }.into(),
                         },
                     }
                     .into(),
@@ -456,25 +760,7 @@ impl<'a> Builder<'a> {
         );
 
         // Handle errors
-        let symbol_id = match symbol_id {
-            Ok(mut ok) => {
-                if self.produce_error {
-                    self.errors.append(&mut ok.errors);
-                }
-
-                ok.value
-            }
-            Err(errors) => {
-                if self.produce_error {
-                    self.errors.extend(
-                        errors
-                            .into_iter()
-                            .filter_map(|err| err.into_semantic_error().ok()),
-                    );
-                }
-                return None;
-            }
-        };
+        let symbol_id = self.handle_symbol_resolve_result(symbol_id)?;
 
         let ID::EnumVariant(enum_variant_id) = symbol_id else {
             self.add_error(
@@ -490,9 +776,164 @@ impl<'a> Builder<'a> {
                 source_span: self.source_span(syntax.span()),
                 variant_number: self.table.get(enum_variant_id).variant_number,
                 enum_id: self.table.get(enum_variant_id).parent_id,
+                enum_variant_id, 
             }
             .into(),
         )
+    }
+
+    fn create_field_initialization(
+        &mut self,
+        struct_id: StructID,
+        field_initialization: &Option<FieldInitializerList>,
+    ) -> HashMap<FieldID, Option<Value<IntermediateType>>> {
+        let mut initialized_field = HashMap::new();
+        for initialization in field_initialization
+            .iter()
+            .flat_map(pernixc_syntax::syntax_tree::ConnectedList::elements)
+        {
+            // get the field id of the initialization
+            let field_id = self
+                .table
+                .get(struct_id)
+                .fields
+                .map_name_to_id(&self.source_file()[initialization.identifier.span]);
+
+            // check if field exists
+            let Some(field_id) = field_id else {
+                self.add_error(FieldNotFound {
+                    source_span: self.source_span(initialization.identifier.span),
+                    struct_id,
+                }.into());
+                continue;
+            };
+            let field = self
+                .table
+                .get(struct_id)
+                .fields
+                .get_by_id(field_id)
+                .unwrap();
+
+            // check if field is already initialized
+            if initialized_field.contains_key(&field_id) {
+                self.add_error(
+                    DuplicateFieldInitialization {
+                        source_span: self.source_span(initialization.span()),
+                    }
+                    .into(),
+                );
+                continue;
+            };
+
+            // check if field is accessible
+            if field.access_modifier == AccessModifier::Private
+                && !self
+                    .table
+                    .is_parent(self.function.parent_id.into(), struct_id.into())
+            {
+                self.add_error(
+                    FieldIsNotAccessible {
+                        source_span: self.source_span(initialization.identifier.span),
+                        struct_id,
+                        field_id,
+                    }
+                    .into(),
+                );
+                continue;
+            }
+
+            // bind the initializer
+            let initializer = self.expect_value(&initialization.expression, field.ty.into(), None);
+
+            // put the field id into the initialized field map
+            initialized_field.insert(field_id, initializer);
+        }
+
+        initialized_field
+    }
+
+    /// Binds the given [`StructLiteralSyntaxTree`] to a [`StructLiteral`].
+    pub fn bind_struct_literal(
+        &mut self,
+        syntax: &StructLiteralSyntaxTree,
+        variable_address: Option<VariableAddress>,
+    ) -> Option<StructLiteral> {
+        let (generated, variable_address) = variable_address.map_or_else(
+            || {
+                (true, VariableAddress {
+                    variable_id: Self::new_variable_id(),
+                })
+            },
+            |variable_id| (false, variable_id),
+        );
+
+        // search for the symbol
+        let symbol_id = self.table.resolve_symbol(
+            self.function_symbol_id.into(),
+            syntax.qualified_identifier.elements(),
+            self.source_file(),
+        );
+
+        let symbol_id = self.handle_symbol_resolve_result(symbol_id)?;
+
+        // expect struct id
+        let ID::Struct(struct_id) = symbol_id else {
+            self.add_error(
+               StructExpected {
+                    source_span: self.source_span(syntax.span()),
+                }.into()
+            );
+            return None;
+        };
+
+        if generated {
+            self.variables
+                .insert(variable_address.variable_id, Variable {
+                    ty: Type::TypedID(struct_id.into()).into(),
+                    is_mutable: true,
+                    name: None,
+                });
+        }
+
+        let initialized_field =
+            self.create_field_initialization(struct_id, &syntax.field_initializations);
+
+        if initialized_field.len() != self.table.get(struct_id).fields.len() {
+            self.add_error(
+                IncompleteFieldInitialization {
+                    source_span: self.source_span(syntax.span()),
+                    struct_id,
+                }
+                .into(),
+            );
+        }
+
+        // generates the store instructions to each field initialization
+        for (field_id, initializer) in initialized_field {
+            let Some(initializer) = initializer else {
+                continue;
+            };
+
+            self.control_flow_graph[self.current_block_id].add_instruction(
+                CFGInstruction::IRInstruction(
+                    Store {
+                        store_address: StructFieldAddress {
+                            struct_address: Box::new(variable_address.into()),
+                            field_id,
+                        }
+                        .into(),
+                        value: initializer,
+                    }
+                    .into(),
+                ),
+            );
+        }
+
+        Some(StructLiteral {
+            source_span: self.source_span(syntax.span()),
+            struct_id,
+            struct_load_address: variable_address,
+        })
     }
 
     fn handle_logical(
@@ -501,8 +942,8 @@ impl<'a> Builder<'a> {
         binary_operator: BinaryOperator,
     ) -> Option<Binary<IntermediateType>> {
         // must be bool
-        let left = self.bind_expression(&syntax.left_operand)?;
-        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty)?;
+        let left = self.bind_expression(&syntax.left_operand, None)?;
+        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty, None)?;
         let ty = self.get_inferrable_type(&left.type_binding().ty);
 
         if matches!(ty, InferrableType::Inferring(_))
@@ -551,6 +992,7 @@ impl<'a> Builder<'a> {
         )
     }
 
+    #[must_use]
     fn check_arithmetic_operation(
         &mut self,
         left: &Value<IntermediateType>,
@@ -634,8 +1076,8 @@ impl<'a> Builder<'a> {
         syntax: &BinarySyntaxTree,
         binary_operator: BinaryOperator,
     ) -> Option<Binary<IntermediateType>> {
-        let left = self.bind_expression(&syntax.left_operand)?;
-        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty)?;
+        let left = self.bind_expression(&syntax.left_operand, None)?;
+        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty, None)?;
 
         self.check_arithmetic_operation(&left, &right, binary_operator, syntax.span())?;
 
@@ -656,8 +1098,8 @@ impl<'a> Builder<'a> {
         syntax: &BinarySyntaxTree,
         binary_operator: BinaryOperator,
     ) -> Option<Binary<IntermediateType>> {
-        let left = self.bind_expression(&syntax.left_operand)?;
-        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty)?;
+        let left = self.bind_expression(&syntax.left_operand, None)?;
+        let right = self.expect_value(&syntax.right_operand, left.type_binding().ty, None)?;
 
         self.check_lvalue_assignment(&left.type_binding(), syntax.span())?;
         self.check_arithmetic_operation(&left, &right, binary_operator, syntax.span())?;
@@ -671,6 +1113,7 @@ impl<'a> Builder<'a> {
         })
     }
 
+    #[must_use]
     fn check_lvalue_assignment(
         &mut self,
         type_binding: &TypeBinding<IntermediateType>,
@@ -735,8 +1178,9 @@ impl<'a> Builder<'a> {
         &mut self,
         syntax: &ExpressionSyntaxTree,
         ty: IntermediateType,
+        variable_address: Option<VariableAddress>,
     ) -> Option<Value<IntermediateType>> {
-        let value = self.bind_expression(syntax)?;
+        let value = self.bind_expression(syntax, variable_address)?;
         self.verify_value(value, ty)
     }
 

@@ -4,7 +4,7 @@ use pernixc_common::source_file::SourceFile;
 
 use crate::symbol::{
     ty::{PrimitiveType, Type, TypeBinding},
-    AccessModifier, Field, LocalVariable,
+    AccessModifier, Field, Parameter,
 };
 
 #[test]
@@ -99,28 +99,28 @@ fn basic_symbol_table_test() -> Result<(), Box<dyn Error>> {
         Type::Primitive(PrimitiveType::Void)
     );
     assert_eq!(test_function_symbol.parameters.len(), 4);
-    assert_eq!(test_function_symbol.parameters[0.into()], LocalVariable {
+    assert_eq!(test_function_symbol.parameters[0.into()], Parameter {
         name: "a".to_string(),
         type_binding: TypeBinding {
             is_mutable: false,
             ty: Type::TypedID(struct_symbol_id.into()),
         },
     });
-    assert_eq!(test_function_symbol.parameters[1.into()], LocalVariable {
+    assert_eq!(test_function_symbol.parameters[1.into()], Parameter {
         name: "b".to_string(),
         type_binding: TypeBinding {
             is_mutable: false,
             ty: Type::TypedID(struct_symbol_id.into()),
         },
     });
-    assert_eq!(test_function_symbol.parameters[2.into()], LocalVariable {
+    assert_eq!(test_function_symbol.parameters[2.into()], Parameter {
         name: "c".to_string(),
         type_binding: TypeBinding {
             is_mutable: false,
             ty: Type::TypedID(sub_some_type_enum_symbol_id.into()),
         },
     });
-    assert_eq!(test_function_symbol.parameters[3.into()], LocalVariable {
+    assert_eq!(test_function_symbol.parameters[3.into()], Parameter {
         name: "d".to_string(),
         type_binding: TypeBinding {
             is_mutable: false,
