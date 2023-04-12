@@ -238,13 +238,6 @@ pub struct MemberAccessOnNonStruct {
     pub source_span: SourceSpan,
 }
 
-/// Loop control is used outside of a loop.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct LoopControlOutsideLoop {
-    /// The span of the loop control.
-    pub span: SourceSpan,
-}
-
 /// The label does not refer to any block or loop.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LabelNotFound {
@@ -280,6 +273,21 @@ pub struct IncompleteFieldInitialization {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NotAllPathExpressTheValue {
     /// Specifies the location of the block expression.
+    pub source_span: SourceSpan,
+}
+
+/// Is an enumeration of all kinds of loop controls.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum LoopControl {
+    Continue,
+    Break,
+}
+
+/// Found a loop control outside of a loop.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LoopControlOutsideLoop {
+    /// The span of the loop control.
     pub source_span: SourceSpan,
 }
 

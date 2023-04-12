@@ -1,6 +1,6 @@
 //! Contains the definition [`Builder`].
 
-use std::{collections::HashSet, hash::Hash, sync::Arc};
+use std::{collections::HashSet, hash::Hash, ops::Deref, sync::Arc};
 
 use pernixc_common::source_file::{SourceElement, SourceFile, Span};
 use pernixc_lexical::token::NumericLiteral as NumericLiteralToken;
@@ -8,9 +8,10 @@ use pernixc_syntax::syntax_tree::{
     expression::{
         Binary as BinarySyntaxTree, BinaryOperator as BinaryOperatorSyntaxTree,
         Block as BlockSyntaxTree, BlockOrIfElse, BooleanLiteral as BooleanLiteralSyntaxTree,
-        Express as ExpressSyntaxTree, Expression as ExpressionSyntaxTree, FieldInitializerList,
+        Break as BreakSyntaxTree, Continue as ContinueSyntaxTree, Express as ExpressSyntaxTree,
+        Expression as ExpressionSyntaxTree, FieldInitializerList,
         FunctionCall as FunctionCallSyntaxTree, Functional as FunctionalSyntaxTree,
-        IfElse as IfElseSyntaxTree, Imperative as ImperativeSyntaxTree,
+        IfElse as IfElseSyntaxTree, Imperative as ImperativeSyntaxTree, Loop as LoopSyntaxTree,
         MemberAccess as MemberAccessSyntaxTree, Named as NamedSyntaxTree,
         Prefix as PrefixSyntaxTree, PrefixOperator as PrefixOperatorSyntaxTree,
         Return as ReturnSyntaxTree, StructLiteral as StructLiteralSyntaxTree,
@@ -19,19 +20,21 @@ use pernixc_syntax::syntax_tree::{
         Declarative as DeclarativeSyntaxTree, Expressive as ExpressiveSyntaxTree,
         Statement as StatementSyntaxTree, VariableDeclaration as VariableDeclarationSyntaxTree,
     },
+    Label,
 };
 
 use self::{
-    label_manager::{BlockInfo, BlockManager},
+    label_manager::{BlockInfo, BlockManager, LoopID, LoopInfo, LoopManager},
     variable_manager::VariableManager,
 };
 use super::{
     instruction::{Initialization, Instruction, StructInitialization},
     value::{
-        ArgumentAddress, Binary, BinaryOperator, Block, BooleanLiteral, Category, EnumLiteral,
-        Express, FunctionCall, IfElse, IfElseLoad, ImplicitConversion, InferrableType,
-        IntermediateType, LValue, Load, MemberAccess, Named, NumericLiteral, Prefix, Return,
-        StructLiteral, TypeBinding, Value, ValueTrait, Variable, VariableAddress, VariableID,
+        ArgumentAddress, Binary, BinaryOperator, Block, BooleanLiteral, Category, Continue,
+        EnumLiteral, ErrorPlaceholder, Express, FunctionCall, IfElse, IfElseLoad,
+        ImplicitConversion, InferrableType, IntermediateType, LValue, Load, Loop, MemberAccess,
+        Named, NumericLiteral, Prefix, Return, StructLiteral, TemporaryVariable, TypeBinding,
+        UserDefinedVariable, Value, ValueTrait, Variable, VariableAddress, VariableID,
     },
 };
 use crate::{
@@ -42,8 +45,9 @@ use crate::{
         ArgumentCountMismatch, AssignToImmutable, AssignToRValue, DuplicateFieldInitialization,
         ExpressOutsideBlock, ExpressionExpected, FieldIsNotAccessible, FieldNotFound,
         IncompleteFieldInitialization, InvalidBinaryOperation, InvalidNumericLiteralSuffix,
-        InvalidPrefixOperation, LabelNotFound, MemberAccessOnNonStruct, NotAllPathExpressTheValue,
-        ReturnRequiredValue, SemanticError, StructExpected, SymbolIsNotCallable, TypeMismatch,
+        InvalidPrefixOperation, LabelNotFound, LoopControlOutsideLoop, MemberAccessOnNonStruct,
+        NotAllPathExpressTheValue, ReturnRequiredValue, SemanticError, StructExpected,
+        SymbolIsNotCallable, TypeMismatch,
     },
     hir::{instruction::Store, value::PrefixOperator},
     infer::{Constraint, InferenceContext, InferenceID, Infererence, UnificationError},
@@ -71,6 +75,7 @@ pub struct Builder<'a> {
     current_basic_block_id: BasicBlockID,
 
     variable_manager: VariableManager<'a>,
+    loop_mananger: LoopManager<'a>,
     block_manager: BlockManager<'a>,
 }
 
@@ -100,6 +105,7 @@ impl<'a> Builder<'a> {
             current_basic_block_id,
             errors: Vec::new(),
             produce_error: true,
+            loop_mananger: LoopManager::new(),
             variable_manager: VariableManager::new(),
             block_manager: BlockManager::new(),
         }
@@ -166,9 +172,12 @@ impl<'a> Builder<'a> {
         self.variable_manager.add_variable_with_name(
             variable_id,
             Variable {
-                is_mutable: variable_declaration.mutable_keyword.is_some(),
                 ty: initializer.type_binding().ty,
-                name: Some(variable_name.to_string()),
+                usage: UserDefinedVariable {
+                    is_mutable: variable_declaration.mutable_keyword.is_some(),
+                    name: self.source_file()[variable_declaration.identifier.span].to_string(),
+                }
+                .into(),
             },
             &self.source_file()[variable_declaration.identifier.span],
         );
@@ -351,10 +360,10 @@ impl<'a> Builder<'a> {
     ) -> Option<Value<IntermediateType>> {
         match syntax {
             ImperativeSyntaxTree::Block(block) => {
-                self.bind_block(block, variable_id).map(Value::Block)
+                Some(Value::from(self.bind_block(block, variable_id)))
             }
             ImperativeSyntaxTree::IfElse(if_else) => {
-                self.bind_if_else(if_else, variable_id).map(Value::IfElse)
+                Some(Value::from(self.bind_if_else(if_else, variable_id)))
             }
             ImperativeSyntaxTree::Loop(_) => todo!(),
         }
@@ -1159,8 +1168,7 @@ impl<'a> Builder<'a> {
         if generated {
             self.variable_manager.add_variable(variable_id, Variable {
                 ty: Type::TypedID(struct_id.into()).into(),
-                is_mutable: true,
-                name: None,
+                usage: TemporaryVariable::SutrctLiteral.into(),
             });
         }
 
@@ -1341,7 +1349,11 @@ impl<'a> Builder<'a> {
                         source_span: self.source_span(syntax.span()),
                         ty: variable_symbol.ty,
                         lvalue: LValue {
-                            is_mutable: variable_symbol.is_mutable,
+                            is_mutable: variable_symbol
+                                .usage
+                                .as_user_defined_variable()
+                                .unwrap()
+                                .is_mutable,
                             address: VariableAddress { variable_id }.into(),
                         },
                     }
@@ -1407,7 +1419,7 @@ impl<'a> Builder<'a> {
         &mut self,
         syntax: &BlockSyntaxTree,
         variable_id: Option<VariableID>,
-    ) -> Option<Block<IntermediateType>> {
+    ) -> Block<IntermediateType> {
         let (generated, variable_id) = variable_id.map_or_else(
             || (true, VariableID::fresh()),
             |variable_id| (false, variable_id),
@@ -1428,9 +1440,7 @@ impl<'a> Builder<'a> {
 
         // bind statements
         for statement in &syntax.block_without_label.statements {
-            if !self.bind_statement(statement) {
-                return None;
-            }
+            let _ = self.bind_statement(statement);
         }
 
         // connect current basic block to successor basic block
@@ -1449,9 +1459,8 @@ impl<'a> Builder<'a> {
         let (ty, has_variable) = if let Some(ty) = self.block_manager[new_block_id].ty() {
             if generated {
                 self.variable_manager.add_variable(variable_id, Variable {
-                    is_mutable: false,
                     ty,
-                    name: None,
+                    usage: TemporaryVariable::Block.into(),
                 });
             }
 
@@ -1493,7 +1502,7 @@ impl<'a> Builder<'a> {
             (reachable, false)
         };
 
-        Some(Block {
+        Block {
             source_span: self.source_span(syntax.span()),
             ty,
             variable_id: if has_variable {
@@ -1501,7 +1510,7 @@ impl<'a> Builder<'a> {
             } else {
                 None
             },
-        })
+        }
     }
 
     fn is_reachable(
@@ -1725,16 +1734,24 @@ impl<'a> Builder<'a> {
         &mut self,
         syntax: &IfElseSyntaxTree,
         variable_id: Option<VariableID>,
-    ) -> Option<IfElse<IntermediateType>> {
+    ) -> IfElse<IntermediateType> {
         let (variable_id, generated) =
             variable_id.map_or_else(|| (VariableID::fresh(), true), |id| (id, false));
 
         // binds the condition
-        let condition = self.expect_value(
-            &syntax.condition,
-            Type::Primitive(PrimitiveType::Bool).into(),
-            None,
-        )?;
+        let condition = self
+            .expect_value(
+                &syntax.condition,
+                Type::Primitive(PrimitiveType::Bool).into(),
+                None,
+            )
+            .unwrap_or_else(|| {
+                ErrorPlaceholder {
+                    source_span: self.source_span(syntax.condition.span()),
+                    ty: Type::Primitive(PrimitiveType::Bool).into(),
+                }
+                .into()
+            });
 
         let then_block = self.control_flow_graph.create_new_block();
         let if_else_load = if let Some(else_expression) = &syntax.else_expression {
@@ -1752,7 +1769,7 @@ impl<'a> Builder<'a> {
 
             // binds the then expression
             self.current_basic_block_id = then_block;
-            let then_result = self.bind_block(&syntax.then_expression, Some(variable_id))?;
+            let then_result = self.bind_block(&syntax.then_expression, Some(variable_id));
             // adds the jump instruction
             self.control_flow_graph
                 .add_jump(self.current_basic_block_id, con_block);
@@ -1761,12 +1778,12 @@ impl<'a> Builder<'a> {
             self.current_basic_block_id = else_block;
             let else_result = match else_expression.expression.as_ref() {
                 BlockOrIfElse::Block(block) => {
-                    self.bind_block(block, Some(variable_id)).map(Value::Block)
+                    Value::from(self.bind_block(block, Some(variable_id)))
                 }
-                BlockOrIfElse::IfElse(if_else) => self
-                    .bind_if_else(if_else, Some(variable_id))
-                    .map(Value::IfElse),
-            }?;
+                BlockOrIfElse::IfElse(if_else) => {
+                    Value::from(self.bind_if_else(if_else, Some(variable_id)))
+                }
+            };
             // adds the jump instruction
             self.control_flow_graph
                 .add_jump(self.current_basic_block_id, con_block);
@@ -1791,8 +1808,7 @@ impl<'a> Builder<'a> {
             if generated {
                 self.variable_manager.add_variable(variable_id, Variable {
                     ty,
-                    is_mutable: false,
-                    name: None,
+                    usage: TemporaryVariable::IfElse.into(),
                 });
             }
 
@@ -1811,7 +1827,7 @@ impl<'a> Builder<'a> {
 
             // binds the then expression
             self.current_basic_block_id = then_block;
-            self.bind_block(&syntax.then_expression, Some(variable_id))?;
+            self.bind_block(&syntax.then_expression, Some(variable_id));
             // adds the jump instruction
             self.control_flow_graph
                 .add_jump(self.current_basic_block_id, con_block);
@@ -1822,10 +1838,10 @@ impl<'a> Builder<'a> {
             None
         };
 
-        Some(IfElse {
+        IfElse {
             source_span: self.source_span(syntax.span()),
             if_else_load,
-        })
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1857,6 +1873,143 @@ impl<'a> Builder<'a> {
         Some(Return {
             source_span: self.source_span(syntax.span()),
         })
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds the given [`LoopSyntaxTree`] to a [`Loop`].
+    pub fn bind_loop(
+        &mut self,
+        syntax: &LoopSyntaxTree,
+        variable_id: Option<VariableID>,
+    ) -> Loop<IntermediateType> {
+        let (variable_id, generated) =
+            variable_id.map_or_else(|| (VariableID::fresh(), true), |id| (id, false));
+
+        let pred_block = self.current_basic_block_id;
+        let header_basic_block_id = self.control_flow_graph.create_new_block();
+        let successor_basic_block_id = self.control_flow_graph.create_new_block();
+
+        // connect from pred to loop header
+        self.control_flow_graph
+            .add_jump(pred_block, header_basic_block_id);
+
+        // change current basic block to loop header
+        self.current_basic_block_id = header_basic_block_id;
+
+        // generates new loop info
+        let this_loop = self.loop_mananger.push(
+            LoopInfo::new(header_basic_block_id, successor_basic_block_id, variable_id),
+            syntax
+                .label_specifier
+                .map(|f| &self.source_file()[f.label.identifier.span]),
+        );
+
+        // binds the loop body
+        for statement in &syntax.expression.block_without_label.statements {
+            let _ = self.bind_statement(statement);
+        }
+
+        // add the jump instruction to the loop header
+        self.control_flow_graph
+            .add_jump(self.current_basic_block_id, header_basic_block_id);
+
+        // start the successor block
+        self.current_basic_block_id = successor_basic_block_id;
+
+        // if the type of the temporary variable is set, we need to store it
+        let ty = if let Some(ty) = self.loop_mananger[this_loop].ty() {
+            if generated {
+                self.variable_manager.add_variable(variable_id, Variable {
+                    ty,
+                    usage: TemporaryVariable::Loop.into(),
+                });
+            }
+            Some(ty)
+        } else {
+            None
+        };
+
+        Loop {
+            source_span: self.source_span(syntax.span()),
+            ty_and_variable_id: ty.map(|f| (f, variable_id)),
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+
+    fn get_loop(&mut self, source_span: SourceSpan, label: &Option<Label>) -> Option<LoopID> {
+        Some(match label {
+            Some(label) => {
+                let Some(loop_id) = self.loop_mananger.get_with_name(
+                    &self.source_file()[label.identifier.span]
+                ) else {
+                    self.add_error(LabelNotFound {
+                        source_span
+                    }.into());
+                    return None;
+                };
+                loop_id
+            }
+            None => {
+                let Some(loop_id) = self.loop_mananger.get() else {
+                    self.add_error(LoopControlOutsideLoop {
+                        source_span
+                    }.into());
+                    return None;
+                };
+                loop_id
+            }
+        })
+    }
+
+    /// Binds the given [`ContinueSyntaxTree`] to a [`Continue`].
+    pub fn bind_continue(&mut self, syntax: &ContinueSyntaxTree) -> Option<Continue> {
+        let loop_id = self.get_loop(self.source_span(syntax.span()), &syntax.label)?;
+
+        // adds the jump instruction to the loop header
+        self.control_flow_graph.add_jump(
+            self.current_basic_block_id,
+            self.loop_mananger[loop_id].header_basic_block_id(),
+        );
+
+        Some(Continue {
+            source_span: self.source_span(syntax.span()),
+        })
+    }
+
+    pub fn bind_break(&mut self, syntax: &BreakSyntaxTree) -> Option<BreakSyntaxTree> {
+        let loop_id = self.get_loop(self.source_span(syntax.span()), &syntax.label)?;
+
+        if let Some(ty) = self.loop_mananger[loop_id].ty() {
+        } else {
+            let value = match &syntax.expression {
+                Some(expression) => {
+                    let value = self.bind_expression(
+                        expression,
+                        Some(self.loop_mananger[loop_id].variable_id()),
+                    )?;
+
+                    self.loop_mananger[loop_id].set_ty(value.type_binding().ty);
+                    Some(value)
+                }
+                None => {
+                    self.loop_mananger[loop_id].set_ty(Type::Primitive(PrimitiveType::Void).into());
+                    None
+                }
+            };
+
+            // adds the store instruction to the loop variable
+            self.control_flow_graph[self.current_basic_block_id].add_instruction(
+                Store {
+                    variable_id: self.loop_mananger[loop_id].variable_id(),
+                    initialization: value.map_or(Initialization::None, Initialization::Value),
+                }
+                .into(),
+            );
+        }
+
+        todo!()
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////

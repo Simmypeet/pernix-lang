@@ -90,7 +90,11 @@ pub enum Value<T: ValueType> {
     Express(Express),
     IfElse(IfElse<T>),
     Return(Return),
+    Loop(Loop<T>),
+    ErrorPlaceholder(ErrorPlaceholder<T>),
     ImplicitConversion(ImplicitConversion<T>),
+    Break(Break),
+    Continue(Continue),
 }
 
 impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
@@ -108,7 +112,11 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
             Self::Express(express) => express.type_binding(),
             Self::IfElse(if_else) => if_else.type_binding(),
             Self::Return(return_) => return_.type_binding(),
+            Self::Loop(loop_) => loop_.type_binding(),
+            Self::ErrorPlaceholder(placeholder) => placeholder.type_binding(),
             Self::ImplicitConversion(conversion) => conversion.type_binding(),
+            Self::Break(break_) => break_.type_binding(),
+            Self::Continue(continue_) => continue_.type_binding(),
         }
     }
 
@@ -126,7 +134,11 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
             Self::Express(express) => ValueTrait::<T>::source_span(express),
             Self::IfElse(if_else) => ValueTrait::<T>::source_span(if_else),
             Self::Return(return_) => ValueTrait::<T>::source_span(return_),
+            Self::Loop(loop_) => ValueTrait::<T>::source_span(loop_),
+            Self::ErrorPlaceholder(placeholder) => ValueTrait::<T>::source_span(placeholder),
             Self::ImplicitConversion(conversion) => ValueTrait::<T>::source_span(conversion),
+            Self::Break(break_) => ValueTrait::<T>::source_span(break_),
+            Self::Continue(continue_) => ValueTrait::<T>::source_span(continue_),
         }
     }
 }
@@ -417,6 +429,27 @@ impl<T: ValueType + Clone> ValueTrait<T> for FunctionCall<T> {
     fn source_span(&self) -> SourceSpan { self.source_span.clone() }
 }
 
+/// Is a value that is used to represent an error in the bound representation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ErrorPlaceholder<T: ValueType> {
+    /// The location of the error in the source code.
+    pub source_span: SourceSpan,
+
+    /// The type of the value that the error placeholder is supposed to represent.
+    pub ty: T,
+}
+
+impl<T: ValueType + Clone> ValueTrait<T> for ErrorPlaceholder<T> {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: self.ty.clone(),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
 /// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::MemberAccess`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemberAccess<T: ValueType> {
@@ -544,6 +577,31 @@ impl<T: ValueType + Clone> ValueTrait<T> for Block<T> {
     fn source_span(&self) -> SourceSpan { self.source_span.clone() }
 }
 
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Loop`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Loop<T: ValueType> {
+    /// Specifies where the loop is located in the source code.
+    pub source_span: SourceSpan,
+
+    /// Is the type of the value that the loop yields. If the loop does not yield a value (no
+    /// break), then this is `None`.
+    pub ty_and_variable_id: Option<(T, VariableID)>,
+}
+
+impl<T: ValueType + Clone> ValueTrait<T> for Loop<T> {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: self
+                .ty_and_variable_id
+                .as_ref()
+                .map_or_else(|| T::from_type(Type::Never), |f| f.0.clone()),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
 /// Represents a type binding of a value.
 ///
 /// The type binding comprises of a [`Type`] and a [`Category`] of the value.
@@ -617,11 +675,78 @@ pub struct Variable<T: ValueType> {
     /// The type of the variable.
     pub ty: T,
 
+    /// The usage of the variable.
+    pub usage: VariableUsage,
+}
+
+/// The variable is created for the variable declaration statement.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UserDefinedVariable {
     /// Specifies whether the variable is mutable.
     pub is_mutable: bool,
 
     /// The name of the variable.
-    pub name: Option<String>,
+    pub name: String,
+}
+
+/// The variable is used internally by the compiler for various purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TemporaryVariable {
+    /// The temporary variable is used for storing the result of a block expression
+    Block,
+
+    /// The temporary variable is used for storing the result of a loop expression
+    Loop,
+
+    /// The temporary variable is used for storing the result of a struct literal expression
+    SutrctLiteral,
+
+    /// The temporary variable is used for storing the result of an if-else expression
+    IfElse,
+}
+
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Continue`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Continue {
+    /// Specifies where the continue statement is located in the source code.
+    pub source_span: SourceSpan,
+}
+
+impl<T: ValueType> ValueTrait<T> for Continue {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: T::from_type(Type::Never),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
+/// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Break`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Break {
+    /// Specifies where the break statement is located in the source code.
+    pub source_span: SourceSpan,
+}
+
+impl<T: ValueType> ValueTrait<T> for Break {
+    fn type_binding(&self) -> TypeBinding<T> {
+        TypeBinding {
+            ty: T::from_type(Type::Never),
+            category: Category::RValue,
+        }
+    }
+
+    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+}
+
+/// Describes how the variable is used by the program.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum VariableUsage {
+    UserDefinedVariable(UserDefinedVariable),
+    TemporaryVariable(TemporaryVariable),
 }
 
 /// Used for retrieving a [`Variable`] from the [`crate::hir::HIR`].

@@ -16,7 +16,7 @@ use getset::Getters;
 
 use self::{
     instruction::Instruction,
-    value::{Variable, VariableID, Value},
+    value::{Value, Variable, VariableID},
 };
 use crate::{control_flow_graph::ControlFlowGraph, symbol::ty::Type};
 

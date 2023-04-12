@@ -15,6 +15,16 @@ use getset::{CopyGetters, Getters};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BasicBlockID(usize);
 
+impl BasicBlockID {
+    /// Creates a new [`BasicBlockID`] that guarantees to be unique from any others.
+    pub fn fresh() -> Self {
+        // use atomic counter for the identifier
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+        Self(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
 /// Represents a control-flow graph (CFG) for a function.
 ///
 /// The control-flow graph is used as an intermediate representation for both the high-level and
@@ -62,11 +72,8 @@ impl<Inst, Value> ControlFlowGraph<Inst, Value> {
     /// # Returns
     /// The [`BasicBlockID`] of the newly created basic block.
     pub fn create_new_block(&mut self) -> BasicBlockID {
+        let id = BasicBlockID::fresh();
         // use atomic as a counter
-        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
-
-        let id = BasicBlockID(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-
         self.ids_by_basic_block.insert(id, BasicBlock {
             basic_block_id: id,
             successor_block_ids: Vec::new(),

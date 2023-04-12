@@ -947,7 +947,10 @@ fn named_binding_test() -> Result<(), Box<dyn Error>> {
                 .unwrap(),
             PrimitiveType::Int64.into()
         );
-        assert_eq!(variable.name, Some("someParameter".to_string()));
+        assert_eq!(
+            variable.usage.as_user_defined_variable().unwrap().name,
+            "someParameter"
+        );
     }
 
     Ok(())

@@ -113,9 +113,9 @@ impl Identifier for BlockID {
 
 #[derive(Debug, Clone, Getters, CopyGetters)]
 pub(super) struct LoopInfo {
-    /// Is the 
+    /// Is the basic block that all the instructions of the loop are executed.
     #[get_copy = "pub(super)"]
-    header_block_id: BlockID,
+    header_basic_block_id: BasicBlockID,
 
     /// Is the basic block that is executed after the current block.
     #[get_copy = "pub(super)"]
@@ -130,4 +130,34 @@ pub(super) struct LoopInfo {
     variable_id: VariableID,
 }
 
+impl LoopInfo {
+    pub(super) fn new(
+        header_basic_block_id: BasicBlockID,
+        successor_basic_block_id: BasicBlockID,
+        variable_id: VariableID,
+    ) -> Self {
+        Self {
+            header_basic_block_id,
+            successor_basic_block_id,
+            ty: None,
+            variable_id,
+        }
+    }
+
+    pub(super) fn set_ty(&mut self, ty: IntermediateType) { self.ty = Some(ty); }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct LoopID(usize);
+
+impl Identifier for LoopID {
+    fn fresh() -> Self {
+        // use atomic counter for the identifier
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+        Self(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
 pub(super) type BlockManager<'a> = LabelManager<'a, BlockID, BlockInfo>;
+pub(super) type LoopManager<'a> = LabelManager<'a, LoopID, LoopInfo>;

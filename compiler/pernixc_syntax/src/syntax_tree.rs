@@ -370,13 +370,16 @@ impl File {
 
         // parse items
         while parser.peek_significant_token().is_some() {
-            parser.parse_item().map_or_else(|| {
+            parser.parse_item().map_or_else(
+                || {
                     // look for the next access modifier
-                    parser.forward_until(|token|
+                    parser.forward_until(|token| {
                         matches!(token, Token::Keyword(keyword) if keyword.keyword == KeywordKind::Public
                             || keyword.keyword == KeywordKind::Private)
-                        );
-                }, |item| items.push(item));
+                    });
+                },
+                |item| items.push(item),
+            );
         }
 
         // return the syntax tree and the errors
