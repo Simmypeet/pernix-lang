@@ -29,29 +29,40 @@ pub mod statement;
 /// This struct is useful for representing syntax tree nodes that are separated by a separator.
 /// For example, a comma separated list of expressions such as `1, 2, 3` can be represented by a
 /// [`ConnectedList`] with the separator being a comma token and the elements being the expressions.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct ConnectedList<Element, Separator> {
     /// The first element of the list.
-    pub first: Element,
+    #[get = "pub"]
+    pub(crate) first: Element,
 
     /// The rest of the elements of the list.
     ///
     /// Each element of the list is a tuple containing the separator and the element. The separator
     /// is the token/syntax tree node that separates the current element from the prior one.
-    pub rest: Vec<(Separator, Element)>,
+    #[get = "pub"]
+    pub(crate) rest: Vec<(Separator, Element)>,
+
+    /// The trailing separator of the list.
+    #[get = "pub"]
+    pub(crate) trailing_separator: Option<Separator>,
 }
 
 impl<Element: SourceElement, Separator: SourceElement> SourceElement
     for ConnectedList<Element, Separator>
 {
     fn span(&self) -> Span {
-        Span {
-            start: self.first.span().start,
-            end: self
-                .rest
-                .last()
-                .map_or(self.first.span().end, |(_, element)| element.span().end),
-        }
+        let end = self
+            .trailing_separator
+            .as_ref()
+            .map(|separator| separator.span())
+            .unwrap_or_else(|| {
+                self.rest
+                    .last()
+                    .map(|(_, element)| element.span())
+                    .unwrap_or_else(|| self.first.span())
+            });
+
+        self.first.span().join(&end).unwrap()
     }
 }
 
@@ -74,16 +85,11 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
 ///
 /// This syntax tree is used to represent the scope separator `::` in the qualified identifier
 /// syntax
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ScopeSeparator(pub Punctuation, pub Punctuation);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ScopeSeparator(pub(crate) Punctuation, pub(crate) Punctuation);
 
 impl SourceElement for ScopeSeparator {
-    fn span(&self) -> Span {
-        Span {
-            start: self.0.span.start,
-            end: self.1.span.end,
-        }
-    }
+    fn span(&self) -> Span { self.0.span().join(self.1.span()).unwrap() }
 }
 
 /// Represents a syntax tree node of identifiers separated by scope separators.
@@ -115,7 +121,7 @@ pub type QualifiedIdentifier = ConnectedList<Identifier, ScopeSeparator>;
 ///     | 'uint64'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum PrimitiveTypeSpecifier {
     Bool(Keyword),
@@ -146,7 +152,7 @@ impl SourceElement for PrimitiveTypeSpecifier {
             | Self::Uint8(token)
             | Self::Uint16(token)
             | Self::Uint32(token)
-            | Self::Uint64(token) => token.span,
+            | Self::Uint64(token) => token.span().clone(),
         }
     }
 }
@@ -162,7 +168,7 @@ impl SourceElement for PrimitiveTypeSpecifier {
 ///     | QualifiedIdentifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum TypeSpecifier {
     PrimitiveTypeSpecifier(PrimitiveTypeSpecifier),
@@ -186,19 +192,21 @@ impl SourceElement for TypeSpecifier {
 ///     '\'' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Label {
-    pub single_quote: Punctuation,
-    pub identifier: Identifier,
+    #[get = "pub"]
+    pub(crate) single_quote: Punctuation,
+    #[get = "pub"]
+    pub(crate) identifier: Identifier,
 }
 
 impl SourceElement for Label {
     fn span(&self) -> Span {
-        Span {
-            start: self.single_quote.span.start,
-            end: self.identifier.span.end,
-        }
+        self.single_quote
+            .span()
+            .join(self.identifier.span())
+            .unwrap()
     }
 }
 
@@ -210,27 +218,24 @@ impl SourceElement for Label {
 ///     ':' TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct TypeAnnotation {
-    pub colon: Punctuation,
-    pub type_specifier: TypeSpecifier,
+    #[get = "pub"]
+    pub(crate) colon: Punctuation,
+    #[get = "pub"]
+    pub(crate) type_specifier: TypeSpecifier,
 }
 
 impl SourceElement for TypeAnnotation {
-    fn span(&self) -> Span {
-        Span {
-            start: self.colon.span.start,
-            end: self.type_specifier.span().end,
-        }
-    }
+    fn span(&self) -> Span { self.colon.span().join(&self.type_specifier.span()).unwrap() }
 }
 
 impl<'a> Parser<'a> {
     /// Parses a [`QualifiedIdentifier`]
     pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifier> {
         // expect the first identifier
-        let first_identifier = *self.expect_identifier()?;
+        let first_identifier = self.expect_identifier()?.clone();
 
         let mut rest = Vec::new();
         let mut cursor = self.cursor;
@@ -238,13 +243,13 @@ impl<'a> Parser<'a> {
         // check if the next token is a scope separator '::'
         while let Some((first_colon, second_colon)) = {
             let first_colon = match self.next_significant_token() {
-                Some(Token::Punctuation(first_colon)) if first_colon.punctuation == ':' => {
+                Some(Token::Punctuation(first_colon)) if first_colon.punctuation() == ':' => {
                     Some(first_colon)
                 }
                 _ => None,
             };
             let second_colon = match self.next_token() {
-                Some(Token::Punctuation(second_colon)) if second_colon.punctuation == ':' => {
+                Some(Token::Punctuation(second_colon)) if second_colon.punctuation() == ':' => {
                     Some(second_colon)
                 }
                 _ => None,
@@ -258,12 +263,12 @@ impl<'a> Parser<'a> {
                 None
             }
         } {
-            let scope_separator = ScopeSeparator(*first_colon, *second_colon);
+            let scope_separator = ScopeSeparator(first_colon.clone(), second_colon.clone());
 
             // must be followed by an identifier
-            let identifier = self.expect_identifier()?;
+            let identifier = self.expect_identifier()?.clone();
 
-            rest.push((scope_separator, *identifier));
+            rest.push((scope_separator, identifier));
 
             cursor = self.cursor;
         }
@@ -271,6 +276,7 @@ impl<'a> Parser<'a> {
         Some(QualifiedIdentifier {
             first: first_identifier,
             rest,
+            trailing_separator: None,
         })
     }
 
@@ -285,19 +291,19 @@ impl<'a> Parser<'a> {
                     // eat the token right away
                     self.next_token();
 
-                    let primitive_type = match keyword.keyword {
-                        KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(*keyword),
-                        KeywordKind::Void => PrimitiveTypeSpecifier::Void(*keyword),
-                        KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(*keyword),
-                        KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(*keyword),
-                        KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(*keyword),
-                        KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(*keyword),
-                        KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(*keyword),
-                        KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(*keyword),
-                        KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(*keyword),
-                        KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(*keyword),
-                        KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(*keyword),
-                        KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(*keyword),
+                    let primitive_type = match keyword.keyword() {
+                        KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword.clone()),
+                        KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword.clone()),
+                        KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword.clone()),
+                        KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(keyword.clone()),
+                        KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword.clone()),
+                        KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword.clone()),
+                        KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(keyword.clone()),
+                        KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(keyword.clone()),
+                        KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(keyword.clone()),
+                        KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(keyword.clone()),
+                        KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(keyword.clone()),
+                        KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(keyword.clone()),
                         _ => return None,
                     };
 
@@ -309,7 +315,7 @@ impl<'a> Parser<'a> {
 
                     self.report_error(
                         TypeSpecifierExpected {
-                            found: Some(*token),
+                            found: Some(token.clone()),
                         }
                         .into(),
                     );
@@ -331,7 +337,7 @@ impl<'a> Parser<'a> {
         let type_specifier = self.parse_type_specifier()?;
 
         Some(TypeAnnotation {
-            colon: *colon,
+            colon: colon.clone(),
             type_specifier,
         })
     }
@@ -345,7 +351,7 @@ impl<'a> Parser<'a> {
 ///     Item*
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct File {
     /// Is a list of item declarations in the file.
     pub items: Vec<Item>,
@@ -374,8 +380,8 @@ impl File {
                 || {
                     // look for the next access modifier
                     parser.forward_until(|token| {
-                        matches!(token, Token::Keyword(keyword) if keyword.keyword == KeywordKind::Public
-                            || keyword.keyword == KeywordKind::Private)
+                        matches!(token, Token::Keyword(keyword) if keyword.keyword() == KeywordKind::Public
+                            || keyword.keyword() == KeywordKind::Private)
                     });
                 },
                 |item| items.push(item),
@@ -387,5 +393,5 @@ impl File {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;

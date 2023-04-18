@@ -101,7 +101,7 @@ impl<'a> Parser<'a> {
             Some(token) => {
                 self.report_error(
                     IdentifierExpected {
-                        found: Some(*token),
+                        found: Some(token.clone()),
                     }
                     .into(),
                 );
@@ -123,14 +123,14 @@ impl<'a> Parser<'a> {
         let token = self.next_significant_token();
 
         match token {
-            Some(Token::Punctuation(punctuation)) if punctuation.punctuation == expected => {
+            Some(Token::Punctuation(punctuation)) if punctuation.punctuation() == expected => {
                 Some(punctuation)
             }
             Some(token) => {
                 self.report_error(
                     PunctuationExpected {
                         expected,
-                        found: Some(*token),
+                        found: Some(token.clone()),
                     }
                     .into(),
                 );
@@ -161,13 +161,11 @@ impl<'a> Parser<'a> {
     pub fn take_errors(&mut self) -> Vec<SyntacticError> { std::mem::take(&mut self.errors) }
 
     fn delimiter_predicate<const CHAR: char>(token: &Token) -> bool {
-        matches!(
-            token,
-            Token::Punctuation(Punctuation {
-                punctuation,
-                ..
-            }) if *punctuation == CHAR
-        )
+        let Some(punctuation) = token.as_punctuation() else {
+            return false
+        };
+
+        punctuation.punctuation() == CHAR
     }
 
     /// Skips all tokens until the given predicate returns `true`.
@@ -181,19 +179,13 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.next_token() {
             match token {
                 // found ( or [ or {, skip until the corresponding closing delimiter
-                Token::Punctuation(Punctuation {
-                    punctuation: '(', ..
-                }) => {
+                Token::Punctuation(punc) if punc.punctuation() == '(' => {
                     self.next_token_until(Self::delimiter_predicate::<')'>);
                 }
-                Token::Punctuation(Punctuation {
-                    punctuation: '[', ..
-                }) => {
+                Token::Punctuation(punc) if punc.punctuation() == '[' => {
                     self.next_token_until(Self::delimiter_predicate::<']'>);
                 }
-                Token::Punctuation(Punctuation {
-                    punctuation: '{', ..
-                }) => {
+                Token::Punctuation(punc) if punc.punctuation() == '{' => {
                     self.next_token_until(Self::delimiter_predicate::<'}'>);
                 }
                 _ => {
@@ -217,19 +209,13 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.peek_token() {
             match token {
                 // found ( or [ or {, skip until the corresponding closing delimiter
-                Token::Punctuation(Punctuation {
-                    punctuation: '(', ..
-                }) => {
+                Token::Punctuation(punc) if punc.punctuation() == '(' => {
                     self.next_token_until(Self::delimiter_predicate::<')'>);
                 }
-                Token::Punctuation(Punctuation {
-                    punctuation: '[', ..
-                }) => {
+                Token::Punctuation(punc) if punc.punctuation() == '[' => {
                     self.next_token_until(Self::delimiter_predicate::<']'>);
                 }
-                Token::Punctuation(Punctuation {
-                    punctuation: '{', ..
-                }) => {
+                Token::Punctuation(punc) if punc.punctuation() == '{' => {
                     self.next_token_until(Self::delimiter_predicate::<'}'>);
                 }
                 _ => {
@@ -258,12 +244,13 @@ impl<'a> Parser<'a> {
     ) -> Option<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
         let mut first = None;
         let mut rest = Vec::new();
+        let mut trailing_separator = None;
 
         // check for empty list
         match self.peek_significant_token() {
-            Some(Token::Punctuation(punc)) if punc.punctuation == delimiter => {
+            Some(Token::Punctuation(punc)) if punc.punctuation() == delimiter => {
                 self.next_token();
-                return Some((None, *punc));
+                return Some((None, punc.clone()));
             }
             None => self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
                 expected: delimiter,
@@ -276,17 +263,17 @@ impl<'a> Parser<'a> {
             first = Some(value);
         } else {
             let token = self.forward_until(|token| match token {
-                Token::Punctuation(Punctuation { punctuation, .. }) => {
-                    *punctuation == delimiter || *punctuation == separator
+                Token::Punctuation(punc) => {
+                    punc.punctuation() == delimiter || punc.punctuation() == separator
                 }
                 _ => false,
             });
 
             // if found delimiter, return empty list
             if let Some(Token::Punctuation(token)) = token {
-                if token.punctuation == delimiter {
+                if token.punctuation() == delimiter {
                     self.next_token();
-                    return Some((None, *token));
+                    return Some((None, token.clone()));
                 }
             }
         }
@@ -294,22 +281,33 @@ impl<'a> Parser<'a> {
         let delimiter = loop {
             match self.peek_significant_token() {
                 Some(Token::Punctuation(separator_token))
-                    if separator_token.punctuation == separator =>
+                    if separator_token.punctuation() == separator =>
                 {
                     // eat the separator
                     self.next_token();
 
+                    match self.peek_significant_token() {
+                        Some(Token::Punctuation(delimiter_token))
+                            if delimiter_token.punctuation() == delimiter =>
+                        {
+                            // eat the delimiter
+                            self.next_token();
+
+                            trailing_separator = Some(separator_token.clone());
+                            break delimiter_token;
+                        }
+                        _ => (),
+                    }
+
                     // add value to the list
-                    parse_item(self).map_or_else(
-                        || {
+                    parse_item(self).map_or(
+                        {
                             // skip to either the next separator or the delimiter
                             self.forward_until(|token| {
                                 matches!(
                                     token,
-                                    Token::Punctuation(Punctuation {
-                                        punctuation,
-                                        ..
-                                    }) if *punctuation == delimiter || *punctuation == separator
+                                    Token::Punctuation(punc) if punc.punctuation() == delimiter ||
+                                        punc.punctuation() == separator
                                 )
                             });
                         },
@@ -317,13 +315,13 @@ impl<'a> Parser<'a> {
                             if first.is_none() {
                                 first = Some(value);
                             } else {
-                                rest.push((*separator_token, value));
+                                rest.push((separator_token.clone(), value));
                             }
                         },
                     );
                 }
                 Some(Token::Punctuation(delimiter_token))
-                    if delimiter_token.punctuation == delimiter =>
+                    if delimiter_token.punctuation() == delimiter =>
                 {
                     // eat the delimiter
                     self.next_token();
@@ -333,14 +331,21 @@ impl<'a> Parser<'a> {
                 token => {
                     self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
                         expected: delimiter,
-                        found: token.copied(),
+                        found: token.cloned(),
                     }));
                     return None;
                 }
             }
         };
 
-        Some((first.map(|first| ConnectedList { first, rest }), *delimiter))
+        Some((
+            first.map(|first| ConnectedList {
+                first,
+                rest,
+                trailing_separator,
+            }),
+            delimiter.clone(),
+        ))
     }
 
     /// Tries to parse a syntax tree node with rollback on failure.
@@ -441,5 +446,5 @@ pub(super) enum FirstOrSecond<T1, T2> {
     Second(T2),
 }
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;

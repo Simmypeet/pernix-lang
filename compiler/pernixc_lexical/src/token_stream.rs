@@ -18,7 +18,7 @@ use crate::{
 ///
 /// This struct is meant to represent only a valid token stream. Therefore, it is not possible to
 /// create an invalid token stream using the public API.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TokenStream(Vec<Token>);
 
 #[allow(clippy::inline_always)]

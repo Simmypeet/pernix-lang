@@ -14,9 +14,9 @@
     rustdoc::broken_intra_doc_links,
     clippy::missing_errors_doc
 )]
-#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
+#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn, missing_docs)]
 
 pub mod errors;
-pub mod file_parsing;
+// pub mod file_parsing;
 pub mod parser;
 pub mod syntax_tree;

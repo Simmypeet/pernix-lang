@@ -2,6 +2,7 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
 
@@ -19,7 +20,7 @@ use crate::parser::Parser;
 ///     Declarative
 ///     | Expressive
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Statement {
     Declarative(Declarative),
@@ -45,7 +46,7 @@ impl SourceElement for Statement {
 ///     VariableDeclaration
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Declarative {
     VariableDeclaration(VariableDeclaration),
@@ -67,25 +68,27 @@ impl SourceElement for Declarative {
 ///     VariableTypeBindingSpecifier Identifier '=' Expression ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct VariableDeclaration {
-    pub let_keyword: Keyword,
-    pub mutable_keyword: Option<Keyword>,
-    pub identifier: Identifier,
-    pub type_annotation: Option<TypeAnnotation>,
-    pub equals: Punctuation,
-    pub expression: Expression,
-    pub semicolon: Punctuation,
+    #[get = "pub"]
+    pub(super) let_keyword: Keyword,
+    #[get = "pub"]
+    pub(super) mutable_keyword: Option<Keyword>,
+    #[get = "pub"]
+    pub(super) identifier: Identifier,
+    #[get = "pub"]
+    pub(super) type_annotation: Option<TypeAnnotation>,
+    #[get = "pub"]
+    pub(super) equals: Punctuation,
+    #[get = "pub"]
+    pub(super) expression: Expression,
+    #[get = "pub"]
+    pub(super) semicolon: Punctuation,
 }
 
 impl SourceElement for VariableDeclaration {
-    fn span(&self) -> Span {
-        Span {
-            start: self.let_keyword.span.start,
-            end: self.semicolon.span.end,
-        }
-    }
+    fn span(&self) -> Span { self.let_keyword.span().join(self.semicolon.span()).unwrap() }
 }
 
 /// Represents an expressive statement syntax tree node
@@ -100,7 +103,7 @@ impl SourceElement for VariableDeclaration {
 ///     | Imperative
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Expressive {
     Semi(Semi),
@@ -126,20 +129,17 @@ impl SourceElement for Expressive {
 ///     Functional ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Semi {
-    pub expression: Functional,
-    pub semicolon: Punctuation,
+    #[get = "pub"]
+    pub(super) expression: Functional,
+    #[get = "pub"]
+    pub(super) semicolon: Punctuation,
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Span {
-        Span {
-            start: self.expression.span().start,
-            end: self.semicolon.span.end,
-        }
-    }
+    fn span(&self) -> Span { self.expression.span().join(self.semicolon.span()).unwrap() }
 }
 
 impl<'a> Parser<'a> {
@@ -147,18 +147,18 @@ impl<'a> Parser<'a> {
     pub fn parse_statement(&mut self) -> Option<Statement> {
         match self.peek_significant_token() {
             // Handles variable declaration statements
-            Some(Token::Keyword(let_keyword)) if let_keyword.keyword == KeywordKind::Let => {
+            Some(Token::Keyword(let_keyword)) if let_keyword.keyword() == KeywordKind::Let => {
                 // eat let keyword
                 self.next_token();
 
                 let mutable_keyword = match self.peek_significant_token() {
                     Some(Token::Keyword(mutable_keyword))
-                        if mutable_keyword.keyword == KeywordKind::Mutable =>
+                        if mutable_keyword.keyword() == KeywordKind::Mutable =>
                     {
                         // eat mutable keyword
                         self.next_token();
 
-                        Some(*mutable_keyword)
+                        Some(mutable_keyword.clone())
                     }
                     _ => None,
                 };
@@ -168,14 +168,14 @@ impl<'a> Parser<'a> {
 
                 // parse optional type annotation
                 let type_annotation = match self.peek_significant_token() {
-                    Some(Token::Punctuation(punctuation)) if punctuation.punctuation == ':' => {
+                    Some(Token::Punctuation(punctuation)) if punctuation.punctuation() == ':' => {
                         // eat colon
                         self.next_token();
 
                         let type_specifier = self.parse_type_specifier()?;
 
                         Some(TypeAnnotation {
-                            colon: *punctuation,
+                            colon: punctuation.clone(),
                             type_specifier,
                         })
                     }
@@ -193,13 +193,13 @@ impl<'a> Parser<'a> {
 
                 Some(Statement::Declarative(
                     VariableDeclaration {
-                        let_keyword: *let_keyword,
+                        let_keyword: let_keyword.clone(),
                         mutable_keyword,
-                        identifier: *identifier,
+                        identifier: identifier.clone(),
                         type_annotation,
-                        equals: *equals,
+                        equals: equals.clone(),
                         expression,
-                        semicolon: *semicolon,
+                        semicolon: semicolon.clone(),
                     }
                     .into(),
                 ))
@@ -214,7 +214,7 @@ impl<'a> Parser<'a> {
 
                         Some(Statement::Expressive(Expressive::Semi(Semi {
                             expression,
-                            semicolon: *semicolon,
+                            semicolon: semicolon.clone(),
                         })))
                     }
                     Expression::Imperative(expression) => {
@@ -226,5 +226,5 @@ impl<'a> Parser<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;

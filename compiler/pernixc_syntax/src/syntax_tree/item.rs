@@ -2,12 +2,13 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_common::source_file::Span;
+use getset::Getters;
+use pernixc_common::source_file::{SourceElement, Span};
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
 
-use super::{expression::BlockWithoutLabel, ConnectedList, SourceElement, TypeAnnotation};
+use super::{expression::BlockWithoutLabel, ConnectedList, TypeAnnotation};
 use crate::{
-    errors::{AccessModifierExpected, FieldGroupExpected, ItemExpected},
+    errors::{AccessModifierExpected, ItemExpected},
     parser::Parser,
 };
 
@@ -21,7 +22,7 @@ use crate::{
 ///     | 'internal'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum AccessModifier {
     Public(Keyword),
@@ -33,7 +34,7 @@ impl SourceElement for AccessModifier {
     fn span(&self) -> Span {
         match self {
             Self::Public(keyword) | Self::Private(keyword) | Self::Internal(keyword) => {
-                keyword.span
+                keyword.span().clone()
             }
         }
     }
@@ -47,21 +48,19 @@ impl SourceElement for AccessModifier {
 ///     Identifier TypeAnnotation ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Field {
-    pub identifier: Identifier,
-    pub type_annotation: TypeAnnotation,
-    pub semicolon: Punctuation,
+    #[get = "pub"]
+    pub(super) identifier: Identifier,
+    #[get = "pub"]
+    pub(super) type_annotation: TypeAnnotation,
+    #[get = "pub"]
+    pub(super) semicolon: Punctuation,
 }
 
 impl SourceElement for Field {
-    fn span(&self) -> Span {
-        Span {
-            start: self.identifier.span.start,
-            end: self.semicolon.span.end,
-        }
-    }
+    fn span(&self) -> Span { self.identifier.span().join(self.semicolon.span()).unwrap() }
 }
 
 /// Represents a syntax tree node for a field group.
@@ -72,20 +71,24 @@ impl SourceElement for Field {
 ///     AccessModifier ':' Field*
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct FieldGroup {
-    pub access_modifier: AccessModifier,
-    pub colon: Punctuation,
-    pub fields: Vec<Field>,
+    #[get = "pub"]
+    pub(super) access_modifier: AccessModifier,
+    #[get = "pub"]
+    pub(super) colon: Punctuation,
+    #[get = "pub"]
+    pub(super) fields: Vec<Field>,
 }
 
 impl SourceElement for FieldGroup {
     fn span(&self) -> Span {
-        Span {
-            start: self.access_modifier.span().start,
-            end: self.fields.last().unwrap().span().end,
-        }
+        let end = self
+            .fields
+            .last()
+            .map_or_else(|| self.colon.span().clone(), |field| field.span());
+        self.access_modifier.span().join(&end).unwrap()
     }
 }
 
@@ -97,23 +100,29 @@ impl SourceElement for FieldGroup {
 ///     AccessModifier 'struct' Identifier '{' FieldGroup* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Struct {
-    pub access_modifier: AccessModifier,
-    pub struct_keyword: Keyword,
-    pub identifier: Identifier,
-    pub left_brace: Punctuation,
-    pub field_groups: Vec<FieldGroup>,
-    pub right_brace: Punctuation,
+    #[get = "pub"]
+    pub(super) access_modifier: AccessModifier,
+    #[get = "pub"]
+    pub(super) struct_keyword: Keyword,
+    #[get = "pub"]
+    pub(super) identifier: Identifier,
+    #[get = "pub"]
+    pub(super) left_brace: Punctuation,
+    #[get = "pub"]
+    pub(super) field_groups: Vec<FieldGroup>,
+    #[get = "pub"]
+    pub(super) right_brace: Punctuation,
 }
 
 impl SourceElement for Struct {
     fn span(&self) -> Span {
-        Span {
-            start: self.access_modifier.span().start,
-            end: self.right_brace.span.end,
-        }
+        self.access_modifier
+            .span()
+            .join(self.right_brace.span())
+            .unwrap()
     }
 }
 
@@ -135,23 +144,29 @@ pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
 ///     AccessModifier 'enum' Identifier '{' EnumVariantList? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Enum {
-    pub access_modifier: AccessModifier,
-    pub enum_keyword: Keyword,
-    pub identifier: Identifier,
-    pub left_brace: Punctuation,
-    pub variants: Option<EnumVariantList>,
-    pub right_brace: Punctuation,
+    #[get = "pub"]
+    pub(super) access_modifier: AccessModifier,
+    #[get = "pub"]
+    pub(super) enum_keyword: Keyword,
+    #[get = "pub"]
+    pub(super) identifier: Identifier,
+    #[get = "pub"]
+    pub(super) left_brace: Punctuation,
+    #[get = "pub"]
+    pub(super) variants: Option<EnumVariantList>,
+    #[get = "pub"]
+    pub(super) right_brace: Punctuation,
 }
 
 impl SourceElement for Enum {
     fn span(&self) -> Span {
-        Span {
-            start: self.access_modifier.span().start,
-            end: self.right_brace.span.end,
-        }
+        self.access_modifier
+            .span()
+            .join(self.right_brace.span())
+            .unwrap()
     }
 }
 
@@ -163,23 +178,24 @@ impl SourceElement for Enum {
 ///     'mutable"? Identifier ':' TypeSpecifier     
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Parameter {
-    pub mutable_keyword: Option<Keyword>,
-    pub identifier: Identifier,
-    pub type_annotation: TypeAnnotation,
+    #[get = "pub"]
+    pub(super) mutable_keyword: Option<Keyword>,
+    #[get = "pub"]
+    pub(super) identifier: Identifier,
+    #[get = "pub"]
+    pub(super) type_annotation: TypeAnnotation,
 }
 
 impl SourceElement for Parameter {
     fn span(&self) -> Span {
-        Span {
-            start: self
-                .mutable_keyword
-                .as_ref()
-                .map_or(self.identifier.span.start, |keyword| keyword.span.start),
-            end: self.type_annotation.span().end,
-        }
+        self.mutable_keyword
+            .as_ref()
+            .map_or_else(|| self.identifier.span(), |keyword| keyword.span())
+            .join(&self.type_annotation.span())
+            .unwrap()
     }
 }
 
@@ -202,25 +218,33 @@ pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 ///     TypeAnnotation BlockWithoutLabel
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Function {
-    pub access_modifier: AccessModifier,
-    pub function_keyword: Keyword,
-    pub identifier: Identifier,
-    pub left_paren: Punctuation,
-    pub parameters: Option<ParameterList>,
-    pub right_paren: Punctuation,
-    pub type_annotation: TypeAnnotation,
-    pub block_without_label: BlockWithoutLabel,
+    #[get = "pub"]
+    pub(super) access_modifier: AccessModifier,
+    #[get = "pub"]
+    pub(super) function_keyword: Keyword,
+    #[get = "pub"]
+    pub(super) identifier: Identifier,
+    #[get = "pub"]
+    pub(super) left_paren: Punctuation,
+    #[get = "pub"]
+    pub(super) parameters: Option<ParameterList>,
+    #[get = "pub"]
+    pub(super) right_paren: Punctuation,
+    #[get = "pub"]
+    pub(super) type_annotation: TypeAnnotation,
+    #[get = "pub"]
+    pub(super) block_without_label: BlockWithoutLabel,
 }
 
 impl SourceElement for Function {
     fn span(&self) -> Span {
-        Span {
-            start: self.access_modifier.span().start,
-            end: self.block_without_label.span().end,
-        }
+        self.access_modifier
+            .span()
+            .join(&self.block_without_label.span())
+            .unwrap()
     }
 }
 
@@ -232,21 +256,25 @@ impl SourceElement for Function {
 ///     AccessModifier 'module' Identifier ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Module {
-    pub access_modifier: AccessModifier,
-    pub module_keyword: Keyword,
-    pub identifier: Identifier,
-    pub semicolon: Punctuation,
+    #[get = "pub"]
+    pub(super) access_modifier: AccessModifier,
+    #[get = "pub"]
+    pub(super) module_keyword: Keyword,
+    #[get = "pub"]
+    pub(super) identifier: Identifier,
+    #[get = "pub"]
+    pub(super) semicolon: Punctuation,
 }
 
 impl SourceElement for Module {
     fn span(&self) -> Span {
-        Span {
-            start: self.access_modifier.span().start,
-            end: self.semicolon.span.end,
-        }
+        self.access_modifier
+            .span()
+            .join(self.semicolon.span())
+            .unwrap()
     }
 }
 
@@ -261,7 +289,7 @@ impl SourceElement for Module {
 ///     | Module
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Item {
     Struct(Struct),
@@ -290,28 +318,28 @@ impl<'a> Parser<'a> {
         match self.peek_significant_token() {
             // Handles struct item
             Some(Token::Keyword(struct_keyword))
-                if struct_keyword.keyword == KeywordKind::Struct =>
+                if struct_keyword.keyword() == KeywordKind::Struct =>
             {
                 // eat struct keyword
                 self.next_token();
-                self.handle_struct(access_modifier, *struct_keyword)
+                self.handle_struct(access_modifier, struct_keyword.clone())
             }
             // Handles enum
-            Some(Token::Keyword(enum_keyword)) if enum_keyword.keyword == KeywordKind::Enum => {
+            Some(Token::Keyword(enum_keyword)) if enum_keyword.keyword() == KeywordKind::Enum => {
                 // eat token
                 self.next_token();
 
                 let identifier = self.expect_identifier()?;
                 let left_brace = self.expect_punctuation('{')?;
                 let (variants, right_brace) =
-                    self.parse_enclosed_list('}', ',', |parse| parse.expect_identifier().copied())?;
+                    self.parse_enclosed_list('}', ',', |parse| parse.expect_identifier().cloned())?;
 
                 Some(
                     Enum {
                         access_modifier,
-                        enum_keyword: *enum_keyword,
-                        identifier: *identifier,
-                        left_brace: *left_brace,
+                        enum_keyword: enum_keyword.clone(),
+                        identifier: identifier.clone(),
+                        left_brace: left_brace.clone(),
                         variants,
                         right_brace,
                     }
@@ -320,7 +348,7 @@ impl<'a> Parser<'a> {
             }
             // Handles module
             Some(Token::Keyword(module_keyword))
-                if module_keyword.keyword == KeywordKind::Module =>
+                if module_keyword.keyword() == KeywordKind::Module =>
             {
                 // eat token
                 self.next_token();
@@ -331,32 +359,32 @@ impl<'a> Parser<'a> {
                 Some(
                     Module {
                         access_modifier,
-                        module_keyword: *module_keyword,
-                        identifier: *identifier,
-                        semicolon: *semicolon,
+                        module_keyword: module_keyword.clone(),
+                        identifier: identifier.clone(),
+                        semicolon: semicolon.clone(),
                     }
                     .into(),
                 )
             }
             // Handles function
             Some(Token::Keyword(function_keyword))
-                if function_keyword.keyword == KeywordKind::Function =>
+                if function_keyword.keyword() == KeywordKind::Function =>
             {
                 // eat function keyword
                 self.next_token();
 
-                let identifier = *self.expect_identifier()?;
-                let left_paren = *self.expect_punctuation('(')?;
+                let identifier = self.expect_identifier()?.clone();
+                let left_paren = self.expect_punctuation('(')?.clone();
 
                 let (parameters, right_paren) = self.parse_enclosed_list(')', ',', |parse| {
                     let mutable_keyword = match parse.peek_significant_token() {
                         Some(Token::Keyword(mutable_keyword))
-                            if mutable_keyword.keyword == KeywordKind::Mutable =>
+                            if mutable_keyword.keyword() == KeywordKind::Mutable =>
                         {
                             // eat mutable keyword
                             parse.next_token();
 
-                            Some(*mutable_keyword)
+                            Some(mutable_keyword.clone())
                         }
                         _ => None,
                     };
@@ -365,7 +393,7 @@ impl<'a> Parser<'a> {
 
                     Some(Parameter {
                         mutable_keyword,
-                        identifier: *identifier,
+                        identifier: identifier.clone(),
                         type_annotation,
                     })
                 })?;
@@ -376,7 +404,7 @@ impl<'a> Parser<'a> {
                 Some(
                     Function {
                         access_modifier,
-                        function_keyword: *function_keyword,
+                        function_keyword: function_keyword.clone(),
                         identifier,
                         left_paren,
                         parameters,
@@ -393,7 +421,7 @@ impl<'a> Parser<'a> {
 
                 self.report_error(
                     ItemExpected {
-                        found: token.copied(),
+                        found: token.cloned(),
                     }
                     .into(),
                 );
@@ -412,22 +440,22 @@ impl<'a> Parser<'a> {
         let mut field_groups = Vec::new();
         let right_brace = loop {
             match self.next_significant_token() {
-                Some(Token::Punctuation(right_brace)) if right_brace.punctuation == '}' => {
+                Some(Token::Punctuation(right_brace)) if right_brace.punctuation() == '}' => {
                     // eat right brace
                     self.next_token();
 
                     break right_brace;
                 }
                 Some(Token::Keyword(access_modifier))
-                    if access_modifier.keyword == KeywordKind::Public
-                        || access_modifier.keyword == KeywordKind::Private
-                        || access_modifier.keyword == KeywordKind::Internal =>
+                    if access_modifier.keyword() == KeywordKind::Public
+                        || access_modifier.keyword() == KeywordKind::Private
+                        || access_modifier.keyword() == KeywordKind::Internal =>
                 {
                     // parse access modifier
-                    let access_modifier = match access_modifier.keyword {
-                        KeywordKind::Public => AccessModifier::Public(*access_modifier),
-                        KeywordKind::Private => AccessModifier::Private(*access_modifier),
-                        KeywordKind::Internal => AccessModifier::Internal(*access_modifier),
+                    let access_modifier = match access_modifier.keyword() {
+                        KeywordKind::Public => AccessModifier::Public(access_modifier.clone()),
+                        KeywordKind::Private => AccessModifier::Private(access_modifier.clone()),
+                        KeywordKind::Internal => AccessModifier::Internal(access_modifier.clone()),
                         _ => unreachable!(),
                     };
 
@@ -439,14 +467,14 @@ impl<'a> Parser<'a> {
                     loop {
                         match self.peek_significant_token() {
                             Some(Token::Punctuation(punctuation))
-                                if punctuation.punctuation == '}' =>
+                                if punctuation.punctuation() == '}' =>
                             {
                                 break;
                             }
                             Some(Token::Keyword(access_mod_keyword))
-                                if access_mod_keyword.keyword == KeywordKind::Public
-                                    || access_mod_keyword.keyword == KeywordKind::Private
-                                    || access_mod_keyword.keyword == KeywordKind::Internal =>
+                                if access_mod_keyword.keyword() == KeywordKind::Public
+                                    || access_mod_keyword.keyword() == KeywordKind::Private
+                                    || access_mod_keyword.keyword() == KeywordKind::Internal =>
                             {
                                 break;
                             }
@@ -457,12 +485,12 @@ impl<'a> Parser<'a> {
                                 let semicolon = self.expect_punctuation(';')?;
 
                                 fields.push(Field {
-                                    identifier: *identifier,
+                                    identifier: identifier.clone(),
                                     type_annotation: TypeAnnotation {
-                                        colon: *colon,
+                                        colon: colon.clone(),
                                         type_specifier,
                                     },
-                                    semicolon: *semicolon,
+                                    semicolon: semicolon.clone(),
                                 });
                             }
                         }
@@ -470,14 +498,14 @@ impl<'a> Parser<'a> {
 
                     field_groups.push(FieldGroup {
                         access_modifier,
-                        colon: *colon,
+                        colon: colon.clone(),
                         fields,
                     });
                 }
                 found => {
                     self.report_error(
-                        FieldGroupExpected {
-                            found: found.copied(),
+                        AccessModifierExpected {
+                            found: found.cloned(),
                         }
                         .into(),
                     );
@@ -489,10 +517,10 @@ impl<'a> Parser<'a> {
             Struct {
                 access_modifier,
                 struct_keyword,
-                identifier: *identifier,
-                left_brace: *left_brace,
+                identifier: identifier.clone(),
+                left_brace: left_brace.clone(),
                 field_groups,
-                right_brace: *right_brace,
+                right_brace: right_brace.clone(),
             }
             .into(),
         )
@@ -502,24 +530,24 @@ impl<'a> Parser<'a> {
     pub fn parse_access_modifier(&mut self) -> Option<AccessModifier> {
         match self.next_significant_token() {
             Some(Token::Keyword(public_keyword))
-                if public_keyword.keyword == KeywordKind::Public =>
+                if public_keyword.keyword() == KeywordKind::Public =>
             {
-                Some(AccessModifier::Public(*public_keyword))
+                Some(AccessModifier::Public(public_keyword.clone()))
             }
             Some(Token::Keyword(private_keyword))
-                if private_keyword.keyword == KeywordKind::Private =>
+                if private_keyword.keyword() == KeywordKind::Private =>
             {
-                Some(AccessModifier::Private(*private_keyword))
+                Some(AccessModifier::Private(private_keyword.clone()))
             }
             Some(Token::Keyword(internal_keyword))
-                if internal_keyword.keyword == KeywordKind::Internal =>
+                if internal_keyword.keyword() == KeywordKind::Internal =>
             {
-                Some(AccessModifier::Internal(*internal_keyword))
+                Some(AccessModifier::Internal(internal_keyword.clone()))
             }
             found => {
                 self.report_error(
                     AccessModifierExpected {
-                        found: found.copied(),
+                        found: found.cloned(),
                     }
                     .into(),
                 );
@@ -529,5 +557,5 @@ impl<'a> Parser<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;

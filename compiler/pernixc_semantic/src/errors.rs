@@ -277,7 +277,7 @@ pub struct NotAllPathExpressTheValue {
 }
 
 /// Is an enumeration of all kinds of loop controls.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum LoopControl {
     Continue,

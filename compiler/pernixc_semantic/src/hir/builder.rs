@@ -1,6 +1,6 @@
 //! Contains the definition [`Builder`].
 
-use std::{collections::HashSet, hash::Hash, ops::Deref, sync::Arc};
+use std::{collections::HashSet, hash::Hash, sync::Arc};
 
 use pernixc_common::source_file::{SourceElement, SourceFile, Span};
 use pernixc_lexical::token::NumericLiteral as NumericLiteralToken;
@@ -175,11 +175,11 @@ impl<'a> Builder<'a> {
                 ty: initializer.type_binding().ty,
                 usage: UserDefinedVariable {
                     is_mutable: variable_declaration.mutable_keyword.is_some(),
-                    name: self.source_file()[variable_declaration.identifier.span].to_string(),
+                    name: variable_name.to_owned(),
                 }
                 .into(),
             },
-            &self.source_file()[variable_declaration.identifier.span],
+            variable_name,
         );
 
         // add store instruction to the current basic block
@@ -1978,6 +1978,7 @@ impl<'a> Builder<'a> {
         })
     }
 
+    /// Binds the given [`BreakSyntaxTree`] to a [`Break`].
     pub fn bind_break(&mut self, syntax: &BreakSyntaxTree) -> Option<BreakSyntaxTree> {
         let loop_id = self.get_loop(self.source_span(syntax.span()), &syntax.label)?;
 
