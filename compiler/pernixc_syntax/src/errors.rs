@@ -26,13 +26,14 @@ fn found_string(found: &Option<Token>) -> String {
 
     match token {
         Token::WhiteSpace(_) => "whitespaces".to_string(),
-        Token::Identifier(_) => format!("`{}` identifier", token.span().source_code()),
-        Token::Keyword(_) => format!("`{}` keyword", token.span().source_code()),
-        Token::Punctuation(_) => format!("`{}`", token.span().source_code()),
-        Token::NumericLiteral(_) => format!("`{}`", token.span().source_code()),
-        Token::StringLiteral(_) => format!("string literal"),
-        Token::CharacterLiteral(_) => format!("character literal"),
-        Token::Comment(_) => format!("comment"),
+        Token::Identifier(_) => format!("`{}` identifier", token.span().str()),
+        Token::Keyword(_) => format!("`{}` keyword", token.span().str()),
+        Token::Punctuation(_) | Token::NumericLiteral(_) => {
+            format!("`{}`", token.span().str())
+        }
+        Token::StringLiteral(_) => "string literal".to_string(),
+        Token::CharacterLiteral(_) => "character literal".to_string(),
+        Token::Comment(_) => "comment".to_string(),
     }
 }
 
@@ -54,7 +55,7 @@ impl IdentifierExpected {
                 Some("identifier expected here"),
             );
         }
-        print!("\n");
+        println!();
     }
 }
 
@@ -84,7 +85,7 @@ impl TypeSpecifierExpected {
                 Some("type specifier syntax expected here"),
             );
         }
-        print!("\n");
+        println!();
     }
 }
 
@@ -114,7 +115,7 @@ impl ExpressionExpected {
                 Some("expression syntax expected here"),
             );
         }
-        print!("\n");
+        println!();
     }
 }
 
@@ -144,7 +145,7 @@ impl ItemExpected {
                 Some("item syntax expected here"),
             );
         }
-        print!("\n");
+        println!();
     }
 }
 
@@ -174,7 +175,7 @@ impl AccessModifierExpected {
                 Some("access modifier syntax expected here"),
             );
         }
-        print!("\n");
+        println!();
     }
 }
 
@@ -211,7 +212,7 @@ impl PunctuationExpected {
                 ),
             );
         }
-        print!("\n");
+        println!();
     }
 }
 
@@ -246,7 +247,7 @@ impl KeywordExpected {
                 Some(format!("keyword of `{}` expected here", self.expected.as_str()).as_str()),
             );
         }
-        print!("\n");
+        println!();
     }
 }
 

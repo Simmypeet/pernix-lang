@@ -1,19 +1,12 @@
-use std::error::Error;
+use std::{error::Error, path::PathBuf};
 
-use pernixc_common::source_file::{Iterator, Span, SpanEnding};
+use pernixc_common::source_file::SourceFile;
 use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
     parser::Parser,
     syntax_tree::{expression::BinaryOperator, SourceElement},
 };
-
-fn substr_span(source_code: &str, span: Span) -> &str {
-    match span.end {
-        SpanEnding::Location(end_location) => &source_code[span.start.byte..end_location.byte],
-        SpanEnding::EndOfFile => &source_code[span.start.byte..],
-    }
-}
 
 const SOURCE_CODE: &str = "
 'test: {
@@ -37,7 +30,13 @@ const SOURCE_CODE: &str = "
 #[test]
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
-    let (token_stream, _) = TokenStream::tokenize(Iterator::new(SOURCE_CODE));
+    let source_file = SourceFile::new(
+        PathBuf::default(),
+        "test".to_string(),
+        SOURCE_CODE.to_string(),
+        vec!["test".to_string()],
+    )?;
+    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
@@ -52,10 +51,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         .unwrap();
 
     assert_eq!(
-        substr_span(
-            SOURCE_CODE,
-            block.label_specifier.unwrap().label.identifier.span
-        ),
+        block.label_specifier.unwrap().label.identifier.span().str(),
         "test"
     );
     let mut statement_iter = block.block_without_label.statements.into_iter();
@@ -75,16 +71,10 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .type_specifier
             .into_qualified_identifier()
             .unwrap();
-        assert_eq!(
-            substr_span(SOURCE_CODE, type_specifier.span()),
-            "Some::Struct::Name"
-        );
+        assert_eq!(type_specifier.span().str(), "Some::Struct::Name");
 
         // check variable name
-        assert_eq!(
-            substr_span(SOURCE_CODE, variable_declaration.identifier.span),
-            "test"
-        );
+        assert_eq!(variable_declaration.identifier.span().str(), "test");
 
         // check expression
         let expression = variable_declaration
@@ -93,7 +83,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .into_numeric_literal()
             .unwrap();
-        assert_eq!(substr_span(SOURCE_CODE, expression.span), "32");
+        assert_eq!(expression.span().str(), "32");
     }
 
     {
@@ -108,10 +98,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .into_named()
             .unwrap();
 
-        assert_eq!(
-            substr_span(SOURCE_CODE, identifier_expression.span()),
-            "SomeFunction"
-        );
+        assert_eq!(identifier_expression.span().str(), "SomeFunction");
     }
 
     {
@@ -133,7 +120,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .into_named()
             .unwrap();
-        assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
+        assert_eq!(left.span().str(), "test");
 
         // check assignment operator
         assert!(matches!(
@@ -148,7 +135,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .into_numeric_literal()
             .unwrap();
-        assert_eq!(substr_span(SOURCE_CODE, right.span()), "64");
+        assert_eq!(right.span().str(), "64");
     }
 
     {
@@ -177,7 +164,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_named()
                 .unwrap();
-            assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
+            assert_eq!(left.span().str(), "test");
 
             assert!(matches!(
                 condition.binary_operator,
@@ -190,7 +177,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
-            assert_eq!(substr_span(SOURCE_CODE, right.span()), "64");
+            assert_eq!(right.span().str(), "64");
         }
 
         // check then expression
@@ -218,7 +205,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_named()
                 .unwrap();
-            assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
+            assert_eq!(left.span().str(), "test");
 
             assert!(matches!(
                 binary_expression.binary_operator,
@@ -231,7 +218,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
-            assert_eq!(substr_span(SOURCE_CODE, right.span()), "128");
+            assert_eq!(right.span().str(), "128");
         }
 
         // check else expression
@@ -260,7 +247,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_named()
                 .unwrap();
-            assert_eq!(substr_span(SOURCE_CODE, left.span()), "test");
+            assert_eq!(left.span().str(), "test");
 
             assert!(matches!(
                 binary_expression.binary_operator,
@@ -273,7 +260,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .into_numeric_literal()
                 .unwrap();
-            assert_eq!(substr_span(SOURCE_CODE, right.span()), "256");
+            assert_eq!(right.span().str(), "256");
         }
     }
 
@@ -300,7 +287,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         assert!(function_call.arguments.is_none());
 
         assert_eq!(
-            substr_span(SOURCE_CODE, function_call.qualified_identifier.span()),
+            function_call.qualified_identifier.span().str(),
             "SomeFunction::Test"
         );
     }
@@ -318,10 +305,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(
-            substr_span(
-                SOURCE_CODE,
-                express_statement.label.unwrap().identifier.span()
-            ),
+            express_statement.label.unwrap().identifier.span().str(),
             "test"
         );
 
@@ -333,10 +317,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .into_named()
             .unwrap();
 
-        assert_eq!(
-            substr_span(SOURCE_CODE, identifier_expression.span()),
-            "someValue"
-        );
+        assert_eq!(identifier_expression.span().str(), "someValue");
     }
 
     {
@@ -352,14 +333,12 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(
-            substr_span(
-                SOURCE_CODE,
-                cast_expression
-                    .type_specifier
-                    .into_qualified_identifier()
-                    .unwrap()
-                    .span()
-            ),
+            cast_expression
+                .type_specifier
+                .into_qualified_identifier()
+                .unwrap()
+                .span()
+                .str(),
             "SomeType"
         );
 
@@ -370,10 +349,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .into_numeric_literal()
             .unwrap();
 
-        assert_eq!(
-            substr_span(SOURCE_CODE, numeric_literal_expression.span()),
-            "42"
-        );
+        assert_eq!(numeric_literal_expression.span().str(), "42");
     }
 
     Ok(())

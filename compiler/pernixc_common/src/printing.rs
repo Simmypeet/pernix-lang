@@ -49,9 +49,10 @@ fn get_digit(mut number: usize) -> usize {
 }
 
 /// Prints and highlights the source code of a span, including the help message if provided.
+#[allow(clippy::too_many_lines)]
 pub fn print_source_code(span: &Span, help_message: Option<&str>) {
     let file_path = {
-        let mut file_path = span.source_file().root_directory().clone();
+        let mut file_path = span.source_file().parent_directory().clone();
         file_path.push(span.source_file().file_name());
 
         // add the .pnx extension to the file path
@@ -79,7 +80,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
     println!(
         "{} {}",
         "-->".bright_cyan().bold(),
-        format!(
+        format_args!(
             "{}:{}:{}",
             file_path.display(),
             start_location.line,
@@ -89,18 +90,18 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
 
     // prints the empty pipe
     {
-        for _ in 0..largest_line_number_digits + 1 {
+        for _ in 0..=largest_line_number_digits {
             print!(" ");
         }
         println!("{}", "|".bright_cyan().bold());
     }
 
-    for line_number in start_line..end_line + 1 {
+    for line_number in start_line..=end_line {
         // prints the line number
         print!(
             "{}{}{} ",
             line_number.to_string().bright_cyan().bold(),
-            format!(
+            format_args!(
                 "{:width$}",
                 "",
                 width = largest_line_number_digits - get_digit(line_number) + 1
@@ -122,37 +123,37 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
                 // check if the character is in the span
                 let is_in_span = {
                     let index = index + 1;
-                    if !is_multiline {
+                    if is_multiline {
+                        (line_number == start_line && index >= start_location.column)
+                            || (line_number == end_line
+                                && (index + 1)
+                                    < end_location
+                                        .map_or(usize::MAX, |end_location| end_location.column))
+                            || (line_number > start_line && line_number < end_line)
+                    } else {
                         line_number == start_line
                             && index >= start_location.column
                             && index
                                 < end_location
                                     .map_or(usize::MAX, |end_location| end_location.column)
-                    } else {
-                        (line_number == start_line && index >= start_location.column)
-                            || (line_number == end_line
-                                && index
-                                    < end_location
-                                        .map_or(usize::MAX, |end_location| end_location.column))
-                            || (line_number > start_line && line_number < end_line)
                     }
                 };
 
                 if is_in_span {
                     print!("{}", char.to_string().bright_yellow().bold().underline());
                 } else {
-                    print!("{}", char.to_string());
+                    print!("{char}");
                 }
             }
         }
-        print!("\n");
+        println!();
     }
 
     if let Some(message) = help_message {
         if !is_multiline {
             // prints the empty pipe
             {
-                for _ in 0..largest_line_number_digits + 1 {
+                for _ in 0..=largest_line_number_digits {
                     print!(" ");
                 }
                 print!("{} ", "|".bright_cyan().bold());
@@ -183,7 +184,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
 
     // prints the empty pipe
     {
-        for _ in 0..largest_line_number_digits + 1 {
+        for _ in 0..=largest_line_number_digits {
             print!(" ");
         }
         println!("{}", "|".bright_cyan().bold());
@@ -192,7 +193,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
     if let Some(message) = help_message {
         if is_multiline {
             {
-                for _ in 0..largest_line_number_digits + 1 {
+                for _ in 0..=largest_line_number_digits {
                     print!(" ");
                 }
                 print!("{} ", "=".bright_cyan().bold());

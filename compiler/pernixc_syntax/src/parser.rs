@@ -299,10 +299,8 @@ impl<'a> Parser<'a> {
                         _ => (),
                     }
 
-                    // add value to the list
-                    parse_item(self).map_or(
-                        {
-                            // skip to either the next separator or the delimiter
+                    parse_item(self).map_or_else(
+                        || {
                             self.forward_until(|token| {
                                 matches!(
                                     token,
@@ -446,5 +444,5 @@ pub(super) enum FirstOrSecond<T1, T2> {
     Second(T2),
 }
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

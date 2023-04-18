@@ -16,7 +16,7 @@ use thiserror::Error;
 pub struct InvalidEscapeCharacterSequences {
     /// The spans represent the locations of the invalid escape character sequences.
     #[get = "pub"]
-    pub(crate) spans: Vec<Span>,
+    pub(super) spans: Vec<Span>,
 }
 
 impl InvalidEscapeCharacterSequences {
@@ -26,14 +26,10 @@ impl InvalidEscapeCharacterSequences {
         for span in &self.spans {
             pernixc_common::printing::log(
                 LogSeverity::Error,
-                format!(
-                    "`{}` is an invalid escape character sequence",
-                    span.source_code()
-                )
-                .as_str(),
+                format!("`{}` is an invalid escape character sequence", span.str()).as_str(),
             );
             pernixc_common::printing::print_source_code(span, None);
-            print!("\n");
+            println!();
         }
     }
 }
@@ -42,7 +38,7 @@ impl InvalidEscapeCharacterSequences {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct UnterminatedStringLiteral {
     /// The span pointing to the unclosed double quote.
-    pub(crate) span: Span,
+    pub(super) span: Span,
 }
 
 impl UnterminatedStringLiteral {
@@ -54,7 +50,7 @@ impl UnterminatedStringLiteral {
             &self.span,
             Some("this double quote is unclosed"),
         );
-        print!("\n");
+        println!();
     }
 }
 
@@ -63,7 +59,7 @@ impl UnterminatedStringLiteral {
 pub struct UnterminatedDelimitedComment {
     /// The span of the unclosed `/*` that starts the comment.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 }
 
 impl UnterminatedDelimitedComment {
@@ -75,7 +71,7 @@ impl UnterminatedDelimitedComment {
             &self.span,
             Some("this `/*` comment is unclosed"),
         );
-        print!("\n");
+        println!();
     }
 }
 
@@ -84,7 +80,7 @@ impl UnterminatedDelimitedComment {
 pub struct EmptyCharacterLiteral {
     /// The span of the empty character literal.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 }
 
 impl EmptyCharacterLiteral {
@@ -93,7 +89,7 @@ impl EmptyCharacterLiteral {
         let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(LogSeverity::Error, "found an empty character literal");
         pernixc_common::printing::print_source_code(&self.span, None);
-        print!("\n");
+        println!();
     }
 }
 
@@ -102,7 +98,7 @@ impl EmptyCharacterLiteral {
 pub struct ControlCharactersMustBeEscaped {
     /// The span of the control character that must be escaped explicitly.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 }
 
 impl ControlCharactersMustBeEscaped {
@@ -125,7 +121,7 @@ impl ControlCharactersMustBeEscaped {
                  must be escaped explicitly",
             ),
         );
-        print!("\n");
+        println!();
     }
 }
 

@@ -129,7 +129,7 @@ impl FromStr for KeywordKind {
             };
         }
 
-        STRING_KEYWORD_MAP.get(s).cloned().ok_or(KeywordParseError)
+        STRING_KEYWORD_MAP.get(s).copied().ok_or(KeywordParseError)
     }
 }
 
@@ -195,7 +195,7 @@ impl KeywordKind {
             };
         }
 
-        STRING_KEYWORD_MAP.get(str).cloned()
+        STRING_KEYWORD_MAP.get(str).copied()
     }
 }
 
@@ -233,7 +233,7 @@ impl SourceElement for Token {
 pub struct WhiteSpace {
     /// Is the span that makes up the token.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 }
 
 impl SourceElement for WhiteSpace {
@@ -245,7 +245,7 @@ impl SourceElement for WhiteSpace {
 pub struct Identifier {
     /// Is the span that makes up the token.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 }
 
 impl SourceElement for Identifier {
@@ -257,11 +257,11 @@ impl SourceElement for Identifier {
 pub struct Keyword {
     /// Is the span that makes up the token.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 
     /// Is the [`KeywordKind`] that the token represents.
     #[get_copy = "pub"]
-    pub(crate) keyword: KeywordKind,
+    pub(super) keyword: KeywordKind,
 }
 
 impl SourceElement for Keyword {
@@ -273,11 +273,11 @@ impl SourceElement for Keyword {
 pub struct Punctuation {
     /// Is the span that makes up the token.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 
     /// Is the ASCII punctuation character that the token represents.
     #[get_copy = "pub"]
-    pub(crate) punctuation: char,
+    pub(super) punctuation: char,
 }
 
 impl SourceElement for Punctuation {
@@ -289,15 +289,15 @@ impl SourceElement for Punctuation {
 pub struct NumericLiteral {
     /// Is the span that makes up the token.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 
     /// Is the sapn representing the value part of the numeric literal.
     #[get = "pub"]
-    pub(crate) value_span: Span,
+    pub(super) value_span: Span,
 
     /// Is the span representing the suffix part of the numeric literal if it exists.
     #[get = "pub"]
-    pub(crate) suffix_span: Option<Span>,
+    pub(super) suffix_span: Option<Span>,
 }
 
 impl SourceElement for NumericLiteral {
@@ -309,11 +309,11 @@ impl SourceElement for NumericLiteral {
 pub struct CharacterLiteral {
     ///  The span that makes up the token.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 
     /// The character value of the literal.
     #[get_copy = "pub"]
-    pub(crate) character: char,
+    pub(super) character: char,
 }
 
 impl SourceElement for CharacterLiteral {
@@ -325,7 +325,7 @@ impl SourceElement for CharacterLiteral {
 pub struct StringLiteral {
     /// Is the span that makes up the token.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 }
 
 impl SourceElement for StringLiteral {
@@ -347,11 +347,11 @@ pub enum CommentKind {
 pub struct Comment {
     /// Is the span that makes up the token.
     #[get = "pub"]
-    pub(crate) span: Span,
+    pub(super) span: Span,
 
     /// Is the kind of comment that the token represents.
     #[get_copy = "pub"]
-    pub(crate) kind: CommentKind,
+    pub(super) kind: CommentKind,
 }
 
 impl SourceElement for Comment {
@@ -449,7 +449,7 @@ impl Token {
         Self::walk_iter(iter, Self::is_identifier_character);
 
         let span = Self::create_span(start, iter);
-        let word = span.source_code();
+        let word = span.str();
 
         // Checks if the word is a keyword
         KeywordKind::from_string(word).map_or_else(

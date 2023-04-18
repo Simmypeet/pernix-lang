@@ -1,6 +1,6 @@
-use std::error::Error;
+use std::{error::Error, path::PathBuf};
 
-use pernixc_common::source_file::{Iterator, SourceElement, Span, SpanEnding};
+use pernixc_common::source_file::{SourceElement, SourceFile};
 use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
@@ -18,16 +18,15 @@ private:
 }
 ";
 
-fn substr_span(source_code: &str, span: Span) -> &str {
-    match span.end {
-        SpanEnding::Location(end_location) => &source_code[span.start.byte..end_location.byte],
-        SpanEnding::EndOfFile => &source_code[span.start.byte..],
-    }
-}
-
 #[test]
 fn struct_item_test() -> Result<(), Box<dyn Error>> {
-    let (token_stream, _) = TokenStream::tokenize(Iterator::new(STRUCT_SOURCE_CODE));
+    let source_file = SourceFile::new(
+        PathBuf::default(),
+        "test".to_string(),
+        STRUCT_SOURCE_CODE.to_string(),
+        vec!["test".to_string()],
+    )?;
+    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
     let mut cursor = token_stream.cursor();
     cursor.next_token();
     let mut parser = Parser::new(cursor)?;
@@ -39,10 +38,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
         AccessModifier::Public(..)
     ));
 
-    assert_eq!(
-        substr_span(STRUCT_SOURCE_CODE, struct_item.identifier.span),
-        "Test"
-    );
+    assert_eq!(struct_item.identifier.span().str(), "Test");
 
     let mut field_group_iter = struct_item.field_groups.into_iter();
 
@@ -65,10 +61,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
         let mut field_iter = field_group.fields.into_iter();
         {
             let field = field_iter.next().unwrap();
-            assert_eq!(
-                substr_span(STRUCT_SOURCE_CODE, field.identifier.span),
-                "test"
-            );
+            assert_eq!(field.identifier.span().str(), "test");
             assert!(matches!(
                 field.type_annotation.type_specifier,
                 TypeSpecifier::PrimitiveTypeSpecifier(PrimitiveTypeSpecifier::Int32(..))
@@ -76,20 +69,15 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
         }
         {
             let field = field_iter.next().unwrap();
+            assert_eq!(field.identifier.span().str(), "test2");
             assert_eq!(
-                substr_span(STRUCT_SOURCE_CODE, field.identifier.span),
-                "test2"
-            );
-            assert_eq!(
-                substr_span(
-                    STRUCT_SOURCE_CODE,
-                    field
-                        .type_annotation
-                        .type_specifier
-                        .into_qualified_identifier()
-                        .unwrap()
-                        .span()
-                ),
+                field
+                    .type_annotation
+                    .type_specifier
+                    .into_qualified_identifier()
+                    .unwrap()
+                    .span()
+                    .str(),
                 "some::other::type"
             );
         }

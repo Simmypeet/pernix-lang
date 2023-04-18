@@ -16,7 +16,7 @@ pub struct SourceFile {
 
     /// Gets the directory where the source file is located.
     #[get = "pub"]
-    root_directory: PathBuf,
+    parent_directory: PathBuf,
 
     /// Gets whether the source file is the root file that the compiler is compiling.
     #[get = "pub"]
@@ -35,18 +35,18 @@ pub struct SourceFile {
 /// Is an error returned by the [ `SourceFile::load()` ] method.
 #[derive(Debug, EnumAsInner, Error, From)]
 #[allow(missing_docs)]
-pub enum SourceFileLoadError {
+pub enum LoadError {
     #[error("{0}")]
     Io(std::io::Error),
 
     #[error("The file extension of the source file must be `.pnx`.")]
-    SourceFileCreateError(SourceFileCreateError),
+    CreateError(CreateError),
 }
 
 /// Is an error returned by the [`SourceFile::new()`] method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumAsInner, From, Error)]
 #[allow(missing_docs)]
-pub enum SourceFileCreateError {
+pub enum CreateError {
     #[error("The module heirarchy string was invalid or empty.")]
     InvalidModuleHeirarchy,
 
@@ -66,22 +66,21 @@ impl SourceFile {
     /// Creates a new source file.
     ///
     /// # Parameters
-    /// - `root_directory`: The directory where the source file is located.
+    /// - `parent_directory`: The directory where the source file is located.
     /// - `file_name`: The name of the source file without the extension.
-    /// - `source_code`: The string source_code that the source file contains.
+    /// - `source_code`: The string `source_code` that the source file contains.
     /// - `module_heirarchy`: The module's fully qualified name of the source file.
     ///
     /// # Errors
-    /// - [`SourceFileCreateError::InvalidModuleHeirarchy`]: One of the module heirarchy strings was
-    ///   an invalid identifier or empty.
-    /// - [`SourceFileCreateError::EmptyModuleHeirarchy`]: The given module heirarchy was an empty
-    ///  list.
+    /// - [`CreateError::InvalidModuleHeirarchy`]: One of the module heirarchy strings was an
+    ///   invalid identifier or empty.
+    /// - [`CreateError::EmptyModuleHeirarchy`]: The given module heirarchy was an empty list.
     pub fn new(
-        root_directory: PathBuf,
+        parent_directory: PathBuf,
         file_name: String,
         mut source_code: String,
         module_heirarchy: Vec<String>,
-    ) -> Result<Arc<Self>, SourceFileCreateError> {
+    ) -> Result<Arc<Self>, CreateError> {
         fn replace_string_inplace(s: &mut String, from: &str, to: &str) {
             let mut start = 0;
             while let Some(i) = s[start..].find(from) {
@@ -91,7 +90,7 @@ impl SourceFile {
         }
 
         if module_heirarchy.is_empty() {
-            return Err(SourceFileCreateError::EmptyModuleHeirarchy);
+            return Err(CreateError::EmptyModuleHeirarchy);
         }
 
         for module in &module_heirarchy {
@@ -100,13 +99,9 @@ impl SourceFile {
             if module
                 .chars()
                 .any(|c| c.is_ascii_punctuation() || c.is_ascii_control())
-                || module
-                    .chars()
-                    .next()
-                    .map(|c| c.is_ascii_digit())
-                    .unwrap_or(false)
+                || module.chars().next().map_or(false, |c| c.is_ascii_digit())
             {
-                return Err(SourceFileCreateError::InvalidModuleHeirarchy);
+                return Err(CreateError::InvalidModuleHeirarchy);
             }
         }
 
@@ -135,7 +130,7 @@ impl SourceFile {
 
         Ok(Arc::new(Self {
             file_name,
-            root_directory,
+            parent_directory,
             module_qualified_name: module_heirarchy.join("::"),
             module_heirarchy,
             source_code,
@@ -146,19 +141,15 @@ impl SourceFile {
     /// Loads a source file from the given path.
     ///
     /// # Errors
-    /// - [`SourceFileLoadError::Io`]: An I/O error occurred.
-    /// - [`SourceFileLoadError::SourceFileCreateError`]: An error occurred while creating the
-    ///   source file.
-    pub fn load(
-        path: PathBuf,
-        module_heirarchy: Vec<String>,
-    ) -> Result<Arc<Self>, SourceFileLoadError> {
-        let source_code = std::fs::read_to_string(&path)?;
-        let root_directory = path.parent().unwrap().to_path_buf();
+    /// - [`LoadError::Io`]: An I/O error occurred.
+    /// - [`LoadError::CreateError`]: An error occurred while creating the source file.
+    pub fn load(path: &PathBuf, module_heirarchy: Vec<String>) -> Result<Arc<Self>, LoadError> {
+        let source_code = std::fs::read_to_string(path)?;
+        let parent_directory = path.parent().unwrap().to_path_buf();
         let file_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
         Ok(Self::new(
-            root_directory,
+            parent_directory,
             file_name,
             source_code,
             module_heirarchy,
@@ -185,6 +176,7 @@ impl SourceFile {
     }
 
     /// Gets the [`Iterator`] for the source file.
+    #[must_use]
     pub fn iter<'a>(self: &'a Arc<Self>) -> Iterator<'a> {
         Iterator {
             source_file: self,
@@ -197,6 +189,7 @@ impl SourceFile {
     pub fn line_number(&self) -> usize { self.lines.len() }
 
     /// Gets the [`Location`] of the given byte index.
+    #[must_use]
     pub fn get_location(&self, byte_index: ByteIndex) -> Option<Location> {
         if !self.source_code().is_char_boundary(byte_index) {
             return None;
@@ -279,7 +272,7 @@ impl Span {
             return None;
         }
 
-        Some(Span {
+        Some(Self {
             start,
             end,
             source_file,
@@ -292,7 +285,7 @@ impl Span {
         if !source_file.source_code().is_char_boundary(start) {
             return None;
         }
-        Some(Span {
+        Some(Self {
             start,
             end: source_file.source_code().len(),
             source_file,
@@ -301,7 +294,7 @@ impl Span {
 
     /// Gets the string slice of the source code that the span represents.
     #[must_use]
-    pub fn source_code(&self) -> &str { &self.source_file.source_code()[self.start..self.end] }
+    pub fn str(&self) -> &str { &self.source_file.source_code()[self.start..self.end] }
 
     /// Gets the starting [`Location`] of the span.
     #[must_use]
@@ -310,18 +303,20 @@ impl Span {
     /// Gets the ending [`Location`] of the span.
     ///
     /// Returns [`None`] if the end of the span is the end of the source file.
+    #[must_use]
     pub fn end_location(&self) -> Option<Location> { self.source_file.get_location(self.end) }
 
     /// Joins the starting position of this span with the end position of the given span.
     ///
     /// Returns [`None`] if the spans are not in the same source file or if the end of this span is
     /// after the start of the given span.
+    #[must_use]
     pub fn join(&self, end: &Self) -> Option<Self> {
         if !Arc::ptr_eq(&self.source_file, &end.source_file) || self.start > end.end {
             return None;
         }
 
-        Some(Span {
+        Some(Self {
             start: self.start,
             end: end.end,
             source_file: self.source_file.clone(),

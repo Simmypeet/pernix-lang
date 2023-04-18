@@ -17,10 +17,11 @@ use crate::{
 };
 
 /// The error caused by encountering a duplicated module declaration in the same file.
-#[derive(Debug, Clone, Copy, Eq, PartialOrd, Ord, Hash, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct DuplicateModuleDeclaration {
     /// The span of the duplicated module declaration.
-    pub span: Span,
+    #[get = "pub"]
+    span: Span,
 }
 
 /// The error encountered while parsing a source file.
@@ -40,13 +41,7 @@ pub enum ParsingError {
     LoadError(LoadError),
 }
 
-/// Is a structure containing the result of parsing a source file.
-///
-/// This struct is the final output of the syntax analysis phase and is meant to be used by the
-/// next stage of the compilation process.
-///
-/// This struct is meant to represent only a valid syntax tree. Therefore, it is not possible to
-/// create an invalid syntax tree using the public API.
+/// Is a structure containing the result of parsing the whole source file.
 #[derive(Debug, Getters)]
 pub struct FileParsing {
     /// Gets the source file that was parsed.
@@ -75,7 +70,7 @@ impl FileParsing {
 #[error("The given source file argument is not a root source file.")]
 pub struct TargetParseError;
 
-fn compile_syntax_tree(source_file: SourceFile, results: &Arc<Mutex<Vec<FileParsing>>>) {
+fn compile_syntax_tree(source_file: Arc<SourceFile>, results: &Arc<Mutex<Vec<FileParsing>>>) {
     let mut errors = Vec::new();
 
     // lexical analysis
@@ -99,10 +94,10 @@ fn compile_syntax_tree(source_file: SourceFile, results: &Arc<Mutex<Vec<FilePars
         };
 
         // check if the module declaration symbol is duplicated.
-        if !submodules.insert(&source_file[module_declaration.identifier.span]) {
+        if !submodules.insert(module_declaration.identifier().span().str()) {
             errors.push(
                 DuplicateModuleDeclaration {
-                    span: module_declaration.identifier.span,
+                    span: module_declaration.identifier().span().clone(),
                 }
                 .into(),
             );
@@ -112,41 +107,17 @@ fn compile_syntax_tree(source_file: SourceFile, results: &Arc<Mutex<Vec<FilePars
     // start compiling the sub modules
     let mut join_handles = Vec::new();
     for module in submodules {
-        let path = if source_file.is_root() {
-            // check within the same directory of this source file
-
-            // the directory of this source file
-            let mut directory = source_file
-                .path_input()
-                .parent()
-                .map_or_else(std::path::PathBuf::new, |directory| {
-                    std::path::PathBuf::from(directory)
-                });
-
-            // push the module name with the .pnx extension to the directory pathbuf
-            directory.push(format!("{module}.pnx"));
-
-            directory
-        } else {
-            // the directory of the root source file
-            let mut directory = source_file.path_input().parent().unwrap().join(
-                source_file
-                    .path_input()
-                    .file_stem()
-                    .expect("should have a file stem"),
-            );
-
-            // add the module name to the directory
-            directory.push(format!("{module}.pnx"));
-
-            directory
-        };
+        let mut path = source_file.parent_directory().clone();
+        if !source_file.is_root() {
+            path.push(source_file.file_name());
+        }
+        path.push(format!("{module}.pnx"));
 
         // create a new module heirarchy
         let mut module_heirarchy = source_file.module_heirarchy().clone();
         module_heirarchy.push(module.to_string());
 
-        match SourceFile::load(path, module_heirarchy) {
+        match SourceFile::load(&path, module_heirarchy) {
             Ok(source_file) => {
                 let modules = Arc::clone(results);
 
@@ -165,17 +136,37 @@ fn compile_syntax_tree(source_file: SourceFile, results: &Arc<Mutex<Vec<FilePars
     }
 
     results.lock().unwrap().push(FileParsing {
-        source_file: Arc::new(source_file),
+        source_file,
         syntax_tree: file_syntax_tree,
         file_parsing_errors: errors,
     });
+}
+
+/// Is a structure containing the result of parsing the whole target.
+///
+/// The target is the collection of source files that were stemmed from the root source file through
+/// the module declaration. These source files are then parsed into a list of [`FileParsing`], which
+/// are then stored in this structure.
+#[derive(Debug, Getters)]
+pub struct TargetParsing {
+    /// Gets the list of [`FileParsing`] that were parsed from the target.
+    #[get = "pub"]
+    file_parsings: Vec<FileParsing>,
+}
+
+impl TargetParsing {
+    /// Destructs this [`TargetParsing`] into its components.
+    #[must_use]
+    pub fn destruct(self) -> Vec<FileParsing> { self.file_parsings }
 }
 
 /// Parses source files of the target from the root source file into a list of [`FileParsing`].
 ///
 /// # Errors
 /// - [`TargetParseError`] if the given source file is not a root source file.
-pub fn parse_files(root_source_file: SourceFile) -> Result<Vec<FileParsing>, TargetParseError> {
+pub fn parse_files(
+    root_source_file: Arc<SourceFile>,
+) -> Result<Vec<FileParsing>, TargetParseError> {
     if !root_source_file.is_root() {
         return Err(TargetParseError);
     }

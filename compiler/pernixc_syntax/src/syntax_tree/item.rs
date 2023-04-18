@@ -84,10 +84,10 @@ pub struct FieldGroup {
 
 impl SourceElement for FieldGroup {
     fn span(&self) -> Span {
-        let end = self
-            .fields
-            .last()
-            .map_or_else(|| self.colon.span().clone(), |field| field.span());
+        let end = self.fields.last().map_or_else(
+            || self.colon.span().clone(),
+            pernixc_common::source_file::SourceElement::span,
+        );
         self.access_modifier.span().join(&end).unwrap()
     }
 }
@@ -557,5 +557,5 @@ impl<'a> Parser<'a> {
     }
 }
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

@@ -51,16 +51,14 @@ impl<Element: SourceElement, Separator: SourceElement> SourceElement
     for ConnectedList<Element, Separator>
 {
     fn span(&self) -> Span {
-        let end = self
-            .trailing_separator
-            .as_ref()
-            .map(|separator| separator.span())
-            .unwrap_or_else(|| {
+        let end = self.trailing_separator.as_ref().map_or_else(
+            || {
                 self.rest
                     .last()
-                    .map(|(_, element)| element.span())
-                    .unwrap_or_else(|| self.first.span())
-            });
+                    .map_or_else(|| self.first.span(), |(_, element)| element.span())
+            },
+            pernixc_common::source_file::SourceElement::span,
+        );
 
         self.first.span().join(&end).unwrap()
     }
@@ -393,5 +391,5 @@ impl File {
     }
 }
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

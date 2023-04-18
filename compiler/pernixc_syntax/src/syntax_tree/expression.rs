@@ -130,7 +130,7 @@ impl SourceElement for Cast {
             .span()
             .join(&self.type_specifier.span())
             .unwrap()
-   }
+    }
 }
 
 /// Represents a boolean literal syntax tree.
@@ -403,7 +403,7 @@ impl SourceElement for FunctionCall {
     fn span(&self) -> Span {
         self.qualified_identifier
             .span()
-            .join(&self.right_paren.span())
+            .join(self.right_paren.span())
             .unwrap()
     }
 }
@@ -431,7 +431,7 @@ impl SourceElement for Parenthesized {
     fn span(&self) -> Span {
         self.left_paren
             .span()
-            .join(&self.right_paren.span())
+            .join(self.right_paren.span())
             .unwrap()
     }
 }
@@ -499,7 +499,7 @@ impl SourceElement for StructLiteral {
     fn span(&self) -> Span {
         self.qualified_identifier
             .span()
-            .join(&self.right_brace.span())
+            .join(self.right_brace.span())
             .unwrap()
     }
 }
@@ -524,7 +524,7 @@ pub struct MemberAccess {
 }
 
 impl SourceElement for MemberAccess {
-    fn span(&self) -> Span { self.operand.span().join(&self.identifier.span()).unwrap() }
+    fn span(&self) -> Span { self.operand.span().join(self.identifier.span()).unwrap() }
 }
 
 /// Is an enumeration of all kinds of imperative expressions.
@@ -575,7 +575,7 @@ pub struct LabelSpecifier {
 }
 
 impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Span { self.label.span().join(&self.colon.span()).unwrap() }
+    fn span(&self) -> Span { self.label.span().join(self.colon.span()).unwrap() }
 }
 
 /// Represents a block syntax tree.
@@ -601,7 +601,7 @@ impl SourceElement for BlockWithoutLabel {
     fn span(&self) -> Span {
         self.left_brace
             .span()
-            .join(&self.right_brace.span())
+            .join(self.right_brace.span())
             .unwrap()
     }
 }
@@ -625,13 +625,15 @@ pub struct Block {
 
 impl SourceElement for Block {
     fn span(&self) -> Span {
-        match &self.label_specifier {
-            Some(label_specifier) => label_specifier
-                .span()
-                .join(&self.block_without_label.span())
-                .unwrap(),
-            None => self.block_without_label.span(),
-        }
+        self.label_specifier.as_ref().map_or_else(
+            || self.block_without_label.span(),
+            |label_specifier| {
+                label_specifier
+                    .span()
+                    .join(&self.block_without_label.span())
+                    .unwrap()
+            },
+        )
     }
 }
 
@@ -748,19 +750,22 @@ pub struct Loop {
 
 impl SourceElement for Loop {
     fn span(&self) -> Span {
-        match &self.label_specifier {
-            Some(label_specifier) => label_specifier
-                .span()
-                .join(&self.loop_keyword.span())
-                .unwrap()
-                .join(&self.expression.span())
-                .unwrap(),
-            None => self
-                .loop_keyword
-                .span()
-                .join(&self.expression.span())
-                .unwrap(),
-        }
+        self.label_specifier.as_ref().map_or_else(
+            || {
+                self.loop_keyword
+                    .span()
+                    .join(&self.expression.span())
+                    .unwrap()
+            },
+            |label_specifier| {
+                label_specifier
+                    .span()
+                    .join(self.loop_keyword.span())
+                    .unwrap()
+                    .join(&self.expression.span())
+                    .unwrap()
+            },
+        )
     }
 }
 
@@ -785,7 +790,7 @@ impl SourceElement for Continue {
     fn span(&self) -> Span {
         let end = self.label.as_ref().map_or_else(
             || self.continue_keyword.span().clone(),
-            |label| label.span(),
+            pernixc_common::source_file::SourceElement::span,
         );
         self.continue_keyword.span().join(&end).unwrap()
     }
@@ -814,11 +819,12 @@ impl SourceElement for Express {
     fn span(&self) -> Span {
         let end = self.expression.as_ref().map_or_else(
             || {
-                self.label
-                    .as_ref()
-                    .map_or_else(|| self.express_keyword.span().clone(), |label| label.span())
+                self.label.as_ref().map_or_else(
+                    || self.express_keyword.span().clone(),
+                    pernixc_common::source_file::SourceElement::span,
+                )
             },
-            |expression| expression.span(),
+            pernixc_common::source_file::SourceElement::span,
         );
         self.express_keyword.span().join(&end).unwrap()
     }
@@ -847,11 +853,12 @@ impl SourceElement for Break {
     fn span(&self) -> Span {
         let end = self.expression.as_ref().map_or_else(
             || {
-                self.label
-                    .as_ref()
-                    .map_or_else(|| self.break_keyword.span().clone(), |label| label.span())
+                self.label.as_ref().map_or_else(
+                    || self.break_keyword.span().clone(),
+                    pernixc_common::source_file::SourceElement::span,
+                )
             },
-            |expression| expression.span(),
+            pernixc_common::source_file::SourceElement::span,
         );
         self.break_keyword.span().join(&end).unwrap()
     }
@@ -878,7 +885,7 @@ impl SourceElement for Return {
     fn span(&self) -> Span {
         let end = self.expression.as_ref().map_or_else(
             || self.return_keyword.span().clone(),
-            |expression| expression.span(),
+            pernixc_common::source_file::SourceElement::span,
         );
         self.return_keyword.span().join(&end).unwrap()
     }
@@ -1530,5 +1537,5 @@ impl<'a> Parser<'a> {
     }
 }
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

@@ -15,9 +15,6 @@ use crate::{
 ///
 /// This struct is the final output of the lexical analysis phase and is meant to be used by the
 /// next stage of the compilation process.
-///
-/// This struct is meant to represent only a valid token stream. Therefore, it is not possible to
-/// create an invalid token stream using the public API.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TokenStream(Vec<Token>);
 
