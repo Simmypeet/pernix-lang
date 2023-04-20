@@ -7,7 +7,10 @@ use std::{
 
 use derive_more::From;
 use getset::Getters;
-use pernixc_common::source_file::{LoadError, SourceFile, Span};
+use pernixc_common::{
+    printing::LogSeverity,
+    source_file::{LoadError, SourceFile, Span},
+};
 use pernixc_lexical::{errors::LexicalError, token_stream::TokenStream};
 use thiserror::Error;
 
@@ -22,6 +25,19 @@ pub struct DuplicateModuleDeclaration {
     /// The span of the duplicated module declaration.
     #[get = "pub"]
     span: Span,
+}
+
+impl DuplicateModuleDeclaration {
+    /// Prints the error message to the console.
+    pub fn print(&self) {
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            "the module declaration is duplicated in the same file",
+        );
+
+        pernixc_common::printing::print_source_code(&self.span, None);
+        println!();
+    }
 }
 
 /// The error encountered while parsing a source file.
@@ -39,6 +55,53 @@ pub enum ParsingError {
 
     #[error("{0}")]
     LoadError(LoadError),
+}
+
+impl ParsingError {
+    /// Prints the error message to the console.
+    pub fn print_error(&self) {
+        match self {
+            Self::LexicalError(error) => error.print(),
+            Self::SyntacticError(error) => error.print(),
+            Self::DuplicateModuleDeclaration(error) => error.print(),
+            Self::LoadError(error) => match error {
+                LoadError::IoLoadError(io_error) => match io_error.error().kind() {
+                    std::io::ErrorKind::NotFound => {
+                        // get the file name
+                        pernixc_common::printing::log(
+                            LogSeverity::Error,
+                            format!(
+                                "the source file `{}` does not exist",
+                                io_error.path().display()
+                            )
+                            .as_str(),
+                        );
+                    }
+                    std::io::ErrorKind::PermissionDenied => {
+                        pernixc_common::printing::log(
+                            LogSeverity::Error,
+                            format!(
+                                "the source file `{}` cannot be accessed",
+                                io_error.path().display()
+                            )
+                            .as_str(),
+                        );
+                    }
+                    _ => {
+                        pernixc_common::printing::log(
+                            LogSeverity::Error,
+                            format!(
+                                "an error occurred while loading the source file `{}`",
+                                io_error.path().display()
+                            )
+                            .as_str(),
+                        );
+                    }
+                },
+                LoadError::CreateError(_) => panic!("ICE: invalid argument input"),
+            },
+        }
+    }
 }
 
 /// Is a structure containing the result of parsing the whole source file.

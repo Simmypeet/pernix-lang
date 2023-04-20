@@ -13,5 +13,4 @@ thiserror = { workspace = true }
 enum-as-inner = { workspace = true }
 derive-new = { workspace = true }
 colored = { workspace = true }
-lazy_static = { workspace = true }
 derive_more = { workspace = true }

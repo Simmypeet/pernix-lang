@@ -265,7 +265,6 @@ dependencies = [
  "derive_more",
  "enum-as-inner",
  "getset",
- "lazy_static",
  "thiserror",
 ]
 

@@ -12,31 +12,10 @@
 )]
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
-use std::sync::Arc;
-
-use pernixc_common::source_file::{SourceFile, Span};
-
-pub mod control_flow_graph;
-pub mod errors;
-pub mod hir;
+pub mod cfg;
+// pub mod hir;
 pub mod infer;
 pub mod symbol;
-
-/// Is a structure containing the [`Span`] and the [`SourceFile`] where the span is located.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SourceSpan {
-    /// The source file where the span is located.
-    pub source_file: Arc<SourceFile>,
-
-    /// The span.
-    pub span: Span,
-}
-
-impl SourceSpan {
-    /// Gets the string slice of the source code that is located in the span.
-    #[must_use]
-    pub fn source_code(&self) -> &str { &self.source_file[self.span] }
-}
 
 /// Is a structure used in [`SemanticResult`] [`Ok`] variant in order to return a value and a list
 /// of non-fatal errors.

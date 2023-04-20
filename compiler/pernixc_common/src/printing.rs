@@ -1,9 +1,6 @@
 //! Provides the functions related to logging/printing messages to the console.
 
-use std::sync::Mutex;
-
 use colored::Colorize;
-use lazy_static::lazy_static;
 
 use crate::source_file::Span;
 
@@ -18,11 +15,6 @@ pub enum LogSeverity {
 
     /// Represents a warning log message.
     Warning,
-}
-
-lazy_static! {
-    /// The mutex used to synchronize the printing of log messages to the console.
-    pub static ref LOG_MUTEX: Mutex<()> = Mutex::new(());
 }
 
 /// Prints a log message to the console.
@@ -140,7 +132,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
                 };
 
                 if is_in_span {
-                    print!("{}", char.to_string().bright_yellow().bold().underline());
+                    print!("{}", char.to_string().bright_red().bold().underline());
                 } else {
                     print!("{char}");
                 }

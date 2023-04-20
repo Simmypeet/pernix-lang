@@ -5,7 +5,10 @@ use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
     parser::Parser,
-    syntax_tree::{item::AccessModifier, PrimitiveTypeSpecifier, TypeSpecifier},
+    syntax_tree::{
+        item::{AccessModifier, Struct},
+        PrimitiveTypeSpecifier, TypeSpecifier,
+    },
 };
 
 const STRUCT_SOURCE_CODE: &str = "
@@ -13,8 +16,8 @@ public struct Test
 {
 public:
 private:
-    test: int32;
-    test2: some::other::type;
+    let test: int32;
+    let test2: some::other::ty;
 }
 ";
 
@@ -48,7 +51,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
             field_group.access_modifier,
             AccessModifier::Public(..)
         ));
-        let mut field_iter = field_group.fields.iter();
+        let mut field_iter = field_group.members.iter();
         assert!(field_iter.next().is_none());
     }
 
@@ -58,9 +61,9 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
             field_group.access_modifier,
             AccessModifier::Private(..)
         ));
-        let mut field_iter = field_group.fields.into_iter();
+        let mut field_iter = field_group.members.into_iter();
         {
-            let field = field_iter.next().unwrap();
+            let field = field_iter.next().unwrap().into_field().unwrap();
             assert_eq!(field.identifier.span().str(), "test");
             assert!(matches!(
                 field.type_annotation.type_specifier,
@@ -68,7 +71,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
             ));
         }
         {
-            let field = field_iter.next().unwrap();
+            let field = field_iter.next().unwrap().into_field().unwrap();
             assert_eq!(field.identifier.span().str(), "test2");
             assert_eq!(
                 field
@@ -78,7 +81,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
                     .unwrap()
                     .span()
                     .str(),
-                "some::other::type"
+                "some::other::ty"
             );
         }
         assert!(field_iter.next().is_none());

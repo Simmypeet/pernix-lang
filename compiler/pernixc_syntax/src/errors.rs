@@ -3,10 +3,7 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
-use pernixc_common::{
-    printing::{LogSeverity, LOG_MUTEX},
-    source_file::SourceElement,
-};
+use pernixc_common::{printing::LogSeverity, source_file::SourceElement};
 use pernixc_lexical::token::{KeywordKind, Token};
 use thiserror::Error;
 
@@ -40,7 +37,6 @@ fn found_string(found: &Option<Token>) -> String {
 impl IdentifierExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(
             LogSeverity::Error,
             format!(
@@ -70,7 +66,6 @@ pub struct TypeSpecifierExpected {
 impl TypeSpecifierExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(
             LogSeverity::Error,
             format!(
@@ -100,7 +95,6 @@ pub struct ExpressionExpected {
 impl ExpressionExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(
             LogSeverity::Error,
             format!(
@@ -119,7 +113,35 @@ impl ExpressionExpected {
     }
 }
 
-/// A item syntax is expected but found an other invalid token.
+/// A member syntax is expected but found an other invalid token.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct MemberExpected {
+    /// The invalid token that was found.
+    pub(super) found: Option<Token>,
+}
+
+impl MemberExpected {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            format!(
+                "a member syntax is expected, found: {}",
+                found_string(&self.found)
+            )
+            .as_str(),
+        );
+        if let Some(token) = self.found.as_ref() {
+            pernixc_common::printing::print_source_code(
+                &token.span(),
+                Some("member syntax expected here"),
+            );
+        }
+        println!();
+    }
+}
+
+/// An item syntax is expected but found an other invalid token.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct ItemExpected {
     /// The invalid token that was found.
@@ -130,7 +152,6 @@ pub struct ItemExpected {
 impl ItemExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(
             LogSeverity::Error,
             format!(
@@ -160,7 +181,6 @@ pub struct AccessModifierExpected {
 impl AccessModifierExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(
             LogSeverity::Error,
             format!(
@@ -191,10 +211,9 @@ pub struct PunctuationExpected {
     pub(super) found: Option<Token>,
 }
 
+/// Prints the error message to the console
 impl PunctuationExpected {
-    /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(
             LogSeverity::Error,
             format!(
@@ -231,7 +250,6 @@ pub struct KeywordExpected {
 impl KeywordExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(
             LogSeverity::Error,
             format!(
@@ -264,6 +282,7 @@ pub enum SyntacticError {
     AccessModifierExpected(AccessModifierExpected),
     PunctuationExpected(PunctuationExpected),
     KeywordExpected(KeywordExpected),
+    MemberExpected(MemberExpected),
 }
 
 impl SyntacticError {
@@ -277,6 +296,7 @@ impl SyntacticError {
             Self::AccessModifierExpected(e) => e.print(),
             Self::PunctuationExpected(e) => e.print(),
             Self::KeywordExpected(e) => e.print(),
+            Self::MemberExpected(e) => e.print(),
         }
     }
 }

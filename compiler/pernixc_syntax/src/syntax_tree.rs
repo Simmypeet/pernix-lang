@@ -16,7 +16,7 @@ use pernixc_lexical::{
 
 use self::item::Item;
 use crate::{
-    errors::{SyntacticError, TypeSpecifierExpected},
+    errors::{PunctuationExpected, SyntacticError, TypeSpecifierExpected},
     parser::Parser,
 };
 
@@ -95,10 +95,27 @@ impl SourceElement for ScopeSeparator {
 /// Syntax Synopsis:
 /// ``` txt
 /// QualifiedIdentifier:
-///     Identifier ('::' Identifier)*
+///     '::'? Identifier ('::' Identifier)*
 ///     ;
 /// ```
-pub type QualifiedIdentifier = ConnectedList<Identifier, ScopeSeparator>;
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct QualifiedIdentifier {
+    #[get = "pub"]
+    leading_separator: Option<ScopeSeparator>,
+    #[get = "pub"]
+    identifiers: ConnectedList<Identifier, ScopeSeparator>,
+}
+
+impl SourceElement for QualifiedIdentifier {
+    fn span(&self) -> Span {
+        let start = self.leading_separator.as_ref().map_or_else(
+            || self.identifiers.first.span().clone(),
+            pernixc_common::source_file::SourceElement::span,
+        );
+
+        start.join(&self.identifiers.span()).unwrap()
+    }
+}
 
 /// Represents a syntax tree node of primitive type specifier.
 ///
@@ -232,6 +249,34 @@ impl SourceElement for TypeAnnotation {
 impl<'a> Parser<'a> {
     /// Parses a [`QualifiedIdentifier`]
     pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifier> {
+        // found a leading separator
+        let leading_separator = match self.peek_significant_token().cloned() {
+            Some(Token::Punctuation(first_colon)) if first_colon.punctuation() == ':' => {
+                // eat the first colon
+                self.next_significant_token();
+
+                // expect the second colon
+                let second_colon = match self.next_token().cloned() {
+                    Some(Token::Punctuation(second_colon)) if second_colon.punctuation() == ':' => {
+                        second_colon
+                    }
+                    found => {
+                        self.report_error(
+                            PunctuationExpected {
+                                expected: ':',
+                                found,
+                            }
+                            .into(),
+                        );
+                        return None;
+                    }
+                };
+
+                Some(ScopeSeparator(first_colon, second_colon))
+            }
+            _ => None,
+        };
+
         // expect the first identifier
         let first_identifier = self.expect_identifier()?.clone();
 
@@ -272,9 +317,12 @@ impl<'a> Parser<'a> {
         }
 
         Some(QualifiedIdentifier {
-            first: first_identifier,
-            rest,
-            trailing_separator: None,
+            leading_separator,
+            identifiers: ConnectedList {
+                first: first_identifier,
+                rest,
+                trailing_separator: None,
+            },
         })
     }
 

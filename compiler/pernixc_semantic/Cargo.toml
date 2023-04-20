@@ -16,3 +16,4 @@ thiserror = { workspace = true }
 derive-new = { workspace = true }
 getset = { workspace = true }
 derive_more = { workspace = true }
+builder-pattern = { workspace = true }

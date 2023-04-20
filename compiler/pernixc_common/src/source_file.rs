@@ -32,15 +32,28 @@ pub struct SourceFile {
     lines: Vec<Range<usize>>,
 }
 
-/// Is an error returned by the [ `SourceFile::load()` ] method.
+/// Is an error returned by the [`SourceFile::load()`] method.
 #[derive(Debug, EnumAsInner, Error, From)]
 #[allow(missing_docs)]
 pub enum LoadError {
     #[error("{0}")]
-    Io(std::io::Error),
+    IoLoadError(IoLoadError),
 
     #[error("The file extension of the source file must be `.pnx`.")]
     CreateError(CreateError),
+}
+
+/// Is an error related to the io operations when using the [`SourceFile::load()`] method.
+#[derive(Debug, Getters, Error)]
+#[error("{error}")]
+pub struct IoLoadError {
+    /// The path where the io error occurred.
+    #[get = "pub"]
+    path: PathBuf,
+
+    /// The io error that occurred.
+    #[get = "pub"]
+    error: std::io::Error,
 }
 
 /// Is an error returned by the [`SourceFile::new()`] method.
@@ -141,10 +154,15 @@ impl SourceFile {
     /// Loads a source file from the given path.
     ///
     /// # Errors
-    /// - [`LoadError::Io`]: An I/O error occurred.
+    /// - [`LoadError::IoLoadError`]: An I/O error occurred.
     /// - [`LoadError::CreateError`]: An error occurred while creating the source file.
     pub fn load(path: &PathBuf, module_heirarchy: Vec<String>) -> Result<Arc<Self>, LoadError> {
-        let source_code = std::fs::read_to_string(path)?;
+        let source_code = std::fs::read_to_string(path).map_err(|err| {
+            LoadError::IoLoadError(IoLoadError {
+                path: path.clone(),
+                error: err,
+            })
+        })?;
         let parent_directory = path.parent().unwrap().to_path_buf();
         let file_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 

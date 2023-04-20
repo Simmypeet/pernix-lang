@@ -3,10 +3,7 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::{
-    printing::{LogSeverity, LOG_MUTEX},
-    source_file::Span,
-};
+use pernixc_common::{printing::LogSeverity, source_file::Span};
 use thiserror::Error;
 
 /// The source code contains an invalid escape character sequences.
@@ -22,7 +19,6 @@ pub struct InvalidEscapeCharacterSequences {
 impl InvalidEscapeCharacterSequences {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         for span in &self.spans {
             pernixc_common::printing::log(
                 LogSeverity::Error,
@@ -44,7 +40,6 @@ pub struct UnterminatedStringLiteral {
 impl UnterminatedStringLiteral {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(LogSeverity::Error, "found an unclosed double quote");
         pernixc_common::printing::print_source_code(
             &self.span,
@@ -65,7 +60,6 @@ pub struct UnterminatedDelimitedComment {
 impl UnterminatedDelimitedComment {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(LogSeverity::Error, "found an unclosed `/*` comment");
         pernixc_common::printing::print_source_code(
             &self.span,
@@ -86,7 +80,6 @@ pub struct EmptyCharacterLiteral {
 impl EmptyCharacterLiteral {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(LogSeverity::Error, "found an empty character literal");
         pernixc_common::printing::print_source_code(&self.span, None);
         println!();
@@ -104,7 +97,6 @@ pub struct ControlCharactersMustBeEscaped {
 impl ControlCharactersMustBeEscaped {
     /// Prints the error message to the console
     pub fn print(&self) {
-        let _ = LOG_MUTEX.lock();
         pernixc_common::printing::log(
             LogSeverity::Error,
             "found a control character that must be escaped explicitly",

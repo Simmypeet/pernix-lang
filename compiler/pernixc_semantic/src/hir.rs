@@ -1,26 +1,21 @@
 //! This module is responsible for building the high-level intermediate representation of the
 //! program.
 //!
-//! The HIR is a first semantically analyzed representation of the program -- every semantic checks
-//! are performed at this level. It's in the form of a control flow graph that has an abstraction
-//! level similar to that of C language. Most of the high-level constructs are lowered into a
-//! sequence of C-like instructions.
-//!
-//! The HIR can be later used in a varius ways, such as:
-//! - Transpiling to a lower-level language such as C.
-//! - Breaking down into a lower-level representation, MIR.
+//! The high-level intermediate representation is responsible for desconstructing the program
+//! control statement/expression (i.e if-else, loop, etc.) into a control flow graph and most of the
+//! semantic checks are done here, such as type checking, type inference, symbol resolution, etc.
 
 use std::collections::HashMap;
 
 use getset::Getters;
 
 use self::{
-    instruction::Instruction,
-    value::{Value, Variable, VariableID},
+    instruction::Backend,
+    value::{Variable, VariableID},
 };
-use crate::{control_flow_graph::ControlFlowGraph, symbol::ty::Type};
+use crate::{cfg::ControlFlowGraph, symbol::ty::Type};
 
-pub mod builder;
+mod builder;
 pub mod instruction;
 pub mod value;
 
@@ -29,7 +24,7 @@ pub mod value;
 pub struct HIR {
     /// The control flow graph of the function.
     #[get = "pub"]
-    control_flow_graph: ControlFlowGraph<Instruction<Type>, Value<Type>>,
+    control_flow_graph: ControlFlowGraph<Backend<Type>>,
 
     /// The list of local variables used in the function.
     #[get = "pub"]

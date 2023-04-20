@@ -3,7 +3,7 @@ members = [
     "compiler/pernixc_common",
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
-    #"compiler/pernixc_semantic",
+    # "compiler/pernixc_semantic",
     #"compiler/pernixc_driver"
 ]
 
@@ -19,6 +19,7 @@ delegate = "0.9.0"
 derive-new = "0.5.9"
 derive_more = "0.99.17"
 colored = "2.0.0"
+builder-pattern = "0.4.2"
 
 [workspace.package]
 version = "0.1.0"

@@ -4,14 +4,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use pernixc_common::source_file::Span;
 
 use crate::{
     infer::{Constraint, InferenceID},
     symbol::{
+        item::{EnumID, EnumVariantID, FieldID, FunctionID, ParameterID, StructID},
         ty::{PrimitiveType, Type},
-        EnumID, EnumVariantID, FieldID, FunctionID, ParameterID, StructID,
     },
-    SourceSpan,
 };
 
 /// Represents a [`Type`] that is specfically used when building the intermediate representation.
@@ -64,8 +64,8 @@ pub trait ValueTrait<T: ValueType> {
     /// Gets the [`TypeBinding`] of the value.
     fn type_binding(&self) -> TypeBinding<T>;
 
-    /// Gets the [`SourceSpan`] of the value.
-    fn source_span(&self) -> SourceSpan;
+    /// Gets the [`Span`] of the value.
+    fn span(&self) -> Span;
 }
 
 /// Represents a value in the high-level intermediate representation.
@@ -120,25 +120,25 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan {
+    fn span(&self) -> Span {
         match self {
-            Self::NumericLiteral(literal) => literal.source_span(),
-            Self::BooleanLiteral(literal) => ValueTrait::<T>::source_span(literal),
-            Self::Prefix(prefix) => ValueTrait::<T>::source_span(prefix),
-            Self::Binary(binary) => ValueTrait::<T>::source_span(binary),
-            Self::Named(named) => ValueTrait::<T>::source_span(named),
-            Self::FunctionCall(call) => ValueTrait::<T>::source_span(call),
-            Self::StructLiteral(literal) => ValueTrait::<T>::source_span(literal),
-            Self::MemberAccess(access) => ValueTrait::<T>::source_span(access),
-            Self::Block(block) => ValueTrait::<T>::source_span(block),
-            Self::Express(express) => ValueTrait::<T>::source_span(express),
-            Self::IfElse(if_else) => ValueTrait::<T>::source_span(if_else),
-            Self::Return(return_) => ValueTrait::<T>::source_span(return_),
-            Self::Loop(loop_) => ValueTrait::<T>::source_span(loop_),
-            Self::ErrorPlaceholder(placeholder) => ValueTrait::<T>::source_span(placeholder),
-            Self::ImplicitConversion(conversion) => ValueTrait::<T>::source_span(conversion),
-            Self::Break(break_) => ValueTrait::<T>::source_span(break_),
-            Self::Continue(continue_) => ValueTrait::<T>::source_span(continue_),
+            Self::NumericLiteral(literal) => literal.span(),
+            Self::BooleanLiteral(literal) => ValueTrait::<T>::span(literal),
+            Self::Prefix(prefix) => ValueTrait::<T>::span(prefix),
+            Self::Binary(binary) => ValueTrait::<T>::span(binary),
+            Self::Named(named) => ValueTrait::<T>::span(named),
+            Self::FunctionCall(call) => ValueTrait::<T>::span(call),
+            Self::StructLiteral(literal) => ValueTrait::<T>::span(literal),
+            Self::MemberAccess(access) => ValueTrait::<T>::span(access),
+            Self::Block(block) => ValueTrait::<T>::span(block),
+            Self::Express(express) => ValueTrait::<T>::span(express),
+            Self::IfElse(if_else) => ValueTrait::<T>::span(if_else),
+            Self::Return(return_) => ValueTrait::<T>::span(return_),
+            Self::Loop(loop_) => ValueTrait::<T>::span(loop_),
+            Self::ErrorPlaceholder(placeholder) => ValueTrait::<T>::span(placeholder),
+            Self::ImplicitConversion(conversion) => ValueTrait::<T>::span(conversion),
+            Self::Break(break_) => ValueTrait::<T>::span(break_),
+            Self::Continue(continue_) => ValueTrait::<T>::span(continue_),
         }
     }
 }
@@ -150,7 +150,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for Value<T> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructLiteral {
     /// Specifies where the literal is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Is the ID of the struct.
     pub struct_id: StructID,
@@ -167,14 +167,14 @@ impl<T: ValueType + Clone> ValueTrait<T> for StructLiteral {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a bound representation of [`pernixc_lexical::token::NumericLiteral`]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NumericLiteral<T: ValueType> {
     /// Specifies where the literal is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Is the value of the literal.
     pub ty: T,
@@ -188,7 +188,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for NumericLiteral<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Represents an implicit conversion that is done by the compiler.
@@ -209,14 +209,14 @@ impl<T: ValueType + Clone> ValueTrait<T> for ImplicitConversion<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.value.source_span() }
+    fn span(&self) -> Span { self.value.span() }
 }
 
 /// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Prefix`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     /// Specifies where the return is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 }
 
 impl<T: ValueType> ValueTrait<T> for Return {
@@ -227,7 +227,7 @@ impl<T: ValueType> ValueTrait<T> for Return {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a bound representation of
@@ -235,7 +235,7 @@ impl<T: ValueType> ValueTrait<T> for Return {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BooleanLiteral {
     /// Specifies where the literal is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Is the boolean value of the literal.
     pub value: bool,
@@ -249,7 +249,7 @@ impl<T: ValueType> ValueTrait<T> for BooleanLiteral {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Named`] that is used as
@@ -257,7 +257,7 @@ impl<T: ValueType> ValueTrait<T> for BooleanLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumLiteral {
     /// Specifies where the literal is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// The ID of the enum variant.
     pub enum_variant_id: EnumVariantID,
@@ -274,7 +274,7 @@ pub struct EnumLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Load<T: ValueType> {
     /// Specifies where the load is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Specifies the type of the load.
     pub ty: T,
@@ -305,7 +305,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for Named<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan {
+    fn span(&self) -> Span {
         match self {
             Self::EnumLiteral(literal) => literal.source_span.clone(),
             Self::Load(load) => load.source_span.clone(),
@@ -328,7 +328,7 @@ pub enum PrefixOperator {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Prefix<T: ValueType> {
     /// Specifies where the prefix expression is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Is the value of the prefix expression.
     pub operand: Box<Value<T>>,
@@ -348,7 +348,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for Prefix<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a bound representation of
@@ -381,7 +381,7 @@ pub enum BinaryOperator {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Binary<T: ValueType> {
     /// Specifies where the binary expression is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Is the left value of the binary expression.
     pub left_operand: Box<Value<T>>,
@@ -399,14 +399,14 @@ pub struct Binary<T: ValueType> {
 impl<T: ValueType + Clone> ValueTrait<T> for Binary<T> {
     fn type_binding(&self) -> TypeBinding<T> { self.type_binding.clone() }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::FunctionCall`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionCall<T: ValueType> {
     /// Specifies where the function call is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Is the function ID of the function call.
     pub function_id: FunctionID,
@@ -426,14 +426,14 @@ impl<T: ValueType + Clone> ValueTrait<T> for FunctionCall<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a value that is used to represent an error in the bound representation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ErrorPlaceholder<T: ValueType> {
     /// The location of the error in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// The type of the value that the error placeholder is supposed to represent.
     pub ty: T,
@@ -447,14 +447,14 @@ impl<T: ValueType + Clone> ValueTrait<T> for ErrorPlaceholder<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::MemberAccess`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemberAccess<T: ValueType> {
     /// Specifies where the member access is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// The value of the struct that the member access is being performed on.
     pub operand: Box<Value<T>>,
@@ -473,7 +473,7 @@ pub struct MemberAccess<T: ValueType> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Express {
     /// Specifies where the expression is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 }
 
 impl<T: ValueType> ValueTrait<T> for Express {
@@ -484,7 +484,7 @@ impl<T: ValueType> ValueTrait<T> for Express {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 impl<T: ValueType + Clone> ValueTrait<T> for MemberAccess<T> {
@@ -507,7 +507,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for MemberAccess<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is the value that a full if-else expression will be evaluated to.
@@ -524,7 +524,7 @@ pub struct IfElseLoad<T: ValueType> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IfElse<T: ValueType> {
     /// Specifies where the if-else expression is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// If the if-else expression has an else block, this is the value that the if-else expression
     /// will be evaluated to as a whole.
@@ -542,7 +542,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for IfElse<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is an enumeration of either a block or an if-else expression.
@@ -557,7 +557,7 @@ pub enum BlockOrIfElse<T: ValueType> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Block<T: ValueType> {
     /// Specifies where the block is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Is the type of the value that the block yields.   
     pub ty: T,
@@ -574,14 +574,14 @@ impl<T: ValueType + Clone> ValueTrait<T> for Block<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Loop`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Loop<T: ValueType> {
     /// Specifies where the loop is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 
     /// Is the type of the value that the loop yields. If the loop does not yield a value (no
     /// break), then this is `None`.
@@ -599,7 +599,7 @@ impl<T: ValueType + Clone> ValueTrait<T> for Loop<T> {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Represents a type binding of a value.
@@ -709,7 +709,7 @@ pub enum TemporaryVariable {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Continue {
     /// Specifies where the continue statement is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 }
 
 impl<T: ValueType> ValueTrait<T> for Continue {
@@ -720,14 +720,14 @@ impl<T: ValueType> ValueTrait<T> for Continue {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Is a bound representation of [`pernixc_syntax::syntax_tree::expression::Break`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Break {
     /// Specifies where the break statement is located in the source code.
-    pub source_span: SourceSpan,
+    pub source_span: Span,
 }
 
 impl<T: ValueType> ValueTrait<T> for Break {
@@ -738,7 +738,7 @@ impl<T: ValueType> ValueTrait<T> for Break {
         }
     }
 
-    fn source_span(&self) -> SourceSpan { self.source_span.clone() }
+    fn span(&self) -> Span { self.source_span.clone() }
 }
 
 /// Describes how the variable is used by the program.

@@ -2,8 +2,9 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use getset::CopyGetters;
 
-use super::TypedID;
+use super::item::TypedID;
 
 /// Is an enumeration of all the primitive types in Pernix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
@@ -53,11 +54,13 @@ impl Default for Type {
 }
 
 /// Represents a type used to represent a type binding of an l-value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, CopyGetters)]
 pub struct TypeBinding {
     /// The type of the binding.
-    pub ty: Type,
+    #[get_copy = "pub"]
+    pub(super) ty: Type,
 
     /// Whether the binding is mutable.
-    pub is_mutable: bool,
+    #[get_copy = "pub"]
+    pub(super) is_mutable: bool,
 }
