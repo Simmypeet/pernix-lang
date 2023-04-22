@@ -7,10 +7,9 @@ use getset::CopyGetters;
 use super::item::TypedID;
 
 /// Is an enumeration of all the primitive types in Pernix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PrimitiveType {
     /// Void (unit type)
-    #[default]
     Void,
     /// A boolean value (true or false)
     Bool,

@@ -9,11 +9,15 @@ use std::{
 
 use getset::{CopyGetters, Getters};
 
-use crate::symbol::Uid;
+use crate::symbol::{Uid, UniqueIdentifier};
 
 /// Is an unique identifier used to identify a basic block in the [`ControlFlowGraph`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BasicBlockID(Uid);
+
+impl UniqueIdentifier for BasicBlockID {
+    fn fresh() -> Self { Self(Uid::fresh()) }
+}
 
 /// A trait for the jump instruction of a [`ControlFlowGraph`].
 pub trait JumpInstruction {
@@ -125,7 +129,7 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
     /// Creates a new [`ControlFlowGraph`] with a single basic block.
     #[must_use]
     pub fn new() -> Self {
-        let new_id = BasicBlockID(crate::symbol::new_uid());
+        let new_id = BasicBlockID::fresh();
         let mut basic_blocks_by_id = HashMap::new();
         basic_blocks_by_id.insert(new_id, BasicBlock {
             instructions: Vec::new(),

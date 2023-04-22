@@ -5,10 +5,7 @@ use pernixc_lexical::token_stream::TokenStream;
 
 use crate::{
     parser::Parser,
-    syntax_tree::{
-        item::{AccessModifier, Struct},
-        PrimitiveTypeSpecifier, TypeSpecifier,
-    },
+    syntax_tree::{item::AccessModifier, PrimitiveTypeSpecifier, TypeSpecifier},
 };
 
 const STRUCT_SOURCE_CODE: &str = "

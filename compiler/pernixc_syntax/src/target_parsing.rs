@@ -1,11 +1,11 @@
 //! Contains the [`FileParsing`] type and its associated types and functions.
 
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 
-use derive_more::From;
+use derive_more::{Deref, From};
 use getset::Getters;
 use pernixc_common::{
     printing::LogSeverity,
@@ -16,7 +16,10 @@ use thiserror::Error;
 
 use crate::{
     errors::SyntacticError,
-    syntax_tree::{item::Item, File},
+    syntax_tree::{
+        item::{AccessModifier, Item},
+        File,
+    },
 };
 
 /// The error caused by encountering a duplicated module declaration in the same file.
@@ -118,6 +121,11 @@ pub struct FileParsing {
     /// Gets the list of errors encountered while parsing the source file.
     #[get = "pub"]
     file_parsing_errors: Vec<ParsingError>,
+
+    /// Gets the access modifier of this module. If `None`, then the module is a root module and
+    /// has an implicit `public` access modifier.
+    #[get = "pub"]
+    access_modifier: Option<AccessModifier>,
 }
 
 impl FileParsing {
@@ -133,7 +141,11 @@ impl FileParsing {
 #[error("The given source file argument is not a root source file.")]
 pub struct TargetParseError;
 
-fn compile_syntax_tree(source_file: Arc<SourceFile>, results: &Arc<Mutex<Vec<FileParsing>>>) {
+fn compile_syntax_tree(
+    source_file: Arc<SourceFile>,
+    results: &Arc<Mutex<Vec<FileParsing>>>,
+    access_modifier: Option<AccessModifier>,
+) {
     let mut errors = Vec::new();
 
     // lexical analysis
@@ -148,16 +160,22 @@ fn compile_syntax_tree(source_file: Arc<SourceFile>, results: &Arc<Mutex<Vec<Fil
             .map(ParsingError::SyntacticError),
     );
 
-    let mut submodules = HashSet::new();
+    let mut submodules = HashMap::new();
 
-    for item in &file_syntax_tree.items {
+    for item in file_syntax_tree.items() {
         // look for all module declaration symbol in the source file.
         let Item::Module(module_declaration) = item else {
             continue;
         };
 
         // check if the module declaration symbol is duplicated.
-        if !submodules.insert(module_declaration.identifier().span().str()) {
+        if submodules
+            .insert(
+                module_declaration.identifier().span().str(),
+                module_declaration.access_modifier().clone(),
+            )
+            .is_some()
+        {
             errors.push(
                 DuplicateModuleDeclaration {
                     span: module_declaration.identifier().span().clone(),
@@ -169,7 +187,7 @@ fn compile_syntax_tree(source_file: Arc<SourceFile>, results: &Arc<Mutex<Vec<Fil
 
     // start compiling the sub modules
     let mut join_handles = Vec::new();
-    for module in submodules {
+    for (module, access_modifier) in submodules {
         let mut path = source_file.parent_directory().clone();
         if !source_file.is_root() {
             path.push(source_file.file_name());
@@ -185,7 +203,7 @@ fn compile_syntax_tree(source_file: Arc<SourceFile>, results: &Arc<Mutex<Vec<Fil
                 let modules = Arc::clone(results);
 
                 join_handles.push(std::thread::spawn(move || {
-                    compile_syntax_tree(source_file, &modules);
+                    compile_syntax_tree(source_file, &modules, Some(access_modifier));
                 }));
             }
             Err(error) => {
@@ -202,6 +220,7 @@ fn compile_syntax_tree(source_file: Arc<SourceFile>, results: &Arc<Mutex<Vec<Fil
         source_file,
         syntax_tree: file_syntax_tree,
         file_parsing_errors: errors,
+        access_modifier,
     });
 }
 
@@ -210,10 +229,16 @@ fn compile_syntax_tree(source_file: Arc<SourceFile>, results: &Arc<Mutex<Vec<Fil
 /// The target is the collection of source files that were stemmed from the root source file through
 /// the module declaration. These source files are then parsed into a list of [`FileParsing`], which
 /// are then stored in this structure.
-#[derive(Debug, Getters)]
+///
+/// The order of the [`FileParsing`] in this structure is sorted by the depth of the module
+/// heirarchy of the source file. The source file with less depth is placed before the source file
+/// with more depth in the list. However, the sorting between source files with the same depth is
+/// undefined.
+#[derive(Debug, Getters, Deref)]
 pub struct TargetParsing {
     /// Gets the list of [`FileParsing`] that were parsed from the target.
     #[get = "pub"]
+    #[deref]
     file_parsings: Vec<FileParsing>,
 }
 
@@ -227,23 +252,24 @@ impl TargetParsing {
 ///
 /// # Errors
 /// - [`TargetParseError`] if the given source file is not a root source file.
-pub fn parse_files(
-    root_source_file: Arc<SourceFile>,
-) -> Result<Vec<FileParsing>, TargetParseError> {
+pub fn parse_target(root_source_file: Arc<SourceFile>) -> Result<TargetParsing, TargetParseError> {
     if !root_source_file.is_root() {
         return Err(TargetParseError);
     }
 
     let results = Arc::new(Mutex::new(Vec::new()));
 
-    compile_syntax_tree(root_source_file, &results);
+    compile_syntax_tree(root_source_file, &results, None);
 
-    let syntax_trees = Arc::try_unwrap(results)
+    let mut file_parsings = Arc::try_unwrap(results)
         .expect("should be the only reference")
         .into_inner()
         .expect("should be able to lock the mutex");
 
-    Ok(syntax_trees)
+    // sort the file parsing by the depth of the module heirarchy (less depth first)
+    file_parsings.sort_by_key(|file_parsing| file_parsing.source_file.module_heirarchy().len());
+
+    Ok(TargetParsing { file_parsings })
 }
 
 #[cfg(test)]

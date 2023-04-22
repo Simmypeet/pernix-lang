@@ -400,7 +400,8 @@ impl<'a> Parser<'a> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct File {
     /// Is a list of item declarations in the file.
-    pub items: Vec<Item>,
+    #[get = "pub"]
+    items: Vec<Item>,
 }
 
 impl File {
@@ -437,6 +438,10 @@ impl File {
         // return the syntax tree and the errors
         (Self { items }, parser.take_errors())
     }
+
+    /// Returns the items in the file.
+    #[must_use]
+    pub fn destruct(self) -> Vec<Item> { self.items }
 }
 
 #[cfg(test)]

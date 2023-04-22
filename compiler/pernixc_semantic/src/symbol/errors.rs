@@ -39,31 +39,31 @@ pub struct SymbolNotFound {
 impl SymbolNotFound {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        let symbol_name = self.span.str();
-        self.symbol_id.map_or_else(
-            || {
-                pernixc_common::printing::log(
-                    LogSeverity::Error,
-                    format!("no target found for `{symbol_name}`").as_str(),
-                );
-            },
-            |symbol_id| {
-                let parent_symbol = &table[symbol_id];
+        // let symbol_name = self.span.str();
+        // self.symbol_id.map_or_else(
+        //     || {
+        //         pernixc_common::printing::log(
+        //             LogSeverity::Error,
+        //             format!("no target found for `{symbol_name}`").as_str(),
+        //         );
+        //     },
+        //     |symbol_id| {
+        //         let parent_symbol = &table[symbol_id];
 
-                pernixc_common::printing::log(
-                    LogSeverity::Error,
-                    format!(
-                        "`{symbol_name}` was not found in `{parent_symbol}`",
-                        symbol_name = symbol_name,
-                        parent_symbol = parent_symbol.name(),
-                    )
-                    .as_str(),
-                );
-            },
-        );
+        //         pernixc_common::printing::log(
+        //             LogSeverity::Error,
+        //             format!(
+        //                 "`{symbol_name}` was not found in `{parent_symbol}`",
+        //                 symbol_name = symbol_name,
+        //                 parent_symbol = parent_symbol.name(),
+        //             )
+        //             .as_str(),
+        //         );
+        //     },
+        // );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
-        println!();
+        // pernixc_common::printing::print_source_code(&self.span, None);
+        // println!();
     }
 }
 
@@ -84,21 +84,21 @@ pub struct SymbolNotAccessible {
 impl SymbolNotAccessible {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        let symbol_name = self.span.str();
-        let symbol = &table[self.symbol_id];
+        // let symbol_name = self.span.str();
+        // let symbol = &table[self.symbol_id];
 
-        pernixc_common::printing::log(
-            LogSeverity::Error,
-            format!(
-                "`{symbol_name}` is not accessible from `{symbol}`",
-                symbol_name = symbol_name,
-                symbol = symbol.name(),
-            )
-            .as_str(),
-        );
+        // pernixc_common::printing::log(
+        //     LogSeverity::Error,
+        //     format!(
+        //         "`{symbol_name}` is not accessible from `{symbol}`",
+        //         symbol_name = symbol_name,
+        //         symbol = symbol.name(),
+        //     )
+        //     .as_str(),
+        // );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
-        println!();
+        // pernixc_common::printing::print_source_code(&self.span, None);
+        // println!();
     }
 }
 
@@ -125,22 +125,22 @@ pub struct PrivateSymbolLeak {
 impl PrivateSymbolLeak {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        let symbol_name = self.span.str();
-        let parent_symbol = &table[self.parent_symbol_id];
+        // let symbol_name = self.span.str();
+        // let parent_symbol = &table[self.parent_symbol_id];
 
-        pernixc_common::printing::log(
-            LogSeverity::Error,
-            format!(
-                "`{symbol_name}` is more restrictive and cannot be leaked to `{parent_symbol}`, \
-                 which is less restrictive",
-                symbol_name = symbol_name,
-                parent_symbol = parent_symbol.name(),
-            )
-            .as_str(),
-        );
+        // pernixc_common::printing::log(
+        //     LogSeverity::Error,
+        //     format!(
+        //         "`{symbol_name}` is more restrictive and cannot be leaked to `{parent_symbol}`, \
+        //          which is less restrictive",
+        //         symbol_name = symbol_name,
+        //         parent_symbol = parent_symbol.name(),
+        //     )
+        //     .as_str(),
+        // );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
-        println!();
+        // pernixc_common::printing::print_source_code(&self.span, None);
+        // println!();
     }
 }
 
@@ -155,13 +155,13 @@ pub struct ParameterRedefinition {
 impl ParameterRedefinition {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        pernixc_common::printing::log(
-            LogSeverity::Error,
-            format!("parameter `{}` was redefined", self.span.str(),).as_str(),
-        );
+        // pernixc_common::printing::log(
+        //     LogSeverity::Error,
+        //     format!("parameter `{}` was redefined", self.span.str(),).as_str(),
+        // );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
-        println!();
+        // pernixc_common::printing::print_source_code(&self.span, None);
+        // println!();
     }
 }
 
@@ -252,21 +252,21 @@ pub struct SymbolRedifinition {
 impl SymbolRedifinition {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        let symbol_name = self.span.str();
-        let available_symbol = &table[self.available_symbol_id];
+        // let symbol_name = self.span.str();
+        // let available_symbol = &table[self.available_symbol_id];
 
-        pernixc_common::printing::log(
-            LogSeverity::Error,
-            format!(
-                "`{symbol_name}` was redefined, but it is already defined in `{available_symbol}`",
-                symbol_name = symbol_name,
-                available_symbol = available_symbol.name(),
-            )
-            .as_str(),
-        );
+        // pernixc_common::printing::log(
+        //     LogSeverity::Error,
+        //     format!(
+        //         "`{symbol_name}` was redefined, but it is already defined in `{available_symbol}`",
+        //         symbol_name = symbol_name,
+        //         available_symbol = available_symbol.name(),
+        //     )
+        //     .as_str(),
+        // );
 
-        pernixc_common::printing::print_source_code(&self.span, Some("redefinition"));
-        println!();
+        // pernixc_common::printing::print_source_code(&self.span, Some("redefinition"));
+        // println!();
     }
 }
 

@@ -12,7 +12,7 @@ fn module_branching_test() -> Result<(), Box<dyn Error>> {
         vec!["test".to_string()],
     )?;
 
-    let syntax_trees = super::parse_files(source_file)?;
+    let syntax_trees = super::parse_target(source_file)?;
 
     assert_eq!(syntax_trees.len(), 4);
 
