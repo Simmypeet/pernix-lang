@@ -365,9 +365,7 @@ pub struct Named {
 }
 
 impl SourceElement for Named {
-    fn span(&self) -> Span {
-        self.qualified_identifier.span()
-    }
+    fn span(&self) -> Span { self.qualified_identifier.span() }
 }
 
 /// Represents a list of expressions separated by commas.
@@ -526,9 +524,7 @@ pub struct MemberAccess {
 }
 
 impl SourceElement for MemberAccess {
-    fn span(&self) -> Span {
-        self.operand.span().join(self.identifier.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.operand.span().join(self.identifier.span()).unwrap() }
 }
 
 /// Is an enumeration of all kinds of imperative expressions.
@@ -579,9 +575,7 @@ pub struct LabelSpecifier {
 }
 
 impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Span {
-        self.label.span().join(self.colon.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.label.span().join(self.colon.span()).unwrap() }
 }
 
 /// Represents a block syntax tree.

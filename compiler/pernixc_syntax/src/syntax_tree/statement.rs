@@ -88,9 +88,7 @@ pub struct VariableDeclaration {
 }
 
 impl SourceElement for VariableDeclaration {
-    fn span(&self) -> Span {
-        self.let_keyword.span().join(self.semicolon.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.let_keyword.span().join(self.semicolon.span()).unwrap() }
 }
 
 /// Represents an expressive statement syntax tree node
@@ -141,9 +139,7 @@ pub struct Semi {
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Span {
-        self.expression.span().join(self.semicolon.span()).unwrap()
-    }
+    fn span(&self) -> Span { self.expression.span().join(self.semicolon.span()).unwrap() }
 }
 
 impl<'a> Parser<'a> {

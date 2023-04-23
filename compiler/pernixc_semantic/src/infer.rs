@@ -27,9 +27,7 @@ pub enum Constraint {
 impl Constraint {
     /// Returns true if the constraint is more constrainted than the other constraint.
     #[must_use]
-    pub fn is_more_constrainted_than(self, other: Self) -> bool {
-        self as usize > other as usize
-    }
+    pub fn is_more_constrainted_than(self, other: Self) -> bool { self as usize > other as usize }
 
     /// Returns true if the constraint is satisfied by the concrete type.
     #[must_use]
@@ -380,9 +378,7 @@ pub enum UnificationError {
 pub struct ConstraintAddError(pub Type);
 
 impl Default for InferenceContext {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ use pernixc_syntax::{
     syntax_tree::{
         item::{
             Enum as EnumSyntaxTree, Function as FunctionSyntaxTree, Item as ItemSyntaxTree,
-            Member as MemberSyntaxTree, MemberGroup, Struct as StructSyntaxTree,
+            Member as MemberSyntaxTree, MemberGroup, ParameterList, Struct as StructSyntaxTree,
             TypeAlias as TypeAliasSyntaxTree, TypeAliasWithoutAccessModifier,
         },
         PrimitiveTypeSpecifier, QualifiedIdentifier, TypeSpecifier,
@@ -25,8 +25,9 @@ use pernixc_syntax::{
 
 use super::{
     errors::{
-        CircularDependency, EnumVariantRedefinition, FieldRedefinition, PrivateSymbolLeak,
-        StructMemberMoreAccessibleThanStruct, SymbolError, SymbolRedifinition, TypeExpected,
+        CircularDependency, EnumVariantRedefinition, FieldRedefinition, OverloadRedefinition,
+        ParameterRedefinition, PrivateSymbolLeak, StructMemberMoreAccessibleThanStruct,
+        SymbolError, SymbolRedifinition, TypeExpected,
     },
     ty::{PrimitiveType, Type, TypeBinding},
     Uid, UniqueIdentifier,
@@ -232,7 +233,7 @@ pub struct SymbolMap<T: SymbolData> {
 }
 
 impl<T: SymbolData> SymbolMap<T> {
-    /// Creates a new empty [`IDMap`].
+    /// Creates a new empty [`SymbolMap`].
     #[must_use]
     fn new() -> Self {
         Self {
@@ -241,7 +242,7 @@ impl<T: SymbolData> SymbolMap<T> {
         }
     }
 
-    /// Adds a new symbol to the [`IDMap`].
+    /// Adds a new symbol to the [`SymbolMap`].
     ///
     /// # Returns
     /// - `Ok(id)` returns the ID of the symbol of the added symbol.
@@ -260,11 +261,11 @@ impl<T: SymbolData> SymbolMap<T> {
         }
     }
 
-    /// Returns the number of symbols in the [`IDMap`].
+    /// Returns the number of symbols in the [`SymbolMap`].
     #[must_use]
     pub fn len(&self) -> usize { self.values_by_id.len() }
 
-    /// Returns `true` if the [`IDMap`] is empty.
+    /// Returns `true` if the [`SymbolMap`] is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool { self.values_by_id.is_empty() }
 
@@ -273,6 +274,9 @@ impl<T: SymbolData> SymbolMap<T> {
     pub fn map_name_to_id(&self, name: &str) -> Option<T::ID> {
         self.ids_by_name.get(name).copied()
     }
+
+    /// Returns an iterator over the symbols in the [`SymbolMap`].
+    pub fn values(&self) -> impl Iterator<Item = &SymbolWithData<T>> { self.values_by_id.values() }
 }
 
 impl<T: SymbolData> Index<T::ID> for SymbolMap<T> {
@@ -294,7 +298,7 @@ pub struct StructData {
 
     /// The field members of the struct.
     #[get = "pub"]
-    field_member_map: SymbolMap<FieldData>,
+    fields: SymbolMap<FieldData>,
 
     /// The type alias members of the struct.
     #[get = "pub"]
@@ -385,17 +389,9 @@ impl SymbolData for ModuleData {
 /// Represents a module symbol.
 pub type Module = SymbolWithData<ModuleData>;
 
-/// Is an unique identifier used to identify a parameter in the [`OverloadData`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ParameterID(Uid);
-
-impl UniqueIdentifier for ParameterID {
-    fn fresh() -> Self { Self(Uid::fresh()) }
-}
-
 /// Represents a parameter data.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
-pub struct ParameterData {
+pub struct Parameter {
     /// The name of the parameter
     #[get = "pub"]
     name: String,
@@ -403,10 +399,6 @@ pub struct ParameterData {
     /// The type binding of this parameter.
     #[get_copy = "pub"]
     type_binding: TypeBinding,
-}
-
-impl SymbolData for ParameterData {
-    type ID = ParameterID;
 }
 
 /// Is an unique identifier used to identify a function overload in the [`FunctionOverloadSetData`].
@@ -430,11 +422,15 @@ pub struct OverloadData {
 
     /// The parameters of the function overload.
     #[get = "pub"]
-    parameters: SymbolMap<ParameterData>,
+    parameters: Vec<Parameter>,
 
     /// The syntax tree that was used to create the function overload.
     #[get = "pub"]
     syntax_tree: FunctionSyntaxTree,
+
+    /// The accessibility of the function overload.
+    #[get_copy = "pub"]
+    accessibility: Accessibility,
 }
 
 impl SymbolData for OverloadData {
@@ -1032,7 +1028,8 @@ impl Table {
                 data: OverloadData {
                     overload_set_id,
                     return_type: PrimitiveType::Void.into(), // to be filled later
-                    parameters: SymbolMap::new(),            // to be filled later
+                    parameters: Vec::new(),                  // to be filled later
+                    accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
                     syntax_tree,
                 },
                 id: overload_id,
@@ -1094,7 +1091,7 @@ impl Table {
                     syntax_tree.identifier().span().str().to_owned(),
                 ))
                 .collect(),
-            field_member_map: SymbolMap::new(), // To be filled later
+            fields: SymbolMap::new(), // To be filled later
             type_alias_member_ids_by_name: HashMap::new(), // To be filled later
             accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
             parent,
@@ -1108,16 +1105,220 @@ impl Table {
         errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
     ) {
-        println!("Building: {}", self[id].qualified_name().join("::"));
-
         match id {
             ID::Struct(id) => self.build_struct_symbol(id, errors, symbol_states_by_id),
             ID::Enum(id) => self.build_enum_symbol(id, errors, symbol_states_by_id),
-            ID::FunctionOverloadSet(_) => todo!(),
+            ID::FunctionOverloadSet(id) => {
+                self.build_function_overload_set_symbol(id, errors, symbol_states_by_id);
+            }
             ID::TypeAlias(id) => self.build_type_alias_symbol(id, errors, symbol_states_by_id),
 
             ID::EnumVariant(..) | ID::Module(..) => unreachable!(),
         }
+    }
+
+    fn build_function_overload_set_symbol(
+        &mut self,
+        function_overload_set_id: FunctionOverloadSetID,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        // mark as constructed, remove from symbol states
+        symbol_states_by_id.remove(&function_overload_set_id.into());
+
+        let mut constructed_overload_ids = Vec::new();
+        let parent_id = self[function_overload_set_id].parent;
+        let overload_ids = self[function_overload_set_id]
+            .overloads_by_id
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+
+        for overload_id in overload_ids {
+            let return_type = {
+                let ty_syntax = self[function_overload_set_id].overloads_by_id[&overload_id]
+                    .syntax_tree
+                    .type_annotation()
+                    .type_specifier()
+                    .clone();
+                let return_type = self
+                    .resolve_type(parent_id.into(), &ty_syntax, errors, symbol_states_by_id)
+                    .unwrap_or(Type::Primitive(PrimitiveType::Void));
+
+                let ty_accessibility = self.get_overall_accessibility(return_type);
+
+                // the return type accessibility can't be more restrictive than the function's
+                if ty_accessibility.restrictiveness_rank()
+                    > self[parent_id].accessibility.restrictiveness_rank()
+                {
+                    errors.push(
+                        PrivateSymbolLeak {
+                            span: self[function_overload_set_id].overloads_by_id[&overload_id]
+                                .syntax_tree
+                                .type_annotation()
+                                .type_specifier()
+                                .span(),
+                            accessibility: ty_accessibility,
+                            parent_accessibility: self[parent_id].accessibility,
+                        }
+                        .into(),
+                    );
+                }
+
+                return_type
+            };
+
+            let parameters = {
+                let syntax = self[function_overload_set_id].overloads_by_id[&overload_id]
+                    .syntax_tree
+                    .parameters()
+                    .clone();
+
+                self.create_function_parameters(
+                    function_overload_set_id,
+                    overload_id,
+                    &syntax,
+                    errors,
+                    symbol_states_by_id,
+                )
+            };
+
+            // check for overload redefinition
+            let mut redefinition = false;
+            'check: for constructed_overload in constructed_overload_ids
+                .iter()
+                .map(|x| &self[function_overload_set_id].overloads_by_id[x])
+            {
+                if constructed_overload.parameters.len() != parameters.len() {
+                    continue;
+                }
+
+                // if found any parameter pair that is not equal, then this is not a redefinition
+                for (parameter, constructed_parameter) in parameters
+                    .iter()
+                    .zip(constructed_overload.parameters.iter())
+                {
+                    if parameter.type_binding().ty != constructed_parameter.type_binding().ty {
+                        continue 'check;
+                    }
+                }
+
+                errors.push(
+                    OverloadRedefinition {
+                        span: self[function_overload_set_id].overloads_by_id[&overload_id]
+                            .syntax_tree
+                            .identifier()
+                            .span()
+                            .clone(),
+                        function_overload_set_id,
+                        available_overload_id: constructed_overload.id,
+                    }
+                    .into(),
+                );
+
+                redefinition = true;
+                break;
+            }
+
+            if redefinition {
+                self[function_overload_set_id]
+                    .overloads_by_id
+                    .remove(&overload_id);
+            } else {
+                let overload = self[function_overload_set_id]
+                    .overloads_by_id
+                    .get_mut(&overload_id)
+                    .unwrap();
+
+                overload.parameters = parameters;
+                overload.return_type = return_type;
+
+                // add to constructed list
+                constructed_overload_ids.push(overload_id);
+            }
+        }
+    }
+
+    fn create_function_parameters(
+        &mut self,
+        function_overload_set_id: FunctionOverloadSetID,
+        overload_id: OverloadID,
+        syntax: &Option<ParameterList>,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) -> Vec<Parameter> {
+        let parent_id = self[function_overload_set_id].parent;
+        let mut parameters: Vec<Parameter> = Vec::new();
+
+        for parameter_syntax in syntax
+            .iter()
+            .flat_map(pernixc_syntax::syntax_tree::ConnectedList::elements)
+        {
+            let ty = self
+                .resolve_type(
+                    parent_id.into(),
+                    parameter_syntax.type_annotation().type_specifier(),
+                    errors,
+                    symbol_states_by_id,
+                )
+                .unwrap_or(Type::Primitive(PrimitiveType::Void));
+            let name = parameter_syntax.identifier().span().str().to_owned();
+            let parameter_data = Parameter {
+                name: name.clone(),
+                type_binding: TypeBinding {
+                    ty,
+                    is_mutable: parameter_syntax.mutable_keyword().is_some(),
+                },
+            };
+
+            // check fo the redefinition
+            if let Some(available_parameter_index) =
+                parameters
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, parameter)| {
+                        if parameter.name == name {
+                            Some(index)
+                        } else {
+                            None
+                        }
+                    })
+            {
+                errors.push(
+                    ParameterRedefinition {
+                        span: parameter_syntax.identifier().span().clone(),
+                        available_parameter_index,
+                    }
+                    .into(),
+                );
+                continue;
+            }
+
+            parameters.push(parameter_data);
+
+            let ty_accessibility = self.get_overall_accessibility(ty);
+
+            // the parameter ty accessibility can not be more restrictive than the function
+            // ty accessibility
+            if ty_accessibility.restrictiveness_rank()
+                < self[function_overload_set_id].overloads_by_id[&overload_id]
+                    .accessibility()
+                    .restrictiveness_rank()
+            {
+                errors.push(
+                    PrivateSymbolLeak {
+                        span: parameter_syntax.span().clone(),
+                        accessibility: ty_accessibility,
+                        parent_accessibility: self[function_overload_set_id].overloads_by_id
+                            [&overload_id]
+                            .accessibility,
+                    }
+                    .into(),
+                );
+            }
+        }
+
+        parameters
     }
 
     fn build_enum_symbol(
@@ -1131,13 +1332,17 @@ impl Table {
 
         let syntax_tree = self[enum_id].syntax_tree.variants().clone();
 
-        for (variant_number, variant) in syntax_tree.iter().enumerate() {
+        for (variant_number, variant) in syntax_tree
+            .iter()
+            .flat_map(pernixc_syntax::syntax_tree::ConnectedList::elements)
+            .enumerate()
+        {
             let name = variant.span().str().to_owned();
             if let Some(available_symbol_id) = self[enum_id].variant_ids_by_name.get(&name).copied()
             {
                 errors.push(
                     EnumVariantRedefinition {
-                        span: variant.span(),
+                        span: variant.span().clone(),
                         available_symbol_id,
                     }
                     .into(),
@@ -1261,7 +1466,7 @@ impl Table {
                 };
 
                 if let Err(available_id) = self[struct_id]
-                    .field_member_map
+                    .fields
                     .add(field.identifier().span().str().to_owned(), field_data)
                 {
                     errors.push(

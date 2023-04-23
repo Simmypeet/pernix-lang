@@ -24,9 +24,7 @@ impl Uid {
 
     /// Gets the underlying [`u64`] representation of the [`Uid`].
     #[must_use]
-    pub fn as_u64(&self) -> u64 {
-        self.0
-    }
+    pub fn as_u64(&self) -> u64 { self.0 }
 }
 
 /// Is a trait for types that can generate a new unique identifier.
@@ -40,7 +38,5 @@ pub trait UniqueIdentifier:
 }
 
 impl UniqueIdentifier for Uid {
-    fn fresh() -> Self {
-        Self::fresh()
-    }
+    fn fresh() -> Self { Self::fresh() }
 }

@@ -16,9 +16,7 @@ use crate::symbol::{Uid, UniqueIdentifier};
 pub struct BasicBlockID(Uid);
 
 impl UniqueIdentifier for BasicBlockID {
-    fn fresh() -> Self {
-        Self(Uid::fresh())
-    }
+    fn fresh() -> Self { Self(Uid::fresh()) }
 }
 
 /// A trait for the jump instruction of a [`ControlFlowGraph`].
@@ -133,15 +131,12 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
     pub fn new() -> Self {
         let new_id = BasicBlockID::fresh();
         let mut basic_blocks_by_id = HashMap::new();
-        basic_blocks_by_id.insert(
-            new_id,
-            BasicBlock {
-                instructions: Vec::new(),
-                successors: HashSet::new(),
-                predecessors: HashSet::new(),
-                basic_block_id: new_id,
-            },
-        );
+        basic_blocks_by_id.insert(new_id, BasicBlock {
+            instructions: Vec::new(),
+            successors: HashSet::new(),
+            predecessors: HashSet::new(),
+            basic_block_id: new_id,
+        });
         Self {
             basic_blocks_by_id,
             entry_block: new_id,
@@ -150,9 +145,7 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
 }
 
 impl<T: InstructionBackend> Default for ControlFlowGraph<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl<T: InstructionBackend> Index<BasicBlockID> for ControlFlowGraph<T> {

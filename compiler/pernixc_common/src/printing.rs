@@ -6,14 +6,10 @@ use crate::source_file::Span;
 
 /// Represents the severity of a log message to be printed to the console.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[allow(missing_docs)]
 pub enum LogSeverity {
-    /// Represents an error log message.
     Error,
-
-    /// Represents an info log message.
     Info,
-
-    /// Represents a warning log message.
     Warning,
 }
 

@@ -6,7 +6,9 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_common::{printing::LogSeverity, source_file::Span};
 
-use super::item::{Accessibility, EnumVariantID, FieldID, Table, ID};
+use super::item::{
+    Accessibility, EnumVariantID, FieldID, FunctionOverloadSetID, OverloadID, Table, ID,
+};
 
 /// Is an error that can occur during the symbol resolution/construction phase of the compiler.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
@@ -22,6 +24,7 @@ pub enum SymbolError {
     SymbolRedifinition(SymbolRedifinition),
     CircularDependency(CircularDependency),
     TypeExpected(TypeExpected),
+    OverloadRedefinition(OverloadRedefinition),
 }
 
 /// Expected a symbol that can be used as a type, but found a symbol that cannot be used as a type.
@@ -148,9 +151,7 @@ pub struct PrivateSymbolLeak {
 
 impl PrivateSymbolLeak {
     /// Prints the error message to the console.
-    pub fn print(&self, table: &Table) {
-        let symbol_name = self.span.str();
-
+    pub fn print(&self) {
         pernixc_common::printing::log(
             LogSeverity::Error,
             "private symbols cannot be leaked to less restrictive scopes",
@@ -167,6 +168,10 @@ pub struct ParameterRedefinition {
     /// Specifies the location where the redefinition occurred.
     #[get = "pub"]
     pub(super) span: Span,
+
+    /// The index of the parameter that was redefined.
+    #[get = "pub"]
+    pub(super) available_parameter_index: usize,
 }
 
 impl ParameterRedefinition {
@@ -178,6 +183,48 @@ impl ParameterRedefinition {
         );
 
         pernixc_common::printing::print_source_code(&self.span, None);
+        println!();
+    }
+}
+
+/// Function overloads cannot be redefined
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct OverloadRedefinition {
+    /// Specifies the location where the redefinition occurred.
+    #[get = "pub"]
+    pub(super) span: Span,
+
+    /// The ID of the function overload set that redifinition occurred in.
+    #[get = "pub"]
+    pub(super) function_overload_set_id: FunctionOverloadSetID,
+
+    /// The ID of the overload that was redefined.
+    #[get = "pub"]
+    pub(super) available_overload_id: OverloadID,
+}
+
+impl OverloadRedefinition {
+    /// Prints the error message to the console.
+    pub fn print(&self, table: &Table) {
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            format!(
+                "function overload `{}` has a redefinition",
+                table[self.function_overload_set_id]
+                    .qualified_name()
+                    .join("::")
+            )
+            .as_str(),
+        );
+
+        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_common::printing::print_source_code(
+            table[self.function_overload_set_id].overloads_by_id()[&self.available_overload_id]
+                .syntax_tree()
+                .identifier()
+                .span(),
+            Some("previous definition here"),
+        );
         println!();
     }
 }
@@ -329,13 +376,14 @@ impl SymbolError {
             Self::TypeExpected(e) => e.print(table),
             Self::SymbolNotFound(e) => e.print(table),
             Self::SymbolNotAccessible(e) => e.print(table),
-            Self::PrivateSymbolLeak(e) => e.print(table),
+            Self::PrivateSymbolLeak(e) => e.print(),
             Self::ParameterRedefinition(e) => e.print(),
             Self::StructMemberMoreAccessibleThanStruct(e) => e.print(),
             Self::FieldRedefinition(e) => e.print(),
             Self::EnumVariantRedefinition(e) => e.print(),
             Self::SymbolRedifinition(e) => e.print(table),
             Self::CircularDependency(e) => e.print(table),
+            Self::OverloadRedefinition(e) => e.print(table),
         }
     }
 }

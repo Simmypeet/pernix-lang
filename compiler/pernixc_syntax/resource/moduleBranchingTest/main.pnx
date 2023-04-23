@@ -3,8 +3,8 @@ public module sub;
 public struct Test 
 {
 public:
-    a: int32;
-    b: int32;
+    let a: int32;
+    let b: int32;
 }
 
 public function main(): int32

@@ -90,9 +90,7 @@ impl TokenStream {
 impl Index<usize> for TokenStream {
     type Output = Token;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
+    fn index(&self, index: usize) -> &Self::Output { &self.0[index] }
 }
 
 /// Represents the position of a cursor over a [`TokenStream`].
@@ -288,7 +286,5 @@ impl<'a> Cursor<'a> {
 
     /// Returns the position of the cursor.
     #[must_use]
-    pub fn position(&self) -> CursorPosition {
-        self.position
-    }
+    pub fn position(&self) -> CursorPosition { self.position }
 }

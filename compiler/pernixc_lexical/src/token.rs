@@ -106,9 +106,7 @@ pub enum KeywordKind {
 }
 
 impl ToString for KeywordKind {
-    fn to_string(&self) -> String {
-        self.as_str().to_string()
-    }
+    fn to_string(&self) -> String { self.as_str().to_string() }
 }
 
 /// Is an error that is returned when a string cannot be parsed into a [`Keyword`] in [`FromStr`]
@@ -242,9 +240,7 @@ pub struct WhiteSpace {
 }
 
 impl SourceElement for WhiteSpace {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters that are valid in an identifier.
@@ -256,9 +252,7 @@ pub struct Identifier {
 }
 
 impl SourceElement for Identifier {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters that are reserved for a keyword.
@@ -274,9 +268,7 @@ pub struct Keyword {
 }
 
 impl SourceElement for Keyword {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a single ASCII punctuation character.
@@ -292,9 +284,7 @@ pub struct Punctuation {
 }
 
 impl SourceElement for Punctuation {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a hardcoded numeric literal value in the source code.
@@ -314,9 +304,7 @@ pub struct NumericLiteral {
 }
 
 impl SourceElement for NumericLiteral {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a single character or escape sequence enclosed in single quotes.
@@ -332,9 +320,7 @@ pub struct CharacterLiteral {
 }
 
 impl SourceElement for CharacterLiteral {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters enclosed in double quotes.
@@ -346,9 +332,7 @@ pub struct StringLiteral {
 }
 
 impl SourceElement for StringLiteral {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Is an enumeration representing the two kinds of comments in the Pernix programming language.
@@ -374,9 +358,7 @@ pub struct Comment {
 }
 
 impl SourceElement for Comment {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Is an error that can occur when invoking the [Token::tokenize()](Token::tokenize()) method.

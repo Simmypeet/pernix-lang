@@ -13,12 +13,23 @@ public type A = float64;
 public type B = C;
 public type C = B;
 
-public enum Days {
-    Monday,
-    Tuesday,
-    Wednesday,
-    Thursday,
-    Friday,
-    Saturday,
-    Sunday,
+public enum Boolean {
+    True,
+    False,
+}
+
+public function add(a: int32, b: int32): int32 {
+    return a + b; 
+}
+
+public function add(a: float32, b: float32): float32 {
+    return a + b; 
+}
+
+public function sub(a: float32, b: float32): float32 {
+    return a - b;
+}
+
+public function add(a: int32, b: int32): float32 { 
+    return a as float32 + b as float32;
 }

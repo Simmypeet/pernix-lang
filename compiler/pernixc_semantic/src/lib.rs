@@ -42,9 +42,7 @@ impl<T, RE> OkResult<T, RE> {
     }
 
     /// Unwraps the [`OkResult`] and returns the value.
-    pub fn unwrap_drop(self) -> T {
-        self.value
-    }
+    pub fn unwrap_drop(self) -> T { self.value }
 
     /// Maps the value of the [`OkResult`] using the given function.
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> OkResult<U, RE> {
@@ -55,9 +53,7 @@ impl<T, RE> OkResult<T, RE> {
     }
 
     /// Unwraps the [`OkResult`] and returns the list of non-fatal errors.
-    pub fn unwrap_err(self) -> Vec<RE> {
-        self.errors
-    }
+    pub fn unwrap_err(self) -> Vec<RE> { self.errors }
 
     /// Unwraps the [`OkResult`] and returns the list of non-fatal errors with an additional error.
     pub fn unwrap_err_push(mut self, error: RE) -> Vec<RE> {
