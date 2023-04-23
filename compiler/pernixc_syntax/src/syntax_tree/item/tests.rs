@@ -40,7 +40,7 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
 
     assert_eq!(struct_item.identifier.span().str(), "Test");
 
-    let mut field_group_iter = struct_item.field_groups.into_iter();
+    let mut field_group_iter = struct_item.member_groups.into_iter();
 
     {
         let field_group = field_group_iter.next().unwrap();

@@ -43,13 +43,6 @@ pub enum Type {
 
     /// The type refers to a particular typed symbol in the symbol table.
     TypedID(TypedID),
-
-    /// The type that yields from an expression that jumps the flow out of the current procedure.
-    Never,
-}
-
-impl Default for Type {
-    fn default() -> Self { Self::Primitive(PrimitiveType::Void) }
 }
 
 /// Represents a type used to represent a type binding of an l-value.

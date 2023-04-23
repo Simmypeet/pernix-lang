@@ -12,13 +12,14 @@ fn module_branching_test() -> Result<(), Box<dyn Error>> {
         vec!["test".to_string()],
     )?;
 
-    let syntax_trees = super::parse_target(source_file)?;
+    let (syntax_trees, errors) = super::parse_target(source_file)?;
 
+    assert!(errors.is_empty());
     assert_eq!(syntax_trees.len(), 4);
 
     // test
     assert!(syntax_trees.iter().any(|syntax_tree| {
-        *syntax_tree.source_file.module_heirarchy() == vec!["test"]
+        *syntax_tree.source_file.module_hierarchy() == vec!["test"]
             && *syntax_tree.source_file.parent_directory()
                 == PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("resource")
@@ -27,7 +28,7 @@ fn module_branching_test() -> Result<(), Box<dyn Error>> {
 
     // test::sub
     assert!(syntax_trees.iter().any(|syntax_tree| {
-        *syntax_tree.source_file.module_heirarchy() == vec!["test", "sub"]
+        *syntax_tree.source_file.module_hierarchy() == vec!["test", "sub"]
             && *syntax_tree.source_file.parent_directory()
                 == PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("resource")
@@ -36,7 +37,7 @@ fn module_branching_test() -> Result<(), Box<dyn Error>> {
 
     // test::sub::innerSub1
     assert!(syntax_trees.iter().any(|syntax_tree| {
-        *syntax_tree.source_file.module_heirarchy() == vec!["test", "sub", "innerSub1"]
+        *syntax_tree.source_file.module_hierarchy() == vec!["test", "sub", "innerSub1"]
             && *syntax_tree.source_file.parent_directory()
                 == PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("resource")
@@ -46,7 +47,7 @@ fn module_branching_test() -> Result<(), Box<dyn Error>> {
 
     // test::sub::innerSub2
     assert!(syntax_trees.iter().any(|syntax_tree| {
-        *syntax_tree.source_file.module_heirarchy() == vec!["test", "sub", "innerSub2"]
+        *syntax_tree.source_file.module_hierarchy() == vec!["test", "sub", "innerSub2"]
             && *syntax_tree.source_file.parent_directory()
                 == PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("resource")

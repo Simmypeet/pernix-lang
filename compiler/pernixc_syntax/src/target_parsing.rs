@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
 
 use derive_more::{Deref, From};
@@ -118,10 +118,6 @@ pub struct FileParsing {
     #[get = "pub"]
     syntax_tree: File,
 
-    /// Gets the list of errors encountered while parsing the source file.
-    #[get = "pub"]
-    file_parsing_errors: Vec<ParsingError>,
-
     /// Gets the access modifier of this module. If `None`, then the module is a root module and
     /// has an implicit `public` access modifier.
     #[get = "pub"]
@@ -131,8 +127,8 @@ pub struct FileParsing {
 impl FileParsing {
     /// Destructs this [`FileParsing`] into its components.
     #[must_use]
-    pub fn destruct(self) -> (Arc<SourceFile>, File, Vec<ParsingError>) {
-        (self.source_file, self.syntax_tree, self.file_parsing_errors)
+    pub fn destruct(self) -> (Arc<SourceFile>, File, Option<AccessModifier>) {
+        (self.source_file, self.syntax_tree, self.access_modifier)
     }
 }
 
@@ -143,18 +139,20 @@ pub struct TargetParseError;
 
 fn compile_syntax_tree(
     source_file: Arc<SourceFile>,
-    results: &Arc<Mutex<Vec<FileParsing>>>,
+    results: &Arc<RwLock<Vec<FileParsing>>>,
+    errors: &Arc<RwLock<Vec<ParsingError>>>,
     access_modifier: Option<AccessModifier>,
 ) {
-    let mut errors = Vec::new();
-
     // lexical analysis
     let (token_stream, lexical_errors) = TokenStream::tokenize(source_file.iter());
-    errors.extend(lexical_errors.into_iter().map(ParsingError::LexicalError));
+    errors
+        .write()
+        .unwrap()
+        .extend(lexical_errors.into_iter().map(ParsingError::LexicalError));
 
     // syntactic analysis
     let (file_syntax_tree, syntactic_errors) = File::parse(&token_stream);
-    errors.extend(
+    errors.write().unwrap().extend(
         syntactic_errors
             .into_iter()
             .map(ParsingError::SyntacticError),
@@ -176,7 +174,7 @@ fn compile_syntax_tree(
             )
             .is_some()
         {
-            errors.push(
+            errors.write().unwrap().push(
                 DuplicateModuleDeclaration {
                     span: module_declaration.identifier().span().clone(),
                 }
@@ -194,20 +192,21 @@ fn compile_syntax_tree(
         }
         path.push(format!("{module}.pnx"));
 
-        // create a new module heirarchy
-        let mut module_heirarchy = source_file.module_heirarchy().clone();
-        module_heirarchy.push(module.to_string());
+        // create a new module hierarchy
+        let mut module_hierarchy = source_file.module_hierarchy().clone();
+        module_hierarchy.push(module.to_string());
 
-        match SourceFile::load(&path, module_heirarchy) {
+        match SourceFile::load(&path, module_hierarchy) {
             Ok(source_file) => {
                 let modules = Arc::clone(results);
+                let errors = Arc::clone(errors);
 
                 join_handles.push(std::thread::spawn(move || {
-                    compile_syntax_tree(source_file, &modules, Some(access_modifier));
+                    compile_syntax_tree(source_file, &modules, &errors, Some(access_modifier));
                 }));
             }
             Err(error) => {
-                errors.push(ParsingError::LoadError(error));
+                errors.write().unwrap().push(ParsingError::LoadError(error));
             }
         }
     }
@@ -216,10 +215,9 @@ fn compile_syntax_tree(
         join_handle.join().unwrap();
     }
 
-    results.lock().unwrap().push(FileParsing {
+    results.write().unwrap().push(FileParsing {
         source_file,
         syntax_tree: file_syntax_tree,
-        file_parsing_errors: errors,
         access_modifier,
     });
 }
@@ -231,7 +229,7 @@ fn compile_syntax_tree(
 /// are then stored in this structure.
 ///
 /// The order of the [`FileParsing`] in this structure is sorted by the depth of the module
-/// heirarchy of the source file. The source file with less depth is placed before the source file
+/// hierarchy of the source file. The source file with less depth is placed before the source file
 /// with more depth in the list. However, the sorting between source files with the same depth is
 /// undefined.
 #[derive(Debug, Getters, Deref)]
@@ -252,24 +250,31 @@ impl TargetParsing {
 ///
 /// # Errors
 /// - [`TargetParseError`] if the given source file is not a root source file.
-pub fn parse_target(root_source_file: Arc<SourceFile>) -> Result<TargetParsing, TargetParseError> {
+pub fn parse_target(
+    root_source_file: Arc<SourceFile>,
+) -> Result<(TargetParsing, Vec<ParsingError>), TargetParseError> {
     if !root_source_file.is_root() {
         return Err(TargetParseError);
     }
 
-    let results = Arc::new(Mutex::new(Vec::new()));
+    let results = Arc::new(RwLock::new(Vec::new()));
+    let errors = Arc::new(RwLock::new(Vec::new()));
 
-    compile_syntax_tree(root_source_file, &results, None);
+    compile_syntax_tree(root_source_file, &results, &errors, None);
 
     let mut file_parsings = Arc::try_unwrap(results)
         .expect("should be the only reference")
         .into_inner()
         .expect("should be able to lock the mutex");
+    let errors = Arc::try_unwrap(errors)
+        .expect("should be the only reference")
+        .into_inner()
+        .expect("should be able to lock the mutex");
 
-    // sort the file parsing by the depth of the module heirarchy (less depth first)
-    file_parsings.sort_by_key(|file_parsing| file_parsing.source_file.module_heirarchy().len());
+    // sort the file parsing by the depth of the module hierarchy (less depth first)
+    file_parsings.sort_by_key(|file_parsing| file_parsing.source_file.module_hierarchy().len());
 
-    Ok(TargetParsing { file_parsings })
+    Ok((TargetParsing { file_parsings }, errors))
 }
 
 #[cfg(test)]

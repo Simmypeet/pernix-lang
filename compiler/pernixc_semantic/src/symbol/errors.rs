@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_common::{printing::LogSeverity, source_file::Span};
 
-use super::item::{AccessModifier, Table, ID};
+use super::item::{Accessibility, EnumVariantID, FieldID, Table, ID};
 
 /// Is an error that can occur during the symbol resolution/construction phase of the compiler.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
@@ -16,10 +16,38 @@ pub enum SymbolError {
     SymbolNotAccessible(SymbolNotAccessible),
     PrivateSymbolLeak(PrivateSymbolLeak),
     ParameterRedefinition(ParameterRedefinition),
-    StructMemberMoreAccessibleThanStruct(FieldGroupMoreAccessibleThanStruct),
+    StructMemberMoreAccessibleThanStruct(StructMemberMoreAccessibleThanStruct),
     FieldRedefinition(FieldRedefinition),
     EnumVariantRedefinition(EnumVariantRedefinition),
     SymbolRedifinition(SymbolRedifinition),
+    CircularDependency(CircularDependency),
+    TypeExpected(TypeExpected),
+}
+
+/// Expected a symbol that can be used as a type, but found a symbol that cannot be used as a type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct TypeExpected {
+    /// Specifies the location where the resolution failed.
+    pub(super) span: Span,
+
+    /// The ID of the found symbol that cannot be used as a type.
+    pub(super) found: ID,
+}
+
+impl TypeExpected {
+    /// Prints the error message to the console.
+    pub fn print(&self, table: &Table) {
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            format!(
+                "the symbol `{}` is not a type",
+                table[self.found].qualified_name().join("::")
+            )
+            .as_str(),
+        );
+        pernixc_common::printing::print_source_code(&self.span, None);
+        println!();
+    }
 }
 
 /// The symbol of the given name was not found in the given scope.
@@ -31,39 +59,39 @@ pub struct SymbolNotFound {
 
     /// Specifies the scope where the resolution was attempted.
     ///
-    /// If this is `None`, then the resolution was attempted in the root scope.
+    /// If this is `None`, then the resolution was attempted in the global scope.
     #[get = "pub"]
-    pub(super) symbol_id: Option<ID>,
+    pub(super) in_scope_id: Option<ID>,
 }
 
 impl SymbolNotFound {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        // let symbol_name = self.span.str();
-        // self.symbol_id.map_or_else(
-        //     || {
-        //         pernixc_common::printing::log(
-        //             LogSeverity::Error,
-        //             format!("no target found for `{symbol_name}`").as_str(),
-        //         );
-        //     },
-        //     |symbol_id| {
-        //         let parent_symbol = &table[symbol_id];
+        let symbol_name = self.span.str();
+        self.in_scope_id.map_or_else(
+            || {
+                pernixc_common::printing::log(
+                    LogSeverity::Error,
+                    format!("no target found for `{symbol_name}`").as_str(),
+                );
+            },
+            |symbol_id| {
+                let parent_symbol = &table[symbol_id];
 
-        //         pernixc_common::printing::log(
-        //             LogSeverity::Error,
-        //             format!(
-        //                 "`{symbol_name}` was not found in `{parent_symbol}`",
-        //                 symbol_name = symbol_name,
-        //                 parent_symbol = parent_symbol.name(),
-        //             )
-        //             .as_str(),
-        //         );
-        //     },
-        // );
+                pernixc_common::printing::log(
+                    LogSeverity::Error,
+                    format!(
+                        "`{symbol_name}` was not found in `{parent_symbol}`",
+                        symbol_name = symbol_name,
+                        parent_symbol = parent_symbol.qualified_name().join("::")
+                    )
+                    .as_str(),
+                );
+            },
+        );
 
-        // pernixc_common::printing::print_source_code(&self.span, None);
-        // println!();
+        pernixc_common::printing::print_source_code(&self.span, None);
+        println!();
     }
 }
 
@@ -76,7 +104,7 @@ pub struct SymbolNotAccessible {
 
     /// Specifies the scope where the resolution was attempted.
     ///
-    /// If this is `None`, then the resolution was attempted in the root scope.
+    /// If this is `None`, then the resolution was attempted in the global scope.
     #[get = "pub"]
     pub(super) symbol_id: ID,
 }
@@ -84,21 +112,21 @@ pub struct SymbolNotAccessible {
 impl SymbolNotAccessible {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        // let symbol_name = self.span.str();
-        // let symbol = &table[self.symbol_id];
+        let symbol_name = self.span.str();
+        let symbol = &table[self.symbol_id];
 
-        // pernixc_common::printing::log(
-        //     LogSeverity::Error,
-        //     format!(
-        //         "`{symbol_name}` is not accessible from `{symbol}`",
-        //         symbol_name = symbol_name,
-        //         symbol = symbol.name(),
-        //     )
-        //     .as_str(),
-        // );
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            format!(
+                "`{symbol_name}` is not accessible from `{symbol}`",
+                symbol_name = symbol_name,
+                symbol = symbol.qualified_name().join("::"),
+            )
+            .as_str(),
+        );
 
-        // pernixc_common::printing::print_source_code(&self.span, None);
-        // println!();
+        pernixc_common::printing::print_source_code(&self.span, None);
+        println!();
     }
 }
 
@@ -111,36 +139,25 @@ pub struct PrivateSymbolLeak {
 
     /// The access modifier of the symbol that was leaked.
     #[get = "pub"]
-    pub(super) access_modifier: AccessModifier,
+    pub(super) accessibility: Accessibility,
 
     /// The access modifier of the scope that leaked the symbol.
     #[get = "pub"]
-    pub(super) parent_access_modifier: AccessModifier,
-
-    /// The less restrictive scope that leaked the symbol.
-    #[get = "pub"]
-    pub(super) parent_symbol_id: ID,
+    pub(super) parent_accessibility: Accessibility,
 }
 
 impl PrivateSymbolLeak {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        // let symbol_name = self.span.str();
-        // let parent_symbol = &table[self.parent_symbol_id];
+        let symbol_name = self.span.str();
 
-        // pernixc_common::printing::log(
-        //     LogSeverity::Error,
-        //     format!(
-        //         "`{symbol_name}` is more restrictive and cannot be leaked to `{parent_symbol}`, \
-        //          which is less restrictive",
-        //         symbol_name = symbol_name,
-        //         parent_symbol = parent_symbol.name(),
-        //     )
-        //     .as_str(),
-        // );
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            "private symbols cannot be leaked to less restrictive scopes",
+        );
 
-        // pernixc_common::printing::print_source_code(&self.span, None);
-        // println!();
+        pernixc_common::printing::print_source_code(&self.span, None);
+        println!();
     }
 }
 
@@ -155,34 +172,34 @@ pub struct ParameterRedefinition {
 impl ParameterRedefinition {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        // pernixc_common::printing::log(
-        //     LogSeverity::Error,
-        //     format!("parameter `{}` was redefined", self.span.str(),).as_str(),
-        // );
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            format!("parameter `{}` was redefined", self.span.str(),).as_str(),
+        );
 
-        // pernixc_common::printing::print_source_code(&self.span, None);
-        // println!();
+        pernixc_common::printing::print_source_code(&self.span, None);
+        println!();
     }
 }
 
 /// Struct members cannot be more accessible than the struct itself.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-pub struct FieldGroupMoreAccessibleThanStruct {
-    /// Specifies the location of the struct member that is more accessible than the struct itself
-    /// (identifier).
+pub struct StructMemberMoreAccessibleThanStruct {
+    /// Specifies the location of the field group access modifier that is more accessible than the
+    /// struct access modifier.
     #[get = "pub"]
     pub(super) span: Span,
 
     /// The access modifier of the struct.
     #[get = "pub"]
-    pub(super) struct_access_modifier: AccessModifier,
+    pub(super) struct_accessibility: Accessibility,
 
     /// The access modifier of the struct member.
     #[get = "pub"]
-    pub(super) group_access_modifier: AccessModifier,
+    pub(super) member_group_accessibility: Accessibility,
 }
 
-impl FieldGroupMoreAccessibleThanStruct {
+impl StructMemberMoreAccessibleThanStruct {
     /// Prints the error message to the console.
     pub fn print(&self) {
         pernixc_common::printing::log(
@@ -201,6 +218,10 @@ pub struct FieldRedefinition {
     /// Specifies the location where the redefinition occurred.
     #[get = "pub"]
     pub(super) span: Span,
+
+    /// The ID of the field that was redefined.
+    #[get = "pub"]
+    pub(super) available_id: FieldID,
 }
 
 impl FieldRedefinition {
@@ -222,6 +243,10 @@ pub struct EnumVariantRedefinition {
     /// Specifies the location where the redefinition occurred.
     #[get = "pub"]
     pub(super) span: Span,
+
+    /// The ID of the enum variant that was redefined.
+    #[get = "pub"]
+    pub(super) available_symbol_id: EnumVariantID,
 }
 
 impl EnumVariantRedefinition {
@@ -252,21 +277,48 @@ pub struct SymbolRedifinition {
 impl SymbolRedifinition {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        // let symbol_name = self.span.str();
-        // let available_symbol = &table[self.available_symbol_id];
+        let symbol_name = self.span.str();
+        let available_symbol = &table[self.available_symbol_id];
 
-        // pernixc_common::printing::log(
-        //     LogSeverity::Error,
-        //     format!(
-        //         "`{symbol_name}` was redefined, but it is already defined in `{available_symbol}`",
-        //         symbol_name = symbol_name,
-        //         available_symbol = available_symbol.name(),
-        //     )
-        //     .as_str(),
-        // );
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            format!(
+                "`{symbol_name}` was redefined, but it is already defined in
+        `{available_symbol}`",
+                symbol_name = symbol_name,
+                available_symbol = available_symbol.qualified_name().join("::"),
+            )
+            .as_str(),
+        );
 
-        // pernixc_common::printing::print_source_code(&self.span, Some("redefinition"));
-        // println!();
+        pernixc_common::printing::print_source_code(&self.span, Some("redefinition"));
+        println!();
+    }
+}
+
+/// A circular dependency was detected.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct CircularDependency {
+    /// The list of symbols that form the circular dependency.
+    #[get = "pub"]
+    pub(super) symbol_ids: Vec<ID>,
+}
+
+impl CircularDependency {
+    /// Prints the error message to the console.
+    pub fn print(&self, table: &Table) {
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            format!(
+                "found circular dependency between these symbols: {}",
+                self.symbol_ids
+                    .iter()
+                    .map(|id| table[*id].qualified_name().join("::"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
+            .as_str(),
+        );
     }
 }
 
@@ -274,6 +326,7 @@ impl SymbolError {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
         match self {
+            Self::TypeExpected(e) => e.print(table),
             Self::SymbolNotFound(e) => e.print(table),
             Self::SymbolNotAccessible(e) => e.print(table),
             Self::PrivateSymbolLeak(e) => e.print(table),
@@ -282,6 +335,7 @@ impl SymbolError {
             Self::FieldRedefinition(e) => e.print(),
             Self::EnumVariantRedefinition(e) => e.print(),
             Self::SymbolRedifinition(e) => e.print(table),
+            Self::CircularDependency(e) => e.print(table),
         }
     }
 }

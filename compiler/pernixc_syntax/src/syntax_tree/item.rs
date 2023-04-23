@@ -140,7 +140,7 @@ pub struct Struct {
     #[get = "pub"]
     pub(super) left_brace: Punctuation,
     #[get = "pub"]
-    pub(super) field_groups: Vec<MemberGroup>,
+    pub(super) member_groups: Vec<MemberGroup>,
     #[get = "pub"]
     pub(super) right_brace: Punctuation,
 }
@@ -199,6 +199,14 @@ pub struct TypeAlias {
     pub(super) access_modifier: AccessModifier,
     #[get = "pub"]
     pub(super) type_without_access_modifier: TypeAliasWithoutAccessModifier,
+}
+
+impl TypeAlias {
+    /// Destructs the type alias into its components.
+    #[must_use]
+    pub fn destruct(self) -> (AccessModifier, TypeAliasWithoutAccessModifier) {
+        (self.access_modifier, self.type_without_access_modifier)
+    }
 }
 
 impl SourceElement for TypeAlias {
@@ -559,7 +567,7 @@ impl<'a> Parser<'a> {
     ) -> Option<Item> {
         let identifier = self.expect_identifier()?;
         let left_brace = self.expect_punctuation('{')?;
-        let mut field_groups = Vec::new();
+        let mut member_groups = Vec::new();
         let right_brace = loop {
             match self.next_significant_token() {
                 Some(Token::Punctuation(right_brace)) if right_brace.punctuation() == '}' => {
@@ -643,7 +651,7 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    field_groups.push(MemberGroup {
+                    member_groups.push(MemberGroup {
                         access_modifier,
                         colon: colon.clone(),
                         members,
@@ -666,7 +674,7 @@ impl<'a> Parser<'a> {
                 struct_keyword,
                 identifier: identifier.clone(),
                 left_brace: left_brace.clone(),
-                field_groups,
+                member_groups,
                 right_brace: right_brace.clone(),
             }
             .into(),

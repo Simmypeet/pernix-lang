@@ -58,12 +58,16 @@ impl<'a> Parser<'a> {
     /// Returns the next token in the token stream.
     ///
     /// If the token iterator is exhausted, this method returns `None`.
-    pub fn next_token(&mut self) -> Option<&'a Token> { self.cursor.next_token() }
+    pub fn next_token(&mut self) -> Option<&'a Token> {
+        self.cursor.next_token()
+    }
 
     /// Returns the next token in the token stream without consuming it.
     ///
     /// If the token iterator is exhausted, this method returns `None`.
-    pub fn peek_token(&mut self) -> Option<&'a Token> { self.cursor.read() }
+    pub fn peek_token(&mut self) -> Option<&'a Token> {
+        self.cursor.read()
+    }
 
     /// Finds the next significant token in the token stream, consuming all insignificant tokens
     /// along the way and consuming the significant token as well.
@@ -158,7 +162,9 @@ impl<'a> Parser<'a> {
     /// Takes the list of errors that have been produced by the parser.
     ///
     /// The list of errors is cleared after this method is called.
-    pub fn take_errors(&mut self) -> Vec<SyntacticError> { std::mem::take(&mut self.errors) }
+    pub fn take_errors(&mut self) -> Vec<SyntacticError> {
+        std::mem::take(&mut self.errors)
+    }
 
     fn delimiter_predicate<const CHAR: char>(token: &Token) -> bool {
         let Some(punctuation) = token.as_punctuation() else {

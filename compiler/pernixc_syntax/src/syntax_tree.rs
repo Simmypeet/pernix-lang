@@ -330,6 +330,9 @@ impl<'a> Parser<'a> {
     pub fn parse_type_specifier(&mut self) -> Option<TypeSpecifier> {
         if let Some(token) = self.peek_significant_token() {
             match token {
+                Token::Punctuation(punc) if punc.punctuation() == ':' => Some(
+                    TypeSpecifier::QualifiedIdentifier(self.parse_qualified_identifier()?),
+                ),
                 Token::Identifier(..) => Some(TypeSpecifier::QualifiedIdentifier(
                     self.parse_qualified_identifier()?,
                 )),

@@ -20,7 +20,7 @@ pub struct SourceFile {
 
     /// Gets whether the source file is the root file that the compiler is compiling.
     #[get = "pub"]
-    module_heirarchy: Vec<String>,
+    module_hierarchy: Vec<String>,
 
     /// Gets the module's fully qualified name of the source file.
     #[get = "pub"]
@@ -60,11 +60,11 @@ pub struct IoLoadError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumAsInner, From, Error)]
 #[allow(missing_docs)]
 pub enum CreateError {
-    #[error("The module heirarchy string was invalid or empty.")]
-    InvalidModuleHeirarchy,
+    #[error("The module hierarchy string was invalid or empty.")]
+    InvalidModulehierarchy,
 
-    #[error("The given module heirarchy was an empty list.")]
-    EmptyModuleHeirarchy,
+    #[error("The given module hierarchy was an empty list.")]
+    EmptyModulehierarchy,
 }
 
 impl SourceFile {
@@ -82,17 +82,17 @@ impl SourceFile {
     /// - `parent_directory`: The directory where the source file is located.
     /// - `file_name`: The name of the source file without the extension.
     /// - `source_code`: The string `source_code` that the source file contains.
-    /// - `module_heirarchy`: The module's fully qualified name of the source file.
+    /// - `module_hierarchy`: The module's fully qualified name of the source file.
     ///
     /// # Errors
-    /// - [`CreateError::InvalidModuleHeirarchy`]: One of the module heirarchy strings was an
+    /// - [`CreateError::InvalidModulehierarchy`]: One of the module hierarchy strings was an
     ///   invalid identifier or empty.
-    /// - [`CreateError::EmptyModuleHeirarchy`]: The given module heirarchy was an empty list.
+    /// - [`CreateError::EmptyModulehierarchy`]: The given module hierarchy was an empty list.
     pub fn new(
         parent_directory: PathBuf,
         file_name: String,
         mut source_code: String,
-        module_heirarchy: Vec<String>,
+        module_hierarchy: Vec<String>,
     ) -> Result<Arc<Self>, CreateError> {
         fn replace_string_inplace(s: &mut String, from: &str, to: &str) {
             let mut start = 0;
@@ -102,11 +102,11 @@ impl SourceFile {
             }
         }
 
-        if module_heirarchy.is_empty() {
-            return Err(CreateError::EmptyModuleHeirarchy);
+        if module_hierarchy.is_empty() {
+            return Err(CreateError::EmptyModulehierarchy);
         }
 
-        for module in &module_heirarchy {
+        for module in &module_hierarchy {
             // the string must not contain any ascii punctuation/control characters
             // the first character cannot be a number
             if module
@@ -114,7 +114,7 @@ impl SourceFile {
                 .any(|c| c.is_ascii_punctuation() || c.is_ascii_control())
                 || module.chars().next().map_or(false, |c| c.is_ascii_digit())
             {
-                return Err(CreateError::InvalidModuleHeirarchy);
+                return Err(CreateError::InvalidModulehierarchy);
             }
         }
 
@@ -144,8 +144,8 @@ impl SourceFile {
         Ok(Arc::new(Self {
             file_name,
             parent_directory,
-            module_qualified_name: module_heirarchy.join("::"),
-            module_heirarchy,
+            module_qualified_name: module_hierarchy.join("::"),
+            module_hierarchy,
             source_code,
             lines,
         }))
@@ -156,7 +156,7 @@ impl SourceFile {
     /// # Errors
     /// - [`LoadError::IoLoadError`]: An I/O error occurred.
     /// - [`LoadError::CreateError`]: An error occurred while creating the source file.
-    pub fn load(path: &PathBuf, module_heirarchy: Vec<String>) -> Result<Arc<Self>, LoadError> {
+    pub fn load(path: &PathBuf, module_hierarchy: Vec<String>) -> Result<Arc<Self>, LoadError> {
         let source_code = std::fs::read_to_string(path).map_err(|err| {
             LoadError::IoLoadError(IoLoadError {
                 path: path.clone(),
@@ -170,13 +170,13 @@ impl SourceFile {
             parent_directory,
             file_name,
             source_code,
-            module_heirarchy,
+            module_hierarchy,
         )?)
     }
 
     /// Gets whether the source file is the root file that the compiler is compiling.
     #[must_use]
-    pub fn is_root(&self) -> bool { self.module_heirarchy.len() == 1 }
+    pub fn is_root(&self) -> bool { self.module_hierarchy.len() == 1 }
 
     /// Gets the line of the source file at the given line number.
     ///

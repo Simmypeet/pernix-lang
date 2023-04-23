@@ -17,6 +17,6 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn, missing_docs)]
 
 pub mod errors;
-pub mod target_parsing;
 pub mod parser;
 pub mod syntax_tree;
+pub mod target_parsing;

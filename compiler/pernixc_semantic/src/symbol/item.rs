@@ -10,22 +10,28 @@ use std::{
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
+use pernixc_common::source_file::SourceElement;
 use pernixc_syntax::{
-    syntax_tree::item::{
-        Enum as EnumSyntaxTree, Function as FunctionSyntaxTree, Struct as StructSyntaxTree,
-        TypeAlias as TypeAliasSyntaxTree,
+    syntax_tree::{
+        item::{
+            Enum as EnumSyntaxTree, Function as FunctionSyntaxTree, Item as ItemSyntaxTree,
+            Member as MemberSyntaxTree, MemberGroup, Struct as StructSyntaxTree,
+            TypeAlias as TypeAliasSyntaxTree, TypeAliasWithoutAccessModifier,
+        },
+        PrimitiveTypeSpecifier, QualifiedIdentifier, TypeSpecifier,
     },
     target_parsing::TargetParsing,
 };
 
-use self::builder::Builder;
 use super::{
-    errors::SymbolError,
-    ty::{Type, TypeBinding},
+    errors::{
+        CircularDependency, EnumVariantRedefinition, FieldRedefinition, PrivateSymbolLeak,
+        StructMemberMoreAccessibleThanStruct, SymbolError, SymbolRedifinition, TypeExpected,
+    },
+    ty::{PrimitiveType, Type, TypeBinding},
     Uid, UniqueIdentifier,
 };
-
-mod builder;
+use crate::symbol::errors::{SymbolNotAccessible, SymbolNotFound};
 
 /// Is an unique identifier used to identify a struct in the [`Table`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -93,6 +99,26 @@ impl From<TypedID> for ID {
     }
 }
 
+/// Is an enumeration of identifier types of the symbols that introduce a new scope to the
+/// namespace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum ScopedID {
+    Struct(StructID),
+    Enum(EnumID),
+    Module(ModuleID),
+}
+
+impl From<ScopedID> for ID {
+    fn from(scoped_id: ScopedID) -> Self {
+        match scoped_id {
+            ScopedID::Struct(id) => Self::Struct(id),
+            ScopedID::Enum(id) => Self::Enum(id),
+            ScopedID::Module(id) => Self::Module(id),
+        }
+    }
+}
+
 /// Is an enumeration of all the identifiers that can be accessed in the global scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
@@ -103,7 +129,29 @@ pub enum ID {
     FunctionOverloadSet(FunctionOverloadSetID),
     EnumVariant(EnumVariantID),
     TypeAlias(TypeAliasID),
-    TypeAliasMemberID(TypeAliasMemberID),
+}
+
+impl ID {
+    /// Returns the [`TypedID`] if the [`ID`] is a subset of [`TypedID`].
+    #[must_use]
+    pub fn as_typed_id(&self) -> Option<TypedID> {
+        match self {
+            Self::Struct(id) => Some(TypedID::Struct(*id)),
+            Self::Enum(id) => Some(TypedID::Enum(*id)),
+            _ => None,
+        }
+    }
+
+    /// Returns the [`ScopedID`] if the [`ID`] is a subset of [`ScopedID`].
+    #[must_use]
+    pub fn as_scoped_id(&self) -> Option<ScopedID> {
+        match self {
+            Self::Struct(id) => Some(ScopedID::Struct(*id)),
+            Self::Enum(id) => Some(ScopedID::Enum(*id)),
+            Self::Module(id) => Some(ScopedID::Module(*id)),
+            _ => None,
+        }
+    }
 }
 
 /// Is an unique identifier used to identify a field in the [`StructData`].
@@ -114,17 +162,9 @@ impl UniqueIdentifier for FieldID {
     fn fresh() -> Self { Self(Uid::fresh()) }
 }
 
-/// Is an unique identifier used to identify a type alias member in the [`StructData`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeAliasMemberID(Uid);
-
-impl UniqueIdentifier for TypeAliasMemberID {
-    fn fresh() -> Self { Self(Uid::fresh()) }
-}
-
 /// Is an enumeration of all the access modifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AccessModifier {
+pub enum Accessibility {
     /// The symbol can be accessed from the same target.
     Internal,
 
@@ -135,7 +175,7 @@ pub enum AccessModifier {
     Public,
 }
 
-impl AccessModifier {
+impl Accessibility {
     /// Creates a new [`AccessModifier`] from the given
     /// [`pernixc_syntax::syntax_tree::item::AccessModifier`].
     #[must_use]
@@ -146,6 +186,17 @@ impl AccessModifier {
             pernixc_syntax::syntax_tree::item::AccessModifier::Internal(..) => Self::Internal,
             pernixc_syntax::syntax_tree::item::AccessModifier::Private(..) => Self::Private,
             pernixc_syntax::syntax_tree::item::AccessModifier::Public(..) => Self::Public,
+        }
+    }
+
+    /// Returns the rank of the [`AccessModifier`]. The lower the number the more restrictive
+    /// the access modifier is.
+    #[must_use]
+    pub fn restrictiveness_rank(&self) -> usize {
+        match self {
+            Self::Private => 0,
+            Self::Internal => 1,
+            Self::Public => 2,
         }
     }
 }
@@ -159,7 +210,7 @@ pub struct FieldData {
 
     /// The access modifier of the field.
     #[get_copy = "pub"]
-    access_modifier: AccessModifier,
+    accessibility: Accessibility,
 
     /// The type of the field.
     #[get = "pub"]
@@ -170,24 +221,9 @@ impl SymbolData for FieldData {
     type ID = FieldID;
 }
 
-/// Represents a type alias member.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, CopyGetters)]
-pub struct TypeAliasMemberData {
-    /// The type that is aliased by the type alias.
-    #[get_copy = "pub"]
-    ty: Type,
-}
-
-impl SymbolData for TypeAliasMemberData {
-    type ID = TypeAliasMemberID;
-}
-
-/// Represents a type alias member symbol.
-pub type TypeAliasMember = SymbolWithData<TypeAliasMemberData>;
-
 /// Is a data structure that allows mapping between name, ID and data.
 #[derive(Debug, Clone)]
-pub struct IDMap<T: SymbolData> {
+pub struct SymbolMap<T: SymbolData> {
     /// Maps the ID to the data.
     values_by_id: HashMap<T::ID, SymbolWithData<T>>,
 
@@ -195,18 +231,57 @@ pub struct IDMap<T: SymbolData> {
     ids_by_name: HashMap<String, T::ID>,
 }
 
-impl<T: SymbolData> IDMap<T> {
+impl<T: SymbolData> SymbolMap<T> {
     /// Creates a new empty [`IDMap`].
     #[must_use]
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             values_by_id: HashMap::new(),
             ids_by_name: HashMap::new(),
         }
     }
+
+    /// Adds a new symbol to the [`IDMap`].
+    ///
+    /// # Returns
+    /// - `Ok(id)` returns the ID of the symbol of the added symbol.
+    ///
+    /// # Errors
+    /// - `Err(id)` returns the ID of the symbol that already exists with the same name.
+    fn add(&mut self, name: String, data: T) -> Result<T::ID, T::ID> {
+        if let Some(id) = self.ids_by_name.get(&name).copied() {
+            Err(id)
+        } else {
+            let id = T::ID::fresh();
+            let symbol = SymbolWithData { data, id };
+            self.ids_by_name.insert(name, id);
+            self.values_by_id.insert(id, symbol);
+            Ok(id)
+        }
+    }
+
+    /// Returns the number of symbols in the [`IDMap`].
+    #[must_use]
+    pub fn len(&self) -> usize { self.values_by_id.len() }
+
+    /// Returns `true` if the [`IDMap`] is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.values_by_id.is_empty() }
+
+    /// Returns the ID of the symbol with the given name.
+    #[must_use]
+    pub fn map_name_to_id(&self, name: &str) -> Option<T::ID> {
+        self.ids_by_name.get(name).copied()
+    }
 }
 
-impl<T: SymbolData> Default for IDMap<T> {
+impl<T: SymbolData> Index<T::ID> for SymbolMap<T> {
+    type Output = SymbolWithData<T>;
+
+    fn index(&self, id: T::ID) -> &Self::Output { &self.values_by_id[&id] }
+}
+
+impl<T: SymbolData> Default for SymbolMap<T> {
     fn default() -> Self { Self::new() }
 }
 
@@ -219,15 +294,15 @@ pub struct StructData {
 
     /// The field members of the struct.
     #[get = "pub"]
-    field_member_map: IDMap<FieldData>,
+    field_member_map: SymbolMap<FieldData>,
 
     /// The type alias members of the struct.
     #[get = "pub"]
-    type_alias_member_ids_by_name: HashMap<String, TypeAliasMemberID>,
+    type_alias_member_ids_by_name: HashMap<String, TypeAliasID>,
 
     /// The access modifier of the struct.
     #[get_copy = "pub"]
-    access_modifier: AccessModifier,
+    accessibility: Accessibility,
 
     /// Is the ID of the module that contains the struct.
     #[get_copy = "pub"]
@@ -258,7 +333,7 @@ pub struct EnumData {
 
     /// The access modifier of the enum.
     #[get_copy = "pub"]
-    access_modifier: AccessModifier,
+    accessibility: Accessibility,
 
     /// Is the ID of the module that contains the enum.
     #[get_copy = "pub"]
@@ -300,7 +375,7 @@ pub struct ModuleData {
 
     /// The access modifier of the module.
     #[get_copy = "pub"]
-    access_modifier: AccessModifier,
+    accessibility: Accessibility,
 }
 
 impl SymbolData for ModuleData {
@@ -355,7 +430,7 @@ pub struct OverloadData {
 
     /// The parameters of the function overload.
     #[get = "pub"]
-    parameters: IDMap<ParameterData>,
+    parameters: SymbolMap<ParameterData>,
 
     /// The syntax tree that was used to create the function overload.
     #[get = "pub"]
@@ -393,15 +468,18 @@ impl SymbolData for FunctionOverloadSetData {
 pub type FunctionOverloadSet = SymbolWithData<FunctionOverloadSetData>;
 
 /// Represents an enum variant data.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
 pub struct EnumVariantData {
     /// The parent enum of the variant.
+    #[get_copy = "pub"]
     parent: EnumID,
 
     /// The fully qualified name of the variant.
+    #[get = "pub"]
     qualified_name: Vec<String>,
 
     /// The order of declaration of the variant.
+    #[get_copy = "pub"]
     variant_number: u64,
 }
 
@@ -425,15 +503,16 @@ pub struct TypeAliasData {
 
     /// The access modifier of the type alias.
     #[get_copy = "pub"]
-    access_modifier: AccessModifier,
+    accessibility: Accessibility,
 
-    /// Is the ID of the module that contains the type alias.
+    /// Is the ID of the scope that contains the type alias (it can either be a module or a
+    /// struct).
     #[get_copy = "pub"]
-    parent: ModuleID,
+    parent: ScopedID,
 
     /// The syntax tree that was used to create the type alias.
     #[get = "pub"]
-    syntax_tree: TypeAliasSyntaxTree,
+    syntax_tree: TypeAliasWithoutAccessModifier,
 }
 
 impl SymbolData for TypeAliasData {
@@ -467,7 +546,48 @@ pub enum Item {
     TypeAlias(TypeAlias),
     Enum(Enum),
     EnumVariant(EnumVariant),
-    TypeAliasMember(TypeAliasMember),
+}
+
+impl Item {
+    /// Gets the fully qualified name of the item.
+    #[must_use]
+    pub fn qualified_name(&self) -> &Vec<String> {
+        match self {
+            Self::Module(module) => module.qualified_name(),
+            Self::Struct(struct_) => struct_.qualified_name(),
+            Self::FunctionOverloadSet(function_overload_set) => {
+                function_overload_set.qualified_name()
+            }
+            Self::TypeAlias(type_alias) => type_alias.qualified_name(),
+            Self::Enum(enum_) => enum_.qualified_name(),
+            Self::EnumVariant(enum_variant) => enum_variant.qualified_name(),
+        }
+    }
+
+    /// Gets the parent of the item.
+    #[must_use]
+    pub fn parent(&self) -> Option<ScopedID> {
+        match self {
+            Self::Module(sym) => sym.parent.map(std::convert::Into::into),
+            Self::Struct(sym) => Some(sym.parent.into()),
+            Self::FunctionOverloadSet(sym) => Some(sym.parent.into()),
+            Self::TypeAlias(sym) => Some(sym.parent),
+            Self::Enum(sym) => Some(sym.parent.into()),
+            Self::EnumVariant(sym) => Some(sym.parent.into()),
+        }
+    }
+
+    /// Gets the access modifier of the item.
+    #[must_use]
+    pub fn accessibility(&self) -> Option<Accessibility> {
+        match self {
+            Self::Module(sym) => Some(sym.accessibility),
+            Self::Struct(sym) => Some(sym.accessibility),
+            Self::TypeAlias(sym) => Some(sym.accessibility),
+            Self::Enum(sym) => Some(sym.accessibility),
+            Self::FunctionOverloadSet(..) | Self::EnumVariant(..) => None,
+        }
+    }
 }
 
 /// Represents a symbol table.
@@ -479,19 +599,6 @@ pub struct Table {
 }
 
 impl Table {
-    /// Analyzes the given target syntax tree and creates the symbol table.
-    ///
-    /// Returns the symbol table and a list of errors that occurred during the analysis.
-    #[must_use]
-    pub fn analyze(target: TargetParsing) -> (Self, Vec<SymbolError>) {
-        let mut builder = Builder::new();
-
-        builder.generate_modules(&target);
-        builder.generate_symbols(target);
-
-        todo!()
-    }
-
     /// Gets the [`ID`] of the symbol from the given fully qualified name.
     ///
     /// The search starts from the root module.
@@ -635,21 +742,891 @@ impl IndexMut<TypeAliasID> for Table {
     }
 }
 
-impl Index<TypeAliasMemberID> for Table {
-    type Output = TypeAliasMember;
+impl Index<ID> for Table {
+    type Output = Item;
 
-    fn index(&self, index: TypeAliasMemberID) -> &Self::Output {
-        self.items_by_id[&index.into()]
-            .as_type_alias_member()
-            .unwrap()
+    fn index(&self, index: ID) -> &Self::Output { &self.items_by_id[&index] }
+}
+impl IndexMut<ID> for Table {
+    fn index_mut(&mut self, index: ID) -> &mut Self::Output {
+        self.items_by_id.get_mut(&index).unwrap()
     }
 }
-impl IndexMut<TypeAliasMemberID> for Table {
-    fn index_mut(&mut self, index: TypeAliasMemberID) -> &mut Self::Output {
-        self.items_by_id
-            .get_mut(&index.into())
-            .unwrap()
-            .as_type_alias_member_mut()
-            .unwrap()
+
+impl Index<ScopedID> for Table {
+    type Output = Item;
+
+    fn index(&self, index: ScopedID) -> &Self::Output { &self.items_by_id[&index.into()] }
+}
+impl IndexMut<ScopedID> for Table {
+    fn index_mut(&mut self, index: ScopedID) -> &mut Self::Output {
+        self.items_by_id.get_mut(&index.into()).unwrap()
     }
 }
+
+impl Index<TypedID> for Table {
+    type Output = Item;
+
+    fn index(&self, index: TypedID) -> &Self::Output { &self.items_by_id[&index.into()] }
+}
+impl IndexMut<TypedID> for Table {
+    fn index_mut(&mut self, index: TypedID) -> &mut Self::Output {
+        self.items_by_id.get_mut(&index.into()).unwrap()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// IMPLEMENTATIONS
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum SymbolState {
+    Unconstructed,
+    Constructing,
+}
+
+impl Table {
+    /// Creates a new empty default table
+    #[must_use]
+    fn new() -> Self {
+        Self {
+            items_by_id: HashMap::new(),
+            root_ids_by_name: HashMap::new(),
+        }
+    }
+
+    /// Analyzes the given syntax trees of the given target and returns the symbol table containing
+    /// all the symbols and the errors that occurred during the analysis.
+    ///
+    /// # Error Handling
+    /// When encountering an error, the analysis will not halt completely, but instead continue to
+    /// analyze the rest of the code while producing the suboptimal symbol table. These are the
+    /// behavior of the errors:
+    ///
+    /// - Symbol Redefinition: One of the definitions will be used in the symbol table, the other
+    ///   will be discarded and an error will be produced.
+    /// - Symbol Not Found: If the symbol is treated as a type, the type will be defaulted to
+    ///   `void`.
+    /// - Symbol Not Accessible: The symbol will be treated as if it was accessible and an error
+    ///   will be produced (non-fatal error).
+    #[must_use]
+    pub fn analyze(target: TargetParsing) -> (Self, Vec<SymbolError>) {
+        let mut table = Self::new();
+        let mut errors = Vec::new();
+
+        // Used to keep track of circular dependencies between symbols
+        let mut symbol_states_by_id = HashMap::new();
+
+        table.generate_modules(&target);
+        table.generate_symbols(target, &mut errors, &mut symbol_states_by_id);
+
+        // build the symbol in the symbol_states_by_id one by one
+        while !symbol_states_by_id.is_empty() {
+            let id = *symbol_states_by_id
+                .iter()
+                .find(|(_, state)| **state == SymbolState::Unconstructed)
+                .unwrap()
+                .0;
+
+            table.build_symbol(id, &mut errors, &mut symbol_states_by_id);
+        }
+
+        (table, errors)
+    }
+
+    fn add_symbol<T: SymbolData>(&mut self, data: T) -> <T as SymbolData>::ID
+    where
+        <T as SymbolData>::ID: Into<ID>,
+        SymbolWithData<T>: Into<Item>,
+    {
+        let id = T::ID::fresh();
+        let symbol = SymbolWithData { data, id };
+
+        self.items_by_id.insert(id.into(), symbol.into());
+
+        id
+    }
+
+    /// Generates the module hierarchy for the given target
+    fn generate_modules(&mut self, target: &TargetParsing) {
+        // iteration is sorted by the depth of the module hierarchy
+        for file in target.file_parsings() {
+            let parent = if file.source_file().module_hierarchy().len() == 1 {
+                None
+            } else {
+                // the parent module name is the full name of the target without the last part
+                Some(
+                    self.get_id_by_full_name(
+                        file.source_file().module_hierarchy()
+                            [..file.source_file().module_hierarchy().len() - 1]
+                            .iter()
+                            .map(std::string::String::as_str),
+                    )
+                    .unwrap()
+                    .into_module()
+                    .unwrap(),
+                )
+            };
+
+            let module_data = ModuleData {
+                parent,
+                qualified_name: file.source_file().module_hierarchy().clone(),
+                children_ids_by_name: HashMap::new(),
+                accessibility: file
+                    .access_modifier()
+                    .as_ref()
+                    .map_or(Accessibility::Public, Accessibility::from_syntax_tree),
+            };
+
+            let id = self.add_symbol(module_data);
+
+            // add the module to the parent module
+            if let Some(parent) = parent {
+                self[parent].children_ids_by_name.insert(
+                    file.source_file()
+                        .module_hierarchy()
+                        .last()
+                        .unwrap()
+                        .clone(),
+                    id.into(),
+                );
+            } else {
+                // add to the root
+                self.root_ids_by_name.insert(
+                    file.source_file()
+                        .module_hierarchy()
+                        .last()
+                        .unwrap()
+                        .clone(),
+                    id,
+                );
+            }
+        }
+    }
+
+    fn generate_symbols(
+        &mut self,
+        file_parsing: TargetParsing,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        let files = file_parsing
+            .destruct()
+            .into_iter()
+            .map(pernixc_syntax::target_parsing::FileParsing::destruct)
+            .collect::<Vec<_>>();
+
+        for (source_file, file_syntax_tree, _) in files {
+            for item in file_syntax_tree.destruct() {
+                // the parent module id
+                let module_id = self
+                    .get_id_by_full_name(
+                        source_file
+                            .module_hierarchy()
+                            .iter()
+                            .map(std::string::String::as_str),
+                    )
+                    .unwrap()
+                    .into_module()
+                    .unwrap();
+
+                let identifier = {
+                    let (is_function, identifier) = match &item {
+                        ItemSyntaxTree::Struct(sym) => (false, sym.identifier()),
+                        ItemSyntaxTree::Enum(sym) => (false, sym.identifier()),
+                        ItemSyntaxTree::Function(sym) => (true, sym.identifier()),
+                        ItemSyntaxTree::Module(..) => continue,
+                        ItemSyntaxTree::TypeAlias(sym) => {
+                            (false, sym.type_without_access_modifier().identifier())
+                        }
+                    };
+
+                    // check for symbol redefinition
+                    if let Some(available_symbol_id) = self.get_id_by_full_name(
+                        source_file
+                            .module_hierarchy()
+                            .iter()
+                            .map(std::string::String::as_str)
+                            .chain(std::iter::once(identifier.span().str())),
+                    ) {
+                        // if the current item is function, the available item should be function
+                        // overload set (function overloadings are allowed).
+                        let is_redefinition = if is_function {
+                            available_symbol_id.as_function_overload_set().is_none()
+                        } else {
+                            true
+                        };
+
+                        if is_redefinition {
+                            errors.push(
+                                SymbolRedifinition {
+                                    available_symbol_id,
+                                    span: identifier.span().clone(),
+                                }
+                                .into(),
+                            );
+                            continue;
+                        }
+                    }
+
+                    identifier.span().str().to_owned()
+                };
+
+                // construct the symbol and add it to the symbol table
+                let id: ID = match item {
+                    ItemSyntaxTree::Struct(syntax_tree) => self
+                        .add_symbol(self.create_struct_data(syntax_tree, module_id))
+                        .into(),
+                    ItemSyntaxTree::Enum(syntax_tree) => self
+                        .add_symbol(self.create_enum_data(syntax_tree, module_id))
+                        .into(),
+                    ItemSyntaxTree::TypeAlias(syntax_tree) => self
+                        .add_symbol(self.create_type_alias_data(syntax_tree, module_id))
+                        .into(),
+                    ItemSyntaxTree::Function(syntax_tree) => self
+                        .handle_function_overload_set(syntax_tree, module_id)
+                        .into(),
+                    ItemSyntaxTree::Module(_) => continue,
+                };
+
+                // add to the parent module
+                self[module_id].children_ids_by_name.insert(identifier, id);
+
+                // add symbol state
+                symbol_states_by_id.insert(id, SymbolState::Unconstructed);
+            }
+        }
+    }
+
+    fn handle_function_overload_set(
+        &mut self,
+        syntax_tree: FunctionSyntaxTree,
+        parent: ModuleID,
+    ) -> FunctionOverloadSetID {
+        #[allow(clippy::option_if_let_else)]
+        let overload_set_id = if let Some(id) = self[parent]
+            .children_ids_by_name
+            .get(syntax_tree.identifier().span().str())
+        {
+            id.into_function_overload_set().unwrap()
+        } else {
+            self.add_symbol(FunctionOverloadSetData {
+                qualified_name: self[parent]
+                    .qualified_name()
+                    .iter()
+                    .map(std::borrow::ToOwned::to_owned)
+                    .chain(std::iter::once(
+                        syntax_tree.identifier().span().str().to_owned(),
+                    ))
+                    .collect(),
+                parent,
+                overloads_by_id: HashMap::new(),
+            })
+        };
+
+        let overload_id = OverloadID::fresh();
+
+        self[overload_set_id]
+            .overloads_by_id
+            .insert(overload_id, Overload {
+                data: OverloadData {
+                    overload_set_id,
+                    return_type: PrimitiveType::Void.into(), // to be filled later
+                    parameters: SymbolMap::new(),            // to be filled later
+                    syntax_tree,
+                },
+                id: overload_id,
+            });
+
+        overload_set_id
+    }
+
+    fn create_type_alias_data(
+        &self,
+        syntax_tree: TypeAliasSyntaxTree,
+        parent: ModuleID,
+    ) -> TypeAliasData {
+        TypeAliasData {
+            qualified_name: self[parent]
+                .qualified_name()
+                .iter()
+                .map(std::borrow::ToOwned::to_owned)
+                .chain(std::iter::once(
+                    syntax_tree
+                        .type_without_access_modifier()
+                        .identifier()
+                        .span()
+                        .str()
+                        .to_owned(),
+                ))
+                .collect(),
+            ty: PrimitiveType::Void.into(), // Use void as a placeholder, to be filled later
+            accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
+            parent: parent.into(),
+            syntax_tree: syntax_tree.destruct().1,
+        }
+    }
+
+    fn create_enum_data(&self, syntax_tree: EnumSyntaxTree, parent: ModuleID) -> EnumData {
+        EnumData {
+            qualified_name: self[parent]
+                .qualified_name()
+                .iter()
+                .map(std::borrow::ToOwned::to_owned)
+                .chain(std::iter::once(
+                    syntax_tree.identifier().span().str().to_owned(),
+                ))
+                .collect(),
+            variant_ids_by_name: HashMap::new(), // To be filled later
+            accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
+            parent,
+            syntax_tree,
+        }
+    }
+
+    fn create_struct_data(&self, syntax_tree: StructSyntaxTree, parent: ModuleID) -> StructData {
+        StructData {
+            qualified_name: self[parent]
+                .qualified_name()
+                .iter()
+                .map(std::borrow::ToOwned::to_owned)
+                .chain(std::iter::once(
+                    syntax_tree.identifier().span().str().to_owned(),
+                ))
+                .collect(),
+            field_member_map: SymbolMap::new(), // To be filled later
+            type_alias_member_ids_by_name: HashMap::new(), // To be filled later
+            accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
+            parent,
+            syntax_tree,
+        }
+    }
+
+    fn build_symbol(
+        &mut self,
+        id: ID,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        println!("Building: {}", self[id].qualified_name().join("::"));
+
+        match id {
+            ID::Struct(id) => self.build_struct_symbol(id, errors, symbol_states_by_id),
+            ID::Enum(id) => self.build_enum_symbol(id, errors, symbol_states_by_id),
+            ID::FunctionOverloadSet(_) => todo!(),
+            ID::TypeAlias(id) => self.build_type_alias_symbol(id, errors, symbol_states_by_id),
+
+            ID::EnumVariant(..) | ID::Module(..) => unreachable!(),
+        }
+    }
+
+    fn build_enum_symbol(
+        &mut self,
+        enum_id: EnumID,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        // mark as constructed
+        symbol_states_by_id.remove(&enum_id.into());
+
+        let syntax_tree = self[enum_id].syntax_tree.variants().clone();
+
+        for (variant_number, variant) in syntax_tree.iter().enumerate() {
+            let name = variant.span().str().to_owned();
+            if let Some(available_symbol_id) = self[enum_id].variant_ids_by_name.get(&name).copied()
+            {
+                errors.push(
+                    EnumVariantRedefinition {
+                        span: variant.span(),
+                        available_symbol_id,
+                    }
+                    .into(),
+                );
+                continue;
+            }
+
+            let data = EnumVariantData {
+                parent: enum_id,
+                qualified_name: self[enum_id]
+                    .qualified_name()
+                    .iter()
+                    .cloned()
+                    .chain(std::iter::once(name.clone()))
+                    .collect(),
+                variant_number: variant_number as u64,
+            };
+
+            let variant_id = self.add_symbol(data);
+            self[enum_id].variant_ids_by_name.insert(name, variant_id);
+        }
+    }
+
+    fn build_type_alias_symbol(
+        &mut self,
+        type_alias_id: TypeAliasID,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        // mark as constructing
+        *symbol_states_by_id
+            .get_mut(&type_alias_id.into())
+            .expect("should exist") = SymbolState::Constructing;
+
+        let ty = self.resolve_type(
+            self[type_alias_id].parent(),
+            &self[type_alias_id].syntax_tree.type_specifier().clone(),
+            errors,
+            symbol_states_by_id,
+        );
+
+        self[type_alias_id].ty = ty.unwrap_or(Type::Primitive(PrimitiveType::Void));
+
+        // the type accessibility must not be more restrictive than the type alias accessibility
+        let ty_accessibility = self.get_overall_accessibility(self[type_alias_id].ty);
+        if ty_accessibility.restrictiveness_rank()
+            > self[type_alias_id].accessibility.restrictiveness_rank()
+        {
+            errors.push(
+                PrivateSymbolLeak {
+                    span: self[type_alias_id].syntax_tree.type_specifier().span(),
+                    accessibility: ty_accessibility,
+                    parent_accessibility: self[type_alias_id].accessibility,
+                }
+                .into(),
+            );
+        }
+
+        // mark as constructed by removing from symbol states map
+        symbol_states_by_id.remove(&type_alias_id.into());
+    }
+
+    fn build_struct_symbol(
+        &mut self,
+        struct_id: StructID,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        // mark as constructed
+        symbol_states_by_id.remove(&struct_id.into());
+
+        let syntax_tree = self[struct_id].syntax_tree.member_groups().clone();
+        self.build_type_alias_members(struct_id, &syntax_tree, errors, symbol_states_by_id);
+        self.build_struct_field_members(struct_id, &syntax_tree, errors, symbol_states_by_id);
+    }
+
+    fn build_struct_field_members(
+        &mut self,
+        struct_id: StructID,
+        syntax_tree: &[MemberGroup],
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        for member_group in syntax_tree {
+            let member_accessibility =
+                Accessibility::from_syntax_tree(member_group.access_modifier());
+
+            for member in member_group.members() {
+                let MemberSyntaxTree::Field(field) = member else {
+                    continue;
+                };
+
+                let ty = self
+                    .resolve_type(
+                        struct_id.into(),
+                        field.type_annotation().type_specifier(),
+                        errors,
+                        symbol_states_by_id,
+                    )
+                    .unwrap_or(Type::Primitive(PrimitiveType::Void));
+
+                // the access modifier of the type can't be more restrictive than the field's access
+                let ty_accessibility = self.get_overall_accessibility(ty);
+                if ty_accessibility.restrictiveness_rank()
+                    < member_accessibility.restrictiveness_rank()
+                {
+                    errors.push(
+                        PrivateSymbolLeak {
+                            accessibility: ty_accessibility,
+                            parent_accessibility: member_accessibility,
+                            span: field.type_annotation().type_specifier().span(),
+                        }
+                        .into(),
+                    );
+                }
+
+                let field_data = FieldData {
+                    name: field.identifier().span().str().to_owned(),
+                    accessibility: member_accessibility,
+                    ty,
+                };
+
+                if let Err(available_id) = self[struct_id]
+                    .field_member_map
+                    .add(field.identifier().span().str().to_owned(), field_data)
+                {
+                    errors.push(
+                        FieldRedefinition {
+                            span: field.identifier().span().clone(),
+                            available_id,
+                        }
+                        .into(),
+                    );
+                }
+            }
+        }
+    }
+
+    fn build_type_alias_members(
+        &mut self,
+        struct_id: StructID,
+        syntax_tree: &[MemberGroup],
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        for member_group in syntax_tree {
+            let accessibility = Accessibility::from_syntax_tree(member_group.access_modifier());
+            // the access modifier must not be less restrictive than the struct's access modifier
+            if accessibility.restrictiveness_rank()
+                < self[struct_id].accessibility.restrictiveness_rank()
+            {
+                errors.push(
+                    StructMemberMoreAccessibleThanStruct {
+                        span: member_group.access_modifier().span(),
+                        struct_accessibility: self[struct_id].accessibility,
+                        member_group_accessibility: accessibility,
+                    }
+                    .into(),
+                );
+            }
+
+            for member in member_group.members() {
+                let MemberSyntaxTree::TypeWithoutAccessModifier(type_alias) = member else {
+                   continue;
+                };
+                self[struct_id]
+                    .type_alias_member_ids_by_name
+                    .get(type_alias.identifier().span().str())
+                    .copied()
+                    .map_or_else(
+                        || {
+                            let id = self.add_symbol(TypeAliasData {
+                                parent: struct_id.into(),
+                                qualified_name: self[struct_id]
+                                    .qualified_name()
+                                    .iter()
+                                    .cloned()
+                                    .chain(std::iter::once(
+                                        type_alias.identifier().span().str().to_owned(),
+                                    ))
+                                    .collect(),
+                                accessibility,
+                                syntax_tree: type_alias.clone(),
+                                ty: PrimitiveType::Void.into(), // to be filled later
+                            });
+
+                            self[struct_id]
+                                .type_alias_member_ids_by_name
+                                .insert(type_alias.identifier().span().str().to_owned(), id);
+
+                            symbol_states_by_id.insert(id.into(), SymbolState::Unconstructed);
+                        },
+                        |available_symbol_id| {
+                            errors.push(
+                                SymbolRedifinition {
+                                    span: type_alias.identifier().span().clone(),
+                                    available_symbol_id: available_symbol_id.into(),
+                                }
+                                .into(),
+                            );
+                        },
+                    );
+            }
+        }
+    }
+
+    fn check_symbol_requirement(
+        &mut self,
+        id: ID,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) -> bool {
+        match symbol_states_by_id.get(&id) {
+            // constructs the symbol if it is not constructed
+            Some(SymbolState::Unconstructed) => {
+                self.build_symbol(id, errors, symbol_states_by_id);
+                true
+            }
+
+            // circular dependency
+            Some(SymbolState::Constructing) => {
+                let symbol_ids = symbol_states_by_id
+                    .iter()
+                    .filter(|(_, state)| **state == SymbolState::Constructing)
+                    .map(|(id, _)| id)
+                    .copied()
+                    .collect::<Vec<_>>();
+
+                // remove all the symbol state from the map
+                for id in &symbol_ids {
+                    symbol_states_by_id.remove(id);
+                }
+
+                errors.push(CircularDependency { symbol_ids }.into());
+                false
+            }
+            None => true,
+        }
+    }
+
+    fn search_child(
+        &mut self,
+        parent: ID,
+        name: &str,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) -> Option<ID> {
+        if !self.check_symbol_requirement(parent, errors, symbol_states_by_id) {
+            return None;
+        }
+
+        match parent {
+            ID::Struct(sym) => self[sym]
+                .type_alias_member_ids_by_name()
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            ID::Enum(sym) => self[sym]
+                .variant_ids_by_name()
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            ID::Module(sym) => self[sym]
+                .children_ids_by_name
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            ID::FunctionOverloadSet(..) | ID::EnumVariant(..) => None,
+            ID::TypeAlias(sym) => match self[sym].ty {
+                Type::Primitive(..) => None,
+                Type::TypedID(type_id) => {
+                    self.search_child(type_id.into(), name, errors, symbol_states_by_id)
+                }
+            },
+        }
+    }
+
+    fn find_nearest_parent_module(&self, mut symbol: ID) -> ModuleID {
+        loop {
+            if let ID::Module(symbol) = symbol {
+                return symbol;
+            }
+
+            symbol = self[symbol].parent().unwrap().into();
+        }
+    }
+
+    fn symbol_accessible(
+        &self,
+        referring_site: ScopedID,
+        symbol: ID,
+        accessibility: Accessibility,
+    ) -> bool {
+        match accessibility {
+            Accessibility::Internal => {
+                self[referring_site].qualified_name().first()
+                    == self[symbol].qualified_name().first()
+            }
+            Accessibility::Private => {
+                // find the nearest parent module of both the referring site and the symbol and
+                // check if the parent module of the referring site is the same or a child of the
+                // parent module of the symbol
+                let sym_parent = self.find_nearest_parent_module(symbol);
+                let mut current_module = referring_site;
+                loop {
+                    match current_module {
+                        ScopedID::Module(module) if module == sym_parent => {
+                            break true;
+                        }
+                        _ => {
+                            if let Some(parent) = self[current_module].parent() {
+                                current_module = parent;
+                            } else {
+                                break false;
+                            }
+                        }
+                    }
+                }
+            }
+            Accessibility::Public => true,
+        }
+    }
+
+    fn resolve_type(
+        &mut self,
+        referring_site: ScopedID,
+        type_specifier: &TypeSpecifier,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) -> Option<Type> {
+        match type_specifier {
+            TypeSpecifier::PrimitiveTypeSpecifier(primitive_type) => match primitive_type {
+                PrimitiveTypeSpecifier::Bool(..) => Some(Type::Primitive(PrimitiveType::Bool)),
+                PrimitiveTypeSpecifier::Int8(..) => Some(Type::Primitive(PrimitiveType::Int8)),
+                PrimitiveTypeSpecifier::Int16(..) => Some(Type::Primitive(PrimitiveType::Int16)),
+                PrimitiveTypeSpecifier::Int32(..) => Some(Type::Primitive(PrimitiveType::Int32)),
+                PrimitiveTypeSpecifier::Int64(..) => Some(Type::Primitive(PrimitiveType::Int64)),
+                PrimitiveTypeSpecifier::Uint8(..) => Some(Type::Primitive(PrimitiveType::Uint8)),
+                PrimitiveTypeSpecifier::Uint16(..) => Some(Type::Primitive(PrimitiveType::Uint16)),
+                PrimitiveTypeSpecifier::Uint32(..) => Some(Type::Primitive(PrimitiveType::Uint32)),
+                PrimitiveTypeSpecifier::Uint64(..) => Some(Type::Primitive(PrimitiveType::Uint64)),
+                PrimitiveTypeSpecifier::Float32(..) => {
+                    Some(Type::Primitive(PrimitiveType::Float32))
+                }
+                PrimitiveTypeSpecifier::Float64(..) => {
+                    Some(Type::Primitive(PrimitiveType::Float64))
+                }
+                PrimitiveTypeSpecifier::Void(..) => Some(Type::Primitive(PrimitiveType::Void)),
+            },
+            TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
+                let symbol_id = self.resolve_symbol(
+                    referring_site,
+                    qualified_identifier,
+                    errors,
+                    symbol_states_by_id,
+                )?;
+
+                match symbol_id {
+                    ID::Struct(sym) => Some(Type::TypedID(sym.into())),
+                    ID::Enum(sym) => Some(Type::TypedID(sym.into())),
+                    ID::TypeAlias(sym) => Some(self[sym].ty),
+                    ID::Module(..) | ID::FunctionOverloadSet(..) | ID::EnumVariant(..) => {
+                        errors.push(
+                            TypeExpected {
+                                span: qualified_identifier.span(),
+                                found: symbol_id,
+                            }
+                            .into(),
+                        );
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_overall_accessibility(&mut self, ty: Type) -> Accessibility {
+        match ty {
+            Type::Primitive(..) => Accessibility::Public,
+            Type::TypedID(ty) => self[ty].accessibility().unwrap_or(Accessibility::Public),
+        }
+    }
+
+    /// Retrieves the symbol ID of the given qualified identifier
+    fn resolve_symbol(
+        &mut self,
+        referring_site: ScopedID,
+        qualified_identifier: &QualifiedIdentifier,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) -> Option<ID> {
+        // at the referring site itself, it must be fully constructed
+        assert!(!symbol_states_by_id.contains_key(&referring_site.into()));
+
+        // find the starting point of the name resolution
+        let mut current_id = if qualified_identifier.leading_separator().is_some() {
+            // start from root
+            if let Some(id) = self
+                .root_ids_by_name
+                .get(qualified_identifier.identifiers().first().span().str())
+                .copied()
+            {
+                id.into()
+            } else {
+                errors.push(
+                    SymbolNotFound {
+                        span: qualified_identifier.identifiers().first().span().clone(),
+                        in_scope_id: None,
+                    }
+                    .into(),
+                );
+
+                return None;
+            }
+        } else {
+            // search starting from the referring site and going up the parent chain. the first
+            // scope that contains the symbol is the starting point
+            let mut in_scope_id: ID = referring_site.into();
+            loop {
+                let result = self.search_child(
+                    in_scope_id,
+                    qualified_identifier.identifiers().first().span().str(),
+                    errors,
+                    symbol_states_by_id,
+                );
+
+                if let Some(result) = result {
+                    break result;
+                }
+
+                // if the parent scope doesn't contain the symbol, go up the parent chain
+                // if returns None, then the symbol is not found
+                in_scope_id = if let Some(id) = self[in_scope_id].parent() {
+                    id.into()
+                } else {
+                    errors.push(
+                        SymbolNotFound {
+                            span: qualified_identifier.identifiers().first().span().clone(),
+                            in_scope_id: None,
+                        }
+                        .into(),
+                    );
+                    return None;
+                };
+            }
+        };
+
+        // the symbol must be built
+        self.check_symbol_requirement(current_id, errors, symbol_states_by_id);
+
+        // search the symbol for the rest of the identifiers
+        for identifier in qualified_identifier.identifiers().rest() {
+            if let Some(result) = self.search_child(
+                current_id,
+                identifier.1.span().str(),
+                errors,
+                symbol_states_by_id,
+            ) {
+                // check if the symbol is accessible
+                if let Some(accessibility) = self[current_id].accessibility() {
+                    if !self.symbol_accessible(referring_site, result, accessibility) {
+                        errors.push(
+                            SymbolNotAccessible {
+                                span: identifier.1.span().clone(),
+                                symbol_id: result,
+                            }
+                            .into(),
+                        );
+                    }
+                }
+
+                current_id = result;
+            } else {
+                errors.push(
+                    SymbolNotFound {
+                        span: identifier.1.span().clone(),
+                        in_scope_id: Some(current_id),
+                    }
+                    .into(),
+                );
+                return None;
+            }
+        }
+
+        self.check_symbol_requirement(current_id, errors, symbol_states_by_id);
+
+        Some(current_id)
+    }
+}
+
+#[cfg(test)]
+mod tests;
