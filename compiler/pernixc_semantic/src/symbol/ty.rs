@@ -39,20 +39,18 @@ pub enum PrimitiveType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, EnumAsInner, From)]
 pub enum Type {
     /// The type is a primitive type.
-    Primitive(PrimitiveType),
+    PrimitiveType(PrimitiveType),
 
     /// The type refers to a particular typed symbol in the symbol table.
     TypedID(TypedID),
 }
 
 /// Represents a type used to represent a type binding of an l-value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, CopyGetters)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeBinding {
     /// The type of the binding.
-    #[get_copy = "pub"]
-    pub(super) ty: Type,
+    pub ty: Type,
 
     /// Whether the binding is mutable.
-    #[get_copy = "pub"]
-    pub(super) is_mutable: bool,
+    pub is_mutable: bool,
 }

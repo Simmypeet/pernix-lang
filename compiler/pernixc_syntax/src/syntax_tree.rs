@@ -5,6 +5,7 @@
 //! - *Statement*: A syntax tree node that represents a statement in the function body.
 //! - *Expression*: A syntax tree node that represents an expression in the function body.
 
+use derive_getters::Dissolve;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -70,6 +71,11 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
         std::iter::once(&self.first).chain(self.rest.iter().map(|(_, element)| element))
     }
 
+    /// Returns an iterator over the elements of the list.
+    pub fn into_elements(self) -> impl Iterator<Item = Element> {
+        std::iter::once(self.first).chain(self.rest.into_iter().map(|(_, element)| element))
+    }
+
     /// Gets the number of elements in the list.
     pub fn len(&self) -> usize { self.rest.len() + 1 }
 
@@ -87,7 +93,7 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
 pub struct ScopeSeparator(pub(crate) Punctuation, pub(crate) Punctuation);
 
 impl SourceElement for ScopeSeparator {
-    fn span(&self) -> Span { self.0.span().join(self.1.span()).unwrap() }
+    fn span(&self) -> Span { self.0.span().join(&self.1.span).unwrap() }
 }
 
 /// Represents a syntax tree node of identifiers separated by scope separators.
@@ -109,7 +115,7 @@ pub struct QualifiedIdentifier {
 impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Span {
         let start = self.leading_separator.as_ref().map_or_else(
-            || self.identifiers.first.span().clone(),
+            || self.identifiers.first.span.clone(),
             pernixc_common::source_file::SourceElement::span,
         );
 
@@ -167,7 +173,7 @@ impl SourceElement for PrimitiveTypeSpecifier {
             | Self::Uint8(token)
             | Self::Uint16(token)
             | Self::Uint32(token)
-            | Self::Uint64(token) => token.span().clone(),
+            | Self::Uint64(token) => token.span.clone(),
         }
     }
 }
@@ -220,7 +226,7 @@ impl SourceElement for Label {
     fn span(&self) -> Span {
         self.single_quote
             .span()
-            .join(self.identifier.span())
+            .join(&self.identifier.span)
             .unwrap()
     }
 }
@@ -233,7 +239,7 @@ impl SourceElement for Label {
 ///     ':' TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
 #[allow(missing_docs)]
 pub struct TypeAnnotation {
     #[get = "pub"]
@@ -251,13 +257,13 @@ impl<'a> Parser<'a> {
     pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifier> {
         // found a leading separator
         let leading_separator = match self.peek_significant_token().cloned() {
-            Some(Token::Punctuation(first_colon)) if first_colon.punctuation() == ':' => {
+            Some(Token::Punctuation(first_colon)) if first_colon.punctuation == ':' => {
                 // eat the first colon
                 self.next_significant_token();
 
                 // expect the second colon
                 let second_colon = match self.next_token().cloned() {
-                    Some(Token::Punctuation(second_colon)) if second_colon.punctuation() == ':' => {
+                    Some(Token::Punctuation(second_colon)) if second_colon.punctuation == ':' => {
                         second_colon
                     }
                     found => {
@@ -286,13 +292,13 @@ impl<'a> Parser<'a> {
         // check if the next token is a scope separator '::'
         while let Some((first_colon, second_colon)) = {
             let first_colon = match self.next_significant_token() {
-                Some(Token::Punctuation(first_colon)) if first_colon.punctuation() == ':' => {
+                Some(Token::Punctuation(first_colon)) if first_colon.punctuation == ':' => {
                     Some(first_colon)
                 }
                 _ => None,
             };
             let second_colon = match self.next_token() {
-                Some(Token::Punctuation(second_colon)) if second_colon.punctuation() == ':' => {
+                Some(Token::Punctuation(second_colon)) if second_colon.punctuation == ':' => {
                     Some(second_colon)
                 }
                 _ => None,
@@ -330,7 +336,7 @@ impl<'a> Parser<'a> {
     pub fn parse_type_specifier(&mut self) -> Option<TypeSpecifier> {
         if let Some(token) = self.peek_significant_token() {
             match token {
-                Token::Punctuation(punc) if punc.punctuation() == ':' => Some(
+                Token::Punctuation(punc) if punc.punctuation == ':' => Some(
                     TypeSpecifier::QualifiedIdentifier(self.parse_qualified_identifier()?),
                 ),
                 Token::Identifier(..) => Some(TypeSpecifier::QualifiedIdentifier(
@@ -340,7 +346,7 @@ impl<'a> Parser<'a> {
                     // eat the token right away
                     self.next_token();
 
-                    let primitive_type = match keyword.keyword() {
+                    let primitive_type = match keyword.keyword {
                         KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword.clone()),
                         KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword.clone()),
                         KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword.clone()),
@@ -400,7 +406,7 @@ impl<'a> Parser<'a> {
 ///     Item*
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
 pub struct File {
     /// Is a list of item declarations in the file.
     #[get = "pub"]
@@ -430,8 +436,8 @@ impl File {
                 || {
                     // look for the next access modifier
                     parser.forward_until(|token| {
-                        matches!(token, Token::Keyword(keyword) if keyword.keyword() == KeywordKind::Public
-                            || keyword.keyword() == KeywordKind::Private)
+                        matches!(token, Token::Keyword(keyword) if keyword.keyword == KeywordKind::Public
+                            || keyword.keyword == KeywordKind::Private)
                     });
                 },
                 |item| items.push(item),
@@ -441,10 +447,6 @@ impl File {
         // return the syntax tree and the errors
         (Self { items }, parser.take_errors())
     }
-
-    /// Returns the items in the file.
-    #[must_use]
-    pub fn destruct(self) -> Vec<Item> { self.items }
 }
 
 #[cfg(test)]

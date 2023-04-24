@@ -123,7 +123,7 @@ impl<'a> Parser<'a> {
         let token = self.next_significant_token();
 
         match token {
-            Some(Token::Punctuation(punctuation)) if punctuation.punctuation() == expected => {
+            Some(Token::Punctuation(punctuation)) if punctuation.punctuation == expected => {
                 Some(punctuation)
             }
             Some(token) => {
@@ -165,7 +165,7 @@ impl<'a> Parser<'a> {
             return false
         };
 
-        punctuation.punctuation() == CHAR
+        punctuation.punctuation == CHAR
     }
 
     /// Skips all tokens until the given predicate returns `true`.
@@ -179,13 +179,13 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.next_token() {
             match token {
                 // found ( or [ or {, skip until the corresponding closing delimiter
-                Token::Punctuation(punc) if punc.punctuation() == '(' => {
+                Token::Punctuation(punc) if punc.punctuation == '(' => {
                     self.next_token_until(Self::delimiter_predicate::<')'>);
                 }
-                Token::Punctuation(punc) if punc.punctuation() == '[' => {
+                Token::Punctuation(punc) if punc.punctuation == '[' => {
                     self.next_token_until(Self::delimiter_predicate::<']'>);
                 }
-                Token::Punctuation(punc) if punc.punctuation() == '{' => {
+                Token::Punctuation(punc) if punc.punctuation == '{' => {
                     self.next_token_until(Self::delimiter_predicate::<'}'>);
                 }
                 _ => {
@@ -209,13 +209,13 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.peek_token() {
             match token {
                 // found ( or [ or {, skip until the corresponding closing delimiter
-                Token::Punctuation(punc) if punc.punctuation() == '(' => {
+                Token::Punctuation(punc) if punc.punctuation == '(' => {
                     self.next_token_until(Self::delimiter_predicate::<')'>);
                 }
-                Token::Punctuation(punc) if punc.punctuation() == '[' => {
+                Token::Punctuation(punc) if punc.punctuation == '[' => {
                     self.next_token_until(Self::delimiter_predicate::<']'>);
                 }
-                Token::Punctuation(punc) if punc.punctuation() == '{' => {
+                Token::Punctuation(punc) if punc.punctuation == '{' => {
                     self.next_token_until(Self::delimiter_predicate::<'}'>);
                 }
                 _ => {
@@ -248,7 +248,7 @@ impl<'a> Parser<'a> {
 
         // check for empty list
         match self.peek_significant_token() {
-            Some(Token::Punctuation(punc)) if punc.punctuation() == delimiter => {
+            Some(Token::Punctuation(punc)) if punc.punctuation == delimiter => {
                 self.next_token();
                 return Some((None, punc.clone()));
             }
@@ -264,14 +264,14 @@ impl<'a> Parser<'a> {
         } else {
             let token = self.forward_until(|token| match token {
                 Token::Punctuation(punc) => {
-                    punc.punctuation() == delimiter || punc.punctuation() == separator
+                    punc.punctuation == delimiter || punc.punctuation == separator
                 }
                 _ => false,
             });
 
             // if found delimiter, return empty list
             if let Some(Token::Punctuation(token)) = token {
-                if token.punctuation() == delimiter {
+                if token.punctuation == delimiter {
                     self.next_token();
                     return Some((None, token.clone()));
                 }
@@ -281,14 +281,14 @@ impl<'a> Parser<'a> {
         let delimiter = loop {
             match self.peek_significant_token() {
                 Some(Token::Punctuation(separator_token))
-                    if separator_token.punctuation() == separator =>
+                    if separator_token.punctuation == separator =>
                 {
                     // eat the separator
                     self.next_token();
 
                     match self.peek_significant_token() {
                         Some(Token::Punctuation(delimiter_token))
-                            if delimiter_token.punctuation() == delimiter =>
+                            if delimiter_token.punctuation == delimiter =>
                         {
                             // eat the delimiter
                             self.next_token();
@@ -304,8 +304,8 @@ impl<'a> Parser<'a> {
                             self.forward_until(|token| {
                                 matches!(
                                     token,
-                                    Token::Punctuation(punc) if punc.punctuation() == delimiter ||
-                                        punc.punctuation() == separator
+                                    Token::Punctuation(punc) if punc.punctuation == delimiter ||
+                                        punc.punctuation == separator
                                 )
                             });
                         },
@@ -319,7 +319,7 @@ impl<'a> Parser<'a> {
                     );
                 }
                 Some(Token::Punctuation(delimiter_token))
-                    if delimiter_token.punctuation() == delimiter =>
+                    if delimiter_token.punctuation == delimiter =>
                 {
                     // eat the delimiter
                     self.next_token();

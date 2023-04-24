@@ -90,7 +90,7 @@ proptest! {
 
         for original_identifier in identifiers.iter().rev() {
             let member_access_expr = expression.into_functional().unwrap().into_member_access().unwrap();
-            prop_assert_eq!(original_identifier, member_access_expr.identifier.span().str());
+            prop_assert_eq!(original_identifier, member_access_expr.identifier.span.str());
             expression = *member_access_expr.operand;
         }
 

@@ -2,7 +2,8 @@
 
 use std::ops::Index;
 
-use delegate::delegate;
+use derive_getters::Dissolve;
+use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Iterator;
 
@@ -15,35 +16,14 @@ use crate::{
 ///
 /// This struct is the final output of the lexical analysis phase and is meant to be used by the
 /// next stage of the compilation process.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TokenStream(Vec<Token>);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deref, Dissolve)]
+pub struct TokenStream {
+    #[deref]
+    tokens: Vec<Token>,
+}
 
 #[allow(clippy::inline_always)]
 impl TokenStream {
-    delegate! {
-        to self.0 {
-            /// Checks if the token stream is empty.
-            #[must_use]
-            pub fn is_empty(&self) -> bool;
-
-            /// Returns the number of tokens in the token stream.
-            #[must_use]
-            pub fn len(&self) -> usize;
-
-            /// Returns a reference to the token at the given index.
-            #[must_use]
-            pub fn get(&self, index: usize) -> Option<&Token>;
-
-            /// Returns a reference to the first token in the token stream.
-            #[must_use]
-            pub fn first(&self) -> Option<&Token>;
-
-            /// Returns a reference to the last token in the token stream.
-            #[must_use]
-            pub fn last(&self) -> Option<&Token>;
-        }
-    }
-
     /// Tokenizes the given source code.
     ///
     /// This function tokenizes the given iterator of source code by calling the
@@ -71,7 +51,7 @@ impl TokenStream {
                     lexical_errors.push(lexical_error);
                 }
                 Err(TokenizationError::EndOfSourceCodeIteratorArgument) => {
-                    break (Self(tokens), lexical_errors)
+                    break (Self { tokens }, lexical_errors)
                 }
             }
         }
@@ -81,7 +61,7 @@ impl TokenStream {
     #[must_use]
     pub fn cursor(&self) -> Cursor {
         Cursor {
-            token_stream: &self.0,
+            token_stream: &self.tokens,
             position: CursorPosition::Before,
         }
     }
@@ -90,7 +70,7 @@ impl TokenStream {
 impl Index<usize> for TokenStream {
     type Output = Token;
 
-    fn index(&self, index: usize) -> &Self::Output { &self.0[index] }
+    fn index(&self, index: usize) -> &Self::Output { &self.tokens[index] }
 }
 
 /// Represents the position of a cursor over a [`TokenStream`].

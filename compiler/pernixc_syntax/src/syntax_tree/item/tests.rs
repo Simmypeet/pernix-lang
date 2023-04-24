@@ -9,12 +9,9 @@ use crate::{
 };
 
 const STRUCT_SOURCE_CODE: &str = "
-public struct Test 
-{
-public:
-private:
-    let test: int32;
-    let test2: some::other::ty;
+public struct Test {
+    public let test: int32;
+    private let test2: some::other::ty;
 }
 ";
 
@@ -34,33 +31,17 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
     let struct_item = parser.parse_item().unwrap().into_struct().unwrap();
 
     assert!(matches!(
-        struct_item.access_modifier,
+        struct_item.signature.access_modifier,
         AccessModifier::Public(..)
     ));
 
-    assert_eq!(struct_item.identifier.span().str(), "Test");
+    assert_eq!(struct_item.signature.identifier.span().str(), "Test");
 
-    let mut field_group_iter = struct_item.member_groups.into_iter();
-
+    let mut member_iter = struct_item.body.members.into_iter();
     {
-        let field_group = field_group_iter.next().unwrap();
-        assert!(matches!(
-            field_group.access_modifier,
-            AccessModifier::Public(..)
-        ));
-        let mut field_iter = field_group.members.iter();
-        assert!(field_iter.next().is_none());
-    }
-
-    {
-        let field_group = field_group_iter.next().unwrap();
-        assert!(matches!(
-            field_group.access_modifier,
-            AccessModifier::Private(..)
-        ));
-        let mut field_iter = field_group.members.into_iter();
         {
-            let field = field_iter.next().unwrap().into_field().unwrap();
+            let field = member_iter.next().unwrap().into_field().unwrap();
+            assert_eq!(field.access_modifier.span().str(), "public");
             assert_eq!(field.identifier.span().str(), "test");
             assert!(matches!(
                 field.type_annotation.type_specifier,
@@ -68,7 +49,8 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
             ));
         }
         {
-            let field = field_iter.next().unwrap().into_field().unwrap();
+            let field = member_iter.next().unwrap().into_field().unwrap();
+            assert_eq!(field.access_modifier.span().str(), "private");
             assert_eq!(field.identifier.span().str(), "test2");
             assert_eq!(
                 field
@@ -81,10 +63,8 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
                 "some::other::ty"
             );
         }
-        assert!(field_iter.next().is_none());
+        assert!(member_iter.next().is_none());
     }
-
-    assert!(field_group_iter.next().is_none());
 
     Ok(())
 }

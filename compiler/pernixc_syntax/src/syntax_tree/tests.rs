@@ -49,7 +49,7 @@ proptest! {
         let qualified_identifier = parser.parse_qualified_identifier().unwrap();
 
         for (original_identifier, parsed_identifier) in identifiers.iter().zip(qualified_identifier.identifiers().elements()) {
-            prop_assert_eq!(&original_identifier.1, parsed_identifier.span().str());
+            prop_assert_eq!(&original_identifier.1, parsed_identifier.span.str());
         }
     }
 }

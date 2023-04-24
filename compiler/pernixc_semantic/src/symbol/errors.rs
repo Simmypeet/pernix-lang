@@ -7,7 +7,7 @@ use getset::Getters;
 use pernixc_common::{printing::LogSeverity, source_file::Span};
 
 use super::item::{
-    Accessibility, EnumVariantID, FieldID, FunctionOverloadSetID, OverloadID, Table, ID,
+    Accessibility, EnumVariantID, FieldID, FunctionOverloadSetID, OverloadID, StructID, Table, ID,
 };
 
 /// Is an error that can occur during the symbol resolution/construction phase of the compiler.
@@ -169,6 +169,9 @@ pub struct ParameterRedefinition {
     #[get = "pub"]
     pub(super) span: Span,
 
+    pub(super) function_overload_set_id: FunctionOverloadSetID,
+    pub(super) overload_id: OverloadID,
+
     /// The index of the parameter that was redefined.
     #[get = "pub"]
     pub(super) available_parameter_index: usize,
@@ -219,10 +222,10 @@ impl OverloadRedefinition {
 
         pernixc_common::printing::print_source_code(&self.span, None);
         pernixc_common::printing::print_source_code(
-            table[self.function_overload_set_id].overloads_by_id()[&self.available_overload_id]
-                .syntax_tree()
+            &table[self.function_overload_set_id].overloads_by_id()[&self.available_overload_id]
+                .signature_syntax_tree()
                 .identifier()
-                .span(),
+                .span,
             Some("previous definition here"),
         );
         println!();
@@ -266,9 +269,13 @@ pub struct FieldRedefinition {
     #[get = "pub"]
     pub(super) span: Span,
 
-    /// The ID of the field that was redefined.
+    /// The ID of the struct that the field was redefined in.
     #[get = "pub"]
-    pub(super) available_id: FieldID,
+    pub(super) struct_id: StructID,
+
+    /// The index of the field that was redefined.
+    #[get = "pub"]
+    pub(super) available_field_index: usize,
 }
 
 impl FieldRedefinition {

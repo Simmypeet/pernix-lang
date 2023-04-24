@@ -98,10 +98,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
-name = "delegate"
-version = "0.9.0"
+name = "derive-getters"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d358e0ec5c59a5e1603b933def447096886121660fc680dc1e64a0753981fe3c"
+checksum = "0122f262bf9c9a367829da84f808d9fb128c10ef283bbe7b0922a77cf07b2747"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -374,6 +374,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "paste"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f746c4065a8fa3fe23974dd82f15431cc8d40779821001404d10d2e79ca7d79"
+
+[[package]]
 name = "pernixc_common"
 version = "0.1.0"
 dependencies = [
@@ -389,7 +395,7 @@ dependencies = [
 name = "pernixc_lexical"
 version = "0.1.0"
 dependencies = [
- "delegate",
+ "derive-getters",
  "derive_more",
  "enum-as-inner",
  "getset",
@@ -405,10 +411,12 @@ name = "pernixc_semantic"
 version = "0.1.0"
 dependencies = [
  "builder-pattern",
+ "derive-getters",
  "derive-new",
  "derive_more",
  "enum-as-inner",
  "getset",
+ "paste",
  "pernixc_common",
  "pernixc_lexical",
  "pernixc_syntax",
@@ -419,6 +427,7 @@ dependencies = [
 name = "pernixc_syntax"
 version = "0.1.0"
 dependencies = [
+ "derive-getters",
  "derive_more",
  "enum-as-inner",
  "getset",

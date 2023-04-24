@@ -5,7 +5,6 @@
 //! of a source file.
 
 #![deny(
-    missing_docs,
     missing_debug_implementations,
     missing_copy_implementations,
     clippy::all,
@@ -14,7 +13,7 @@
     rustdoc::broken_intra_doc_links,
     clippy::missing_errors_doc
 )]
-#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn, missing_docs)]
+#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
 pub mod errors;
 pub mod parser;

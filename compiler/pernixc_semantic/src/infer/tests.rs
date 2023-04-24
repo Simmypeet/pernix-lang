@@ -53,7 +53,7 @@ fn inference_test() {
             .get_inference(expr_id1)
             .as_inferred()
             .unwrap()
-            .as_primitive()
+            .as_primitive_type()
             .unwrap(),
         &PrimitiveType::Float32
     );
@@ -62,7 +62,7 @@ fn inference_test() {
             .get_inference(expr_id2)
             .as_inferred()
             .unwrap()
-            .as_primitive()
+            .as_primitive_type()
             .unwrap(),
         &PrimitiveType::Float32
     );

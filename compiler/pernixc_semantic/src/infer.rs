@@ -36,7 +36,7 @@ impl Constraint {
             Self::All => true,
             Self::Number => matches!(
                 concrete_type,
-                Type::Primitive(
+                Type::PrimitiveType(
                     PrimitiveType::Float32
                         | PrimitiveType::Float64
                         | PrimitiveType::Int8
@@ -51,7 +51,7 @@ impl Constraint {
             ),
             Self::Signed => matches!(
                 concrete_type,
-                Type::Primitive(
+                Type::PrimitiveType(
                     PrimitiveType::Float32
                         | PrimitiveType::Float64
                         | PrimitiveType::Int8
@@ -62,7 +62,7 @@ impl Constraint {
             ),
             Self::Float => matches!(
                 concrete_type,
-                Type::Primitive(PrimitiveType::Float32 | PrimitiveType::Float64)
+                Type::PrimitiveType(PrimitiveType::Float32 | PrimitiveType::Float64)
             ),
         }
     }

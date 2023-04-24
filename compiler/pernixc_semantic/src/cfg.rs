@@ -9,7 +9,7 @@ use std::{
 
 use getset::{CopyGetters, Getters};
 
-use crate::symbol::{Uid, UniqueIdentifier};
+use crate::symbol::{SymbolData, SymbolWithData, Uid, UniqueIdentifier};
 
 /// Is an unique identifier used to identify a basic block in the [`ControlFlowGraph`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -88,7 +88,7 @@ pub enum Instruction<T: InstructionBackend> {
 /// These blocks can be connected to each other by various kinds of jump instructions in order to
 /// represent the full control flow of a function.
 #[derive(Debug, Clone, Getters, CopyGetters)]
-pub struct BasicBlock<T: InstructionBackend> {
+pub struct BasicBlockData<T: InstructionBackend> {
     /// The list of instructions that are stored in the basic block.
     #[get = "pub"]
     instructions: Vec<Instruction<T>>,
@@ -100,11 +100,14 @@ pub struct BasicBlock<T: InstructionBackend> {
     /// The list of [`BasicBlockID`] of the basic blocks that are predecessors of this basic block.
     #[get = "pub"]
     predecessors: HashSet<BasicBlockID>,
-
-    /// The unique identifier of the basic block.
-    #[get_copy = "pub"]
-    basic_block_id: BasicBlockID,
 }
+
+impl<T: InstructionBackend> SymbolData for BasicBlockData<T> {
+    type ID = BasicBlockID;
+}
+
+/// A [`BasicBlockData`] with an unique identifier.
+pub type BasicBlock<T> = SymbolWithData<BasicBlockData<T>>;
 
 /// Represents a control flow graph of a function.
 ///
@@ -129,18 +132,24 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
     /// Creates a new [`ControlFlowGraph`] with a single basic block.
     #[must_use]
     pub fn new() -> Self {
-        let new_id = BasicBlockID::fresh();
-        let mut basic_blocks_by_id = HashMap::new();
-        basic_blocks_by_id.insert(new_id, BasicBlock {
+        let symbol = SymbolWithData::new(BasicBlockData {
             instructions: Vec::new(),
             successors: HashSet::new(),
             predecessors: HashSet::new(),
-            basic_block_id: new_id,
         });
+        let id = symbol.id();
         Self {
-            basic_blocks_by_id,
-            entry_block: new_id,
+            basic_blocks_by_id: std::iter::once((id, symbol)).collect(),
+            entry_block: id,
         }
+    }
+
+    /// Adds a new basic block to the [`ControlFlowGraph`].
+    pub fn add_basic_block(&mut self, basic_block: BasicBlockData<T>) -> BasicBlockID {
+        let symbol = SymbolWithData::new(basic_block);
+        let id = symbol.id();
+        self.basic_blocks_by_id.insert(id, symbol);
+        id
     }
 }
 

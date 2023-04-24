@@ -10,10 +10,10 @@
     rustdoc::broken_intra_doc_links,
     clippy::missing_errors_doc
 )]
-#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
+#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn, missing_docs)]
 
 pub mod cfg;
-// pub mod hir;
+pub mod hir;
 pub mod infer;
 pub mod symbol;
 

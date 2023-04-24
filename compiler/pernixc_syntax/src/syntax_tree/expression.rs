@@ -87,7 +87,7 @@ pub enum Functional {
 impl SourceElement for Functional {
     fn span(&self) -> Span {
         match self {
-            Self::NumericLiteral(numeric_literal) => numeric_literal.span().clone(),
+            Self::NumericLiteral(numeric_literal) => numeric_literal.span.clone(),
             Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
             Self::Binary(binary_expression) => binary_expression.span(),
             Self::Prefix(prefix_expression) => prefix_expression.span(),
@@ -152,7 +152,7 @@ pub enum BooleanLiteral {
 impl SourceElement for BooleanLiteral {
     fn span(&self) -> Span {
         match self {
-            Self::True(keyword) | Self::False(keyword) => keyword.span().clone(),
+            Self::True(keyword) | Self::False(keyword) => keyword.span.clone(),
         }
     }
 }
@@ -257,7 +257,7 @@ impl SourceElement for BinaryOperator {
             | Self::Modulo(token)
             | Self::Assign(token)
             | Self::LessThan(token)
-            | Self::GreaterThan(token) => token.span().clone(),
+            | Self::GreaterThan(token) => token.span.clone(),
             Self::CompoundAdd(token, token1)
             | Self::CompoundSubtract(token, token1)
             | Self::CompoundMultiply(token, token1)
@@ -266,8 +266,8 @@ impl SourceElement for BinaryOperator {
             | Self::Equal(token, token1)
             | Self::NotEqual(token, token1)
             | Self::LessThanOrEqual(token, token1)
-            | Self::GreaterThanOrEqual(token, token1) => token.span().join(token1.span()).unwrap(),
-            Self::LogicalAnd(token) | Self::LogicalOr(token) => token.span().clone(),
+            | Self::GreaterThanOrEqual(token, token1) => token.span().join(&token1.span).unwrap(),
+            Self::LogicalAnd(token) | Self::LogicalOr(token) => token.span.clone(),
         }
     }
 }
@@ -319,7 +319,7 @@ pub enum PrefixOperator {
 impl SourceElement for PrefixOperator {
     fn span(&self) -> Span {
         match self {
-            Self::LogicalNot(token) | Self::Negate(token) => token.span().clone(),
+            Self::LogicalNot(token) | Self::Negate(token) => token.span.clone(),
         }
     }
 }
@@ -403,7 +403,7 @@ impl SourceElement for FunctionCall {
     fn span(&self) -> Span {
         self.qualified_identifier
             .span()
-            .join(self.right_paren.span())
+            .join(&self.right_paren.span)
             .unwrap()
     }
 }
@@ -428,12 +428,7 @@ pub struct Parenthesized {
 }
 
 impl SourceElement for Parenthesized {
-    fn span(&self) -> Span {
-        self.left_paren
-            .span()
-            .join(self.right_paren.span())
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.left_paren.span().join(&self.right_paren.span).unwrap() }
 }
 
 /// Represents a field initializer syntax tree.
@@ -499,7 +494,7 @@ impl SourceElement for StructLiteral {
     fn span(&self) -> Span {
         self.qualified_identifier
             .span()
-            .join(self.right_brace.span())
+            .join(&self.right_brace.span)
             .unwrap()
     }
 }
@@ -524,7 +519,7 @@ pub struct MemberAccess {
 }
 
 impl SourceElement for MemberAccess {
-    fn span(&self) -> Span { self.operand.span().join(self.identifier.span()).unwrap() }
+    fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
 }
 
 /// Is an enumeration of all kinds of imperative expressions.
@@ -575,7 +570,7 @@ pub struct LabelSpecifier {
 }
 
 impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Span { self.label.span().join(self.colon.span()).unwrap() }
+    fn span(&self) -> Span { self.label.span().join(&self.colon.span).unwrap() }
 }
 
 /// Represents a block syntax tree.
@@ -598,12 +593,7 @@ pub struct BlockWithoutLabel {
 }
 
 impl SourceElement for BlockWithoutLabel {
-    fn span(&self) -> Span {
-        self.left_brace
-            .span()
-            .join(self.right_brace.span())
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.left_brace.span().join(&self.right_brace.span).unwrap() }
 }
 
 /// Represents a block syntax tree with an optional label specifier.
@@ -760,7 +750,7 @@ impl SourceElement for Loop {
             |label_specifier| {
                 label_specifier
                     .span()
-                    .join(self.loop_keyword.span())
+                    .join(&self.loop_keyword.span)
                     .unwrap()
                     .join(&self.expression.span())
                     .unwrap()
@@ -789,7 +779,7 @@ pub struct Continue {
 impl SourceElement for Continue {
     fn span(&self) -> Span {
         let end = self.label.as_ref().map_or_else(
-            || self.continue_keyword.span().clone(),
+            || self.continue_keyword.span.clone(),
             pernixc_common::source_file::SourceElement::span,
         );
         self.continue_keyword.span().join(&end).unwrap()
@@ -820,7 +810,7 @@ impl SourceElement for Express {
         let end = self.expression.as_ref().map_or_else(
             || {
                 self.label.as_ref().map_or_else(
-                    || self.express_keyword.span().clone(),
+                    || self.express_keyword.span.clone(),
                     pernixc_common::source_file::SourceElement::span,
                 )
             },
@@ -854,7 +844,7 @@ impl SourceElement for Break {
         let end = self.expression.as_ref().map_or_else(
             || {
                 self.label.as_ref().map_or_else(
-                    || self.break_keyword.span().clone(),
+                    || self.break_keyword.span.clone(),
                     pernixc_common::source_file::SourceElement::span,
                 )
             },
@@ -884,7 +874,7 @@ pub struct Return {
 impl SourceElement for Return {
     fn span(&self) -> Span {
         let end = self.expression.as_ref().map_or_else(
-            || self.return_keyword.span().clone(),
+            || self.return_keyword.span.clone(),
             pernixc_common::source_file::SourceElement::span,
         );
         self.return_keyword.span().join(&end).unwrap()
@@ -973,7 +963,7 @@ impl<'a> Parser<'a> {
         let starting_cursor_position = self.cursor.position();
         let next_token = self.next_significant_token();
         match next_token {
-            Some(Token::Punctuation(punctuation)) => match punctuation.punctuation() {
+            Some(Token::Punctuation(punctuation)) => match punctuation.punctuation {
                 '+' => return Some(BinaryOperator::Add(punctuation.clone())),
                 '-' => return Some(BinaryOperator::Subtract(punctuation.clone())),
                 '*' => return Some(BinaryOperator::Multiply(punctuation.clone())),
@@ -982,7 +972,7 @@ impl<'a> Parser<'a> {
                 '=' => return Some(BinaryOperator::Assign(punctuation.clone())),
                 '!' => {
                     if let Some(Token::Punctuation(punctuation1)) = self.peek_significant_token() {
-                        if punctuation1.punctuation() == '=' {
+                        if punctuation1.punctuation == '=' {
                             self.next_significant_token();
                             return Some(BinaryOperator::NotEqual(
                                 punctuation.clone(),
@@ -995,10 +985,10 @@ impl<'a> Parser<'a> {
                 '>' => return Some(BinaryOperator::GreaterThan(punctuation.clone())),
                 _ => (),
             },
-            Some(Token::Keyword(and_keyword)) if and_keyword.keyword() == KeywordKind::And => {
+            Some(Token::Keyword(and_keyword)) if and_keyword.keyword == KeywordKind::And => {
                 return Some(BinaryOperator::LogicalAnd(and_keyword.clone()))
             }
-            Some(Token::Keyword(or_keyword)) if or_keyword.keyword() == KeywordKind::Or => {
+            Some(Token::Keyword(or_keyword)) if or_keyword.keyword == KeywordKind::Or => {
                 return Some(BinaryOperator::LogicalOr(or_keyword.clone()))
             }
             _ => (),
@@ -1014,7 +1004,7 @@ impl<'a> Parser<'a> {
         let starting_cursor_position = self.cursor.position();
 
         match self.next_significant_token() {
-            Some(Token::Punctuation(punctuation)) if punctuation.punctuation() == '=' => {
+            Some(Token::Punctuation(punctuation)) if punctuation.punctuation == '=' => {
                 match first_punctuation_binary_operator {
                     BinaryOperator::Add(prev_punctuation) => {
                         BinaryOperator::CompoundAdd(prev_punctuation, punctuation.clone())
@@ -1067,7 +1057,7 @@ impl<'a> Parser<'a> {
         // Parses statements until a right brace is found.
         let right_brace = loop {
             match self.peek_significant_token() {
-                Some(Token::Punctuation(punc)) if punc.punctuation() == '}' => {
+                Some(Token::Punctuation(punc)) if punc.punctuation == '}' => {
                     self.next_token();
                     break punc;
                 }
@@ -1091,12 +1081,12 @@ impl<'a> Parser<'a> {
                             matches!(
                                 token,
                                 Token::Punctuation(punc)
-                                    if punc.punctuation() == ';' || punc.punctuation() == '}'
+                                    if punc.punctuation == ';' || punc.punctuation == '}'
                             )
                         });
 
                         match token {
-                            Some(Token::Punctuation(punc)) if punc.punctuation() == '}' => {
+                            Some(Token::Punctuation(punc)) if punc.punctuation == '}' => {
                                 break punc
                             }
                             None => {
@@ -1129,7 +1119,7 @@ impl<'a> Parser<'a> {
     ) -> Option<Expression> {
         match self.peek_significant_token() {
             // Handles loop
-            Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword() == KeywordKind::Loop => {
+            Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == KeywordKind::Loop => {
                 self.next_token();
 
                 let expression = self.parse_block()?;
@@ -1141,7 +1131,7 @@ impl<'a> Parser<'a> {
                 })))
             }
             // Handles block
-            Some(Token::Punctuation(left_brace)) if left_brace.punctuation() == '{' => {
+            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
                 let block_without_label = self.parse_block_without_label()?;
                 Some(Expression::Imperative(Imperative::Block(Block {
                     label_specifier,
@@ -1161,7 +1151,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_block(&mut self) -> Option<Block> {
-        let label_specifier = if matches!(self.peek_significant_token(), Some(Token::Punctuation(punc)) if punc.punctuation() == '\'')
+        let label_specifier = if matches!(self.peek_significant_token(), Some(Token::Punctuation(punc)) if punc.punctuation == '\'')
         {
             let single_quote = self.expect_punctuation('\'')?;
             let identifier = self.expect_identifier()?;
@@ -1192,10 +1182,10 @@ impl<'a> Parser<'a> {
 
         // Parses an else expression if it exists.
         let else_expression = match self.peek_significant_token() {
-            Some(Token::Keyword(else_keyword)) if else_keyword.keyword() == KeywordKind::Else => {
+            Some(Token::Keyword(else_keyword)) if else_keyword.keyword == KeywordKind::Else => {
                 self.next_token();
                 let block_of_if_else = match self.peek_significant_token().cloned() {
-                    Some(Token::Keyword(if_keyword)) if if_keyword.keyword() == KeywordKind::If => {
+                    Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
                         self.next_token();
 
                         BlockOrIfElse::IfElse(
@@ -1232,7 +1222,7 @@ impl<'a> Parser<'a> {
 
         match self.peek_significant_token() {
             // Function call
-            Some(Token::Punctuation(left_paren)) if left_paren.punctuation() == '(' => {
+            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
                 // eat the left parenthesis
                 self.next_token();
 
@@ -1251,7 +1241,7 @@ impl<'a> Parser<'a> {
             }
 
             // Struct literal
-            Some(Token::Punctuation(left_brace)) if left_brace.punctuation() == '{' => {
+            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
                 // eat the left brace
                 self.next_token();
 
@@ -1293,7 +1283,7 @@ impl<'a> Parser<'a> {
 
     fn try_parse_label(&mut self) -> Option<Label> {
         match self.peek_significant_token() {
-            Some(Token::Punctuation(single_quote)) if single_quote.punctuation() == '\'' => {
+            Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
                 // eat the single quote
                 self.next_token();
 
@@ -1310,7 +1300,7 @@ impl<'a> Parser<'a> {
 
     fn try_parse_expression_for_control_expression(&mut self) -> Option<Box<Expression>> {
         match self.peek_significant_token() {
-            Some(Token::Punctuation(semicolon)) if semicolon.punctuation() == ';' => None,
+            Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => None,
             _ => {
                 let current_position = self.cursor.position();
 
@@ -1342,7 +1332,7 @@ impl<'a> Parser<'a> {
     fn parse_primary_expression_raw(&mut self) -> Option<Expression> {
         match self.peek_significant_token() {
             // Handles if expressions
-            Some(Token::Keyword(if_keyword)) if if_keyword.keyword() == KeywordKind::If => {
+            Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
                 self.next_token();
                 self.handle_if_keyword(if_keyword.clone())
             }
@@ -1354,13 +1344,13 @@ impl<'a> Parser<'a> {
             }
 
             // Handles parenthesis
-            Some(Token::Punctuation(left_paren)) if left_paren.punctuation() == '(' => {
+            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
                 self.next_token();
                 self.handle_parenthesized(left_paren.clone())
             }
 
             // Handles label specifier
-            Some(Token::Punctuation(single_quote)) if single_quote.punctuation() == '\'' => {
+            Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
                 self.next_token();
 
                 let name = self.expect_identifier()?;
@@ -1379,7 +1369,7 @@ impl<'a> Parser<'a> {
 
             // Handle continue expression
             Some(Token::Keyword(continue_keyword))
-                if continue_keyword.keyword() == KeywordKind::Continue =>
+                if continue_keyword.keyword == KeywordKind::Continue =>
             {
                 // eat the continue keyword
                 self.next_token();
@@ -1396,9 +1386,7 @@ impl<'a> Parser<'a> {
             }
 
             // Handle break expression
-            Some(Token::Keyword(break_keyword))
-                if break_keyword.keyword() == KeywordKind::Break =>
-            {
+            Some(Token::Keyword(break_keyword)) if break_keyword.keyword == KeywordKind::Break => {
                 // eat the break keyword
                 self.next_token();
 
@@ -1417,7 +1405,7 @@ impl<'a> Parser<'a> {
 
             // Handle express expression
             Some(Token::Keyword(express_keyword))
-                if express_keyword.keyword() == KeywordKind::Express =>
+                if express_keyword.keyword == KeywordKind::Express =>
             {
                 // eat the express keyword
                 self.next_token();
@@ -1437,7 +1425,7 @@ impl<'a> Parser<'a> {
 
             // Handles return expression
             Some(Token::Keyword(return_keyword))
-                if return_keyword.keyword() == KeywordKind::Return =>
+                if return_keyword.keyword == KeywordKind::Return =>
             {
                 // eat the return keyword
                 self.next_token();
@@ -1457,13 +1445,13 @@ impl<'a> Parser<'a> {
             Some(Token::Identifier(..)) => self.handle_identifier(),
 
             // Handles boolean literal
-            Some(Token::Keyword(keyword)) if keyword.keyword() == KeywordKind::True => {
+            Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::True => {
                 self.next_token();
                 Some(Expression::Functional(
                     BooleanLiteral::True(keyword.clone()).into(),
                 ))
             }
-            Some(Token::Keyword(keyword)) if keyword.keyword() == KeywordKind::False => {
+            Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::False => {
                 self.next_token();
                 Some(Expression::Functional(
                     BooleanLiteral::False(keyword.clone()).into(),
@@ -1478,7 +1466,7 @@ impl<'a> Parser<'a> {
     fn parse_primary_expression(&mut self) -> Option<Expression> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(punc))
-                if punc.punctuation() == '!' || punc.punctuation() == '-' =>
+                if punc.punctuation == '!' || punc.punctuation == '-' =>
             {
                 self.next_token();
 
@@ -1486,7 +1474,7 @@ impl<'a> Parser<'a> {
 
                 return Some(Expression::Functional(
                     Prefix {
-                        prefix_operator: match punc.punctuation() {
+                        prefix_operator: match punc.punctuation {
                             '!' => PrefixOperator::LogicalNot(punc.clone()),
                             '-' => PrefixOperator::Negate(punc.clone()),
                             _ => unreachable!(),
@@ -1503,7 +1491,7 @@ impl<'a> Parser<'a> {
 
         loop {
             match self.peek_significant_token() {
-                Some(Token::Punctuation(dot)) if dot.punctuation() == '.' => {
+                Some(Token::Punctuation(dot)) if dot.punctuation == '.' => {
                     self.next_token();
 
                     let identifier = self.expect_identifier()?.clone();
@@ -1517,7 +1505,7 @@ impl<'a> Parser<'a> {
                         .into(),
                     );
                 }
-                Some(Token::Keyword(as_keyword)) if as_keyword.keyword() == KeywordKind::As => {
+                Some(Token::Keyword(as_keyword)) if as_keyword.keyword == KeywordKind::As => {
                     self.next_token();
 
                     let type_specifier = self.parse_type_specifier()?;

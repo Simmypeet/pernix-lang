@@ -7,16 +7,21 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use derive_more::{Deref, DerefMut, From};
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_common::source_file::SourceElement;
+use pernixc_lexical::token::Identifier as IdentifierToken;
 use pernixc_syntax::{
     syntax_tree::{
+        expression::BlockWithoutLabel as BlockWithoutLabelSyntaxTree,
         item::{
-            Enum as EnumSyntaxTree, Function as FunctionSyntaxTree, Item as ItemSyntaxTree,
-            Member as MemberSyntaxTree, MemberGroup, ParameterList, Struct as StructSyntaxTree,
-            TypeAlias as TypeAliasSyntaxTree, TypeAliasWithoutAccessModifier,
+            Enum as EnumSyntaxTree, EnumSignature as EnumSignatureSyntaxTree,
+            Field as FieldSyntaxTree, Function as FunctionSyntaxTree,
+            FunctionSignature as FunctionSignatureSyntaxTree, Item as ItemSyntaxTree,
+            Member as MemberSyntaxTree, Parameter as ParameterSyntaxTree, ParameterList,
+            Struct as StructSyntaxTree, StructSignature as StructSignatureSyntaxTree,
+            TypeAlias as TypeAliasSyntaxTree,
         },
         PrimitiveTypeSpecifier, QualifiedIdentifier, TypeSpecifier,
     },
@@ -30,7 +35,7 @@ use super::{
         SymbolError, SymbolRedifinition, TypeExpected,
     },
     ty::{PrimitiveType, Type, TypeBinding},
-    Uid, UniqueIdentifier,
+    SymbolData, SymbolWithData, Uid, UniqueIdentifier,
 };
 use crate::symbol::errors::{SymbolNotAccessible, SymbolNotFound};
 
@@ -203,8 +208,8 @@ impl Accessibility {
 }
 
 /// Represents a field data of a struct.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
-pub struct FieldData {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct Field {
     /// The name of the field.
     #[get = "pub"]
     name: String,
@@ -216,10 +221,10 @@ pub struct FieldData {
     /// The type of the field.
     #[get = "pub"]
     ty: Type,
-}
 
-impl SymbolData for FieldData {
-    type ID = FieldID;
+    /// The syntax tree of the field member.
+    #[get = "pub"]
+    syntax_tree: FieldSyntaxTree,
 }
 
 /// Is a data structure that allows mapping between name, ID and data.
@@ -298,7 +303,7 @@ pub struct StructData {
 
     /// The field members of the struct.
     #[get = "pub"]
-    fields: SymbolMap<FieldData>,
+    fields: Vec<Field>,
 
     /// The type alias members of the struct.
     #[get = "pub"]
@@ -314,7 +319,7 @@ pub struct StructData {
 
     /// The syntax tree that was used to create the struct.
     #[get = "pub"]
-    syntax_tree: StructSyntaxTree,
+    signature_syntax_tree: StructSignatureSyntaxTree,
 }
 
 impl SymbolData for StructData {
@@ -345,7 +350,7 @@ pub struct EnumData {
 
     /// The syntax tree that was used to create the enum.
     #[get = "pub"]
-    syntax_tree: EnumSyntaxTree,
+    signature_syntax_tree: EnumSignatureSyntaxTree,
 }
 
 impl SymbolData for EnumData {
@@ -354,12 +359,6 @@ impl SymbolData for EnumData {
 
 /// Represents an enum symbol.
 pub type Enum = SymbolWithData<EnumData>;
-
-/// Is a trait that all the data of a symbol must implement.
-pub trait SymbolData {
-    /// The type of the ID that can be used to identify the symbol.
-    type ID: UniqueIdentifier;
-}
 
 /// Represents a module data.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -390,7 +389,7 @@ impl SymbolData for ModuleData {
 pub type Module = SymbolWithData<ModuleData>;
 
 /// Represents a parameter data.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct Parameter {
     /// The name of the parameter
     #[get = "pub"]
@@ -399,6 +398,10 @@ pub struct Parameter {
     /// The type binding of this parameter.
     #[get_copy = "pub"]
     type_binding: TypeBinding,
+
+    /// The syntax tree that was used to create the parameter.
+    #[get = "pub"]
+    syntax_tree: ParameterSyntaxTree,
 }
 
 /// Is an unique identifier used to identify a function overload in the [`FunctionOverloadSetData`].
@@ -414,7 +417,7 @@ impl UniqueIdentifier for OverloadID {
 pub struct OverloadData {
     /// The ID of the function overload set that contains this overload.
     #[get_copy = "pub"]
-    overload_set_id: FunctionOverloadSetID,
+    function_overload_set_id: FunctionOverloadSetID,
 
     /// The return type of the function overload.
     #[get = "pub"]
@@ -424,9 +427,17 @@ pub struct OverloadData {
     #[get = "pub"]
     parameters: Vec<Parameter>,
 
-    /// The syntax tree that was used to create the function overload.
+    /// The identifier token of the function overload.
     #[get = "pub"]
-    syntax_tree: FunctionSyntaxTree,
+    identifier_token: IdentifierToken,
+
+    /// The return type specifier of the function overload.
+    #[get = "pub"]
+    return_type_syntax_tree: TypeSpecifier,
+
+    /// The body syntax tree of the function overload.
+    #[get = "pub"]
+    body_syntax_tree: BlockWithoutLabelSyntaxTree,
 
     /// The accessibility of the function overload.
     #[get_copy = "pub"]
@@ -464,7 +475,7 @@ impl SymbolData for FunctionOverloadSetData {
 pub type FunctionOverloadSet = SymbolWithData<FunctionOverloadSetData>;
 
 /// Represents an enum variant data.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct EnumVariantData {
     /// The parent enum of the variant.
     #[get_copy = "pub"]
@@ -477,6 +488,10 @@ pub struct EnumVariantData {
     /// The order of declaration of the variant.
     #[get_copy = "pub"]
     variant_number: u64,
+
+    /// The syntax tree that was used to create the variant.
+    #[get = "pub"]
+    syntax_tree: IdentifierToken,
 }
 
 impl SymbolData for EnumVariantData {
@@ -508,7 +523,7 @@ pub struct TypeAliasData {
 
     /// The syntax tree that was used to create the type alias.
     #[get = "pub"]
-    syntax_tree: TypeAliasWithoutAccessModifier,
+    syntax_tree: TypeAliasSyntaxTree,
 }
 
 impl SymbolData for TypeAliasData {
@@ -517,20 +532,6 @@ impl SymbolData for TypeAliasData {
 
 /// Represents a type alias symbol.
 pub type TypeAlias = SymbolWithData<TypeAliasData>;
-
-/// The struct contains the data of the symbol and its ID.
-#[derive(
-    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut, CopyGetters,
-)]
-pub struct SymbolWithData<T: SymbolData> {
-    #[deref]
-    #[deref_mut]
-    data: T,
-
-    /// The ID of the symbol.
-    #[get_copy = "pub"]
-    id: T::ID,
-}
 
 /// Is an enumeration of all symbols that can be accessed in the global scope.
 #[derive(Debug, Clone, EnumAsInner, From)]
@@ -907,13 +908,13 @@ impl Table {
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
     ) {
         let files = file_parsing
-            .destruct()
+            .dissolve()
             .into_iter()
-            .map(pernixc_syntax::target_parsing::FileParsing::destruct)
+            .map(pernixc_syntax::target_parsing::FileParsing::dissolve)
             .collect::<Vec<_>>();
 
         for (source_file, file_syntax_tree, _) in files {
-            for item in file_syntax_tree.destruct() {
+            for item in file_syntax_tree.dissolve() {
                 // the parent module id
                 let module_id = self
                     .get_id_by_full_name(
@@ -928,13 +929,11 @@ impl Table {
 
                 let identifier = {
                     let (is_function, identifier) = match &item {
-                        ItemSyntaxTree::Struct(sym) => (false, sym.identifier()),
-                        ItemSyntaxTree::Enum(sym) => (false, sym.identifier()),
-                        ItemSyntaxTree::Function(sym) => (true, sym.identifier()),
+                        ItemSyntaxTree::Struct(sym) => (false, sym.signature().identifier()),
+                        ItemSyntaxTree::Enum(sym) => (false, sym.signature().identifier()),
+                        ItemSyntaxTree::Function(sym) => (true, sym.signature().identifier()),
                         ItemSyntaxTree::Module(..) => continue,
-                        ItemSyntaxTree::TypeAlias(sym) => {
-                            (false, sym.type_without_access_modifier().identifier())
-                        }
+                        ItemSyntaxTree::TypeAlias(sym) => (false, sym.identifier()),
                     };
 
                     // check for symbol redefinition
@@ -971,7 +970,7 @@ impl Table {
                 // construct the symbol and add it to the symbol table
                 let id: ID = match item {
                     ItemSyntaxTree::Struct(syntax_tree) => self
-                        .add_symbol(self.create_struct_data(syntax_tree, module_id))
+                        .generate_struct(syntax_tree, module_id, errors, symbol_states_by_id)
                         .into(),
                     ItemSyntaxTree::Enum(syntax_tree) => self
                         .add_symbol(self.create_enum_data(syntax_tree, module_id))
@@ -980,7 +979,7 @@ impl Table {
                         .add_symbol(self.create_type_alias_data(syntax_tree, module_id))
                         .into(),
                     ItemSyntaxTree::Function(syntax_tree) => self
-                        .handle_function_overload_set(syntax_tree, module_id)
+                        .generate_function_overload_set(syntax_tree, module_id, errors)
                         .into(),
                     ItemSyntaxTree::Module(_) => continue,
                 };
@@ -988,21 +987,213 @@ impl Table {
                 // add to the parent module
                 self[module_id].children_ids_by_name.insert(identifier, id);
 
-                // add symbol state
                 symbol_states_by_id.insert(id, SymbolState::Unconstructed);
             }
         }
     }
 
-    fn handle_function_overload_set(
+    fn generate_enum(
+        &mut self,
+        syntax_tree: EnumSyntaxTree,
+        parent: ModuleID,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) {
+        let (signature, body) = syntax_tree.dissolve();
+        let enum_id = EnumID::fresh();
+        let data = EnumData {
+            qualified_name: self[parent]
+                .qualified_name()
+                .iter()
+                .map(std::borrow::ToOwned::to_owned)
+                .chain(std::iter::once(
+                    signature.identifier().span().str().to_owned(),
+                ))
+                .collect(),
+            variant_ids_by_name: HashMap::new(), // To be filled later
+            accessibility: Accessibility::from_syntax_tree(signature.access_modifier()),
+            parent,
+            signature_syntax_tree: signature,
+        };
+
+        for (index, variant) in body
+            .dissolve()
+            .1
+            .into_iter()
+            .flat_map(|x| x.into_elements())
+            .enumerate()
+        {
+            let variant_id = EnumVariantID::fresh();
+            let variant_data = EnumVariantData {
+                qualified_name: self[parent]
+                    .qualified_name()
+                    .iter()
+                    .map(std::borrow::ToOwned::to_owned)
+                    .chain(std::iter::once(
+                        signature.identifier().span().str().to_owned(),
+                    ))
+                    .chain(std::iter::once(
+                        variant.identifier().span().str().to_owned(),
+                    ))
+                    .collect(),
+                accessibility: Accessibility::from_syntax_tree(signature.access_modifier()),
+                parent: enum_id,
+                signature_syntax_tree: variant,
+                index,
+            };
+        }
+
+        // add to the symbol table
+        self.items_by_id.insert(
+            enum_id.into(),
+            SymbolWithData {
+                data,
+                id: enum_id.into(),
+            }
+            .into(),
+        );
+        self[parent].children_ids_by_name.insert(
+            signature.identifier().span().str().to_owned(),
+            enum_id.into(),
+        );
+    }
+
+    fn generate_struct(
+        &mut self,
+        syntax_tree: StructSyntaxTree,
+        parent: ModuleID,
+        errors: &mut Vec<SymbolError>,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+    ) -> StructID {
+        let (signature, body) = syntax_tree.dissolve();
+
+        let struct_id = StructID::fresh();
+        let mut data = StructData {
+            qualified_name: self[parent]
+                .qualified_name()
+                .iter()
+                .map(std::borrow::ToOwned::to_owned)
+                .chain(std::iter::once(
+                    signature.identifier().span().str().to_owned(),
+                ))
+                .collect(),
+            fields: Vec::new(),                            // To be filled later
+            type_alias_member_ids_by_name: HashMap::new(), // To be filled later
+            accessibility: Accessibility::from_syntax_tree(signature.access_modifier()),
+            parent,
+            signature_syntax_tree: signature,
+        };
+
+        for member in body.dissolve().1 {
+            match member {
+                // handle field member
+                MemberSyntaxTree::Field(field) => {
+                    let field = Field {
+                        name: field.identifier().span().str().to_owned(),
+                        accessibility: Accessibility::from_syntax_tree(field.access_modifier()),
+                        ty: PrimitiveType::Void.into(),
+                        syntax_tree: field,
+                    };
+
+                    if let Some(available_field_index) = data
+                        .fields
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, available_field)| {
+                            if available_field.name == field.name {
+                                Some(index)
+                            } else {
+                                None
+                            }
+                        })
+                        .next()
+                    {
+                        errors.push(
+                            FieldRedefinition {
+                                span: field.syntax_tree.identifier().span().clone(),
+                                struct_id,
+                                available_field_index,
+                            }
+                            .into(),
+                        );
+                    } else {
+                        data.fields.push(field);
+                    }
+                }
+                // handle type alias member
+                MemberSyntaxTree::TypeAlias(type_alias) => {
+                    let type_alias_id = TypeAliasID::fresh();
+
+                    if let Some(available_symbol_id) = data
+                        .type_alias_member_ids_by_name
+                        .get(type_alias.identifier().span.str())
+                        .copied()
+                    {
+                        errors.push(
+                            SymbolRedifinition {
+                                span: type_alias.identifier().span.clone(),
+                                available_symbol_id: available_symbol_id.into(),
+                            }
+                            .into(),
+                        );
+                    } else {
+                        self.items_by_id.insert(
+                            type_alias_id.into(),
+                            SymbolWithData {
+                                data: TypeAliasData {
+                                    qualified_name: data
+                                        .qualified_name()
+                                        .iter()
+                                        .cloned()
+                                        .chain(std::iter::once(
+                                            type_alias.identifier().span.str().to_owned(),
+                                        ))
+                                        .collect(),
+                                    accessibility: Accessibility::from_syntax_tree(
+                                        type_alias.access_modifier(),
+                                    ),
+                                    parent: struct_id.into(),
+                                    syntax_tree: type_alias,
+                                    ty: PrimitiveType::Void.into(), // To be filled later
+                                },
+                                id: type_alias_id.into(),
+                            }
+                            .into(),
+                        );
+
+                        // add to the parent struct
+                        data.type_alias_member_ids_by_name
+                            .insert(type_alias.identifier().span.str().to_owned(), type_alias_id);
+
+                        // add to the symbol states
+                        symbol_states_by_id
+                            .insert(type_alias_id.into(), SymbolState::Unconstructed);
+                    }
+                }
+            }
+        }
+
+        self.items_by_id.insert(
+            struct_id.into(),
+            SymbolWithData {
+                id: struct_id,
+                data,
+            }
+            .into(),
+        );
+        struct_id
+    }
+
+    fn generate_function_overload_set(
         &mut self,
         syntax_tree: FunctionSyntaxTree,
         parent: ModuleID,
+        errors: &mut Vec<SymbolError>,
     ) -> FunctionOverloadSetID {
         #[allow(clippy::option_if_let_else)]
-        let overload_set_id = if let Some(id) = self[parent]
+        let function_overload_set_id = if let Some(id) = self[parent]
             .children_ids_by_name
-            .get(syntax_tree.identifier().span().str())
+            .get(syntax_tree.signature().identifier().span().str())
         {
             id.into_function_overload_set().unwrap()
         } else {
@@ -1012,7 +1203,7 @@ impl Table {
                     .iter()
                     .map(std::borrow::ToOwned::to_owned)
                     .chain(std::iter::once(
-                        syntax_tree.identifier().span().str().to_owned(),
+                        syntax_tree.signature().identifier().span().str().to_owned(),
                     ))
                     .collect(),
                 parent,
@@ -1022,20 +1213,76 @@ impl Table {
 
         let overload_id = OverloadID::fresh();
 
-        self[overload_set_id]
+        let (function_signature, body) = syntax_tree.dissolve();
+        let (
+            access_modifier,
+            keyword,
+            identifier,
+            left_paren,
+            parameter_list,
+            right_paren,
+            type_annotation,
+        ) = function_signature.dissolve();
+
+        let parameters = {
+            let mut parameters: Vec<Parameter> = Vec::new();
+
+            // creates a parameter from a parameter syntax tree
+            for parameter in parameter_list.into_iter().flat_map(|x| x.into_elements()) {
+                // redefinition
+                if let Some(available_parameter_index) = parameters
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, x)| {
+                        if x.name == parameter.identifier().span.str() {
+                            Some(idx)
+                        } else {
+                            None
+                        }
+                    })
+                    .next()
+                {
+                    errors.push(
+                        ParameterRedefinition {
+                            span: parameter.identifier().span.clone(),
+                            available_parameter_index,
+                            function_overload_set_id,
+                            overload_id,
+                        }
+                        .into(),
+                    );
+                } else {
+                    // add the parameter
+                    parameters.push(Parameter {
+                        name: parameter.identifier().span.str().to_owned(),
+                        type_binding: TypeBinding {
+                            ty: PrimitiveType::Void.into(),
+                            is_mutable: false,
+                        },
+                        syntax_tree: parameter,
+                    });
+                }
+            }
+
+            parameters
+        };
+
+        self[function_overload_set_id]
             .overloads_by_id
-            .insert(overload_id, Overload {
+            .insert(overload_id, SymbolWithData {
                 data: OverloadData {
-                    overload_set_id,
-                    return_type: PrimitiveType::Void.into(), // to be filled later
-                    parameters: Vec::new(),                  // to be filled later
-                    accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
-                    syntax_tree,
+                    function_overload_set_id,
+                    return_type: PrimitiveType::Void.into(),
+                    parameters,
+                    identifier_token: identifier,
+                    return_type_syntax_tree: type_annotation.dissolve().1,
+                    body_syntax_tree: body,
+                    accessibility: Accessibility::from_syntax_tree(&access_modifier),
                 },
                 id: overload_id,
             });
 
-        overload_set_id
+        function_overload_set_id
     }
 
     fn create_type_alias_data(
@@ -1060,44 +1307,13 @@ impl Table {
             ty: PrimitiveType::Void.into(), // Use void as a placeholder, to be filled later
             accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
             parent: parent.into(),
-            syntax_tree: syntax_tree.destruct().1,
+            syntax_tree: syntax_tree.deconstruct().1,
         }
     }
 
-    fn create_enum_data(&self, syntax_tree: EnumSyntaxTree, parent: ModuleID) -> EnumData {
-        EnumData {
-            qualified_name: self[parent]
-                .qualified_name()
-                .iter()
-                .map(std::borrow::ToOwned::to_owned)
-                .chain(std::iter::once(
-                    syntax_tree.identifier().span().str().to_owned(),
-                ))
-                .collect(),
-            variant_ids_by_name: HashMap::new(), // To be filled later
-            accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
-            parent,
-            syntax_tree,
-        }
-    }
+    fn create_enum_data(&self, syntax_tree: EnumSyntaxTree, parent: ModuleID) -> EnumData {}
 
-    fn create_struct_data(&self, syntax_tree: StructSyntaxTree, parent: ModuleID) -> StructData {
-        StructData {
-            qualified_name: self[parent]
-                .qualified_name()
-                .iter()
-                .map(std::borrow::ToOwned::to_owned)
-                .chain(std::iter::once(
-                    syntax_tree.identifier().span().str().to_owned(),
-                ))
-                .collect(),
-            fields: SymbolMap::new(), // To be filled later
-            type_alias_member_ids_by_name: HashMap::new(), // To be filled later
-            accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
-            parent,
-            syntax_tree,
-        }
-    }
+    fn create_struct_data(&self, syntax_tree: StructSyntaxTree, parent: ModuleID) -> StructData {}
 
     fn build_symbol(
         &mut self,
@@ -1143,7 +1359,7 @@ impl Table {
                     .clone();
                 let return_type = self
                     .resolve_type(parent_id.into(), &ty_syntax, errors, symbol_states_by_id)
-                    .unwrap_or(Type::Primitive(PrimitiveType::Void));
+                    .unwrap_or(Type::PrimitiveType(PrimitiveType::Void));
 
                 let ty_accessibility = self.get_overall_accessibility(return_type);
 
@@ -1261,7 +1477,7 @@ impl Table {
                     errors,
                     symbol_states_by_id,
                 )
-                .unwrap_or(Type::Primitive(PrimitiveType::Void));
+                .unwrap_or(Type::PrimitiveType(PrimitiveType::Void));
             let name = parameter_syntax.identifier().span().str().to_owned();
             let parameter_data = Parameter {
                 name: name.clone(),
@@ -1384,7 +1600,7 @@ impl Table {
             symbol_states_by_id,
         );
 
-        self[type_alias_id].ty = ty.unwrap_or(Type::Primitive(PrimitiveType::Void));
+        self[type_alias_id].ty = ty.unwrap_or(Type::PrimitiveType(PrimitiveType::Void));
 
         // the type accessibility must not be more restrictive than the type alias accessibility
         let ty_accessibility = self.get_overall_accessibility(self[type_alias_id].ty);
@@ -1442,7 +1658,7 @@ impl Table {
                         errors,
                         symbol_states_by_id,
                     )
-                    .unwrap_or(Type::Primitive(PrimitiveType::Void));
+                    .unwrap_or(Type::PrimitiveType(PrimitiveType::Void));
 
                 // the access modifier of the type can't be more restrictive than the field's access
                 let ty_accessibility = self.get_overall_accessibility(ty);
@@ -1612,7 +1828,7 @@ impl Table {
                 .map(std::convert::Into::into),
             ID::FunctionOverloadSet(..) | ID::EnumVariant(..) => None,
             ID::TypeAlias(sym) => match self[sym].ty {
-                Type::Primitive(..) => None,
+                Type::PrimitiveType(..) => None,
                 Type::TypedID(type_id) => {
                     self.search_child(type_id.into(), name, errors, symbol_states_by_id)
                 }
@@ -1675,22 +1891,36 @@ impl Table {
     ) -> Option<Type> {
         match type_specifier {
             TypeSpecifier::PrimitiveTypeSpecifier(primitive_type) => match primitive_type {
-                PrimitiveTypeSpecifier::Bool(..) => Some(Type::Primitive(PrimitiveType::Bool)),
-                PrimitiveTypeSpecifier::Int8(..) => Some(Type::Primitive(PrimitiveType::Int8)),
-                PrimitiveTypeSpecifier::Int16(..) => Some(Type::Primitive(PrimitiveType::Int16)),
-                PrimitiveTypeSpecifier::Int32(..) => Some(Type::Primitive(PrimitiveType::Int32)),
-                PrimitiveTypeSpecifier::Int64(..) => Some(Type::Primitive(PrimitiveType::Int64)),
-                PrimitiveTypeSpecifier::Uint8(..) => Some(Type::Primitive(PrimitiveType::Uint8)),
-                PrimitiveTypeSpecifier::Uint16(..) => Some(Type::Primitive(PrimitiveType::Uint16)),
-                PrimitiveTypeSpecifier::Uint32(..) => Some(Type::Primitive(PrimitiveType::Uint32)),
-                PrimitiveTypeSpecifier::Uint64(..) => Some(Type::Primitive(PrimitiveType::Uint64)),
+                PrimitiveTypeSpecifier::Bool(..) => Some(Type::PrimitiveType(PrimitiveType::Bool)),
+                PrimitiveTypeSpecifier::Int8(..) => Some(Type::PrimitiveType(PrimitiveType::Int8)),
+                PrimitiveTypeSpecifier::Int16(..) => {
+                    Some(Type::PrimitiveType(PrimitiveType::Int16))
+                }
+                PrimitiveTypeSpecifier::Int32(..) => {
+                    Some(Type::PrimitiveType(PrimitiveType::Int32))
+                }
+                PrimitiveTypeSpecifier::Int64(..) => {
+                    Some(Type::PrimitiveType(PrimitiveType::Int64))
+                }
+                PrimitiveTypeSpecifier::Uint8(..) => {
+                    Some(Type::PrimitiveType(PrimitiveType::Uint8))
+                }
+                PrimitiveTypeSpecifier::Uint16(..) => {
+                    Some(Type::PrimitiveType(PrimitiveType::Uint16))
+                }
+                PrimitiveTypeSpecifier::Uint32(..) => {
+                    Some(Type::PrimitiveType(PrimitiveType::Uint32))
+                }
+                PrimitiveTypeSpecifier::Uint64(..) => {
+                    Some(Type::PrimitiveType(PrimitiveType::Uint64))
+                }
                 PrimitiveTypeSpecifier::Float32(..) => {
-                    Some(Type::Primitive(PrimitiveType::Float32))
+                    Some(Type::PrimitiveType(PrimitiveType::Float32))
                 }
                 PrimitiveTypeSpecifier::Float64(..) => {
-                    Some(Type::Primitive(PrimitiveType::Float64))
+                    Some(Type::PrimitiveType(PrimitiveType::Float64))
                 }
-                PrimitiveTypeSpecifier::Void(..) => Some(Type::Primitive(PrimitiveType::Void)),
+                PrimitiveTypeSpecifier::Void(..) => Some(Type::PrimitiveType(PrimitiveType::Void)),
             },
             TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
                 let symbol_id = self.resolve_symbol(
@@ -1721,7 +1951,7 @@ impl Table {
 
     fn get_overall_accessibility(&mut self, ty: Type) -> Accessibility {
         match ty {
-            Type::Primitive(..) => Accessibility::Public,
+            Type::PrimitiveType(..) => Accessibility::Public,
             Type::TypedID(ty) => self[ty].accessibility().unwrap_or(Accessibility::Public),
         }
     }

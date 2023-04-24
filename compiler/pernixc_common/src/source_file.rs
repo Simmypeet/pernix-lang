@@ -44,16 +44,14 @@ pub enum LoadError {
 }
 
 /// Is an error related to the io operations when using the [`SourceFile::load()`] method.
-#[derive(Debug, Getters, Error)]
+#[derive(Debug, Error)]
 #[error("{error}")]
 pub struct IoLoadError {
     /// The path where the io error occurred.
-    #[get = "pub"]
-    path: PathBuf,
+    pub path: PathBuf,
 
     /// The io error that occurred.
-    #[get = "pub"]
-    error: std::io::Error,
+    pub error: std::io::Error,
 }
 
 /// Is an error returned by the [`SourceFile::new()`] method.

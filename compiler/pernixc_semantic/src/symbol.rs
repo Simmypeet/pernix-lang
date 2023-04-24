@@ -1,9 +1,18 @@
 //! Contains the code related to the symbol resolution pass of the compiler.
 
-use std::{fmt::Debug, hash::Hash, sync::atomic::AtomicU64};
+use std::{collections::HashMap, fmt::Debug, hash::Hash, ops::Index, sync::atomic::AtomicU64};
+
+use derive_more::{Deref, DerefMut};
+use enum_as_inner::EnumAsInner;
+use getset::{CopyGetters, Getters};
+use paste::paste;
+use pernixc_lexical::token::Identifier as IdentifierToken;
+use pernixc_syntax::syntax_tree::item::{
+    EnumSignature as EnumSignatureSyntaxTree, Field as FieldSyntaxTree,
+    StructSignature as StructSignatureSyntaxTree,
+};
 
 pub mod errors;
-pub mod item;
 pub mod ty;
 
 /// Is a unique identifier used for various purposes in the compiler.
@@ -39,4 +48,273 @@ pub trait UniqueIdentifier:
 
 impl UniqueIdentifier for Uid {
     fn fresh() -> Self { Self::fresh() }
+}
+
+/// Is a trait that all the data of a symbol must implement.
+#[allow(clippy::module_name_repetitions)]
+pub trait SymbolData {
+    /// The type of the ID that can be used to identify the symbol.
+    type ID: UniqueIdentifier;
+}
+
+/// The struct contains the data of the symbol and its ID.
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut, CopyGetters,
+)]
+#[allow(clippy::module_name_repetitions)]
+pub struct SymbolWithData<T: SymbolData> {
+    #[deref]
+    #[deref_mut]
+    data: T,
+
+    /// The ID of the symbol.
+    #[get_copy = "pub"]
+    id: T::ID,
+}
+
+impl<T: SymbolData> SymbolWithData<T> {
+    /// Creates a new [`SymbolWithData`] from the given data.
+    pub fn new(data: T) -> Self {
+        Self {
+            data,
+            id: T::ID::fresh(),
+        }
+    }
+}
+
+/// Is a data structure that allows mapping between name, ID and data.
+#[derive(Debug, Clone)]
+pub struct SymbolMap<T: SymbolData> {
+    /// Maps the ID to the data.
+    values_by_id: HashMap<T::ID, SymbolWithData<T>>,
+
+    /// Maps the name to the ID.
+    ids_by_name: HashMap<String, T::ID>,
+}
+
+impl<T: SymbolData> SymbolMap<T> {
+    /// Creates a new empty [`SymbolMap`].
+    #[must_use]
+    fn new() -> Self {
+        Self {
+            values_by_id: HashMap::new(),
+            ids_by_name: HashMap::new(),
+        }
+    }
+
+    /// Adds a new symbol to the [`SymbolMap`].
+    ///
+    /// # Returns
+    /// - `Ok(id)` returns the ID of the symbol of the added symbol.
+    ///
+    /// # Errors
+    /// - `Err(id)` returns the ID of the symbol that already exists with the same name.
+    fn add(&mut self, name: String, data: T) -> Result<T::ID, T::ID> {
+        if let Some(id) = self.ids_by_name.get(&name).copied() {
+            Err(id)
+        } else {
+            let id = T::ID::fresh();
+            let symbol = SymbolWithData { data, id };
+            self.ids_by_name.insert(name, id);
+            self.values_by_id.insert(id, symbol);
+            Ok(id)
+        }
+    }
+
+    /// Returns the number of symbols in the [`SymbolMap`].
+    #[must_use]
+    pub fn len(&self) -> usize { self.values_by_id.len() }
+
+    /// Returns `true` if the [`SymbolMap`] is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.values_by_id.is_empty() }
+
+    /// Returns the ID of the symbol with the given name.
+    #[must_use]
+    pub fn map_name_to_id(&self, name: &str) -> Option<T::ID> {
+        self.ids_by_name.get(name).copied()
+    }
+
+    /// Returns an iterator over the symbols in the [`SymbolMap`].
+    pub fn values(&self) -> impl Iterator<Item = &SymbolWithData<T>> { self.values_by_id.values() }
+}
+
+impl<T: SymbolData> Index<T::ID> for SymbolMap<T> {
+    type Output = SymbolWithData<T>;
+
+    fn index(&self, id: T::ID) -> &Self::Output { &self.values_by_id[&id] }
+}
+
+impl<T: SymbolData> Default for SymbolMap<T> {
+    fn default() -> Self { Self::new() }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum Accessibility {
+    Private,
+    Internal,
+    Public,
+}
+
+macro_rules! impl_symbol {
+    (
+        $(#[$outer:meta])*
+        $vis:vis struct $name:ident $($t:tt)*
+    ) => {
+        paste! {
+            $(#[$outer])*
+            $vis struct [< $name Data >] $($t)*
+
+            #[doc = concat!("Is a unique identifier for a [`", stringify!($name), "`].")]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+            pub struct [< $name ID >](Uid);
+
+            impl UniqueIdentifier for [< $name ID >] {
+                fn fresh() -> Self { Self(Uid::fresh()) }
+            }
+
+            impl SymbolData for [< $name Data >] {
+                type ID = [< $name ID >];
+            }
+
+            #[doc = concat!("Is a symbol with data of type [`", stringify!([< $name Data >]), "`].")]
+            pub type $name = SymbolWithData<[< $name Data >]>;
+        }
+    };
+}
+
+impl_symbol! {
+    /// Contains the data of the module symbol.
+    #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+    pub struct Module {
+        /// The name of the module
+        #[get = "pub"]
+        name: String,
+
+        /// The accessibility of the module
+        #[get_copy = "pub"]
+        accessibility: Accessibility,
+
+        /// The parent ID of the module. If `None` then the module is the root module.
+        #[get_copy = "pub"]
+        parent_module_id: Option<ModuleID>,
+
+        /// Maps the name of the symbol defined in this module to its corresponding ID.
+        #[get = "pub"]
+        child_ids_by_name: HashMap<String, GlobalID>,
+    }
+}
+
+impl_symbol! {
+    /// Contains the data of the field symbol.
+    #[derive(Debug, Clone, PartialEq, Eq,  Hash, Getters, CopyGetters)]
+    pub struct Field {
+        /// The name of the field
+        #[get = "pub"]
+        name: String,
+
+        /// The accessibility of the field
+        #[get_copy = "pub"]
+        accessibility: Accessibility,
+
+        /// The struct ID where the field is defined.
+        #[get_copy = "pub"]
+        parent_struct_id: StructID,
+
+        /// The syntax tree that was used to create the field.
+        #[get = "pub"]
+        syntax_tree: FieldSyntaxTree,
+
+        /// The order in which the field was declared.
+        #[get_copy = "pub"]
+        declaration_order: usize,
+    }
+}
+
+impl_symbol! {
+    /// Contains the data of the struct symbol.
+    #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+    pub struct Struct {
+        /// The name of the struct
+        #[get = "pub"]
+        name: String,
+
+        /// The accessibility of the struct
+        #[get_copy = "pub"]
+        accessibility: Accessibility,
+
+        /// The parent ID of the struct.
+        #[get_copy = "pub"]
+        parent_module_id: ModuleID,
+
+        /// The syntax tree that was used to create the struct.
+        #[get = "pub"]
+        syntax_tree: StructSignatureSyntaxTree,
+
+        /// Maps the name of the field to its corresponding ID.
+        #[get = "pub"]
+        field_ids_by_name: HashMap<String, FieldID>,
+
+        /// List of the fields in the order in which they were declared.
+        #[get = "pub"]
+        field_order: Vec<FieldID>,
+    }
+}
+
+impl_symbol! {
+    /// Contains the data of the enum symbol.
+    #[derive(Debug, Clone, PartialEq, Eq,  Hash, Getters, CopyGetters)]
+    pub struct EnumVariant {
+        /// The name of the enum variant
+        #[get = "pub"]
+        name: String,
+
+        /// The parent ID of the enum variant.
+        #[get_copy = "pub"]
+        parent: EnumID,
+
+        /// The order in which the enum variant was declared.
+        #[get_copy = "pub"]
+        declaration_order: usize,
+
+        /// The syntax tree that was used to create the enum variant.
+        #[get = "pub"]
+        syntax_tree: IdentifierToken,
+    }
+}
+
+impl_symbol! {
+    #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+    pub struct Enum {
+        /// The name of the enum
+        #[get = "pub"]
+        name: String,
+
+        /// The accessibility of the enum
+        #[get_copy = "pub"]
+        accessibility: Accessibility,
+
+        /// The parent ID of the enum.
+        #[get_copy = "pub"]
+        parent: ModuleID,
+
+        /// The syntax tree that was used to create the enum.
+        #[get = "pub"]
+        syntax_tree: EnumSignatureSyntaxTree,
+
+        /// Maps the name of the enum variant to the ID of the enum variant.
+        #[get = "pub"]
+        variant_ids_by_name: HashMap<String, EnumVariantID>,
+
+        /// List of the enum variants in the order in which they were declared.
+        #[get = "pub"]
+        variant_order: Vec<EnumVariantID>,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum GlobalID {
+    Module(ModuleID),
+    Struct(StructID),
+    Enum(EnumID),
 }

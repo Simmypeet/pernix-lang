@@ -219,14 +219,14 @@ pub enum Token {
 impl SourceElement for Token {
     fn span(&self) -> Span {
         match self {
-            Self::WhiteSpace(token) => token.span().clone(),
-            Self::Identifier(token) => token.span().clone(),
-            Self::Keyword(token) => token.span().clone(),
-            Self::Punctuation(token) => token.span().clone(),
-            Self::NumericLiteral(token) => token.span().clone(),
-            Self::StringLiteral(token) => token.span().clone(),
-            Self::CharacterLiteral(token) => token.span().clone(),
-            Self::Comment(token) => token.span().clone(),
+            Self::WhiteSpace(token) => token.span.clone(),
+            Self::Identifier(token) => token.span.clone(),
+            Self::Keyword(token) => token.span.clone(),
+            Self::Punctuation(token) => token.span.clone(),
+            Self::NumericLiteral(token) => token.span.clone(),
+            Self::StringLiteral(token) => token.span.clone(),
+            Self::CharacterLiteral(token) => token.span.clone(),
+            Self::Comment(token) => token.span.clone(),
         }
     }
 }
@@ -235,8 +235,7 @@ impl SourceElement for Token {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct WhiteSpace {
     /// Is the span that makes up the token.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 }
 
 impl SourceElement for WhiteSpace {
@@ -247,8 +246,7 @@ impl SourceElement for WhiteSpace {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Identifier {
     /// Is the span that makes up the token.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 }
 
 impl SourceElement for Identifier {
@@ -259,12 +257,10 @@ impl SourceElement for Identifier {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct Keyword {
     /// Is the span that makes up the token.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 
     /// Is the [`KeywordKind`] that the token represents.
-    #[get_copy = "pub"]
-    pub(super) keyword: KeywordKind,
+    pub keyword: KeywordKind,
 }
 
 impl SourceElement for Keyword {
@@ -275,12 +271,10 @@ impl SourceElement for Keyword {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct Punctuation {
     /// Is the span that makes up the token.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 
     /// Is the ASCII punctuation character that the token represents.
-    #[get_copy = "pub"]
-    pub(super) punctuation: char,
+    pub punctuation: char,
 }
 
 impl SourceElement for Punctuation {
@@ -291,16 +285,13 @@ impl SourceElement for Punctuation {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct NumericLiteral {
     /// Is the span that makes up the token.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 
     /// Is the sapn representing the value part of the numeric literal.
-    #[get = "pub"]
-    pub(super) value_span: Span,
+    pub value_span: Span,
 
     /// Is the span representing the suffix part of the numeric literal if it exists.
-    #[get = "pub"]
-    pub(super) suffix_span: Option<Span>,
+    pub suffix_span: Option<Span>,
 }
 
 impl SourceElement for NumericLiteral {
@@ -311,12 +302,10 @@ impl SourceElement for NumericLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct CharacterLiteral {
     ///  The span that makes up the token.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 
     /// The character value of the literal.
-    #[get_copy = "pub"]
-    pub(super) character: char,
+    pub character: char,
 }
 
 impl SourceElement for CharacterLiteral {
@@ -327,8 +316,7 @@ impl SourceElement for CharacterLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct StringLiteral {
     /// Is the span that makes up the token.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 }
 
 impl SourceElement for StringLiteral {
@@ -349,12 +337,10 @@ pub enum CommentKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct Comment {
     /// Is the span that makes up the token.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 
     /// Is the kind of comment that the token represents.
-    #[get_copy = "pub"]
-    pub(super) kind: CommentKind,
+    pub kind: CommentKind,
 }
 
 impl SourceElement for Comment {

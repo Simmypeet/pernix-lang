@@ -17,3 +17,5 @@ derive-new = { workspace = true }
 getset = { workspace = true }
 derive_more = { workspace = true }
 builder-pattern = { workspace = true }
+derive-getters = { workspace = true }
+paste = { workspace = true }

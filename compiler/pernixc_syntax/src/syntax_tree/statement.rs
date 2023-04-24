@@ -88,7 +88,7 @@ pub struct VariableDeclaration {
 }
 
 impl SourceElement for VariableDeclaration {
-    fn span(&self) -> Span { self.let_keyword.span().join(self.semicolon.span()).unwrap() }
+    fn span(&self) -> Span { self.let_keyword.span().join(&self.semicolon.span).unwrap() }
 }
 
 /// Represents an expressive statement syntax tree node
@@ -139,7 +139,7 @@ pub struct Semi {
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Span { self.expression.span().join(self.semicolon.span()).unwrap() }
+    fn span(&self) -> Span { self.expression.span().join(&self.semicolon.span).unwrap() }
 }
 
 impl<'a> Parser<'a> {
@@ -147,13 +147,13 @@ impl<'a> Parser<'a> {
     pub fn parse_statement(&mut self) -> Option<Statement> {
         match self.peek_significant_token() {
             // Handles variable declaration statements
-            Some(Token::Keyword(let_keyword)) if let_keyword.keyword() == KeywordKind::Let => {
+            Some(Token::Keyword(let_keyword)) if let_keyword.keyword == KeywordKind::Let => {
                 // eat let keyword
                 self.next_token();
 
                 let mutable_keyword = match self.peek_significant_token() {
                     Some(Token::Keyword(mutable_keyword))
-                        if mutable_keyword.keyword() == KeywordKind::Mutable =>
+                        if mutable_keyword.keyword == KeywordKind::Mutable =>
                     {
                         // eat mutable keyword
                         self.next_token();
@@ -168,7 +168,7 @@ impl<'a> Parser<'a> {
 
                 // parse optional type annotation
                 let type_annotation = match self.peek_significant_token() {
-                    Some(Token::Punctuation(punctuation)) if punctuation.punctuation() == ':' => {
+                    Some(Token::Punctuation(punctuation)) if punctuation.punctuation == ':' => {
                         // eat colon
                         self.next_token();
 

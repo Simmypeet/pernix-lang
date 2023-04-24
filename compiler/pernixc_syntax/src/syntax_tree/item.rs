@@ -1,5 +1,6 @@
 //! Contains syntax tree nodes for items.
 
+use derive_getters::Dissolve;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -34,7 +35,7 @@ impl SourceElement for AccessModifier {
     fn span(&self) -> Span {
         match self {
             Self::Public(keyword) | Self::Private(keyword) | Self::Internal(keyword) => {
-                keyword.span().clone()
+                keyword.span.clone()
             }
         }
     }
@@ -45,12 +46,14 @@ impl SourceElement for AccessModifier {
 /// Syntax Synopsis:
 /// ``` text
 /// Field:
-///     'let' Identifier TypeAnnotation ';'
+///     AccessModifier 'let' Identifier TypeAnnotation ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Field {
+    #[get = "pub"]
+    pub(super) access_modifier: AccessModifier,
     #[get = "pub"]
     pub(super) let_keyword: Keyword,
     #[get = "pub"]
@@ -62,7 +65,7 @@ pub struct Field {
 }
 
 impl SourceElement for Field {
-    fn span(&self) -> Span { self.identifier.span().join(self.semicolon.span()).unwrap() }
+    fn span(&self) -> Span { self.identifier.span().join(&self.semicolon.span).unwrap() }
 }
 
 /// Represents a syntax tree node for a member of a struct.
@@ -71,53 +74,71 @@ impl SourceElement for Field {
 /// ``` text
 /// Member:
 ///     Field
-///     | TypeWithoutAccessModifier
+///     | TypeAlias
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 pub enum Member {
     Field(Field),
-    TypeWithoutAccessModifier(TypeAliasWithoutAccessModifier),
+    TypeAlias(TypeAlias),
 }
 
 impl SourceElement for Member {
     fn span(&self) -> Span {
         match self {
             Self::Field(field) => field.span(),
-            Self::TypeWithoutAccessModifier(type_without_access_modifier) => {
-                type_without_access_modifier.span()
-            }
+            Self::TypeAlias(type_alias) => type_alias.span(),
         }
     }
 }
 
-/// Represents a syntax tree node for a field group.
+/// Represents a syntax tree node for a struct signature.
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// MemberGroup:
-///     AccessModifier ':' Member*
+/// StructSignature:
+///     AccessModifier 'struct' Identifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
-pub struct MemberGroup {
+pub struct StructSignature {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
     #[get = "pub"]
-    pub(super) colon: Punctuation,
+    pub(super) struct_keyword: Keyword,
     #[get = "pub"]
-    pub(super) members: Vec<Member>,
+    pub(super) identifier: Identifier,
 }
 
-impl SourceElement for MemberGroup {
+impl SourceElement for StructSignature {
     fn span(&self) -> Span {
-        let end = self.members.last().map_or_else(
-            || self.colon.span().clone(),
-            pernixc_common::source_file::SourceElement::span,
-        );
-        self.access_modifier.span().join(&end).unwrap()
+        self.access_modifier
+            .span()
+            .join(&self.identifier.span)
+            .unwrap()
     }
+}
+
+/// Represents a syntax tree node for a struct body.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// StructBody:
+///     '{' Members* '}'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
+pub struct StructBody {
+    #[get = "pub"]
+    pub(super) left_brace: Punctuation,
+    #[get = "pub"]
+    pub(super) members: Vec<Member>,
+    #[get = "pub"]
+    pub(super) right_brace: Punctuation,
+}
+
+impl SourceElement for StructBody {
+    fn span(&self) -> Span { self.left_brace.span().join(&self.right_brace.span).unwrap() }
 }
 
 /// Represents a syntax tree node for a struct.
@@ -125,45 +146,34 @@ impl SourceElement for MemberGroup {
 /// Syntax Synopsis:
 /// ``` text
 /// Struct:
-///     AccessModifier 'struct' Identifier '{' MemberGroup* '}'
+///     AccessModifier 'struct' Identifier '{' Members* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
 #[allow(missing_docs)]
 pub struct Struct {
     #[get = "pub"]
-    pub(super) access_modifier: AccessModifier,
+    pub(super) signature: StructSignature,
     #[get = "pub"]
-    pub(super) struct_keyword: Keyword,
-    #[get = "pub"]
-    pub(super) identifier: Identifier,
-    #[get = "pub"]
-    pub(super) left_brace: Punctuation,
-    #[get = "pub"]
-    pub(super) member_groups: Vec<MemberGroup>,
-    #[get = "pub"]
-    pub(super) right_brace: Punctuation,
+    pub(super) body: StructBody,
 }
 
 impl SourceElement for Struct {
-    fn span(&self) -> Span {
-        self.access_modifier
-            .span()
-            .join(self.right_brace.span())
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.signature.span().join(&self.body.span()).unwrap() }
 }
 
-/// Represents a syntax tree node forr a type alias without an access modifier.
+/// Represents a syntax tree node for a type alias.
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// TypeAliasWithoutAccessModifier:
-///     'type' Identifier '=' TypeSpecifier ';'
+/// Type:
+///     AccessModifier 'type' Identifier '=' TypeSpecifier ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-pub struct TypeAliasWithoutAccessModifier {
+pub struct TypeAlias {
+    #[get = "pub"]
+    pub(super) access_modifier: AccessModifier,
     #[get = "pub"]
     pub(super) type_keyword: Keyword,
     #[get = "pub"]
@@ -176,46 +186,32 @@ pub struct TypeAliasWithoutAccessModifier {
     pub(super) semicolon: Punctuation,
 }
 
-impl SourceElement for TypeAliasWithoutAccessModifier {
-    fn span(&self) -> Span {
-        self.type_keyword
-            .span()
-            .join(self.semicolon.span())
-            .unwrap()
-    }
-}
-
-/// Represents a syntax tree node for a type alias.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// Type:
-///     AccessModifier TypeAliasWithoutAccessModifier
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-pub struct TypeAlias {
-    #[get = "pub"]
-    pub(super) access_modifier: AccessModifier,
-    #[get = "pub"]
-    pub(super) type_without_access_modifier: TypeAliasWithoutAccessModifier,
-}
-
-impl TypeAlias {
-    /// Destructs the type alias into its components.
-    #[must_use]
-    pub fn destruct(self) -> (AccessModifier, TypeAliasWithoutAccessModifier) {
-        (self.access_modifier, self.type_without_access_modifier)
-    }
-}
-
 impl SourceElement for TypeAlias {
     fn span(&self) -> Span {
         self.access_modifier
             .span()
-            .join(self.type_without_access_modifier.semicolon.span())
+            .join(&self.semicolon.span)
             .unwrap()
     }
+}
+
+/// Represents a syntax tree node for an enum signature.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// EnumSignature:
+///     AccessModifier 'enum' Identifier
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[allow(missing_docs)]
+pub struct EnumSignature {
+    #[get = "pub"]
+    pub(super) access_modifier: AccessModifier,
+    #[get = "pub"]
+    pub(super) enum_keyword: Keyword,
+    #[get = "pub"]
+    pub(super) identifier: Identifier,
 }
 
 /// Represents a list of identifiers separated by commas.
@@ -228,23 +224,17 @@ impl SourceElement for TypeAlias {
 /// ```
 pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
 
-/// Represents a syntax tree node for an enum.
+/// Represents a syntax tree node for an enum body.
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// Enum:
-///     AccessModifier 'enum' Identifier '{' EnumVariantList? '}'
+/// EnumBody:
+///     '{' EnumVariantList? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
 #[allow(missing_docs)]
-pub struct Enum {
-    #[get = "pub"]
-    pub(super) access_modifier: AccessModifier,
-    #[get = "pub"]
-    pub(super) enum_keyword: Keyword,
-    #[get = "pub"]
-    pub(super) identifier: Identifier,
+pub struct EnumBody {
     #[get = "pub"]
     pub(super) left_brace: Punctuation,
     #[get = "pub"]
@@ -253,11 +243,29 @@ pub struct Enum {
     pub(super) right_brace: Punctuation,
 }
 
+/// Represents a syntax tree node for an enum.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// Enum:
+///     EnumSignature EnumBody
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
+#[allow(missing_docs)]
+pub struct Enum {
+    #[get = "pub"]
+    pub(super) signature: EnumSignature,
+    #[get = "pub"]
+    pub(super) body: EnumBody,
+}
+
 impl SourceElement for Enum {
     fn span(&self) -> Span {
-        self.access_modifier
+        self.signature
+            .access_modifier
             .span()
-            .join(self.right_brace.span())
+            .join(&self.body.right_brace.span)
             .unwrap()
     }
 }
@@ -285,7 +293,7 @@ impl SourceElement for Parameter {
     fn span(&self) -> Span {
         self.mutable_keyword
             .as_ref()
-            .map_or_else(|| self.identifier.span(), |keyword| keyword.span())
+            .map_or_else(|| &self.identifier.span, |keyword| &keyword.span)
             .join(&self.type_annotation.span())
             .unwrap()
     }
@@ -301,18 +309,16 @@ impl SourceElement for Parameter {
 /// ```
 pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 
-/// Represents a syntax tree node for a function.
+/// Represents a syntax tree node for a function signature.
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// Function:
-///     AccessModifier 'function' Identifier '(' ParameterList? ')'
-///     TypeAnnotation BlockWithoutLabel
+/// FunctionSignature:
+///     AccessModifier 'function' Identifier '(' ParameterList? ')' TypeAnnotation
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
-pub struct Function {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
+pub struct FunctionSignature {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
     #[get = "pub"]
@@ -327,13 +333,40 @@ pub struct Function {
     pub(super) right_paren: Punctuation,
     #[get = "pub"]
     pub(super) type_annotation: TypeAnnotation,
+}
+
+impl SourceElement for FunctionSignature {
+    fn span(&self) -> Span {
+        self.access_modifier
+            .span()
+            .join(&self.type_annotation.span())
+            .unwrap()
+    }
+}
+
+/// Represents a syntax tree node for a function.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// Function:
+///     FunctionSignature BlockWithoutLabel
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
+#[allow(missing_docs)]
+pub struct Function {
+    #[get = "pub"]
+    pub(super) signature: FunctionSignature,
     #[get = "pub"]
     pub(super) block_without_label: BlockWithoutLabel,
 }
 
+impl Function {}
+
 impl SourceElement for Function {
     fn span(&self) -> Span {
-        self.access_modifier
+        self.signature
+            .access_modifier
             .span()
             .join(&self.block_without_label.span())
             .unwrap()
@@ -365,7 +398,7 @@ impl SourceElement for Module {
     fn span(&self) -> Span {
         self.access_modifier
             .span()
-            .join(self.semicolon.span())
+            .join(&self.semicolon.span)
             .unwrap()
     }
 }
@@ -414,14 +447,14 @@ impl<'a> Parser<'a> {
         match self.peek_significant_token() {
             // Handles struct item
             Some(Token::Keyword(struct_keyword))
-                if struct_keyword.keyword() == KeywordKind::Struct =>
+                if struct_keyword.keyword == KeywordKind::Struct =>
             {
                 // eat struct keyword
                 self.next_token();
                 self.handle_struct(access_modifier, struct_keyword.clone())
             }
             // Handles enum
-            Some(Token::Keyword(enum_keyword)) if enum_keyword.keyword() == KeywordKind::Enum => {
+            Some(Token::Keyword(enum_keyword)) if enum_keyword.keyword == KeywordKind::Enum => {
                 // eat token
                 self.next_token();
 
@@ -432,19 +465,23 @@ impl<'a> Parser<'a> {
 
                 Some(
                     Enum {
-                        access_modifier,
-                        enum_keyword: enum_keyword.clone(),
-                        identifier: identifier.clone(),
-                        left_brace: left_brace.clone(),
-                        variants,
-                        right_brace,
+                        signature: EnumSignature {
+                            access_modifier,
+                            enum_keyword: enum_keyword.clone(),
+                            identifier: identifier.clone(),
+                        },
+                        body: EnumBody {
+                            left_brace: left_brace.clone(),
+                            variants,
+                            right_brace,
+                        },
                     }
                     .into(),
                 )
             }
             // Handles module
             Some(Token::Keyword(module_keyword))
-                if module_keyword.keyword() == KeywordKind::Module =>
+                if module_keyword.keyword == KeywordKind::Module =>
             {
                 // eat token
                 self.next_token();
@@ -463,24 +500,18 @@ impl<'a> Parser<'a> {
                 )
             }
             // Handles type alias
-            Some(Token::Keyword(type_keyword)) if type_keyword.keyword() == KeywordKind::Type => {
+            Some(Token::Keyword(type_keyword)) if type_keyword.keyword == KeywordKind::Type => {
                 // eat token
                 self.next_token();
 
-                let type_without_access_modifier =
-                    self.parse_type_without_access_modifier(type_keyword.clone())?;
-
                 Some(
-                    TypeAlias {
-                        access_modifier,
-                        type_without_access_modifier,
-                    }
-                    .into(),
+                    self.parse_type_alias(access_modifier, type_keyword.clone())?
+                        .into(),
                 )
             }
             // Handles function
             Some(Token::Keyword(function_keyword))
-                if function_keyword.keyword() == KeywordKind::Function =>
+                if function_keyword.keyword == KeywordKind::Function =>
             {
                 // eat function keyword
                 self.next_token();
@@ -491,7 +522,7 @@ impl<'a> Parser<'a> {
                 let (parameters, right_paren) = self.parse_enclosed_list(')', ',', |parse| {
                     let mutable_keyword = match parse.peek_significant_token() {
                         Some(Token::Keyword(mutable_keyword))
-                            if mutable_keyword.keyword() == KeywordKind::Mutable =>
+                            if mutable_keyword.keyword == KeywordKind::Mutable =>
                         {
                             // eat mutable keyword
                             parse.next_token();
@@ -515,13 +546,15 @@ impl<'a> Parser<'a> {
 
                 Some(
                     Function {
-                        access_modifier,
-                        function_keyword: function_keyword.clone(),
-                        identifier,
-                        left_paren,
-                        parameters,
-                        right_paren,
-                        type_annotation,
+                        signature: FunctionSignature {
+                            access_modifier,
+                            function_keyword: function_keyword.clone(),
+                            identifier,
+                            left_paren,
+                            parameters,
+                            right_paren,
+                            type_annotation,
+                        },
                         block_without_label,
                     }
                     .into(),
@@ -542,16 +575,18 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type_without_access_modifier(
+    fn parse_type_alias(
         &mut self,
+        access_modifier: AccessModifier,
         type_keyword: Keyword,
-    ) -> Option<TypeAliasWithoutAccessModifier> {
+    ) -> Option<TypeAlias> {
         let identifier = self.expect_identifier()?;
         let equals = self.expect_punctuation('=')?;
         let type_specifier = self.parse_type_specifier()?;
         let semicolon = self.expect_punctuation(';')?;
 
-        Some(TypeAliasWithoutAccessModifier {
+        Some(TypeAlias {
+            access_modifier,
             type_keyword,
             identifier: identifier.clone(),
             equals: equals.clone(),
@@ -567,95 +602,67 @@ impl<'a> Parser<'a> {
     ) -> Option<Item> {
         let identifier = self.expect_identifier()?;
         let left_brace = self.expect_punctuation('{')?;
-        let mut member_groups = Vec::new();
+        let mut members = Vec::new();
         let right_brace = loop {
             match self.next_significant_token() {
-                Some(Token::Punctuation(right_brace)) if right_brace.punctuation() == '}' => {
-                    // eat right brace
-                    self.next_token();
-
+                Some(Token::Punctuation(right_brace)) if right_brace.punctuation == '}' => {
                     break right_brace;
                 }
                 Some(Token::Keyword(access_modifier))
-                    if access_modifier.keyword() == KeywordKind::Public
-                        || access_modifier.keyword() == KeywordKind::Private
-                        || access_modifier.keyword() == KeywordKind::Internal =>
+                    if access_modifier.keyword == KeywordKind::Public
+                        || access_modifier.keyword == KeywordKind::Private
+                        || access_modifier.keyword == KeywordKind::Internal =>
                 {
                     // parse access modifier
-                    let access_modifier = match access_modifier.keyword() {
+                    let access_modifier = match access_modifier.keyword {
                         KeywordKind::Public => AccessModifier::Public(access_modifier.clone()),
                         KeywordKind::Private => AccessModifier::Private(access_modifier.clone()),
                         KeywordKind::Internal => AccessModifier::Internal(access_modifier.clone()),
                         _ => unreachable!(),
                     };
 
-                    // expect colon
-                    let colon = self.expect_punctuation(':')?;
+                    match self.next_significant_token() {
+                        Some(Token::Keyword(let_keyword))
+                            if let_keyword.keyword == KeywordKind::Let =>
+                        {
+                            let identifier = self.expect_identifier()?;
+                            let type_annotation = self.parse_type_annotation()?;
+                            let semicolon = self.expect_punctuation(';')?;
 
-                    let mut members = Vec::new();
-
-                    loop {
-                        match self.peek_significant_token() {
-                            Some(Token::Punctuation(punctuation))
-                                if punctuation.punctuation() == '}' =>
-                            {
-                                break;
-                            }
-                            Some(Token::Keyword(access_mod_keyword))
-                                if access_mod_keyword.keyword() == KeywordKind::Public
-                                    || access_mod_keyword.keyword() == KeywordKind::Private
-                                    || access_mod_keyword.keyword() == KeywordKind::Internal =>
-                            {
-                                break;
-                            }
-                            Some(Token::Keyword(let_keyword))
-                                if let_keyword.keyword() == KeywordKind::Let =>
-                            {
-                                // eat let keyword
-                                self.next_token();
-
-                                let identifier = self.expect_identifier()?;
-                                let type_annotation = self.parse_type_annotation()?;
-                                let semicolon = self.expect_punctuation(';')?;
-
-                                members.push(
-                                    Field {
-                                        let_keyword: let_keyword.clone(),
-                                        identifier: identifier.clone(),
-                                        type_annotation,
-                                        semicolon: semicolon.clone(),
-                                    }
+                            members.push(
+                                Field {
+                                    access_modifier,
+                                    let_keyword: let_keyword.clone(),
+                                    identifier: identifier.clone(),
+                                    type_annotation,
+                                    semicolon: semicolon.clone(),
+                                }
+                                .into(),
+                            );
+                        }
+                        Some(Token::Keyword(type_keyword))
+                            if type_keyword.keyword == KeywordKind::Type =>
+                        {
+                            members.push(
+                                self.parse_type_alias(access_modifier, type_keyword.clone())?
                                     .into(),
-                                );
-                            }
-                            Some(Token::Keyword(type_keyword))
-                                if type_keyword.keyword() == KeywordKind::Type =>
-                            {
-                                // eat type keyword
-                                self.next_token();
-
-                                members.push(
-                                    self.parse_type_without_access_modifier(type_keyword.clone())?
-                                        .into(),
-                                );
-                            }
-                            found => {
-                                self.report_error(
-                                    MemberExpected {
-                                        found: found.cloned(),
-                                    }
-                                    .into(),
-                                );
-                                break;
-                            }
+                            );
+                        }
+                        found => {
+                            self.report_error(
+                                MemberExpected {
+                                    found: found.cloned(),
+                                }
+                                .into(),
+                            );
+                            self.forward_until(|token| {
+                                matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
+                                || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
+                                    || kw.keyword == KeywordKind::Private
+                                    || kw.keyword == KeywordKind::Internal)
+                            });
                         }
                     }
-
-                    member_groups.push(MemberGroup {
-                        access_modifier,
-                        colon: colon.clone(),
-                        members,
-                    });
                 }
                 found => {
                     self.report_error(
@@ -664,18 +671,28 @@ impl<'a> Parser<'a> {
                         }
                         .into(),
                     );
+                    self.forward_until(|token| {
+                        matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
+                        || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
+                            || kw.keyword == KeywordKind::Private
+                            || kw.keyword == KeywordKind::Internal)
+                    });
                 }
             }
         };
 
         Some(
             Struct {
-                access_modifier,
-                struct_keyword,
-                identifier: identifier.clone(),
-                left_brace: left_brace.clone(),
-                member_groups,
-                right_brace: right_brace.clone(),
+                signature: StructSignature {
+                    access_modifier,
+                    struct_keyword,
+                    identifier: identifier.clone(),
+                },
+                body: StructBody {
+                    left_brace: left_brace.clone(),
+                    members,
+                    right_brace: right_brace.clone(),
+                },
             }
             .into(),
         )
@@ -685,17 +702,17 @@ impl<'a> Parser<'a> {
     pub fn parse_access_modifier(&mut self) -> Option<AccessModifier> {
         match self.next_significant_token() {
             Some(Token::Keyword(public_keyword))
-                if public_keyword.keyword() == KeywordKind::Public =>
+                if public_keyword.keyword == KeywordKind::Public =>
             {
                 Some(AccessModifier::Public(public_keyword.clone()))
             }
             Some(Token::Keyword(private_keyword))
-                if private_keyword.keyword() == KeywordKind::Private =>
+                if private_keyword.keyword == KeywordKind::Private =>
             {
                 Some(AccessModifier::Private(private_keyword.clone()))
             }
             Some(Token::Keyword(internal_keyword))
-                if internal_keyword.keyword() == KeywordKind::Internal =>
+                if internal_keyword.keyword == KeywordKind::Internal =>
             {
                 Some(AccessModifier::Internal(internal_keyword.clone()))
             }

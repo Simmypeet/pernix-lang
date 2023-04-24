@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use derive_getters::Dissolve;
 use derive_more::{Deref, From};
 use getset::Getters;
 use pernixc_common::{
@@ -68,14 +69,14 @@ impl ParsingError {
             Self::SyntacticError(error) => error.print(),
             Self::DuplicateModuleDeclaration(error) => error.print(),
             Self::LoadError(error) => match error {
-                LoadError::IoLoadError(io_error) => match io_error.error().kind() {
+                LoadError::IoLoadError(io_error) => match io_error.error.kind() {
                     std::io::ErrorKind::NotFound => {
                         // get the file name
                         pernixc_common::printing::log(
                             LogSeverity::Error,
                             format!(
                                 "the source file `{}` does not exist",
-                                io_error.path().display()
+                                io_error.path.display()
                             )
                             .as_str(),
                         );
@@ -85,7 +86,7 @@ impl ParsingError {
                             LogSeverity::Error,
                             format!(
                                 "the source file `{}` cannot be accessed",
-                                io_error.path().display()
+                                io_error.path.display()
                             )
                             .as_str(),
                         );
@@ -95,7 +96,7 @@ impl ParsingError {
                             LogSeverity::Error,
                             format!(
                                 "an error occurred while loading the source file `{}`",
-                                io_error.path().display()
+                                io_error.path.display()
                             )
                             .as_str(),
                         );
@@ -108,7 +109,7 @@ impl ParsingError {
 }
 
 /// Is a structure containing the result of parsing the whole source file.
-#[derive(Debug, Getters)]
+#[derive(Debug, Getters, Dissolve)]
 pub struct FileParsing {
     /// Gets the source file that was parsed.
     #[get = "pub"]
@@ -122,14 +123,6 @@ pub struct FileParsing {
     /// has an implicit `public` access modifier.
     #[get = "pub"]
     access_modifier: Option<AccessModifier>,
-}
-
-impl FileParsing {
-    /// Destructs this [`FileParsing`] into its components.
-    #[must_use]
-    pub fn destruct(self) -> (Arc<SourceFile>, File, Option<AccessModifier>) {
-        (self.source_file, self.syntax_tree, self.access_modifier)
-    }
 }
 
 /// The error caused by passing a non-root source file to the [`parse_files`] function.
@@ -169,14 +162,14 @@ fn compile_syntax_tree(
         // check if the module declaration symbol is duplicated.
         if submodules
             .insert(
-                module_declaration.identifier().span().str(),
+                module_declaration.identifier().span.str(),
                 module_declaration.access_modifier().clone(),
             )
             .is_some()
         {
             errors.write().unwrap().push(
                 DuplicateModuleDeclaration {
-                    span: module_declaration.identifier().span().clone(),
+                    span: module_declaration.identifier().span.clone(),
                 }
                 .into(),
             );
@@ -232,18 +225,12 @@ fn compile_syntax_tree(
 /// hierarchy of the source file. The source file with less depth is placed before the source file
 /// with more depth in the list. However, the sorting between source files with the same depth is
 /// undefined.
-#[derive(Debug, Getters, Deref)]
+#[derive(Debug, Getters, Deref, Dissolve)]
 pub struct TargetParsing {
     /// Gets the list of [`FileParsing`] that were parsed from the target.
     #[get = "pub"]
     #[deref]
     file_parsings: Vec<FileParsing>,
-}
-
-impl TargetParsing {
-    /// Destructs this [`TargetParsing`] into its components.
-    #[must_use]
-    pub fn destruct(self) -> Vec<FileParsing> { self.file_parsings }
 }
 
 /// Parses source files of the target from the root source file into a list of [`FileParsing`].
