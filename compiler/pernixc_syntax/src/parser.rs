@@ -99,16 +99,13 @@ impl<'a> Parser<'a> {
         match token {
             Some(Token::Identifier(identifier)) => Some(identifier),
             Some(token) => {
-                self.report_error(
-                    IdentifierExpected {
-                        found: Some(token.clone()),
-                    }
-                    .into(),
-                );
+                self.report_error(IdentifierExpected {
+                    found: Some(token.clone()),
+                });
                 None
             }
             None => {
-                self.report_error(IdentifierExpected { found: None }.into());
+                self.report_error(IdentifierExpected { found: None });
                 None
             }
         }
@@ -127,13 +124,10 @@ impl<'a> Parser<'a> {
                 Some(punctuation)
             }
             Some(token) => {
-                self.report_error(
-                    PunctuationExpected {
-                        expected,
-                        found: Some(token.clone()),
-                    }
-                    .into(),
-                );
+                self.report_error(PunctuationExpected {
+                    expected,
+                    found: Some(token.clone()),
+                });
                 None
             }
             None => {
@@ -149,9 +143,9 @@ impl<'a> Parser<'a> {
     /// Stores the given error into the error list of the parser.
     ///
     /// The error is discarded if the parser is not configured to produce errors.
-    pub fn report_error(&mut self, error: SyntacticError) {
+    pub fn report_error(&mut self, error: impl Into<SyntacticError>) {
         if self.produce_errors {
-            self.errors.push(error);
+            self.errors.push(error.into());
         }
     }
 

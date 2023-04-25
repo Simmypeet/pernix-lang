@@ -82,7 +82,6 @@ pub struct TypeVariableID(usize);
 
 /// Represents a type that is used in the type inference algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
 #[non_exhaustive]
 pub enum MonoType {
     TypeVariable(TypeVariableID),
@@ -353,7 +352,7 @@ impl InferenceContext {
 
 /// Represents an error that can occur during unification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum UnificationError {
     #[error("Attempted to unify two concrete types that are not the same.")]
     TypeMismatch { left: Type, right: Type },

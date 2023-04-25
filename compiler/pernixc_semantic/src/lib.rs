@@ -13,9 +13,10 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn, missing_docs)]
 
 pub mod cfg;
-pub mod hir;
 pub mod infer;
 pub mod symbol;
+
+pub mod hir;
 
 /// Is a structure used in [`SemanticResult`] [`Ok`] variant in order to return a value and a list
 /// of non-fatal errors.

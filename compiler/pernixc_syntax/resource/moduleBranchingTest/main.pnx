@@ -2,9 +2,8 @@ public module sub;
 
 public struct Test 
 {
-public:
-    let a: int32;
-    let b: int32;
+    public let a: int32;
+    public let b: int32;
 }
 
 public function main(): int32

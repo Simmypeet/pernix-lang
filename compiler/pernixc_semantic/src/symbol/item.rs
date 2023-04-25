@@ -90,7 +90,7 @@ impl UniqueIdentifier for TypeAliasID {
 /// Is an enumeration of all the identifiers of the symbol that can be used as a type in
 /// the program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
-#[allow(missing_docs)]
+
 pub enum TypedID {
     Struct(StructID),
     Enum(EnumID),
@@ -108,7 +108,7 @@ impl From<TypedID> for ID {
 /// Is an enumeration of identifier types of the symbols that introduce a new scope to the
 /// namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum ScopedID {
     Struct(StructID),
     Enum(EnumID),
@@ -127,7 +127,7 @@ impl From<ScopedID> for ID {
 
 /// Is an enumeration of all the identifiers that can be accessed in the global scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum ID {
     Struct(StructID),
     Enum(EnumID),
@@ -535,7 +535,7 @@ pub type TypeAlias = SymbolWithData<TypeAliasData>;
 
 /// Is an enumeration of all symbols that can be accessed in the global scope.
 #[derive(Debug, Clone, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum Item {
     Module(Module),
     Struct(Struct),
@@ -792,21 +792,7 @@ impl Table {
         }
     }
 
-    /// Analyzes the given syntax trees of the given target and returns the symbol table containing
-    /// all the symbols and the errors that occurred during the analysis.
-    ///
-    /// # Error Handling
-    /// When encountering an error, the analysis will not halt completely, but instead continue to
-    /// analyze the rest of the code while producing the suboptimal symbol table. These are the
-    /// behavior of the errors:
-    ///
-    /// - Symbol Redefinition: One of the definitions will be used in the symbol table, the other
-    ///   will be discarded and an error will be produced.
-    /// - Symbol Not Found: If the symbol is treated as a type, the type will be defaulted to
-    ///   `void`.
-    /// - Symbol Not Accessible: The symbol will be treated as if it was accessible and an error
-    ///   will be produced (non-fatal error).
-    #[must_use]
+    
     pub fn analyze(target: TargetParsing) -> (Self, Vec<SymbolError>) {
         let mut table = Self::new();
         let mut errors = Vec::new();

@@ -143,7 +143,7 @@ impl SourceElement for QualifiedIdentifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum PrimitiveTypeSpecifier {
     Bool(Keyword),
     Void(Keyword),
@@ -190,7 +190,7 @@ impl SourceElement for PrimitiveTypeSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum TypeSpecifier {
     PrimitiveTypeSpecifier(PrimitiveTypeSpecifier),
     QualifiedIdentifier(QualifiedIdentifier),
@@ -214,7 +214,7 @@ impl SourceElement for TypeSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Label {
     #[get = "pub"]
     pub(crate) single_quote: Punctuation,
@@ -240,7 +240,7 @@ impl SourceElement for Label {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-#[allow(missing_docs)]
+
 pub struct TypeAnnotation {
     #[get = "pub"]
     pub(crate) colon: Punctuation,
@@ -267,13 +267,10 @@ impl<'a> Parser<'a> {
                         second_colon
                     }
                     found => {
-                        self.report_error(
-                            PunctuationExpected {
-                                expected: ':',
-                                found,
-                            }
-                            .into(),
-                        );
+                        self.report_error(PunctuationExpected {
+                            expected: ':',
+                            found,
+                        });
                         return None;
                     }
                 };
@@ -368,12 +365,9 @@ impl<'a> Parser<'a> {
                     // eat the token, make progress
                     self.next_token();
 
-                    self.report_error(
-                        TypeSpecifierExpected {
-                            found: Some(token.clone()),
-                        }
-                        .into(),
-                    );
+                    self.report_error(TypeSpecifierExpected {
+                        found: Some(token.clone()),
+                    });
                     None
                 }
             }
@@ -381,7 +375,7 @@ impl<'a> Parser<'a> {
             // make progress
             self.next_token();
 
-            self.report_error(TypeSpecifierExpected { found: None }.into());
+            self.report_error(TypeSpecifierExpected { found: None });
             None
         }
     }

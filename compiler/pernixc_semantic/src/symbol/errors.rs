@@ -6,13 +6,13 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_common::{printing::LogSeverity, source_file::Span};
 
-use super::item::{
-    Accessibility, EnumVariantID, FieldID, FunctionOverloadSetID, OverloadID, StructID, Table, ID,
+use super::{
+    table::Table, Accessibility, EnumVariantID, FieldID, GlobalID, OverloadID, ParameterID, ID,
 };
 
 /// Is an error that can occur during the symbol resolution/construction phase of the compiler.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum SymbolError {
     SymbolNotFound(SymbolNotFound),
     SymbolNotAccessible(SymbolNotAccessible),
@@ -34,7 +34,7 @@ pub struct TypeExpected {
     pub(super) span: Span,
 
     /// The ID of the found symbol that cannot be used as a type.
-    pub(super) found: ID,
+    pub(super) found: GlobalID,
 }
 
 impl TypeExpected {
@@ -44,7 +44,7 @@ impl TypeExpected {
             LogSeverity::Error,
             format!(
                 "the symbol `{}` is not a type",
-                table[self.found].qualified_name().join("::")
+                table.get_full_name_of(self.found)
             )
             .as_str(),
         );
@@ -64,7 +64,7 @@ pub struct SymbolNotFound {
     ///
     /// If this is `None`, then the resolution was attempted in the global scope.
     #[get = "pub"]
-    pub(super) in_scope_id: Option<ID>,
+    pub(super) in_scope_id: Option<GlobalID>,
 }
 
 impl SymbolNotFound {
@@ -79,14 +79,12 @@ impl SymbolNotFound {
                 );
             },
             |symbol_id| {
-                let parent_symbol = &table[symbol_id];
-
                 pernixc_common::printing::log(
                     LogSeverity::Error,
                     format!(
                         "`{symbol_name}` was not found in `{parent_symbol}`",
                         symbol_name = symbol_name,
-                        parent_symbol = parent_symbol.qualified_name().join("::")
+                        parent_symbol = table.get_full_name_of(symbol_id)
                     )
                     .as_str(),
                 );
@@ -109,21 +107,20 @@ pub struct SymbolNotAccessible {
     ///
     /// If this is `None`, then the resolution was attempted in the global scope.
     #[get = "pub"]
-    pub(super) symbol_id: ID,
+    pub(super) global_id: GlobalID,
 }
 
 impl SymbolNotAccessible {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
         let symbol_name = self.span.str();
-        let symbol = &table[self.symbol_id];
 
         pernixc_common::printing::log(
             LogSeverity::Error,
             format!(
                 "`{symbol_name}` is not accessible from `{symbol}`",
                 symbol_name = symbol_name,
-                symbol = symbol.qualified_name().join("::"),
+                symbol = table.get_full_name_of(self.global_id)
             )
             .as_str(),
         );
@@ -169,12 +166,9 @@ pub struct ParameterRedefinition {
     #[get = "pub"]
     pub(super) span: Span,
 
-    pub(super) function_overload_set_id: FunctionOverloadSetID,
-    pub(super) overload_id: OverloadID,
-
-    /// The index of the parameter that was redefined.
+    /// The ID of the parameter that was redefined.
     #[get = "pub"]
-    pub(super) available_parameter_index: usize,
+    pub(super) available_parameter_id: ParameterID,
 }
 
 impl ParameterRedefinition {
@@ -197,10 +191,6 @@ pub struct OverloadRedefinition {
     #[get = "pub"]
     pub(super) span: Span,
 
-    /// The ID of the function overload set that redifinition occurred in.
-    #[get = "pub"]
-    pub(super) function_overload_set_id: FunctionOverloadSetID,
-
     /// The ID of the overload that was redefined.
     #[get = "pub"]
     pub(super) available_overload_id: OverloadID,
@@ -213,18 +203,16 @@ impl OverloadRedefinition {
             LogSeverity::Error,
             format!(
                 "function overload `{}` has a redefinition",
-                table[self.function_overload_set_id]
-                    .qualified_name()
-                    .join("::")
+                table.get_full_name_of(table[self.available_overload_id].parent_overload_set_id)
             )
             .as_str(),
         );
 
         pernixc_common::printing::print_source_code(&self.span, None);
         pernixc_common::printing::print_source_code(
-            &table[self.function_overload_set_id].overloads_by_id()[&self.available_overload_id]
-                .signature_syntax_tree()
-                .identifier()
+            &table[self.available_overload_id]
+                .syntax_tree()
+                .identifier
                 .span,
             Some("previous definition here"),
         );
@@ -246,7 +234,7 @@ pub struct StructMemberMoreAccessibleThanStruct {
 
     /// The access modifier of the struct member.
     #[get = "pub"]
-    pub(super) member_group_accessibility: Accessibility,
+    pub(super) member_accessibility: Accessibility,
 }
 
 impl StructMemberMoreAccessibleThanStruct {
@@ -269,13 +257,9 @@ pub struct FieldRedefinition {
     #[get = "pub"]
     pub(super) span: Span,
 
-    /// The ID of the struct that the field was redefined in.
+    /// The ID of the field that was redefined.
     #[get = "pub"]
-    pub(super) struct_id: StructID,
-
-    /// The index of the field that was redefined.
-    #[get = "pub"]
-    pub(super) available_field_index: usize,
+    pub(super) available_field_id: FieldID,
 }
 
 impl FieldRedefinition {
@@ -300,7 +284,7 @@ pub struct EnumVariantRedefinition {
 
     /// The ID of the enum variant that was redefined.
     #[get = "pub"]
-    pub(super) available_symbol_id: EnumVariantID,
+    pub(super) available_enum_variant_id: EnumVariantID,
 }
 
 impl EnumVariantRedefinition {
@@ -325,25 +309,32 @@ pub struct SymbolRedifinition {
 
     /// The symbol that was redefined.
     #[get = "pub"]
-    pub(super) available_symbol_id: ID,
+    pub(super) available_global_id: GlobalID,
 }
 
 impl SymbolRedifinition {
     /// Prints the error message to the console.
     pub fn print(&self, table: &Table) {
-        let symbol_name = self.span.str();
-        let available_symbol = &table[self.available_symbol_id];
-
-        pernixc_common::printing::log(
-            LogSeverity::Error,
-            format!(
-                "`{symbol_name}` was redefined, but it is already defined in
-        `{available_symbol}`",
-                symbol_name = symbol_name,
-                available_symbol = available_symbol.qualified_name().join("::"),
-            )
-            .as_str(),
-        );
+        table[self.available_global_id]
+            .parent_scoped_id()
+            .map_or_else(
+                || {
+                    pernixc_common::printing::log(
+                        LogSeverity::Error,
+                        &format!("symbol `{}` was already defined", self.span.str(),),
+                    );
+                },
+                |parent_id| {
+                    pernixc_common::printing::log(
+                        LogSeverity::Error,
+                        &format!(
+                            "symbol `{}` was already defined in `{}`",
+                            self.span.str(),
+                            table.get_full_name_of(parent_id)
+                        ),
+                    );
+                },
+            );
 
         pernixc_common::printing::print_source_code(&self.span, Some("redefinition"));
         println!();
@@ -360,18 +351,10 @@ pub struct CircularDependency {
 
 impl CircularDependency {
     /// Prints the error message to the console.
-    pub fn print(&self, table: &Table) {
+    pub fn print(&self) {
         pernixc_common::printing::log(
             LogSeverity::Error,
-            format!(
-                "found circular dependency between these symbols: {}",
-                self.symbol_ids
-                    .iter()
-                    .map(|id| table[*id].qualified_name().join("::"))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            )
-            .as_str(),
+            "found circular dependency between these symbols.",
         );
     }
 }
@@ -389,7 +372,7 @@ impl SymbolError {
             Self::FieldRedefinition(e) => e.print(),
             Self::EnumVariantRedefinition(e) => e.print(),
             Self::SymbolRedifinition(e) => e.print(table),
-            Self::CircularDependency(e) => e.print(table),
+            Self::CircularDependency(e) => e.print(),
             Self::OverloadRedefinition(e) => e.print(table),
         }
     }

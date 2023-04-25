@@ -9,7 +9,7 @@ use std::{
 
 use getset::{CopyGetters, Getters};
 
-use crate::symbol::{SymbolData, SymbolWithData, Uid, UniqueIdentifier};
+use crate::symbol::{Data, Uid, UniqueIdentifier, WithData};
 
 /// Is an unique identifier used to identify a basic block in the [`ControlFlowGraph`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -75,7 +75,7 @@ pub trait InstructionBackend {
 /// Represents a unit of instructions that are stored in the [`BasicBlock`] for a sequential
 /// execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
+
 pub enum Instruction<T: InstructionBackend> {
     Jump(T::Jump),
     Return(T::Return),
@@ -102,12 +102,12 @@ pub struct BasicBlockData<T: InstructionBackend> {
     predecessors: HashSet<BasicBlockID>,
 }
 
-impl<T: InstructionBackend> SymbolData for BasicBlockData<T> {
+impl<T: InstructionBackend> Data for BasicBlockData<T> {
     type ID = BasicBlockID;
 }
 
 /// A [`BasicBlockData`] with an unique identifier.
-pub type BasicBlock<T> = SymbolWithData<BasicBlockData<T>>;
+pub type BasicBlock<T> = WithData<BasicBlockData<T>>;
 
 /// Represents a control flow graph of a function.
 ///
@@ -132,7 +132,7 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
     /// Creates a new [`ControlFlowGraph`] with a single basic block.
     #[must_use]
     pub fn new() -> Self {
-        let symbol = SymbolWithData::new(BasicBlockData {
+        let symbol = WithData::new(BasicBlockData {
             instructions: Vec::new(),
             successors: HashSet::new(),
             predecessors: HashSet::new(),
@@ -146,7 +146,7 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
 
     /// Adds a new basic block to the [`ControlFlowGraph`].
     pub fn add_basic_block(&mut self, basic_block: BasicBlockData<T>) -> BasicBlockID {
-        let symbol = SymbolWithData::new(basic_block);
+        let symbol = WithData::new(basic_block);
         let id = symbol.id();
         self.basic_blocks_by_id.insert(id, symbol);
         id

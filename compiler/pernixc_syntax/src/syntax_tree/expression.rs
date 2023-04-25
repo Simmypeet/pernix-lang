@@ -27,7 +27,7 @@ use crate::{
 ///     ;
 ///  ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum Expression {
     Functional(Functional),
     Imperative(Imperative),
@@ -66,7 +66,7 @@ impl SourceElement for Expression {
 ///     | Cast
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum Functional {
     NumericLiteral(NumericLiteral),
     BooleanLiteral(BooleanLiteral),
@@ -114,7 +114,7 @@ impl SourceElement for Functional {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Cast {
     #[get = "pub"]
     pub(super) operand: Box<Expression>,
@@ -143,7 +143,7 @@ impl SourceElement for Cast {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum BooleanLiteral {
     True(Keyword),
     False(Keyword),
@@ -184,7 +184,7 @@ impl SourceElement for BooleanLiteral {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum BinaryOperator {
     Add(Punctuation),
     Subtract(Punctuation),
@@ -281,7 +281,7 @@ impl SourceElement for BinaryOperator {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Binary {
     #[get = "pub"]
     pub(super) left_operand: Box<Expression>,
@@ -310,7 +310,7 @@ impl SourceElement for Binary {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum PrefixOperator {
     LogicalNot(Punctuation),
     Negate(Punctuation),
@@ -333,7 +333,7 @@ impl SourceElement for PrefixOperator {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Prefix {
     #[get = "pub"]
     pub(super) prefix_operator: PrefixOperator,
@@ -387,7 +387,7 @@ pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct FunctionCall {
     #[get = "pub"]
     pub(super) qualified_identifier: QualifiedIdentifier,
@@ -417,7 +417,7 @@ impl SourceElement for FunctionCall {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Parenthesized {
     #[get = "pub"]
     pub(super) left_paren: Punctuation,
@@ -440,7 +440,7 @@ impl SourceElement for Parenthesized {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct FieldInitializer {
     #[get = "pub"]
     pub(super) identifier: Identifier,
@@ -478,7 +478,7 @@ pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct StructLiteral {
     #[get = "pub"]
     pub(super) qualified_identifier: QualifiedIdentifier,
@@ -508,7 +508,7 @@ impl SourceElement for StructLiteral {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct MemberAccess {
     #[get = "pub"]
     pub(super) operand: Box<Expression>,
@@ -535,7 +535,7 @@ impl SourceElement for MemberAccess {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum Imperative {
     Block(Block),
     IfElse(IfElse),
@@ -561,7 +561,7 @@ impl SourceElement for Imperative {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct LabelSpecifier {
     #[get = "pub"]
     pub(super) label: Label,
@@ -582,7 +582,7 @@ impl SourceElement for LabelSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct BlockWithoutLabel {
     #[get = "pub"]
     pub(super) left_brace: Punctuation,
@@ -605,7 +605,7 @@ impl SourceElement for BlockWithoutLabel {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Block {
     #[get = "pub"]
     pub(super) label_specifier: Option<LabelSpecifier>,
@@ -637,7 +637,7 @@ impl SourceElement for Block {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum BlockOrIfElse {
     Block(Block),
     IfElse(IfElse),
@@ -661,7 +661,7 @@ impl SourceElement for BlockOrIfElse {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Else {
     #[get = "pub"]
     pub(super) else_keyword: Keyword,
@@ -687,7 +687,7 @@ impl SourceElement for Else {
 ///     ;
 /// ```    
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct IfElse {
     #[get = "pub"]
     pub(super) if_keyword: Keyword,
@@ -728,7 +728,7 @@ impl SourceElement for IfElse {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Loop {
     #[get = "pub"]
     pub(super) label_specifier: Option<LabelSpecifier>,
@@ -768,7 +768,7 @@ impl SourceElement for Loop {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Continue {
     #[get = "pub"]
     pub(super) continue_keyword: Keyword,
@@ -795,7 +795,7 @@ impl SourceElement for Continue {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Express {
     #[get = "pub"]
     pub(super) express_keyword: Keyword,
@@ -829,7 +829,7 @@ impl SourceElement for Express {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Break {
     #[get = "pub"]
     pub(super) break_keyword: Keyword,
@@ -863,7 +863,7 @@ impl SourceElement for Break {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Return {
     #[get = "pub"]
     pub(super) return_keyword: Keyword,
@@ -1139,12 +1139,9 @@ impl<'a> Parser<'a> {
                 })))
             }
             token => {
-                self.report_error(
-                    ExpressionExpected {
-                        found: token.cloned(),
-                    }
-                    .into(),
-                );
+                self.report_error(ExpressionExpected {
+                    found: token.cloned(),
+                });
                 None
             }
         }

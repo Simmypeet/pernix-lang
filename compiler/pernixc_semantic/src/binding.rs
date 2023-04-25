@@ -57,7 +57,7 @@ pub trait Binding {
 
 /// Is an enumeration of all possible expression bindings.
 #[derive(Debug, Clone, PartialEq, From)]
-#[allow(missing_docs)]
+
 pub enum Expression {
     NumericLiteral(NumericLiteral),
     BooleanLiteral(BooleanLiteral),
@@ -135,7 +135,7 @@ pub struct StructFieldAddress {
 
 /// Represents an address of a particular l-value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
-#[allow(missing_docs)]
+
 pub enum Address {
     LocalVariableAddress(LocalVariableAddress),
     LocalArgumentAddress(LocalArgumentAddress),
@@ -174,7 +174,7 @@ pub struct LocalArgumentLoad {
 
 /// Is an enumeration of how a named load can be performed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum NamedLoadKind {
     LocalVariableLoad(LocalVariableLoad),
     LocalArgumentLoad(LocalArgumentLoad),
@@ -191,9 +191,7 @@ pub struct NamedLoad {
 }
 
 impl Binding for NamedLoad {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
     fn value_type(&self) -> ValueType {
         match &self.kind {
@@ -224,9 +222,7 @@ impl Binding for NamedLoad {
 }
 
 impl Binding for NumericLiteral {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -258,9 +254,7 @@ pub struct BooleanLiteral {
 }
 
 impl Binding for BooleanLiteral {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -275,7 +269,7 @@ impl Binding for BooleanLiteral {
 /// `LogicalAnd` and `LogicalOr` are not included because they are short-circuiting and are handled
 /// separately. See [`PhiNodeShortCircuit`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
+
 pub enum BinaryOperator {
     Add,
     Subtract,
@@ -362,18 +356,14 @@ pub struct Binary {
 }
 
 impl Binding for Binary {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
-    fn value_type(&self) -> ValueType {
-        self.value_type.clone()
-    }
+    fn value_type(&self) -> ValueType { self.value_type.clone() }
 }
 
 /// Is an enumeration of prefix operators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
+
 pub enum PrefixOperator {
     LogicalNot,
     Negate,
@@ -396,13 +386,9 @@ pub struct Prefix {
 }
 
 impl Binding for Prefix {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
-    fn value_type(&self) -> ValueType {
-        self.value_type.clone()
-    }
+    fn value_type(&self) -> ValueType { self.value_type.clone() }
 }
 
 /// Represents an enumeration literal binding.
@@ -419,9 +405,7 @@ pub struct EnumLiteral {
 }
 
 impl Binding for EnumLiteral {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -448,13 +432,9 @@ pub struct FunctionCall {
 }
 
 impl Binding for FunctionCall {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
-    fn value_type(&self) -> ValueType {
-        self.value_type.clone()
-    }
+    fn value_type(&self) -> ValueType { self.value_type.clone() }
 }
 
 /// Represents a struct literal binding.
@@ -474,9 +454,7 @@ pub struct StructLiteral {
 }
 
 impl Binding for StructLiteral {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -506,9 +484,7 @@ pub struct MemberAccess {
 }
 
 impl Binding for MemberAccess {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
     fn value_type(&self) -> ValueType {
         let struct_expression_value_type = self.struct_expression.value_type();
@@ -547,9 +523,7 @@ pub struct Cast {
 }
 
 impl Binding for Cast {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -574,9 +548,7 @@ pub struct TemporaryLoad {
 }
 
 impl Binding for TemporaryLoad {
-    fn span(&self) -> &SourceSpan {
-        &self.span
-    }
+    fn span(&self) -> &SourceSpan { &self.span }
 
     fn value_type(&self) -> ValueType {
         ValueType {
@@ -588,7 +560,7 @@ impl Binding for TemporaryLoad {
 
 /// Represents the value of a numeric literal.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[allow(missing_docs)]
+
 pub enum NumericLiteralValue {
     Float64(f64),
     Float32(f32),
@@ -682,9 +654,7 @@ pub struct PhiNodeShortCircuit {
 }
 
 impl Binding for PhiNodeShortCircuit {
-    fn span(&self) -> &SourceSpan {
-        &self.binary_short_circuit_expression_span
-    }
+    fn span(&self) -> &SourceSpan { &self.binary_short_circuit_expression_span }
 
     fn value_type(&self) -> ValueType {
         ValueType {

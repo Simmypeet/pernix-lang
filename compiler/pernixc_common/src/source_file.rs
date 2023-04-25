@@ -34,7 +34,7 @@ pub struct SourceFile {
 
 /// Is an error returned by the [`SourceFile::load()`] method.
 #[derive(Debug, EnumAsInner, Error, From)]
-#[allow(missing_docs)]
+
 pub enum LoadError {
     #[error("{0}")]
     IoLoadError(IoLoadError),
@@ -56,7 +56,7 @@ pub struct IoLoadError {
 
 /// Is an error returned by the [`SourceFile::new()`] method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumAsInner, From, Error)]
-#[allow(missing_docs)]
+
 pub enum CreateError {
     #[error("The module hierarchy string was invalid or empty.")]
     InvalidModulehierarchy,

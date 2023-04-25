@@ -24,7 +24,7 @@ use crate::{
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-#[allow(missing_docs)]
+
 pub enum AccessModifier {
     Public(Keyword),
     Private(Keyword),
@@ -50,7 +50,7 @@ impl SourceElement for AccessModifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Field {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -150,7 +150,7 @@ impl SourceElement for StructBody {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-#[allow(missing_docs)]
+
 pub struct Struct {
     #[get = "pub"]
     pub(super) signature: StructSignature,
@@ -204,7 +204,7 @@ impl SourceElement for TypeAlias {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct EnumSignature {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -233,7 +233,7 @@ pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-#[allow(missing_docs)]
+
 pub struct EnumBody {
     #[get = "pub"]
     pub(super) left_brace: Punctuation,
@@ -252,7 +252,7 @@ pub struct EnumBody {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-#[allow(missing_docs)]
+
 pub struct Enum {
     #[get = "pub"]
     pub(super) signature: EnumSignature,
@@ -279,7 +279,7 @@ impl SourceElement for Enum {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Parameter {
     #[get = "pub"]
     pub(super) mutable_keyword: Option<Keyword>,
@@ -353,7 +353,7 @@ impl SourceElement for FunctionSignature {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-#[allow(missing_docs)]
+
 pub struct Function {
     #[get = "pub"]
     pub(super) signature: FunctionSignature,
@@ -382,7 +382,7 @@ impl SourceElement for Function {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Module {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -416,7 +416,7 @@ impl SourceElement for Module {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum Item {
     Struct(Struct),
     Enum(Enum),
@@ -564,12 +564,9 @@ impl<'a> Parser<'a> {
                 // make progress
                 self.next_token();
 
-                self.report_error(
-                    ItemExpected {
-                        found: token.cloned(),
-                    }
-                    .into(),
-                );
+                self.report_error(ItemExpected {
+                    found: token.cloned(),
+                });
                 None
             }
         }
@@ -649,12 +646,9 @@ impl<'a> Parser<'a> {
                             );
                         }
                         found => {
-                            self.report_error(
-                                MemberExpected {
-                                    found: found.cloned(),
-                                }
-                                .into(),
-                            );
+                            self.report_error(MemberExpected {
+                                found: found.cloned(),
+                            });
                             self.forward_until(|token| {
                                 matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
                                 || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
@@ -665,12 +659,9 @@ impl<'a> Parser<'a> {
                     }
                 }
                 found => {
-                    self.report_error(
-                        AccessModifierExpected {
-                            found: found.cloned(),
-                        }
-                        .into(),
-                    );
+                    self.report_error(AccessModifierExpected {
+                        found: found.cloned(),
+                    });
                     self.forward_until(|token| {
                         matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
                         || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
@@ -717,12 +708,9 @@ impl<'a> Parser<'a> {
                 Some(AccessModifier::Internal(internal_keyword.clone()))
             }
             found => {
-                self.report_error(
-                    AccessModifierExpected {
-                        found: found.cloned(),
-                    }
-                    .into(),
-                );
+                self.report_error(AccessModifierExpected {
+                    found: found.cloned(),
+                });
                 None
             }
         }

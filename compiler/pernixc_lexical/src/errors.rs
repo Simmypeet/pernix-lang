@@ -121,7 +121,7 @@ impl ControlCharactersMustBeEscaped {
 /// source code.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered an lexical error while tokenizing the source code.")]
-#[allow(missing_docs)]
+
 pub enum LexicalError {
     InvalidEscapeCharacterSequences(InvalidEscapeCharacterSequences),
     UnterminatedStringLiteral(UnterminatedStringLiteral),

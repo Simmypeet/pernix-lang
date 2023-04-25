@@ -3,7 +3,6 @@
 //! meant to be used by the end-user.
 
 #![deny(
-    missing_docs,
     missing_debug_implementations,
     missing_copy_implementations,
     clippy::all,

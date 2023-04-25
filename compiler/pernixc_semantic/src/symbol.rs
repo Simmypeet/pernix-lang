@@ -1,18 +1,31 @@
 //! Contains the code related to the symbol resolution pass of the compiler.
 
-use std::{collections::HashMap, fmt::Debug, hash::Hash, ops::Index, sync::atomic::AtomicU64};
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    hash::Hash,
+    sync::{atomic::AtomicU64, Arc},
+};
 
-use derive_more::{Deref, DerefMut};
+use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use paste::paste;
-use pernixc_lexical::token::Identifier as IdentifierToken;
-use pernixc_syntax::syntax_tree::item::{
-    EnumSignature as EnumSignatureSyntaxTree, Field as FieldSyntaxTree,
-    StructSignature as StructSignatureSyntaxTree,
+use pernixc_lexical::token::{Identifier as IdentifierToken, Keyword};
+use pernixc_syntax::syntax_tree::{
+    expression::BlockWithoutLabel,
+    item::{
+        AccessModifier, EnumSignature as EnumSignatureSyntaxTree, Field as FieldSyntaxTree,
+        Parameter as ParameterSyntaxTree, StructSignature as StructSignatureSyntaxTree,
+        TypeAlias as TypeAliasSyntaxTree,
+    },
+    TypeAnnotation,
 };
 
+use self::ty::{Type, TypeBinding};
+
 pub mod errors;
+pub mod table;
 pub mod ty;
 
 /// Is a unique identifier used for various purposes in the compiler.
@@ -51,8 +64,7 @@ impl UniqueIdentifier for Uid {
 }
 
 /// Is a trait that all the data of a symbol must implement.
-#[allow(clippy::module_name_repetitions)]
-pub trait SymbolData {
+pub trait Data {
     /// The type of the ID that can be used to identify the symbol.
     type ID: UniqueIdentifier;
 }
@@ -62,7 +74,7 @@ pub trait SymbolData {
     Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut, CopyGetters,
 )]
 #[allow(clippy::module_name_repetitions)]
-pub struct SymbolWithData<T: SymbolData> {
+pub struct WithData<T: Data> {
     #[deref]
     #[deref_mut]
     data: T,
@@ -72,8 +84,8 @@ pub struct SymbolWithData<T: SymbolData> {
     id: T::ID,
 }
 
-impl<T: SymbolData> SymbolWithData<T> {
-    /// Creates a new [`SymbolWithData`] from the given data.
+impl<T: Data> WithData<T> {
+    /// Creates a new [`Data`] from the given data. A new unique ID is generated for the data.
     pub fn new(data: T) -> Self {
         Self {
             data,
@@ -82,108 +94,116 @@ impl<T: SymbolData> SymbolWithData<T> {
     }
 }
 
-/// Is a data structure that allows mapping between name, ID and data.
-#[derive(Debug, Clone)]
-pub struct SymbolMap<T: SymbolData> {
-    /// Maps the ID to the data.
-    values_by_id: HashMap<T::ID, SymbolWithData<T>>,
-
-    /// Maps the name to the ID.
-    ids_by_name: HashMap<String, T::ID>,
-}
-
-impl<T: SymbolData> SymbolMap<T> {
-    /// Creates a new empty [`SymbolMap`].
-    #[must_use]
-    fn new() -> Self {
-        Self {
-            values_by_id: HashMap::new(),
-            ids_by_name: HashMap::new(),
-        }
-    }
-
-    /// Adds a new symbol to the [`SymbolMap`].
-    ///
-    /// # Returns
-    /// - `Ok(id)` returns the ID of the symbol of the added symbol.
-    ///
-    /// # Errors
-    /// - `Err(id)` returns the ID of the symbol that already exists with the same name.
-    fn add(&mut self, name: String, data: T) -> Result<T::ID, T::ID> {
-        if let Some(id) = self.ids_by_name.get(&name).copied() {
-            Err(id)
-        } else {
-            let id = T::ID::fresh();
-            let symbol = SymbolWithData { data, id };
-            self.ids_by_name.insert(name, id);
-            self.values_by_id.insert(id, symbol);
-            Ok(id)
-        }
-    }
-
-    /// Returns the number of symbols in the [`SymbolMap`].
-    #[must_use]
-    pub fn len(&self) -> usize { self.values_by_id.len() }
-
-    /// Returns `true` if the [`SymbolMap`] is empty.
-    #[must_use]
-    pub fn is_empty(&self) -> bool { self.values_by_id.is_empty() }
-
-    /// Returns the ID of the symbol with the given name.
-    #[must_use]
-    pub fn map_name_to_id(&self, name: &str) -> Option<T::ID> {
-        self.ids_by_name.get(name).copied()
-    }
-
-    /// Returns an iterator over the symbols in the [`SymbolMap`].
-    pub fn values(&self) -> impl Iterator<Item = &SymbolWithData<T>> { self.values_by_id.values() }
-}
-
-impl<T: SymbolData> Index<T::ID> for SymbolMap<T> {
-    type Output = SymbolWithData<T>;
-
-    fn index(&self, id: T::ID) -> &Self::Output { &self.values_by_id[&id] }
-}
-
-impl<T: SymbolData> Default for SymbolMap<T> {
-    fn default() -> Self { Self::new() }
-}
-
+/// The accessibility of the symbol. Determines where the symbol can be accessed from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Accessibility {
+    /// The symbol can only be accessed from the same module it is defined in.
     Private,
+
+    /// The symbol can only be accessed from the same target it is defined in.
     Internal,
+
+    /// The symbol can be accessed from anywhere.
     Public,
 }
 
-macro_rules! impl_symbol {
-    (
-        $(#[$outer:meta])*
-        $vis:vis struct $name:ident $($t:tt)*
-    ) => {
-        paste! {
-            $(#[$outer])*
-            $vis struct [< $name Data >] $($t)*
+impl Accessibility {
+    /// Creates a new [`Accessibility`] from the given [`AccessModifier`].
+    #[must_use]
+    pub fn from_syntax_tree(syntax_tree: &AccessModifier) -> Self {
+        match syntax_tree {
+            AccessModifier::Public(..) => Self::Public,
+            AccessModifier::Private(..) => Self::Private,
+            AccessModifier::Internal(..) => Self::Internal,
+        }
+    }
 
+    /// Returns the rank of the accessibility. The higher the rank, the more accessible the symbol
+    /// is.
+    #[must_use]
+    pub fn rank(&self) -> u8 {
+        match self {
+            Self::Private => 0,
+            Self::Internal => 1,
+            Self::Public => 2,
+        }
+    }
+}
+
+macro_rules! implements_id {
+    ($name:ident) => {
+        paste! {
             #[doc = concat!("Is a unique identifier for a [`", stringify!($name), "`].")]
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-            pub struct [< $name ID >](Uid);
+            pub struct [< $name ID >](crate::symbol::Uid);
 
-            impl UniqueIdentifier for [< $name ID >] {
-                fn fresh() -> Self { Self(Uid::fresh()) }
+            impl crate::symbol::UniqueIdentifier for [< $name ID >] {
+                fn fresh() -> Self { Self(crate::symbol::Uid::fresh()) }
             }
+        }
+    };
+    ($name: ident, $doc: literal) => {
+        paste! {
+            #[doc = $doc]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+            pub struct [< $name ID >](crate::symbol::Uid);
 
-            impl SymbolData for [< $name Data >] {
-                type ID = [< $name ID >];
+            impl crate::symbol::UniqueIdentifier for [< $name ID >] {
+                fn fresh() -> Self { Self(crate::symbol::Uid::fresh()) }
             }
-
-            #[doc = concat!("Is a symbol with data of type [`", stringify!([< $name Data >]), "`].")]
-            pub type $name = SymbolWithData<[< $name Data >]>;
         }
     };
 }
 
-impl_symbol! {
+macro_rules! implements_data_with_id {
+    (
+        $(#[$outer:meta])*
+        $vis:vis $ty:ident $name:ident $($t:tt)*
+    ) => {
+        paste! {
+            $(#[$outer])*
+            $vis $ty [< $name Data >] $($t)*
+
+            implements_id!($name);
+
+            impl crate::symbol::Data for [< $name Data >] {
+                type ID = [< $name ID >];
+            }
+
+            #[doc = concat!("Is a symbol with data of type [`", stringify!([< $name Data >]), "`].")]
+            pub type $name = crate::symbol::WithData<[< $name Data >]>;
+        }
+    };
+}
+
+pub(crate) use implements_data_with_id;
+pub(crate) use implements_id;
+
+/// A trait representing the symbol that can be referred in the global scope and has a clear
+/// hierarchy.
+pub trait Global {
+    /// Returns the name of the symbol.
+    fn name(&self) -> &str;
+
+    /// Returns the accessibility of the symbol.
+    fn accessibility(&self) -> Accessibility;
+
+    /// Returns the ID of the symbol.
+    ///
+    /// If the symbol is at the root and has no preceding scope, then it returns `None`.
+    fn parent_scoped_id(&self) -> Option<ScopedID>;
+}
+
+/// A trait representing the symbol that introduces a new scope and can contain child symbols.
+pub trait Scoped: Global {
+    /// Returns the ID of the child symbol contained in this scope from the given name.
+    fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID>;
+}
+
+/// A trait representing the symbol that can be used as a type.
+pub trait Typed: Global {}
+
+implements_data_with_id! {
     /// Contains the data of the module symbol.
     #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
     pub struct Module {
@@ -205,7 +225,21 @@ impl_symbol! {
     }
 }
 
-impl_symbol! {
+impl Global for Module {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { self.parent_module_id.map(ScopedID::Module) }
+}
+
+impl Scoped for Module {
+    fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
+        self.child_ids_by_name.get(name).copied()
+    }
+}
+
+implements_data_with_id! {
     /// Contains the data of the field symbol.
     #[derive(Debug, Clone, PartialEq, Eq,  Hash, Getters, CopyGetters)]
     pub struct Field {
@@ -223,15 +257,19 @@ impl_symbol! {
 
         /// The syntax tree that was used to create the field.
         #[get = "pub"]
-        syntax_tree: FieldSyntaxTree,
+        syntax_tree: Arc<FieldSyntaxTree>,
 
         /// The order in which the field was declared.
         #[get_copy = "pub"]
         declaration_order: usize,
+
+        /// The type of the field.
+        #[get_copy = "pub"]
+        ty: Type,
     }
 }
 
-impl_symbol! {
+implements_data_with_id! {
     /// Contains the data of the struct symbol.
     #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
     pub struct Struct {
@@ -249,7 +287,7 @@ impl_symbol! {
 
         /// The syntax tree that was used to create the struct.
         #[get = "pub"]
-        syntax_tree: StructSignatureSyntaxTree,
+        syntax_tree: Arc<StructSignatureSyntaxTree>,
 
         /// Maps the name of the field to its corresponding ID.
         #[get = "pub"]
@@ -258,10 +296,33 @@ impl_symbol! {
         /// List of the fields in the order in which they were declared.
         #[get = "pub"]
         field_order: Vec<FieldID>,
+
+        /// Maps the name of the type alias defined in this struct to its corresponding ID.
+        #[get = "pub"]
+        type_alias_ids_by_name: HashMap<String, TypeAliasID>,
     }
 }
 
-impl_symbol! {
+impl Typed for Struct {}
+
+impl Scoped for Struct {
+    fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
+        self.type_alias_ids_by_name
+            .get(name)
+            .copied()
+            .map(GlobalID::TypeAlias)
+    }
+}
+
+impl Global for Struct {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
+}
+
+implements_data_with_id! {
     /// Contains the data of the enum symbol.
     #[derive(Debug, Clone, PartialEq, Eq,  Hash, Getters, CopyGetters)]
     pub struct EnumVariant {
@@ -269,9 +330,9 @@ impl_symbol! {
         #[get = "pub"]
         name: String,
 
-        /// The parent ID of the enum variant.
+        /// The ID of the enum that contains the enum variant.
         #[get_copy = "pub"]
-        parent: EnumID,
+        parent_enum_id: EnumID,
 
         /// The order in which the enum variant was declared.
         #[get_copy = "pub"]
@@ -279,11 +340,20 @@ impl_symbol! {
 
         /// The syntax tree that was used to create the enum variant.
         #[get = "pub"]
-        syntax_tree: IdentifierToken,
+        syntax_tree: Arc<IdentifierToken>,
     }
 }
 
-impl_symbol! {
+impl Global for EnumVariant {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { Accessibility::Public }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Enum(self.parent_enum_id)) }
+}
+
+implements_data_with_id! {
+    /// Contains the data of the enum symbol.
     #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
     pub struct Enum {
         /// The name of the enum
@@ -294,13 +364,13 @@ impl_symbol! {
         #[get_copy = "pub"]
         accessibility: Accessibility,
 
-        /// The parent ID of the enum.
+        /// The ID of the module that contains the enum.
         #[get_copy = "pub"]
-        parent: ModuleID,
+        parent_module_id: ModuleID,
 
         /// The syntax tree that was used to create the enum.
         #[get = "pub"]
-        syntax_tree: EnumSignatureSyntaxTree,
+        syntax_tree: Arc<EnumSignatureSyntaxTree>,
 
         /// Maps the name of the enum variant to the ID of the enum variant.
         #[get = "pub"]
@@ -312,9 +382,314 @@ impl_symbol! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+impl Typed for Enum {}
+
+impl Scoped for Enum {
+    fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
+        self.variant_ids_by_name
+            .get(name)
+            .copied()
+            .map(GlobalID::EnumVariant)
+    }
+}
+
+impl Global for Enum {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
+}
+
+/// Represents an overload signature syntax tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct OverloadSignatureSyntaxTree {
+    pub access_modifier: AccessModifier,
+    pub function_keyword: Keyword,
+    pub identifier: IdentifierToken,
+    pub type_annotation: TypeAnnotation,
+    pub block_without_label: BlockWithoutLabel,
+}
+
+implements_data_with_id! {
+    /// Contains the data of parameter symbol.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+    pub struct Parameter {
+        /// The name of the parameter
+        #[get = "pub"]
+        name: String,
+
+        /// The syntax tree that was used to create the parameter.
+        #[get = "pub"]
+        syntax_tree: Arc<ParameterSyntaxTree>,
+
+        /// The order in which the parameter was declared.
+        #[get_copy = "pub"]
+        parent_overload_id: OverloadID,
+
+        /// The order in which the parameter was declared.
+        #[get_copy = "pub"]
+        declaration_order: usize,
+
+        /// The type binding of the parameter.
+        #[get_copy = "pub"]
+        type_binding: TypeBinding,
+    }
+}
+
+implements_data_with_id! {
+    /// Contains the data of overload symbol.
+    #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+    pub struct Overload {
+        /// The ID of the overload set that contains the overload.
+        #[get_copy = "pub"]
+        parent_overload_set_id: OverloadSetID,
+
+        /// The syntax tree that was used to create the overload.
+        #[get = "pub"]
+        syntax_tree: Arc<OverloadSignatureSyntaxTree>,
+
+        /// The accessibility of the overload.
+        #[get_copy = "pub"]
+        accessibility: Accessibility,
+
+        /// Maps the name of the parameter to its corresponding ID.
+        #[get = "pub"]
+        parameter_ids_by_name: HashMap<String, ParameterID>,
+
+        /// List of the parameters in the order in which they were declared.
+        #[get = "pub"]
+        parameter_order: Vec<ParameterID>,
+
+        /// The return type of the overload.
+        #[get_copy = "pub"]
+        return_type: Type,
+    }
+}
+
+implements_data_with_id! {
+    /// Contains the data of overload set symbol.
+    #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+    pub struct OverloadSet {
+        /// The ID of the module that contains the overload set.
+        #[get_copy = "pub"]
+        parent_module_id: ModuleID,
+
+        /// The name of the overload set.
+        #[get = "pub"]
+        name: String,
+
+        /// Maps the name of the overload to its corresponding ID.
+        #[get = "pub"]
+        overloads: Vec<OverloadID>,
+    }
+}
+
+impl Global for OverloadSet {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { Accessibility::Public }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
+}
+
+implements_data_with_id! {
+    /// Contains the data of type alias symbol.
+    #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+    pub struct TypeAlias {
+        /// The name of the type alias.
+        #[get = "pub"]
+        name: String,
+
+        /// The accessibility of the type alias.
+        #[get_copy = "pub"]
+        accessibility: Accessibility,
+
+        /// The ID of the parent symbol that contains the type alias.
+        #[get_copy = "pub"]
+        type_alias_parent_id: TypeAliasParentID,
+
+        /// The type that the type alias represents.
+        #[get_copy = "pub"]
+        alias: Type,
+
+        /// The syntax tree that was used to create the type alias.
+        #[get = "pub"]
+        syntax_tree: Arc<TypeAliasSyntaxTree>
+    }
+}
+
+impl Global for TypeAlias {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.type_alias_parent_id.into()) }
+}
+
+/// Is an enumeration of IDs that can contain a type alias.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum TypeAliasParentID {
+    Module(ModuleID),
+    Struct(StructID),
+}
+
+impl From<TypeAliasParentID> for ScopedID {
+    fn from(id: TypeAliasParentID) -> Self {
+        match id {
+            TypeAliasParentID::Module(id) => Self::Module(id),
+            TypeAliasParentID::Struct(id) => Self::Struct(id),
+        }
+    }
+}
+
+impl From<TypeAliasParentID> for GlobalID {
+    fn from(id: TypeAliasParentID) -> Self {
+        match id {
+            TypeAliasParentID::Module(id) => Self::Module(id),
+            TypeAliasParentID::Struct(id) => Self::Struct(id),
+        }
+    }
+}
+
+impl From<TypeAliasParentID> for ID {
+    fn from(id: TypeAliasParentID) -> Self {
+        match id {
+            TypeAliasParentID::Module(id) => Self::Module(id),
+            TypeAliasParentID::Struct(id) => Self::Struct(id),
+        }
+    }
+}
+
+/// Is an enumeration of ID of the symbols that can be used as a type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum TypedID {
+    Enum(EnumID),
+    Struct(StructID),
+}
+
+impl From<TypedID> for GlobalID {
+    fn from(value: TypedID) -> Self {
+        match value {
+            TypedID::Enum(id) => Self::Enum(id),
+            TypedID::Struct(id) => Self::Struct(id),
+        }
+    }
+}
+
+impl From<TypedID> for ID {
+    fn from(value: TypedID) -> Self {
+        match value {
+            TypedID::Enum(id) => Self::Enum(id),
+            TypedID::Struct(id) => Self::Struct(id),
+        }
+    }
+}
+
+impl From<TypedID> for ScopedID {
+    fn from(value: TypedID) -> Self {
+        match value {
+            TypedID::Enum(id) => Self::Enum(id),
+            TypedID::Struct(id) => Self::Struct(id),
+        }
+    }
+}
+
+/// Is an enumeration of ID of the symbols that introduce a new scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum ScopedID {
+    Module(ModuleID),
+    Struct(StructID),
+    Enum(EnumID),
+}
+
+impl From<ScopedID> for GlobalID {
+    fn from(value: ScopedID) -> Self {
+        match value {
+            ScopedID::Module(id) => Self::Module(id),
+            ScopedID::Struct(id) => Self::Struct(id),
+            ScopedID::Enum(id) => Self::Enum(id),
+        }
+    }
+}
+
+impl From<ScopedID> for ID {
+    fn from(value: ScopedID) -> Self {
+        match value {
+            ScopedID::Module(id) => Self::Module(id),
+            ScopedID::Struct(id) => Self::Struct(id),
+            ScopedID::Enum(id) => Self::Enum(id),
+        }
+    }
+}
+
+/// Is an enumeration of ID of the symbols that can be referred in the global scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum GlobalID {
     Module(ModuleID),
     Struct(StructID),
     Enum(EnumID),
+    EnumVariant(EnumVariantID),
+    OverloadSet(OverloadSetID),
+    TypeAlias(TypeAliasID),
+}
+
+impl From<GlobalID> for ID {
+    fn from(value: GlobalID) -> Self {
+        match value {
+            GlobalID::Module(id) => Self::Module(id),
+            GlobalID::Struct(id) => Self::Struct(id),
+            GlobalID::Enum(id) => Self::Enum(id),
+            GlobalID::OverloadSet(id) => Self::OverloadSet(id),
+            GlobalID::TypeAlias(id) => Self::TypeAlias(id),
+            GlobalID::EnumVariant(id) => Self::EnumVariant(id),
+        }
+    }
+}
+
+/// Is an enumeration of Self of the symbols that are defined by global symbols and local to its
+/// parent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum LocalID {
+    Field(FieldID),
+    Overload(OverloadID),
+    Parameter(ParameterID),
+}
+
+impl From<LocalID> for ID {
+    fn from(value: LocalID) -> Self {
+        match value {
+            LocalID::Field(id) => Self::Field(id),
+            LocalID::Overload(id) => Self::Overload(id),
+            LocalID::Parameter(id) => Self::Parameter(id),
+        }
+    }
+}
+
+/// Is an enumeration of all kinds of symbol IDs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum ID {
+    Module(ModuleID),
+    Struct(StructID),
+    Enum(EnumID),
+    EnumVariant(EnumVariantID),
+    OverloadSet(OverloadSetID),
+    TypeAlias(TypeAliasID),
+    Field(FieldID),
+    Overload(OverloadID),
+    Parameter(ParameterID),
+}
+
+/// Represents a symbol that is defined in the program, including globals and locals.
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner, From)]
+pub enum Symbol {
+    Module(Module),
+    Struct(Struct),
+    Enum(Enum),
+    EnumVariant(EnumVariant),
+    OverloadSet(OverloadSet),
+    TypeAlias(TypeAlias),
+    Field(Field),
+    Overload(Overload),
+    Parameter(Parameter),
 }

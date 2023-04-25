@@ -204,7 +204,7 @@ impl KeywordKind {
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming language.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum Token {
     WhiteSpace(WhiteSpace),
     Identifier(Identifier),
@@ -349,7 +349,7 @@ impl SourceElement for Comment {
 
 /// Is an error that can occur when invoking the [Token::tokenize()](Token::tokenize()) method.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
-#[allow(missing_docs)]
+
 pub enum TokenizationError {
     #[error("Encountered an lexical error while tokenizing the source code.")]
     LexicalError(LexicalError),

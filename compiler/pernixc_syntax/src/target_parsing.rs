@@ -46,7 +46,7 @@ impl DuplicateModuleDeclaration {
 
 /// The error encountered while parsing a source file.
 #[derive(Debug, Error, From)]
-#[allow(missing_docs)]
+
 pub enum ParsingError {
     #[error("{0}")]
     LexicalError(LexicalError),

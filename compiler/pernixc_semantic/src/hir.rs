@@ -1,6 +1,17 @@
 //! Contains code related to the high-level intermediate representation of Pernix.
 
+use std::collections::HashMap;
+
+use derive_more::From;
+use enum_as_inner::EnumAsInner;
 use getset::Getters;
+use paste::paste;
+use pernixc_lexical::token::Identifier as IdentifierToken;
+
+use crate::symbol::{
+    implements_data_with_id, implements_id,
+    ty::{Type, TypeBinding},
+};
 
 /// The high-level intermediate representation of Pernix.
 ///
@@ -26,5 +37,34 @@ use getset::Getters;
 ///   done in later stages of the compiler.
 /// - Optimization: the HIR does not perform any optimizations such as constant folding, dead code
 ///   elimination, or inlining. These optimizations are done in later stages of the compiler.
-#[derive(Debug, Copy, Clone, Getters)]
-pub struct HIR {}
+#[derive(Debug, Clone, Getters)]
+pub struct HIR {
+    variables_by_id: HashMap<Variable, VariableID>,
+}
+
+implements_data_with_id! {
+    /// Represents a single distinct variable in the SSA form.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Variable {
+        pub ty: Type,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LocalAlloca {
+    pub type_binding: TypeBinding,
+    pub identifier: IdentifierToken,
+}
+
+implements_data_with_id! {
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+    pub enum Alloca {
+        LocalAlloca(LocalAlloca)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum Value {
+    Variable(VariableID),
+    Alloca(AllocaID),
+}

@@ -21,7 +21,7 @@ use crate::parser::Parser;
 ///     | Expressive
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum Statement {
     Declarative(Declarative),
     Expressive(Expressive),
@@ -47,7 +47,7 @@ impl SourceElement for Statement {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum Declarative {
     VariableDeclaration(VariableDeclaration),
 }
@@ -69,7 +69,7 @@ impl SourceElement for Declarative {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct VariableDeclaration {
     #[get = "pub"]
     pub(super) let_keyword: Keyword,
@@ -104,7 +104,7 @@ impl SourceElement for VariableDeclaration {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
+
 pub enum Expressive {
     Semi(Semi),
     Imperative(Imperative),
@@ -130,7 +130,7 @@ impl SourceElement for Expressive {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-#[allow(missing_docs)]
+
 pub struct Semi {
     #[get = "pub"]
     pub(super) expression: Functional,

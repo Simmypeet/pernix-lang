@@ -1,19 +1,19 @@
 public struct SomeStruct 
 {
-public:
-    type A = float32; 
-    type B = A;       
+    public type A = float32; 
+    public type B = A;       
 
-    let first: A;         // refers to ::test::SomeStruct::A;
-    let second: B;        // refers to ::test::SomeStruct::B;
-    let third: ::test::A; // refers to ::test::A
+    public let first: A;         // refers to ::test::SomeStruct::A;
+    public let second: B;        // refers to ::test::SomeStruct::B;
+    public let third: ::test::A; // refers to ::test::A
 }
 
 public type A = float64;
 public type B = C;
 public type C = B;
 
-public enum Boolean {
+public enum Boolean 
+{
     True,
     False,
 }

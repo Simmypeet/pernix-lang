@@ -2,9 +2,8 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use getset::CopyGetters;
 
-use super::item::TypedID;
+use super::TypedID;
 
 /// Is an enumeration of all the primitive types in Pernix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

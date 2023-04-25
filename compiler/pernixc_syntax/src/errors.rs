@@ -273,7 +273,7 @@ impl KeywordExpected {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered a syntactic error while parsing the source code.")]
-#[allow(missing_docs)]
+
 pub enum SyntacticError {
     IdentifierExpected(IdentifierExpected),
     TypeSpecifierExpected(TypeSpecifierExpected),
