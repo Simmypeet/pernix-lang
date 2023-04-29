@@ -7,10 +7,11 @@ use pernixc_lexical::{
     token::{Identifier, Punctuation, Token},
     token_stream::{Cursor, CursorPosition},
 };
+use pernixc_system::error_handler::ErrorHandler;
 use thiserror::Error;
 
 use crate::{
-    errors::{IdentifierExpected, PunctuationExpected, SyntacticError},
+    error::{IdentifierExpected, PunctuationExpected, SyntacticError},
     syntax_tree::ConnectedList,
 };
 
@@ -22,13 +23,6 @@ use crate::{
 #[derive(Debug, Getters)]
 pub struct Parser<'a> {
     pub(super) cursor: Cursor<'a>,
-    /// Gets the list of errors that have been produced by the parser.
-    #[get = "pub"]
-    pub(crate) errors: Vec<SyntacticError>,
-
-    /// The flag that indicates whether the parser should produce errors that are encountered
-    /// during parsing.
-    pub produce_errors: bool,
 }
 
 /// Indicates that the given token stream cursor is not pointing at a valid position when creating a
@@ -48,11 +42,7 @@ impl<'a> Parser<'a> {
             return Err(InvalidTokenStreamCursorError);
         }
 
-        Ok(Self {
-            cursor,
-            errors: Vec::new(),
-            produce_errors: true,
-        })
+        Ok(Self { cursor })
     }
 
     /// Returns the next token in the token stream.
@@ -93,19 +83,25 @@ impl<'a> Parser<'a> {
     ///
     /// The error is reported to the error list of the parser if the parser is configured to produce
     /// errors.
-    pub fn expect_identifier(&mut self) -> Option<&'a Identifier> {
+    pub fn expect_identifier(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<&'a Identifier> {
         let token = self.next_significant_token();
 
         match token {
             Some(Token::Identifier(identifier)) => Some(identifier),
             Some(token) => {
-                self.report_error(IdentifierExpected {
-                    found: Some(token.clone()),
-                });
+                handler.recieve(
+                    IdentifierExpected {
+                        found: Some(token.clone()),
+                    }
+                    .into(),
+                );
                 None
             }
             None => {
-                self.report_error(IdentifierExpected { found: None });
+                handler.recieve(IdentifierExpected { found: None }.into());
                 None
             }
         }
@@ -116,7 +112,11 @@ impl<'a> Parser<'a> {
     ///
     /// The error is reported to the error list of the parser if the parser is configured to produce
     /// errors.
-    pub fn expect_punctuation(&mut self, expected: char) -> Option<&'a Punctuation> {
+    pub fn expect_punctuation(
+        &mut self,
+        expected: char,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<&'a Punctuation> {
         let token = self.next_significant_token();
 
         match token {
@@ -124,35 +124,27 @@ impl<'a> Parser<'a> {
                 Some(punctuation)
             }
             Some(token) => {
-                self.report_error(PunctuationExpected {
-                    expected,
-                    found: Some(token.clone()),
-                });
+                handler.recieve(
+                    PunctuationExpected {
+                        expected,
+                        found: Some(token.clone()),
+                    }
+                    .into(),
+                );
                 None
             }
             None => {
-                self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
-                    expected,
-                    found: None,
-                }));
+                handler.recieve(
+                    PunctuationExpected {
+                        expected,
+                        found: None,
+                    }
+                    .into(),
+                );
                 None
             }
         }
     }
-
-    /// Stores the given error into the error list of the parser.
-    ///
-    /// The error is discarded if the parser is not configured to produce errors.
-    pub fn report_error(&mut self, error: impl Into<SyntacticError>) {
-        if self.produce_errors {
-            self.errors.push(error.into());
-        }
-    }
-
-    /// Takes the list of errors that have been produced by the parser.
-    ///
-    /// The list of errors is cleared after this method is called.
-    pub fn take_errors(&mut self) -> Vec<SyntacticError> { std::mem::take(&mut self.errors) }
 
     fn delimiter_predicate<const CHAR: char>(token: &Token) -> bool {
         let Some(punctuation) = token.as_punctuation() else {
@@ -235,6 +227,7 @@ impl<'a> Parser<'a> {
         delimiter: char,
         separator: char,
         mut parse_item: impl FnMut(&mut Self) -> Option<T>,
+        handler: &impl ErrorHandler<SyntacticError>,
     ) -> Option<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
         let mut first = None;
         let mut rest = Vec::new();
@@ -246,10 +239,13 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 return Some((None, punc.clone()));
             }
-            None => self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
-                expected: delimiter,
-                found: None,
-            })),
+            None => handler.recieve(
+                PunctuationExpected {
+                    expected: delimiter,
+                    found: None,
+                }
+                .into(),
+            ),
             _ => (),
         };
 
@@ -321,10 +317,13 @@ impl<'a> Parser<'a> {
                     break delimiter_token;
                 }
                 token => {
-                    self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
-                        expected: delimiter,
-                        found: token.cloned(),
-                    }));
+                    handler.recieve(
+                        PunctuationExpected {
+                            expected: delimiter,
+                            found: token.cloned(),
+                        }
+                        .into(),
+                    );
                     return None;
                 }
             }
@@ -339,103 +338,6 @@ impl<'a> Parser<'a> {
             delimiter.clone(),
         ))
     }
-
-    /// Tries to parse a syntax tree node with rollback on failure.
-    pub fn try_parse<T>(&mut self, parse: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
-        let produce_errors_record = self.produce_errors;
-        let cursor_position = self.cursor.position();
-
-        // disable error production
-        if produce_errors_record {
-            self.produce_errors = false;
-        }
-
-        let result = parse(self);
-
-        if result.is_none() {
-            // restore the cursor position
-            self.cursor.set_position(cursor_position);
-
-            // restore the error production
-            if produce_errors_record {
-                self.produce_errors = true;
-            }
-        }
-
-        result
-    }
-
-    /// Tries to parse a syntax tree that has an ambiguity between two possible syntaxes.
-    #[allow(dead_code)]
-    pub(super) fn ambiguity_resolution<T1, T2>(
-        &mut self,
-        first: impl FnOnce(&mut Self) -> Option<T1>,
-        second: impl FnOnce(&mut Self) -> Option<T2>,
-    ) -> Option<FirstOrSecond<T1, T2>> {
-        // count the number of significant tokens that are eaten by each parser
-        fn count_fn(original_cursor: &mut Cursor, comparing_cursor: &Cursor) -> usize {
-            let mut significant_token_eaten = 0;
-            let starting_cursor_position = original_cursor.position();
-            while original_cursor.position() < comparing_cursor.position() {
-                if let Some(token) = original_cursor.next_token() {
-                    if !matches!(token, Token::WhiteSpace(..) | Token::Comment(..)) {
-                        significant_token_eaten += 1;
-                    }
-                }
-            }
-            original_cursor.set_position(starting_cursor_position);
-            significant_token_eaten
-        }
-
-        let mut first_parser = Parser {
-            cursor: self.cursor,
-            produce_errors: self.produce_errors,
-            errors: Vec::new(),
-        };
-        let mut second_parser = Parser {
-            cursor: self.cursor,
-            produce_errors: self.produce_errors,
-            errors: Vec::new(),
-        };
-
-        let (first_result, second_result) = (first(&mut first_parser), second(&mut second_parser));
-        let (first_token_eaten, second_token_eaten) = (
-            count_fn(&mut self.cursor, &first_parser.cursor),
-            count_fn(&mut self.cursor, &second_parser.cursor),
-        );
-
-        match (first_result, second_result) {
-            (Some(first_result), None) if second_token_eaten + 1 == first_token_eaten => {
-                // choose first
-                self.cursor = first_parser.cursor;
-                self.errors.append(&mut first_parser.errors);
-                Some(FirstOrSecond::First(first_result))
-            }
-            (None, Some(second_result)) if first_token_eaten + 1 == second_token_eaten => {
-                // choose second
-                self.cursor = second_parser.cursor;
-                self.errors.append(&mut second_parser.errors);
-                Some(FirstOrSecond::Second(second_result))
-            }
-            (first_result, second_result) => {
-                // choose the one that has the most significant tokens eaten
-                if first_token_eaten > second_token_eaten {
-                    self.cursor = first_parser.cursor;
-                    self.errors.append(&mut first_parser.errors);
-                    first_result.map(FirstOrSecond::First)
-                } else {
-                    self.cursor = second_parser.cursor;
-                    self.errors.append(&mut second_parser.errors);
-                    second_result.map(FirstOrSecond::Second)
-                }
-            }
-        }
-    }
-}
-
-pub(super) enum FirstOrSecond<T1, T2> {
-    First(T1),
-    Second(T2),
 }
 
 #[cfg(test)]

@@ -15,6 +15,6 @@
 )]
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
-pub mod errors;
+pub mod error;
 pub mod token;
 pub mod token_stream;

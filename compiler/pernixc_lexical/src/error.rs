@@ -13,20 +13,22 @@ use thiserror::Error;
 pub struct InvalidEscapeCharacterSequences {
     /// The spans represent the locations of the invalid escape character sequences.
     #[get = "pub"]
-    pub(super) spans: Vec<Span>,
+    pub(super) span: Span,
 }
 
 impl InvalidEscapeCharacterSequences {
     /// Prints the error message to the console
     pub fn print(&self) {
-        for span in &self.spans {
-            pernixc_common::printing::log(
-                LogSeverity::Error,
-                format!("`{}` is an invalid escape character sequence", span.str()).as_str(),
-            );
-            pernixc_common::printing::print_source_code(span, None);
-            println!();
-        }
+        pernixc_common::printing::log(
+            LogSeverity::Error,
+            format!(
+                "`{}` is an invalid escape character sequence",
+                self.span.str()
+            )
+            .as_str(),
+        );
+        pernixc_common::printing::print_source_code(&self.span, None);
+        println!();
     }
 }
 
@@ -121,7 +123,7 @@ impl ControlCharactersMustBeEscaped {
 /// source code.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered an lexical error while tokenizing the source code.")]
-
+#[allow(clippy::module_name_repetitions)]
 pub enum LexicalError {
     InvalidEscapeCharacterSequences(InvalidEscapeCharacterSequences),
     UnterminatedStringLiteral(UnterminatedStringLiteral),

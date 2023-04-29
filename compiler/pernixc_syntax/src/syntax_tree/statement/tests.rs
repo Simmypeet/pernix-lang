@@ -2,6 +2,7 @@ use std::{error::Error, path::PathBuf};
 
 use pernixc_common::source_file::SourceFile;
 use pernixc_lexical::token_stream::TokenStream;
+use pernixc_system::error_handler::DummyErrorHandler;
 
 use crate::{
     parser::Parser,
@@ -36,14 +37,14 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         SOURCE_CODE.to_string(),
         vec!["test".to_string()],
     )?;
-    let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+    let token_stream = TokenStream::tokenize(source_file.iter(), &DummyErrorHandler);
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
     let mut parser = Parser::new(cursor)?;
 
     let block = parser
-        .parse_expression()
+        .parse_expression(&DummyErrorHandler)
         .unwrap()
         .into_imperative()
         .unwrap()

@@ -1,6 +1,9 @@
 use std::{error::Error, path::PathBuf};
 
 use pernixc_common::source_file::SourceFile;
+use pernixc_system::error_handler::ErrorVec;
+
+use crate::target_parsing::AllParsingError;
 
 #[test]
 fn module_branching_test() -> Result<(), Box<dyn Error>> {
@@ -12,9 +15,10 @@ fn module_branching_test() -> Result<(), Box<dyn Error>> {
         vec!["test".to_string()],
     )?;
 
-    let (syntax_trees, errors) = super::parse_target(source_file)?;
+    let error_vec: ErrorVec<AllParsingError> = ErrorVec::default();
+    let syntax_trees = super::parse_target(source_file, &error_vec)?;
 
-    assert!(errors.is_empty());
+    assert!(error_vec.into_vec().is_empty());
     assert_eq!(syntax_trees.len(), 4);
 
     // test

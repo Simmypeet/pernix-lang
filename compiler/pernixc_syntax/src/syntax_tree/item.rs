@@ -6,10 +6,11 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_common::source_file::{SourceElement, Span};
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
+use pernixc_system::error_handler::ErrorHandler;
 
 use super::{expression::BlockWithoutLabel, ConnectedList, TypeAnnotation, TypeSpecifier};
 use crate::{
-    errors::{AccessModifierExpected, ItemExpected, MemberExpected},
+    error::{AccessModifierExpected, ItemExpected, MemberExpected, SyntacticError},
     parser::Parser,
 };
 
@@ -440,9 +441,9 @@ impl SourceElement for Item {
 impl<'a> Parser<'a> {
     /// Parses an [Item].
     #[allow(clippy::too_many_lines)]
-    pub fn parse_item(&mut self) -> Option<Item> {
+    pub fn parse_item(&mut self, handler: &impl ErrorHandler<SyntacticError>) -> Option<Item> {
         // expect access modifier keyword token
-        let access_modifier = self.parse_access_modifier()?;
+        let access_modifier = self.parse_access_modifier(handler)?;
 
         match self.peek_significant_token() {
             // Handles struct item
@@ -451,17 +452,21 @@ impl<'a> Parser<'a> {
             {
                 // eat struct keyword
                 self.next_token();
-                self.handle_struct(access_modifier, struct_keyword.clone())
+                self.handle_struct(access_modifier, struct_keyword.clone(), handler)
             }
             // Handles enum
             Some(Token::Keyword(enum_keyword)) if enum_keyword.keyword == KeywordKind::Enum => {
                 // eat token
                 self.next_token();
 
-                let identifier = self.expect_identifier()?;
-                let left_brace = self.expect_punctuation('{')?;
-                let (variants, right_brace) =
-                    self.parse_enclosed_list('}', ',', |parse| parse.expect_identifier().cloned())?;
+                let identifier = self.expect_identifier(handler)?;
+                let left_brace = self.expect_punctuation('{', handler)?;
+                let (variants, right_brace) = self.parse_enclosed_list(
+                    '}',
+                    ',',
+                    |parse| parse.expect_identifier(handler).cloned(),
+                    handler,
+                )?;
 
                 Some(
                     Enum {
@@ -486,8 +491,8 @@ impl<'a> Parser<'a> {
                 // eat token
                 self.next_token();
 
-                let identifier = self.expect_identifier()?;
-                let semicolon = self.expect_punctuation(';')?;
+                let identifier = self.expect_identifier(handler)?;
+                let semicolon = self.expect_punctuation(';', handler)?;
 
                 Some(
                     Module {
@@ -505,7 +510,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
 
                 Some(
-                    self.parse_type_alias(access_modifier, type_keyword.clone())?
+                    self.parse_type_alias(access_modifier, type_keyword.clone(), handler)?
                         .into(),
                 )
             }
@@ -516,33 +521,38 @@ impl<'a> Parser<'a> {
                 // eat function keyword
                 self.next_token();
 
-                let identifier = self.expect_identifier()?.clone();
-                let left_paren = self.expect_punctuation('(')?.clone();
+                let identifier = self.expect_identifier(handler)?.clone();
+                let left_paren = self.expect_punctuation('(', handler)?.clone();
 
-                let (parameters, right_paren) = self.parse_enclosed_list(')', ',', |parse| {
-                    let mutable_keyword = match parse.peek_significant_token() {
-                        Some(Token::Keyword(mutable_keyword))
-                            if mutable_keyword.keyword == KeywordKind::Mutable =>
-                        {
-                            // eat mutable keyword
-                            parse.next_token();
+                let (parameters, right_paren) = self.parse_enclosed_list(
+                    ')',
+                    ',',
+                    |parse| {
+                        let mutable_keyword = match parse.peek_significant_token() {
+                            Some(Token::Keyword(mutable_keyword))
+                                if mutable_keyword.keyword == KeywordKind::Mutable =>
+                            {
+                                // eat mutable keyword
+                                parse.next_token();
 
-                            Some(mutable_keyword.clone())
-                        }
-                        _ => None,
-                    };
-                    let identifier = parse.expect_identifier()?;
-                    let type_annotation = parse.parse_type_annotation()?;
+                                Some(mutable_keyword.clone())
+                            }
+                            _ => None,
+                        };
+                        let identifier = parse.expect_identifier(handler)?;
+                        let type_annotation = parse.parse_type_annotation(handler)?;
 
-                    Some(Parameter {
-                        mutable_keyword,
-                        identifier: identifier.clone(),
-                        type_annotation,
-                    })
-                })?;
+                        Some(Parameter {
+                            mutable_keyword,
+                            identifier: identifier.clone(),
+                            type_annotation,
+                        })
+                    },
+                    handler,
+                )?;
 
-                let type_annotation = self.parse_type_annotation()?;
-                let block_without_label = self.parse_block_without_label()?;
+                let type_annotation = self.parse_type_annotation(handler)?;
+                let block_without_label = self.parse_block_without_label(handler)?;
 
                 Some(
                     Function {
@@ -564,9 +574,12 @@ impl<'a> Parser<'a> {
                 // make progress
                 self.next_token();
 
-                self.report_error(ItemExpected {
-                    found: token.cloned(),
-                });
+                handler.recieve(
+                    ItemExpected {
+                        found: token.cloned(),
+                    }
+                    .into(),
+                );
                 None
             }
         }
@@ -576,11 +589,12 @@ impl<'a> Parser<'a> {
         &mut self,
         access_modifier: AccessModifier,
         type_keyword: Keyword,
+        handler: &impl ErrorHandler<SyntacticError>,
     ) -> Option<TypeAlias> {
-        let identifier = self.expect_identifier()?;
-        let equals = self.expect_punctuation('=')?;
-        let type_specifier = self.parse_type_specifier()?;
-        let semicolon = self.expect_punctuation(';')?;
+        let identifier = self.expect_identifier(handler)?;
+        let equals = self.expect_punctuation('=', handler)?;
+        let type_specifier = self.parse_type_specifier(handler)?;
+        let semicolon = self.expect_punctuation(';', handler)?;
 
         Some(TypeAlias {
             access_modifier,
@@ -596,9 +610,10 @@ impl<'a> Parser<'a> {
         &mut self,
         access_modifier: AccessModifier,
         struct_keyword: Keyword,
+        handler: &impl ErrorHandler<SyntacticError>,
     ) -> Option<Item> {
-        let identifier = self.expect_identifier()?;
-        let left_brace = self.expect_punctuation('{')?;
+        let identifier = self.expect_identifier(handler)?;
+        let left_brace = self.expect_punctuation('{', handler)?;
         let mut members = Vec::new();
         let right_brace = loop {
             match self.next_significant_token() {
@@ -622,9 +637,9 @@ impl<'a> Parser<'a> {
                         Some(Token::Keyword(let_keyword))
                             if let_keyword.keyword == KeywordKind::Let =>
                         {
-                            let identifier = self.expect_identifier()?;
-                            let type_annotation = self.parse_type_annotation()?;
-                            let semicolon = self.expect_punctuation(';')?;
+                            let identifier = self.expect_identifier(handler)?;
+                            let type_annotation = self.parse_type_annotation(handler)?;
+                            let semicolon = self.expect_punctuation(';', handler)?;
 
                             members.push(
                                 Field {
@@ -641,14 +656,21 @@ impl<'a> Parser<'a> {
                             if type_keyword.keyword == KeywordKind::Type =>
                         {
                             members.push(
-                                self.parse_type_alias(access_modifier, type_keyword.clone())?
-                                    .into(),
+                                self.parse_type_alias(
+                                    access_modifier,
+                                    type_keyword.clone(),
+                                    handler,
+                                )?
+                                .into(),
                             );
                         }
                         found => {
-                            self.report_error(MemberExpected {
-                                found: found.cloned(),
-                            });
+                            handler.recieve(
+                                MemberExpected {
+                                    found: found.cloned(),
+                                }
+                                .into(),
+                            );
                             self.forward_until(|token| {
                                 matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
                                 || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
@@ -659,9 +681,12 @@ impl<'a> Parser<'a> {
                     }
                 }
                 found => {
-                    self.report_error(AccessModifierExpected {
-                        found: found.cloned(),
-                    });
+                    handler.recieve(
+                        AccessModifierExpected {
+                            found: found.cloned(),
+                        }
+                        .into(),
+                    );
                     self.forward_until(|token| {
                         matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
                         || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
@@ -690,7 +715,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses an [`AccessModifier`]
-    pub fn parse_access_modifier(&mut self) -> Option<AccessModifier> {
+    pub fn parse_access_modifier(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<AccessModifier> {
         match self.next_significant_token() {
             Some(Token::Keyword(public_keyword))
                 if public_keyword.keyword == KeywordKind::Public =>
@@ -708,9 +736,12 @@ impl<'a> Parser<'a> {
                 Some(AccessModifier::Internal(internal_keyword.clone()))
             }
             found => {
-                self.report_error(AccessModifierExpected {
-                    found: found.cloned(),
-                });
+                handler.recieve(
+                    AccessModifierExpected {
+                        found: found.cloned(),
+                    }
+                    .into(),
+                );
                 None
             }
         }

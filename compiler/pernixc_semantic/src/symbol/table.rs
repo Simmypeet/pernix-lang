@@ -1,11 +1,7 @@
-use std::{
-    collections::HashMap,
-    ops::{Index, IndexMut},
-    sync::Arc,
-};
+//! Contains the definition of [`Table`].
 
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use paste::paste;
 use pernixc_common::source_file::SourceElement;
 use pernixc_lexical::token::Identifier as IdentifierToken;
 use pernixc_syntax::{
@@ -19,52 +15,66 @@ use pernixc_syntax::{
     },
     target_parsing::{FileParsing, TargetParsing},
 };
+use pernixc_system::{
+    arena::{Arena, InvalidIDError},
+    error_handler::ErrorHandler,
+};
+use std::{collections::HashMap, sync::Arc};
+use thiserror::Error;
 
 use super::{
-    errors::{
+    error::{
         CircularDependency, EnumVariantRedefinition, FieldRedefinition, OverloadRedefinition,
-        ParameterRedefinition, PrivateSymbolLeak, SymbolError, SymbolRedifinition, TypeExpected,
+        ParameterRedefinition, PrivateSymbolLeak, StructMemberMoreAccessibleThanStruct,
+        SymbolError, SymbolNotAccessible, SymbolNotFound, SymbolRedifinition, TypeExpected,
     },
     ty::{PrimitiveType, Type, TypeBinding},
-    Accessibility, Data, Enum, EnumData, EnumID, EnumVariant, EnumVariantData, EnumVariantID,
-    Field, FieldID, Global, GlobalID, Module, ModuleData, ModuleID, Overload, OverloadData,
-    OverloadID, OverloadSet, OverloadSetData, OverloadSetID, OverloadSignatureSyntaxTree,
-    Parameter, ParameterData, ParameterID, Scoped, ScopedID, Struct, StructData, StructID, Symbol,
-    TypeAlias, TypeAliasData, TypeAliasID, TypeAliasParentID, Typed, TypedID, WithData, ID,
-};
-use crate::symbol::{
-    errors::{StructMemberMoreAccessibleThanStruct, SymbolNotAccessible, SymbolNotFound},
-    FieldData,
+    Accessibility, Enum, EnumID, EnumVariant, EnumVariantID, Field, FieldID, GlobalID, Module,
+    ModuleID, Overload, OverloadID, OverloadSet, OverloadSetID, OverloadSyntaxTree, Parameter,
+    ParameterID, ScopedID, Struct, StructID, TypeAlias, TypeAliasID, TypeAliasParentID, ID,
 };
 
-/// Is an enumeration flag used to indicate the state of the symbol.
-///
-/// It's as well used to detect cyclic dependencies when constructing the symbol table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum SymbolState {
-    /// The symbol is filled in the default state when it's created, doesn't contain the valid
-    /// data.
     Drafted,
-
-    /// The symbol is being constructed. This state is used to detect cyclic dependencies.
     Constructing,
 }
 
-/// Is the symbol table of the semantic analysis.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Is a symbol table for the compiler.
+#[derive(Debug)]
 pub struct Table {
-    symbols_by_id: HashMap<ID, Symbol>,
+    modules: Arena<Module>,
+    structs: Arena<Struct>,
+    enums: Arena<Enum>,
+    enum_variants: Arena<EnumVariant>,
+    type_aliases: Arena<TypeAlias>,
+    overload_sets: Arena<OverloadSet>,
+    overloads: Arena<Overload>,
+    fields: Arena<Field>,
+    parameters: Arena<Parameter>,
+
     root_module_ids_by_name: HashMap<String, ModuleID>,
 }
 
+/// Is an error that can occur when resolving a symbol in the [`Table`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From, Error)]
+#[allow(missing_docs)]
+pub enum ResolveError {
+    #[error("Encountered a fatal symbol error, the resolution must be aborted.")]
+    FatalSymbolError,
+
+    #[error("{0}")]
+    InvalidIDError(InvalidIDError),
+}
+
 impl Table {
-    /// Analyzes the given syntax trees of the given target and returns the symbol table containing
+    /// Analyzes the syntax trees of the given target and returns the symbol table containing
     /// all the symbols and the errors that occurred during the analysis.
     ///
     /// # Error Handling
     /// When encountering an error, the analysis will not halt completely, but instead continue to
     /// analyze the rest of the code while producing the suboptimal symbol table. These are the
-    /// behavior of the errors:
+    /// expected behavior of the errors:
     ///
     /// - Symbol Redefinition: One of the definitions will be used in the symbol table, the other
     ///   will be discarded and an error will be produced.
@@ -72,14 +82,28 @@ impl Table {
     ///   `void`.
     /// - Symbol Not Accessible: The symbol will be treated as if it was accessible and an error
     ///   will be produced (non-fatal error).
-    #[must_use]
-    pub fn analyze(target_parsing: TargetParsing) -> (Self, Vec<SymbolError>) {
+    pub fn analyze(
+        target_parsing: TargetParsing,
+        handler: &impl ErrorHandler<SymbolError>,
+    ) -> Self {
+        let mut table = Self {
+            modules: Arena::new(),
+            structs: Arena::new(),
+            enums: Arena::new(),
+            enum_variants: Arena::new(),
+            type_aliases: Arena::new(),
+            overload_sets: Arena::new(),
+            overloads: Arena::new(),
+            fields: Arena::new(),
+            parameters: Arena::new(),
+
+            root_module_ids_by_name: HashMap::new(),
+        };
+
         let mut symbol_states_by_id = HashMap::new();
-        let mut errors = Vec::new();
-        let mut table = Self::new();
 
         table.generate_modules(&target_parsing);
-        table.draft_symbols(target_parsing, &mut errors, &mut symbol_states_by_id);
+        table.draft_symbols(target_parsing, &mut symbol_states_by_id, handler);
 
         // build the symbol in the symbol_states_by_id one by one
         while !symbol_states_by_id.is_empty() {
@@ -89,65 +113,230 @@ impl Table {
                 .unwrap()
                 .0;
 
-            table.construct_symbol(id, &mut errors, &mut symbol_states_by_id);
+            table.construct_symbol(id, &mut symbol_states_by_id, handler);
         }
 
-        (table, errors)
+        table
     }
 
-    /// Gets the [`GlobalID`] from the given fully qualified name.
+    /// Gets the [`GlobalID`] of a symbol with the given fully qualified name.
     pub fn get_global_id_by_full_name<'a>(
         &self,
-        identifiers: impl Iterator<Item = &'a str>,
+        mut name: impl Iterator<Item = &'a str>,
     ) -> Option<GlobalID> {
-        let mut current_id: Option<GlobalID> = None;
+        let mut current_id = self
+            .root_module_ids_by_name
+            .get(name.next()?)
+            .copied()?
+            .into();
 
-        for name in identifiers {
-            if let Some(id) = current_id {
-                current_id = match id {
-                    GlobalID::Module(sym) => Some(self[sym].child_ids_by_name.get(name).copied()?),
-                    GlobalID::Struct(sym) => {
-                        Some(self[sym].type_alias_ids_by_name.get(name).copied()?.into())
-                    }
-                    GlobalID::Enum(sym) => {
-                        Some(self[sym].variant_ids_by_name.get(name).copied()?.into())
-                    }
-                    GlobalID::EnumVariant(..)
-                    | GlobalID::OverloadSet(..)
-                    | GlobalID::TypeAlias(..) => {
-                        return None;
+        for name_part in name {
+            let scoped_id: ScopedID = match current_id {
+                GlobalID::Module(id) => id.into(),
+                GlobalID::Struct(id) => id.into(),
+                GlobalID::Enum(id) => id.into(),
+                GlobalID::EnumVariant(..) | GlobalID::OverloadSet(..) | GlobalID::TypeAlias(..) => {
+                    return None;
+                }
+            };
+
+            current_id = self
+                .get_scoped(scoped_id)
+                .unwrap()
+                .get_child_id_by_name(name_part)?;
+        }
+
+        Some(current_id)
+    }
+
+    /// Gets the full name of the symbol of the given [`GlobalID`].
+    ///
+    /// # Errors
+    /// - If the given [`GlobalID`] is invalid.
+    pub fn get_full_name_of(
+        &self,
+        global_id: impl Into<GlobalID>,
+    ) -> Result<String, InvalidIDError> {
+        let global_id = global_id.into();
+        let global = self.get_global(global_id).ok_or(InvalidIDError)?;
+        let mut name = global.name().to_owned();
+        let mut parent = global
+            .parent_scoped_id()
+            .map(|id| self.get_scoped(id).unwrap());
+
+        while let Some(current_parent) = parent {
+            name.insert_str(0, "::");
+            name.insert_str(0, current_parent.name());
+            parent = current_parent
+                .parent_scoped_id()
+                .map(|id| self.get_scoped(id).unwrap());
+        }
+
+        Ok(name)
+    }
+
+    /// Checks whether if the `symol` is accessible from the `referring_site` if the
+    /// `symbol` with the given `accessibility`.
+    ///
+    /// # Errors
+    /// - If the given `referring_site` or `symbol` is invalid.
+    pub fn symbol_accessible(
+        &self,
+        referring_site: ScopedID,
+        symbol: GlobalID,
+        accessibility: Accessibility,
+    ) -> Result<bool, InvalidIDError> {
+        if self.get_scoped(referring_site).is_none() || self.get_global(symbol).is_none() {
+            return Err(InvalidIDError);
+        }
+
+        match accessibility {
+            Accessibility::Internal => {
+                let referring_site_root_module = self.find_root_module(referring_site.into())?;
+                let symbol_root_module = self.find_root_module(symbol)?;
+
+                Ok(referring_site_root_module == symbol_root_module)
+            }
+            Accessibility::Private => {
+                // find the nearest parent module of both the referring site and the symbol and
+                // check if the parent module of the referring site is the same or a child of the
+                // parent module of the symbol
+                let sym_parent = self.find_nearest_parent_module(symbol)?;
+                let mut current_module = referring_site;
+                loop {
+                    match current_module {
+                        ScopedID::Module(module) if module == sym_parent => {
+                            break Ok(true);
+                        }
+                        _ => {
+                            if let Some(parent) =
+                                self.get_scoped(current_module).unwrap().parent_scoped_id()
+                            {
+                                current_module = parent;
+                            } else {
+                                break Ok(false);
+                            }
+                        }
                     }
                 }
+            }
+            Accessibility::Public => Ok(true),
+        }
+    }
+
+    /// Performs a name resolution from the given [`QualifiedIdentifier`] syntax tree and referring
+    /// site (where the name resolution is performed from).
+    ///
+    /// # Errors
+    /// - [`ResolveError::FatalSymbolError`]: Found a [`SymbolError`] that is fatal to the name
+    /// resolution process.
+    /// - [`ResolveError::InvalidIDError`]: The given `referring_site` is not a valid [`ScopedID`].
+    pub fn resolve_symbol(
+        &self,
+        referring_site: ScopedID,
+        qualified_identifier: &QualifiedIdentifier,
+        handler: &impl ErrorHandler<SymbolError>,
+    ) -> Result<GlobalID, ResolveError> {
+        // find the starting point of the name resolution
+        let mut current_id = if qualified_identifier.leading_separator().is_some() {
+            // start from root
+            if let Some(id) = self
+                .root_module_ids_by_name
+                .get(qualified_identifier.identifiers().first().span.str())
+                .copied()
+            {
+                id.into()
             } else {
-                current_id = Some(self.root_module_ids_by_name.get(name).copied()?.into());
+                handler.recieve(
+                    SymbolNotFound {
+                        span: qualified_identifier.identifiers().first().span.clone(),
+                        in_scope_id: None,
+                    }
+                    .into(),
+                );
+
+                return Err(ResolveError::FatalSymbolError);
+            }
+        } else {
+            // search starting from the referring site and going up the parent chain. the first
+            // scope that contains the symbol is the starting point
+            let mut in_scope_id: GlobalID = referring_site.into();
+            loop {
+                let result = self.search_child(
+                    in_scope_id,
+                    qualified_identifier.identifiers().first().span.str(),
+                );
+
+                if let Some(result) = result {
+                    break result;
+                }
+
+                // if the parent scope doesn't contain the symbol, go up the parent chain
+                // if returns None, then the symbol is not found
+                in_scope_id =
+                    if let Some(id) = self.get_global(in_scope_id).unwrap().parent_scoped_id() {
+                        id.into()
+                    } else {
+                        handler.recieve(
+                            SymbolNotFound {
+                                span: qualified_identifier.identifiers().first().span.clone(),
+                                in_scope_id: None,
+                            }
+                            .into(),
+                        );
+                        return Err(ResolveError::FatalSymbolError);
+                    };
+            }
+        };
+
+        // search the symbol for the rest of the identifiers
+        for identifier in qualified_identifier.identifiers().rest() {
+            if let Some(result) = self.search_child(current_id, identifier.1.span.str()) {
+                // check if the symbol is accessible
+                if !self.symbol_accessible(
+                    referring_site,
+                    result,
+                    self.get_global(current_id).unwrap().accessibility(),
+                )? {
+                    handler.recieve(
+                        SymbolNotAccessible {
+                            span: identifier.1.span.clone(),
+                            global_id: result,
+                        }
+                        .into(),
+                    );
+                }
+
+                current_id = result;
+            } else {
+                handler.recieve(
+                    SymbolNotFound {
+                        span: identifier.1.span.clone(),
+                        in_scope_id: Some(current_id),
+                    }
+                    .into(),
+                );
+                return Err(ResolveError::FatalSymbolError);
             }
         }
 
-        current_id
-    }
-
-    /// Gets the fully qualified name of the given symbol.
-    #[must_use]
-    pub fn get_full_name_of(&self, global_id: impl Into<GlobalID>) -> String {
-        let global_id = global_id.into();
-        let mut name = self[global_id].name().to_owned();
-        let mut parent = self[global_id].parent_scoped_id();
-
-        while let Some(parent_id) = parent {
-            name.insert_str(0, "::");
-            name.insert_str(0, self[parent_id].name());
-            parent = self[parent_id].parent_scoped_id();
-        }
-
-        name
+        Ok(current_id)
     }
 }
 
 impl Table {
-    /// Creates a new empty [`Table`].
+    #[allow(dead_code)]
     fn new() -> Self {
         Self {
-            symbols_by_id: HashMap::new(),
+            modules: Arena::new(),
+            structs: Arena::new(),
+            enums: Arena::new(),
+            enum_variants: Arena::new(),
+            type_aliases: Arena::new(),
+            overload_sets: Arena::new(),
+            overloads: Arena::new(),
+            fields: Arena::new(),
+            parameters: Arena::new(),
             root_module_ids_by_name: HashMap::new(),
         }
     }
@@ -173,7 +362,7 @@ impl Table {
                 )
             };
 
-            let module_data = ModuleData {
+            let module = Module {
                 parent_module_id,
                 name: file
                     .source_file()
@@ -188,18 +377,21 @@ impl Table {
                     .map_or(Accessibility::Public, Accessibility::from_syntax_tree),
             };
 
-            let id = self.add_symbol(module_data);
+            let id = self.modules.insert(module);
 
             // add the module to the parent module
             if let Some(parent) = parent_module_id {
-                self[parent].child_ids_by_name.insert(
-                    file.source_file()
-                        .module_hierarchy()
-                        .last()
-                        .unwrap()
-                        .clone(),
-                    id.into(),
-                );
+                self.get_module_mut(parent)
+                    .unwrap()
+                    .child_ids_by_name
+                    .insert(
+                        file.source_file()
+                            .module_hierarchy()
+                            .last()
+                            .unwrap()
+                            .clone(),
+                        id.into(),
+                    );
             } else {
                 // add to the root
                 self.root_module_ids_by_name.insert(
@@ -214,12 +406,11 @@ impl Table {
         }
     }
 
-    /// Drafts all the symbols from the given target parsing.
     fn draft_symbols(
         &mut self,
         target_parsing: TargetParsing,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) {
         let files = target_parsing
             .dissolve()
@@ -264,7 +455,7 @@ impl Table {
                         };
 
                         if is_redefinition {
-                            errors.push(
+                            handler.recieve(
                                 SymbolRedifinition {
                                     available_global_id,
                                     span: identifier.span.clone(),
@@ -283,27 +474,27 @@ impl Table {
                         self.draft_struct(
                             syntax_tree,
                             parent_module_id,
-                            errors,
                             symbol_states_by_id,
+                            handler,
                         )
                         .into(),
                     ),
                     ItemSyntaxTree::Enum(syntax_tree) => Some(
-                        self.draft_enum(syntax_tree, parent_module_id, errors)
+                        self.draft_enum(syntax_tree, parent_module_id, handler)
                             .into(),
                     ),
                     ItemSyntaxTree::Function(syntax_tree) => Some(
                         self.draft_overload_set(
                             syntax_tree,
                             parent_module_id,
-                            errors,
                             symbol_states_by_id,
+                            handler,
                         )
                         .into(),
                     ),
                     ItemSyntaxTree::Module(..) => continue,
                     ItemSyntaxTree::TypeAlias(syntax_tree) => self
-                        .draft_type_alias(syntax_tree, parent_module_id.into(), errors)
+                        .draft_type_alias(syntax_tree, parent_module_id.into(), handler)
                         .map(GlobalID::TypeAlias),
                 };
 
@@ -312,7 +503,7 @@ impl Table {
                 };
 
                 // add the symbol to the parent module
-                let module_sym = &mut self[parent_module_id];
+                let module_sym = self.get_module_mut(parent_module_id).unwrap();
                 module_sym.child_ids_by_name.insert(name, global_id);
 
                 match global_id {
@@ -333,18 +524,20 @@ impl Table {
         &mut self,
         syntax_tree: FunctionSyntaxTree,
         parent_module_id: ModuleID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> OverloadSetID {
         // create new overload set
         #[allow(clippy::option_if_let_else)]
-        let overload_set_id = if let Some(id) = self[parent_module_id]
+        let overload_set_id = if let Some(id) = self
+            .get_module(parent_module_id)
+            .unwrap()
             .child_ids_by_name
             .get(syntax_tree.signature().identifier().span.str())
         {
             id.into_overload_set().unwrap()
         } else {
-            self.add_symbol(OverloadSetData {
+            self.overload_sets.insert(OverloadSet {
                 parent_module_id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 overloads: Vec::new(),
@@ -356,7 +549,7 @@ impl Table {
             signature.dissolve();
 
         // signature syntax tree
-        let overload_syntax_tree = OverloadSignatureSyntaxTree {
+        let overload_syntax_tree = OverloadSyntaxTree {
             access_modifier,
             function_keyword,
             identifier,
@@ -365,7 +558,7 @@ impl Table {
         };
 
         // create new overload
-        let overload_id = self.add_symbol(OverloadData {
+        let overload_id = self.overloads.insert(Overload {
             parent_overload_set_id: overload_set_id,
             accessibility: Accessibility::from_syntax_tree(&overload_syntax_tree.access_modifier),
             syntax_tree: Arc::new(overload_syntax_tree),
@@ -376,7 +569,10 @@ impl Table {
 
         // add symbol state
         symbol_states_by_id.insert(overload_id.into(), SymbolState::Drafted);
-        self[overload_set_id].overloads.push(overload_id);
+        self.get_overload_set_mut(overload_set_id)
+            .unwrap()
+            .overloads
+            .push(overload_id);
 
         // draft parameter
         for parameter in parameter_ist
@@ -386,17 +582,17 @@ impl Table {
             let Some(parameter_id) = self.draft_parameter(
                 parameter,
                 overload_id,
-                self[overload_id].parameter_order().len(),
-                errors
+                self.get_overload(overload_id).unwrap().parameter_order().len(),
+                handler
             ) else {
                 continue;
             };
 
             // add symbol state
-            let parameter_name = self[parameter_id].name.clone();
+            let parameter_name = self.get_parameter(parameter_id).unwrap().name.clone();
             symbol_states_by_id.insert(parameter_id.into(), SymbolState::Drafted);
 
-            let overload = &mut self[overload_id];
+            let overload = self.get_overload_mut(overload_id).unwrap();
             overload
                 .parameter_ids_by_name
                 .insert(parameter_name, parameter_id);
@@ -411,15 +607,17 @@ impl Table {
         syntax_tree: ParameterSyntaxTree,
         parent_overload_id: OverloadID,
         declaration_order: usize,
-        errors: &mut Vec<SymbolError>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> Option<ParameterID> {
         let name = syntax_tree.identifier().span.str().to_owned();
-        if let Some(available_parameter_id) = self[parent_overload_id]
+        if let Some(available_parameter_id) = self
+            .get_overload(parent_overload_id)
+            .unwrap()
             .parameter_ids_by_name()
             .get(&name)
             .copied()
         {
-            errors.push(
+            handler.recieve(
                 ParameterRedefinition {
                     span: syntax_tree.identifier().span.clone(),
                     available_parameter_id,
@@ -429,7 +627,7 @@ impl Table {
             return None;
         }
 
-        Some(self.add_symbol(ParameterData {
+        Some(self.parameters.insert(Parameter {
             name,
             syntax_tree: Arc::new(syntax_tree),
             parent_overload_id,
@@ -445,12 +643,12 @@ impl Table {
         &mut self,
         syntax_tree: StructSyntaxTree,
         parent_module_id: ModuleID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> StructID {
         let (signature, body) = syntax_tree.dissolve();
 
-        let data = StructData {
+        let data = Struct {
             name: signature.identifier().span.str().to_owned(),
             accessibility: Accessibility::from_syntax_tree(signature.access_modifier()),
             parent_module_id,
@@ -460,7 +658,7 @@ impl Table {
             type_alias_ids_by_name: HashMap::new(), // To be filled later
         };
 
-        let id = self.add_symbol(data);
+        let id = self.structs.insert(data);
 
         // Draft each member
         for member in body.dissolve().1 {
@@ -470,14 +668,14 @@ impl Table {
                     let Some(field_id) = self.draft_field(
                         field,
                         id,
-                        self[id].field_order.len(),
-                        errors,
+                        self.get_struct(id).unwrap().field_order.len(),
+                        handler,
                     ) else {
                         continue;
                     };
 
-                    let field_name = self[field_id].name.clone();
-                    let struct_sym = &mut self[id];
+                    let field_name = self.get_field(field_id).unwrap().name.clone();
+                    let struct_sym = self.get_struct_mut(id).unwrap();
 
                     struct_sym.field_ids_by_name.insert(field_name, field_id);
                     struct_sym.field_order.push(field_id);
@@ -489,13 +687,13 @@ impl Table {
                     let Some(type_alias_id) = self.draft_type_alias(
                         type_alias,
                         TypeAliasParentID::Struct(id),
-                        errors,
+                        handler,
                     ) else {
                         continue;
                     };
 
-                    let type_alias_name = self[type_alias_id].name.clone();
-                    let struct_sym = &mut self[id];
+                    let type_alias_name = self.get_type_alias(type_alias_id).unwrap().name.clone();
+                    let struct_sym = self.get_struct_mut(id).unwrap();
 
                     struct_sym
                         .type_alias_ids_by_name
@@ -515,7 +713,7 @@ impl Table {
         &mut self,
         syntax_tree: TypeAliasSyntaxTree,
         parent_type_alias_id: TypeAliasParentID,
-        errors: &mut Vec<SymbolError>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> Option<TypeAliasID> {
         let name = syntax_tree.identifier().span.str().to_owned();
         let accessibility = Accessibility::from_syntax_tree(syntax_tree.access_modifier());
@@ -523,11 +721,11 @@ impl Table {
         // redifinition and accessibility check
         match parent_type_alias_id {
             TypeAliasParentID::Module(sym) => {
-                let module_sym = &self[sym];
+                let module_sym = self.get_module(sym).unwrap();
                 if let Some(available_global_id) = module_sym.child_ids_by_name.get(&name).copied()
                 {
                     // symbol redefinition
-                    errors.push(
+                    handler.recieve(
                         SymbolRedifinition {
                             available_global_id,
                             span: syntax_tree.identifier().span.clone(),
@@ -539,12 +737,12 @@ impl Table {
                 }
             }
             TypeAliasParentID::Struct(sym) => {
-                let struct_sym = &self[sym];
+                let struct_sym = self.get_struct(sym).unwrap();
                 if let Some(available_global_id) =
                     struct_sym.type_alias_ids_by_name.get(&name).copied()
                 {
                     // symbol redefinition
-                    errors.push(
+                    handler.recieve(
                         SymbolRedifinition {
                             available_global_id: available_global_id.into(),
                             span: syntax_tree.identifier().span.clone(),
@@ -557,7 +755,7 @@ impl Table {
 
                 // accessibility check
                 if accessibility < struct_sym.accessibility {
-                    errors.push(
+                    handler.recieve(
                         StructMemberMoreAccessibleThanStruct {
                             span: syntax_tree.identifier().span.clone(),
                             member_accessibility: accessibility,
@@ -569,7 +767,7 @@ impl Table {
             }
         }
 
-        Some(self.add_symbol(TypeAliasData {
+        Some(self.type_aliases.insert(TypeAlias {
             name,
             accessibility,
             type_alias_parent_id: parent_type_alias_id,
@@ -583,15 +781,17 @@ impl Table {
         syntax_tree: FieldSyntaxTree,
         parent_struct_id: StructID,
         declaration_order: usize,
-        errors: &mut Vec<SymbolError>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> Option<FieldID> {
-        if let Some(available_field_id) = self[parent_struct_id]
+        if let Some(available_field_id) = self
+            .get_struct(parent_struct_id)
+            .unwrap()
             .field_ids_by_name
             .get(syntax_tree.identifier().span.str())
             .copied()
         {
             // field redefinition
-            errors.push(
+            handler.recieve(
                 FieldRedefinition {
                     span: syntax_tree.identifier().span.clone(),
                     available_field_id,
@@ -606,9 +806,9 @@ impl Table {
 
         // accessibility check
         {
-            let struct_symbol = &self[parent_struct_id];
+            let struct_symbol = &self.get_struct(parent_struct_id).unwrap();
             if struct_symbol.accessibility.rank() < accessibility.rank() {
-                errors.push(
+                handler.recieve(
                     StructMemberMoreAccessibleThanStruct {
                         span: syntax_tree.identifier().span.clone(),
                         member_accessibility: accessibility,
@@ -619,7 +819,7 @@ impl Table {
             }
         }
 
-        Some(self.add_symbol(FieldData {
+        Some(self.fields.insert(Field {
             name: syntax_tree.identifier().span.str().to_owned(),
             accessibility,
             parent_struct_id,
@@ -633,13 +833,13 @@ impl Table {
         &mut self,
         syntax_tree: EnumSyntaxTree,
         parent_module_id: ModuleID,
-        errors: &mut Vec<SymbolError>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> EnumID {
         let (signature, body) = syntax_tree.dissolve();
         let name = signature.identifier().span.str().to_owned();
         let accessibility = Accessibility::from_syntax_tree(signature.access_modifier());
 
-        let id = self.add_symbol(EnumData {
+        let id = self.enums.insert(Enum {
             name,
             accessibility,
             parent_module_id,
@@ -654,12 +854,16 @@ impl Table {
             .into_iter()
             .flat_map(ConnectedList::into_elements)
         {
-            let variant_id =
-                self.draft_enum_variant(variant, id, self[id].variant_order.len(), errors);
+            let variant_id = self.draft_enum_variant(
+                variant,
+                id,
+                self.get_enum(id).unwrap().variant_order.len(),
+                handler,
+            );
 
             if let Some(variant_id) = variant_id {
-                let variant_name = self[variant_id].name.clone();
-                let enum_sym = &mut self[id];
+                let variant_name = self.get_enum_variant(variant_id).unwrap().name.clone();
+                let enum_sym = self.get_enum_mut(id).unwrap();
 
                 // add to the name map
                 enum_sym
@@ -679,15 +883,19 @@ impl Table {
         syntax_tree: IdentifierToken,
         parent_enum_id: EnumID,
         declaration_order: usize,
-        errors: &mut Vec<SymbolError>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> Option<EnumVariantID> {
         let name = syntax_tree.span.str().to_owned();
 
         // redefinition check
-        if let Some(available_enum_variant_id) =
-            self[parent_enum_id].variant_ids_by_name.get(&name).copied()
+        if let Some(available_enum_variant_id) = self
+            .get_enum(parent_enum_id)
+            .unwrap()
+            .variant_ids_by_name
+            .get(&name)
+            .copied()
         {
-            errors.push(
+            handler.recieve(
                 EnumVariantRedefinition {
                     span: syntax_tree.span,
                     available_enum_variant_id,
@@ -698,7 +906,7 @@ impl Table {
             return None;
         }
 
-        Some(self.add_symbol(EnumVariantData {
+        Some(self.enum_variants.insert(EnumVariant {
             name,
             parent_enum_id,
             syntax_tree: Arc::new(syntax_tree),
@@ -706,101 +914,28 @@ impl Table {
         }))
     }
 
-    /// Add the symbol to the table and returns the ID of the symbol.
-    fn add_symbol<T: Data>(&mut self, data: T) -> <T as Data>::ID
-    where
-        <T as Data>::ID: Into<ID>,
-        WithData<T>: Into<Symbol>,
-    {
-        let with_data = WithData::new(data);
-        let id = with_data.id;
-
-        self.symbols_by_id.insert(id.into(), with_data.into());
-
-        id
-    }
-
-    fn find_nearest_parent_module(&self, mut symbol: GlobalID) -> ModuleID {
-        loop {
-            if let GlobalID::Module(symbol) = symbol {
-                return symbol;
-            }
-
-            symbol = self[symbol].parent_scoped_id().unwrap().into();
-        }
-    }
-
-    fn find_root_module(&self, mut symbol: GlobalID) -> ModuleID {
-        loop {
-            if let Some(parent) = self[symbol].parent_scoped_id() {
-                symbol = parent.into();
-            } else {
-                // must be module
-                return symbol.into_module().unwrap();
-            }
-        }
-    }
-
-    fn symbol_accessible(
-        &self,
-        referring_site: ScopedID,
-        symbol: GlobalID,
-        accessibility: Accessibility,
-    ) -> bool {
-        match accessibility {
-            Accessibility::Internal => {
-                let referring_site_root_module = self.find_root_module(referring_site.into());
-                let symbol_root_module = self.find_root_module(symbol);
-
-                referring_site_root_module == symbol_root_module
-            }
-            Accessibility::Private => {
-                // find the nearest parent module of both the referring site and the symbol and
-                // check if the parent module of the referring site is the same or a child of the
-                // parent module of the symbol
-                let sym_parent = self.find_nearest_parent_module(symbol);
-                let mut current_module = referring_site;
-                loop {
-                    match current_module {
-                        ScopedID::Module(module) if module == sym_parent => {
-                            break true;
-                        }
-                        _ => {
-                            if let Some(parent) = self[current_module].parent_scoped_id() {
-                                current_module = parent;
-                            } else {
-                                break false;
-                            }
-                        }
-                    }
-                }
-            }
-            Accessibility::Public => true,
-        }
-    }
-
     fn construct_symbol(
         &mut self,
         id: ID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) {
         match id {
             ID::Module(..) | ID::Struct(..) | ID::Enum(..) | ID::EnumVariant(..) => unreachable!(),
             ID::OverloadSet(overload_set_id) => {
-                self.construct_overload_set(overload_set_id, errors, symbol_states_by_id);
+                self.construct_overload_set(overload_set_id, symbol_states_by_id, handler);
             }
             ID::TypeAlias(type_alias_id) => {
-                self.construct_type_alias(type_alias_id, errors, symbol_states_by_id);
+                self.construct_type_alias(type_alias_id, symbol_states_by_id, handler);
             }
             ID::Field(field_id) => {
-                self.construct_field(field_id, errors, symbol_states_by_id);
+                self.construct_field(field_id, symbol_states_by_id, handler);
             }
             ID::Overload(overload_id) => {
-                self.construct_overload(overload_id, errors, symbol_states_by_id);
+                self.construct_overload(overload_id, symbol_states_by_id, handler);
             }
             ID::Parameter(parameter_id) => {
-                self.construct_parameter(parameter_id, errors, symbol_states_by_id);
+                self.construct_parameter(parameter_id, symbol_states_by_id, handler);
             }
         }
     }
@@ -808,22 +943,40 @@ impl Table {
     fn construct_overload_set(
         &mut self,
         overload_set_id: OverloadSetID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) {
-        for i in 0..self[overload_set_id].overloads.len() {
-            let overload_id = self[overload_set_id].overloads[i];
-            self.check_symbol_requirement(overload_id.into(), errors, symbol_states_by_id);
+        for i in 0..self
+            .get_overload_set(overload_set_id)
+            .unwrap()
+            .overloads
+            .len()
+        {
+            let overload_set = self.get_overload_set(overload_set_id).unwrap();
+            let overload_id = overload_set.overloads[i];
+            self.check_symbol_requirement(overload_id.into(), symbol_states_by_id, handler);
         }
 
         // check for overload redefinition
         let mut i = 0;
-        while i < self[overload_set_id].overloads.len() {
+        while i < self
+            .get_overload_set(overload_set_id)
+            .unwrap()
+            .overloads
+            .len()
+        {
             let mut j = i + 1;
-            while j < self[overload_set_id].overloads.len() {
+            while j < self
+                .get_overload_set(overload_set_id)
+                .unwrap()
+                .overloads
+                .len()
+            {
+                let overload_set = self.get_overload_set(overload_set_id).unwrap();
+                let overload_j = self.get_overload(overload_set.overloads[j]).unwrap();
+
                 let redefined = 'result: {
-                    let overload_i = &self[self[overload_set_id].overloads[i]];
-                    let overload_j = &self[self[overload_set_id].overloads[j]];
+                    let overload_i = self.get_overload(overload_set.overloads[i]).unwrap();
 
                     if overload_i.parameter_order.len() != overload_j.parameter_order.len() {
                         break 'result false;
@@ -833,7 +986,12 @@ impl Table {
                         .parameter_order
                         .iter()
                         .zip(overload_j.parameter_order.iter())
-                        .map(|(i, j)| (&self[*i], &self[*j]))
+                        .map(|(i, j)| {
+                            (
+                                self.get_parameter(*i).unwrap(),
+                                self.get_parameter(*j).unwrap(),
+                            )
+                        })
                     {
                         if parameter_i.type_binding.ty != parameter_j.type_binding.ty {
                             break 'result false;
@@ -844,17 +1002,17 @@ impl Table {
                 };
 
                 if redefined {
-                    errors.push(
+                    handler.recieve(
                         OverloadRedefinition {
-                            span: self[self[overload_set_id].overloads[j]]
-                                .syntax_tree
-                                .identifier
-                                .span(),
-                            available_overload_id: self[overload_set_id].overloads[i],
+                            span: overload_j.syntax_tree.identifier.span(),
+                            available_overload_id: overload_set.overloads[i],
                         }
                         .into(),
                     );
-                    self[overload_set_id].overloads.remove(j);
+                    self.get_overload_set_mut(overload_set_id)
+                        .unwrap()
+                        .overloads
+                        .remove(j);
                 } else {
                     j += 1;
                 }
@@ -869,90 +1027,79 @@ impl Table {
     fn construct_overload(
         &mut self,
         overload_id: OverloadID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) {
         *symbol_states_by_id.get_mut(&overload_id.into()).unwrap() = SymbolState::Constructing;
 
-        let syntax_tree = self[overload_id].syntax_tree.clone();
+        let overload = self.get_overload(overload_id).unwrap();
+
+        let syntax_tree = overload.syntax_tree.clone();
         let ty = self
             .resolve_type_with_accessibility_constraint(
                 syntax_tree.type_annotation.type_specifier(),
-                self[overload_id].accessibility,
-                self[self[overload_id].parent_overload_set_id]
+                overload.accessibility,
+                self.get_overload_set(overload.parent_overload_set_id)
+                    .unwrap()
                     .parent_module_id
                     .into(),
-                errors,
                 symbol_states_by_id,
+                handler,
             )
             .unwrap_or(Type::PrimitiveType(PrimitiveType::Void));
 
-        self[overload_id].return_type = ty;
+        self.get_overload_mut(overload_id).unwrap().return_type = ty;
 
-        for i in 0..self[overload_id].parameter_order.len() {
+        for i in 0..self
+            .get_overload(overload_id)
+            .unwrap()
+            .parameter_order
+            .len()
+        {
             self.check_symbol_requirement(
-                self[overload_id].parameter_order[i].into(),
-                errors,
+                self.get_overload(overload_id).unwrap().parameter_order[i].into(),
                 symbol_states_by_id,
+                handler,
             );
         }
 
         symbol_states_by_id.remove(&overload_id.into());
     }
 
-    fn resolve_type_with_accessibility_constraint(
-        &mut self,
-        type_specifier: &TypeSpecifier,
-        accessibility_constraint: Accessibility,
-        referring_site: ScopedID,
-        errors: &mut Vec<SymbolError>,
-        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-    ) -> Option<Type> {
-        let ty = self.resolve_type(referring_site, type_specifier, errors, symbol_states_by_id)?;
-
-        let ty_accessibility = self.get_overall_accessibility(ty);
-
-        if accessibility_constraint.rank() > ty_accessibility.rank() {
-            errors.push(
-                PrivateSymbolLeak {
-                    span: type_specifier.span(),
-                    accessibility: ty_accessibility,
-                    parent_accessibility: accessibility_constraint,
-                }
-                .into(),
-            );
-        }
-
-        Some(ty)
-    }
-
     fn construct_parameter(
         &mut self,
         parameter_id: ParameterID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) {
         *symbol_states_by_id.get_mut(&parameter_id.into()).unwrap() = SymbolState::Constructing;
+        let parameter = self.get_parameter(parameter_id).unwrap();
 
-        let parameter = self[parameter_id].syntax_tree.clone();
+        let syntax_tree = parameter.syntax_tree.clone();
         let parent_module_id = self
-            [self[self[parameter_id].parent_overload_id].parent_overload_set_id]
+            .get_overload_set(
+                self.get_overload(parameter.parent_overload_id)
+                    .unwrap()
+                    .parent_overload_set_id,
+            )
+            .unwrap()
             .parent_module_id;
 
         let ty = self
             .resolve_type_with_accessibility_constraint(
-                parameter.type_annotation().type_specifier(),
-                self.index(self.index(parameter_id).parent_overload_id)
+                syntax_tree.type_annotation().type_specifier(),
+                self.get_overload(self.get_parameter(parameter_id).unwrap().parent_overload_id)
+                    .unwrap()
                     .accessibility,
                 parent_module_id.into(),
-                errors,
                 symbol_states_by_id,
+                handler,
             )
             .unwrap_or(Type::PrimitiveType(PrimitiveType::Void));
 
-        self[parameter_id].type_binding = TypeBinding {
+        self.get_parameter_mut(parameter_id).unwrap().type_binding = TypeBinding {
             ty,
-            is_mutable: parameter.mutable_keyword().is_some(),
+            is_mutable: syntax_tree.mutable_keyword().is_some(),
         };
 
         // remove the parameter from the constructing list
@@ -962,26 +1109,27 @@ impl Table {
     fn construct_field(
         &mut self,
         field_id: FieldID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) {
         *symbol_states_by_id.get_mut(&field_id.into()).unwrap() = SymbolState::Constructing;
 
-        let field = self[field_id].syntax_tree.clone();
+        let field = self.get_field(field_id).unwrap();
+        let syntax_tree = field.syntax_tree.clone();
 
         // resolve the type
         let ty = self
             .resolve_type_with_accessibility_constraint(
-                field.type_annotation().type_specifier(),
-                self[field_id].accessibility,
-                self[field_id].parent_struct_id.into(),
-                errors,
+                syntax_tree.type_annotation().type_specifier(),
+                field.accessibility,
+                field.parent_struct_id.into(),
                 symbol_states_by_id,
+                handler,
             )
             .unwrap_or(Type::PrimitiveType(PrimitiveType::Void));
 
         // update the field
-        self[field_id].ty = ty;
+        self.get_field_mut(field_id).unwrap().ty = ty;
 
         // remove from the constructing set
         symbol_states_by_id.remove(&field_id.into());
@@ -990,47 +1138,41 @@ impl Table {
     fn construct_type_alias(
         &mut self,
         type_alias_id: TypeAliasID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) {
         *symbol_states_by_id.get_mut(&type_alias_id.into()).unwrap() = SymbolState::Constructing;
 
-        let type_specifier = self[type_alias_id].syntax_tree.clone();
+        let type_alias = self.get_type_alias(type_alias_id).unwrap();
+        let type_specifier = type_alias.syntax_tree.clone();
 
         // resolve the type
         let ty = self
             .resolve_type_with_accessibility_constraint(
                 type_specifier.type_specifier(),
-                self[type_alias_id].accessibility,
-                self[type_alias_id].type_alias_parent_id.into(),
-                errors,
+                type_alias.accessibility,
+                type_alias.type_alias_parent_id.into(),
                 symbol_states_by_id,
+                handler,
             )
             .unwrap_or(Type::PrimitiveType(PrimitiveType::Void));
 
-        self[type_alias_id].alias = ty;
+        self.get_type_alias_mut(type_alias_id).unwrap().alias = ty;
 
         // remove the state
         symbol_states_by_id.remove(&type_alias_id.into());
     }
 
-    fn get_overall_accessibility(&mut self, ty: Type) -> Accessibility {
-        match ty {
-            Type::PrimitiveType(..) => Accessibility::Public,
-            Type::TypedID(ty) => self[ty].accessibility(),
-        }
-    }
-
     fn check_symbol_requirement(
         &mut self,
         id: ID,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> bool {
         match symbol_states_by_id.get(&id) {
             // constructs the symbol if it is not constructed
             Some(SymbolState::Drafted) => {
-                self.construct_symbol(id, errors, symbol_states_by_id);
+                self.construct_symbol(id, symbol_states_by_id, handler);
                 true
             }
 
@@ -1048,56 +1190,19 @@ impl Table {
                     symbol_states_by_id.remove(id);
                 }
 
-                errors.push(CircularDependency { symbol_ids }.into());
+                handler.recieve(CircularDependency { symbol_ids }.into());
                 false
             }
             None => true,
         }
     }
 
-    fn search_child(
-        &mut self,
-        parent: GlobalID,
-        name: &str,
-        errors: &mut Vec<SymbolError>,
-        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-    ) -> Option<GlobalID> {
-        if !self.check_symbol_requirement(parent.into(), errors, symbol_states_by_id) {
-            return None;
-        }
-
-        match parent {
-            GlobalID::Struct(sym) => self[sym]
-                .type_alias_ids_by_name
-                .get(name)
-                .copied()
-                .map(std::convert::Into::into),
-            GlobalID::Enum(sym) => self[sym]
-                .variant_ids_by_name
-                .get(name)
-                .copied()
-                .map(std::convert::Into::into),
-            GlobalID::Module(sym) => self[sym]
-                .child_ids_by_name
-                .get(name)
-                .copied()
-                .map(std::convert::Into::into),
-            GlobalID::TypeAlias(sym) => match self[sym].alias {
-                Type::PrimitiveType(..) => None,
-                Type::TypedID(type_id) => {
-                    self.search_child(type_id.into(), name, errors, symbol_states_by_id)
-                }
-            },
-            GlobalID::OverloadSet(..) | GlobalID::EnumVariant(..) => None,
-        }
-    }
-
-    fn resolve_type(
+    fn resolve_type_constructing(
         &mut self,
         referring_site: ScopedID,
         type_specifier: &TypeSpecifier,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> Option<Type> {
         match type_specifier {
             TypeSpecifier::PrimitiveTypeSpecifier(primitive_type) => match primitive_type {
@@ -1133,21 +1238,21 @@ impl Table {
                 PrimitiveTypeSpecifier::Void(..) => Some(Type::PrimitiveType(PrimitiveType::Void)),
             },
             TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
-                let symbol_id = self.resolve_symbol(
+                let symbol_id = self.resolve_symbol_constructing(
                     referring_site,
                     qualified_identifier,
-                    errors,
                     symbol_states_by_id,
+                    handler,
                 )?;
 
                 match symbol_id {
                     GlobalID::Struct(sym) => Some(Type::TypedID(sym.into())),
                     GlobalID::Enum(sym) => Some(Type::TypedID(sym.into())),
-                    GlobalID::TypeAlias(sym) => Some(self[sym].alias),
+                    GlobalID::TypeAlias(sym) => Some(self.get_type_alias(sym).unwrap().alias),
                     GlobalID::Module(..)
                     | GlobalID::OverloadSet(..)
                     | GlobalID::EnumVariant(..) => {
-                        errors.push(
+                        handler.recieve(
                             TypeExpected {
                                 span: qualified_identifier.span(),
                                 found: symbol_id,
@@ -1161,13 +1266,128 @@ impl Table {
         }
     }
 
+    fn get_overall_accessibility(&mut self, ty: Type) -> Accessibility {
+        match ty {
+            Type::PrimitiveType(..) => Accessibility::Public,
+            Type::TypedID(ty) => self.get_global(ty.into()).unwrap().accessibility(),
+        }
+    }
+
+    fn resolve_type_with_accessibility_constraint(
+        &mut self,
+        type_specifier: &TypeSpecifier,
+        accessibility_constraint: Accessibility,
+        referring_site: ScopedID,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
+    ) -> Option<Type> {
+        let ty = self.resolve_type_constructing(
+            referring_site,
+            type_specifier,
+            symbol_states_by_id,
+            handler,
+        )?;
+
+        let ty_accessibility = self.get_overall_accessibility(ty);
+
+        if accessibility_constraint.rank() > ty_accessibility.rank() {
+            handler.recieve(
+                PrivateSymbolLeak {
+                    span: type_specifier.span(),
+                    accessibility: ty_accessibility,
+                    parent_accessibility: accessibility_constraint,
+                }
+                .into(),
+            );
+        }
+
+        Some(ty)
+    }
+
+    fn search_child(&self, parent: GlobalID, name: &str) -> Option<GlobalID> {
+        match parent {
+            GlobalID::Struct(sym) => self
+                .get_struct(sym)
+                .unwrap()
+                .type_alias_ids_by_name
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            GlobalID::Enum(sym) => self
+                .get_enum(sym)
+                .unwrap()
+                .variant_ids_by_name
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            GlobalID::Module(sym) => self
+                .get_module(sym)
+                .unwrap()
+                .child_ids_by_name
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            GlobalID::TypeAlias(sym) => match self.get_type_alias(sym).unwrap().alias {
+                Type::PrimitiveType(..) => None,
+                Type::TypedID(type_id) => self.search_child(type_id.into(), name),
+            },
+            GlobalID::OverloadSet(..) | GlobalID::EnumVariant(..) => None,
+        }
+    }
+
+    fn search_child_constructing(
+        &mut self,
+        parent: GlobalID,
+        name: &str,
+        symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
+    ) -> Option<GlobalID> {
+        if !self.check_symbol_requirement(parent.into(), symbol_states_by_id, handler) {
+            return None;
+        }
+
+        match parent {
+            GlobalID::Struct(sym) => self
+                .get_struct(sym)
+                .unwrap()
+                .type_alias_ids_by_name
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            GlobalID::Enum(sym) => self
+                .get_enum(sym)
+                .unwrap()
+                .variant_ids_by_name
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            GlobalID::Module(sym) => self
+                .get_module(sym)
+                .unwrap()
+                .child_ids_by_name
+                .get(name)
+                .copied()
+                .map(std::convert::Into::into),
+            GlobalID::TypeAlias(sym) => match self.get_type_alias(sym).unwrap().alias {
+                Type::PrimitiveType(..) => None,
+                Type::TypedID(type_id) => self.search_child_constructing(
+                    type_id.into(),
+                    name,
+                    symbol_states_by_id,
+                    handler,
+                ),
+            },
+            GlobalID::OverloadSet(..) | GlobalID::EnumVariant(..) => None,
+        }
+    }
+
     /// Retrieves the symbol ID of the given qualified identifier
-    fn resolve_symbol(
+    fn resolve_symbol_constructing(
         &mut self,
         referring_site: ScopedID,
         qualified_identifier: &QualifiedIdentifier,
-        errors: &mut Vec<SymbolError>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
+        handler: &impl ErrorHandler<SymbolError>,
     ) -> Option<GlobalID> {
         // at the referring site itself, it must be fully constructed
         assert!(!symbol_states_by_id.contains_key(&referring_site.into()));
@@ -1182,7 +1402,7 @@ impl Table {
             {
                 id.into()
             } else {
-                errors.push(
+                handler.recieve(
                     SymbolNotFound {
                         span: qualified_identifier.identifiers().first().span.clone(),
                         in_scope_id: None,
@@ -1197,11 +1417,11 @@ impl Table {
             // scope that contains the symbol is the starting point
             let mut in_scope_id: GlobalID = referring_site.into();
             loop {
-                let result = self.search_child(
+                let result = self.search_child_constructing(
                     in_scope_id,
                     qualified_identifier.identifiers().first().span.str(),
-                    errors,
                     symbol_states_by_id,
+                    handler,
                 );
 
                 if let Some(result) = result {
@@ -1210,36 +1430,43 @@ impl Table {
 
                 // if the parent scope doesn't contain the symbol, go up the parent chain
                 // if returns None, then the symbol is not found
-                in_scope_id = if let Some(id) = self[in_scope_id].parent_scoped_id() {
-                    id.into()
-                } else {
-                    errors.push(
-                        SymbolNotFound {
-                            span: qualified_identifier.identifiers().first().span.clone(),
-                            in_scope_id: None,
-                        }
-                        .into(),
-                    );
-                    return None;
-                };
+                in_scope_id =
+                    if let Some(id) = self.get_global(in_scope_id).unwrap().parent_scoped_id() {
+                        id.into()
+                    } else {
+                        handler.recieve(
+                            SymbolNotFound {
+                                span: qualified_identifier.identifiers().first().span.clone(),
+                                in_scope_id: None,
+                            }
+                            .into(),
+                        );
+                        return None;
+                    };
             }
         };
 
         // the symbol must be built
-        self.check_symbol_requirement(current_id.into(), errors, symbol_states_by_id);
+        self.check_symbol_requirement(current_id.into(), symbol_states_by_id, handler);
 
         // search the symbol for the rest of the identifiers
         for identifier in qualified_identifier.identifiers().rest() {
-            if let Some(result) = self.search_child(
+            if let Some(result) = self.search_child_constructing(
                 current_id,
                 identifier.1.span.str(),
-                errors,
                 symbol_states_by_id,
+                handler,
             ) {
                 // check if the symbol is accessible
-                if !self.symbol_accessible(referring_site, result, self[current_id].accessibility())
+                if !self
+                    .symbol_accessible(
+                        referring_site,
+                        result,
+                        self.get_global(current_id).unwrap().accessibility(),
+                    )
+                    .unwrap()
                 {
-                    errors.push(
+                    handler.recieve(
                         SymbolNotAccessible {
                             span: identifier.1.span.clone(),
                             global_id: result,
@@ -1250,7 +1477,7 @@ impl Table {
 
                 current_id = result;
             } else {
-                errors.push(
+                handler.recieve(
                     SymbolNotFound {
                         span: identifier.1.span.clone(),
                         in_scope_id: Some(current_id),
@@ -1261,92 +1488,101 @@ impl Table {
             }
         }
 
-        self.check_symbol_requirement(current_id.into(), errors, symbol_states_by_id);
+        self.check_symbol_requirement(current_id.into(), symbol_states_by_id, handler);
 
         Some(current_id)
     }
-}
 
-macro_rules! impl_index {
-    // for unit index (pub struct ID(Uid);)
-    ($name:ident) => {
-        paste! {
-            impl Index<[< $name ID >]> for Table {
-                type Output = $name;
+    fn find_nearest_parent_module(&self, mut symbol: GlobalID) -> Result<ModuleID, InvalidIDError> {
+        if self.get_global(symbol).is_none() {
+            return Err(InvalidIDError);
+        }
 
-                fn index(&self, id: [< $name ID >]) -> &Self::Output {
-                    match self.symbols_by_id.get(&id.into()) {
-                        Some(Symbol::$name(sym)) => sym,
-                        _ => panic!("invalid id"),
-                    }
-                }
+        loop {
+            if let GlobalID::Module(symbol) = symbol {
+                return Ok(symbol);
             }
 
-            impl IndexMut<[< $name ID >]> for Table {
-                fn index_mut(&mut self, id: [< $name ID >]) -> &mut Self::Output {
-                    match self.symbols_by_id.get_mut(&id.into()) {
-                        Some(Symbol::$name(sym)) => sym,
-                        _ => panic!("invalid id"),
-                    }
-                }
+            symbol = self
+                .get_global(symbol)
+                .unwrap()
+                .parent_scoped_id()
+                .unwrap()
+                .into();
+        }
+    }
+
+    fn find_root_module(&self, mut symbol: GlobalID) -> Result<ModuleID, InvalidIDError> {
+        if self.get_global(symbol).is_none() {
+            return Err(InvalidIDError);
+        }
+
+        loop {
+            if let Some(parent) = self.get_global(symbol).unwrap().parent_scoped_id() {
+                symbol = parent.into();
+            } else {
+                // must be module
+                return Ok(symbol.into_module().unwrap());
             }
         }
-    };
-
-    // for enum index (pub enum ID { ID1(ID1), ID2(ID2), .. })
-    ($name:ident, $($variants:ident),+) => {
-        paste! {
-            impl Index<[< $name ID >]> for Table {
-                type Output = dyn $name;
-
-                fn index(&self, id: [< $name ID >]) -> &Self::Output {
-                    match self.symbols_by_id.get(&id.into()) {
-                        $(
-                            Some(Symbol::$variants(sym)) => sym,
-                        )+
-                        _ => panic!("invalid id"),
-                    }
-                }
-            }
-
-            impl IndexMut<[< $name ID >]> for Table {
-                fn index_mut(&mut self, id: [< $name ID >]) -> &mut Self::Output {
-                    match self.symbols_by_id.get_mut(&id.into()) {
-                        $(
-                            Some(Symbol::$variants(sym)) => sym,
-                        )+
-                        _ => panic!("invalid id"),
-                    }
-                }
-            }
-        }
-    };
-}
-
-impl_index!(Struct);
-impl_index!(OverloadSet);
-impl_index!(Module);
-impl_index!(Enum);
-impl_index!(EnumVariant);
-impl_index!(TypeAlias);
-impl_index!(Overload);
-impl_index!(Field);
-impl_index!(Parameter);
-
-impl_index!(Scoped, Module, Enum, Struct);
-impl_index!(Global, Module, Enum, Struct, TypeAlias, OverloadSet);
-impl_index!(Typed, Enum, Struct);
-
-impl Index<ID> for Table {
-    type Output = Symbol;
-
-    fn index(&self, id: ID) -> &Self::Output { &self.symbols_by_id[&id] }
-}
-impl IndexMut<ID> for Table {
-    fn index_mut(&mut self, id: ID) -> &mut Self::Output {
-        self.symbols_by_id.get_mut(&id).unwrap()
     }
 }
+
+macro_rules! impl_index_getter {
+    ($name:ident, $arena_name:ident $(, $opt_postfix:ident)?) => {
+        paste::paste! {
+            impl Table {
+                #[must_use]
+                #[doc = concat!("Returns a reference to [`", stringify!([< $name Symbol >]), "`] with the given ID.")]
+                pub fn [< get_ $arena_name >](&self, id: super::[< $name ID >]) -> Option<&super::[< $name Symbol >]> {
+                    self.[< $arena_name $($opt_postfix)? s >].get(id)
+                }
+
+                #[allow(dead_code)]
+                fn [< get_ $arena_name _mut>](&mut self, id: super::[< $name ID >]) -> Option<&mut super::[< $name Symbol >]> {
+                    self.[< $arena_name $($opt_postfix)? s >].get_mut(id)
+                }
+            }
+        }
+    };
+
+    ($name:ident, $method_name:ident, $( ($variant:ident, $arena_name:ident) ),+) => {
+        paste::paste! {
+            impl Table {
+                #[must_use]
+                #[doc = concat!("Returns a mutable reference to [`", stringify!([< $name Symbol >]), "`] with the given ID.")]
+                pub fn [< get_ $method_name >](&self, id: super::[< $name ID >]) -> Option<& dyn super::$name> {
+                    match id {
+                        $(
+                            super::[< $name ID >]::$variant(id) => self.[< get_ $arena_name >](id).map(|s| s as &dyn super::$name),
+                        )+
+                    }
+                }
+
+                #[allow(dead_code)]
+                fn [< get_ $method_name _mut>](&mut self, id: super::[< $name ID >]) -> Option<&mut dyn super::$name> {
+                    match id {
+                        $(
+                            super::[< $name ID >]::$variant(id) => self.[< get_ $arena_name _mut>](id).map(|s| s as &mut dyn super::$name),
+                        )+
+                    }
+                }
+            }
+        }
+    };
+}
+
+impl_index_getter!(Module, module);
+impl_index_getter!(Struct, struct);
+impl_index_getter!(Enum, enum);
+impl_index_getter!(EnumVariant, enum_variant);
+impl_index_getter!(OverloadSet, overload_set);
+impl_index_getter!(Overload, overload);
+impl_index_getter!(Field, field);
+impl_index_getter!(Parameter, parameter);
+impl_index_getter!(TypeAlias, type_alias, e);
+impl_index_getter!(Global, global, (Module, module), (Struct, struct), (Enum, enum), (EnumVariant, enum_variant), (OverloadSet, overload_set), (TypeAlias, type_alias));
+impl_index_getter!(Scoped, scoped, (Module, module), (Struct, struct), (Enum, enum));
 
 #[cfg(test)]
 mod tests;

@@ -98,6 +98,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
+name = "delegate"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d358e0ec5c59a5e1603b933def447096886121660fc680dc1e64a0753981fe3c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "derive-getters"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -353,9 +364,9 @@ checksum = "348108ab3fba42ec82ff6e9564fc4ca0247bdccdc68dd8af9764bbc79c3c8ffb"
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36eb31c1778188ae1e64398743890d0877fef36d11521ac60406b42016e8c2cf"
+checksum = "2e8776872cdc2f073ccaab02e336fa321328c1e02646ebcb9d2108d0baab480d"
 
 [[package]]
 name = "memchr"
@@ -388,6 +399,7 @@ dependencies = [
  "derive_more",
  "enum-as-inner",
  "getset",
+ "pernixc_system",
  "thiserror",
 ]
 
@@ -401,6 +413,7 @@ dependencies = [
  "getset",
  "lazy_static",
  "pernixc_common",
+ "pernixc_system",
  "strum",
  "strum_macros",
  "thiserror",
@@ -411,6 +424,7 @@ name = "pernixc_semantic"
 version = "0.1.0"
 dependencies = [
  "builder-pattern",
+ "delegate",
  "derive-getters",
  "derive-new",
  "derive_more",
@@ -420,6 +434,7 @@ dependencies = [
  "pernixc_common",
  "pernixc_lexical",
  "pernixc_syntax",
+ "pernixc_system",
  "thiserror",
 ]
 
@@ -434,7 +449,18 @@ dependencies = [
  "lazy_static",
  "pernixc_common",
  "pernixc_lexical",
+ "pernixc_system",
  "proptest",
+ "thiserror",
+]
+
+[[package]]
+name = "pernixc_system"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "getset",
+ "paste",
  "thiserror",
 ]
 
@@ -596,9 +622,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.37.14"
+version = "0.37.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9b864d3c18a5785a05953adeed93e2dca37ed30f18e69bba9f30079d51f363f"
+checksum = "a0661814f891c57c930a610266415528da53c4933e6dea5fb350cbfe048a9ece"
 dependencies = [
  "bitflags",
  "errno",

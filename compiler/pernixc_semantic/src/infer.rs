@@ -1,12 +1,16 @@
 //! Implements the type inference algorithm for the Pernix programming language.
 
-use std::{collections::HashMap, sync::atomic::AtomicUsize};
+use std::{collections::HashMap, ops::Index, sync::atomic::AtomicUsize};
 
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use thiserror::Error;
 
-use crate::symbol::ty::{PrimitiveType, Type};
+use crate::symbol::{
+    implements_data_with_id,
+    ty::{PrimitiveType, Type},
+};
 
 /// Represents a constraint that is used in the type variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -68,20 +72,18 @@ impl Constraint {
     }
 }
 
-/// Represents an information about a type variable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct TypeVariableInfo {
-    /// Gets the constraint that is associated with the type variable.
-    #[get = "pub"]
-    constraint: Constraint,
+implements_data_with_id! {
+    /// Represents an information about a type variable.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+    pub struct TypeVariable {
+        /// Gets the constraint that is associated with the type variable.
+        #[get = "pub"]
+        constraint: Constraint,
+    }
 }
 
-/// Represents a type variable that is used in the type inference algorithm.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeVariableID(usize);
-
 /// Represents a type that is used in the type inference algorithm.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[non_exhaustive]
 pub enum MonoType {
     TypeVariable(TypeVariableID),
@@ -89,13 +91,13 @@ pub enum MonoType {
 }
 
 /// Represents a result of retrieving a type with [`InferenceID`] from the [`InferenceContext`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum Infererence<'a> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum InferableType {
     /// The type is successfully inferred.
-    Inferred(&'a Type),
+    Type(Type),
 
-    /// The type is not inferred yet and the type variable info is returned.
-    TypeVariable(&'a TypeVariableInfo),
+    /// The type is not yet inferred and is represented by a type variable.
+    Constraint(Constraint),
 }
 
 /// Represents an identifier used to retrieve a type assignment from the [`InferenceContext`].
@@ -106,7 +108,7 @@ pub struct InferenceID(usize);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceContext {
     assignments: HashMap<InferenceID, MonoType>,
-    type_variables: HashMap<TypeVariableID, TypeVariableInfo>,
+    type_variable_by_ids: HashMap<TypeVariableID, TypeVariable>,
 }
 
 impl InferenceContext {
@@ -115,7 +117,7 @@ impl InferenceContext {
     pub fn new() -> Self {
         Self {
             assignments: HashMap::new(),
-            type_variables: HashMap::new(),
+            type_variable_by_ids: HashMap::new(),
         }
     }
 
@@ -139,29 +141,26 @@ impl InferenceContext {
     /// Creates a new type variable.
     #[must_use]
     fn add_type_variable(&mut self, constraint: Constraint) -> TypeVariableID {
-        // use atomic counter to get the next id
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let symbol = TypeVariable::new(TypeVariableData { constraint });
+        let id = symbol.id();
 
-        let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let id = TypeVariableID(id);
-
-        self.type_variables
-            .insert(id, TypeVariableInfo { constraint });
+        self.type_variable_by_ids.insert(id, symbol);
 
         id
     }
 
     /// Gets the type of the given inference id.
-    ///
-    /// # Panics
-    /// Panics if the `inference_id` was not from this context or invalid.
     #[must_use]
-    pub fn get_inference(&self, inference_id: InferenceID) -> Infererence<'_> {
+    pub fn get_inferable_type(&self, inference_id: InferenceID) -> InferableType {
         match self.assignments.get(&inference_id).unwrap() {
-            MonoType::TypeVariable(type_var) => {
-                Infererence::TypeVariable(self.type_variables.get(type_var).unwrap())
-            }
-            MonoType::Type(concrete) => Infererence::Inferred(concrete),
+            MonoType::TypeVariable(type_var) => InferableType::Constraint(
+                *self
+                    .type_variable_by_ids
+                    .get(type_var)
+                    .unwrap()
+                    .constraint(),
+            ),
+            MonoType::Type(concrete) => InferableType::Type(*concrete),
         }
     }
 
@@ -177,10 +176,10 @@ impl InferenceContext {
         &mut self,
         inference_id: InferenceID,
         constraint: Constraint,
-    ) -> Result<(), ConstraintAddError> {
+    ) -> Result<(), ConstraintNotSatisfiedError> {
         match *self.assignments.get(&inference_id).unwrap() {
             MonoType::TypeVariable(type_variable) => {
-                let type_variable = self.type_variables.get_mut(&type_variable).unwrap();
+                let type_variable = self.type_variable_by_ids.get_mut(&type_variable).unwrap();
                 if constraint.is_more_constrainted_than(type_variable.constraint) {
                     type_variable.constraint = constraint;
                 }
@@ -190,7 +189,10 @@ impl InferenceContext {
                 if constraint.satisfies(concrete_type) {
                     Ok(())
                 } else {
-                    Err(ConstraintAddError(concrete_type))
+                    Err(ConstraintNotSatisfiedError {
+                        constraint,
+                        concrete_type,
+                    })
                 }
             }
         }
@@ -211,23 +213,24 @@ impl InferenceContext {
             }
 
             if !self
-                .type_variables
+                .type_variable_by_ids
                 .get(&ty_var)
                 .unwrap()
                 .constraint
                 .satisfies(concrete)
             {
-                return Err(UnificationError::ConstraintNotSatisfied {
-                    constraint: self.type_variables.get(&ty_var).unwrap().constraint,
+                return Err(ConstraintNotSatisfiedError {
+                    constraint: self.type_variable_by_ids.get(&ty_var).unwrap().constraint,
                     concrete_type: concrete,
-                });
+                }
+                .into());
             }
 
             *ty = MonoType::Type(concrete);
         }
 
         // remove variable_id type variable
-        self.type_variables.remove(&variable_id);
+        self.type_variable_by_ids.remove(&variable_id);
 
         Ok(())
     }
@@ -252,10 +255,11 @@ impl InferenceContext {
                 if inferred == &concrete {
                     Ok(())
                 } else {
-                    Err(UnificationError::TypeMismatch {
+                    Err(TypeMismatchError {
                         left: *inferred,
                         right: concrete,
-                    })
+                    }
+                    .into())
                 }
             }
         }
@@ -289,11 +293,13 @@ impl InferenceContext {
             // Check if the left type variable is more constrainted than the right type
             // variable.
             let left_more_constraint = self
-                .type_variables
+                .type_variable_by_ids
                 .get(&left)
                 .unwrap()
                 .constraint
-                .is_more_constrainted_than(self.type_variables.get(&right).unwrap().constraint);
+                .is_more_constrainted_than(
+                    self.type_variable_by_ids.get(&right).unwrap().constraint,
+                );
 
             let map_fn = |this: &mut Self, from: TypeVariableID, to: TypeVariableID| {
                 // map from left to right in assignments
@@ -309,11 +315,11 @@ impl InferenceContext {
             if left_more_constraint {
                 map_fn(self, right, left);
                 // remove right type variable
-                self.type_variables.remove(&right);
+                self.type_variable_by_ids.remove(&right);
             } else {
                 map_fn(self, left, right);
                 // remove left type variable
-                self.type_variables.remove(&left);
+                self.type_variable_by_ids.remove(&left);
             }
 
             Ok(())
@@ -341,40 +347,46 @@ impl InferenceContext {
             if left == right {
                 Ok(())
             } else {
-                Err(UnificationError::TypeMismatch {
+                Err(TypeMismatchError {
                     left: *left,
                     right: *right,
-                })
+                }
+                .into())
             }
         }
     }
 }
 
-/// Represents an error that can occur during unification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error, EnumAsInner)]
+impl Index<TypeVariableID> for InferenceContext {
+    type Output = TypeVariable;
 
-pub enum UnificationError {
-    #[error("Attempted to unify two concrete types that are not the same.")]
-    TypeMismatch { left: Type, right: Type },
-
-    #[error(
-        "Attempted to unify a type variable with a concrete type that does not satisfy the \
-         constraint"
-    )]
-    ConstraintNotSatisfied {
-        constraint: Constraint,
-        concrete_type: Type,
-    },
+    fn index(&self, index: TypeVariableID) -> &Self::Output {
+        self.type_variable_by_ids.get(&index).unwrap()
+    }
 }
 
-/// Represents an error that can occur when adding a constraint to an inference variable via
-/// [`InferenceContext::add_constraint()`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
-#[error(
-    "The inference variable is already assigned a concrete type but the concrete type does not \
-     satisfy the constraint."
-)]
-pub struct ConstraintAddError(pub Type);
+#[error("Attempted to unify two concrete types that are not the same.")]
+pub struct TypeMismatchError {
+    pub left: Type,
+    pub right: Type,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[error("The concrete type doesn't satisfy particular constraint")]
+pub struct ConstraintNotSatisfiedError {
+    pub constraint: Constraint,
+    pub concrete_type: Type,
+}
+
+/// Represents an error that can occur during unification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error, EnumAsInner, From)]
+pub enum UnificationError {
+    #[error("{0}")]
+    TypeMismatchError(TypeMismatchError),
+    #[error("{0}")]
+    ConstraintNotSatisfiedError(ConstraintNotSatisfiedError),
+}
 
 impl Default for InferenceContext {
     fn default() -> Self { Self::new() }

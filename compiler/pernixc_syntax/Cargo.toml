@@ -8,6 +8,7 @@ edition = { workspace = true }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+pernixc_system = { path = "../pernixc_system" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_common = { path = "../pernixc_common" }
 enum-as-inner = { workspace = true }

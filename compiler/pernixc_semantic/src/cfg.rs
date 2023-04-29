@@ -50,7 +50,7 @@ pub trait ConditionalJumpInstruction {
 }
 
 /// Is a trait for the basic instruction of a [`ControlFlowGraph`].
-pub trait IRinstruction {}
+pub trait BasicInstruction {}
 
 /// Is a trait for the backend of a [`ControlFlowGraph`].
 ///
@@ -59,16 +59,16 @@ pub trait InstructionBackend {
     /// The type of the value of the [`ControlFlowGraph`].
     type Value: Debug + Clone;
 
-    /// The type of the instruction of the [`ControlFlowGraph`].
-    type IR: IRinstruction + Debug + Clone;
+    /// The basic instruction type of the [`ControlFlowGraph`].
+    type Basic: BasicInstruction + Debug + Clone;
 
-    /// The type of the jump instruction of the [`ControlFlowGraph`].
+    /// The jump instruction type of the [`ControlFlowGraph`].
     type Jump: JumpInstruction + Debug + Clone;
 
-    /// The type of the return instruction of the [`ControlFlowGraph`].
+    /// The return instruction type of the [`ControlFlowGraph`].
     type Return: ReturnInstruction<Value = Self::Value> + Debug + Clone;
 
-    /// The type of the conditional jump instruction of the [`ControlFlowGraph`].
+    /// The conditional jump instruction type of the [`ControlFlowGraph`].
     type ConditionalJump: ConditionalJumpInstruction<Value = Self::Value> + Debug + Clone;
 }
 
@@ -80,7 +80,7 @@ pub enum Instruction<T: InstructionBackend> {
     Jump(T::Jump),
     Return(T::Return),
     ConditionalJump(T::ConditionalJump),
-    IR(T::IR),
+    Basic(T::Basic),
 }
 
 /// Represents a unit of sequential instructions that are executed in order.
@@ -102,6 +102,13 @@ pub struct BasicBlockData<T: InstructionBackend> {
     predecessors: HashSet<BasicBlockID>,
 }
 
+impl<T: InstructionBackend> BasicBlockData<T> {
+    /// Adds a new basic instruction to the [`BasicBlock`].
+    pub fn add_basic_instruction(&mut self, instruction: T::Basic) {
+        self.instructions.push(Instruction::Basic(instruction));
+    }
+}
+
 impl<T: InstructionBackend> Data for BasicBlockData<T> {
     type ID = BasicBlockID;
 }
@@ -119,7 +126,7 @@ pub type BasicBlock<T> = WithData<BasicBlockData<T>>;
 /// represent the control flow of a function. It accepts a [`InstructionBackend`] generic type
 /// parameter to accommodate different kinds of intermediate representations throughout the semantic
 /// analysis.
-#[derive(Debug, Clone, CopyGetters)]
+#[derive(Debug, CopyGetters)]
 pub struct ControlFlowGraph<T: InstructionBackend> {
     basic_blocks_by_id: HashMap<BasicBlockID, BasicBlock<T>>,
 

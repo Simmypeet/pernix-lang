@@ -5,12 +5,13 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
+use pernixc_system::error_handler::ErrorHandler;
 
 use super::{
     expression::{Expression, Functional, Imperative},
     SourceElement, TypeAnnotation,
 };
-use crate::parser::Parser;
+use crate::{error::SyntacticError, parser::Parser};
 
 /// Represents a statement syntax tree node
 ///
@@ -144,7 +145,10 @@ impl SourceElement for Semi {
 
 impl<'a> Parser<'a> {
     /// Parses a [Statement]
-    pub fn parse_statement(&mut self) -> Option<Statement> {
+    pub fn parse_statement(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<Statement> {
         match self.peek_significant_token() {
             // Handles variable declaration statements
             Some(Token::Keyword(let_keyword)) if let_keyword.keyword == KeywordKind::Let => {
@@ -164,7 +168,7 @@ impl<'a> Parser<'a> {
                 };
 
                 // expect identifier
-                let identifier = self.expect_identifier()?;
+                let identifier = self.expect_identifier(handler)?;
 
                 // parse optional type annotation
                 let type_annotation = match self.peek_significant_token() {
@@ -172,7 +176,7 @@ impl<'a> Parser<'a> {
                         // eat colon
                         self.next_token();
 
-                        let type_specifier = self.parse_type_specifier()?;
+                        let type_specifier = self.parse_type_specifier(handler)?;
 
                         Some(TypeAnnotation {
                             colon: punctuation.clone(),
@@ -183,13 +187,13 @@ impl<'a> Parser<'a> {
                 };
 
                 // expect equals
-                let equals = self.expect_punctuation('=')?;
+                let equals = self.expect_punctuation('=', handler)?;
 
                 // parse expression
-                let expression = self.parse_expression()?;
+                let expression = self.parse_expression(handler)?;
 
                 // expect semi-colon
-                let semicolon = self.expect_punctuation(';')?;
+                let semicolon = self.expect_punctuation(';', handler)?;
 
                 Some(Statement::Declarative(
                     VariableDeclaration {
@@ -205,12 +209,12 @@ impl<'a> Parser<'a> {
                 ))
             }
             _ => {
-                let expression = self.parse_expression()?;
+                let expression = self.parse_expression(handler)?;
 
                 match expression {
                     Expression::Functional(expression) => {
                         // expect semi-colon
-                        let semicolon = self.expect_punctuation(';')?;
+                        let semicolon = self.expect_punctuation(';', handler)?;
 
                         Some(Statement::Expressive(Expressive::Semi(Semi {
                             expression,

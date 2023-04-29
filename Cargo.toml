@@ -1,10 +1,10 @@
 [workspace]
 members = [
+    "compiler/pernixc_system",
     "compiler/pernixc_common",
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_semantic",
-    #"compiler/pernixc_driver"
 ]
 
 [workspace.dependencies]
@@ -21,6 +21,7 @@ colored = "2.0.0"
 builder-pattern = "0.4.2"
 derive-getters = "0.2.1"
 paste = "1.0.12"
+delegate = "0.9.0"
 
 [workspace.package]
 version = "0.1.0"

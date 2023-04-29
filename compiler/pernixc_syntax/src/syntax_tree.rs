@@ -14,10 +14,11 @@ use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::TokenStream,
 };
+use pernixc_system::error_handler::ErrorHandler;
 
 use self::item::Item;
 use crate::{
-    errors::{PunctuationExpected, SyntacticError, TypeSpecifierExpected},
+    error::{PunctuationExpected, SyntacticError, TypeSpecifierExpected},
     parser::Parser,
 };
 
@@ -254,7 +255,10 @@ impl SourceElement for TypeAnnotation {
 
 impl<'a> Parser<'a> {
     /// Parses a [`QualifiedIdentifier`]
-    pub fn parse_qualified_identifier(&mut self) -> Option<QualifiedIdentifier> {
+    pub fn parse_qualified_identifier(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<QualifiedIdentifier> {
         // found a leading separator
         let leading_separator = match self.peek_significant_token().cloned() {
             Some(Token::Punctuation(first_colon)) if first_colon.punctuation == ':' => {
@@ -267,10 +271,13 @@ impl<'a> Parser<'a> {
                         second_colon
                     }
                     found => {
-                        self.report_error(PunctuationExpected {
-                            expected: ':',
-                            found,
-                        });
+                        handler.recieve(
+                            PunctuationExpected {
+                                expected: ':',
+                                found,
+                            }
+                            .into(),
+                        );
                         return None;
                     }
                 };
@@ -281,7 +288,7 @@ impl<'a> Parser<'a> {
         };
 
         // expect the first identifier
-        let first_identifier = self.expect_identifier()?.clone();
+        let first_identifier = self.expect_identifier(handler)?.clone();
 
         let mut rest = Vec::new();
         let mut cursor = self.cursor;
@@ -312,7 +319,7 @@ impl<'a> Parser<'a> {
             let scope_separator = ScopeSeparator(first_colon.clone(), second_colon.clone());
 
             // must be followed by an identifier
-            let identifier = self.expect_identifier()?.clone();
+            let identifier = self.expect_identifier(handler)?.clone();
 
             rest.push((scope_separator, identifier));
 
@@ -330,14 +337,17 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a [`TypeSpecifier`]
-    pub fn parse_type_specifier(&mut self) -> Option<TypeSpecifier> {
+    pub fn parse_type_specifier(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<TypeSpecifier> {
         if let Some(token) = self.peek_significant_token() {
             match token {
                 Token::Punctuation(punc) if punc.punctuation == ':' => Some(
-                    TypeSpecifier::QualifiedIdentifier(self.parse_qualified_identifier()?),
+                    TypeSpecifier::QualifiedIdentifier(self.parse_qualified_identifier(handler)?),
                 ),
                 Token::Identifier(..) => Some(TypeSpecifier::QualifiedIdentifier(
-                    self.parse_qualified_identifier()?,
+                    self.parse_qualified_identifier(handler)?,
                 )),
                 Token::Keyword(keyword) => {
                     // eat the token right away
@@ -365,9 +375,12 @@ impl<'a> Parser<'a> {
                     // eat the token, make progress
                     self.next_token();
 
-                    self.report_error(TypeSpecifierExpected {
-                        found: Some(token.clone()),
-                    });
+                    handler.recieve(
+                        TypeSpecifierExpected {
+                            found: Some(token.clone()),
+                        }
+                        .into(),
+                    );
                     None
                 }
             }
@@ -375,15 +388,18 @@ impl<'a> Parser<'a> {
             // make progress
             self.next_token();
 
-            self.report_error(TypeSpecifierExpected { found: None });
+            handler.recieve(TypeSpecifierExpected { found: None }.into());
             None
         }
     }
 
     /// Parses a [`TypeAnnotation`]
-    pub fn parse_type_annotation(&mut self) -> Option<TypeAnnotation> {
-        let colon = self.expect_punctuation(':')?;
-        let type_specifier = self.parse_type_specifier()?;
+    pub fn parse_type_annotation(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<TypeAnnotation> {
+        let colon = self.expect_punctuation(':', handler)?;
+        let type_specifier = self.parse_type_specifier(handler)?;
 
         Some(TypeAnnotation {
             colon: colon.clone(),
@@ -410,10 +426,10 @@ pub struct File {
 impl File {
     /// Parses a [`File`] from a token stream.
     #[must_use]
-    pub fn parse(tokens: &TokenStream) -> (Self, Vec<SyntacticError>) {
+    pub fn parse(tokens: &TokenStream, handler: &impl ErrorHandler<SyntacticError>) -> Self {
         // empty token stream
         if tokens.is_empty() {
-            return (Self { items: Vec::new() }, Vec::new());
+            return Self { items: Vec::new() };
         }
 
         let mut cursor = tokens.cursor();
@@ -426,7 +442,7 @@ impl File {
 
         // parse items
         while parser.peek_significant_token().is_some() {
-            parser.parse_item().map_or_else(
+            parser.parse_item(handler).map_or_else(
                 || {
                     // look for the next access modifier
                     parser.forward_until(|token| {
@@ -439,7 +455,7 @@ impl File {
         }
 
         // return the syntax tree and the errors
-        (Self { items }, parser.take_errors())
+        Self { items }
     }
 }
 

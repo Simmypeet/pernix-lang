@@ -1,5 +1,4 @@
-//! Contains the syntax tree for expressions.
-
+///! Contains the syntax tree for expressions.
 use std::cmp::Ordering;
 
 use derive_more::From;
@@ -9,12 +8,13 @@ use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{
     Identifier, Keyword, KeywordKind, NumericLiteral, Punctuation, Token,
 };
+use pernixc_system::error_handler::ErrorHandler;
 
 use super::{
     statement::Statement, ConnectedList, Label, QualifiedIdentifier, SourceElement, TypeSpecifier,
 };
 use crate::{
-    errors::{ExpressionExpected, PunctuationExpected, SyntacticError},
+    error::{ExpressionExpected, PunctuationExpected, SyntacticError},
     parser::Parser,
 };
 
@@ -883,15 +883,21 @@ impl SourceElement for Return {
 
 impl<'a> Parser<'a> {
     /// Parses an [`Expression`].
-    pub fn parse_expression(&mut self) -> Option<Expression> {
+    pub fn parse_expression(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<Expression> {
         // Gets the first primary expression
-        let mut first_expression = self.parse_primary_expression()?;
+        let mut first_expression = self.parse_primary_expression(handler)?;
 
         let mut expressions = Vec::new();
 
         // Parses a list of binary operators and expressions
         while let Some(binary_operator) = self.try_parse_binary_operator() {
-            expressions.push((binary_operator, Some(self.parse_primary_expression()?)));
+            expressions.push((
+                binary_operator,
+                Some(self.parse_primary_expression(handler)?),
+            ));
         }
 
         // We have to fold the expressions based on the precedence of the binary operators and the
@@ -1049,8 +1055,11 @@ impl<'a> Parser<'a> {
         Some(self.try_parse_second_punctuation_binary_operator(first_punctuation_binary_operator))
     }
 
-    pub(super) fn parse_block_without_label(&mut self) -> Option<BlockWithoutLabel> {
-        let left_brace = self.expect_punctuation('{')?;
+    pub(super) fn parse_block_without_label(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<BlockWithoutLabel> {
+        let left_brace = self.expect_punctuation('{', handler)?;
 
         let mut statements = Vec::new();
 
@@ -1063,15 +1072,19 @@ impl<'a> Parser<'a> {
                 }
 
                 None => {
-                    self.report_error(SyntacticError::PunctuationExpected(PunctuationExpected {
-                        expected: '}',
-                        found: None,
-                    }));
+                    handler.recieve(
+                        PunctuationExpected {
+                            expected: '}',
+                            found: None,
+                        }
+                        .into(),
+                    );
+
                     return None;
                 }
 
                 _ => {
-                    let statement = self.parse_statement();
+                    let statement = self.parse_statement(handler);
 
                     if let Some(statement) = statement {
                         statements.push(statement);
@@ -1090,12 +1103,13 @@ impl<'a> Parser<'a> {
                                 break punc
                             }
                             None => {
-                                self.report_error(SyntacticError::PunctuationExpected(
+                                handler.recieve(
                                     PunctuationExpected {
                                         expected: '}',
                                         found: None,
-                                    },
-                                ));
+                                    }
+                                    .into(),
+                                );
                                 return None;
                             }
                             _ => (),
@@ -1116,13 +1130,14 @@ impl<'a> Parser<'a> {
     fn parse_block_or_loop_expression(
         &mut self,
         label_specifier: Option<LabelSpecifier>,
+        handler: &impl ErrorHandler<SyntacticError>,
     ) -> Option<Expression> {
         match self.peek_significant_token() {
             // Handles loop
             Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == KeywordKind::Loop => {
                 self.next_token();
 
-                let expression = self.parse_block()?;
+                let expression = self.parse_block(handler)?;
 
                 Some(Expression::Imperative(Imperative::Loop(Loop {
                     label_specifier: None,
@@ -1132,27 +1147,30 @@ impl<'a> Parser<'a> {
             }
             // Handles block
             Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
-                let block_without_label = self.parse_block_without_label()?;
+                let block_without_label = self.parse_block_without_label(handler)?;
                 Some(Expression::Imperative(Imperative::Block(Block {
                     label_specifier,
                     block_without_label,
                 })))
             }
             token => {
-                self.report_error(ExpressionExpected {
-                    found: token.cloned(),
-                });
+                handler.recieve(
+                    ExpressionExpected {
+                        found: token.cloned(),
+                    }
+                    .into(),
+                );
                 None
             }
         }
     }
 
-    fn parse_block(&mut self) -> Option<Block> {
+    fn parse_block(&mut self, handler: &impl ErrorHandler<SyntacticError>) -> Option<Block> {
         let label_specifier = if matches!(self.peek_significant_token(), Some(Token::Punctuation(punc)) if punc.punctuation == '\'')
         {
-            let single_quote = self.expect_punctuation('\'')?;
-            let identifier = self.expect_identifier()?;
-            let colon = self.expect_punctuation(':')?;
+            let single_quote = self.expect_punctuation('\'', handler)?;
+            let identifier = self.expect_identifier(handler)?;
+            let colon = self.expect_punctuation(':', handler)?;
             Some(LabelSpecifier {
                 colon: colon.clone(),
                 label: Label {
@@ -1164,18 +1182,22 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let block = self.parse_block_without_label()?;
+        let block = self.parse_block_without_label(handler)?;
         Some(Block {
             label_specifier,
             block_without_label: block,
         })
     }
 
-    fn handle_if_keyword(&mut self, if_keyword: Keyword) -> Option<Expression> {
-        let left_paren = self.expect_punctuation('(')?;
-        let condition = self.parse_expression()?;
-        let right_paren = self.expect_punctuation(')')?;
-        let then_expression = self.parse_block()?;
+    fn handle_if_keyword(
+        &mut self,
+        if_keyword: Keyword,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<Expression> {
+        let left_paren = self.expect_punctuation('(', handler)?;
+        let condition = self.parse_expression(handler)?;
+        let right_paren = self.expect_punctuation(')', handler)?;
+        let then_expression = self.parse_block(handler)?;
 
         // Parses an else expression if it exists.
         let else_expression = match self.peek_significant_token() {
@@ -1186,14 +1208,14 @@ impl<'a> Parser<'a> {
                         self.next_token();
 
                         BlockOrIfElse::IfElse(
-                            self.handle_if_keyword(if_keyword)?
+                            self.handle_if_keyword(if_keyword, handler)?
                                 .into_imperative()
                                 .unwrap()
                                 .into_if_else()
                                 .unwrap(),
                         )
                     }
-                    _ => BlockOrIfElse::Block(self.parse_block()?),
+                    _ => BlockOrIfElse::Block(self.parse_block(handler)?),
                 };
 
                 Some(Else {
@@ -1214,8 +1236,11 @@ impl<'a> Parser<'a> {
         })))
     }
 
-    fn handle_identifier(&mut self) -> Option<Expression> {
-        let qualified_identifier = self.parse_qualified_identifier()?;
+    fn handle_identifier(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<Expression> {
+        let qualified_identifier = self.parse_qualified_identifier(handler)?;
 
         match self.peek_significant_token() {
             // Function call
@@ -1223,8 +1248,12 @@ impl<'a> Parser<'a> {
                 // eat the left parenthesis
                 self.next_token();
 
-                let (arguments, right_paren) = self
-                    .parse_enclosed_list(')', ',', |this| this.parse_expression().map(Box::new))?;
+                let (arguments, right_paren) = self.parse_enclosed_list(
+                    ')',
+                    ',',
+                    |this| this.parse_expression(handler).map(Box::new),
+                    handler,
+                )?;
 
                 Some(Expression::Functional(
                     FunctionCall {
@@ -1242,20 +1271,24 @@ impl<'a> Parser<'a> {
                 // eat the left brace
                 self.next_token();
 
-                let (field_initializations, right_brace) =
-                    self.parse_enclosed_list('}', ',', |this| {
-                        let identifier = this.expect_identifier()?;
+                let (field_initializations, right_brace) = self.parse_enclosed_list(
+                    '}',
+                    ',',
+                    |this| {
+                        let identifier = this.expect_identifier(handler)?;
 
-                        let colon = this.expect_punctuation(':')?;
+                        let colon = this.expect_punctuation(':', handler)?;
 
-                        let expression = this.parse_expression()?;
+                        let expression = this.parse_expression(handler)?;
 
                         Some(FieldInitializer {
                             identifier: identifier.clone(),
                             colon: colon.clone(),
                             expression: Box::new(expression),
                         })
-                    })?;
+                    },
+                    handler,
+                )?;
 
                 Some(Expression::Functional(
                     StructLiteral {
@@ -1278,13 +1311,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_parse_label(&mut self) -> Option<Label> {
+    fn try_parse_label(&mut self, handler: &impl ErrorHandler<SyntacticError>) -> Option<Label> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
                 // eat the single quote
                 self.next_token();
 
-                let identifier = self.expect_identifier()?.clone();
+                let identifier = self.expect_identifier(handler)?.clone();
 
                 Some(Label {
                     single_quote: single_quote.clone(),
@@ -1295,7 +1328,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_parse_expression_for_control_expression(&mut self) -> Option<Box<Expression>> {
+    fn try_parse_expression_for_control_expression(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<Box<Expression>> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => None,
             _ => {
@@ -1305,15 +1341,19 @@ impl<'a> Parser<'a> {
                     self.cursor.set_position(current_position);
                     None
                 } else {
-                    Some(Box::new(self.parse_expression()?))
+                    Some(Box::new(self.parse_expression(handler)?))
                 }
             }
         }
     }
 
-    fn handle_parenthesized(&mut self, left_paren: Punctuation) -> Option<Expression> {
-        let expression = self.parse_expression()?;
-        let right_paren = self.expect_punctuation(')')?;
+    fn handle_parenthesized(
+        &mut self,
+        left_paren: Punctuation,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<Expression> {
+        let expression = self.parse_expression(handler)?;
+        let right_paren = self.expect_punctuation(')', handler)?;
 
         Some(Expression::Functional(
             Parenthesized {
@@ -1326,12 +1366,15 @@ impl<'a> Parser<'a> {
     }
 
     // Parses an primary expression without any prefix operators.
-    fn parse_primary_expression_raw(&mut self) -> Option<Expression> {
+    fn parse_primary_expression_raw(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<Expression> {
         match self.peek_significant_token() {
             // Handles if expressions
             Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
                 self.next_token();
-                self.handle_if_keyword(if_keyword.clone())
+                self.handle_if_keyword(if_keyword.clone(), handler)
             }
 
             // Handles numeric literal
@@ -1343,15 +1386,15 @@ impl<'a> Parser<'a> {
             // Handles parenthesis
             Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
                 self.next_token();
-                self.handle_parenthesized(left_paren.clone())
+                self.handle_parenthesized(left_paren.clone(), handler)
             }
 
             // Handles label specifier
             Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
                 self.next_token();
 
-                let name = self.expect_identifier()?;
-                let colon = self.expect_punctuation(':')?;
+                let name = self.expect_identifier(handler)?;
+                let colon = self.expect_punctuation(':', handler)?;
 
                 let label = LabelSpecifier {
                     label: Label {
@@ -1361,7 +1404,7 @@ impl<'a> Parser<'a> {
                     colon: colon.clone(),
                 };
 
-                self.parse_block_or_loop_expression(Some(label))
+                self.parse_block_or_loop_expression(Some(label), handler)
             }
 
             // Handle continue expression
@@ -1371,7 +1414,7 @@ impl<'a> Parser<'a> {
                 // eat the continue keyword
                 self.next_token();
 
-                let label = self.try_parse_label();
+                let label = self.try_parse_label(handler);
 
                 Some(Expression::Functional(
                     Continue {
@@ -1387,8 +1430,8 @@ impl<'a> Parser<'a> {
                 // eat the break keyword
                 self.next_token();
 
-                let label = self.try_parse_label();
-                let expression = self.try_parse_expression_for_control_expression();
+                let label = self.try_parse_label(handler);
+                let expression = self.try_parse_expression_for_control_expression(handler);
 
                 Some(Expression::Functional(
                     Break {
@@ -1407,8 +1450,8 @@ impl<'a> Parser<'a> {
                 // eat the express keyword
                 self.next_token();
 
-                let label = self.try_parse_label();
-                let expression = self.try_parse_expression_for_control_expression();
+                let label = self.try_parse_label(handler);
+                let expression = self.try_parse_expression_for_control_expression(handler);
 
                 Some(Expression::Functional(
                     Express {
@@ -1427,7 +1470,7 @@ impl<'a> Parser<'a> {
                 // eat the return keyword
                 self.next_token();
 
-                let expression = self.try_parse_expression_for_control_expression();
+                let expression = self.try_parse_expression_for_control_expression(handler);
 
                 Some(Expression::Functional(
                     Return {
@@ -1439,7 +1482,7 @@ impl<'a> Parser<'a> {
             }
 
             // Handles identifier
-            Some(Token::Identifier(..)) => self.handle_identifier(),
+            Some(Token::Identifier(..)) => self.handle_identifier(handler),
 
             // Handles boolean literal
             Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::True => {
@@ -1455,19 +1498,22 @@ impl<'a> Parser<'a> {
                 ))
             }
 
-            _ => self.parse_block_or_loop_expression(None),
+            _ => self.parse_block_or_loop_expression(None, handler),
         }
     }
 
     // Parses a primary expression with prefix operators and postfix operators.
-    fn parse_primary_expression(&mut self) -> Option<Expression> {
+    fn parse_primary_expression(
+        &mut self,
+        handler: &impl ErrorHandler<SyntacticError>,
+    ) -> Option<Expression> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(punc))
                 if punc.punctuation == '!' || punc.punctuation == '-' =>
             {
                 self.next_token();
 
-                let operand = self.parse_primary_expression()?;
+                let operand = self.parse_primary_expression(handler)?;
 
                 return Some(Expression::Functional(
                     Prefix {
@@ -1484,14 +1530,14 @@ impl<'a> Parser<'a> {
             _ => (),
         }
 
-        let mut primary_expression = self.parse_primary_expression_raw()?;
+        let mut primary_expression = self.parse_primary_expression_raw(handler)?;
 
         loop {
             match self.peek_significant_token() {
                 Some(Token::Punctuation(dot)) if dot.punctuation == '.' => {
                     self.next_token();
 
-                    let identifier = self.expect_identifier()?.clone();
+                    let identifier = self.expect_identifier(handler)?.clone();
 
                     primary_expression = Expression::Functional(
                         MemberAccess {
@@ -1505,7 +1551,7 @@ impl<'a> Parser<'a> {
                 Some(Token::Keyword(as_keyword)) if as_keyword.keyword == KeywordKind::As => {
                     self.next_token();
 
-                    let type_specifier = self.parse_type_specifier()?;
+                    let type_specifier = self.parse_type_specifier(handler)?;
 
                     primary_expression = Expression::Functional(
                         Cast {

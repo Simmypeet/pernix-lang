@@ -6,9 +6,10 @@ use derive_getters::Dissolve;
 use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
 use pernixc_common::source_file::Iterator;
+use pernixc_system::error_handler::ErrorHandler;
 
 use crate::{
-    errors::LexicalError,
+    error::LexicalError,
     token::{Token, TokenizationError},
 };
 
@@ -36,23 +37,21 @@ impl TokenStream {
     /// A tuple containing the stream of successfully tokenized tokens and a list of lexical errors
     /// encountered during tokenization.
     #[must_use]
-    pub fn tokenize(mut source_file_iterator: Iterator) -> (Self, Vec<LexicalError>) {
+    pub fn tokenize(
+        mut source_file_iterator: Iterator,
+        handler: &impl ErrorHandler<LexicalError>,
+    ) -> Self {
         // list of tokens to return
         let mut tokens = Vec::new();
 
-        // list of lexical errors encountered during tokenization
-        let mut lexical_errors = Vec::new();
-
         loop {
             // Tokenizes the next token
-            match Token::tokenize(&mut source_file_iterator) {
+            match Token::tokenize(&mut source_file_iterator, handler) {
                 Ok(token) => tokens.push(token),
-                Err(TokenizationError::LexicalError(lexical_error)) => {
-                    lexical_errors.push(lexical_error);
-                }
                 Err(TokenizationError::EndOfSourceCodeIteratorArgument) => {
-                    break (Self { tokens }, lexical_errors)
+                    break Self { tokens };
                 }
+                Err(TokenizationError::FatalLexicalError) => (),
             }
         }
     }

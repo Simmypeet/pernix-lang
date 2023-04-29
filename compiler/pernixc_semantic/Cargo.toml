@@ -8,6 +8,7 @@ edition = { workspace = true }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+pernixc_system = { path = "../pernixc_system" }
 pernixc_common = { path = "../pernixc_common" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_lexical = { path = "../pernixc_lexical" }
@@ -19,3 +20,4 @@ derive_more = { workspace = true }
 builder-pattern = { workspace = true }
 derive-getters = { workspace = true }
 paste = { workspace = true }
+delegate = { workspace = true }

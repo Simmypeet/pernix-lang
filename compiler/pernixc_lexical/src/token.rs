@@ -7,11 +7,12 @@ use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
 use pernixc_common::source_file::{ByteIndex, SourceElement, SourceFile, Span};
+use pernixc_system::error_handler::ErrorHandler;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
 
-use crate::errors::{
+use crate::error::{
     ControlCharactersMustBeEscaped, EmptyCharacterLiteral, InvalidEscapeCharacterSequences,
     LexicalError, UnterminatedDelimitedComment, UnterminatedStringLiteral,
 };
@@ -348,11 +349,11 @@ impl SourceElement for Comment {
 }
 
 /// Is an error that can occur when invoking the [Token::tokenize()](Token::tokenize()) method.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 
 pub enum TokenizationError {
-    #[error("Encountered an lexical error while tokenizing the source code.")]
-    LexicalError(LexicalError),
+    #[error("Encountered a fatal lexical error that causes the process to stop.")]
+    FatalLexicalError,
 
     #[error("The iterator argument is at the end of the source code.")]
     EndOfSourceCodeIteratorArgument,
@@ -457,6 +458,7 @@ impl Token {
         iter: &mut pernixc_common::source_file::Iterator,
         start: ByteIndex,
         character: char,
+        handler: &impl ErrorHandler<LexicalError>,
     ) -> Result<Self, TokenizationError> {
         // Single line comment
         if let Some((_, '/')) = iter.peek() {
@@ -498,12 +500,13 @@ impl Token {
                 }
                 .into())
             } else {
-                Err(TokenizationError::LexicalError(
+                handler.recieve(
                     UnterminatedDelimitedComment {
                         span: Span::new(iter.source_file().clone(), start, start + 2).unwrap(),
                     }
                     .into(),
-                ))
+                );
+                return Err(TokenizationError::FatalLexicalError);
             }
         }
         // Just a single slash punctuation
@@ -519,9 +522,9 @@ impl Token {
     fn handle_string_literal(
         iter: &mut pernixc_common::source_file::Iterator,
         start: ByteIndex,
-    ) -> Result<Self, LexicalError> {
-        let mut invalid_escape_characters = Vec::new();
-
+        handler: &impl ErrorHandler<LexicalError>,
+    ) -> Result<Self, TokenizationError> {
+        let mut found_invalid = false;
         loop {
             let character = iter.next().map_or('\0', |x| x.1);
 
@@ -539,29 +542,37 @@ impl Token {
                 let escape_character = Self::map_escape_character(character);
 
                 if escape_character.is_none() {
-                    invalid_escape_characters.push(Self::create_span(location - 1, iter));
+                    handler.recieve(
+                        InvalidEscapeCharacterSequences {
+                            span: Self::create_span(location - 1, iter),
+                        }
+                        .into(),
+                    );
+                    found_invalid = true;
                 }
             }
             // Unterminated string literal
             else if character == '\0' {
-                return Err(UnterminatedStringLiteral {
-                    span: Span::new(iter.source_file().clone(), start, start + 1).unwrap(),
-                }
-                .into());
+                handler.recieve(
+                    UnterminatedStringLiteral {
+                        span: Span::new(iter.source_file().clone(), start, start + 1).unwrap(),
+                    }
+                    .into(),
+                );
+                return Err(TokenizationError::FatalLexicalError);
             }
         }
 
         // No error found, returns the string literal token
-        if invalid_escape_characters.is_empty() {
-            Ok(StringLiteral {
-                span: Self::create_span(start, iter),
-            }
-            .into())
+        if found_invalid {
+            // couldn't construct the string literal with the invalid escape characters since it
+            // might be used later on
+            Err(TokenizationError::FatalLexicalError)
         }
         // Found invalid escape characters
         else {
-            Err(InvalidEscapeCharacterSequences {
-                spans: invalid_escape_characters,
+            Ok(StringLiteral {
+                span: Self::create_span(start, iter),
             }
             .into())
         }
@@ -570,15 +581,20 @@ impl Token {
     fn handle_character_literal(
         iter: &mut pernixc_common::source_file::Iterator,
         start: ByteIndex,
-    ) -> Result<Self, LexicalError> {
+        handler: &impl ErrorHandler<LexicalError>,
+    ) -> Result<Self, TokenizationError> {
         // Empty character literal error
         if let Some((_, '\'')) = iter.peek() {
             iter.next();
 
-            Err(EmptyCharacterLiteral {
-                span: Self::create_span(start, iter),
-            }
-            .into())
+            handler.recieve(
+                EmptyCharacterLiteral {
+                    span: Self::create_span(start, iter),
+                }
+                .into(),
+            );
+
+            Err(TokenizationError::FatalLexicalError)
         }
         // Might found a character literal or a single quote punctuation
         else {
@@ -603,13 +619,17 @@ impl Token {
 
                     escape_character.map_or_else(
                         || {
-                            Err(InvalidEscapeCharacterSequences {
-                                spans: vec![Self::create_span(
-                                    escape_source_location - 1,
-                                    &mut end_escape_character_iter,
-                                )],
-                            }
-                            .into())
+                            handler.recieve(
+                                InvalidEscapeCharacterSequences {
+                                    span: Self::create_span(
+                                        escape_source_location - 1,
+                                        &mut end_escape_character_iter,
+                                    ),
+                                }
+                                .into(),
+                            );
+
+                            Err(TokenizationError::FatalLexicalError)
                         },
                         |character| {
                             Ok(CharacterLiteral {
@@ -628,10 +648,13 @@ impl Token {
 
                     // The control characters must be escaped
                     if character.is_control() {
-                        Err(ControlCharactersMustBeEscaped {
-                            span: Self::create_span(start, iter),
-                        }
-                        .into())
+                        handler.recieve(
+                            ControlCharactersMustBeEscaped {
+                                span: Self::create_span(start, iter),
+                            }
+                            .into(),
+                        );
+                        Err(TokenizationError::FatalLexicalError)
                     } else {
                         Ok(CharacterLiteral {
                             span: Self::create_span(start, iter),
@@ -710,10 +733,10 @@ impl Token {
     /// # Errors
     /// - [`TokenizationError::EndOfSourceCodeIteratorArgument`] - The iterator argument is at the
     ///   end of the source code.
-    /// - [`TokenizationError::LexicalError`] - Any lexical error encountered in the source code
-    ///   while tokenizing.
+    /// - [`TokenizationError::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn tokenize(
         iter: &mut pernixc_common::source_file::Iterator,
+        handler: &impl ErrorHandler<LexicalError>,
     ) -> Result<Self, TokenizationError> {
         // Gets the first character
         let (start, character) = iter
@@ -730,15 +753,15 @@ impl Token {
         }
         // Found comment/single slash punctuation
         else if character == '/' {
-            Self::handle_comment(iter, start, character)
+            Self::handle_comment(iter, start, character, handler)
         }
         // Found a string literal
         else if character == '"' {
-            Self::handle_string_literal(iter, start).map_err(Into::into)
+            Self::handle_string_literal(iter, start, handler).map_err(Into::into)
         }
         // Found a character literal
         else if character == '\'' {
-            Self::handle_character_literal(iter, start).map_err(Into::into)
+            Self::handle_character_literal(iter, start, handler).map_err(Into::into)
         }
         // Found numeric literal
         else if character.is_ascii_digit() {

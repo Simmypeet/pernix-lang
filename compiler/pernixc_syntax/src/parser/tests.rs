@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use pernixc_common::source_file::{Location, SourceFile};
 use pernixc_lexical::{token::Token, token_stream::TokenStream};
+use pernixc_system::error_handler::DummyErrorHandler;
 
 use super::Parser;
 
@@ -14,7 +15,7 @@ fn next_token_until_test() -> Result<(), Box<dyn std::error::Error>> {
             "-(+)[+]{+}+-".to_string(),
             vec!["test".to_string()],
         )?;
-        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let token_stream = TokenStream::tokenize(source_file.iter(), &DummyErrorHandler);
         let mut cursor = token_stream.cursor();
         cursor.next_token();
 
@@ -57,7 +58,7 @@ fn next_token_until_test() -> Result<(), Box<dyn std::error::Error>> {
             "[++".to_string(),
             vec!["test".to_string()],
         )?;
-        let (token_stream, _) = TokenStream::tokenize(source_file.iter());
+        let token_stream = TokenStream::tokenize(source_file.iter(), &DummyErrorHandler);
         let mut cursor = token_stream.cursor();
         cursor.next_token();
 

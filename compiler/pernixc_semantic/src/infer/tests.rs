@@ -21,26 +21,23 @@ fn inference_test() {
 
     assert_eq!(
         infer_ctx
-            .get_inference(expr_id1)
-            .as_type_variable()
-            .unwrap()
-            .constraint,
+            .get_inferable_type(expr_id1)
+            .into_constraint()
+            .unwrap(),
         Constraint::Float
     );
     assert_eq!(
         infer_ctx
-            .get_inference(expr_id2)
-            .as_type_variable()
-            .unwrap()
-            .constraint,
+            .get_inferable_type(expr_id2)
+            .into_constraint()
+            .unwrap(),
         Constraint::Float
     );
     assert_eq!(
         infer_ctx
-            .get_inference(expr_id3)
-            .as_type_variable()
-            .unwrap()
-            .constraint,
+            .get_inferable_type(expr_id3)
+            .into_constraint()
+            .unwrap(),
         Constraint::Signed
     );
 
@@ -50,8 +47,8 @@ fn inference_test() {
 
     assert_eq!(
         infer_ctx
-            .get_inference(expr_id1)
-            .as_inferred()
+            .get_inferable_type(expr_id1)
+            .into_type()
             .unwrap()
             .as_primitive_type()
             .unwrap(),
@@ -59,8 +56,8 @@ fn inference_test() {
     );
     assert_eq!(
         infer_ctx
-            .get_inference(expr_id2)
-            .as_inferred()
+            .get_inferable_type(expr_id2)
+            .into_type()
             .unwrap()
             .as_primitive_type()
             .unwrap(),
@@ -69,10 +66,9 @@ fn inference_test() {
 
     assert_eq!(
         infer_ctx
-            .get_inference(expr_id3)
-            .as_type_variable()
-            .unwrap()
-            .constraint,
+            .get_inferable_type(expr_id3)
+            .into_constraint()
+            .unwrap(),
         Constraint::Signed
     );
 }
