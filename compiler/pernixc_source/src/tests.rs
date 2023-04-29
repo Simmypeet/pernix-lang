@@ -1,7 +1,6 @@
 use std::{error::Error, path::PathBuf};
 
-use super::SourceFile;
-use crate::source_file::Location;
+use super::{Location, SourceFile};
 
 #[test]
 fn location_test() -> Result<(), Box<dyn Error>> {

@@ -9,15 +9,12 @@ edition = { workspace = true }
 
 [dependencies]
 pernixc_system = { path = "../pernixc_system" }
-pernixc_common = { path = "../pernixc_common" }
+pernixc_source = { path = "../pernixc_source" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_lexical = { path = "../pernixc_lexical" }
+pernixc_print = { path = "../pernixc_print" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
-derive-new = { workspace = true }
 getset = { workspace = true }
 derive_more = { workspace = true }
-builder-pattern = { workspace = true }
-derive-getters = { workspace = true }
 paste = { workspace = true }
-delegate = { workspace = true }

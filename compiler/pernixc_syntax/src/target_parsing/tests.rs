@@ -1,6 +1,6 @@
 use std::{error::Error, path::PathBuf};
 
-use pernixc_common::source_file::SourceFile;
+use pernixc_source::SourceFile;
 use pernixc_system::error_handler::ErrorVec;
 
 use crate::target_parsing::AllParsingError;

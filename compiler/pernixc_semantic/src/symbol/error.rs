@@ -4,7 +4,8 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::{printing::LogSeverity, source_file::Span};
+use pernixc_print::LogSeverity;
+use pernixc_source::Span;
 use pernixc_system::arena::InvalidIDError;
 
 use super::{
@@ -42,7 +43,7 @@ impl TypeExpected {
     /// Prints the error message to the console.
     #[allow(clippy::missing_errors_doc)]
     pub fn print(&self, table: &Table) -> Result<(), InvalidIDError> {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "the symbol `{}` is not a type",
@@ -50,7 +51,7 @@ impl TypeExpected {
             )
             .as_str(),
         );
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
 
         Ok(())
@@ -79,7 +80,7 @@ impl SymbolNotFound {
 
         #[allow(clippy::option_if_let_else)]
         if let Some(symbol_id) = self.in_scope_id {
-            pernixc_common::printing::log(
+            pernixc_print::print(
                 LogSeverity::Error,
                 format!(
                     "`{symbol_name}` was not found in `{parent_symbol}`",
@@ -89,13 +90,13 @@ impl SymbolNotFound {
                 .as_str(),
             );
         } else {
-            pernixc_common::printing::log(
+            pernixc_print::print(
                 LogSeverity::Error,
                 format!("no target found for `{symbol_name}`").as_str(),
             );
         }
 
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
 
         Ok(())
@@ -122,7 +123,7 @@ impl SymbolNotAccessible {
     pub fn print(&self, table: &Table) -> Result<(), InvalidIDError> {
         let symbol_name = self.span.str();
 
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "`{symbol_name}` is not accessible from `{symbol}`",
@@ -132,7 +133,7 @@ impl SymbolNotAccessible {
             .as_str(),
         );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
 
         Ok(())
@@ -158,12 +159,12 @@ pub struct PrivateSymbolLeak {
 impl PrivateSymbolLeak {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             "private symbols cannot be leaked to less restrictive scopes",
         );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
     }
 }
@@ -183,12 +184,12 @@ pub struct ParameterRedefinition {
 impl ParameterRedefinition {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!("parameter `{}` was redefined", self.span.str(),).as_str(),
         );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
     }
 }
@@ -209,25 +210,23 @@ impl OverloadRedefinition {
     /// Prints the error message to the console.
     #[allow(clippy::missing_errors_doc)]
     pub fn print(&self, table: &Table) -> Result<(), InvalidIDError> {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "function overload `{}` has a redefinition",
                 table.get_full_name_of(
                     table
-                        .get_overload(self.available_overload_id)
-                        .ok_or(InvalidIDError)?
+                        .get_overload(self.available_overload_id)?
                         .parent_overload_set_id
                 )?
             )
             .as_str(),
         );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
-        pernixc_common::printing::print_source_code(
+        pernixc_print::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(
             &table
-                .get_overload(self.available_overload_id)
-                .ok_or(InvalidIDError)?
+                .get_overload(self.available_overload_id)?
                 .syntax_tree()
                 .identifier
                 .span,
@@ -259,12 +258,12 @@ pub struct StructMemberMoreAccessibleThanStruct {
 impl StructMemberMoreAccessibleThanStruct {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             "this field group is more accessible than the struct itself, which is not allowed",
         );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
     }
 }
@@ -284,12 +283,12 @@ pub struct FieldRedefinition {
 impl FieldRedefinition {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!("struct member `{}` was redefined", self.span.str(),).as_str(),
         );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
     }
 }
@@ -309,12 +308,12 @@ pub struct EnumVariantRedefinition {
 impl EnumVariantRedefinition {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!("enum variant `{}` was redefined", self.span.str(),).as_str(),
         );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
     }
 }
@@ -337,11 +336,10 @@ impl SymbolRedifinition {
     pub fn print(&self, table: &Table) -> Result<(), InvalidIDError> {
         #[allow(clippy::option_if_let_else)]
         if let Some(parent_id) = table
-            .get_global(self.available_global_id)
-            .ok_or(InvalidIDError)?
+            .get_global(self.available_global_id)?
             .parent_scoped_id()
         {
-            pernixc_common::printing::log(
+            pernixc_print::print(
                 LogSeverity::Error,
                 &format!(
                     "symbol `{}` was already defined in `{}`",
@@ -350,13 +348,13 @@ impl SymbolRedifinition {
                 ),
             );
         } else {
-            pernixc_common::printing::log(
+            pernixc_print::print(
                 LogSeverity::Error,
                 &format!("symbol `{}` was already defined", self.span.str(),),
             );
         }
 
-        pernixc_common::printing::print_source_code(&self.span, Some("redefinition"));
+        pernixc_print::print_source_code(&self.span, Some("redefinition"));
         println!();
 
         Ok(())
@@ -374,7 +372,7 @@ pub struct CircularDependency {
 impl CircularDependency {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             "found circular dependency between these symbols.",
         );

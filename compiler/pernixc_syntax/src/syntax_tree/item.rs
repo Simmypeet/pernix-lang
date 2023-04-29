@@ -1,11 +1,10 @@
 //! Contains syntax tree nodes for items.
 
-use derive_getters::Dissolve;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::source_file::{SourceElement, Span};
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
+use pernixc_source::{SourceElement, Span};
 use pernixc_system::error_handler::ErrorHandler;
 
 use super::{expression::BlockWithoutLabel, ConnectedList, TypeAnnotation, TypeSpecifier};
@@ -25,7 +24,6 @@ use crate::{
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-
 pub enum AccessModifier {
     Public(Keyword),
     Private(Keyword),
@@ -51,7 +49,6 @@ impl SourceElement for AccessModifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Field {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -128,7 +125,7 @@ impl SourceElement for StructSignature {
 ///     '{' Members* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct StructBody {
     #[get = "pub"]
     pub(super) left_brace: Punctuation,
@@ -136,6 +133,14 @@ pub struct StructBody {
     pub(super) members: Vec<Member>,
     #[get = "pub"]
     pub(super) right_brace: Punctuation,
+}
+
+impl StructBody {
+    /// Dissolves the struct body into its components.
+    #[must_use]
+    pub fn dissolve(self) -> (Punctuation, Vec<Member>, Punctuation) {
+        (self.left_brace, self.members, self.right_brace)
+    }
 }
 
 impl SourceElement for StructBody {
@@ -150,13 +155,18 @@ impl SourceElement for StructBody {
 ///     AccessModifier 'struct' Identifier '{' Members* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Struct {
     #[get = "pub"]
     pub(super) signature: StructSignature,
     #[get = "pub"]
     pub(super) body: StructBody,
+}
+
+impl Struct {
+    /// Dissolves the struct into its components.
+    #[must_use]
+    pub fn dissolve(self) -> (StructSignature, StructBody) { (self.signature, self.body) }
 }
 
 impl SourceElement for Struct {
@@ -205,7 +215,6 @@ impl SourceElement for TypeAlias {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct EnumSignature {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -233,8 +242,7 @@ pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
 ///     '{' EnumVariantList? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct EnumBody {
     #[get = "pub"]
     pub(super) left_brace: Punctuation,
@@ -242,6 +250,14 @@ pub struct EnumBody {
     pub(super) variants: Option<EnumVariantList>,
     #[get = "pub"]
     pub(super) right_brace: Punctuation,
+}
+
+impl EnumBody {
+    /// Dissolves the syntax tree node into its components.
+    #[must_use]
+    pub fn dissolve(self) -> (Punctuation, Option<EnumVariantList>, Punctuation) {
+        (self.left_brace, self.variants, self.right_brace)
+    }
 }
 
 /// Represents a syntax tree node for an enum.
@@ -252,13 +268,18 @@ pub struct EnumBody {
 ///     EnumSignature EnumBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Enum {
     #[get = "pub"]
     pub(super) signature: EnumSignature,
     #[get = "pub"]
     pub(super) body: EnumBody,
+}
+
+impl Enum {
+    /// Dissolves the syntax tree node into its components.
+    #[must_use]
+    pub fn dissolve(self) -> (EnumSignature, EnumBody) { (self.signature, self.body) }
 }
 
 impl SourceElement for Enum {
@@ -280,7 +301,6 @@ impl SourceElement for Enum {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Parameter {
     #[get = "pub"]
     pub(super) mutable_keyword: Option<Keyword>,
@@ -318,7 +338,7 @@ pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 ///     AccessModifier 'function' Identifier '(' ParameterList? ')' TypeAnnotation
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct FunctionSignature {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -334,6 +354,32 @@ pub struct FunctionSignature {
     pub(super) right_paren: Punctuation,
     #[get = "pub"]
     pub(super) type_annotation: TypeAnnotation,
+}
+
+impl FunctionSignature {
+    /// Dissolves this syntax tree node into its parts.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        AccessModifier,
+        Keyword,
+        Identifier,
+        Punctuation,
+        Option<ParameterList>,
+        Punctuation,
+        TypeAnnotation,
+    ) {
+        (
+            self.access_modifier,
+            self.function_keyword,
+            self.identifier,
+            self.left_paren,
+            self.parameters,
+            self.right_paren,
+            self.type_annotation,
+        )
+    }
 }
 
 impl SourceElement for FunctionSignature {
@@ -353,8 +399,7 @@ impl SourceElement for FunctionSignature {
 ///     FunctionSignature BlockWithoutLabel
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Function {
     #[get = "pub"]
     pub(super) signature: FunctionSignature,
@@ -362,7 +407,13 @@ pub struct Function {
     pub(super) block_without_label: BlockWithoutLabel,
 }
 
-impl Function {}
+impl Function {
+    /// Dissolves the function into its signature and block.
+    #[must_use]
+    pub fn dissolve(self) -> (FunctionSignature, BlockWithoutLabel) {
+        (self.signature, self.block_without_label)
+    }
+}
 
 impl SourceElement for Function {
     fn span(&self) -> Span {
@@ -383,7 +434,6 @@ impl SourceElement for Function {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Module {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -417,7 +467,6 @@ impl SourceElement for Module {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-
 pub enum Item {
     Struct(Struct),
     Enum(Enum),

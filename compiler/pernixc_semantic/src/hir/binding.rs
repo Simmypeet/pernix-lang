@@ -1,7 +1,7 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
-use pernixc_common::source_file::Span;
+use pernixc_source::source_file::Span;
 use pernixc_syntax::syntax_tree::expression::PrefixOperator;
 
 use super::{Hir, Inspectable, Reachability, SsaValue, ValueTypeID};

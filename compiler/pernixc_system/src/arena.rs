@@ -1,3 +1,5 @@
+//! Contains definitions for the arena and symbol.
+
 use std::{
     collections::HashMap,
     fmt::Debug,
@@ -8,10 +10,12 @@ use std::{
 use derive_more::{Deref, DerefMut};
 use getset::CopyGetters;
 
+/// Is a unique identifier that guarantees uniqueness across the entire program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uid(u64);
 
 impl Uid {
+    /// Creates a new [`Uid`] with a unique value.
     pub fn fresh() -> Self {
         static ATOMIC_COUNTER: AtomicU64 = AtomicU64::new(0);
         Self(ATOMIC_COUNTER.fetch_add(1, Ordering::Relaxed))
@@ -22,6 +26,7 @@ impl Uid {
 pub trait UniqueIdentifier:
     'static + Send + Sync + Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Hash
 {
+    /// Creates a new [`UniqueIdentifier`] with a unique value.
     fn fresh() -> Self;
 }
 
@@ -64,7 +69,7 @@ pub struct Arena<T: Data> {
 }
 
 impl<T: Data> Arena<T> {
-    /// Creates a new empty [`arena`].
+    /// Creates a new empty [`Arena`].
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -72,7 +77,7 @@ impl<T: Data> Arena<T> {
         }
     }
 
-    /// Inserts a new symbol into the [`arena`].
+    /// Inserts a new symbol into the [`Arena`].
     pub fn insert(&mut self, data: T) -> T::ID {
         let symbol = Symbol::new(data);
         let id = symbol.id;
@@ -80,21 +85,30 @@ impl<T: Data> Arena<T> {
         id
     }
 
-    /// Removes a symbol from the [`arena`] with the given [`UniqueIdentifier`].
+    /// Removes a symbol from the [`Arena`] with the given [`UniqueIdentifier`].
     ///
     /// Returns the symbol of the given [`UniqueIdentifier`] if it exists.
-    pub fn remove(&mut self, id: T::ID) -> Option<Symbol<T>> {
-        self.symbols_by_id.remove(&id)
+    ///
+    /// # Errors
+    /// - If the ID wasn't created by this [`Arena`].
+    pub fn remove(&mut self, id: T::ID) -> Result<Symbol<T>, InvalidIDError> {
+        self.symbols_by_id.remove(&id).ok_or(InvalidIDError)
     }
 
     /// Returns a reference to the symbol of the given [`UniqueIdentifier`].
-    pub fn get(&self, id: T::ID) -> Option<&Symbol<T>> {
-        self.symbols_by_id.get(&id)
+    ///
+    /// # Errors
+    /// - If the ID wasn't created by this [`Arena`].
+    pub fn get(&self, id: T::ID) -> Result<&Symbol<T>, InvalidIDError> {
+        self.symbols_by_id.get(&id).ok_or(InvalidIDError)
     }
 
     /// Returns a mutable reference to the symbol of the given [`UniqueIdentifier`].
-    pub fn get_mut(&mut self, id: T::ID) -> Option<&mut Symbol<T>> {
-        self.symbols_by_id.get_mut(&id)
+    ///
+    /// # Errors
+    /// - If the ID wasn't created by this [`Arena`].
+    pub fn get_mut(&mut self, id: T::ID) -> Result<&mut Symbol<T>, InvalidIDError> {
+        self.symbols_by_id.get_mut(&id).ok_or(InvalidIDError)
     }
 }
 
@@ -104,6 +118,7 @@ impl<T: Data> Arena<T> {
 #[error("The given ID is invalid or wasn't created by this container.")]
 pub struct InvalidIDError;
 
+/// Is a macro that generates a new ID type and implements the [`UniqueIdentifier`]
 #[macro_export]
 macro_rules! create_id_type {
     ($name:ident) => {
@@ -130,24 +145,26 @@ macro_rules! create_id_type {
     };
 }
 
+/// Is a macro generating a [`Data`] trait impl for a given type and its ID.
 #[macro_export]
 macro_rules! create_symbol {
     (
         $(#[$outer:meta])*
-        $vis:vis $ty:ident $name:ident  $($t:tt)*
+        $vis:vis $ty:ident $name:ident $(< $($lt:lifetime),* $($gt:ident $(: $tb:tt)?),* >)?
+        { $($t:tt)* }
     ) => {
         paste::paste! {
             $(#[$outer])*
-            $vis $ty [< $name >] $($t)*
+            $vis $ty [< $name >] $(< $($lt),* $($gt $( : $tb)?),* >)? { $($t)* }
 
             pernixc_system::arena::create_id_type!($name);
 
-            impl pernixc_system::arena::Data for $name {
+            impl $(< $($lt),* $($gt $(: $tb)?),* >)? pernixc_system::arena::Data for $name $(< $($lt),* $($gt),* >)? {
                 type ID = [< $name ID >];
             }
 
             #[doc = concat!("Is a symbol with data of type [`", stringify!($name), "`].")]
-            pub type [< $name Symbol >] = pernixc_system::arena::Symbol<$name>;
+            pub type [< $name Symbol >]$(< $($lt),* $($gt),* >)? = pernixc_system::arena::Symbol<$name $(< $($lt),* $($gt),* >)?>;
         }
     };
 }

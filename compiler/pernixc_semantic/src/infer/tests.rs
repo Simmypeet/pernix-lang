@@ -1,10 +1,12 @@
+use std::error::Error;
+
 use crate::{
     infer::{Constraint, InferenceContext},
     symbol::ty::PrimitiveType,
 };
 
 #[test]
-fn inference_test() {
+fn inference_test() -> Result<(), Box<dyn Error>> {
     let mut infer_ctx = InferenceContext::new();
 
     // let expr1 = 1; // Number
@@ -13,29 +15,29 @@ fn inference_test() {
     // expr1 + expr2; // expr1 ~ expr2
     // let x: f32 = expr1; // expr1 ~ f32
 
-    let expr_id1 = infer_ctx.add_inference(Constraint::Number);
-    let expr_id2 = infer_ctx.add_inference(Constraint::Float);
-    let expr_id3 = infer_ctx.add_inference(Constraint::Signed);
+    let expr_id1 = infer_ctx.new_inference(Constraint::Number);
+    let expr_id2 = infer_ctx.new_inference(Constraint::Float);
+    let expr_id3 = infer_ctx.new_inference(Constraint::Signed);
 
     infer_ctx.unify(expr_id1, expr_id2).unwrap();
 
     assert_eq!(
         infer_ctx
-            .get_inferable_type(expr_id1)
+            .get_inferable_type(expr_id1)?
             .into_constraint()
             .unwrap(),
         Constraint::Float
     );
     assert_eq!(
         infer_ctx
-            .get_inferable_type(expr_id2)
+            .get_inferable_type(expr_id2)?
             .into_constraint()
             .unwrap(),
         Constraint::Float
     );
     assert_eq!(
         infer_ctx
-            .get_inferable_type(expr_id3)
+            .get_inferable_type(expr_id3)?
             .into_constraint()
             .unwrap(),
         Constraint::Signed
@@ -47,7 +49,7 @@ fn inference_test() {
 
     assert_eq!(
         infer_ctx
-            .get_inferable_type(expr_id1)
+            .get_inferable_type(expr_id1)?
             .into_type()
             .unwrap()
             .as_primitive_type()
@@ -56,7 +58,7 @@ fn inference_test() {
     );
     assert_eq!(
         infer_ctx
-            .get_inferable_type(expr_id2)
+            .get_inferable_type(expr_id2)?
             .into_type()
             .unwrap()
             .as_primitive_type()
@@ -66,9 +68,11 @@ fn inference_test() {
 
     assert_eq!(
         infer_ctx
-            .get_inferable_type(expr_id3)
+            .get_inferable_type(expr_id3)?
             .into_constraint()
             .unwrap(),
         Constraint::Signed
     );
+
+    Ok(())
 }

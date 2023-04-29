@@ -1,8 +1,8 @@
 use std::{error::Error, path::PathBuf};
 
-use pernixc_common::source_file::{SourceElement, SourceFile};
 use pernixc_lexical::token_stream::TokenStream;
-use pernixc_system::error_handler::DummyErrorHandler;
+use pernixc_source::{SourceElement, SourceFile};
+use pernixc_system::error_handler::Dummy;
 
 use crate::{
     parser::Parser,
@@ -24,16 +24,12 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
         STRUCT_SOURCE_CODE.to_string(),
         vec!["test".to_string()],
     )?;
-    let token_stream = TokenStream::tokenize(source_file.iter(), &DummyErrorHandler);
+    let token_stream = TokenStream::tokenize(source_file.iter(), &Dummy);
     let mut cursor = token_stream.cursor();
     cursor.next_token();
     let mut parser = Parser::new(cursor)?;
 
-    let struct_item = parser
-        .parse_item(&DummyErrorHandler)
-        .unwrap()
-        .into_struct()
-        .unwrap();
+    let struct_item = parser.parse_item(&Dummy).unwrap().into_struct().unwrap();
 
     assert!(matches!(
         struct_item.signature.access_modifier,

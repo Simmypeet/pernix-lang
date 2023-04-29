@@ -2,8 +2,8 @@ use std::{convert::Into, sync::Arc};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_common::source_file::{SourceElement, Span};
 use pernixc_lexical::token::NumericLiteral as NumericLiteralToken;
+use pernixc_source::source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     expression::{
         BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, error::Error, path::PathBuf};
 
-use pernixc_common::source_file::SourceFile;
+use pernixc_source::SourceFile;
 use pernixc_syntax::target_parsing::AllParsingError;
 use pernixc_system::error_handler::ErrorVec;
 

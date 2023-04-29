@@ -9,7 +9,8 @@ edition = { workspace = true }
 
 [dependencies]
 pernixc_system = { path = "../pernixc_system" }
-pernixc_common = { path = "../pernixc_common" }
+pernixc_print = { path = "../pernixc_print" }
+pernixc_source = { path = "../pernixc_source" }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
@@ -17,4 +18,3 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 lazy_static = { workspace = true }
 derive_more = { workspace = true }
-derive-getters = { workspace = true }

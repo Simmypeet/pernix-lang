@@ -6,7 +6,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
-use pernixc_common::source_file::{ByteIndex, SourceElement, SourceFile, Span};
+use pernixc_source::{ByteIndex, SourceElement, SourceFile, Span};
 use pernixc_system::error_handler::ErrorHandler;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -361,10 +361,7 @@ pub enum TokenizationError {
 
 impl Token {
     /// Increments the iterator until the predicate returns false.
-    fn walk_iter(
-        iter: &mut pernixc_common::source_file::Iterator,
-        predicate: impl Fn(char) -> bool,
-    ) {
+    fn walk_iter(iter: &mut pernixc_source::Iterator, predicate: impl Fn(char) -> bool) {
         while let Some((_, character)) = iter.peek() {
             if !predicate(character) {
                 break;
@@ -375,7 +372,7 @@ impl Token {
     }
 
     /// Creates a span from the given start location to the current location of the iterator.
-    fn create_span(start: ByteIndex, iter: &mut pernixc_common::source_file::Iterator) -> Span {
+    fn create_span(start: ByteIndex, iter: &mut pernixc_source::Iterator) -> Span {
         iter.peek().map_or_else(
             || Span::to_end(iter.source_file().clone(), start).unwrap(),
             |(index, _)| Span::new(iter.source_file().clone(), start, index).unwrap(),
@@ -420,10 +417,7 @@ impl Token {
         }
     }
 
-    fn handle_whitespace(
-        iter: &mut pernixc_common::source_file::Iterator,
-        start: ByteIndex,
-    ) -> Self {
+    fn handle_whitespace(iter: &mut pernixc_source::Iterator, start: ByteIndex) -> Self {
         Self::walk_iter(iter, char::is_whitespace);
 
         WhiteSpace {
@@ -433,7 +427,7 @@ impl Token {
     }
 
     fn handle_identifier_and_keyword(
-        iter: &mut pernixc_common::source_file::Iterator,
+        iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
     ) -> Self {
         Self::walk_iter(iter, Self::is_identifier_character);
@@ -455,7 +449,7 @@ impl Token {
     }
 
     fn handle_comment(
-        iter: &mut pernixc_common::source_file::Iterator,
+        iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
         character: char,
         handler: &impl ErrorHandler<LexicalError>,
@@ -520,7 +514,7 @@ impl Token {
     }
 
     fn handle_string_literal(
-        iter: &mut pernixc_common::source_file::Iterator,
+        iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
         handler: &impl ErrorHandler<LexicalError>,
     ) -> Result<Self, TokenizationError> {
@@ -579,7 +573,7 @@ impl Token {
     }
 
     fn handle_character_literal(
-        iter: &mut pernixc_common::source_file::Iterator,
+        iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
         handler: &impl ErrorHandler<LexicalError>,
     ) -> Result<Self, TokenizationError> {
@@ -675,10 +669,7 @@ impl Token {
         }
     }
 
-    fn handle_numeric_literal(
-        iter: &mut pernixc_common::source_file::Iterator,
-        start: ByteIndex,
-    ) -> Self {
+    fn handle_numeric_literal(iter: &mut pernixc_source::Iterator, start: ByteIndex) -> Self {
         // Tokenizes the whole number part
         Self::walk_iter(iter, |character| character.is_ascii_digit());
 
@@ -735,7 +726,7 @@ impl Token {
     ///   end of the source code.
     /// - [`TokenizationError::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn tokenize(
-        iter: &mut pernixc_common::source_file::Iterator,
+        iter: &mut pernixc_source::Iterator,
         handler: &impl ErrorHandler<LexicalError>,
     ) -> Result<Self, TokenizationError> {
         // Gets the first character

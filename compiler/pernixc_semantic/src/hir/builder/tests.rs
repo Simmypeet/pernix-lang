@@ -1,6 +1,6 @@
 use std::{error::Error, path::PathBuf, sync::Arc};
 
-use pernixc_common::source_file::SourceFile;
+use pernixc_source::source_file::SourceFile;
 use pernixc_syntax::target_parsing;
 
 use crate::{hir::builder::Builder, symbol::table::Table};

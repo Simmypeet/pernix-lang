@@ -2,10 +2,8 @@
 
 use std::ops::Index;
 
-use derive_getters::Dissolve;
 use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
-use pernixc_common::source_file::Iterator;
 use pernixc_system::error_handler::ErrorHandler;
 
 use crate::{
@@ -17,13 +15,12 @@ use crate::{
 ///
 /// This struct is the final output of the lexical analysis phase and is meant to be used by the
 /// next stage of the compilation process.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deref, Dissolve)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deref)]
 pub struct TokenStream {
     #[deref]
     tokens: Vec<Token>,
 }
 
-#[allow(clippy::inline_always)]
 impl TokenStream {
     /// Tokenizes the given source code.
     ///
@@ -38,7 +35,7 @@ impl TokenStream {
     /// encountered during tokenization.
     #[must_use]
     pub fn tokenize(
-        mut source_file_iterator: Iterator,
+        mut source_file_iterator: pernixc_source::Iterator,
         handler: &impl ErrorHandler<LexicalError>,
     ) -> Self {
         // list of tokens to return
@@ -64,6 +61,10 @@ impl TokenStream {
             position: CursorPosition::Before,
         }
     }
+
+    /// Dissolves this struct into a tuple of its components.
+    #[must_use]
+    pub fn dissolve(self) -> Vec<Token> { self.tokens }
 }
 
 impl Index<usize> for TokenStream {

@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "compiler/pernixc_system",
-    "compiler/pernixc_common",
+    "compiler/pernixc_source",
+    "compiler/pernixc_print",
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_semantic",
@@ -15,13 +16,9 @@ proptest = "1.1.0"
 lazy_static = "1.4.0"
 strum = "0.24.1"
 strum_macros = "0.24"
-derive-new = "0.5.9"
 derive_more = "0.99.17"
 colored = "2.0.0"
-builder-pattern = "0.4.2"
-derive-getters = "0.2.1"
 paste = "1.0.12"
-delegate = "0.9.0"
 
 [workspace.package]
 version = "0.1.0"

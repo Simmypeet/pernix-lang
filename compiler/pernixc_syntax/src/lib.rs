@@ -5,6 +5,7 @@
 //! of a source file.
 
 #![deny(
+    missing_docs,
     missing_debug_implementations,
     missing_copy_implementations,
     clippy::all,
@@ -17,5 +18,6 @@
 
 pub mod error;
 pub mod parser;
+#[allow(missing_docs)]
 pub mod syntax_tree;
 pub mod target_parsing;

@@ -5,15 +5,12 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use derive_getters::Dissolve;
 use derive_more::{Deref, From};
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::{
-    printing::LogSeverity,
-    source_file::{LoadError, SourceFile, Span},
-};
 use pernixc_lexical::{error::LexicalError, token_stream::TokenStream};
+use pernixc_print::LogSeverity;
+use pernixc_source::{LoadError, SourceFile, Span};
 use pernixc_system::error_handler::ErrorHandler;
 use thiserror::Error;
 
@@ -36,18 +33,19 @@ pub struct DuplicateModuleDeclaration {
 impl DuplicateModuleDeclaration {
     /// Prints the error message to the console.
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             "the module declaration is duplicated in the same file",
         );
 
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
     }
 }
 
 /// Contains the errors related to branching the module heirarchy.
 #[derive(Debug, Error, From)]
+#[allow(missing_docs)]
 pub enum ModuleError {
     #[error("Module declaration is duplicated in the same file.")]
     DuplicateModuleDeclaration(DuplicateModuleDeclaration),
@@ -65,7 +63,7 @@ impl ModuleError {
                 LoadError::IoLoadError(io_error) => match io_error.error.kind() {
                     std::io::ErrorKind::NotFound => {
                         // get the file name
-                        pernixc_common::printing::log(
+                        pernixc_print::print(
                             LogSeverity::Error,
                             format!(
                                 "the source file `{}` does not exist",
@@ -75,7 +73,7 @@ impl ModuleError {
                         );
                     }
                     std::io::ErrorKind::PermissionDenied => {
-                        pernixc_common::printing::log(
+                        pernixc_print::print(
                             LogSeverity::Error,
                             format!(
                                 "the source file `{}` cannot be accessed",
@@ -85,7 +83,7 @@ impl ModuleError {
                         );
                     }
                     _ => {
-                        pernixc_common::printing::log(
+                        pernixc_print::print(
                             LogSeverity::Error,
                             format!(
                                 "an error occurred while loading the source file `{}`",
@@ -102,7 +100,7 @@ impl ModuleError {
 }
 
 /// Is a structure containing the result of parsing the whole source file.
-#[derive(Debug, Getters, Dissolve)]
+#[derive(Debug, Getters)]
 pub struct FileParsing {
     /// Gets the source file that was parsed.
     #[get = "pub"]
@@ -116,6 +114,14 @@ pub struct FileParsing {
     /// has an implicit `public` access modifier.
     #[get = "pub"]
     access_modifier: Option<AccessModifier>,
+}
+
+impl FileParsing {
+    /// Dissolves this structure into its components.
+    #[must_use]
+    pub fn dissolve(self) -> (Arc<SourceFile>, File, Option<AccessModifier>) {
+        (self.source_file, self.syntax_tree, self.access_modifier)
+    }
 }
 
 /// The error caused by passing a non-root source file to the [`parse_files`] function.
@@ -215,7 +221,7 @@ fn compile_syntax_tree<
 /// hierarchy of the source file. The source file with less depth is placed before the source file
 /// with more depth in the list. However, the sorting between source files with the same depth is
 /// undefined.
-#[derive(Debug, Getters, Deref, Dissolve)]
+#[derive(Debug, Getters, Deref)]
 pub struct TargetParsing {
     /// Gets the list of [`FileParsing`] that were parsed from the target.
     #[get = "pub"]
@@ -223,8 +229,15 @@ pub struct TargetParsing {
     file_parsings: Vec<FileParsing>,
 }
 
+impl TargetParsing {
+    /// Dissolves this structure into the list of [`FileParsing`].
+    #[must_use]
+    pub fn dissolve(self) -> Vec<FileParsing> { self.file_parsings }
+}
+
 /// Is an enumeration of all errors that can be reported in the [`parse_target()`].
 #[derive(Debug, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum AllParsingError {
     LexicalError(LexicalError),
     ModuleError(ModuleError),

@@ -12,7 +12,7 @@
 )]
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
-// pub mod cfg;
+pub mod cfg;
 // pub mod hir;
-// pub mod infer;
+pub mod infer;
 pub mod symbol;

@@ -1,9 +1,11 @@
 //! Contains the definition of [`Table`].
 
+use std::{collections::HashMap, sync::Arc};
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_common::source_file::SourceElement;
 use pernixc_lexical::token::Identifier as IdentifierToken;
+use pernixc_source::SourceElement;
 use pernixc_syntax::{
     syntax_tree::{
         item::{
@@ -19,7 +21,6 @@ use pernixc_system::{
     arena::{Arena, InvalidIDError},
     error_handler::ErrorHandler,
 };
-use std::{collections::HashMap, sync::Arc};
 use thiserror::Error;
 
 use super::{
@@ -158,7 +159,7 @@ impl Table {
         global_id: impl Into<GlobalID>,
     ) -> Result<String, InvalidIDError> {
         let global_id = global_id.into();
-        let global = self.get_global(global_id).ok_or(InvalidIDError)?;
+        let global = self.get_global(global_id)?;
         let mut name = global.name().to_owned();
         let mut parent = global
             .parent_scoped_id()
@@ -186,10 +187,6 @@ impl Table {
         symbol: GlobalID,
         accessibility: Accessibility,
     ) -> Result<bool, InvalidIDError> {
-        if self.get_scoped(referring_site).is_none() || self.get_global(symbol).is_none() {
-            return Err(InvalidIDError);
-        }
-
         match accessibility {
             Accessibility::Internal => {
                 let referring_site_root_module = self.find_root_module(referring_site.into())?;
@@ -210,7 +207,7 @@ impl Table {
                         }
                         _ => {
                             if let Some(parent) =
-                                self.get_scoped(current_module).unwrap().parent_scoped_id()
+                                self.get_scoped(current_module)?.parent_scoped_id()
                             {
                                 current_module = parent;
                             } else {
@@ -1494,7 +1491,7 @@ impl Table {
     }
 
     fn find_nearest_parent_module(&self, mut symbol: GlobalID) -> Result<ModuleID, InvalidIDError> {
-        if self.get_global(symbol).is_none() {
+        if self.get_global(symbol).is_err() {
             return Err(InvalidIDError);
         }
 
@@ -1503,22 +1500,17 @@ impl Table {
                 return Ok(symbol);
             }
 
-            symbol = self
-                .get_global(symbol)
-                .unwrap()
-                .parent_scoped_id()
-                .unwrap()
-                .into();
+            symbol = self.get_global(symbol)?.parent_scoped_id().unwrap().into();
         }
     }
 
     fn find_root_module(&self, mut symbol: GlobalID) -> Result<ModuleID, InvalidIDError> {
-        if self.get_global(symbol).is_none() {
+        if self.get_global(symbol).is_err() {
             return Err(InvalidIDError);
         }
 
         loop {
-            if let Some(parent) = self.get_global(symbol).unwrap().parent_scoped_id() {
+            if let Some(parent) = self.get_global(symbol)?.parent_scoped_id() {
                 symbol = parent.into();
             } else {
                 // must be module
@@ -1532,14 +1524,15 @@ macro_rules! impl_index_getter {
     ($name:ident, $arena_name:ident $(, $opt_postfix:ident)?) => {
         paste::paste! {
             impl Table {
-                #[must_use]
                 #[doc = concat!("Returns a reference to [`", stringify!([< $name Symbol >]), "`] with the given ID.")]
-                pub fn [< get_ $arena_name >](&self, id: super::[< $name ID >]) -> Option<&super::[< $name Symbol >]> {
+                pub fn [< get_ $arena_name >](&self, id: super::[< $name ID >])
+                    -> Result<&super::[< $name Symbol >], pernixc_system::arena::InvalidIDError> {
                     self.[< $arena_name $($opt_postfix)? s >].get(id)
                 }
 
                 #[allow(dead_code)]
-                fn [< get_ $arena_name _mut>](&mut self, id: super::[< $name ID >]) -> Option<&mut super::[< $name Symbol >]> {
+                fn [< get_ $arena_name _mut>](&mut self, id: super::[< $name ID >])
+                    -> Result<&mut super::[< $name Symbol >], pernixc_system::arena::InvalidIDError> {
                     self.[< $arena_name $($opt_postfix)? s >].get_mut(id)
                 }
             }
@@ -1549,9 +1542,9 @@ macro_rules! impl_index_getter {
     ($name:ident, $method_name:ident, $( ($variant:ident, $arena_name:ident) ),+) => {
         paste::paste! {
             impl Table {
-                #[must_use]
                 #[doc = concat!("Returns a mutable reference to [`", stringify!([< $name Symbol >]), "`] with the given ID.")]
-                pub fn [< get_ $method_name >](&self, id: super::[< $name ID >]) -> Option<& dyn super::$name> {
+                pub fn [< get_ $method_name >](&self, id: super::[< $name ID >])
+                    -> Result<& dyn super::$name, pernixc_system::arena::InvalidIDError> {
                     match id {
                         $(
                             super::[< $name ID >]::$variant(id) => self.[< get_ $arena_name >](id).map(|s| s as &dyn super::$name),
@@ -1560,7 +1553,8 @@ macro_rules! impl_index_getter {
                 }
 
                 #[allow(dead_code)]
-                fn [< get_ $method_name _mut>](&mut self, id: super::[< $name ID >]) -> Option<&mut dyn super::$name> {
+                fn [< get_ $method_name _mut>](&mut self, id: super::[< $name ID >])
+                    -> Result<&mut dyn super::$name, pernixc_system::arena::InvalidIDError> {
                     match id {
                         $(
                             super::[< $name ID >]::$variant(id) => self.[< get_ $arena_name _mut>](id).map(|s| s as &mut dyn super::$name),

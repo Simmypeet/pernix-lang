@@ -3,7 +3,8 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::{printing::LogSeverity, source_file::Span};
+use pernixc_print::LogSeverity;
+use pernixc_source::Span;
 use thiserror::Error;
 
 /// The source code contains an invalid escape character sequences.
@@ -19,7 +20,7 @@ pub struct InvalidEscapeCharacterSequences {
 impl InvalidEscapeCharacterSequences {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "`{}` is an invalid escape character sequence",
@@ -27,7 +28,7 @@ impl InvalidEscapeCharacterSequences {
             )
             .as_str(),
         );
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print_source_code(&self.span, None);
         println!();
     }
 }
@@ -42,11 +43,8 @@ pub struct UnterminatedStringLiteral {
 impl UnterminatedStringLiteral {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(LogSeverity::Error, "found an unclosed double quote");
-        pernixc_common::printing::print_source_code(
-            &self.span,
-            Some("this double quote is unclosed"),
-        );
+        pernixc_print::print(LogSeverity::Error, "found an unclosed double quote");
+        pernixc_print::print_source_code(&self.span, Some("this double quote is unclosed"));
         println!();
     }
 }
@@ -62,11 +60,8 @@ pub struct UnterminatedDelimitedComment {
 impl UnterminatedDelimitedComment {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(LogSeverity::Error, "found an unclosed `/*` comment");
-        pernixc_common::printing::print_source_code(
-            &self.span,
-            Some("this `/*` comment is unclosed"),
-        );
+        pernixc_print::print(LogSeverity::Error, "found an unclosed `/*` comment");
+        pernixc_print::print_source_code(&self.span, Some("this `/*` comment is unclosed"));
         println!();
     }
 }
@@ -82,8 +77,8 @@ pub struct EmptyCharacterLiteral {
 impl EmptyCharacterLiteral {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(LogSeverity::Error, "found an empty character literal");
-        pernixc_common::printing::print_source_code(&self.span, None);
+        pernixc_print::print(LogSeverity::Error, "found an empty character literal");
+        pernixc_print::print_source_code(&self.span, None);
         println!();
     }
 }
@@ -99,11 +94,11 @@ pub struct ControlCharactersMustBeEscaped {
 impl ControlCharactersMustBeEscaped {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             "found a control character that must be escaped explicitly",
         );
-        pernixc_common::printing::print_source_code(
+        pernixc_print::print_source_code(
             &Span::new(
                 self.span.source_file().clone(),
                 self.span.start(),

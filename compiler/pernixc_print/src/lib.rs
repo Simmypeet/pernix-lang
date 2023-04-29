@@ -1,8 +1,7 @@
 //! Provides the functions related to logging/printing messages to the console.
 
 use colored::Colorize;
-
-use crate::source_file::Span;
+use pernixc_source::Span;
 
 /// Represents the severity of a log message to be printed to the console.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -14,7 +13,7 @@ pub enum LogSeverity {
 }
 
 /// Prints a log message to the console.
-pub fn log(severity: LogSeverity, message: &str) {
+pub fn print(severity: LogSeverity, message: &str) {
     let log_header_message = match severity {
         LogSeverity::Error => "[error]:".bright_red().bold(),
         LogSeverity::Info => "[info]:".bright_green().bold(),

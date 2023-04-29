@@ -5,10 +5,10 @@ use std::{collections::HashMap, ops::Index, sync::Arc};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
-use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{
     Identifier as IdentifierToken, NumericLiteral as NumericLiteralToken,
 };
+use pernixc_source::source_file::Span;
 
 use self::{binding::Binding, instruction::Backend};
 use crate::{

@@ -9,14 +9,14 @@ edition = { workspace = true }
 
 [dependencies]
 pernixc_system = { path = "../pernixc_system" }
+pernixc_print = { path = "../pernixc_print" }
 pernixc_lexical = { path = "../pernixc_lexical" }
-pernixc_common = { path = "../pernixc_common" }
+pernixc_source = { path = "../pernixc_source" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 getset = { workspace = true }
 lazy_static = { workspace = true }
 derive_more = { workspace = true }
-derive-getters = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

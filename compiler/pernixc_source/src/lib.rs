@@ -1,4 +1,16 @@
-//! Contains the [`SourceFile`] type which represents a source file input for the compiler.
+//! Contains the code related to project configuration and input of the compiler.
+
+#![deny(
+    missing_docs,
+    missing_debug_implementations,
+    missing_copy_implementations,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    rustdoc::broken_intra_doc_links,
+    clippy::missing_errors_doc
+)]
+#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
 use std::{cmp::Ordering, iter::Peekable, ops::Range, path::PathBuf, str::CharIndices, sync::Arc};
 
@@ -34,7 +46,7 @@ pub struct SourceFile {
 
 /// Is an error returned by the [`SourceFile::load()`] method.
 #[derive(Debug, EnumAsInner, Error, From)]
-
+#[allow(missing_docs)]
 pub enum LoadError {
     #[error("{0}")]
     IoLoadError(IoLoadError),
@@ -56,7 +68,7 @@ pub struct IoLoadError {
 
 /// Is an error returned by the [`SourceFile::new()`] method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumAsInner, From, Error)]
-
+#[allow(missing_docs)]
 pub enum CreateError {
     #[error("The module hierarchy string was invalid or empty.")]
     InvalidModulehierarchy,

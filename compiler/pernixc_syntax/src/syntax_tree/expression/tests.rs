@@ -1,8 +1,8 @@
 use std::{error::Error, path::PathBuf};
 
-use pernixc_common::source_file::SourceFile;
 use pernixc_lexical::token_stream::TokenStream;
-use pernixc_system::error_handler::DummyErrorHandler;
+use pernixc_source::SourceFile;
+use pernixc_system::error_handler::Dummy;
 use proptest::{
     prop_assert_eq, prop_oneof, proptest,
     strategy::{Just, Strategy},
@@ -51,12 +51,12 @@ proptest! {
             vec!["test".to_string()],
         )?;
 
-        let token_stream = TokenStream::tokenize(source_file.iter(), &DummyErrorHandler);
+        let token_stream = TokenStream::tokenize(source_file.iter(), &Dummy);
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
 
-        let mut expression = parser.parse_primary_expression(&DummyErrorHandler).unwrap();
+        let mut expression = parser.parse_primary_expression(&Dummy).unwrap();
 
         for original_operator in operators {
             let prefix_expr = expression.into_functional()
@@ -82,12 +82,12 @@ proptest! {
             string,
             vec!["test".to_string()],
         )?;
-        let token_stream = TokenStream::tokenize(source_file.iter(), &DummyErrorHandler);
+        let token_stream = TokenStream::tokenize(source_file.iter(), &Dummy);
         let mut cursor = token_stream.cursor();
         cursor.next_token();
         let mut parser = Parser::new(cursor).unwrap();
 
-        let mut expression = parser.parse_primary_expression(&DummyErrorHandler).unwrap();
+        let mut expression = parser.parse_primary_expression(&Dummy).unwrap();
 
         for original_identifier in identifiers.iter().rev() {
             let member_access_expr = expression.into_functional().unwrap().into_member_access().unwrap();
@@ -130,14 +130,14 @@ fn binary_operator_test() -> Result<(), Box<dyn Error>> {
         source_code.to_string(),
         vec!["test".to_string()],
     )?;
-    let token_stream = TokenStream::tokenize(source_file.iter(), &DummyErrorHandler);
+    let token_stream = TokenStream::tokenize(source_file.iter(), &Dummy);
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
     let mut parser = Parser::new(cursor).unwrap();
 
     let expression = parser
-        .parse_expression(&DummyErrorHandler)
+        .parse_expression(&Dummy)
         .unwrap()
         .into_functional()
         .unwrap()
@@ -281,7 +281,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
         source_code.to_string(),
         vec!["test".to_string()],
     )?;
-    let token_stream = TokenStream::tokenize(source_file.iter(), &DummyErrorHandler);
+    let token_stream = TokenStream::tokenize(source_file.iter(), &Dummy);
     let mut cursor = token_stream.cursor();
     cursor.next_token();
 
@@ -290,7 +290,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
     // Qualified::Identifier
     {
         let expression = parser
-            .parse_primary_expression(&DummyErrorHandler)
+            .parse_primary_expression(&Dummy)
             .unwrap()
             .into_functional()
             .unwrap()
@@ -303,7 +303,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
     // Hello(1, 2)
     {
         let mut expression = parser
-            .parse_primary_expression(&DummyErrorHandler)
+            .parse_primary_expression(&Dummy)
             .unwrap()
             .into_functional()
             .unwrap()
@@ -341,7 +341,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
     // World()
     {
         let expression = parser
-            .parse_primary_expression(&DummyErrorHandler)
+            .parse_primary_expression(&Dummy)
             .unwrap()
             .into_functional()
             .unwrap()
@@ -356,7 +356,7 @@ fn identifier_expression_test() -> Result<(), Box<dyn Error>> {
     // Test { yeah: 1 }
     {
         let mut expression = parser
-            .parse_primary_expression(&DummyErrorHandler)
+            .parse_primary_expression(&Dummy)
             .unwrap()
             .into_functional()
             .unwrap()

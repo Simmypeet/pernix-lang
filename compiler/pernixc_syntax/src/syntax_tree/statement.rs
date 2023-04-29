@@ -3,8 +3,8 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
+use pernixc_source::Span;
 use pernixc_system::error_handler::ErrorHandler;
 
 use super::{
@@ -22,7 +22,6 @@ use crate::{error::SyntacticError, parser::Parser};
 ///     | Expressive
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-
 pub enum Statement {
     Declarative(Declarative),
     Expressive(Expressive),
@@ -70,7 +69,6 @@ impl SourceElement for Declarative {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct VariableDeclaration {
     #[get = "pub"]
     pub(super) let_keyword: Keyword,
@@ -105,7 +103,6 @@ impl SourceElement for VariableDeclaration {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-
 pub enum Expressive {
     Semi(Semi),
     Imperative(Imperative),
@@ -131,7 +128,6 @@ impl SourceElement for Expressive {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Semi {
     #[get = "pub"]
     pub(super) expression: Functional,

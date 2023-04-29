@@ -1,7 +1,13 @@
+//! Contains a definition of [`ErrorHandler`] trait -- a trait responsible for handling compilation
+//! errors and warnings in the compiler.
+//!
+//! Also contains ssome implementations of [`ErrorHandler`] trait.
+
 use std::sync::RwLock;
 
 /// Represents a trait responsible for handling compilation errors and warnings in the compiler.
 pub trait ErrorHandler<T>: 'static + Send + Sync {
+    /// Recieves an error and handles it.
     fn recieve(&self, error: T);
 }
 
@@ -13,6 +19,7 @@ pub struct ErrorVec<T: 'static + Send + Sync> {
 
 impl<T: 'static + Send + Sync> ErrorVec<T> {
     /// Creates a new empty [`ErrorVec`]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             errors: RwLock::new(Vec::new()),
@@ -20,29 +27,24 @@ impl<T: 'static + Send + Sync> ErrorVec<T> {
     }
 
     /// Consumes the [`ErrorVec`] and returns the underlying vector of errors.
-    pub fn into_vec(self) -> Vec<T> {
-        self.errors.into_inner().unwrap()
-    }
+    pub fn into_vec(self) -> Vec<T> { self.errors.into_inner().unwrap() }
 }
 
 impl<T: 'static + Send + Sync> Default for ErrorVec<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl<T: 'static + Send + Sync, U> ErrorHandler<U> for ErrorVec<T>
 where
     U: Into<T>,
 {
-    fn recieve(&self, error: U) {
-        self.errors.write().unwrap().push(error.into());
-    }
+    fn recieve(&self, error: U) { self.errors.write().unwrap().push(error.into()); }
 }
 
 /// Is a struct that implements [`ErrorHandler`] trait by doing nothing with the errors.
-pub struct DummyErrorHandler;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Dummy;
 
-impl<T> ErrorHandler<T> for DummyErrorHandler {
+impl<T> ErrorHandler<T> for Dummy {
     fn recieve(&self, _error: T) {}
 }

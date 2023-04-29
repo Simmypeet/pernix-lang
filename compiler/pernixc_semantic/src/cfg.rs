@@ -1,22 +1,33 @@
 //! This module contains the definition of the [`ControlFlowGraph`] and all the traits that are
 //! required to implement it.
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    ops::{Index, IndexMut},
-};
+use std::{collections::HashSet, fmt::Debug};
 
 use getset::{CopyGetters, Getters};
+use pernixc_system::{
+    arena::{Arena, InvalidIDError},
+    create_symbol,
+};
 
-use crate::symbol::{Data, Uid, UniqueIdentifier, WithData};
+create_symbol! {
+    /// Represents a unit of sequential instructions that are executed in order.
+    ///
+    /// These blocks can be connected to each other by various kinds of jump instructions in order to
+    /// represent the full control flow of a function.
+    #[derive(Debug, Clone, Getters, CopyGetters)]
+    pub struct BasicBlock<T: InstructionBackend> {
+        /// The list of instructions that are stored in the basic block.
+        #[get = "pub"]
+        instructions: Vec<Instruction<T>>,
 
-/// Is an unique identifier used to identify a basic block in the [`ControlFlowGraph`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BasicBlockID(Uid);
+        /// The list of [`BasicBlockID`] of the basic blocks that are successors of this basic block.
+        #[get = "pub"]
+        successors: HashSet<BasicBlockID>,
 
-impl UniqueIdentifier for BasicBlockID {
-    fn fresh() -> Self { Self(Uid::fresh()) }
+        /// The list of [`BasicBlockID`] of the basic blocks that are predecessors of this basic block.
+        #[get = "pub"]
+        predecessors: HashSet<BasicBlockID>,
+    }
 }
 
 /// A trait for the jump instruction of a [`ControlFlowGraph`].
@@ -75,7 +86,7 @@ pub trait InstructionBackend {
 /// Represents a unit of instructions that are stored in the [`BasicBlock`] for a sequential
 /// execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-
+#[allow(missing_docs)]
 pub enum Instruction<T: InstructionBackend> {
     Jump(T::Jump),
     Return(T::Return),
@@ -83,38 +94,20 @@ pub enum Instruction<T: InstructionBackend> {
     Basic(T::Basic),
 }
 
-/// Represents a unit of sequential instructions that are executed in order.
-///
-/// These blocks can be connected to each other by various kinds of jump instructions in order to
-/// represent the full control flow of a function.
-#[derive(Debug, Clone, Getters, CopyGetters)]
-pub struct BasicBlockData<T: InstructionBackend> {
-    /// The list of instructions that are stored in the basic block.
-    #[get = "pub"]
-    instructions: Vec<Instruction<T>>,
+impl<T: InstructionBackend> BasicBlock<T> {
+    fn new() -> Self {
+        Self {
+            instructions: Vec::new(),
+            successors: HashSet::new(),
+            predecessors: HashSet::new(),
+        }
+    }
 
-    /// The list of [`BasicBlockID`] of the basic blocks that are successors of this basic block.
-    #[get = "pub"]
-    successors: HashSet<BasicBlockID>,
-
-    /// The list of [`BasicBlockID`] of the basic blocks that are predecessors of this basic block.
-    #[get = "pub"]
-    predecessors: HashSet<BasicBlockID>,
-}
-
-impl<T: InstructionBackend> BasicBlockData<T> {
     /// Adds a new basic instruction to the [`BasicBlock`].
     pub fn add_basic_instruction(&mut self, instruction: T::Basic) {
         self.instructions.push(Instruction::Basic(instruction));
     }
 }
-
-impl<T: InstructionBackend> Data for BasicBlockData<T> {
-    type ID = BasicBlockID;
-}
-
-/// A [`BasicBlockData`] with an unique identifier.
-pub type BasicBlock<T> = WithData<BasicBlockData<T>>;
 
 /// Represents a control flow graph of a function.
 ///
@@ -128,7 +121,7 @@ pub type BasicBlock<T> = WithData<BasicBlockData<T>>;
 /// analysis.
 #[derive(Debug, CopyGetters)]
 pub struct ControlFlowGraph<T: InstructionBackend> {
-    basic_blocks_by_id: HashMap<BasicBlockID, BasicBlock<T>>,
+    basic_blocks: Arena<BasicBlock<T>>,
 
     /// The [`BasicBlockID`] of the entry block of the control flow graph.
     #[get_copy = "pub"]
@@ -139,45 +132,43 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
     /// Creates a new [`ControlFlowGraph`] with a single basic block.
     #[must_use]
     pub fn new() -> Self {
-        let symbol = WithData::new(BasicBlockData {
-            instructions: Vec::new(),
-            successors: HashSet::new(),
-            predecessors: HashSet::new(),
-        });
-        let id = symbol.id();
+        let mut basic_blocks = Arena::new();
+        let entry_block = basic_blocks.insert(BasicBlock::new());
+
         Self {
-            basic_blocks_by_id: std::iter::once((id, symbol)).collect(),
-            entry_block: id,
+            basic_blocks,
+            entry_block,
         }
     }
 
     /// Adds a new basic block to the [`ControlFlowGraph`].
-    pub fn add_basic_block(&mut self, basic_block: BasicBlockData<T>) -> BasicBlockID {
-        let symbol = WithData::new(basic_block);
-        let id = symbol.id();
-        self.basic_blocks_by_id.insert(id, symbol);
-        id
+    ///
+    /// # Returns
+    /// The [`BasicBlockID`] of the newly added basic block.
+    pub fn new_basic_block(&mut self) -> BasicBlockID {
+        self.basic_blocks.insert(BasicBlock::new())
+    }
+
+    /// Gets a reference to the [`BasicBlock`] with the given [`BasicBlockID`].
+    ///
+    /// # Errors
+    /// If the given [`BasicBlockID`] is invalid.
+    pub fn get(&self, id: BasicBlockID) -> Result<&BasicBlockSymbol<T>, InvalidIDError> {
+        self.basic_blocks.get(id)
+    }
+
+    /// Gets a mutable reference to the [`BasicBlock`] with the given [`BasicBlockID`].
+    ///
+    /// # Errors
+    /// If the given [`BasicBlockID`] is invalid.
+    pub fn get_mut(
+        &mut self,
+        id: BasicBlockID,
+    ) -> Result<&mut BasicBlockSymbol<T>, InvalidIDError> {
+        self.basic_blocks.get_mut(id)
     }
 }
 
 impl<T: InstructionBackend> Default for ControlFlowGraph<T> {
     fn default() -> Self { Self::new() }
-}
-
-impl<T: InstructionBackend> Index<BasicBlockID> for ControlFlowGraph<T> {
-    type Output = BasicBlock<T>;
-
-    fn index(&self, index: BasicBlockID) -> &Self::Output {
-        self.basic_blocks_by_id
-            .get(&index)
-            .expect("Basic block not found")
-    }
-}
-
-impl<T: InstructionBackend> IndexMut<BasicBlockID> for ControlFlowGraph<T> {
-    fn index_mut(&mut self, index: BasicBlockID) -> &mut Self::Output {
-        self.basic_blocks_by_id
-            .get_mut(&index)
-            .expect("Basic block not found")
-    }
 }

@@ -1,13 +1,14 @@
-///! Contains the syntax tree for expressions.
+//! Contains the syntax tree for expressions.
+
 use std::cmp::Ordering;
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::source_file::Span;
 use pernixc_lexical::token::{
     Identifier, Keyword, KeywordKind, NumericLiteral, Punctuation, Token,
 };
+use pernixc_source::Span;
 use pernixc_system::error_handler::ErrorHandler;
 
 use super::{
@@ -27,7 +28,6 @@ use crate::{
 ///     ;
 ///  ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-
 pub enum Expression {
     Functional(Functional),
     Imperative(Imperative),
@@ -66,7 +66,6 @@ impl SourceElement for Expression {
 ///     | Cast
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-
 pub enum Functional {
     NumericLiteral(NumericLiteral),
     BooleanLiteral(BooleanLiteral),
@@ -114,7 +113,6 @@ impl SourceElement for Functional {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Cast {
     #[get = "pub"]
     pub(super) operand: Box<Expression>,
@@ -143,7 +141,6 @@ impl SourceElement for Cast {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-
 pub enum BooleanLiteral {
     True(Keyword),
     False(Keyword),
@@ -184,7 +181,6 @@ impl SourceElement for BooleanLiteral {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-
 pub enum BinaryOperator {
     Add(Punctuation),
     Subtract(Punctuation),
@@ -281,7 +277,6 @@ impl SourceElement for BinaryOperator {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Binary {
     #[get = "pub"]
     pub(super) left_operand: Box<Expression>,
@@ -310,7 +305,6 @@ impl SourceElement for Binary {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-
 pub enum PrefixOperator {
     LogicalNot(Punctuation),
     Negate(Punctuation),
@@ -333,7 +327,6 @@ impl SourceElement for PrefixOperator {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Prefix {
     #[get = "pub"]
     pub(super) prefix_operator: PrefixOperator,
@@ -387,7 +380,6 @@ pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct FunctionCall {
     #[get = "pub"]
     pub(super) qualified_identifier: QualifiedIdentifier,
@@ -417,7 +409,6 @@ impl SourceElement for FunctionCall {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Parenthesized {
     #[get = "pub"]
     pub(super) left_paren: Punctuation,
@@ -440,7 +431,6 @@ impl SourceElement for Parenthesized {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct FieldInitializer {
     #[get = "pub"]
     pub(super) identifier: Identifier,
@@ -478,7 +468,6 @@ pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct StructLiteral {
     #[get = "pub"]
     pub(super) qualified_identifier: QualifiedIdentifier,
@@ -508,7 +497,6 @@ impl SourceElement for StructLiteral {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct MemberAccess {
     #[get = "pub"]
     pub(super) operand: Box<Expression>,
@@ -535,7 +523,6 @@ impl SourceElement for MemberAccess {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-
 pub enum Imperative {
     Block(Block),
     IfElse(IfElse),
@@ -561,7 +548,6 @@ impl SourceElement for Imperative {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct LabelSpecifier {
     #[get = "pub"]
     pub(super) label: Label,
@@ -582,7 +568,6 @@ impl SourceElement for LabelSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct BlockWithoutLabel {
     #[get = "pub"]
     pub(super) left_brace: Punctuation,
@@ -605,7 +590,6 @@ impl SourceElement for BlockWithoutLabel {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Block {
     #[get = "pub"]
     pub(super) label_specifier: Option<LabelSpecifier>,
@@ -637,7 +621,6 @@ impl SourceElement for Block {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-
 pub enum BlockOrIfElse {
     Block(Block),
     IfElse(IfElse),
@@ -661,7 +644,6 @@ impl SourceElement for BlockOrIfElse {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Else {
     #[get = "pub"]
     pub(super) else_keyword: Keyword,
@@ -687,7 +669,6 @@ impl SourceElement for Else {
 ///     ;
 /// ```    
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct IfElse {
     #[get = "pub"]
     pub(super) if_keyword: Keyword,
@@ -728,7 +709,6 @@ impl SourceElement for IfElse {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Loop {
     #[get = "pub"]
     pub(super) label_specifier: Option<LabelSpecifier>,
@@ -768,7 +748,6 @@ impl SourceElement for Loop {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Continue {
     #[get = "pub"]
     pub(super) continue_keyword: Keyword,
@@ -780,7 +759,7 @@ impl SourceElement for Continue {
     fn span(&self) -> Span {
         let end = self.label.as_ref().map_or_else(
             || self.continue_keyword.span.clone(),
-            pernixc_common::source_file::SourceElement::span,
+            pernixc_source::SourceElement::span,
         );
         self.continue_keyword.span().join(&end).unwrap()
     }
@@ -795,7 +774,6 @@ impl SourceElement for Continue {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Express {
     #[get = "pub"]
     pub(super) express_keyword: Keyword,
@@ -811,10 +789,10 @@ impl SourceElement for Express {
             || {
                 self.label.as_ref().map_or_else(
                     || self.express_keyword.span.clone(),
-                    pernixc_common::source_file::SourceElement::span,
+                    pernixc_source::SourceElement::span,
                 )
             },
-            pernixc_common::source_file::SourceElement::span,
+            pernixc_source::SourceElement::span,
         );
         self.express_keyword.span().join(&end).unwrap()
     }
@@ -829,7 +807,6 @@ impl SourceElement for Express {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Break {
     #[get = "pub"]
     pub(super) break_keyword: Keyword,
@@ -845,10 +822,10 @@ impl SourceElement for Break {
             || {
                 self.label.as_ref().map_or_else(
                     || self.break_keyword.span.clone(),
-                    pernixc_common::source_file::SourceElement::span,
+                    pernixc_source::SourceElement::span,
                 )
             },
-            pernixc_common::source_file::SourceElement::span,
+            pernixc_source::SourceElement::span,
         );
         self.break_keyword.span().join(&end).unwrap()
     }
@@ -863,7 +840,6 @@ impl SourceElement for Break {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Return {
     #[get = "pub"]
     pub(super) return_keyword: Keyword,
@@ -875,7 +851,7 @@ impl SourceElement for Return {
     fn span(&self) -> Span {
         let end = self.expression.as_ref().map_or_else(
             || self.return_keyword.span.clone(),
-            pernixc_common::source_file::SourceElement::span,
+            pernixc_source::SourceElement::span,
         );
         self.return_keyword.span().join(&end).unwrap()
     }

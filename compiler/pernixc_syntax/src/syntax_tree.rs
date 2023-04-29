@@ -5,15 +5,14 @@
 //! - *Statement*: A syntax tree node that represents a statement in the function body.
 //! - *Expression*: A syntax tree node that represents an expression in the function body.
 
-use derive_getters::Dissolve;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_common::source_file::{SourceElement, Span};
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::TokenStream,
 };
+use pernixc_source::{SourceElement, Span};
 use pernixc_system::error_handler::ErrorHandler;
 
 use self::item::Item;
@@ -59,7 +58,7 @@ impl<Element: SourceElement, Separator: SourceElement> SourceElement
                     .last()
                     .map_or_else(|| self.first.span(), |(_, element)| element.span())
             },
-            pernixc_common::source_file::SourceElement::span,
+            pernixc_source::SourceElement::span,
         );
 
         self.first.span().join(&end).unwrap()
@@ -117,7 +116,7 @@ impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Span {
         let start = self.leading_separator.as_ref().map_or_else(
             || self.identifiers.first.span.clone(),
-            pernixc_common::source_file::SourceElement::span,
+            pernixc_source::SourceElement::span,
         );
 
         start.join(&self.identifiers.span()).unwrap()
@@ -240,13 +239,18 @@ impl SourceElement for Label {
 ///     ':' TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
-
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct TypeAnnotation {
     #[get = "pub"]
     pub(crate) colon: Punctuation,
     #[get = "pub"]
     pub(crate) type_specifier: TypeSpecifier,
+}
+
+impl TypeAnnotation {
+    /// Dissolves the struct into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Punctuation, TypeSpecifier) { (self.colon, self.type_specifier) }
 }
 
 impl SourceElement for TypeAnnotation {
@@ -416,11 +420,17 @@ impl<'a> Parser<'a> {
 ///     Item*
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, Dissolve)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct File {
     /// Is a list of item declarations in the file.
     #[get = "pub"]
     items: Vec<Item>,
+}
+
+impl File {
+    /// Dissolves the struct into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> Vec<Item> { self.items }
 }
 
 impl File {

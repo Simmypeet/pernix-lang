@@ -3,8 +3,9 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
-use pernixc_common::{printing::LogSeverity, source_file::SourceElement};
 use pernixc_lexical::token::{KeywordKind, Token};
+use pernixc_print::LogSeverity;
+use pernixc_source::SourceElement;
 use thiserror::Error;
 
 /// An identifier is expected but found an another invalid token.
@@ -37,7 +38,7 @@ fn found_string(found: &Option<Token>) -> String {
 impl IdentifierExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "an identifier is expected, found: {}",
@@ -46,10 +47,7 @@ impl IdentifierExpected {
             .as_str(),
         );
         if let Some(token) = self.found.as_ref() {
-            pernixc_common::printing::print_source_code(
-                &token.span(),
-                Some("identifier expected here"),
-            );
+            pernixc_print::print_source_code(&token.span(), Some("identifier expected here"));
         }
         println!();
     }
@@ -66,7 +64,7 @@ pub struct TypeSpecifierExpected {
 impl TypeSpecifierExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "a type specifier syntax is expected, found: {}",
@@ -75,7 +73,7 @@ impl TypeSpecifierExpected {
             .as_str(),
         );
         if let Some(token) = self.found.as_ref() {
-            pernixc_common::printing::print_source_code(
+            pernixc_print::print_source_code(
                 &token.span(),
                 Some("type specifier syntax expected here"),
             );
@@ -95,7 +93,7 @@ pub struct ExpressionExpected {
 impl ExpressionExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "an expression syntax is expected, found: {}",
@@ -104,7 +102,7 @@ impl ExpressionExpected {
             .as_str(),
         );
         if let Some(token) = self.found.as_ref() {
-            pernixc_common::printing::print_source_code(
+            pernixc_print::print_source_code(
                 &token.span(),
                 Some("expression syntax expected here"),
             );
@@ -123,7 +121,7 @@ pub struct MemberExpected {
 impl MemberExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "a member syntax is expected, found: {}",
@@ -132,10 +130,7 @@ impl MemberExpected {
             .as_str(),
         );
         if let Some(token) = self.found.as_ref() {
-            pernixc_common::printing::print_source_code(
-                &token.span(),
-                Some("member syntax expected here"),
-            );
+            pernixc_print::print_source_code(&token.span(), Some("member syntax expected here"));
         }
         println!();
     }
@@ -152,7 +147,7 @@ pub struct ItemExpected {
 impl ItemExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "an item syntax is expected, found: {}",
@@ -161,10 +156,7 @@ impl ItemExpected {
             .as_str(),
         );
         if let Some(token) = self.found.as_ref() {
-            pernixc_common::printing::print_source_code(
-                &token.span(),
-                Some("item syntax expected here"),
-            );
+            pernixc_print::print_source_code(&token.span(), Some("item syntax expected here"));
         }
         println!();
     }
@@ -181,7 +173,7 @@ pub struct AccessModifierExpected {
 impl AccessModifierExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "an access modifier syntax is expected, found: {}",
@@ -190,7 +182,7 @@ impl AccessModifierExpected {
             .as_str(),
         );
         if let Some(token) = self.found.as_ref() {
-            pernixc_common::printing::print_source_code(
+            pernixc_print::print_source_code(
                 &token.span(),
                 Some("access modifier syntax expected here"),
             );
@@ -213,8 +205,9 @@ pub struct PunctuationExpected {
 
 /// Prints the error message to the console
 impl PunctuationExpected {
+    /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "a punctuation of character `{}` is expected, found: {}",
@@ -224,7 +217,7 @@ impl PunctuationExpected {
             .as_str(),
         );
         if let Some(token) = self.found.as_ref() {
-            pernixc_common::printing::print_source_code(
+            pernixc_print::print_source_code(
                 &token.span(),
                 Some(
                     format!("punctuation of character `{}` expected here", self.expected).as_str(),
@@ -250,7 +243,7 @@ pub struct KeywordExpected {
 impl KeywordExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
-        pernixc_common::printing::log(
+        pernixc_print::print(
             LogSeverity::Error,
             format!(
                 "a keyword of `{}` is expected, found: {}",
@@ -260,7 +253,7 @@ impl KeywordExpected {
             .as_str(),
         );
         if let Some(token) = self.found.as_ref() {
-            pernixc_common::printing::print_source_code(
+            pernixc_print::print_source_code(
                 &token.span(),
                 Some(format!("keyword of `{}` expected here", self.expected.as_str()).as_str()),
             );
@@ -273,7 +266,7 @@ impl KeywordExpected {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered a syntactic error while parsing the source code.")]
-#[allow(clippy::module_name_repetitions)]
+#[allow(clippy::module_name_repetitions, missing_docs)]
 pub enum SyntacticError {
     IdentifierExpected(IdentifierExpected),
     TypeSpecifierExpected(TypeSpecifierExpected),
