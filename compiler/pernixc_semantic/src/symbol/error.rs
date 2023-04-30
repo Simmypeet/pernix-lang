@@ -12,7 +12,8 @@ use super::{
     table::Table, Accessibility, EnumVariantID, FieldID, GlobalID, OverloadID, ParameterID, ID,
 };
 
-/// Is an error that can occur during the symbol resolution/construction phase of the compiler.
+/// Is a semantic error that can occur during the symbol resolution/construction phase of the
+/// compiler.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs, clippy::module_name_repetitions)]
 pub enum SymbolError {

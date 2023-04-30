@@ -109,13 +109,21 @@ create_symbol! {
 }
 
 impl Global for ModuleSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
+    fn id(&self) -> GlobalID {
+        self.id().into()
+    }
 
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
 
-    fn accessibility(&self) -> Accessibility { self.accessibility }
+    fn accessibility(&self) -> Accessibility {
+        self.accessibility
+    }
 
-    fn parent_scoped_id(&self) -> Option<ScopedID> { self.parent_module_id.map(ScopedID::Module) }
+    fn parent_scoped_id(&self) -> Option<ScopedID> {
+        self.parent_module_id.map(ScopedID::Module)
+    }
 }
 
 impl Scoped for ModuleSymbol {
@@ -200,13 +208,21 @@ impl Scoped for StructSymbol {
 }
 
 impl Global for StructSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
+    fn id(&self) -> GlobalID {
+        self.id().into()
+    }
 
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
 
-    fn accessibility(&self) -> Accessibility { self.accessibility }
+    fn accessibility(&self) -> Accessibility {
+        self.accessibility
+    }
 
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
+    fn parent_scoped_id(&self) -> Option<ScopedID> {
+        Some(ScopedID::Module(self.parent_module_id))
+    }
 }
 
 create_symbol! {
@@ -232,13 +248,21 @@ create_symbol! {
 }
 
 impl Global for EnumVariantSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
+    fn id(&self) -> GlobalID {
+        self.id().into()
+    }
 
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
 
-    fn accessibility(&self) -> Accessibility { Accessibility::Public }
+    fn accessibility(&self) -> Accessibility {
+        Accessibility::Public
+    }
 
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Enum(self.parent_enum_id)) }
+    fn parent_scoped_id(&self) -> Option<ScopedID> {
+        Some(ScopedID::Enum(self.parent_enum_id))
+    }
 }
 
 create_symbol! {
@@ -283,13 +307,21 @@ impl Scoped for EnumSymbol {
 }
 
 impl Global for EnumSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
+    fn id(&self) -> GlobalID {
+        self.id().into()
+    }
 
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
 
-    fn accessibility(&self) -> Accessibility { self.accessibility }
+    fn accessibility(&self) -> Accessibility {
+        self.accessibility
+    }
 
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
+    fn parent_scoped_id(&self) -> Option<ScopedID> {
+        Some(ScopedID::Module(self.parent_module_id))
+    }
 }
 
 /// Represents an overload signature syntax tree.
@@ -378,13 +410,21 @@ create_symbol! {
 }
 
 impl Global for OverloadSetSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
+    fn id(&self) -> GlobalID {
+        self.id().into()
+    }
 
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
 
-    fn accessibility(&self) -> Accessibility { Accessibility::Public }
+    fn accessibility(&self) -> Accessibility {
+        Accessibility::Public
+    }
 
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
+    fn parent_scoped_id(&self) -> Option<ScopedID> {
+        Some(ScopedID::Module(self.parent_module_id))
+    }
 }
 
 create_symbol! {
@@ -414,13 +454,21 @@ create_symbol! {
 }
 
 impl Global for TypeAliasSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
+    fn id(&self) -> GlobalID {
+        self.id().into()
+    }
 
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
 
-    fn accessibility(&self) -> Accessibility { self.accessibility }
+    fn accessibility(&self) -> Accessibility {
+        self.accessibility
+    }
 
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.type_alias_parent_id.into()) }
+    fn parent_scoped_id(&self) -> Option<ScopedID> {
+        Some(self.type_alias_parent_id.into())
+    }
 }
 
 /// Is an enumeration of IDs that can contain a type alias.
@@ -461,34 +509,34 @@ impl From<TypeAliasParentID> for ID {
 /// Is an enumeration of ID of the symbols that can be used as a type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
-pub enum TypedID {
+pub enum TypableID {
     Enum(EnumID),
     Struct(StructID),
 }
 
-impl From<TypedID> for GlobalID {
-    fn from(value: TypedID) -> Self {
+impl From<TypableID> for GlobalID {
+    fn from(value: TypableID) -> Self {
         match value {
-            TypedID::Enum(id) => Self::Enum(id),
-            TypedID::Struct(id) => Self::Struct(id),
+            TypableID::Enum(id) => Self::Enum(id),
+            TypableID::Struct(id) => Self::Struct(id),
         }
     }
 }
 
-impl From<TypedID> for ID {
-    fn from(value: TypedID) -> Self {
+impl From<TypableID> for ID {
+    fn from(value: TypableID) -> Self {
         match value {
-            TypedID::Enum(id) => Self::Enum(id),
-            TypedID::Struct(id) => Self::Struct(id),
+            TypableID::Enum(id) => Self::Enum(id),
+            TypableID::Struct(id) => Self::Struct(id),
         }
     }
 }
 
-impl From<TypedID> for ScopedID {
-    fn from(value: TypedID) -> Self {
+impl From<TypableID> for ScopedID {
+    fn from(value: TypableID) -> Self {
         match value {
-            TypedID::Enum(id) => Self::Enum(id),
-            TypedID::Struct(id) => Self::Struct(id),
+            TypableID::Enum(id) => Self::Enum(id),
+            TypableID::Struct(id) => Self::Struct(id),
         }
     }
 }

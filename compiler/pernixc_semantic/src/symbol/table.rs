@@ -1243,8 +1243,8 @@ impl Table {
                 )?;
 
                 match symbol_id {
-                    GlobalID::Struct(sym) => Some(Type::TypedID(sym.into())),
-                    GlobalID::Enum(sym) => Some(Type::TypedID(sym.into())),
+                    GlobalID::Struct(sym) => Some(Type::TypableID(sym.into())),
+                    GlobalID::Enum(sym) => Some(Type::TypableID(sym.into())),
                     GlobalID::TypeAlias(sym) => Some(self.get_type_alias(sym).unwrap().alias),
                     GlobalID::Module(..)
                     | GlobalID::OverloadSet(..)
@@ -1266,7 +1266,7 @@ impl Table {
     fn get_overall_accessibility(&mut self, ty: Type) -> Accessibility {
         match ty {
             Type::PrimitiveType(..) => Accessibility::Public,
-            Type::TypedID(ty) => self.get_global(ty.into()).unwrap().accessibility(),
+            Type::TypableID(ty) => self.get_global(ty.into()).unwrap().accessibility(),
         }
     }
 
@@ -1326,7 +1326,7 @@ impl Table {
                 .map(std::convert::Into::into),
             GlobalID::TypeAlias(sym) => match self.get_type_alias(sym).unwrap().alias {
                 Type::PrimitiveType(..) => None,
-                Type::TypedID(type_id) => self.search_child(type_id.into(), name),
+                Type::TypableID(type_id) => self.search_child(type_id.into(), name),
             },
             GlobalID::OverloadSet(..) | GlobalID::EnumVariant(..) => None,
         }
@@ -1367,7 +1367,7 @@ impl Table {
                 .map(std::convert::Into::into),
             GlobalID::TypeAlias(sym) => match self.get_type_alias(sym).unwrap().alias {
                 Type::PrimitiveType(..) => None,
-                Type::TypedID(type_id) => self.search_child_constructing(
+                Type::TypableID(type_id) => self.search_child_constructing(
                     type_id.into(),
                     name,
                     symbol_states_by_id,

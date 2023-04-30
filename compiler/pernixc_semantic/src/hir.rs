@@ -6,15 +6,18 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_lexical::token::Identifier as IdentifierToken;
+use pernixc_source::Span;
 use pernixc_system::{
     arena::{Arena, InvalidIDError},
     create_symbol,
     error_handler::ErrorHandler,
 };
+use thiserror::Error;
 
-use self::{builder::Builder, error::BindingError, instruction::Backend, value::binding::Binding};
+use self::{builder::Builder, error::HirError, instruction::Backend, value::binding::Binding};
 use crate::{
     cfg::ControlFlowGraph,
+    infer::InferableType,
     symbol::{error::SymbolError, table::Table, ty::Type, OverloadID},
 };
 
@@ -65,9 +68,9 @@ impl Hir {
 
 /// Is a derived [`ErrorHandler`] trait that can handle both [`BindingError`] and [`SymbolError`]
 /// (the two types of errors that can occur while building the HIR)
-pub trait BindingErrorHandler: ErrorHandler<BindingError> + ErrorHandler<SymbolError> {}
+pub trait BindingErrorHandler: ErrorHandler<HirError> + ErrorHandler<SymbolError> {}
 
-impl<T: ErrorHandler<BindingError> + ErrorHandler<SymbolError>> BindingErrorHandler for T {}
+impl<T: ErrorHandler<HirError> + ErrorHandler<SymbolError>> BindingErrorHandler for T {}
 
 /// Represents that is used for type checking.
 pub trait TypeSystem: Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Hash {
@@ -77,6 +80,56 @@ pub trait TypeSystem: Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord +
 
 impl TypeSystem for Type {
     fn from_type(ty: Type) -> Self { ty }
+}
+
+impl TypeSystem for InferableType {
+    fn from_type(ty: Type) -> Self { InferableType::Type(ty) }
+}
+
+/// Specifies whether if the value is reachable or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum Reachability {
+    /// The value is unreachable.
+    Unreachable,
+
+    /// The value is reachable.
+    Reachable,
+}
+
+/// Is a struct composed of the type of the value and its reachability.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TypeBinding<T: TypeSystem> {
+    /// The type of the value.
+    pub ty: T,
+
+    /// Specifies whether if the value is reachable or not.
+    pub reachability: Reachability,
+}
+
+/// Occurs when a value is used in a context where it wasn't created from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[error("The value is used in a context where it wasn't created from.")]
+pub struct InvalidValueError;
+
+/// Represents a context in which values are created and used.
+pub trait ValueContext<T: TypeSystem, V> {
+    /// Gets the type binding of the value.
+    ///
+    /// # Errors
+    /// If the given value was not created in this context, an [`InvalidValueError`] is returned.
+    fn get_type(&self, value: &V) -> Result<T, InvalidValueError>;
+
+    /// Gets the span of the value.
+    ///
+    /// # Errors
+    /// If the given value was not created in this context, an [`InvalidValueError`] is returned.
+    fn get_span(&self, value: &V) -> Result<Span, InvalidValueError>;
+
+    /// Gets the reachability of the value.
+    ///
+    /// # Errors
+    /// If the given value was not created in this context, an [`InvalidValueError`] is returned.
+    fn get_reachability(&self, value: &V) -> Result<Reachability, InvalidValueError>;
 }
 
 create_symbol! {

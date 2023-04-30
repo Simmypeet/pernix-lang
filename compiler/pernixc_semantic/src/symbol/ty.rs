@@ -3,7 +3,7 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
-use super::TypedID;
+use super::TypableID;
 
 /// Is an enumeration of all the primitive types in Pernix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -41,7 +41,7 @@ pub enum Type {
     PrimitiveType(PrimitiveType),
 
     /// The type refers to a particular typed symbol in the symbol table.
-    TypedID(TypedID),
+    TypableID(TypableID),
 }
 
 /// Represents a type used to represent a type binding of an l-value.

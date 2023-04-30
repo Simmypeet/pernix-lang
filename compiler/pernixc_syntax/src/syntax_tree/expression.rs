@@ -114,8 +114,9 @@ impl SourceElement for Functional {
 ///     NumericLiteralToken
 ///     ;
 /// ````
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct NumericLiteral {
+    #[get = "pub"]
     pub(super) numeric_literal_token: NumericLiteralToken,
 }
 
