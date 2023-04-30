@@ -16,4 +16,3 @@ public function main(mutable someParameter: int32): void {
 
     someParameter = 5i64;
 }
-

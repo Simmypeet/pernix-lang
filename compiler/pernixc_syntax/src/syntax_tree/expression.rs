@@ -6,7 +6,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_lexical::token::{
-    Identifier, Keyword, KeywordKind, NumericLiteral, Punctuation, Token,
+    Identifier, Keyword, KeywordKind, NumericLiteral as NumericLiteralToken, Punctuation, Token,
 };
 use pernixc_source::Span;
 use pernixc_system::error_handler::ErrorHandler;
@@ -86,7 +86,9 @@ pub enum Functional {
 impl SourceElement for Functional {
     fn span(&self) -> Span {
         match self {
-            Self::NumericLiteral(numeric_literal) => numeric_literal.span.clone(),
+            Self::NumericLiteral(numeric_literal) => {
+                numeric_literal.numeric_literal_token.span.clone()
+            }
             Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
             Self::Binary(binary_expression) => binary_expression.span(),
             Self::Prefix(prefix_expression) => prefix_expression.span(),
@@ -102,6 +104,23 @@ impl SourceElement for Functional {
             Self::Cast(cast) => cast.span(),
         }
     }
+}
+
+/// Represents a numeric literal syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// NumericLiteral:
+///     NumericLiteralToken
+///     ;
+/// ````
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NumericLiteral {
+    pub(super) numeric_literal_token: NumericLiteralToken,
+}
+
+impl SourceElement for NumericLiteral {
+    fn span(&self) -> Span { self.numeric_literal_token.span.clone() }
 }
 
 /// Represents a cast expression syntax tree.
@@ -1356,7 +1375,12 @@ impl<'a> Parser<'a> {
             // Handles numeric literal
             Some(Token::NumericLiteral(numeric_literal)) => {
                 self.next_token();
-                Some(Expression::Functional((numeric_literal.clone()).into()))
+                Some(Expression::Functional(
+                    NumericLiteral {
+                        numeric_literal_token: numeric_literal.clone(),
+                    }
+                    .into(),
+                ))
             }
 
             // Handles parenthesis

@@ -1,25 +1,36 @@
-use super::{SsaValue, SsaVariableID};
+//! Contains all the definitions of instructions used in the HIR.
+
+use std::marker::PhantomData;
+
+use derive_more::From;
+use enum_as_inner::EnumAsInner;
+
+use super::{value::Value, TypeSystem};
 use crate::cfg::{
     BasicBlockID, BasicInstruction, ConditionalJumpInstruction, InstructionBackend,
     JumpInstruction, ReturnInstruction,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Basic {
-    SsaVariableAssignment(SsaVariableID),
+/// Represents a jump instruciton in the HIR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Jump {
+    pub(super) jump_target: BasicBlockID,
 }
 
-impl BasicInstruction for Basic {}
+impl JumpInstruction for Jump {
+    fn jump_target(&self) -> BasicBlockID { self.jump_target }
+}
 
+/// Represents a conditional jump instruction in the HIR.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ConditionalJump {
-    pub condition: SsaValue,
-    pub true_jump_target: BasicBlockID,
-    pub false_jump_target: BasicBlockID,
+pub struct ConditionalJump<T: TypeSystem> {
+    pub(super) condition: Value<T>,
+    pub(super) true_jump_target: BasicBlockID,
+    pub(super) false_jump_target: BasicBlockID,
 }
 
-impl ConditionalJumpInstruction for ConditionalJump {
-    type Value = SsaValue;
+impl<T: TypeSystem> ConditionalJumpInstruction for ConditionalJump<T> {
+    type Value = Value<T>;
 
     fn condition_value(&self) -> &Self::Value { &self.condition }
 
@@ -28,33 +39,32 @@ impl ConditionalJumpInstruction for ConditionalJump {
     fn false_jump_target(&self) -> BasicBlockID { self.false_jump_target }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Jump {
-    pub jump_target: BasicBlockID,
-}
-
-impl JumpInstruction for Jump {
-    fn jump_target(&self) -> BasicBlockID { self.jump_target }
-}
-
+/// Represents a return instruction in the HIR.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Return {
-    pub return_value: Option<SsaValue>,
+pub struct Return<T: TypeSystem> {
+    pub(super) return_value: Option<Value<T>>,
 }
 
-impl ReturnInstruction for Return {
-    type Value = SsaValue;
+impl<T: TypeSystem> ReturnInstruction for Return<T> {
+    type Value = Value<T>;
 
     fn return_value(&self) -> Option<&Self::Value> { self.return_value.as_ref() }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Backend;
+/// Represents a basic instruction in the HIR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum Basic {}
 
-impl InstructionBackend for Backend {
+impl BasicInstruction for Basic {}
+
+/// Is a struct that implements [`InstructionBackend`] for the HIR.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Backend<T: TypeSystem>(PhantomData<T>);
+
+impl<T: TypeSystem> InstructionBackend for Backend<T> {
     type Basic = Basic;
-    type ConditionalJump = ConditionalJump;
+    type ConditionalJump = ConditionalJump<T>;
     type Jump = Jump;
-    type Return = Return;
-    type Value = SsaValue;
+    type Return = Return<T>;
+    type Value = Value<T>;
 }
