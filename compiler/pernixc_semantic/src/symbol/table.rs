@@ -223,7 +223,7 @@ impl Table {
     /// site (where the name resolution is performed from).
     ///
     /// # Errors
-    /// - [`ResolveError::FatalSymbolError`]: Found a [`SymbolError`] that is fatal to the name
+    /// - [`ResolveError::FatalSymbolError`]: Found a [`Error`] that is fatal to the name
     /// resolution process.
     /// - [`ResolveError::InvalidIDError`]: The given `referring_site` is not a valid [`ScopedID`].
     pub fn resolve_symbol(
@@ -316,6 +316,68 @@ impl Table {
         }
 
         Ok(current_id)
+    }
+
+    /// Resolves a [`TypeSpecifier`] syntax tree into a [`Type`]
+    ///
+    /// # Errors
+    /// - [`ResolveError::FatalSymbolError`]: Found a [`Error`] that is fatal to the name
+    /// resolution process.
+    /// - [`ResolveError::InvalidIDError`]: The given `referring_site` is not a valid [`ScopedID`].
+    pub fn resolve_type(
+        &self,
+        referring_site: ScopedID,
+        type_specifier: &TypeSpecifier,
+        handler: &impl ErrorHandler<Error>,
+    ) -> Result<Type, ResolveError> {
+        match type_specifier {
+            TypeSpecifier::PrimitiveTypeSpecifier(primitive_type) => match primitive_type {
+                PrimitiveTypeSpecifier::Bool(..) => Ok(Type::PrimitiveType(PrimitiveType::Bool)),
+                PrimitiveTypeSpecifier::Int8(..) => Ok(Type::PrimitiveType(PrimitiveType::Int8)),
+                PrimitiveTypeSpecifier::Int16(..) => Ok(Type::PrimitiveType(PrimitiveType::Int16)),
+                PrimitiveTypeSpecifier::Int32(..) => Ok(Type::PrimitiveType(PrimitiveType::Int32)),
+                PrimitiveTypeSpecifier::Int64(..) => Ok(Type::PrimitiveType(PrimitiveType::Int64)),
+                PrimitiveTypeSpecifier::Uint8(..) => Ok(Type::PrimitiveType(PrimitiveType::Uint8)),
+                PrimitiveTypeSpecifier::Uint16(..) => {
+                    Ok(Type::PrimitiveType(PrimitiveType::Uint16))
+                }
+                PrimitiveTypeSpecifier::Uint32(..) => {
+                    Ok(Type::PrimitiveType(PrimitiveType::Uint32))
+                }
+                PrimitiveTypeSpecifier::Uint64(..) => {
+                    Ok(Type::PrimitiveType(PrimitiveType::Uint64))
+                }
+                PrimitiveTypeSpecifier::Float32(..) => {
+                    Ok(Type::PrimitiveType(PrimitiveType::Float32))
+                }
+                PrimitiveTypeSpecifier::Float64(..) => {
+                    Ok(Type::PrimitiveType(PrimitiveType::Float64))
+                }
+                PrimitiveTypeSpecifier::Void(..) => Ok(Type::PrimitiveType(PrimitiveType::Void)),
+            },
+            TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
+                let symbol_id =
+                    self.resolve_symbol(referring_site, qualified_identifier, handler)?;
+
+                match symbol_id {
+                    GlobalID::Struct(sym) => Ok(Type::TypedID(sym.into())),
+                    GlobalID::Enum(sym) => Ok(Type::TypedID(sym.into())),
+                    GlobalID::TypeAlias(sym) => Ok(self.get_type_alias(sym).unwrap().alias),
+                    GlobalID::Module(..)
+                    | GlobalID::OverloadSet(..)
+                    | GlobalID::EnumVariant(..) => {
+                        handler.recieve(
+                            TypeExpected {
+                                span: qualified_identifier.span(),
+                                found: symbol_id,
+                            }
+                            .into(),
+                        );
+                        Err(ResolveError::FatalSymbolError)
+                    }
+                }
+            }
+        }
     }
 }
 

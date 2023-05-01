@@ -11,7 +11,7 @@ use super::{
 };
 use crate::symbol::{
     ty::{PrimitiveType, Type},
-    EnumVariantID, FieldID,
+    EnumVariantID, FieldID, ParameterID,
 };
 
 pub mod binding;
@@ -138,7 +138,7 @@ impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
 /// This is generally used for error handling by replacing a value that encountered an error with
 /// a placeholder value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, CopyGetters, Getters)]
-pub struct PlaceHolder<T: TypeSystem> {
+pub struct Placeholder<T: TypeSystem> {
     /// The location of the expression that this placeholder substitutes.
     #[get = "pub"]
     pub(super) span: Span,
@@ -148,14 +148,14 @@ pub struct PlaceHolder<T: TypeSystem> {
     pub(super) ty: T,
 }
 
-impl<T: TypeSystem> ValueInspect<T, PlaceHolder<T>> for Container<T> {
-    fn get_type(&self, value: &PlaceHolder<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
+impl<T: TypeSystem> ValueInspect<T, Placeholder<T>> for Container<T> {
+    fn get_type(&self, value: &Placeholder<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
-    fn get_span(&self, value: &PlaceHolder<T>) -> Result<Span, InvalidValueError> {
+    fn get_span(&self, value: &Placeholder<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
     }
 
-    fn get_reachability(&self, _value: &PlaceHolder<T>) -> Result<Reachability, InvalidValueError> {
+    fn get_reachability(&self, _value: &Placeholder<T>) -> Result<Reachability, InvalidValueError> {
         Ok(Reachability::Reachable)
     }
 }
@@ -170,7 +170,7 @@ pub enum Value<T: TypeSystem> {
     Constant(Constant<T>),
 
     /// Is used when encountering an error.
-    PlaceHolder(PlaceHolder<T>),
+    Placeholder(Placeholder<T>),
 }
 
 impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
@@ -178,7 +178,7 @@ impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
         match value {
             Value::Register(id) => self.get_type(id),
             Value::Constant(c) => self.get_type(c),
-            Value::PlaceHolder(p) => self.get_type(p),
+            Value::Placeholder(p) => self.get_type(p),
         }
     }
 
@@ -186,7 +186,7 @@ impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
         match value {
             Value::Register(id) => self.get_span(id),
             Value::Constant(c) => self.get_span(c),
-            Value::PlaceHolder(p) => self.get_span(p),
+            Value::Placeholder(p) => self.get_span(p),
         }
     }
 
@@ -194,7 +194,7 @@ impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
         match value {
             Value::Register(id) => self.get_reachability(id),
             Value::Constant(c) => self.get_reachability(c),
-            Value::PlaceHolder(p) => self.get_reachability(p),
+            Value::Placeholder(p) => self.get_reachability(p),
         }
     }
 }
@@ -216,5 +216,6 @@ pub struct FieldAddress {
 #[allow(missing_docs)]
 pub enum Address {
     AllocaID(AllocaID),
+    ParameterID(ParameterID),
     FieldAddress(FieldAddress),
 }

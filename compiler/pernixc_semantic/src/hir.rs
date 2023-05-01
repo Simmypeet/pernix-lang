@@ -61,7 +61,7 @@ pub struct Container<T: TypeSystem> {
 
     /// The list of all the allocas that are used in the function.
     #[get = "pub"]
-    allocas: Arena<Alloca<Type>>,
+    allocas: Arena<Alloca<T>>,
 
     /// The table that is used in lookup and resolution of the symbols.
     #[get = "pub"]
@@ -217,36 +217,20 @@ impl<T: TypeSystem> ValueInspect<T, RegisterID> for Container<T> {
     }
 }
 
-/// Is a stack allocated memory that is used for variable declaration statements.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
-pub struct UserAlloca<T: TypeSystem> {
-    /// The identifier token of the variable.
-    #[get = "pub"]
-    identifier_token: IdentifierToken,
-
-    /// Specifies whether the variable was declared as mutable.
-    #[get_copy = "pub"]
-    is_mutable: bool,
-
-    /// The type of the variable.
-    #[get_copy = "pub"]
-    ty: T,
-}
-
-/// Is a stack allocated memory defined implicitly by the compiler for storing intermediate values.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, CopyGetters)]
-pub struct ImplicitAlloca<T: TypeSystem> {
-    /// The type of the variable.
-    #[get_copy = "pub"]
-    ty: T,
-}
-
 create_symbol! {
-    /// Represents a single distinct stack allocated memory in the SSA form.
-    #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-    #[allow(missing_docs)]
-    pub enum Alloca<T: TypeSystem> {
-        UserAlloca(UserAlloca<T>),
-        ImplicitAlloca(ImplicitAlloca<T>),
+    /// Is a stack allocated memory that is used for variable declaration statements.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+    pub struct Alloca<T: TypeSystem> {
+        /// The identifier token of the variable.
+        #[get = "pub"]
+        identifier_token: IdentifierToken,
+
+        /// Specifies whether the variable was declared as mutable.
+        #[get_copy = "pub"]
+        is_mutable: bool,
+
+        /// The type of the variable.
+        #[get_copy = "pub"]
+        ty: T,
     }
 }

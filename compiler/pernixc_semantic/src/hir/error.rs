@@ -90,6 +90,10 @@ pub struct NoOverloadWithMatchingArgumentTypes {
     /// Specifes the location where the symbol was attempted to be resolved.
     #[get = "pub"]
     pub(super) symbol_span: Span,
+
+    /// The types of the arguments that were passed to the overload set.
+    #[get = "pub"]
+    pub(super) argument_types: Vec<InferableType>,
 }
 
 /// Multiple overloads are available to be called.
@@ -117,7 +121,7 @@ pub struct TypeMismatch {
 
     /// The expected type.
     #[get_copy = "pub"]
-    pub(super) expected: InferableType,
+    pub(super) expect: InferableType,
 
     /// The type that was found.
     #[get_copy = "pub"]

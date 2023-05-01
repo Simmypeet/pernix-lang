@@ -1,8 +1,10 @@
+public module inner;
+
 public function someFunction(a: uint32, b: uint32): uint32 { // first overload
     return a + b;
 }
 
-public function someFunction(a: uint8): uint8 { // second overload
+public function someFunction(a: int8): int8 { // second overload
     return a; 
 }
 
@@ -19,9 +21,11 @@ public function main(): void {
 
     someFunction(4.0); // 3rd overload
 
-    someFunction(5u32); // 2nd overload
+    someFunction(5i32); // type mismatch
 
     someFunction(6f32); // 3rd overload
 
-    someFunction(7u8); // 4th overload
-}
+    someFunction(7i8); // 4th overload
+
+    inner::someFunction(8u8); // inaccessible
+} 

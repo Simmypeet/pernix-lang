@@ -4,8 +4,9 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_source::Span;
+use pernixc_syntax::syntax_tree::expression::PrefixOperator;
 
-use super::{TypeSystem, Value};
+use super::{Address, TypeSystem, Value};
 use crate::{
     hir::{Container, InvalidValueError, Reachability, ValueInspect},
     symbol::OverloadID,
@@ -14,34 +15,43 @@ use crate::{
 /// Represents a bound syntax tree.
 ///
 /// The bound syntax tree is attached with type information and additional semantics.
-#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Binding<T: TypeSystem> {
     FunctionCall(FunctionCall<T>),
+    Prefix(Prefix<T>),
+    NamedLoad(NamedLoad),
 }
 
 impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
     fn get_type(&self, value: &Binding<T>) -> Result<T, InvalidValueError> {
         match value {
             Binding::FunctionCall(value) => self.get_type(value),
+            Binding::Prefix(value) => self.get_type(value),
+            Binding::NamedLoad(value) => self.get_type(value),
         }
     }
 
     fn get_span(&self, value: &Binding<T>) -> Result<pernixc_source::Span, InvalidValueError> {
         match value {
             Binding::FunctionCall(value) => self.get_span(value),
+            Binding::Prefix(value) => self.get_span(value),
+            Binding::NamedLoad(value) => self.get_span(value),
         }
     }
 
     fn get_reachability(&self, value: &Binding<T>) -> Result<Reachability, InvalidValueError> {
         match value {
             Binding::FunctionCall(value) => self.get_reachability(value),
+            Binding::Prefix(value) => self.get_reachability(value),
+            Binding::NamedLoad(value) => self.get_reachability(value),
         }
     }
 }
 
-/// Represents a bound [`FunctionCall`](pernixc_syntax::syntax_tree::expression::FunctionCall).
-#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+/// Represents a bound [`FunctionCall`](pernixc_syntax::syntax_tree::expression::FunctionCall)
+/// syntax tree.
+#[derive(Debug, Clone, PartialEq, Eq, Getters, Hash, CopyGetters)]
 pub struct FunctionCall<T: TypeSystem> {
     /// Specifies the location of the function call.
     #[get = "pub"]
@@ -70,10 +80,104 @@ impl<T: TypeSystem> ValueInspect<T, FunctionCall<T>> for Container<T> {
         Ok(value.span.clone())
     }
 
-    fn get_reachability(
-        &self,
-        _value: &FunctionCall<T>,
-    ) -> Result<Reachability, InvalidValueError> {
+    fn get_reachability(&self, value: &FunctionCall<T>) -> Result<Reachability, InvalidValueError> {
+        // if found any one of the arguments is unreachable, then the function call is unreachable
+        for argument in &value.arguments {
+            if self.get_reachability(argument)? == Reachability::Unreachable {
+                return Ok(Reachability::Unreachable);
+            }
+        }
+
+        Ok(Reachability::Reachable)
+    }
+}
+
+/// Represents a bound [`Prefix`](pernixc_syntax::syntax_tree::expression::Prefix) syntax tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct Prefix<T: TypeSystem> {
+    /// Specifies the location of the prefix expression.
+    #[get = "pub"]
+    pub(in crate::hir) span: Span,
+
+    /// The operator that is applied to the operand.
+    #[get = "pub"]
+    pub(in crate::hir) prefix_operator: PrefixOperator,
+
+    /// The operand that is being operated on.
+    #[get = "pub"]
+    pub(in crate::hir) operand: Value<T>,
+}
+
+impl<T: TypeSystem> ValueInspect<T, Prefix<T>> for Container<T> {
+    fn get_type(&self, value: &Prefix<T>) -> Result<T, InvalidValueError> {
+        self.get_type(&value.operand)
+    }
+
+    fn get_span(&self, value: &Prefix<T>) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
+
+    fn get_reachability(&self, value: &Prefix<T>) -> Result<Reachability, InvalidValueError> {
+        self.get_reachability(&value.operand)
+    }
+}
+
+/// Specifies how the [`NamedLoad`] loads the value from the address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum LoadType {
+    /// The value is moved from the address.
+    Move,
+
+    /// The value is copied from the address.
+    Copy,
+}
+
+/// Represents a bound [`Named`](pernixc_syntax::syntax_tree::expression::Named) syntax tree.
+///
+/// This struct represents the [`Named`](pernixc_syntax::syntax_tree::expression::Named) syntax
+/// tree that loads the value from the address.
+/// [`Named`](pernixc_syntax::syntax_tree::expression::Named) can also represent the
+/// [`EnumLiteral`](super::EnumLiteral) value as well.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct NamedLoad {
+    /// The span of the [`NamedLoad`].
+    #[get = "pub"]
+    pub(super) span: Span,
+
+    /// Determines how the value is loaded from the address.
+    #[get_copy = "pub"]
+    pub(super) load_type: LoadType,
+
+    /// The address of the value.
+    #[get = "pub"]
+    pub(super) address: Address,
+}
+
+impl<T: TypeSystem> ValueInspect<T, NamedLoad> for Container<T> {
+    fn get_type(&self, value: &NamedLoad) -> Result<T, InvalidValueError> {
+        match &value.address {
+            Address::AllocaID(id) => Ok(self.allocas.get(*id).map_err(|_| InvalidValueError)?.ty()),
+            Address::ParameterID(id) => Ok(T::from_type(
+                self.table
+                    .get_parameter(*id)
+                    .map_err(|_| InvalidValueError)?
+                    .type_binding()
+                    .ty,
+            )),
+            Address::FieldAddress(address) => Ok(T::from_type(
+                self.table
+                    .get_field(address.field_id)
+                    .map_err(|_| InvalidValueError)?
+                    .ty(),
+            )),
+        }
+    }
+
+    fn get_span(&self, value: &NamedLoad) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
+
+    fn get_reachability(&self, _: &NamedLoad) -> Result<Reachability, InvalidValueError> {
         Ok(Reachability::Reachable)
     }
 }

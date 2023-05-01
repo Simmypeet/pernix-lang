@@ -10,13 +10,19 @@ use pernixc_syntax::syntax_tree::{
     expression::{
         BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,
         FunctionCall as FunctionCallSyntaxTree, Functional as FunctionalSyntaxTree,
-        Imperative as ImperativeSyntaxTree, NumericLiteral as NumericLiteralSyntaxTree,
+        Imperative as ImperativeSyntaxTree, Named as NamedSyntaxTree,
+        NumericLiteral as NumericLiteralSyntaxTree, Prefix as PrefixSyntaxTree, PrefixOperator,
+    },
+    statement::{
+        Declarative, Expressive, Statement as StatementSyntaxTree,
+        VariableDeclaration as VariableDeclarationSyntaxTree,
     },
     ConnectedList,
 };
 use pernixc_system::arena::InvalidIDError;
 use thiserror::Error;
 
+use self::scope::Stack;
 use super::{
     error::{
         AmbiguousFunctionCall, Error, FloatingPointLiteralHasIntegralSuffix,
@@ -25,21 +31,31 @@ use super::{
     },
     instruction::RegisterAssignment,
     value::{
-        binding::FunctionCall, Address, BooleanLiteral, Constant, NumericLiteral, PlaceHolder,
-        Value,
+        binding::{FunctionCall, Prefix},
+        Address, BooleanLiteral, Constant, NumericLiteral, Placeholder, Value,
     },
     Container, ErrorHandler, InvalidValueError, Register, RegisterID, TypeBinding, TypeSystem,
     ValueInspect,
 };
 use crate::{
     cfg::BasicBlockID,
-    infer::{Constraint, InferableType, InferenceContext, InferenceID},
+    hir::{
+        error::TypeMismatch,
+        instruction::{Store, VariableDeclaration},
+        Alloca,
+    },
+    infer::{
+        Constraint, ConstraintNotSatisfiedError, InferableType, InferenceContext, InferenceID,
+        TypeMismatchError, UnificationError,
+    },
     symbol::{
         table::Table,
         ty::{PrimitiveType, Type},
         GlobalID, Overload, OverloadID, OverloadSetID,
     },
 };
+
+pub mod scope;
 
 /// Is an enumeration flag that specifies how the builder should bind the syntax tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -69,7 +85,7 @@ pub enum BindingTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct BindingOption {
     /// Specifies the binding target.
-    bind_kind: BindingTarget,
+    binding_target: BindingTarget,
 }
 
 /// Is a [`TypeSystem`] used for building the [`Hir`].
@@ -103,6 +119,7 @@ pub struct Builder {
     container: Container<IntermediateTypeID>,
     current_block: BasicBlockID,
     inference_context: InferenceContext,
+    stack: Stack,
 }
 
 impl Builder {
@@ -121,6 +138,7 @@ impl Builder {
             current_block: container.control_flow_graph.entry_block(),
             container,
             inference_context: InferenceContext::new(),
+            stack: Stack::new(),
         })
     }
 
@@ -135,7 +153,7 @@ impl Builder {
     where
         Container<IntermediateTypeID>: ValueInspect<IntermediateTypeID, T>,
     {
-        let intermediate_ty_id = self.container.get_type(value)?;
+        let intermediate_ty_id = self.get_intermediate_type_id(value)?;
         let reachability = self.container.get_reachability(value)?;
         let ty = match intermediate_ty_id {
             IntermediateTypeID::InferenceID(inference_id) => self
@@ -146,6 +164,23 @@ impl Builder {
         };
 
         Ok(TypeBinding { ty, reachability })
+    }
+
+    /// Obtains [`IntermediateTypeID`] for the given value.
+    ///
+    /// This [`IntermediateTypeID`] doesn't represent the final type of the value. Therefore, do
+    /// not use this method for type checking.
+    ///
+    /// # Errors
+    /// - If the given value wasn't created from this [`Builder`].
+    pub fn get_intermediate_type_id<T>(
+        &self,
+        value: &T,
+    ) -> Result<IntermediateTypeID, InvalidValueError>
+    where
+        Container<IntermediateTypeID>: ValueInspect<IntermediateTypeID, T>,
+    {
+        self.container.get_type(value)
     }
 
     /// Obtains [`Span`] for the given value.
@@ -181,6 +216,118 @@ pub enum BindingResult {
 impl Builder {
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
+    /// Binds [`StatementSyntaxTree`] into an instruction that will be inserted into the control
+    /// flow graph in this builder.
+    ///
+    /// # Errors
+    /// - If the binding process encounters a fatal semantic error.
+    pub fn bind_statement(
+        &mut self,
+        syntax_tree: &StatementSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Result<(), BindingError> {
+        match syntax_tree {
+            StatementSyntaxTree::Declarative(Declarative::VariableDeclaration(syntax_tree)) => {
+                self.bind_variable_declaration_statement(syntax_tree, handler)
+            }
+            StatementSyntaxTree::Expressive(syntax_tree) => {
+                let binding_option = BindingOption {
+                    binding_target: BindingTarget::ForStatement,
+                };
+                match syntax_tree {
+                    Expressive::Semi(syntax_tree) => self
+                        .bind_functional(syntax_tree.expression(), binding_option, handler)
+                        .map(|_| ()),
+                    Expressive::Imperative(syntax_tree) => self
+                        .bind_imperative(syntax_tree, binding_option, handler)
+                        .map(|_| ()),
+                }
+            }
+        }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds [`VariableDeclarationSyntaxTree`] into an instruction that will be inserted into the
+    /// control flow graph in this builder.
+    ///
+    /// # Errors
+    /// - If the binding process encounters a fatal semantic error.
+    pub fn bind_variable_declaration_statement(
+        &mut self,
+        syntax_tree: &VariableDeclarationSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Result<(), BindingError> {
+        // gets the type of the variable
+        let ty = if let Some(type_annotation) = syntax_tree.type_annotation() {
+            // gets the type of the variable
+            self.container
+                .table
+                .resolve_type(
+                    self.container.parent_module_id.into(),
+                    type_annotation.type_specifier(),
+                    handler,
+                )
+                .map(InferableType::Type)
+                .unwrap_or(InferableType::Constraint(Constraint::All))
+        } else {
+            InferableType::Constraint(Constraint::All)
+        };
+
+        // gets the value of the variable
+        let value = self
+            .expect_expression(
+                syntax_tree.expression(),
+                BindingOption::default(),
+                ty,
+                handler,
+            )
+            .map(|x| x.into_value().unwrap())
+            .unwrap_or_else(|err| {
+                Value::Placeholder(Placeholder {
+                    span: err.0,
+                    ty: self.inference_context.new_inference(Constraint::All).into(),
+                })
+            });
+
+        // gets the type of the variable
+        let ty = self.get_intermediate_type_id(&value).unwrap();
+
+        // inserts a new alloca
+        let alloca_id = self.container.allocas.insert(Alloca {
+            identifier_token: syntax_tree.identifier().clone(),
+            is_mutable: syntax_tree.mutable_keyword().is_some(),
+            ty,
+        });
+
+        self.container
+            .control_flow_graph
+            .get_mut(self.current_block)
+            .unwrap()
+            .add_basic_instruction(VariableDeclaration { alloca_id }.into());
+
+        // inserts a new store
+        self.container
+            .control_flow_graph
+            .get_mut(self.current_block)
+            .unwrap()
+            .add_basic_instruction(
+                Store {
+                    address: Address::AllocaID(alloca_id),
+                    value,
+                }
+                .into(),
+            );
+
+        Ok(())
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+}
+
+impl Builder {
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
     /// Binds the given [`ExpressionSyntaxTree`] and returns the [`BindingResult`].
     ///
     /// # Errors
@@ -188,7 +335,7 @@ impl Builder {
     pub fn bind_expression(
         &mut self,
         syntax_tree: &ExpressionSyntaxTree,
-        binding_option: &BindingOption,
+        binding_option: BindingOption,
         handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree {
@@ -210,7 +357,7 @@ impl Builder {
     pub fn bind_functional(
         &mut self,
         syntax_tree: &FunctionalSyntaxTree,
-        _binding_option: &BindingOption,
+        _binding_option: BindingOption,
         handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree {
@@ -244,7 +391,7 @@ impl Builder {
     pub fn bind_imperative(
         &mut self,
         _syntax_tree: &ImperativeSyntaxTree,
-        _binding_option: &BindingOption,
+        _binding_option: BindingOption,
         _handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         todo!()
@@ -429,6 +576,10 @@ impl Builder {
                     NoOverloadWithMatchingArgumentTypes {
                         overload_set_id,
                         symbol_span: syntax_tree.qualified_identifier().span(),
+                        argument_types: arguments
+                            .iter()
+                            .map(|a| self.get_type_binding(a).unwrap().ty)
+                            .collect(),
                     },
                 ));
 
@@ -534,7 +685,7 @@ impl Builder {
             .iter()
             .flat_map(ConnectedList::elements)
         {
-            let argument = self.bind_expression(argument, &BindingOption::default(), handler);
+            let argument = self.bind_expression(argument, BindingOption::default(), handler);
             arguments.push(argument);
         }
 
@@ -578,7 +729,7 @@ impl Builder {
                 // every expression can be bound as value if requested
                 x.unwrap_or_else(|err| {
                     has_placeholders = true;
-                    BindingResult::Value(Value::PlaceHolder(PlaceHolder {
+                    BindingResult::Value(Value::Placeholder(Placeholder {
                         span: err.0,
                         ty: IntermediateTypeID::InferenceID(
                             self.inference_context.new_inference(Constraint::All),
@@ -625,6 +776,203 @@ impl Builder {
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds the given [`PrefixSyntaxTree`] and returns the [`RegisterID`] where the result of the
+    /// expression is stored.
+    ///
+    /// # Errors
+    /// - If encounters a fatal semantic error.
+    pub fn bind_prefix(
+        &mut self,
+        syntax_tree: &PrefixSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Result<RegisterID, BindingError> {
+        // get the expected type of the operand based on the operator
+        let expected_type = match syntax_tree.prefix_operator() {
+            PrefixOperator::LogicalNot(..) => InferableType::Type(PrimitiveType::Bool.into()),
+            PrefixOperator::Negate(..) => InferableType::Constraint(Constraint::Signed),
+        };
+
+        // bind the operand
+        let operand = self
+            .expect_expression(
+                syntax_tree.operand(),
+                BindingOption::default(),
+                expected_type,
+                handler,
+            )
+            // default to a placeholder if fails to bind the operand
+            .unwrap_or(BindingResult::Value(Value::Placeholder(Placeholder {
+                span: syntax_tree.span(),
+                ty: match expected_type {
+                    InferableType::Type(ty) => ty.into(),
+                    InferableType::Constraint(constraint) => {
+                        self.inference_context.new_inference(constraint).into()
+                    }
+                },
+            })))
+            .into_value()
+            .unwrap();
+
+        let binding = Prefix {
+            span: syntax_tree.span(),
+            prefix_operator: syntax_tree.prefix_operator().clone(),
+            operand,
+        }
+        .into();
+
+        let register_id = self.container.registers.insert(Register { binding });
+        self.container
+            .control_flow_graph
+            .get_mut(self.current_block)
+            .unwrap()
+            .add_basic_instruction(RegisterAssignment { register_id }.into());
+
+        Ok(register_id)
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+}
+
+impl Builder {
+    fn get_address_intermediate_type_id(&self, address: &Address) -> IntermediateTypeID {
+        match address {
+            Address::AllocaID(id) => self.container.allocas.get(*id).unwrap().ty,
+            Address::ParameterID(id) => self
+                .container
+                .table
+                .get_parameter(*id)
+                .unwrap()
+                .type_binding()
+                .ty
+                .into(),
+            Address::FieldAddress(address) => IntermediateTypeID::Type(Type::TypedID(
+                self.container
+                    .table
+                    .get_field(address.field_id())
+                    .unwrap()
+                    .parent_struct_id()
+                    .into(),
+            )),
+        }
+    }
+
+    /// Similar to `bind_expression` but with additional type checking.
+    fn expect_expression(
+        &mut self,
+        syntax_tree: &ExpressionSyntaxTree,
+        binding_option: BindingOption,
+        expect: InferableType,
+        handler: &impl ErrorHandler,
+    ) -> Result<BindingResult, BindingError> {
+        assert!(
+            binding_option.binding_target != BindingTarget::ForStatement,
+            "`BindingTarget::ForStatement` with type checking doesn't seem applicable since the \
+             expression might not return anything when binding"
+        );
+
+        let value = self.bind_expression(syntax_tree, binding_option, handler)?;
+
+        match &value {
+            BindingResult::Value(value) => self.type_check(
+                syntax_tree.span(),
+                self.get_intermediate_type_id(value).unwrap(),
+                expect,
+                handler,
+            )?,
+            BindingResult::Address(address) => {
+                self.type_check(
+                    syntax_tree.span(),
+                    self.get_address_intermediate_type_id(address),
+                    expect,
+                    handler,
+                )?;
+            }
+            BindingResult::None => todo!(),
+        }
+
+        Ok(value)
+    }
+
+    fn type_check(
+        &mut self,
+        span: Span,
+        found: IntermediateTypeID,
+        expect: InferableType,
+        handler: &impl ErrorHandler,
+    ) -> Result<(), BindingError> {
+        fn handle_unification_error(expression_span: Span, err: UnificationError) -> Error {
+            let (left, right) = match err {
+                UnificationError::TypeMismatchError(TypeMismatchError { left, right }) => {
+                    (left.into(), right.into())
+                }
+                UnificationError::ConstraintNotSatisfiedError(ConstraintNotSatisfiedError {
+                    constraint,
+                    concrete_type,
+                }) => (constraint.into(), concrete_type.into()),
+                UnificationError::InvalidIDError(..) => unreachable!(
+                    "Internal Compiler Error: InvalidIDError should never be returned from unify"
+                ),
+            };
+
+            TypeMismatch {
+                expression_span,
+                found: left,
+                expect: right,
+            }
+            .into()
+        }
+
+        let err = match (found, expect) {
+            (IntermediateTypeID::InferenceID(found), InferableType::Type(expected)) => {
+                let Err(err) = self
+                    .inference_context
+                    .unify_with_concrete(found, expected) else {
+                    return Ok(());
+                };
+                err
+            }
+            (IntermediateTypeID::InferenceID(found), InferableType::Constraint(expected)) => {
+                let Err(err) = self
+                    .inference_context
+                    .unify_with_constraint(found, expected) else {
+                    return Ok(());
+                };
+                err
+            }
+            (IntermediateTypeID::Type(found), InferableType::Constraint(expected)) => {
+                if expected.satisfies(found) {
+                    return Ok(());
+                }
+
+                handler.recieve(Error::TypeMismatch(TypeMismatch {
+                    expression_span: span.clone(),
+                    found: found.into(),
+                    expect: expected.into(),
+                }));
+
+                return Err(BindingError(span));
+            }
+            (IntermediateTypeID::Type(found), InferableType::Type(expected)) => {
+                if found == expected {
+                    return Ok(());
+                }
+
+                handler.recieve(Error::TypeMismatch(TypeMismatch {
+                    expression_span: span.clone(),
+                    found: found.into(),
+                    expect: expected.into(),
+                }));
+                return Err(BindingError(span));
+            }
+        };
+
+        handler.recieve(handle_unification_error(span.clone(), err));
+
+        Err(BindingError(span))
+    }
 }
 
 #[cfg(test)]

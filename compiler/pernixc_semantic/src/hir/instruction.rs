@@ -4,9 +4,12 @@ use std::marker::PhantomData;
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use getset::CopyGetters;
+use getset::{CopyGetters, Getters};
 
-use super::{value::Value, RegisterID, TypeSystem};
+use super::{
+    value::{Address, Value},
+    AllocaID, RegisterID, TypeSystem,
+};
 use crate::cfg::{
     BasicBlockID, BasicInstruction, ConditionalJumpInstruction, InstructionBackend,
     JumpInstruction, ReturnInstruction,
@@ -53,10 +56,12 @@ impl<T: TypeSystem> ReturnInstruction for Return<T> {
 }
 
 /// Represents a basic instruction in the HIR.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
-pub enum Basic {
+pub enum Basic<T: TypeSystem> {
     RegisterAssignment(RegisterAssignment),
+    VariableDeclaration(VariableDeclaration),
+    Store(Store<T>),
 }
 
 /// Represents a register assignment instruction in the HIR.
@@ -67,14 +72,34 @@ pub struct RegisterAssignment {
     pub(super) register_id: RegisterID,
 }
 
-impl BasicInstruction for Basic {}
+/// Represents a variable declaration instruction in the HIR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
+pub struct VariableDeclaration {
+    /// Gets the [`AllocaID`] that was declared at the point of this instruction.
+    #[get_copy = "pub"]
+    pub(super) alloca_id: AllocaID,
+}
+
+/// Represents a store a value to an address instruction in the HIR.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct Store<T: TypeSystem> {
+    /// Gets the [`Address`] that is being stored to.
+    #[get = "pub"]
+    pub(super) address: Address,
+
+    /// Gets the [`Value`] that is being stored to the [`Address`].
+    #[get = "pub"]
+    pub(super) value: Value<T>,
+}
+
+impl<T: TypeSystem> BasicInstruction for Basic<T> {}
 
 /// Is a struct that implements [`InstructionBackend`] for the HIR.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Backend<T: TypeSystem>(PhantomData<T>);
 
 impl<T: TypeSystem> InstructionBackend for Backend<T> {
-    type Basic = Basic;
+    type Basic = Basic<T>;
     type ConditionalJump = ConditionalJump<T>;
     type Jump = Jump;
     type Return = Return<T>;

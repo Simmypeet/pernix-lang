@@ -18,7 +18,8 @@ use crate::{
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
     let source_file = SourceFile::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/hir/numericLiteralBinding.pnx"),
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resource/hir/numericLiteralBinding/main.pnx"),
         vec!["test".to_string()],
     )?;
 
@@ -102,6 +103,7 @@ fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
                 .unwrap(),
             &errors,
         )?;
+
         assert_eq!(errors.as_vec().len(), 0);
         let type_binding = builder.get_type_binding(&numeric_value).unwrap();
         assert_eq!(
@@ -195,7 +197,8 @@ fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
     let source_file = SourceFile::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/hir/functionCallBinding.pnx"),
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resource/hir/functionCallBinding/main.pnx"),
         vec!["test".to_string()],
     )?;
 
@@ -217,6 +220,11 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
     let main_overload_id = main_overload_set.overloads()[0];
     let some_function_overload_set_id = table
         .get_global_id_by_full_name(["test", "someFunction"].into_iter())
+        .unwrap()
+        .into_overload_set()
+        .unwrap();
+    let inner_some_function_overload_set_id = table
+        .get_global_id_by_full_name(["test", "inner", "someFunction"].into_iter())
         .unwrap()
         .into_overload_set()
         .unwrap();
@@ -332,6 +340,460 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
 
         assert_eq!(err.candidate_overloads.len(), 2);
         assert_eq!(err.overload_set_id, some_function_overload_set_id);
+    }
+    {
+        let register_id = builder
+            .bind_function_call(
+                statements[3]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_function_call()
+                    .unwrap(),
+                &errors,
+            )
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        assert_eq!(
+            type_binding.ty,
+            InferableType::Type(PrimitiveType::Float32.into())
+        );
+
+        let function_binding = builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_function_call()
+            .unwrap();
+
+        assert_eq!(function_binding.arguments.len(), 1);
+        assert_eq!(
+            table
+                .get_overload(function_binding.overload_id)?
+                .parent_overload_set_id(),
+            some_function_overload_set_id
+        );
+
+        assert_eq!(
+            builder.get_type_binding(&function_binding.arguments[0])?.ty,
+            InferableType::Type(Type::PrimitiveType(PrimitiveType::Float32))
+        );
+        assert_eq!(
+            builder.get_span(&function_binding.arguments[0])?.str(),
+            "4.0"
+        );
+    }
+    {
+        assert!(builder
+            .bind_function_call(
+                statements[4]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_function_call()
+                    .unwrap(),
+                &errors,
+            )
+            .is_err());
+
+        let err = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_no_overload_with_matching_argument_types()
+                .unwrap()
+        };
+
+        assert_eq!(err.overload_set_id, some_function_overload_set_id);
+        assert_eq!(err.argument_types, [InferableType::Type(
+            PrimitiveType::Int32.into()
+        )]);
+    }
+    {
+        let register_id = builder
+            .bind_function_call(
+                statements[5]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_function_call()
+                    .unwrap(),
+                &errors,
+            )
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        assert_eq!(
+            type_binding.ty,
+            InferableType::Type(PrimitiveType::Float32.into())
+        );
+
+        let function_binding = builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_function_call()
+            .unwrap();
+
+        assert_eq!(function_binding.arguments.len(), 1);
+        assert_eq!(
+            table
+                .get_overload(function_binding.overload_id)?
+                .parent_overload_set_id(),
+            some_function_overload_set_id
+        );
+
+        assert_eq!(
+            builder.get_type_binding(&function_binding.arguments[0])?.ty,
+            InferableType::Type(Type::PrimitiveType(PrimitiveType::Float32))
+        );
+        assert_eq!(
+            builder.get_span(&function_binding.arguments[0])?.str(),
+            "6f32"
+        );
+    }
+    {
+        let register_id = builder
+            .bind_function_call(
+                statements[6]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_function_call()
+                    .unwrap(),
+                &errors,
+            )
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        assert_eq!(
+            type_binding.ty,
+            InferableType::Type(PrimitiveType::Int8.into())
+        );
+
+        let function_binding = builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_function_call()
+            .unwrap();
+
+        assert_eq!(function_binding.arguments.len(), 1);
+        assert_eq!(
+            table
+                .get_overload(function_binding.overload_id)?
+                .parent_overload_set_id(),
+            some_function_overload_set_id
+        );
+
+        assert_eq!(
+            builder.get_type_binding(&function_binding.arguments[0])?.ty,
+            InferableType::Type(Type::PrimitiveType(PrimitiveType::Int8))
+        );
+        assert_eq!(
+            builder.get_span(&function_binding.arguments[0])?.str(),
+            "7i8"
+        );
+    }
+    {
+        assert!(builder
+            .bind_function_call(
+                statements[7]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_function_call()
+                    .unwrap(),
+                &errors,
+            )
+            .is_err());
+
+        let err = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_no_accessible_overload()
+                .unwrap()
+        };
+
+        assert_eq!(err.overload_set_id, inner_some_function_overload_set_id);
+    }
+
+    Ok(())
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
+    let source_file = SourceFile::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/hir/prefixBinding/main.pnx"),
+        vec!["test".to_string()],
+    )?;
+
+    let errors: ErrorVec<AllParsingError> = ErrorVec::new();
+    let target = pernixc_syntax::target_parsing::parse_target(source_file, &errors)?;
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let table = Arc::new(Table::analyze(target, &errors));
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let overload_set = table.get_overload_set(
+        table
+            .get_global_id_by_full_name(["test", "main"].into_iter())
+            .unwrap()
+            .into_overload_set()
+            .unwrap(),
+    )?;
+    let overload_id = overload_set.overloads()[0];
+    let mut builder = Builder::new(table, overload_id)?;
+    let table = builder.container.table.clone();
+    let overload = table.get_overload(overload_id)?;
+    let statements = overload.syntax_tree().block_without_label.statements();
+    let errors: ErrorVec<AllHirError> = ErrorVec::new();
+
+    {
+        let register_id = builder.bind_prefix(
+            statements[0]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_prefix()
+                .unwrap(),
+            &errors,
+        )?;
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        assert_eq!(
+            type_binding.ty,
+            InferableType::Constraint(Constraint::Signed)
+        );
+
+        let prefix = builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_prefix()
+            .unwrap();
+
+        assert_eq!(
+            builder.get_type_binding(prefix.operand())?.ty,
+            InferableType::Constraint(Constraint::Signed)
+        );
+
+        assert_eq!(builder.get_span(prefix.operand())?.str(), "0");
+    }
+    {
+        let register_id = builder.bind_prefix(
+            statements[1]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_prefix()
+                .unwrap(),
+            &errors,
+        )?;
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        assert_eq!(
+            type_binding.ty,
+            InferableType::Constraint(Constraint::Float)
+        );
+
+        let prefix = builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_prefix()
+            .unwrap();
+
+        assert_eq!(
+            builder.get_type_binding(prefix.operand())?.ty,
+            InferableType::Constraint(Constraint::Float)
+        );
+
+        assert_eq!(builder.get_span(prefix.operand())?.str(), "1.0");
+    }
+    {
+        let register_id = builder.bind_prefix(
+            statements[2]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_prefix()
+                .unwrap(),
+            &errors,
+        )?;
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        assert_eq!(
+            type_binding.ty,
+            InferableType::Type(PrimitiveType::Float32.into())
+        );
+
+        let prefix = builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_prefix()
+            .unwrap();
+
+        assert_eq!(
+            builder.get_type_binding(prefix.operand())?.ty,
+            InferableType::Type(PrimitiveType::Float32.into())
+        );
+
+        assert_eq!(builder.get_span(prefix.operand())?.str(), "2.0f32");
+    }
+    {
+        let register_id = builder.bind_prefix(
+            statements[3]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_prefix()
+                .unwrap(),
+            &errors,
+        )?;
+
+        assert!(builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_prefix()
+            .unwrap()
+            .operand
+            .as_placeholder()
+            .is_some());
+
+        let err = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_type_mismatch()
+                .unwrap()
+        };
+
+        assert_eq!(err.expect, Constraint::Signed.into());
+        assert_eq!(err.found, Type::PrimitiveType(PrimitiveType::Uint32).into());
+    }
+    {
+        let register_id = builder.bind_prefix(
+            statements[4]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_prefix()
+                .unwrap(),
+            &errors,
+        )?;
+
+        assert!(builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_prefix()
+            .unwrap()
+            .operand
+            .as_placeholder()
+            .is_some());
+
+        let err = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_type_mismatch()
+                .unwrap()
+        };
+
+        assert_eq!(err.expect, Type::PrimitiveType(PrimitiveType::Bool).into());
+        assert_eq!(err.found, Constraint::Number.into());
+    }
+    {
+        let register_id = builder.bind_prefix(
+            statements[5]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_prefix()
+                .unwrap(),
+            &errors,
+        )?;
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        assert_eq!(
+            type_binding.ty,
+            InferableType::Type(PrimitiveType::Bool.into())
+        );
+
+        let prefix = builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_prefix()
+            .unwrap();
+
+        assert_eq!(
+            builder.get_type_binding(prefix.operand())?.ty,
+            InferableType::Type(PrimitiveType::Bool.into())
+        );
+
+        assert_eq!(builder.get_span(prefix.operand())?.str(), "false");
     }
 
     Ok(())
