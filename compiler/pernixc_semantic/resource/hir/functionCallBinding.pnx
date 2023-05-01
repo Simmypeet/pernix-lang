@@ -1,11 +1,27 @@
-public function add(a: int32, b: int32): int32 {
+public function someFunction(a: uint32, b: uint32): uint32 { // first overload
     return a + b;
 }
 
+public function someFunction(a: uint8): uint8 { // second overload
+    return a; 
+}
+
+public function someFunction(a: float32): float32 { // third overload
+    return a;
+}
+
 public function main(): void {
-    add(1, 2);
-    add(true, false);
-    add(3.0, 4);
-    add();
-    add(true, false, 5.0f32);
+    someFunction(1, 2); // 1st overload
+
+    someFunction(true, false, true); // argument length mismatch
+
+    someFunction(3); // ambigious: overload 2nd and 3rd
+
+    someFunction(4.0); // 3rd overload
+
+    someFunction(5u32); // 2nd overload
+
+    someFunction(6f32); // 3rd overload
+
+    someFunction(7u8); // 4th overload
 }

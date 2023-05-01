@@ -11,7 +11,7 @@ use pernixc_system::error_handler::ErrorHandler;
 use thiserror::Error;
 
 use crate::{
-    error::{IdentifierExpected, PunctuationExpected, SyntacticError},
+    error::{Error, IdentifierExpected, PunctuationExpected},
     syntax_tree::ConnectedList,
 };
 
@@ -85,7 +85,7 @@ impl<'a> Parser<'a> {
     /// errors.
     pub fn expect_identifier(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<&'a Identifier> {
         let token = self.next_significant_token();
 
@@ -115,7 +115,7 @@ impl<'a> Parser<'a> {
     pub fn expect_punctuation(
         &mut self,
         expected: char,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<&'a Punctuation> {
         let token = self.next_significant_token();
 
@@ -227,7 +227,7 @@ impl<'a> Parser<'a> {
         delimiter: char,
         separator: char,
         mut parse_item: impl FnMut(&mut Self) -> Option<T>,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
         let mut first = None;
         let mut rest = Vec::new();

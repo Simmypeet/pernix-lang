@@ -118,8 +118,7 @@ impl ControlCharactersMustBeEscaped {
 /// source code.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered an lexical error while tokenizing the source code.")]
-#[allow(clippy::module_name_repetitions)]
-pub enum LexicalError {
+pub enum Error {
     InvalidEscapeCharacterSequences(InvalidEscapeCharacterSequences),
     UnterminatedStringLiteral(UnterminatedStringLiteral),
     UnterminatedDelimitedComment(UnterminatedDelimitedComment),
@@ -127,7 +126,7 @@ pub enum LexicalError {
     ControlCharactersMustBeEscaped(ControlCharactersMustBeEscaped),
 }
 
-impl LexicalError {
+impl Error {
     /// Prints the error message to the console
     pub fn print(&self) {
         match self {

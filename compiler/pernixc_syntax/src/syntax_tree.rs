@@ -17,7 +17,7 @@ use pernixc_system::error_handler::ErrorHandler;
 
 use self::item::Item;
 use crate::{
-    error::{PunctuationExpected, SyntacticError, TypeSpecifierExpected},
+    error::{Error, PunctuationExpected, TypeSpecifierExpected},
     parser::Parser,
 };
 
@@ -261,7 +261,7 @@ impl<'a> Parser<'a> {
     /// Parses a [`QualifiedIdentifier`]
     pub fn parse_qualified_identifier(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<QualifiedIdentifier> {
         // found a leading separator
         let leading_separator = match self.peek_significant_token().cloned() {
@@ -343,7 +343,7 @@ impl<'a> Parser<'a> {
     /// Parses a [`TypeSpecifier`]
     pub fn parse_type_specifier(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<TypeSpecifier> {
         if let Some(token) = self.peek_significant_token() {
             match token {
@@ -400,7 +400,7 @@ impl<'a> Parser<'a> {
     /// Parses a [`TypeAnnotation`]
     pub fn parse_type_annotation(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<TypeAnnotation> {
         let colon = self.expect_punctuation(':', handler)?;
         let type_specifier = self.parse_type_specifier(handler)?;
@@ -436,7 +436,7 @@ impl File {
 impl File {
     /// Parses a [`File`] from a token stream.
     #[must_use]
-    pub fn parse(tokens: &TokenStream, handler: &impl ErrorHandler<SyntacticError>) -> Self {
+    pub fn parse(tokens: &TokenStream, handler: &impl ErrorHandler<Error>) -> Self {
         // empty token stream
         if tokens.is_empty() {
             return Self { items: Vec::new() };

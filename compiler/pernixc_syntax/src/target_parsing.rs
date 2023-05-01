@@ -8,14 +8,13 @@ use std::{
 use derive_more::{Deref, From};
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_lexical::{error::LexicalError, token_stream::TokenStream};
+use pernixc_lexical::{error::Error as LexicalError, token_stream::TokenStream};
 use pernixc_print::LogSeverity;
 use pernixc_source::{LoadError, SourceFile, Span};
-use pernixc_system::error_handler::ErrorHandler;
 use thiserror::Error;
 
 use crate::{
-    error::SyntacticError,
+    error::Error as SyntacticError,
     syntax_tree::{
         item::{AccessModifier, Item},
         File,
@@ -129,16 +128,29 @@ impl FileParsing {
 #[error("The given source file argument is not a root source file.")]
 pub struct TargetParseError;
 
-fn compile_syntax_tree<
-    'err,
-    'scope,
-    T: ErrorHandler<SyntacticError> + ErrorHandler<LexicalError> + ErrorHandler<ModuleError>,
->(
+/// Is a derived [`pernixc_system::error_handler::ErrorHandler`] trait that can handle
+/// [`pernixc_lexical::error::Error`], [`pernixc_lexical::error::Error`], and [`ModuleError`]
+pub trait ErrorHandler:
+    pernixc_system::error_handler::ErrorHandler<LexicalError>
+    + pernixc_system::error_handler::ErrorHandler<SyntacticError>
+    + pernixc_system::error_handler::ErrorHandler<ModuleError>
+{
+}
+
+impl<
+        T: pernixc_system::error_handler::ErrorHandler<LexicalError>
+            + pernixc_system::error_handler::ErrorHandler<SyntacticError>
+            + pernixc_system::error_handler::ErrorHandler<ModuleError>,
+    > ErrorHandler for T
+{
+}
+
+fn compile_syntax_tree<'err, 'scope>(
     source_file: Arc<SourceFile>,
     results: &Arc<RwLock<Vec<FileParsing>>>,
     access_modifier: Option<AccessModifier>,
     scope: &'scope std::thread::Scope<'err, '_>,
-    errors: &'err T,
+    errors: &'err impl ErrorHandler,
 ) where
     'scope: 'err,
 {
@@ -248,11 +260,9 @@ pub enum AllParsingError {
 ///
 /// # Errors
 /// - If the root source file is not a module.
-pub fn parse_target<
-    T: ErrorHandler<LexicalError> + ErrorHandler<SyntacticError> + ErrorHandler<ModuleError>,
->(
+pub fn parse_target(
     root_source_file: Arc<SourceFile>,
-    handler: &T,
+    handler: &impl ErrorHandler,
 ) -> Result<TargetParsing, TargetParseError> {
     if !root_source_file.is_root() {
         return Err(TargetParseError);

@@ -9,7 +9,7 @@ use pernixc_system::error_handler::ErrorHandler;
 
 use super::{expression::BlockWithoutLabel, ConnectedList, TypeAnnotation, TypeSpecifier};
 use crate::{
-    error::{AccessModifierExpected, ItemExpected, MemberExpected, SyntacticError},
+    error::{AccessModifierExpected, Error, ItemExpected, MemberExpected},
     parser::Parser,
 };
 
@@ -490,7 +490,7 @@ impl SourceElement for Item {
 impl<'a> Parser<'a> {
     /// Parses an [Item].
     #[allow(clippy::too_many_lines)]
-    pub fn parse_item(&mut self, handler: &impl ErrorHandler<SyntacticError>) -> Option<Item> {
+    pub fn parse_item(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Item> {
         // expect access modifier keyword token
         let access_modifier = self.parse_access_modifier(handler)?;
 
@@ -638,7 +638,7 @@ impl<'a> Parser<'a> {
         &mut self,
         access_modifier: AccessModifier,
         type_keyword: Keyword,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<TypeAlias> {
         let identifier = self.expect_identifier(handler)?;
         let equals = self.expect_punctuation('=', handler)?;
@@ -659,7 +659,7 @@ impl<'a> Parser<'a> {
         &mut self,
         access_modifier: AccessModifier,
         struct_keyword: Keyword,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Item> {
         let identifier = self.expect_identifier(handler)?;
         let left_brace = self.expect_punctuation('{', handler)?;
@@ -766,7 +766,7 @@ impl<'a> Parser<'a> {
     /// Parses an [`AccessModifier`]
     pub fn parse_access_modifier(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<AccessModifier> {
         match self.next_significant_token() {
             Some(Token::Keyword(public_keyword))

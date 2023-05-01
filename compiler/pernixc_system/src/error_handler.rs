@@ -3,7 +3,7 @@
 //!
 //! Also contains ssome implementations of [`ErrorHandler`] trait.
 
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Represents a trait responsible for handling compilation errors and warnings in the compiler.
 pub trait ErrorHandler<T>: 'static + Send + Sync {
@@ -28,6 +28,12 @@ impl<T: 'static + Send + Sync> ErrorVec<T> {
 
     /// Consumes the [`ErrorVec`] and returns the underlying vector of errors.
     pub fn into_vec(self) -> Vec<T> { self.errors.into_inner().unwrap() }
+
+    /// Returns a reference to the underlying vector of errors.
+    pub fn as_vec(&self) -> RwLockReadGuard<Vec<T>> { self.errors.read().unwrap() }
+
+    /// Returns a mutable reference to the underlying vector of errors.
+    pub fn as_vec_mut(&self) -> RwLockWriteGuard<Vec<T>> { self.errors.write().unwrap() }
 }
 
 impl<T: 'static + Send + Sync> Default for ErrorVec<T> {

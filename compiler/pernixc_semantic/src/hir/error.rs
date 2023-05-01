@@ -1,3 +1,5 @@
+//! Contains the definitions of the semantic errors related to the binding/HIR building phase.
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
@@ -10,8 +12,8 @@ use crate::{
 
 /// Is a semantic error that occurs during the binding/HIR building phase.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(clippy::module_name_repetitions)]
-pub enum HirError {
+#[allow(missing_docs)]
+pub enum Error {
     InvalidNumericLiteralSuffix(InvalidNumericLiteralSuffix),
     FloatingPointLiteralHasIntegralSuffix(FloatingPointLiteralHasIntegralSuffix),
     SymbolNotCallable(SymbolNotCallable),
@@ -65,7 +67,7 @@ pub struct NoAccessibleOverload {
 /// No overload with matching number of arguments found.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct NoOverloadWithMatchingNumberOfArguments {
-    /// The overload set that was attempted to be resolved.
+    /// The overload set that the function call was attempted to resolve to.
     #[get_copy = "pub"]
     pub(super) overload_set_id: OverloadSetID,
 
@@ -81,7 +83,7 @@ pub struct NoOverloadWithMatchingNumberOfArguments {
 /// No overload with matching argument types found.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct NoOverloadWithMatchingArgumentTypes {
-    /// The overload set that was attempted to be resolved.
+    /// The overload set that the function call was attempted to resolve to.
     #[get_copy = "pub"]
     pub(super) overload_set_id: OverloadSetID,
 
@@ -91,7 +93,7 @@ pub struct NoOverloadWithMatchingArgumentTypes {
 }
 
 /// Multiple overloads are available to be called.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct AmbiguousFunctionCall {
     /// The span of the function call.
     #[get = "pub"]
@@ -100,6 +102,10 @@ pub struct AmbiguousFunctionCall {
     /// The list of overloads that are available to be called.
     #[get = "pub"]
     pub(super) candidate_overloads: Vec<OverloadID>,
+
+    /// The overload set that the function call was attempted to resolve to.
+    #[get_copy = "pub"]
+    pub(super) overload_set_id: OverloadSetID,
 }
 
 /// The type of an expression does not match the expected type.

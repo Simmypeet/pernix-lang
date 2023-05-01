@@ -63,7 +63,7 @@ impl<T: Data> Symbol<T> {
 /// This container is generally used to construct a graph of symbols. Semantic analysis phase
 /// generally uses lots of graphs to represent the program. The symbols would use the
 /// [`UniqueIdentifier`] to store the references to other symbols.
-#[derive(Debug, Default, Deref, DerefMut)]
+#[derive(Debug, Default, Deref)]
 pub struct Arena<T: Data> {
     symbols_by_id: HashMap<T::ID, Symbol<T>>,
 }
@@ -109,6 +109,11 @@ impl<T: Data> Arena<T> {
     /// - If the ID wasn't created by this [`Arena`].
     pub fn get_mut(&mut self, id: T::ID) -> Result<&mut Symbol<T>, InvalidIDError> {
         self.symbols_by_id.get_mut(&id).ok_or(InvalidIDError)
+    }
+
+    /// Returns a mutable iterator over the symbols in the [`Arena`].
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Symbol<T>> {
+        self.symbols_by_id.values_mut()
     }
 }
 

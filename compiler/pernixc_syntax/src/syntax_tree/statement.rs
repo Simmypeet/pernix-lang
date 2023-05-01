@@ -11,7 +11,7 @@ use super::{
     expression::{Expression, Functional, Imperative},
     SourceElement, TypeAnnotation,
 };
-use crate::{error::SyntacticError, parser::Parser};
+use crate::{error::Error, parser::Parser};
 
 /// Represents a statement syntax tree node
 ///
@@ -141,10 +141,7 @@ impl SourceElement for Semi {
 
 impl<'a> Parser<'a> {
     /// Parses a [Statement]
-    pub fn parse_statement(
-        &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
-    ) -> Option<Statement> {
+    pub fn parse_statement(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Statement> {
         match self.peek_significant_token() {
             // Handles variable declaration statements
             Some(Token::Keyword(let_keyword)) if let_keyword.keyword == KeywordKind::Let => {

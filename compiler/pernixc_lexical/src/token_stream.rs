@@ -7,7 +7,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_system::error_handler::ErrorHandler;
 
 use crate::{
-    error::LexicalError,
+    error::Error,
     token::{Token, TokenizationError},
 };
 
@@ -36,7 +36,7 @@ impl TokenStream {
     #[must_use]
     pub fn tokenize(
         mut source_file_iterator: pernixc_source::Iterator,
-        handler: &impl ErrorHandler<LexicalError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Self {
         // list of tokens to return
         let mut tokens = Vec::new();

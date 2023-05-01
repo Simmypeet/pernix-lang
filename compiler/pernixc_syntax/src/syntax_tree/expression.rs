@@ -15,7 +15,7 @@ use super::{
     statement::Statement, ConnectedList, Label, QualifiedIdentifier, SourceElement, TypeSpecifier,
 };
 use crate::{
-    error::{ExpressionExpected, PunctuationExpected, SyntacticError},
+    error::{Error, ExpressionExpected, PunctuationExpected},
     parser::Parser,
 };
 
@@ -879,10 +879,7 @@ impl SourceElement for Return {
 
 impl<'a> Parser<'a> {
     /// Parses an [`Expression`].
-    pub fn parse_expression(
-        &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
-    ) -> Option<Expression> {
+    pub fn parse_expression(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Expression> {
         // Gets the first primary expression
         let mut first_expression = self.parse_primary_expression(handler)?;
 
@@ -1053,7 +1050,7 @@ impl<'a> Parser<'a> {
 
     pub(super) fn parse_block_without_label(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<BlockWithoutLabel> {
         let left_brace = self.expect_punctuation('{', handler)?;
 
@@ -1126,7 +1123,7 @@ impl<'a> Parser<'a> {
     fn parse_block_or_loop_expression(
         &mut self,
         label_specifier: Option<LabelSpecifier>,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Expression> {
         match self.peek_significant_token() {
             // Handles loop
@@ -1161,7 +1158,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_block(&mut self, handler: &impl ErrorHandler<SyntacticError>) -> Option<Block> {
+    fn parse_block(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Block> {
         let label_specifier = if matches!(self.peek_significant_token(), Some(Token::Punctuation(punc)) if punc.punctuation == '\'')
         {
             let single_quote = self.expect_punctuation('\'', handler)?;
@@ -1188,7 +1185,7 @@ impl<'a> Parser<'a> {
     fn handle_if_keyword(
         &mut self,
         if_keyword: Keyword,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Expression> {
         let left_paren = self.expect_punctuation('(', handler)?;
         let condition = self.parse_expression(handler)?;
@@ -1232,10 +1229,7 @@ impl<'a> Parser<'a> {
         })))
     }
 
-    fn handle_identifier(
-        &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
-    ) -> Option<Expression> {
+    fn handle_identifier(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Expression> {
         let qualified_identifier = self.parse_qualified_identifier(handler)?;
 
         match self.peek_significant_token() {
@@ -1307,7 +1301,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_parse_label(&mut self, handler: &impl ErrorHandler<SyntacticError>) -> Option<Label> {
+    fn try_parse_label(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Label> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
                 // eat the single quote
@@ -1326,7 +1320,7 @@ impl<'a> Parser<'a> {
 
     fn try_parse_expression_for_control_expression(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Box<Expression>> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(semicolon)) if semicolon.punctuation == ';' => None,
@@ -1346,7 +1340,7 @@ impl<'a> Parser<'a> {
     fn handle_parenthesized(
         &mut self,
         left_paren: Punctuation,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Expression> {
         let expression = self.parse_expression(handler)?;
         let right_paren = self.expect_punctuation(')', handler)?;
@@ -1364,7 +1358,7 @@ impl<'a> Parser<'a> {
     // Parses an primary expression without any prefix operators.
     fn parse_primary_expression_raw(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Expression> {
         match self.peek_significant_token() {
             // Handles if expressions
@@ -1506,7 +1500,7 @@ impl<'a> Parser<'a> {
     // Parses a primary expression with prefix operators and postfix operators.
     fn parse_primary_expression(
         &mut self,
-        handler: &impl ErrorHandler<SyntacticError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Expression> {
         match self.peek_significant_token() {
             Some(Token::Punctuation(punc))

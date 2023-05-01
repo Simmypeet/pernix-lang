@@ -13,8 +13,8 @@ use strum_macros::EnumIter;
 use thiserror::Error;
 
 use crate::error::{
-    ControlCharactersMustBeEscaped, EmptyCharacterLiteral, InvalidEscapeCharacterSequences,
-    LexicalError, UnterminatedDelimitedComment, UnterminatedStringLiteral,
+    ControlCharactersMustBeEscaped, EmptyCharacterLiteral, Error, InvalidEscapeCharacterSequences,
+    UnterminatedDelimitedComment, UnterminatedStringLiteral,
 };
 
 /// Is an enumeration representing keywords in the Pernix programming language.
@@ -452,7 +452,7 @@ impl Token {
         iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
         character: char,
-        handler: &impl ErrorHandler<LexicalError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Result<Self, TokenizationError> {
         // Single line comment
         if let Some((_, '/')) = iter.peek() {
@@ -516,7 +516,7 @@ impl Token {
     fn handle_string_literal(
         iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
-        handler: &impl ErrorHandler<LexicalError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Result<Self, TokenizationError> {
         let mut found_invalid = false;
         loop {
@@ -575,7 +575,7 @@ impl Token {
     fn handle_character_literal(
         iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
-        handler: &impl ErrorHandler<LexicalError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Result<Self, TokenizationError> {
         // Empty character literal error
         if let Some((_, '\'')) = iter.peek() {
@@ -727,7 +727,7 @@ impl Token {
     /// - [`TokenizationError::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn tokenize(
         iter: &mut pernixc_source::Iterator,
-        handler: &impl ErrorHandler<LexicalError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Result<Self, TokenizationError> {
         // Gets the first character
         let (start, character) = iter

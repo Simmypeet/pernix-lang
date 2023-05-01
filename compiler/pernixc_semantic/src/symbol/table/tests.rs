@@ -1,11 +1,11 @@
-use std::{collections::HashMap, error::Error, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use pernixc_source::SourceFile;
 use pernixc_syntax::target_parsing::AllParsingError;
 use pernixc_system::error_handler::ErrorVec;
 
 use crate::symbol::{
-    error::SymbolError,
+    error::Error,
     table::{SymbolState, Table},
     ty::PrimitiveType,
     Accessibility,
@@ -13,7 +13,7 @@ use crate::symbol::{
 
 #[test]
 #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
-fn module_test() -> Result<(), Box<dyn Error>> {
+fn module_test() -> Result<(), Box<dyn std::error::Error>> {
     // creates a new source file
     let source_file = SourceFile::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/symbol/moduleTest/main.pnx"),
@@ -101,7 +101,7 @@ fn module_test() -> Result<(), Box<dyn Error>> {
 
 #[test]
 #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
-fn draft_test() -> Result<(), Box<dyn Error>> {
+fn draft_test() -> Result<(), Box<dyn std::error::Error>> {
     let source_file = SourceFile::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/symbol/populateTest/main.pnx"),
         vec!["test".to_string()],
@@ -112,7 +112,7 @@ fn draft_test() -> Result<(), Box<dyn Error>> {
     assert!(errors.into_vec().is_empty());
 
     let mut table = Table::new();
-    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let errors: ErrorVec<Error> = ErrorVec::new();
     let mut symbol_states_by_id = HashMap::new();
     table.generate_modules(&target_parsing);
     table.draft_symbols(target_parsing, &mut symbol_states_by_id, &errors);
@@ -256,7 +256,7 @@ fn draft_test() -> Result<(), Box<dyn Error>> {
 
 #[test]
 #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
-fn accessible_test() -> Result<(), Box<dyn Error>> {
+fn accessible_test() -> Result<(), Box<dyn std::error::Error>> {
     let source_file = SourceFile::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/symbol/accessibleTest/main.pnx"),
         vec!["test".to_string()],
@@ -266,7 +266,7 @@ fn accessible_test() -> Result<(), Box<dyn Error>> {
     assert!(errors.into_vec().is_empty());
 
     let mut table = Table::new();
-    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let errors: ErrorVec<Error> = ErrorVec::new();
     let mut symbol_states_by_id = HashMap::new();
 
     table.generate_modules(&file_parsing);
@@ -338,7 +338,7 @@ fn accessible_test() -> Result<(), Box<dyn Error>> {
 
 #[test]
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-pub fn construct_test() -> Result<(), Box<dyn Error>> {
+pub fn construct_test() -> Result<(), Box<dyn std::error::Error>> {
     let source_file = SourceFile::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/symbol/constructTest/main.pnx"),
         vec!["test".to_string()],
@@ -347,7 +347,7 @@ pub fn construct_test() -> Result<(), Box<dyn Error>> {
     let target_parsing = pernixc_syntax::target_parsing::parse_target(source_file, &errors)?;
     assert!(errors.into_vec().is_empty());
 
-    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let errors: ErrorVec<Error> = ErrorVec::new();
     let table = Table::analyze(target_parsing, &errors);
     let errors = errors.into_vec();
     assert_eq!(errors.len(), 2);
@@ -357,7 +357,7 @@ pub fn construct_test() -> Result<(), Box<dyn Error>> {
         {
             let circular_dependency_err = errors
                 .iter()
-                .find_map(SymbolError::as_circular_dependency)
+                .find_map(Error::as_circular_dependency)
                 .unwrap();
             assert!(circular_dependency_err.symbol_ids().contains(
                 &table
@@ -375,7 +375,7 @@ pub fn construct_test() -> Result<(), Box<dyn Error>> {
         {
             let overload_redefinition_err = errors
                 .iter()
-                .find_map(SymbolError::as_overload_redefinition)
+                .find_map(Error::as_overload_redefinition)
                 .unwrap();
             assert_eq!(
                 table.get_full_name_of(

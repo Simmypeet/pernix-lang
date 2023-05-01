@@ -10,15 +10,16 @@ use pernixc_source::Span;
 use pernixc_system::{
     arena::{Arena, InvalidIDError},
     create_symbol,
-    error_handler::ErrorHandler,
 };
 use thiserror::Error;
 
-use self::{builder::Builder, error::HirError, instruction::Backend, value::binding::Binding};
+use self::{error::Error as HirError, instruction::Backend, value::binding::Binding};
 use crate::{
     cfg::ControlFlowGraph,
     infer::InferableType,
-    symbol::{error::SymbolError, table::Table, ty::Type, OverloadID},
+    symbol::{
+        error::Error as SymbolError, table::Table, ty::Type, ModuleID, OverloadID, OverloadSetID,
+    },
 };
 
 pub mod builder;
@@ -34,11 +35,8 @@ pub mod value;
 /// paths, etc.
 #[derive(Debug, CopyGetters)]
 pub struct Hir {
-    control_flow_graph: ControlFlowGraph<Backend<Type>>,
-    registers: Arena<Register<Type>>,
-    allocas: Arena<Alloca<Type>>,
-    table: Arc<Table>,
-    overload_id: OverloadID,
+    #[allow(dead_code)]
+    container: Container<Type>,
 
     /// Returns true if the HIR is in a suboptimal state.
     ///
@@ -48,29 +46,110 @@ pub struct Hir {
     is_suboptimal: bool,
 }
 
-impl Hir {
-    /// Binds the given overload to the HIR.
+/// The container that holds the contents of the [`Hir`].
+///
+/// This container is as well used in the [`Builder`] to construct the [`Hir`].
+#[derive(Debug, Getters, CopyGetters)]
+pub struct Container<T: TypeSystem> {
+    /// The control flow graph that represents the flow of the function.
+    #[get = "pub"]
+    control_flow_graph: ControlFlowGraph<Backend<T>>,
+
+    /// The list of all the registers that are used in the function.
+    #[get = "pub"]
+    registers: Arena<Register<T>>,
+
+    /// The list of all the allocas that are used in the function.
+    #[get = "pub"]
+    allocas: Arena<Alloca<Type>>,
+
+    /// The table that is used in lookup and resolution of the symbols.
+    #[get = "pub"]
+    table: Arc<Table>,
+
+    /// The overload that this container represents.
+    #[get_copy = "pub"]
+    overload_id: OverloadID,
+
+    /// The parent overload set that the [`Self::overload_id`] is defined in.
+    #[get_copy = "pub"]
+    parent_overload_set_id: OverloadSetID,
+
+    /// The parent module that the [`Self::parent_overload_set_id`] is defined in.
+    #[get_copy = "pub"]
+    parent_module_id: ModuleID,
+}
+
+impl<T: TypeSystem> Container<T> {
+    /// Constructs a new empty container with ID validation.
     ///
     /// # Errors
-    /// - If the overload ID is invalid.
-    pub fn bind(
-        table: Arc<Table>,
-        overload_id: OverloadID,
-        error_handler: &impl BindingErrorHandler,
-    ) -> Result<Self, InvalidIDError> {
-        let mut builder = Builder::new(table, overload_id)?;
+    /// If the given [`OverloadID`] is invalid for the given [`Table`].
+    pub fn new(table: Arc<Table>, overload_id: OverloadID) -> Result<Self, InvalidIDError> {
+        let overload = table
+            .get_overload(overload_id)
+            .map_err(|_| InvalidIDError)?;
+        let overload_set = table
+            .get_overload_set(overload.parent_overload_set_id())
+            .map_err(|_| InvalidIDError)?;
 
-        todo!("Binds all the statements in the overload into instructions and registers.");
-
-        Ok(builder.build(error_handler))
+        Ok(Self {
+            control_flow_graph: ControlFlowGraph::new(),
+            overload_id,
+            parent_overload_set_id: overload_set.id(),
+            parent_module_id: overload_set.parent_module_id(),
+            table,
+            registers: Arena::new(),
+            allocas: Arena::new(),
+        })
     }
 }
 
-/// Is a derived [`ErrorHandler`] trait that can handle both [`BindingError`] and [`SymbolError`]
-/// (the two types of errors that can occur while building the HIR)
-pub trait BindingErrorHandler: ErrorHandler<HirError> + ErrorHandler<SymbolError> {}
+/// Is a trait implemented by [`Container`] that allows to inspect various properties of the
+/// values.
+pub trait ValueInspect<T: TypeSystem, V> {
+    /// Returns the type of the given value.
+    ///
+    /// # Errors
+    /// - If the given value wasn't created by the same [`Container`] as this one.
+    fn get_type(&self, value: &V) -> Result<T, InvalidValueError>;
 
-impl<T: ErrorHandler<HirError> + ErrorHandler<SymbolError>> BindingErrorHandler for T {}
+    /// Returns the span of the given value.
+    ///
+    /// # Errors
+    /// - If the given value wasn't created by the same [`Container`] as this one.
+    fn get_span(&self, value: &V) -> Result<Span, InvalidValueError>;
+
+    /// Returns the reachability of the given value.
+    ///
+    /// # Errors
+    /// - If the given value wasn't created by the same [`Container`] as this one.j
+    fn get_reachability(&self, value: &V) -> Result<Reachability, InvalidValueError>;
+}
+
+/// Is an enumeration of semantic errors that can occur during HIR construction.
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum AllHirError {
+    HirError(HirError),
+    SymbolError(SymbolError),
+}
+
+/// Is a derived [`pernixc_system::error_handler::ErrorHandler`] trait that can handle both
+/// [`HirError`] and [`SymbolError`] (the two types of errors that can occur while building the
+/// HIR)
+pub trait ErrorHandler:
+    pernixc_system::error_handler::ErrorHandler<HirError>
+    + pernixc_system::error_handler::ErrorHandler<SymbolError>
+{
+}
+
+impl<
+        T: pernixc_system::error_handler::ErrorHandler<HirError>
+            + pernixc_system::error_handler::ErrorHandler<SymbolError>,
+    > ErrorHandler for T
+{
+}
 
 /// Represents that is used for type checking.
 pub trait TypeSystem: Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Hash {
@@ -83,7 +162,7 @@ impl TypeSystem for Type {
 }
 
 impl TypeSystem for InferableType {
-    fn from_type(ty: Type) -> Self { InferableType::Type(ty) }
+    fn from_type(ty: Type) -> Self { Self::Type(ty) }
 }
 
 /// Specifies whether if the value is reachable or not.
@@ -111,34 +190,30 @@ pub struct TypeBinding<T: TypeSystem> {
 #[error("The value is used in a context where it wasn't created from.")]
 pub struct InvalidValueError;
 
-/// Represents a context in which values are created and used.
-pub trait ValueContext<T: TypeSystem, V> {
-    /// Gets the type binding of the value.
-    ///
-    /// # Errors
-    /// If the given value was not created in this context, an [`InvalidValueError`] is returned.
-    fn get_type(&self, value: &V) -> Result<T, InvalidValueError>;
-
-    /// Gets the span of the value.
-    ///
-    /// # Errors
-    /// If the given value was not created in this context, an [`InvalidValueError`] is returned.
-    fn get_span(&self, value: &V) -> Result<Span, InvalidValueError>;
-
-    /// Gets the reachability of the value.
-    ///
-    /// # Errors
-    /// If the given value was not created in this context, an [`InvalidValueError`] is returned.
-    fn get_reachability(&self, value: &V) -> Result<Reachability, InvalidValueError>;
-}
-
 create_symbol! {
     /// Represents a single distinct register assignment in the SSA form.
     #[derive(Debug, Clone, PartialEq, Eq, Getters)]
     pub struct Register<T: TypeSystem> {
         /// The binding value of the register.
         #[get = "pub"]
-        binding: Binding<T>,
+        binding: Binding<T>
+    }
+}
+
+impl<T: TypeSystem> ValueInspect<T, RegisterID> for Container<T> {
+    fn get_type(&self, value: &RegisterID) -> Result<T, InvalidValueError> {
+        let register = self.registers.get(*value).map_err(|_| InvalidValueError)?;
+        self.get_type(&register.binding)
+    }
+
+    fn get_span(&self, value: &RegisterID) -> Result<Span, InvalidValueError> {
+        let register = self.registers.get(*value).map_err(|_| InvalidValueError)?;
+        self.get_span(&register.binding)
+    }
+
+    fn get_reachability(&self, value: &RegisterID) -> Result<Reachability, InvalidValueError> {
+        let register = self.registers.get(*value).map_err(|_| InvalidValueError)?;
+        self.get_reachability(&register.binding)
     }
 }
 

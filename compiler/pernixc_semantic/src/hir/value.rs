@@ -7,16 +7,11 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::expression::NumericLiteral as NumericLiteralSyntaxTree;
 
 use super::{
-    builder::{Builder, TypeID},
-    AllocaID, Hir, InvalidValueError, Reachability, RegisterID, TypeBinding, TypeSystem,
-    ValueContext,
+    AllocaID, Container, InvalidValueError, Reachability, RegisterID, TypeSystem, ValueInspect,
 };
-use crate::{
-    infer::InferableType,
-    symbol::{
-        ty::{PrimitiveType, Type},
-        EnumVariantID, FieldID,
-    },
+use crate::symbol::{
+    ty::{PrimitiveType, Type},
+    EnumVariantID, FieldID,
 };
 
 pub mod binding;
@@ -33,41 +28,15 @@ pub struct NumericLiteral<T: TypeSystem> {
     pub(super) ty: T,
 }
 
-impl ValueContext<Type, NumericLiteral<Type>> for Hir {
-    fn get_type_binding(
-        &self,
-        value: &NumericLiteral<Type>,
-    ) -> Result<TypeBinding<Type>, InvalidValueError> {
-        Ok(TypeBinding {
-            ty: value.ty,
-            reachability: Reachability::Reachable,
-        })
-    }
+impl<T: TypeSystem> ValueInspect<T, NumericLiteral<T>> for Container<T> {
+    fn get_type(&self, value: &NumericLiteral<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
-    fn get_span(&self, value: &NumericLiteral<Type>) -> Result<Span, InvalidValueError> {
+    fn get_span(&self, value: &NumericLiteral<T>) -> Result<Span, InvalidValueError> {
         Ok(value.numeric_literal_syntax_tree.span())
     }
-}
 
-impl ValueContext<InferableType, NumericLiteral<TypeID>> for Builder {
-    fn get_type_binding(
-        &self,
-        value: &NumericLiteral<TypeID>,
-    ) -> Result<TypeBinding<InferableType>, InvalidValueError> {
-        Ok(TypeBinding {
-            ty: match value.ty {
-                TypeID::InferenceID(inference_id) => self
-                    .inference_context()
-                    .get_inferable_type(inference_id)
-                    .map_err(|_| InvalidValueError)?,
-                TypeID::Type(ty) => InferableType::Type(ty),
-            },
-            reachability: Reachability::Reachable,
-        })
-    }
-
-    fn get_span(&self, value: &NumericLiteral<TypeID>) -> Result<Span, InvalidValueError> {
-        Ok(value.numeric_literal_syntax_tree.span())
+    fn get_reachability(&self, _: &NumericLiteral<T>) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
     }
 }
 
@@ -83,32 +52,18 @@ pub struct BooleanLiteral {
     pub(super) value: bool,
 }
 
-impl ValueContext<Type, BooleanLiteral> for Hir {
-    fn get_type_binding(
-        &self,
-        value: &BooleanLiteral,
-    ) -> Result<TypeBinding<Type>, InvalidValueError> {
-        Ok(TypeBinding {
-            ty: Type::PrimitiveType(PrimitiveType::Bool),
-            reachability: Reachability::Reachable,
-        })
+impl<T: TypeSystem> ValueInspect<T, BooleanLiteral> for Container<T> {
+    fn get_type(&self, _: &BooleanLiteral) -> Result<T, InvalidValueError> {
+        Ok(T::from_type(Type::PrimitiveType(PrimitiveType::Bool)))
     }
 
-    fn get_span(&self, value: &BooleanLiteral) -> Result<Span, InvalidValueError> { Ok(value.span) }
-}
-
-impl ValueContext<InferableType, BooleanLiteral> for Builder {
-    fn get_type_binding(
-        &self,
-        value: &BooleanLiteral,
-    ) -> Result<TypeBinding<InferableType>, InvalidValueError> {
-        Ok(TypeBinding {
-            ty: InferableType::Type(Type::PrimitiveType(PrimitiveType::Bool)),
-            reachability: Reachability::Reachable,
-        })
+    fn get_span(&self, value: &BooleanLiteral) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
     }
 
-    fn get_span(&self, value: &BooleanLiteral) -> Result<Span, InvalidValueError> { Ok(value.span) }
+    fn get_reachability(&self, _: &BooleanLiteral) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
+    }
 }
 
 /// Represents an enum literal constant value.
@@ -122,45 +77,23 @@ pub struct EnumLiteral {
     enum_variant_id: EnumVariantID,
 }
 
-impl ValueContext<Type, EnumLiteral> for Hir {
-    fn get_type_binding(
-        &self,
-        value: &EnumLiteral,
-    ) -> Result<TypeBinding<Type>, InvalidValueError> {
-        let enum_variant = self
-            .table
-            .get_enum_variant(value.enum_variant_id)
-            .map_err(|_| InvalidValueError)?;
-
-        Ok(TypeBinding {
-            ty: Type::TypableID(enum_variant.parent_enum_id().into()),
-            reachability: Reachability::Reachable,
-        })
+impl<T: TypeSystem> ValueInspect<T, EnumLiteral> for Container<T> {
+    fn get_type(&self, value: &EnumLiteral) -> Result<T, InvalidValueError> {
+        Ok(T::from_type(Type::TypedID(
+            self.table
+                .get_enum_variant(value.enum_variant_id)
+                .map_err(|_| InvalidValueError)?
+                .parent_enum_id()
+                .into(),
+        )))
     }
 
     fn get_span(&self, value: &EnumLiteral) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
     }
-}
 
-impl ValueContext<InferableType, EnumLiteral> for Builder {
-    fn get_type_binding(
-        &self,
-        value: &EnumLiteral,
-    ) -> Result<TypeBinding<InferableType>, InvalidValueError> {
-        let enum_variant = self
-            .table()
-            .get_enum_variant(value.enum_variant_id)
-            .map_err(|_| InvalidValueError)?;
-
-        Ok(TypeBinding {
-            ty: InferableType::Type(Type::TypableID(enum_variant.parent_enum_id().into())),
-            reachability: Reachability::Reachable,
-        })
-    }
-
-    fn get_span(&self, value: &EnumLiteral) -> Result<Span, InvalidValueError> {
-        Ok(value.span.clone())
+    fn get_reachability(&self, _: &EnumLiteral) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
     }
 }
 
@@ -173,23 +106,28 @@ pub enum Constant<T: TypeSystem> {
     EnumLiteral(EnumLiteral),
 }
 
-impl ValueContext<Type, Constant<Type>> for Hir {
-    fn get_type_binding(
-        &self,
-        value: &Constant<Type>,
-    ) -> Result<TypeBinding<Type>, InvalidValueError> {
+impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
+    fn get_type(&self, value: &Constant<T>) -> Result<T, InvalidValueError> {
         match value {
-            Constant::NumericLiteral(val) => self.get_type_binding(val),
-            Constant::BooleanLiteral(val) => self.get_type_binding(val),
-            Constant::EnumLiteral(val) => self.get_type_binding(val),
+            Constant::NumericLiteral(n) => self.get_type(n),
+            Constant::BooleanLiteral(b) => self.get_type(b),
+            Constant::EnumLiteral(e) => self.get_type(e),
         }
     }
 
-    fn get_span(&self, value: &Constant<Type>) -> Result<Span, InvalidValueError> {
+    fn get_span(&self, value: &Constant<T>) -> Result<Span, InvalidValueError> {
         match value {
-            Constant::NumericLiteral(val) => self.get_span(val),
-            Constant::BooleanLiteral(val) => self.get_span(val),
-            Constant::EnumLiteral(val) => self.get_span(val),
+            Constant::NumericLiteral(n) => self.get_span(n),
+            Constant::BooleanLiteral(b) => self.get_span(b),
+            Constant::EnumLiteral(e) => self.get_span(e),
+        }
+    }
+
+    fn get_reachability(&self, value: &Constant<T>) -> Result<Reachability, InvalidValueError> {
+        match value {
+            Constant::NumericLiteral(n) => self.get_reachability(n),
+            Constant::BooleanLiteral(b) => self.get_reachability(b),
+            Constant::EnumLiteral(e) => self.get_reachability(e),
         }
     }
 }
@@ -210,40 +148,16 @@ pub struct PlaceHolder<T: TypeSystem> {
     pub(super) ty: T,
 }
 
-impl ValueContext<Type, PlaceHolder<Type>> for Hir {
-    fn get_type_binding(
-        &self,
-        value: &PlaceHolder<Type>,
-    ) -> Result<TypeBinding<Type>, InvalidValueError> {
-        Ok(TypeBinding {
-            ty: value.ty,
-            reachability: Reachability::Reachable,
-        })
-    }
+impl<T: TypeSystem> ValueInspect<T, PlaceHolder<T>> for Container<T> {
+    fn get_type(&self, value: &PlaceHolder<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
-    fn get_span(&self, value: &PlaceHolder<Type>) -> Result<Span, InvalidValueError> {
+    fn get_span(&self, value: &PlaceHolder<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
     }
-}
 
-impl ValueContext<InferableType, PlaceHolder<TypeID>> for Builder {
-    fn get_type_binding(
-        &self,
-        value: &PlaceHolder<TypeID>,
-    ) -> Result<TypeBinding<InferableType>, InvalidValueError> {
-        Ok(TypeBinding {
-            ty: match value.ty {
-                TypeID::InferenceID(id) => self
-                    .inference_context()
-                    .get_inferable_type(id)
-                    .map_err(|_| InvalidValueError)?,
-                TypeID::Type(ty) => InferableType::Type(ty),
-            },
-            reachability: Reachability::Reachable,
-        })
+    fn get_reachability(&self, _value: &PlaceHolder<T>) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
     }
-
-    fn get_span(&self, value: &PlaceHolder<TypeID>) -> Result<Span, InvalidValueError> { todo!() }
 }
 
 /// Is an enumeration of all the ways a value can be represented.
@@ -259,26 +173,30 @@ pub enum Value<T: TypeSystem> {
     PlaceHolder(PlaceHolder<T>),
 }
 
-impl ValueContext<Type, Value<Type>> for Hir {
-    fn get_type_binding(
-        &self,
-        value: &Value<Type>,
-    ) -> Result<TypeBinding<Type>, InvalidValueError> {
-        todo!()
+impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
+    fn get_type(&self, value: &Value<T>) -> Result<T, InvalidValueError> {
+        match value {
+            Value::Register(id) => self.get_type(id),
+            Value::Constant(c) => self.get_type(c),
+            Value::PlaceHolder(p) => self.get_type(p),
+        }
     }
 
-    fn get_span(&self, value: &Value<Type>) -> Result<Span, InvalidValueError> { todo!() }
-}
-
-impl ValueContext<InferableType, Value<TypeID>> for Builder {
-    fn get_type_binding(
-        &self,
-        value: &Value<TypeID>,
-    ) -> Result<TypeBinding<InferableType>, InvalidValueError> {
-        todo!()
+    fn get_span(&self, value: &Value<T>) -> Result<Span, InvalidValueError> {
+        match value {
+            Value::Register(id) => self.get_span(id),
+            Value::Constant(c) => self.get_span(c),
+            Value::PlaceHolder(p) => self.get_span(p),
+        }
     }
 
-    fn get_span(&self, value: &Value<TypeID>) -> Result<Span, InvalidValueError> { todo!() }
+    fn get_reachability(&self, value: &Value<T>) -> Result<Reachability, InvalidValueError> {
+        match value {
+            Value::Register(id) => self.get_reachability(id),
+            Value::Constant(c) => self.get_reachability(c),
+            Value::PlaceHolder(p) => self.get_reachability(p),
+        }
+    }
 }
 
 /// Represents an adress to a particular field member.

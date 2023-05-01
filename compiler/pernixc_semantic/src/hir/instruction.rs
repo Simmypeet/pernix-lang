@@ -4,8 +4,9 @@ use std::marker::PhantomData;
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use getset::CopyGetters;
 
-use super::{value::Value, TypeSystem};
+use super::{value::Value, RegisterID, TypeSystem};
 use crate::cfg::{
     BasicBlockID, BasicInstruction, ConditionalJumpInstruction, InstructionBackend,
     JumpInstruction, ReturnInstruction,
@@ -53,7 +54,18 @@ impl<T: TypeSystem> ReturnInstruction for Return<T> {
 
 /// Represents a basic instruction in the HIR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-pub enum Basic {}
+#[allow(missing_docs)]
+pub enum Basic {
+    RegisterAssignment(RegisterAssignment),
+}
+
+/// Represents a register assignment instruction in the HIR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, CopyGetters)]
+pub struct RegisterAssignment {
+    /// Gets the [`RegisterID`] of the register that is being assigned to.
+    #[get_copy = "pub"]
+    pub(super) register_id: RegisterID,
+}
 
 impl BasicInstruction for Basic {}
 

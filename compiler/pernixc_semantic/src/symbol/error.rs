@@ -15,8 +15,8 @@ use super::{
 /// Is a semantic error that can occur during the symbol resolution/construction phase of the
 /// compiler.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-#[allow(missing_docs, clippy::module_name_repetitions)]
-pub enum SymbolError {
+#[allow(missing_docs)]
+pub enum Error {
     SymbolNotFound(SymbolNotFound),
     SymbolNotAccessible(SymbolNotAccessible),
     PrivateSymbolLeak(PrivateSymbolLeak),
@@ -380,7 +380,7 @@ impl CircularDependency {
     }
 }
 
-impl SymbolError {
+impl Error {
     /// Prints the error message to the console.
     #[allow(clippy::missing_errors_doc)]
     #[allow(clippy::unit_arg)]

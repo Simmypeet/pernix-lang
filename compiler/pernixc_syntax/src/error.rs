@@ -266,8 +266,8 @@ impl KeywordExpected {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered a syntactic error while parsing the source code.")]
-#[allow(clippy::module_name_repetitions, missing_docs)]
-pub enum SyntacticError {
+#[allow(missing_docs)]
+pub enum Error {
     IdentifierExpected(IdentifierExpected),
     TypeSpecifierExpected(TypeSpecifierExpected),
     ExpressionExpected(ExpressionExpected),
@@ -278,7 +278,7 @@ pub enum SyntacticError {
     MemberExpected(MemberExpected),
 }
 
-impl SyntacticError {
+impl Error {
     /// Prints the error message to the console
     pub fn print(&self) {
         match self {

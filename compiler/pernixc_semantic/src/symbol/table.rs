@@ -25,9 +25,10 @@ use thiserror::Error;
 
 use super::{
     error::{
-        CircularDependency, EnumVariantRedefinition, FieldRedefinition, OverloadRedefinition,
-        ParameterRedefinition, PrivateSymbolLeak, StructMemberMoreAccessibleThanStruct,
-        SymbolError, SymbolNotAccessible, SymbolNotFound, SymbolRedifinition, TypeExpected,
+        CircularDependency, EnumVariantRedefinition, Error, FieldRedefinition,
+        OverloadRedefinition, ParameterRedefinition, PrivateSymbolLeak,
+        StructMemberMoreAccessibleThanStruct, SymbolNotAccessible, SymbolNotFound,
+        SymbolRedifinition, TypeExpected,
     },
     ty::{PrimitiveType, Type, TypeBinding},
     Accessibility, Enum, EnumID, EnumVariant, EnumVariantID, Field, FieldID, GlobalID, Module,
@@ -83,10 +84,7 @@ impl Table {
     ///   `void`.
     /// - Symbol Not Accessible: The symbol will be treated as if it was accessible and an error
     ///   will be produced (non-fatal error).
-    pub fn analyze(
-        target_parsing: TargetParsing,
-        handler: &impl ErrorHandler<SymbolError>,
-    ) -> Self {
+    pub fn analyze(target_parsing: TargetParsing, handler: &impl ErrorHandler<Error>) -> Self {
         let mut table = Self {
             modules: Arena::new(),
             structs: Arena::new(),
@@ -232,7 +230,7 @@ impl Table {
         &self,
         referring_site: ScopedID,
         qualified_identifier: &QualifiedIdentifier,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Result<GlobalID, ResolveError> {
         // find the starting point of the name resolution
         let mut current_id = if qualified_identifier.leading_separator().is_some() {
@@ -407,7 +405,7 @@ impl Table {
         &mut self,
         target_parsing: TargetParsing,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) {
         let files = target_parsing
             .dissolve()
@@ -522,7 +520,7 @@ impl Table {
         syntax_tree: FunctionSyntaxTree,
         parent_module_id: ModuleID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> OverloadSetID {
         // create new overload set
         #[allow(clippy::option_if_let_else)]
@@ -604,7 +602,7 @@ impl Table {
         syntax_tree: ParameterSyntaxTree,
         parent_overload_id: OverloadID,
         declaration_order: usize,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<ParameterID> {
         let name = syntax_tree.identifier().span.str().to_owned();
         if let Some(available_parameter_id) = self
@@ -641,7 +639,7 @@ impl Table {
         syntax_tree: StructSyntaxTree,
         parent_module_id: ModuleID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> StructID {
         let (signature, body) = syntax_tree.dissolve();
 
@@ -710,7 +708,7 @@ impl Table {
         &mut self,
         syntax_tree: TypeAliasSyntaxTree,
         parent_type_alias_id: TypeAliasParentID,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<TypeAliasID> {
         let name = syntax_tree.identifier().span.str().to_owned();
         let accessibility = Accessibility::from_syntax_tree(syntax_tree.access_modifier());
@@ -778,7 +776,7 @@ impl Table {
         syntax_tree: FieldSyntaxTree,
         parent_struct_id: StructID,
         declaration_order: usize,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<FieldID> {
         if let Some(available_field_id) = self
             .get_struct(parent_struct_id)
@@ -830,7 +828,7 @@ impl Table {
         &mut self,
         syntax_tree: EnumSyntaxTree,
         parent_module_id: ModuleID,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> EnumID {
         let (signature, body) = syntax_tree.dissolve();
         let name = signature.identifier().span.str().to_owned();
@@ -880,7 +878,7 @@ impl Table {
         syntax_tree: IdentifierToken,
         parent_enum_id: EnumID,
         declaration_order: usize,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<EnumVariantID> {
         let name = syntax_tree.span.str().to_owned();
 
@@ -915,7 +913,7 @@ impl Table {
         &mut self,
         id: ID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) {
         match id {
             ID::Module(..) | ID::Struct(..) | ID::Enum(..) | ID::EnumVariant(..) => unreachable!(),
@@ -941,7 +939,7 @@ impl Table {
         &mut self,
         overload_set_id: OverloadSetID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) {
         for i in 0..self
             .get_overload_set(overload_set_id)
@@ -1025,7 +1023,7 @@ impl Table {
         &mut self,
         overload_id: OverloadID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) {
         *symbol_states_by_id.get_mut(&overload_id.into()).unwrap() = SymbolState::Constructing;
 
@@ -1067,7 +1065,7 @@ impl Table {
         &mut self,
         parameter_id: ParameterID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) {
         *symbol_states_by_id.get_mut(&parameter_id.into()).unwrap() = SymbolState::Constructing;
         let parameter = self.get_parameter(parameter_id).unwrap();
@@ -1107,7 +1105,7 @@ impl Table {
         &mut self,
         field_id: FieldID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) {
         *symbol_states_by_id.get_mut(&field_id.into()).unwrap() = SymbolState::Constructing;
 
@@ -1136,7 +1134,7 @@ impl Table {
         &mut self,
         type_alias_id: TypeAliasID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) {
         *symbol_states_by_id.get_mut(&type_alias_id.into()).unwrap() = SymbolState::Constructing;
 
@@ -1164,7 +1162,7 @@ impl Table {
         &mut self,
         id: ID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> bool {
         match symbol_states_by_id.get(&id) {
             // constructs the symbol if it is not constructed
@@ -1199,7 +1197,7 @@ impl Table {
         referring_site: ScopedID,
         type_specifier: &TypeSpecifier,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Type> {
         match type_specifier {
             TypeSpecifier::PrimitiveTypeSpecifier(primitive_type) => match primitive_type {
@@ -1243,8 +1241,8 @@ impl Table {
                 )?;
 
                 match symbol_id {
-                    GlobalID::Struct(sym) => Some(Type::TypableID(sym.into())),
-                    GlobalID::Enum(sym) => Some(Type::TypableID(sym.into())),
+                    GlobalID::Struct(sym) => Some(Type::TypedID(sym.into())),
+                    GlobalID::Enum(sym) => Some(Type::TypedID(sym.into())),
                     GlobalID::TypeAlias(sym) => Some(self.get_type_alias(sym).unwrap().alias),
                     GlobalID::Module(..)
                     | GlobalID::OverloadSet(..)
@@ -1266,7 +1264,7 @@ impl Table {
     fn get_overall_accessibility(&mut self, ty: Type) -> Accessibility {
         match ty {
             Type::PrimitiveType(..) => Accessibility::Public,
-            Type::TypableID(ty) => self.get_global(ty.into()).unwrap().accessibility(),
+            Type::TypedID(ty) => self.get_global(ty.into()).unwrap().accessibility(),
         }
     }
 
@@ -1276,7 +1274,7 @@ impl Table {
         accessibility_constraint: Accessibility,
         referring_site: ScopedID,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<Type> {
         let ty = self.resolve_type_constructing(
             referring_site,
@@ -1326,7 +1324,7 @@ impl Table {
                 .map(std::convert::Into::into),
             GlobalID::TypeAlias(sym) => match self.get_type_alias(sym).unwrap().alias {
                 Type::PrimitiveType(..) => None,
-                Type::TypableID(type_id) => self.search_child(type_id.into(), name),
+                Type::TypedID(type_id) => self.search_child(type_id.into(), name),
             },
             GlobalID::OverloadSet(..) | GlobalID::EnumVariant(..) => None,
         }
@@ -1337,7 +1335,7 @@ impl Table {
         parent: GlobalID,
         name: &str,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<GlobalID> {
         if !self.check_symbol_requirement(parent.into(), symbol_states_by_id, handler) {
             return None;
@@ -1367,7 +1365,7 @@ impl Table {
                 .map(std::convert::Into::into),
             GlobalID::TypeAlias(sym) => match self.get_type_alias(sym).unwrap().alias {
                 Type::PrimitiveType(..) => None,
-                Type::TypableID(type_id) => self.search_child_constructing(
+                Type::TypedID(type_id) => self.search_child_constructing(
                     type_id.into(),
                     name,
                     symbol_states_by_id,
@@ -1384,7 +1382,7 @@ impl Table {
         referring_site: ScopedID,
         qualified_identifier: &QualifiedIdentifier,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
-        handler: &impl ErrorHandler<SymbolError>,
+        handler: &impl ErrorHandler<Error>,
     ) -> Option<GlobalID> {
         // at the referring site itself, it must be fully constructed
         assert!(!symbol_states_by_id.contains_key(&referring_site.into()));

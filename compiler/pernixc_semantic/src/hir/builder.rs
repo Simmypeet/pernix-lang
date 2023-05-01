@@ -19,21 +19,25 @@ use thiserror::Error;
 
 use super::{
     error::{
-        FloatingPointLiteralHasIntegralSuffix, HirError, InvalidNumericLiteralSuffix,
-        NoAccessibleOverload, NoOverloadWithMatchingArgumentTypes,
+        AmbiguousFunctionCall, Error, FloatingPointLiteralHasIntegralSuffix,
+        InvalidNumericLiteralSuffix, NoAccessibleOverload, NoOverloadWithMatchingArgumentTypes,
         NoOverloadWithMatchingNumberOfArguments, SymbolNotCallable,
     },
-    instruction::Backend,
-    value::{Address, BooleanLiteral, Constant, NumericLiteral, PlaceHolder, Value},
-    BindingErrorHandler, Hir, TypeSystem,
+    instruction::RegisterAssignment,
+    value::{
+        binding::FunctionCall, Address, BooleanLiteral, Constant, NumericLiteral, PlaceHolder,
+        Value,
+    },
+    Container, ErrorHandler, InvalidValueError, Register, RegisterID, TypeBinding, TypeSystem,
+    ValueInspect,
 };
 use crate::{
-    cfg::ControlFlowGraph,
+    cfg::BasicBlockID,
     infer::{Constraint, InferableType, InferenceContext, InferenceID},
     symbol::{
         table::Table,
         ty::{PrimitiveType, Type},
-        GlobalID, ModuleID, Overload, OverloadID, OverloadSetID,
+        GlobalID, Overload, OverloadID, OverloadSetID,
     },
 };
 
@@ -71,9 +75,16 @@ pub struct BindingOption {
 /// Is a [`TypeSystem`] used for building the [`Hir`].
 ///
 /// While building the [`Hir`], the type of the value might not be known right away. Therefore, the
-/// builder uses this [`TypeID`] to represent the type of the value that might be inferred later.
+/// builder uses this [`IntermediateTypeID`] to represent the type of the value that might be
+/// inferred later.
+///
+/// ## Misonceptions
+///
+/// This doesn't represent the final type of the value. Therefore, do not use this to check for
+/// type equality. Instead, retrieve the [`TypeBinding<InferableType>`] from [`Builder`] then first
+/// check for type equality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-pub enum TypeID {
+pub enum IntermediateTypeID {
     /// The type might be inferred later by the inference context.
     InferenceID(InferenceID),
 
@@ -81,27 +92,17 @@ pub enum TypeID {
     Type(Type),
 }
 
-impl TypeSystem for TypeID {
-    fn from_type(ty: Type) -> Self {
-        ty.into()
-    }
+impl TypeSystem for IntermediateTypeID {
+    fn from_type(ty: Type) -> Self { ty.into() }
 }
 
 /// Is a builder that builds the [`Hir`] by inputting the various
 /// [`StatementSyntaxTree`](pernixc_syntax::syntax_tree::statement::Statement) to it.
 #[derive(Debug, Getters)]
 pub struct Builder {
-    control_flow_graph: ControlFlowGraph<Backend<TypeID>>,
-    /// Gets the [`InferenceContext`] used by the builder.
-    #[get = "pub"]
+    container: Container<IntermediateTypeID>,
+    current_block: BasicBlockID,
     inference_context: InferenceContext,
-
-    /// Gets the [`Table`] that was used for symbol resolution and variable lookup.
-    #[get = "pub"]
-    table: Arc<Table>,
-    overload_id: OverloadID,
-    overload_set_id: OverloadSetID,
-    parent_module_id: ModuleID,
 }
 
 impl Builder {
@@ -114,22 +115,48 @@ impl Builder {
     /// # Errors
     /// - [`InvalidIDError`] if the `overload_id` is invalid for the `table`.
     pub fn new(table: Arc<Table>, overload_id: OverloadID) -> Result<Self, InvalidIDError> {
-        let overload_set_id = table.get_overload(overload_id)?.parent_overload_set_id();
-        let parent_module_id = table.get_overload_set(overload_set_id)?.parent_module_id();
+        let container = Container::new(table, overload_id)?;
 
         Ok(Self {
-            control_flow_graph: ControlFlowGraph::new(),
+            current_block: container.control_flow_graph.entry_block(),
+            container,
             inference_context: InferenceContext::new(),
-            table,
-            overload_id,
-            overload_set_id,
-            parent_module_id,
         })
     }
 
-    /// Finishes the building process and returns the [`Hir`].
-    pub fn build(self, handler: &impl BindingErrorHandler) -> Hir {
-        todo!()
+    /// Obtains [`TypeBinding`] for the given value.
+    ///
+    /// # Errors
+    /// - If the given value wasn't created from this [`Builder`].
+    pub fn get_type_binding<T>(
+        &self,
+        value: &T,
+    ) -> Result<TypeBinding<InferableType>, InvalidValueError>
+    where
+        Container<IntermediateTypeID>: ValueInspect<IntermediateTypeID, T>,
+    {
+        let intermediate_ty_id = self.container.get_type(value)?;
+        let reachability = self.container.get_reachability(value)?;
+        let ty = match intermediate_ty_id {
+            IntermediateTypeID::InferenceID(inference_id) => self
+                .inference_context
+                .get_inferable_type(inference_id)
+                .map_err(|_| InvalidValueError)?,
+            IntermediateTypeID::Type(ty) => InferableType::Type(ty),
+        };
+
+        Ok(TypeBinding { ty, reachability })
+    }
+
+    /// Obtains [`Span`] for the given value.
+    ///
+    /// # Errors
+    /// - If the given value wasn't created from this [`Builder`].
+    pub fn get_span<T>(&self, value: &T) -> Result<Span, InvalidValueError>
+    where
+        Container<IntermediateTypeID>: ValueInspect<IntermediateTypeID, T>,
+    {
+        self.container.get_span(value)
     }
 }
 
@@ -142,7 +169,7 @@ pub struct BindingError(Span);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 pub enum BindingResult {
     /// The binding process returns a value.
-    Value(Value<TypeID>),
+    Value(Value<IntermediateTypeID>),
 
     /// The binding process returns an address to a value.
     Address(Address),
@@ -162,7 +189,7 @@ impl Builder {
         &mut self,
         syntax_tree: &ExpressionSyntaxTree,
         binding_option: &BindingOption,
-        handler: &impl BindingErrorHandler,
+        handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree {
             ExpressionSyntaxTree::Functional(syn) => {
@@ -183,8 +210,8 @@ impl Builder {
     pub fn bind_functional(
         &mut self,
         syntax_tree: &FunctionalSyntaxTree,
-        binding_option: &BindingOption,
-        handler: &impl BindingErrorHandler,
+        _binding_option: &BindingOption,
+        handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree {
             FunctionalSyntaxTree::NumericLiteral(syn) => self
@@ -216,9 +243,9 @@ impl Builder {
     /// - If the binding process encounters a fatal semantic error.
     pub fn bind_imperative(
         &mut self,
-        syntax_tree: &ImperativeSyntaxTree,
-        binding_option: &BindingOption,
-        handler: &impl BindingErrorHandler,
+        _syntax_tree: &ImperativeSyntaxTree,
+        _binding_option: &BindingOption,
+        _handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         todo!()
     }
@@ -232,8 +259,8 @@ impl Builder {
     pub fn bind_numeric_literal(
         &mut self,
         syntax_tree: &NumericLiteralSyntaxTree,
-        handler: &impl BindingErrorHandler,
-    ) -> Result<NumericLiteral<TypeID>, BindingError> {
+        handler: &impl ErrorHandler,
+    ) -> Result<NumericLiteral<IntermediateTypeID>, BindingError> {
         // determine the type of the literal
         let type_id = if let Some(suffix) = &syntax_tree.numeric_literal_token().suffix_span {
             // the literal type is specified, so we don't need to infer the type
@@ -250,7 +277,7 @@ impl Builder {
                 "f32" => PrimitiveType::Float32,
                 "f64" => PrimitiveType::Float64,
                 _ => {
-                    handler.recieve(HirError::InvalidNumericLiteralSuffix(
+                    handler.recieve(Error::InvalidNumericLiteralSuffix(
                         InvalidNumericLiteralSuffix {
                             suffix_span: suffix.clone(),
                         },
@@ -278,7 +305,7 @@ impl Builder {
                 .contains('.');
 
             if primitive_type_is_integral && has_dot {
-                handler.recieve(HirError::FloatingPointLiteralHasIntegralSuffix(
+                handler.recieve(Error::FloatingPointLiteralHasIntegralSuffix(
                     FloatingPointLiteralHasIntegralSuffix {
                         floating_point_span: syntax_tree.numeric_literal_token().span.clone(),
                     },
@@ -286,7 +313,7 @@ impl Builder {
                 return Err(BindingError(syntax_tree.span()));
             }
 
-            TypeID::Type(Type::PrimitiveType(primitive_type))
+            IntermediateTypeID::Type(Type::PrimitiveType(primitive_type))
         } else {
             // the literal type is not specified, so we need to infer the type
             let has_dot = syntax_tree
@@ -296,9 +323,13 @@ impl Builder {
                 .contains('.');
 
             if has_dot {
-                TypeID::InferenceID(self.inference_context.new_inference(Constraint::Float))
+                IntermediateTypeID::InferenceID(
+                    self.inference_context.new_inference(Constraint::Float),
+                )
             } else {
-                TypeID::InferenceID(self.inference_context.new_inference(Constraint::Number))
+                IntermediateTypeID::InferenceID(
+                    self.inference_context.new_inference(Constraint::Number),
+                )
             }
         };
 
@@ -335,7 +366,7 @@ impl Builder {
         let mut index = 0;
         while index < overload_candidates.len() {
             let overload_id = overload_candidates[index];
-            let overload = self.table.get_overload(overload_id).unwrap();
+            let overload = self.container.table.get_overload(overload_id).unwrap();
 
             if filter(overload) {
                 index += 1;
@@ -349,16 +380,21 @@ impl Builder {
         &mut self,
         overload_set_id: OverloadSetID,
         syntax_tree: &FunctionCallSyntaxTree,
-        handler: &impl BindingErrorHandler,
+        handler: &impl ErrorHandler,
     ) -> Result<Vec<OverloadID>, BindingError> {
-        let overload_set = self.table.get_overload_set(overload_set_id).unwrap();
+        let overload_set = self
+            .container
+            .table
+            .get_overload_set(overload_set_id)
+            .unwrap();
         let mut overload_candidates = overload_set.overloads().clone();
 
         // filter out the overloads that are not accessible
         self.filter_overload_candidate(&mut overload_candidates, |overload| {
-            self.table
+            self.container
+                .table
                 .symbol_accessible(
-                    self.parent_module_id.into(),
+                    self.container.parent_module_id.into(),
                     overload_set_id.into(),
                     overload.accessibility(),
                 )
@@ -366,7 +402,7 @@ impl Builder {
         });
 
         if overload_candidates.is_empty() {
-            handler.recieve(HirError::NoAccessibleOverload(NoAccessibleOverload {
+            handler.recieve(Error::NoAccessibleOverload(NoAccessibleOverload {
                 overload_set_id,
                 symbol_span: syntax_tree.qualified_identifier().span(),
             }));
@@ -378,18 +414,18 @@ impl Builder {
 
     fn handle_overload_candidates(
         &mut self,
-        arguments: Vec<Value<TypeID>>,
+        arguments: Vec<Value<IntermediateTypeID>>,
         overload_candidates: Vec<OverloadID>,
         has_placeholders: bool,
         syntax_tree: &FunctionCallSyntaxTree,
         overload_set_id: OverloadSetID,
-        handler: &impl BindingErrorHandler,
-    ) -> Result<BindingResult, BindingError> {
+        handler: &impl ErrorHandler,
+    ) -> Result<RegisterID, BindingError> {
         // must be exactly one overload
         match overload_candidates.len() {
             // no overload matches
             0 => {
-                handler.recieve(HirError::NoOverloadWithMatchingArgumentTypes(
+                handler.recieve(Error::NoOverloadWithMatchingArgumentTypes(
                     NoOverloadWithMatchingArgumentTypes {
                         overload_set_id,
                         symbol_span: syntax_tree.qualified_identifier().span(),
@@ -404,13 +440,17 @@ impl Builder {
                 for (argument, parameter) in arguments
                     .iter()
                     .zip(
-                        self.table
+                        self.container
+                            .table
                             .get_overload(overload_candidates[0])
                             .unwrap()
                             .parameter_order(),
                     )
                     .map(|(argument, parameter)| {
-                        (argument, self.table.get_parameter(*parameter).unwrap())
+                        (
+                            argument,
+                            self.container.table.get_parameter(*parameter).unwrap(),
+                        )
                     })
                 {
                     let inference_id = if self
@@ -420,7 +460,11 @@ impl Builder {
                         .as_constraint()
                         .is_some()
                     {
-                        *self.hir.get_value_type_id(argument).as_inferring().unwrap()
+                        self.container
+                            .get_type(argument)
+                            .unwrap()
+                            .into_inference_id()
+                            .unwrap()
                     } else {
                         continue;
                     };
@@ -436,38 +480,48 @@ impl Builder {
                     arguments,
                 };
 
-                let id = self.new_ssa(function_call.into());
+                let id = self.container.registers.insert(Register {
+                    binding: function_call.into(),
+                });
 
-                if bind_option.bind_target != BindTarget::ForValue {
-                    return Err(BindingError::TargetNotApplicable);
-                }
+                // create assignment
+                self.container
+                    .control_flow_graph
+                    .get_mut(self.current_block)
+                    .unwrap()
+                    .add_basic_instruction(RegisterAssignment { register_id: id }.into());
 
-                Ok(BindingResult::Value(SsaValue::SsaVariableID(id)))
+                Ok(id)
             }
             // ambiguous function call
             _ => {
-                self.errors.push(
-                    AmbiguousFunctionCall {
+                // since placeholders can match multiple types, it might produce multiple candidates
+                if !has_placeholders {
+                    handler.recieve(Error::AmbiguousFunctionCall(AmbiguousFunctionCall {
                         candidate_overloads: overload_candidates,
                         function_call_span: syntax_tree.span(),
-                    }
-                    .into(),
-                );
+                        overload_set_id,
+                    }));
+                }
 
-                Err(BindingError::FatalSemanticError)
+                Err(BindingError(syntax_tree.span()))
             }
         }
     }
 
-    /// Binds the given [`FunctionCallSyntaxTree`] to a [`SsaValue`].
+    /// Binds the given [`FunctionCallSyntaxTree`] and returns the [`RegisterID`] where the result
+    /// is stored.
+    ///
+    /// # Errors
+    /// - If the binding process encounters a fatal semantic error.
     pub fn bind_function_call(
         &mut self,
         syntax_tree: &FunctionCallSyntaxTree,
-        handler: &impl BindingErrorHandler,
-    ) -> Result<BindingResult, BindingError> {
+        handler: &impl ErrorHandler,
+    ) -> Result<RegisterID, BindingError> {
         // resolve the symbol
-        let symbol = self.table.resolve_symbol(
-            self.parent_module_id.into(),
+        let symbol = self.container.table.resolve_symbol(
+            self.container.parent_module_id.into(),
             syntax_tree.qualified_identifier(),
             handler,
         );
@@ -489,7 +543,7 @@ impl Builder {
 
         let GlobalID::OverloadSet(overload_set_id) = symbol else {
             handler.recieve(
-                HirError::SymbolNotCallable(SymbolNotCallable {
+                Error::SymbolNotCallable(SymbolNotCallable {
                     found_id: symbol,
                     symbol_span: syntax_tree.span()
                 })
@@ -506,7 +560,7 @@ impl Builder {
             overload.parameter_order().len() == arguments.len()
         });
         if overload_candidates.is_empty() {
-            handler.recieve(HirError::NoOverloadWithMatchingNumberOfArguments(
+            handler.recieve(Error::NoOverloadWithMatchingNumberOfArguments(
                 NoOverloadWithMatchingNumberOfArguments {
                     overload_set_id,
                     argument_count: arguments.len(),
@@ -526,7 +580,7 @@ impl Builder {
                     has_placeholders = true;
                     BindingResult::Value(Value::PlaceHolder(PlaceHolder {
                         span: err.0,
-                        ty: TypeID::InferenceID(
+                        ty: IntermediateTypeID::InferenceID(
                             self.inference_context.new_inference(Constraint::All),
                         ),
                     }))
@@ -541,7 +595,7 @@ impl Builder {
             for (parameter, argument) in overload
                 .parameter_order()
                 .iter()
-                .map(|x| self.table.get_parameter(*x).unwrap())
+                .map(|x| self.container.table.get_parameter(*x).unwrap())
                 .zip(arguments.iter())
             {
                 let bound_type = self.get_type_binding(argument).unwrap();
@@ -563,10 +617,15 @@ impl Builder {
         self.handle_overload_candidates(
             arguments,
             overload_candidates,
+            has_placeholders,
             syntax_tree,
             overload_set_id,
+            handler,
         )
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 }
+
+#[cfg(test)]
+mod tests;
