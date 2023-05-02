@@ -70,11 +70,11 @@ impl<T: TypeSystem> ValueInspect<T, BooleanLiteral> for Container<T> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct EnumLiteral {
     /// Specfies the location of the enum literal.
-    span: Span,
+    pub(super) span: Span,
 
     /// Gets the ID of the enum variant that is used for the literal.
     #[get_copy = "pub"]
-    enum_variant_id: EnumVariantID,
+    pub(super) enum_variant_id: EnumVariantID,
 }
 
 impl<T: TypeSystem> ValueInspect<T, EnumLiteral> for Container<T> {

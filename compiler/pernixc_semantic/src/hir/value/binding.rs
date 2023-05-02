@@ -142,15 +142,15 @@ pub enum LoadType {
 pub struct NamedLoad {
     /// The span of the [`NamedLoad`].
     #[get = "pub"]
-    pub(super) span: Span,
+    pub(in crate::hir) span: Span,
 
     /// Determines how the value is loaded from the address.
     #[get_copy = "pub"]
-    pub(super) load_type: LoadType,
+    pub(in crate::hir) load_type: LoadType,
 
     /// The address of the value.
     #[get = "pub"]
-    pub(super) address: Address,
+    pub(in crate::hir) address: Address,
 }
 
 impl<T: TypeSystem> ValueInspect<T, NamedLoad> for Container<T> {

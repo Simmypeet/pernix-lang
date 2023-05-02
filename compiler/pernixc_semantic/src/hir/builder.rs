@@ -27,12 +27,12 @@ use super::{
     error::{
         AmbiguousFunctionCall, Error, FloatingPointLiteralHasIntegralSuffix,
         InvalidNumericLiteralSuffix, NoAccessibleOverload, NoOverloadWithMatchingArgumentTypes,
-        NoOverloadWithMatchingNumberOfArguments, SymbolNotCallable,
+        NoOverloadWithMatchingNumberOfArguments, SymbolNotCallable, ValueExpected,
     },
     instruction::RegisterAssignment,
     value::{
         binding::{FunctionCall, Prefix},
-        Address, BooleanLiteral, Constant, NumericLiteral, Placeholder, Value,
+        Address, BooleanLiteral, Constant, EnumLiteral, NumericLiteral, Placeholder, Value,
     },
     Container, ErrorHandler, InvalidValueError, Register, RegisterID, TypeBinding, TypeSystem,
     ValueInspect,
@@ -42,6 +42,7 @@ use crate::{
     hir::{
         error::TypeMismatch,
         instruction::{Store, VariableDeclaration},
+        value::binding::{LoadType, NamedLoad},
         Alloca,
     },
     infer::{
@@ -357,7 +358,7 @@ impl Builder {
     pub fn bind_functional(
         &mut self,
         syntax_tree: &FunctionalSyntaxTree,
-        _binding_option: BindingOption,
+        binding_option: BindingOption,
         handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree {
@@ -368,10 +369,16 @@ impl Builder {
                 Constant::BooleanLiteral(Self::bind_boolean_literal(syn)),
             ))),
             FunctionalSyntaxTree::Binary(_) => todo!(),
-            FunctionalSyntaxTree::Prefix(_) => todo!(),
+            FunctionalSyntaxTree::Prefix(syn) => self
+                .bind_prefix(syn, handler)
+                .map(|x| BindingResult::Value(Value::Register(x))),
             FunctionalSyntaxTree::Named(_) => todo!(),
-            FunctionalSyntaxTree::FunctionCall(_) => todo!(),
-            FunctionalSyntaxTree::Parenthesized(_) => todo!(),
+            FunctionalSyntaxTree::FunctionCall(syn) => self
+                .bind_function_call(syn, handler)
+                .map(|x| BindingResult::Value(Value::Register(x))),
+            FunctionalSyntaxTree::Parenthesized(syn) => {
+                self.bind_expression(syn.expression(), binding_option, handler)
+            }
             FunctionalSyntaxTree::StructLiteral(_) => todo!(),
             FunctionalSyntaxTree::MemberAccess(_) => todo!(),
             FunctionalSyntaxTree::Continue(_) => todo!(),
@@ -832,6 +839,104 @@ impl Builder {
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds the [`NamedSyntaxTree`] into a [`BindingResult`]
+    ///
+    /// # Errors
+    /// - If encounters a fatal semantic error
+    pub fn bind_named(
+        &mut self,
+        syntax_tree: &NamedSyntaxTree,
+        binding_option: BindingOption,
+        handler: &impl ErrorHandler,
+    ) -> Result<BindingResult, BindingError> {
+        // check for locals
+        if syntax_tree
+            .qualified_identifier()
+            .leading_separator()
+            .is_none()
+            && syntax_tree.qualified_identifier().identifiers().len() == 1
+        {
+            let local_ident = syntax_tree
+                .qualified_identifier()
+                .identifiers()
+                .first()
+                .span
+                .str();
+
+            // search for local variables then parameters
+            let address = self
+                .stack
+                .serach(local_ident)
+                .map(Address::AllocaID)
+                .map_or_else(
+                    || {
+                        self.container
+                            .table
+                            .get_overload(self.container.overload_id)
+                            .unwrap()
+                            .parameter_ids_by_name()
+                            .get(local_ident)
+                            .copied()
+                            .map(Address::ParameterID)
+                    },
+                    Some,
+                );
+
+            if let Some(address) = address {
+                match binding_option.binding_target {
+                    BindingTarget::ForValue => {
+                        // load the value
+                        let binding = NamedLoad {
+                            span: syntax_tree.span(),
+                            load_type: LoadType::Copy, // auto move will be applied later
+                            address,
+                        }
+                        .into();
+
+                        let register_id = self.container.registers.insert(Register { binding });
+                        self.container
+                            .control_flow_graph
+                            .get_mut(self.current_block)
+                            .unwrap()
+                            .add_basic_instruction(RegisterAssignment { register_id }.into());
+
+                        return Ok(BindingResult::Value(Value::Register(register_id)));
+                    }
+                    BindingTarget::ForAddress => return Ok(BindingResult::Address(address)),
+                    BindingTarget::ForStatement => return Ok(BindingResult::None),
+                }
+            }
+        }
+
+        // search in gloal scope
+        let symbol = self
+            .container
+            .table
+            .resolve_symbol(
+                self.container.parent_module_id.into(),
+                syntax_tree.qualified_identifier(),
+                handler,
+            )
+            .map_err(|_| BindingError(syntax_tree.span()))?;
+
+        // only enum literal can be used as a value
+        let GlobalID::EnumVariant(enum_variant_id) = symbol else {
+            handler.recieve(Error::ValueExpected(ValueExpected {
+                expression_span: syntax_tree.span(),
+                found_symbol: symbol
+            }));
+
+            return Err(BindingError(syntax_tree.span()));
+        };
+
+        Ok(BindingResult::Value(Value::Constant(
+            Constant::EnumLiteral(EnumLiteral {
+                span: syntax_tree.span(),
+                enum_variant_id,
+            }),
+        )))
+    }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 }

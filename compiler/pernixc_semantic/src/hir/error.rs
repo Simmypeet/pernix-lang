@@ -22,6 +22,7 @@ pub enum Error {
     NoOverloadWithMatchingArgumentTypes(NoOverloadWithMatchingArgumentTypes),
     TypeMismatch(TypeMismatch),
     AmbiguousFunctionCall(AmbiguousFunctionCall),
+    ValueExpected(ValueExpected),
 }
 
 /// The numeric literal suffix is not applicable to the literal's type.
@@ -126,4 +127,16 @@ pub struct TypeMismatch {
     /// The type that was found.
     #[get_copy = "pub"]
     pub(super) found: InferableType,
+}
+
+/// Expected a value from symbol resolution, but got a non-value symbol.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct ValueExpected {
+    /// The span of the expression.
+    #[get = "pub"]
+    pub(super) expression_span: Span,
+
+    /// The found symbol that was not a value.
+    #[get_copy = "pub"]
+    pub(super) found_symbol: GlobalID,
 }
