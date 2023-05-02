@@ -7,11 +7,13 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
+    self,
     expression::{
         BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,
         FunctionCall as FunctionCallSyntaxTree, Functional as FunctionalSyntaxTree,
         Imperative as ImperativeSyntaxTree, Named as NamedSyntaxTree,
         NumericLiteral as NumericLiteralSyntaxTree, Prefix as PrefixSyntaxTree, PrefixOperator,
+        StructLiteral as StructLiteralSyntaxTree,
     },
     statement::{
         Declarative, Expressive, Statement as StatementSyntaxTree,
@@ -89,11 +91,11 @@ pub struct BindingOption {
     binding_target: BindingTarget,
 }
 
-/// Is a [`TypeSystem`] used for building the [`Hir`].
+/// Is a [`TypeSystem`] used for building the [`super::Hir`].
 ///
-/// While building the [`Hir`], the type of the value might not be known right away. Therefore, the
-/// builder uses this [`IntermediateTypeID`] to represent the type of the value that might be
-/// inferred later.
+/// While building the [`super::Hir`], the type of the value might not be known right away.
+/// Therefore, the builder uses this [`IntermediateTypeID`] to represent the type of the value that
+/// might be inferred later.
 ///
 /// ## Misonceptions
 ///
@@ -113,7 +115,7 @@ impl TypeSystem for IntermediateTypeID {
     fn from_type(ty: Type) -> Self { ty.into() }
 }
 
-/// Is a builder that builds the [`Hir`] by inputting the various
+/// Is a builder that builds the [`super::Hir`] by inputting the various
 /// [`StatementSyntaxTree`](pernixc_syntax::syntax_tree::statement::Statement) to it.
 #[derive(Debug, Getters)]
 pub struct Builder {
@@ -128,7 +130,7 @@ impl Builder {
     ///
     /// # Parameters
     /// - `table`: The [`Table`] that will be used for symbol resolution and various lookups.
-    /// - `overload_id`: The context in which the [`Builder`] will be building the [`Hir`].
+    /// - `overload_id`: The context in which the [`Builder`] will be building the [`super::Hir`].
     ///
     /// # Errors
     /// - [`InvalidIDError`] if the `overload_id` is invalid for the `table`.
@@ -265,7 +267,7 @@ impl Builder {
             self.container
                 .table
                 .resolve_type(
-                    self.container.parent_module_id.into(),
+                    self.container.parent_scoped_id,
                     type_annotation.type_specifier(),
                     handler,
                 )
@@ -320,6 +322,11 @@ impl Builder {
                 .into(),
             );
 
+        // insert into stack
+        self.stack
+            .top_mut()
+            .insert(syntax_tree.identifier().span.str().to_owned(), alloca_id);
+
         Ok(())
     }
 
@@ -372,7 +379,7 @@ impl Builder {
             FunctionalSyntaxTree::Prefix(syn) => self
                 .bind_prefix(syn, handler)
                 .map(|x| BindingResult::Value(Value::Register(x))),
-            FunctionalSyntaxTree::Named(_) => todo!(),
+            FunctionalSyntaxTree::Named(syn) => self.bind_named(syn, binding_option, handler),
             FunctionalSyntaxTree::FunctionCall(syn) => self
                 .bind_function_call(syn, handler)
                 .map(|x| BindingResult::Value(Value::Register(x))),
@@ -391,7 +398,7 @@ impl Builder {
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
-    /// Binds the given [`ImperativeSyntaxTree`] and returns the [`BindingResulft`].
+    /// Binds the given [`ImperativeSyntaxTree`] and returns the [`BindingResult`].
     ///
     /// # Errors
     /// - If the binding process encounters a fatal semantic error.
@@ -548,7 +555,7 @@ impl Builder {
             self.container
                 .table
                 .symbol_accessible(
-                    self.container.parent_module_id.into(),
+                    self.container.parent_scoped_id,
                     overload_set_id.into(),
                     overload.accessibility(),
                 )
@@ -679,7 +686,7 @@ impl Builder {
     ) -> Result<RegisterID, BindingError> {
         // resolve the symbol
         let symbol = self.container.table.resolve_symbol(
-            self.container.parent_module_id.into(),
+            self.container.parent_scoped_id,
             syntax_tree.qualified_identifier(),
             handler,
         );
@@ -914,7 +921,7 @@ impl Builder {
             .container
             .table
             .resolve_symbol(
-                self.container.parent_module_id.into(),
+                self.container.parent_scoped_id,
                 syntax_tree.qualified_identifier(),
                 handler,
             )
@@ -939,9 +946,43 @@ impl Builder {
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds the given [`StructLiteralSyntaxTree`] and returns the [`RegisterID`] where the result
+    /// is stored.
+    ///
+    /// # Errors
+    /// - If the binding process encounters a fatal semantic error.
+    pub fn bind_struct_literal(
+        &mut self,
+        syntax_tree: &StructLiteralSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Result<RegisterID, BindingError> {
+        // resolve the struct id
+        let GlobalID::Struct(struct_id) = self.container.table.resolve_symbol(
+            self.container.parent_scoped_id,
+            syntax_tree.qualified_identifier(),
+            handler,
+        ).unwrap() else {
+            return Err(BindingError(syntax_tree.span()))
+        };
+
+        todo!()
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
 }
 
 impl Builder {
+    fn get_address_type(&self, address: &Address) -> InferableType {
+        let intermediate_type = self.get_address_intermediate_type_id(address);
+        match intermediate_type {
+            IntermediateTypeID::InferenceID(id) => {
+                self.inference_context.get_inferable_type(id).unwrap()
+            }
+            IntermediateTypeID::Type(ty) => ty.into(),
+        }
+    }
+
     fn get_address_intermediate_type_id(&self, address: &Address) -> IntermediateTypeID {
         match address {
             Address::AllocaID(id) => self.container.allocas.get(*id).unwrap().ty,

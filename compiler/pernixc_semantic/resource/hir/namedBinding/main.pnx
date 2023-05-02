@@ -1,0 +1,20 @@
+public enum SomeEnum 
+{
+    First,
+    Second
+}
+
+public function main(mutable someParameter: int32): void 
+{
+    let value: float32 = 32;
+
+    someParameter;
+    value;
+    SomeEnum; // Error - cannot access enum type directly
+    SomeEnum::First;
+
+    // shadow the parameter
+    let mutable someParameter: float64 = 32;
+    
+    someParameter;
+}

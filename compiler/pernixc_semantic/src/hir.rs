@@ -18,7 +18,8 @@ use crate::{
     cfg::ControlFlowGraph,
     infer::InferableType,
     symbol::{
-        error::Error as SymbolError, table::Table, ty::Type, ModuleID, OverloadID, OverloadSetID,
+        error::Error as SymbolError, table::Table, ty::Type, Global, ModuleID, OverloadID,
+        OverloadSetID, ScopedID,
     },
 };
 
@@ -48,7 +49,7 @@ pub struct Hir {
 
 /// The container that holds the contents of the [`Hir`].
 ///
-/// This container is as well used in the [`Builder`] to construct the [`Hir`].
+/// This container is as well used in the [`builder::Builder`] to construct the [`Hir`].
 #[derive(Debug, Getters, CopyGetters)]
 pub struct Container<T: TypeSystem> {
     /// The control flow graph that represents the flow of the function.
@@ -77,7 +78,7 @@ pub struct Container<T: TypeSystem> {
 
     /// The parent module that the [`Self::parent_overload_set_id`] is defined in.
     #[get_copy = "pub"]
-    parent_module_id: ModuleID,
+    parent_scoped_id: ScopedID,
 }
 
 impl<T: TypeSystem> Container<T> {
@@ -97,7 +98,7 @@ impl<T: TypeSystem> Container<T> {
             control_flow_graph: ControlFlowGraph::new(),
             overload_id,
             parent_overload_set_id: overload_set.id(),
-            parent_module_id: overload_set.parent_module_id(),
+            parent_scoped_id: overload_set.parent_scoped_id().unwrap(),
             table,
             registers: Arena::new(),
             allocas: Arena::new(),

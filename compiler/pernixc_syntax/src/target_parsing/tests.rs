@@ -3,7 +3,7 @@ use std::{error::Error, path::PathBuf};
 use pernixc_source::SourceFile;
 use pernixc_system::error_handler::ErrorVec;
 
-use crate::target_parsing::AllParsingError;
+use crate::target_parsing::{AllParsingError, TargetParsing};
 
 #[test]
 fn module_branching_test() -> Result<(), Box<dyn Error>> {
@@ -16,7 +16,7 @@ fn module_branching_test() -> Result<(), Box<dyn Error>> {
     )?;
 
     let error_vec: ErrorVec<AllParsingError> = ErrorVec::default();
-    let syntax_trees = super::parse_target(source_file, &error_vec)?;
+    let syntax_trees = TargetParsing::parse(source_file, &error_vec)?;
 
     assert!(error_vec.into_vec().is_empty());
     assert_eq!(syntax_trees.len(), 4);

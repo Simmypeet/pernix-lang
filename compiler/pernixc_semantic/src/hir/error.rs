@@ -7,7 +7,7 @@ use pernixc_source::Span;
 
 use crate::{
     infer::InferableType,
-    symbol::{GlobalID, OverloadID, OverloadSetID},
+    symbol::{FieldID, GlobalID, OverloadID, OverloadSetID, ScopedID, StructID},
 };
 
 /// Is a semantic error that occurs during the binding/HIR building phase.
@@ -23,6 +23,9 @@ pub enum Error {
     TypeMismatch(TypeMismatch),
     AmbiguousFunctionCall(AmbiguousFunctionCall),
     ValueExpected(ValueExpected),
+    UninitializedFields(UninitializedFields),
+    FieldInaccessible(FieldInaccessible),
+    FieldInitializeDuplication(FieldInitializeDuplication),
 }
 
 /// The numeric literal suffix is not applicable to the literal's type.
@@ -139,4 +142,56 @@ pub struct ValueExpected {
     /// The found symbol that was not a value.
     #[get_copy = "pub"]
     pub(super) found_symbol: GlobalID,
+}
+
+/// Not all fields of a struct literal were initialized.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct UninitializedFields {
+    /// The span of the struct literal.
+    #[get = "pub"]
+    pub(super) struct_literal_span: Span,
+
+    /// The struct that was not fully initialized.
+    #[get_copy = "pub"]
+    pub(super) struct_id: StructID,
+
+    /// The fields that were not initialized.
+    #[get = "pub"]
+    pub(super) uninitialized_fields: Vec<FieldID>,
+}
+
+/// A field of a struct was initialized multiple times.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct FieldInitializeDuplication {
+    /// The span of the duplicate initialization.
+    #[get = "pub"]
+    pub(super) duplicate_initialization_span: Span,
+
+    /// The span of the previous initialization.
+    #[get = "pub"]
+    pub(super) previous_initialization_span: Span,
+
+    /// The ID of the field that was initialized multiple times.
+    #[get_copy = "pub"]
+    pub(super) field_id: FieldID,
+}
+
+/// The field of the struct is not accessible from the current scope.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct FieldInaccessible {
+    /// The ID of the field that was not accessible.
+    #[get_copy = "pub"]
+    pub(super) field_id: FieldID,
+
+    /// The ID of the struct that the field belongs to.
+    #[get_copy = "pub"]
+    pub(super) struct_id: StructID,
+
+    /// The span of the field access.
+    #[get = "pub"]
+    pub(super) field_span: Span,
+
+    /// The ID of the scope that the field was accessed from.
+    #[get_copy = "pub"]
+    pub(super) current_scope: ScopedID,
 }

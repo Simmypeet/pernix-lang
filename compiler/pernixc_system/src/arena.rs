@@ -127,23 +127,23 @@ pub struct InvalidIDError;
 #[macro_export]
 macro_rules! create_id_type {
     ($name:ident) => {
-        paste::paste! {
+        $crate::arena::__private::paste! {
             #[doc = concat!("Is a unique identifier for a [`", stringify!($name), "`].")]
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-            pub struct [< $name ID >](pernixc_system::arena::Uid);
+            pub struct [< $name ID >]($crate::arena::Uid);
 
-            impl pernixc_system::arena::UniqueIdentifier for [< $name ID >] {
+            impl $crate::arena::UniqueIdentifier for [< $name ID >] {
                 fn fresh() -> Self { Self(pernixc_system::arena::Uid::fresh()) }
             }
         }
     };
     ($name: ident, $doc: literal) => {
-        paste::paste! {
+        $crate::arena::__private::paste! {
             #[doc = $doc]
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-            pub struct [< $name ID >](pernixc_system::arena::Uid);
+            pub struct [< $name ID >]($crate::arena::Uid);
 
-        impl pernixc_system::arena::UniqueIdentifier for [< $name ID >] {
+        impl $crate::arena::UniqueIdentifier for [< $name ID >] {
             fn fresh() -> Self { Self(pernixc_system::arena::Uid::fresh()) }
             }
         }
@@ -158,20 +158,25 @@ macro_rules! create_symbol {
         $vis:vis $ty:ident $name:ident $(< $($lt:lifetime),* $($gt:ident $(: $tb:tt)?),* >)?
         { $($t:tt)* }
     ) => {
-        paste::paste! {
+        $crate::arena::__private::paste! {
             $(#[$outer])*
             $vis $ty [< $name >] $(< $($lt),* $($gt $( : $tb)?),* >)? { $($t)* }
 
-            pernixc_system::arena::create_id_type!($name);
+            $crate::arena::create_id_type!($name);
 
-            impl $(< $($lt),* $($gt $(: $tb)?),* >)? pernixc_system::arena::Data for $name $(< $($lt),* $($gt),* >)? {
+            impl $(< $($lt),* $($gt $(: $tb)?),* >)? $crate::arena::Data for $name $(< $($lt),* $($gt),* >)? {
                 type ID = [< $name ID >];
             }
 
             #[doc = concat!("Is a symbol with data of type [`", stringify!($name), "`].")]
-            pub type [< $name Symbol >]$(< $($lt),* $($gt),* >)? = pernixc_system::arena::Symbol<$name $(< $($lt),* $($gt),* >)?>;
+            pub type [< $name Symbol >]$(< $($lt),* $($gt),* >)? = $crate::arena::Symbol<$name $(< $($lt),* $($gt),* >)?>;
         }
     };
+}
+
+#[doc(hidden)]
+pub mod __private {
+    pub use paste::paste;
 }
 
 pub use create_id_type;

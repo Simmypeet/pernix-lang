@@ -123,7 +123,7 @@ impl FileParsing {
     }
 }
 
-/// The error caused by passing a non-root source file to the [`parse_files`] function.
+/// The error caused by passing a non-root source file to the [`TargetParsing::parse()`] function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Error)]
 #[error("The given source file argument is not a root source file.")]
 pub struct TargetParseError;
@@ -242,47 +242,47 @@ pub struct TargetParsing {
 }
 
 impl TargetParsing {
+    /// Parses source files of the target from the root source file into a [`TargetParsing`]
+    ///
+    /// # Errors
+    /// - If the root source file is not a module.
+    pub fn parse(
+        root_source_file: Arc<SourceFile>,
+        handler: &impl ErrorHandler,
+    ) -> Result<Self, TargetParseError> {
+        if !root_source_file.is_root() {
+            return Err(TargetParseError);
+        }
+
+        let results = Arc::new(RwLock::new(Vec::new()));
+
+        std::thread::scope(|scope| {
+            compile_syntax_tree(root_source_file, &results, None, scope, handler);
+        });
+
+        let mut file_parsings = Arc::try_unwrap(results)
+            .expect("should be the only reference")
+            .into_inner()
+            .expect("should be able to lock the mutex");
+
+        // sort the file parsing by the depth of the module hierarchy (less depth first)
+        file_parsings.sort_by_key(|file_parsing| file_parsing.source_file.module_hierarchy().len());
+
+        Ok(Self { file_parsings })
+    }
+
     /// Dissolves this structure into the list of [`FileParsing`].
     #[must_use]
     pub fn dissolve(self) -> Vec<FileParsing> { self.file_parsings }
 }
 
-/// Is an enumeration of all errors that can be reported in the [`parse_target()`].
+/// Is an enumeration of all errors that can be reported in the [`TargetParsing::parse()`].
 #[derive(Debug, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum AllParsingError {
     LexicalError(LexicalError),
     ModuleError(ModuleError),
     SyntacticError(SyntacticError),
-}
-
-/// Parses source files of the target from the root source file into a list of [`FileParsing`].
-///
-/// # Errors
-/// - If the root source file is not a module.
-pub fn parse_target(
-    root_source_file: Arc<SourceFile>,
-    handler: &impl ErrorHandler,
-) -> Result<TargetParsing, TargetParseError> {
-    if !root_source_file.is_root() {
-        return Err(TargetParseError);
-    }
-
-    let results = Arc::new(RwLock::new(Vec::new()));
-
-    std::thread::scope(|scope| {
-        compile_syntax_tree(root_source_file, &results, None, scope, handler);
-    });
-
-    let mut file_parsings = Arc::try_unwrap(results)
-        .expect("should be the only reference")
-        .into_inner()
-        .expect("should be able to lock the mutex");
-
-    // sort the file parsing by the depth of the module hierarchy (less depth first)
-    file_parsings.sort_by_key(|file_parsing| file_parsing.source_file.module_hierarchy().len());
-
-    Ok(TargetParsing { file_parsings })
 }
 
 #[cfg(test)]

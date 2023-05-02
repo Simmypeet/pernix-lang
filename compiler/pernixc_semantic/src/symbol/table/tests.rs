@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use pernixc_source::SourceFile;
-use pernixc_syntax::target_parsing::AllParsingError;
+use pernixc_syntax::target_parsing::{AllParsingError, TargetParsing};
 use pernixc_system::error_handler::ErrorVec;
 
 use crate::symbol::{
@@ -22,7 +22,7 @@ fn module_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // creates a target parsing
     let error_vec: ErrorVec<AllParsingError> = ErrorVec::new();
-    let target_parsing = pernixc_syntax::target_parsing::parse_target(source_file, &error_vec)?;
+    let target_parsing = TargetParsing::parse(source_file, &error_vec)?;
     assert!(error_vec.into_vec().is_empty());
 
     let mut table = Table::new();
@@ -108,7 +108,7 @@ fn draft_test() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let errors: ErrorVec<AllParsingError> = ErrorVec::new();
-    let target_parsing = pernixc_syntax::target_parsing::parse_target(source_file, &errors)?;
+    let target_parsing = TargetParsing::parse(source_file, &errors)?;
     assert!(errors.into_vec().is_empty());
 
     let mut table = Table::new();
@@ -262,7 +262,7 @@ fn accessible_test() -> Result<(), Box<dyn std::error::Error>> {
         vec!["test".to_string()],
     )?;
     let errors: ErrorVec<AllParsingError> = ErrorVec::new();
-    let file_parsing = pernixc_syntax::target_parsing::parse_target(source_file, &errors)?;
+    let file_parsing = TargetParsing::parse(source_file, &errors)?;
     assert!(errors.into_vec().is_empty());
 
     let mut table = Table::new();
@@ -344,7 +344,7 @@ pub fn construct_test() -> Result<(), Box<dyn std::error::Error>> {
         vec!["test".to_string()],
     )?;
     let errors: ErrorVec<AllParsingError> = ErrorVec::new();
-    let target_parsing = pernixc_syntax::target_parsing::parse_target(source_file, &errors)?;
+    let target_parsing = TargetParsing::parse(source_file, &errors)?;
     assert!(errors.into_vec().is_empty());
 
     let errors: ErrorVec<Error> = ErrorVec::new();

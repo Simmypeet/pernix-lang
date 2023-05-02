@@ -1,11 +1,14 @@
 use std::{error::Error, path::PathBuf, sync::Arc};
 
 use pernixc_source::{SourceElement, SourceFile};
-use pernixc_syntax::target_parsing::AllParsingError;
+use pernixc_syntax::target_parsing::{AllParsingError, TargetParsing};
 use pernixc_system::error_handler::ErrorVec;
 
 use crate::{
-    hir::{builder::Builder, AllHirError},
+    hir::{
+        builder::{BindingOption, BindingTarget, Builder},
+        AllHirError,
+    },
     infer::{Constraint, InferableType},
     symbol::{
         error::Error as SymbolError,
@@ -24,7 +27,7 @@ fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
     )?;
 
     let errors: ErrorVec<AllParsingError> = ErrorVec::new();
-    let target = pernixc_syntax::target_parsing::parse_target(source_file, &errors)?;
+    let target = TargetParsing::parse(source_file, &errors)?;
     assert_eq!(errors.into_vec().len(), 0);
 
     let errors: ErrorVec<SymbolError> = ErrorVec::new();
@@ -203,7 +206,7 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
     )?;
 
     let errors: ErrorVec<AllParsingError> = ErrorVec::new();
-    let target = pernixc_syntax::target_parsing::parse_target(source_file, &errors)?;
+    let target = TargetParsing::parse(source_file, &errors)?;
     assert_eq!(errors.into_vec().len(), 0);
 
     let errors: ErrorVec<SymbolError> = ErrorVec::new();
@@ -556,7 +559,7 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let errors: ErrorVec<AllParsingError> = ErrorVec::new();
-    let target = pernixc_syntax::target_parsing::parse_target(source_file, &errors)?;
+    let target = TargetParsing::parse(source_file, &errors)?;
     assert_eq!(errors.into_vec().len(), 0);
 
     let errors: ErrorVec<SymbolError> = ErrorVec::new();
@@ -796,5 +799,208 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(builder.get_span(prefix.operand())?.str(), "false");
     }
 
+    Ok(())
+}
+
+#[test]
+#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
+fn named_binding_test() -> Result<(), Box<dyn std::error::Error>> {
+    let source_file = SourceFile::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/hir/namedBinding/main.pnx"),
+        vec!["test".to_string()],
+    )?;
+
+    let errors: ErrorVec<AllParsingError> = ErrorVec::new();
+    let target = TargetParsing::parse(source_file, &errors)?;
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let table = Arc::new(Table::analyze(target, &errors));
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let overload_set = table.get_overload_set(
+        table
+            .get_global_id_by_full_name(["test", "main"].into_iter())
+            .unwrap()
+            .into_overload_set()
+            .unwrap(),
+    )?;
+    let overload_id = overload_set.overloads()[0];
+    let some_enum_id = table
+        .get_global_id_by_full_name(["test", "SomeEnum"].into_iter())
+        .unwrap()
+        .into_enum()
+        .unwrap();
+    let mut builder = Builder::new(table, overload_id)?;
+    let table = builder.container.table.clone();
+    let overload = table.get_overload(overload_id)?;
+    let statements = overload.syntax_tree().block_without_label.statements();
+    let errors: ErrorVec<AllHirError> = ErrorVec::new();
+
+    {
+        assert!(builder.bind_statement(&statements[0], &errors).is_ok());
+        assert_eq!(errors.as_vec().len(), 0);
+    }
+    {
+        let address = builder
+            .bind_named(
+                statements[1]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_named()
+                    .unwrap(),
+                BindingOption {
+                    binding_target: BindingTarget::ForAddress,
+                },
+                &errors,
+            )?
+            .into_address()
+            .unwrap()
+            .into_parameter_id()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+        assert_eq!(
+            builder
+                .container
+                .table()
+                .get_parameter(address)
+                .unwrap()
+                .name(),
+            "someParameter"
+        );
+    }
+    {
+        let address = builder
+            .bind_named(
+                statements[2]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_named()
+                    .unwrap(),
+                BindingOption {
+                    binding_target: BindingTarget::ForAddress,
+                },
+                &errors,
+            )?
+            .into_address()
+            .unwrap()
+            .into_alloca_id()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+        let alloca = builder.container.allocas().get(address).unwrap();
+
+        assert_eq!(
+            builder.get_address_type(&address.into()),
+            Type::PrimitiveType(PrimitiveType::Float32).into()
+        );
+        assert_eq!(alloca.identifier_token().span.str(), "value");
+    }
+    {
+        assert!(builder
+            .bind_named(
+                statements[3]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_named()
+                    .unwrap(),
+                BindingOption {
+                    binding_target: BindingTarget::ForAddress,
+                },
+                &errors,
+            )
+            .is_err());
+
+        let error = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_value_expected()
+                .unwrap()
+        };
+
+        assert_eq!(some_enum_id, error.found_symbol.into_enum().unwrap());
+    }
+    {
+        let enum_literal = builder
+            .bind_named(
+                statements[4]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_named()
+                    .unwrap(),
+                BindingOption {
+                    binding_target: BindingTarget::ForValue,
+                },
+                &errors,
+            )?
+            .into_value()
+            .unwrap()
+            .into_constant()
+            .unwrap()
+            .into_enum_literal()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0,);
+
+        assert_eq!(
+            table
+                .get_enum_variant(enum_literal.enum_variant_id())
+                .unwrap()
+                .parent_enum_id(),
+            some_enum_id
+        );
+    }
+    {
+        assert!(builder.bind_statement(&statements[5], &errors).is_ok());
+        assert_eq!(errors.as_vec().len(), 0);
+    }
+    {
+        let address = builder
+            .bind_named(
+                statements[6]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_named()
+                    .unwrap(),
+                BindingOption {
+                    binding_target: BindingTarget::ForAddress,
+                },
+                &errors,
+            )?
+            .into_address()
+            .unwrap()
+            .into_alloca_id()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+        let alloca = builder.container.allocas().get(address).unwrap();
+
+        assert_eq!(
+            builder.get_address_type(&address.into()),
+            Type::PrimitiveType(PrimitiveType::Float64).into()
+        );
+        assert_eq!(alloca.identifier_token().span.str(), "someParameter");
+    }
     Ok(())
 }

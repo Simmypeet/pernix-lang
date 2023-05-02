@@ -223,7 +223,7 @@ impl Table {
     /// site (where the name resolution is performed from).
     ///
     /// # Errors
-    /// - [`ResolveError::FatalSymbolError`]: Found a [`Error`] that is fatal to the name
+    /// - [`ResolveError::FatalSymbolError`]: Found a [`enum@Error`] that is fatal to the name
     /// resolution process.
     /// - [`ResolveError::InvalidIDError`]: The given `referring_site` is not a valid [`ScopedID`].
     pub fn resolve_symbol(
@@ -321,7 +321,7 @@ impl Table {
     /// Resolves a [`TypeSpecifier`] syntax tree into a [`Type`]
     ///
     /// # Errors
-    /// - [`ResolveError::FatalSymbolError`]: Found a [`Error`] that is fatal to the name
+    /// - [`ResolveError::FatalSymbolError`]: Found a [`enum@Error`] that is fatal to the name
     /// resolution process.
     /// - [`ResolveError::InvalidIDError`]: The given `referring_site` is not a valid [`ScopedID`].
     pub fn resolve_type(
@@ -1584,7 +1584,7 @@ macro_rules! impl_index_getter {
     ($name:ident, $arena_name:ident $(, $opt_postfix:ident)?) => {
         paste::paste! {
             impl Table {
-                #[doc = concat!("Returns a reference to [`", stringify!([< $name Symbol >]), "`] with the given ID.")]
+                #[doc = concat!("Returns a reference to [`super::", stringify!([< $name Symbol >]), "`] with the given ID.")]
                 pub fn [< get_ $arena_name >](&self, id: super::[< $name ID >])
                     -> Result<&super::[< $name Symbol >], pernixc_system::arena::InvalidIDError> {
                     self.[< $arena_name $($opt_postfix)? s >].get(id)
@@ -1602,7 +1602,7 @@ macro_rules! impl_index_getter {
     ($name:ident, $method_name:ident, $( ($variant:ident, $arena_name:ident) ),+) => {
         paste::paste! {
             impl Table {
-                #[doc = concat!("Returns a mutable reference to [`", stringify!([< $name Symbol >]), "`] with the given ID.")]
+                #[doc = concat!("Returns a mutable reference to [`super::", stringify!($name), "`] with the given ID.")]
                 pub fn [< get_ $method_name >](&self, id: super::[< $name ID >])
                     -> Result<& dyn super::$name, pernixc_system::arena::InvalidIDError> {
                     match id {

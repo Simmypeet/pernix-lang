@@ -9,7 +9,7 @@ use pernixc_syntax::syntax_tree::expression::PrefixOperator;
 use super::{Address, TypeSystem, Value};
 use crate::{
     hir::{Container, InvalidValueError, Reachability, ValueInspect},
-    symbol::OverloadID,
+    symbol::{ty::Type, FieldID, OverloadID, StructID},
 };
 
 /// Represents a bound syntax tree.
@@ -21,6 +21,7 @@ pub enum Binding<T: TypeSystem> {
     FunctionCall(FunctionCall<T>),
     Prefix(Prefix<T>),
     NamedLoad(NamedLoad),
+    StructLiteral(StructLiteral<T>),
 }
 
 impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
@@ -29,6 +30,7 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::FunctionCall(value) => self.get_type(value),
             Binding::Prefix(value) => self.get_type(value),
             Binding::NamedLoad(value) => self.get_type(value),
+            Binding::StructLiteral(value) => self.get_type(value),
         }
     }
 
@@ -37,6 +39,7 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::FunctionCall(value) => self.get_span(value),
             Binding::Prefix(value) => self.get_span(value),
             Binding::NamedLoad(value) => self.get_span(value),
+            Binding::StructLiteral(value) => self.get_span(value),
         }
     }
 
@@ -45,6 +48,7 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::FunctionCall(value) => self.get_reachability(value),
             Binding::Prefix(value) => self.get_reachability(value),
             Binding::NamedLoad(value) => self.get_reachability(value),
+            Binding::StructLiteral(value) => self.get_reachability(value),
         }
     }
 }
@@ -80,14 +84,7 @@ impl<T: TypeSystem> ValueInspect<T, FunctionCall<T>> for Container<T> {
         Ok(value.span.clone())
     }
 
-    fn get_reachability(&self, value: &FunctionCall<T>) -> Result<Reachability, InvalidValueError> {
-        // if found any one of the arguments is unreachable, then the function call is unreachable
-        for argument in &value.arguments {
-            if self.get_reachability(argument)? == Reachability::Unreachable {
-                return Ok(Reachability::Unreachable);
-            }
-        }
-
+    fn get_reachability(&self, _: &FunctionCall<T>) -> Result<Reachability, InvalidValueError> {
         Ok(Reachability::Reachable)
     }
 }
@@ -117,8 +114,8 @@ impl<T: TypeSystem> ValueInspect<T, Prefix<T>> for Container<T> {
         Ok(value.span.clone())
     }
 
-    fn get_reachability(&self, value: &Prefix<T>) -> Result<Reachability, InvalidValueError> {
-        self.get_reachability(&value.operand)
+    fn get_reachability(&self, _: &Prefix<T>) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
     }
 }
 
@@ -178,6 +175,37 @@ impl<T: TypeSystem> ValueInspect<T, NamedLoad> for Container<T> {
     }
 
     fn get_reachability(&self, _: &NamedLoad) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
+    }
+}
+
+/// Represents a bound
+/// [`StructLiteral`](pernixc_syntax::syntax_tree::expression::StructLiteral) syntax tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct StructLiteral<T: TypeSystem> {
+    /// The span of the struct literal.
+    #[get = "pub "]
+    pub(in crate::hir) span: Span,
+
+    /// The struct ID that this literal instantiates.
+    #[get_copy = "pub"]
+    pub(in crate::hir) struct_id: StructID,
+
+    /// Is a list of tuple pairs of field IDs and the value to initialize them with.
+    #[get = "pub"]
+    pub(in crate::hir) initialization: Vec<(FieldID, Value<T>)>,
+}
+
+impl<T: TypeSystem> ValueInspect<T, StructLiteral<T>> for Container<T> {
+    fn get_type(&self, value: &StructLiteral<T>) -> Result<T, InvalidValueError> {
+        Ok(T::from_type(Type::TypedID(value.struct_id.into())))
+    }
+
+    fn get_span(&self, value: &StructLiteral<T>) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
+
+    fn get_reachability(&self, _: &StructLiteral<T>) -> Result<Reachability, InvalidValueError> {
         Ok(Reachability::Reachable)
     }
 }

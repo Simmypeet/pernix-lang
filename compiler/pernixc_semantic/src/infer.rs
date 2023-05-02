@@ -164,8 +164,8 @@ impl InferenceContext {
     /// Panics if the `inference_id` was not from this context or invalid.
     ///
     /// # Errors
-    /// - [`ConstraintAddError`]: if the inference id is already assigned to a concrete type and the
-    ///   constraint is not satisfied by the concrete type.
+    /// - [`UnificationError::ConstraintNotSatisfiedError`]: if the inference id is already assigned
+    ///   to a concrete type and the constraint is not satisfied by the concrete type.
     pub fn unify_with_constraint(
         &mut self,
         inference_id: InferenceID,
@@ -232,9 +232,10 @@ impl InferenceContext {
     /// Unifies the inference variable with the given concrete type.
     ///
     /// # Errors
-    /// - [`UnificationError::TypeMismatch`]: The concrete type of the two inference variables do
-    ///   not match.
-    /// - [`UnificationError::ConstraintNotSatisfied`]: One of the inference variables got assigned
+    /// - [`UnificationError::TypeMismatchError`]: The concrete type of the two inference variables
+    ///   do not match.
+    /// - [`UnificationError::ConstraintNotSatisfiedError`]: One of the inference variables got
+    ///   assigned
     ///  a concrete type that does not satisfy the constraint.
     pub fn unify_with_concrete(
         &mut self,
@@ -262,9 +263,10 @@ impl InferenceContext {
     /// Unifies two inference variables together.
     ///
     /// # Errors
-    /// - [`UnificationError::TypeMismatch`]: The concrete type of the two inference variables do
-    ///   not match.
-    /// - [`UnificationError::ConstraintNotSatisfied`]: One of the inference variables got assigned
+    /// - [`UnificationError::TypeMismatchError`]: The concrete type of the two inference variables
+    ///   do not match.
+    /// - [`UnificationError::ConstraintNotSatisfiedError`]: One of the inference variables got
+    ///   assigned
     ///  a concrete type that does not satisfy the constraint.
     #[allow(clippy::too_many_lines)]
     pub fn unify(&mut self, left: InferenceID, right: InferenceID) -> Result<(), UnificationError> {

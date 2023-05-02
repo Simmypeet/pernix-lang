@@ -212,7 +212,7 @@ pub struct FieldAddress {
 }
 
 /// Represents an address to a particular stack allocated memory.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Address {
     AllocaID(AllocaID),
