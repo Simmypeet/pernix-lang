@@ -170,7 +170,5 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
 }
 
 impl<T: InstructionBackend> Default for ControlFlowGraph<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }

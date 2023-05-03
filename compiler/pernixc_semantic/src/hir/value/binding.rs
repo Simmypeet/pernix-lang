@@ -1,5 +1,7 @@
 //! Contains all the definitions of bound syntax trees.
 
+use std::collections::HashMap;
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
@@ -8,8 +10,12 @@ use pernixc_syntax::syntax_tree::expression::PrefixOperator;
 
 use super::{Address, TypeSystem, Value};
 use crate::{
+    cfg::BasicBlockID,
     hir::{Container, InvalidValueError, Reachability, ValueInspect},
-    symbol::{ty::Type, FieldID, OverloadID, StructID},
+    symbol::{
+        ty::{PrimitiveType, Type},
+        FieldID, OverloadID, StructID,
+    },
 };
 
 /// Represents a bound syntax tree.
@@ -20,8 +26,10 @@ use crate::{
 pub enum Binding<T: TypeSystem> {
     FunctionCall(FunctionCall<T>),
     Prefix(Prefix<T>),
-    NamedLoad(NamedLoad),
+    Load(Load),
     StructLiteral(StructLiteral<T>),
+    MemberAccess(MemberAccess<T>),
+    Binary(Binary<T>),
 }
 
 impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
@@ -29,8 +37,10 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
         match value {
             Binding::FunctionCall(value) => self.get_type(value),
             Binding::Prefix(value) => self.get_type(value),
-            Binding::NamedLoad(value) => self.get_type(value),
+            Binding::Load(value) => self.get_type(value),
             Binding::StructLiteral(value) => self.get_type(value),
+            Binding::MemberAccess(value) => self.get_type(value),
+            Binding::Binary(value) => self.get_type(value),
         }
     }
 
@@ -38,8 +48,10 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
         match value {
             Binding::FunctionCall(value) => self.get_span(value),
             Binding::Prefix(value) => self.get_span(value),
-            Binding::NamedLoad(value) => self.get_span(value),
+            Binding::Load(value) => self.get_span(value),
             Binding::StructLiteral(value) => self.get_span(value),
+            Binding::MemberAccess(value) => self.get_span(value),
+            Binding::Binary(value) => self.get_span(value),
         }
     }
 
@@ -47,8 +59,10 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
         match value {
             Binding::FunctionCall(value) => self.get_reachability(value),
             Binding::Prefix(value) => self.get_reachability(value),
-            Binding::NamedLoad(value) => self.get_reachability(value),
+            Binding::Load(value) => self.get_reachability(value),
             Binding::StructLiteral(value) => self.get_reachability(value),
+            Binding::MemberAccess(value) => self.get_reachability(value),
+            Binding::Binary(value) => self.get_reachability(value),
         }
     }
 }
@@ -119,7 +133,7 @@ impl<T: TypeSystem> ValueInspect<T, Prefix<T>> for Container<T> {
     }
 }
 
-/// Specifies how the [`NamedLoad`] loads the value from the address.
+/// Specifies how the [`Load`] loads the value from the address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum LoadType {
     /// The value is moved from the address.
@@ -129,15 +143,10 @@ pub enum LoadType {
     Copy,
 }
 
-/// Represents a bound [`Named`](pernixc_syntax::syntax_tree::expression::Named) syntax tree.
-///
-/// This struct represents the [`Named`](pernixc_syntax::syntax_tree::expression::Named) syntax
-/// tree that loads the value from the address.
-/// [`Named`](pernixc_syntax::syntax_tree::expression::Named) can also represent the
-/// [`EnumLiteral`](super::EnumLiteral) value as well.
+/// Represents a bound syntax tree that loads a value from an address.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
-pub struct NamedLoad {
-    /// The span of the [`NamedLoad`].
+pub struct Load {
+    /// The span of the [`Load`].
     #[get = "pub"]
     pub(in crate::hir) span: Span,
 
@@ -150,8 +159,8 @@ pub struct NamedLoad {
     pub(in crate::hir) address: Address,
 }
 
-impl<T: TypeSystem> ValueInspect<T, NamedLoad> for Container<T> {
-    fn get_type(&self, value: &NamedLoad) -> Result<T, InvalidValueError> {
+impl<T: TypeSystem> ValueInspect<T, Load> for Container<T> {
+    fn get_type(&self, value: &Load) -> Result<T, InvalidValueError> {
         match &value.address {
             Address::AllocaID(id) => Ok(self.allocas.get(*id).map_err(|_| InvalidValueError)?.ty()),
             Address::ParameterID(id) => Ok(T::from_type(
@@ -170,11 +179,9 @@ impl<T: TypeSystem> ValueInspect<T, NamedLoad> for Container<T> {
         }
     }
 
-    fn get_span(&self, value: &NamedLoad) -> Result<Span, InvalidValueError> {
-        Ok(value.span.clone())
-    }
+    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> { Ok(value.span.clone()) }
 
-    fn get_reachability(&self, _: &NamedLoad) -> Result<Reachability, InvalidValueError> {
+    fn get_reachability(&self, _: &Load) -> Result<Reachability, InvalidValueError> {
         Ok(Reachability::Reachable)
     }
 }
@@ -193,7 +200,7 @@ pub struct StructLiteral<T: TypeSystem> {
 
     /// Is a list of tuple pairs of field IDs and the value to initialize them with.
     #[get = "pub"]
-    pub(in crate::hir) initialization: Vec<(FieldID, Value<T>)>,
+    pub(in crate::hir) initializations: Vec<(FieldID, Value<T>)>,
 }
 
 impl<T: TypeSystem> ValueInspect<T, StructLiteral<T>> for Container<T> {
@@ -206,6 +213,147 @@ impl<T: TypeSystem> ValueInspect<T, StructLiteral<T>> for Container<T> {
     }
 
     fn get_reachability(&self, _: &StructLiteral<T>) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
+    }
+}
+
+/// Represents a bound [`MemberAccess`](pernixc_syntax::syntax_tree::expression::MemberAccess)
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct MemberAccess<T: TypeSystem> {
+    /// The span of the member access.
+    #[get = "pub"]
+    pub(in crate::hir) span: Span,
+
+    /// The operand of the member access.
+    #[get = "pub"]
+    pub(in crate::hir) operand: Value<T>,
+
+    /// The field ID that is being accessed.
+    #[get_copy = "pub"]
+    pub(in crate::hir) field_id: FieldID,
+}
+
+impl<T: TypeSystem> ValueInspect<T, MemberAccess<T>> for Container<T> {
+    fn get_type(&self, value: &MemberAccess<T>) -> Result<T, InvalidValueError> {
+        self.table
+            .get_field(value.field_id)
+            .map_err(|_| InvalidValueError)
+            .map(|x| T::from_type(Type::TypedID(x.parent_struct_id().into())))
+    }
+
+    fn get_span(&self, value: &MemberAccess<T>) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
+
+    fn get_reachability(&self, _: &MemberAccess<T>) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
+    }
+}
+
+/// Is an enumeration of arithmetic binary operators that can be applied numeric values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum ArithmeticOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+}
+
+/// Is an enumeration of comparison binary operators that can be applied to numeric values and
+/// yields a boolean value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum ComparisonOperator {
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+}
+
+/// Is an enumeration of equality binary operators that can be applied to values of any primitive
+/// types and yields a boolean value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum EqualityOperator {
+    Equal,
+    NotEqual,
+}
+
+/// Represents a `phi` instruction in the SSA form.
+///
+/// Some expressions in the Pernix programming language that involves in altering the control flow
+/// and branching, such as logical short-circuiting, are lowered into `phi` instructions.
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+pub struct PhiNode<T: TypeSystem> {
+    /// Is the span of the expression that is lowered into this `phi` instruction.
+    #[get = "pub"]
+    pub(in crate::hir) span: Span,
+
+    /// Maps the predecessor basic blocks to the values that are passed from them.
+    #[get = "pub"]
+    pub(in crate::hir) values_by_predecessor: HashMap<BasicBlockID, Value<T>>,
+
+    /// Specifies the kind of expression that is lowered into this `phi` instruction.
+    #[get_copy = "pub"]
+    pub(in crate::hir) phi_node_source: PhiNodeSource,
+}
+
+/// Is an enumeration of expressions that can be lowered into `phi` instructions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum PhiNodeSource {
+    LogicalShortCircuit,
+    Express,
+    Break,
+    IfEsle,
+}
+
+/// Is an enumeration of all kinds of binary operators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum BinaryOperator {
+    ArithmeticOperator(ArithmeticOperator),
+    ComparisonOperator(ComparisonOperator),
+    EqualityOperator(EqualityOperator),
+}
+
+/// Represents a bound [`Binary`](pernixc_syntax::syntax_tree::expression::Binary) syntax tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct Binary<T: TypeSystem> {
+    /// The span of binary.
+    #[get = "pub"]
+    pub(in crate::hir) span: Span,
+
+    /// The left-hand-side operand of the binary.
+    #[get = "pub"]
+    pub(in crate::hir) lhs_operand: Value<T>,
+
+    /// The right-hand-side operand of the binary.
+    #[get = "pub"]
+    pub(in crate::hir) rhs_operand: Value<T>,
+
+    /// The operator of the binary.
+    #[get_copy = "pub"]
+    pub(in crate::hir) binary_operator: BinaryOperator,
+}
+
+impl<T: TypeSystem> ValueInspect<T, Binary<T>> for Container<T> {
+    fn get_type(&self, value: &Binary<T>) -> Result<T, InvalidValueError> {
+        match value.binary_operator {
+            BinaryOperator::ArithmeticOperator(..) => self.get_type(&value.lhs_operand),
+            BinaryOperator::ComparisonOperator(..) | BinaryOperator::EqualityOperator(..) => {
+                Ok(T::from_type(PrimitiveType::Bool.into()))
+            }
+        }
+    }
+
+    fn get_span(&self, value: &Binary<T>) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
+
+    fn get_reachability(&self, _: &Binary<T>) -> Result<Reachability, InvalidValueError> {
         Ok(Reachability::Reachable)
     }
 }

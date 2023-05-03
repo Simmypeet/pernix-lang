@@ -29,7 +29,7 @@ impl Stack {
     }
 
     /// Pushes a new scope onto the stack.
-    pub fn push_scope(&mut self) { self.scopes.push(Scope::default()) }
+    pub fn push_scope(&mut self) { self.scopes.push(Scope::default()); }
 
     /// Removes the topmost scope from the stack.
     ///

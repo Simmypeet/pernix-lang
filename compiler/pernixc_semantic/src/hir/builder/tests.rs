@@ -61,11 +61,8 @@ fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
             &errors,
         )?;
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&numeric_value).unwrap();
-        assert_eq!(
-            type_binding.ty,
-            InferableType::Constraint(Constraint::Number)
-        );
+        let type_binding = builder.get_inferable_type(&numeric_value).unwrap();
+        assert_eq!(type_binding, InferableType::Constraint(Constraint::Number));
         assert_eq!(
             numeric_value.numeric_literal_syntax_tree().span().str(),
             "1"
@@ -84,11 +81,8 @@ fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
             &errors,
         )?;
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&numeric_value).unwrap();
-        assert_eq!(
-            type_binding.ty,
-            InferableType::Constraint(Constraint::Float)
-        );
+        let type_binding = builder.get_inferable_type(&numeric_value).unwrap();
+        assert_eq!(type_binding, InferableType::Constraint(Constraint::Float));
         assert_eq!(
             numeric_value.numeric_literal_syntax_tree().span().str(),
             "2.0"
@@ -108,9 +102,9 @@ fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
         )?;
 
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&numeric_value).unwrap();
+        let type_binding = builder.get_inferable_type(&numeric_value).unwrap();
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(Type::PrimitiveType(PrimitiveType::Float32))
         );
         assert_eq!(
@@ -159,9 +153,9 @@ fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
             &errors,
         )?;
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&numeric_value)?;
+        let type_binding = builder.get_inferable_type(&numeric_value)?;
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(Type::PrimitiveType(PrimitiveType::Uint8))
         );
         assert_eq!(
@@ -182,9 +176,9 @@ fn numeric_literal_binding() -> Result<(), Box<dyn Error>> {
             &errors,
         )?;
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&numeric_value)?;
+        let type_binding = builder.get_inferable_type(&numeric_value)?;
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(Type::PrimitiveType(PrimitiveType::Float32))
         );
         assert_eq!(
@@ -251,9 +245,9 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
             &errors,
         )?;
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        let type_binding = builder.get_inferable_type(&register_id).unwrap();
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(PrimitiveType::Uint32.into())
         );
 
@@ -274,12 +268,12 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
         );
 
         assert_eq!(
-            builder.get_type_binding(&function_binding.arguments[0])?.ty,
+            builder.get_inferable_type(&function_binding.arguments[0])?,
             InferableType::Type(Type::PrimitiveType(PrimitiveType::Uint32))
         );
         assert_eq!(builder.get_span(&function_binding.arguments[0])?.str(), "1");
         assert_eq!(
-            builder.get_type_binding(&function_binding.arguments[1])?.ty,
+            builder.get_inferable_type(&function_binding.arguments[1])?,
             InferableType::Type(Type::PrimitiveType(PrimitiveType::Uint32))
         );
         assert_eq!(builder.get_span(&function_binding.arguments[1])?.str(), "2");
@@ -360,9 +354,9 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        let type_binding = builder.get_inferable_type(&register_id).unwrap();
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(PrimitiveType::Float32.into())
         );
 
@@ -383,7 +377,7 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
         );
 
         assert_eq!(
-            builder.get_type_binding(&function_binding.arguments[0])?.ty,
+            builder.get_inferable_type(&function_binding.arguments[0])?,
             InferableType::Type(Type::PrimitiveType(PrimitiveType::Float32))
         );
         assert_eq!(
@@ -439,9 +433,9 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        let type_binding = builder.get_inferable_type(&register_id).unwrap();
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(PrimitiveType::Float32.into())
         );
 
@@ -462,7 +456,7 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
         );
 
         assert_eq!(
-            builder.get_type_binding(&function_binding.arguments[0])?.ty,
+            builder.get_inferable_type(&function_binding.arguments[0])?,
             InferableType::Type(Type::PrimitiveType(PrimitiveType::Float32))
         );
         assert_eq!(
@@ -486,9 +480,9 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
             .unwrap();
 
         assert_eq!(errors.as_vec().len(), 0);
-        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        let type_binding = builder.get_inferable_type(&register_id).unwrap();
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(PrimitiveType::Int8.into())
         );
 
@@ -509,7 +503,7 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
         );
 
         assert_eq!(
-            builder.get_type_binding(&function_binding.arguments[0])?.ty,
+            builder.get_inferable_type(&function_binding.arguments[0])?,
             InferableType::Type(Type::PrimitiveType(PrimitiveType::Int8))
         );
         assert_eq!(
@@ -594,11 +588,8 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         assert_eq!(errors.as_vec().len(), 0);
 
-        let type_binding = builder.get_type_binding(&register_id).unwrap();
-        assert_eq!(
-            type_binding.ty,
-            InferableType::Constraint(Constraint::Signed)
-        );
+        let type_binding = builder.get_inferable_type(&register_id).unwrap();
+        assert_eq!(type_binding, InferableType::Constraint(Constraint::Signed));
 
         let prefix = builder
             .container
@@ -609,7 +600,7 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         assert_eq!(
-            builder.get_type_binding(prefix.operand())?.ty,
+            builder.get_inferable_type(prefix.operand())?,
             InferableType::Constraint(Constraint::Signed)
         );
 
@@ -629,11 +620,8 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         assert_eq!(errors.as_vec().len(), 0);
 
-        let type_binding = builder.get_type_binding(&register_id).unwrap();
-        assert_eq!(
-            type_binding.ty,
-            InferableType::Constraint(Constraint::Float)
-        );
+        let type_binding = builder.get_inferable_type(&register_id).unwrap();
+        assert_eq!(type_binding, InferableType::Constraint(Constraint::Float));
 
         let prefix = builder
             .container
@@ -644,7 +632,7 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         assert_eq!(
-            builder.get_type_binding(prefix.operand())?.ty,
+            builder.get_inferable_type(prefix.operand())?,
             InferableType::Constraint(Constraint::Float)
         );
 
@@ -664,9 +652,9 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         assert_eq!(errors.as_vec().len(), 0);
 
-        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        let type_binding = builder.get_inferable_type(&register_id).unwrap();
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(PrimitiveType::Float32.into())
         );
 
@@ -679,7 +667,7 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         assert_eq!(
-            builder.get_type_binding(prefix.operand())?.ty,
+            builder.get_inferable_type(prefix.operand())?,
             InferableType::Type(PrimitiveType::Float32.into())
         );
 
@@ -777,9 +765,9 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         assert_eq!(errors.as_vec().len(), 0);
 
-        let type_binding = builder.get_type_binding(&register_id).unwrap();
+        let type_binding = builder.get_inferable_type(&register_id).unwrap();
         assert_eq!(
-            type_binding.ty,
+            type_binding,
             InferableType::Type(PrimitiveType::Bool.into())
         );
 
@@ -792,7 +780,7 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         assert_eq!(
-            builder.get_type_binding(prefix.operand())?.ty,
+            builder.get_inferable_type(prefix.operand())?,
             InferableType::Type(PrimitiveType::Bool.into())
         );
 
@@ -857,8 +845,9 @@ fn named_binding_test() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 &errors,
             )?
-            .into_address()
+            .into_address_with_span()
             .unwrap()
+            .address
             .into_parameter_id()
             .unwrap();
 
@@ -889,8 +878,9 @@ fn named_binding_test() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 &errors,
             )?
-            .into_address()
+            .into_address_with_span()
             .unwrap()
+            .address
             .into_alloca_id()
             .unwrap();
 
@@ -988,8 +978,9 @@ fn named_binding_test() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 &errors,
             )?
-            .into_address()
+            .into_address_with_span()
             .unwrap()
+            .address
             .into_alloca_id()
             .unwrap();
 
@@ -1001,6 +992,291 @@ fn named_binding_test() -> Result<(), Box<dyn std::error::Error>> {
             Type::PrimitiveType(PrimitiveType::Float64).into()
         );
         assert_eq!(alloca.identifier_token().span.str(), "someParameter");
+    }
+    Ok(())
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+fn struct_literal_binding_test() -> Result<(), Box<dyn std::error::Error>> {
+    let source_file = SourceFile::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resource/hir/structLiteralBinding/main.pnx"),
+        vec!["test".to_string()],
+    )?;
+
+    let errors: ErrorVec<AllParsingError> = ErrorVec::new();
+    let target = TargetParsing::parse(source_file, &errors)?;
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let table = Arc::new(Table::analyze(target, &errors));
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let overload_set = table.get_overload_set(
+        table
+            .get_global_id_by_full_name(["test", "main"].into_iter())
+            .unwrap()
+            .into_overload_set()
+            .unwrap(),
+    )?;
+    let overload_id = overload_set.overloads()[0];
+    let overload = table.get_overload(overload_id)?;
+    let empty_struct_id = table
+        .get_global_id_by_full_name(["test", "Empty"].into_iter())
+        .unwrap()
+        .into_struct()
+        .unwrap();
+    let struct_id = table
+        .get_global_id_by_full_name(["test", "Vector3"].into_iter())
+        .unwrap()
+        .into_struct()
+        .unwrap();
+    let struct_sym = table.get_struct(struct_id).unwrap();
+
+    let x_filed_id = struct_sym.field_ids_by_name().get("x").copied().unwrap();
+    let y_filed_id = struct_sym.field_ids_by_name().get("y").copied().unwrap();
+    let z_filed_id = struct_sym.field_ids_by_name().get("z").copied().unwrap();
+
+    let mut builder = Builder::new(table.clone(), overload_id)?;
+    let statements = overload.syntax_tree().block_without_label.statements();
+
+    let errors: ErrorVec<AllHirError> = ErrorVec::new();
+
+    {
+        let register_id = builder.bind_struct_literal(
+            statements[0]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_struct_literal()
+                .unwrap(),
+            &errors,
+        )?;
+        assert_eq!(errors.as_vec().len(), 0);
+        let found_struct_id = builder
+            .get_inferable_type(&register_id)
+            .unwrap()
+            .into_type()
+            .unwrap()
+            .into_typed_id()
+            .unwrap()
+            .into_struct()
+            .unwrap();
+
+        assert_eq!(found_struct_id, struct_id);
+        let struct_literal_binding = builder
+            .container
+            .registers
+            .get(register_id)
+            .unwrap()
+            .binding
+            .as_struct_literal()
+            .unwrap();
+
+        for ((i, field_id), value_str) in (0..3)
+            .zip([x_filed_id, y_filed_id, z_filed_id].into_iter())
+            .zip(["6", "9", "420"].into_iter())
+        {
+            assert_eq!(struct_literal_binding.initializations[i].0, field_id);
+            assert_eq!(
+                builder
+                    .get_inferable_type(&struct_literal_binding.initializations[i].1)
+                    .unwrap()
+                    .into_type()
+                    .unwrap(),
+                PrimitiveType::Float32.into()
+            );
+            assert_eq!(
+                builder
+                    .get_span(&struct_literal_binding.initializations[i].1)
+                    .unwrap()
+                    .str(),
+                value_str
+            );
+        }
+    }
+    {
+        let register_id = builder.bind_struct_literal(
+            statements[1]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_struct_literal()
+                .unwrap(),
+            &errors,
+        )?;
+
+        let error = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_uninitialized_fields()
+                .unwrap()
+        };
+
+        assert_eq!(error.uninitialized_fields.len(), 1);
+        assert_eq!(error.uninitialized_fields[0], y_filed_id);
+        assert_eq!(error.struct_id, struct_id);
+
+        let found_struct_id = builder
+            .get_inferable_type(&register_id)
+            .unwrap()
+            .into_type()
+            .unwrap()
+            .into_typed_id()
+            .unwrap()
+            .into_struct()
+            .unwrap();
+
+        assert_eq!(found_struct_id, struct_id);
+
+        let struct_literal_binding = builder
+            .container
+            .registers
+            .get(register_id)
+            .unwrap()
+            .binding
+            .as_struct_literal()
+            .unwrap();
+
+        for ((i, field_id), value_str) in (0..2)
+            .zip([x_filed_id, z_filed_id].into_iter())
+            .zip(["6", "42"].into_iter())
+        {
+            assert_eq!(struct_literal_binding.initializations[i].0, field_id);
+            assert_eq!(
+                builder
+                    .get_inferable_type(&struct_literal_binding.initializations[i].1)
+                    .unwrap()
+                    .into_type()
+                    .unwrap(),
+                PrimitiveType::Float32.into()
+            );
+            assert_eq!(
+                builder
+                    .get_span(&struct_literal_binding.initializations[i].1)
+                    .unwrap()
+                    .str(),
+                value_str
+            );
+        }
+    }
+    {
+        let register_id = builder.bind_struct_literal(
+            statements[2]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_struct_literal()
+                .unwrap(),
+            &errors,
+        )?;
+
+        let error = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_duplicate_field_initialization()
+                .unwrap()
+        };
+
+        assert_eq!(error.duplicate_initialization_span.str(), "z: 0");
+        assert_eq!(error.previous_initialization_span.str(), "z: 6");
+        assert_eq!(error.field_id, z_filed_id);
+        assert_eq!(error.struct_id, struct_id);
+
+        let found_struct_id = builder
+            .get_inferable_type(&register_id)
+            .unwrap()
+            .into_type()
+            .unwrap()
+            .into_typed_id()
+            .unwrap()
+            .into_struct()
+            .unwrap();
+
+        assert_eq!(found_struct_id, struct_id);
+
+        let struct_literal_binding = builder
+            .container
+            .registers
+            .get(register_id)
+            .unwrap()
+            .binding
+            .as_struct_literal()
+            .unwrap();
+
+        for ((i, field_id), value_str) in (0..3)
+            .zip([z_filed_id, y_filed_id, x_filed_id].into_iter())
+            .zip(["6", "9", "2"].into_iter())
+        {
+            assert_eq!(struct_literal_binding.initializations[i].0, field_id);
+            assert_eq!(
+                builder
+                    .get_inferable_type(&struct_literal_binding.initializations[i].1)
+                    .unwrap()
+                    .into_type()
+                    .unwrap(),
+                PrimitiveType::Float32.into()
+            );
+            assert_eq!(
+                builder
+                    .get_span(&struct_literal_binding.initializations[i].1)
+                    .unwrap()
+                    .str(),
+                value_str
+            );
+        }
+    }
+    {
+        let register_id = builder.bind_struct_literal(
+            statements[3]
+                .as_expressive()
+                .unwrap()
+                .as_semi()
+                .unwrap()
+                .expression()
+                .as_struct_literal()
+                .unwrap(),
+            &errors,
+        )?;
+        assert_eq!(errors.as_vec().len(), 0);
+        let found_struct_id = builder
+            .get_inferable_type(&register_id)
+            .unwrap()
+            .into_type()
+            .unwrap()
+            .into_typed_id()
+            .unwrap()
+            .into_struct()
+            .unwrap();
+
+        assert_eq!(found_struct_id, empty_struct_id);
+        let struct_literal_binding = builder
+            .container
+            .registers
+            .get(register_id)
+            .unwrap()
+            .binding
+            .as_struct_literal()
+            .unwrap();
+
+        assert_eq!(struct_literal_binding.initializations.len(), 0);
     }
     Ok(())
 }

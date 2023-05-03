@@ -12,7 +12,10 @@
 )]
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
-use std::{cmp::Ordering, iter::Peekable, ops::Range, path::PathBuf, str::CharIndices, sync::Arc};
+use std::{
+    cmp::Ordering, fmt::Debug, iter::Peekable, ops::Range, path::PathBuf, str::CharIndices,
+    sync::Arc,
+};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
@@ -258,7 +261,7 @@ impl SourceFile {
 pub type ByteIndex = usize;
 
 /// Represents a range of characters in a source file.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+#[derive(Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct Span {
     /// Gets the start byte index of the span.
     #[get_copy = "pub"]
@@ -271,6 +274,17 @@ pub struct Span {
     /// Gets the source file that the span is located in.
     #[get = "pub"]
     source_file: Arc<SourceFile>,
+}
+
+impl Debug for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Span")
+            .field("start", &self.start)
+            .field("end", &self.end)
+            .field("source_file", self.source_file.file_name())
+            .field("content", &self.str())
+            .finish()
+    }
 }
 
 /// Is a struct pointing to a particular location in a source file.

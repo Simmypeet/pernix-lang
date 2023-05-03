@@ -655,6 +655,43 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_struct_member(
+        &mut self,
+        access_modifier: AccessModifier,
+        handler: &impl ErrorHandler<Error>,
+    ) -> Option<Member> {
+        match self.next_significant_token() {
+            Some(Token::Keyword(let_keyword)) if let_keyword.keyword == KeywordKind::Let => {
+                let identifier = self.expect_identifier(handler)?;
+                let type_annotation = self.parse_type_annotation(handler)?;
+                let semicolon = self.expect_punctuation(';', handler)?;
+
+                Some(
+                    Field {
+                        access_modifier,
+                        let_keyword: let_keyword.clone(),
+                        identifier: identifier.clone(),
+                        type_annotation,
+                        semicolon: semicolon.clone(),
+                    }
+                    .into(),
+                )
+            }
+            Some(Token::Keyword(type_keyword)) if type_keyword.keyword == KeywordKind::Type => self
+                .parse_type_alias(access_modifier, type_keyword.clone(), handler)
+                .map(std::convert::Into::into),
+            found => {
+                handler.recieve(
+                    MemberExpected {
+                        found: found.cloned(),
+                    }
+                    .into(),
+                );
+                None
+            }
+        }
+    }
+
     fn handle_struct(
         &mut self,
         access_modifier: AccessModifier,
@@ -664,6 +701,12 @@ impl<'a> Parser<'a> {
         let identifier = self.expect_identifier(handler)?;
         let left_brace = self.expect_punctuation('{', handler)?;
         let mut members = Vec::new();
+        let member_recoverer = |token: &Token| {
+            matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
+                || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
+                                    || kw.keyword == KeywordKind::Private
+                                    || kw.keyword == KeywordKind::Internal)
+        };
         let right_brace = loop {
             match self.next_significant_token() {
                 Some(Token::Punctuation(right_brace)) if right_brace.punctuation == '}' => {
@@ -682,50 +725,12 @@ impl<'a> Parser<'a> {
                         _ => unreachable!(),
                     };
 
-                    match self.next_significant_token() {
-                        Some(Token::Keyword(let_keyword))
-                            if let_keyword.keyword == KeywordKind::Let =>
-                        {
-                            let identifier = self.expect_identifier(handler)?;
-                            let type_annotation = self.parse_type_annotation(handler)?;
-                            let semicolon = self.expect_punctuation(';', handler)?;
-
-                            members.push(
-                                Field {
-                                    access_modifier,
-                                    let_keyword: let_keyword.clone(),
-                                    identifier: identifier.clone(),
-                                    type_annotation,
-                                    semicolon: semicolon.clone(),
-                                }
-                                .into(),
-                            );
-                        }
-                        Some(Token::Keyword(type_keyword))
-                            if type_keyword.keyword == KeywordKind::Type =>
-                        {
-                            members.push(
-                                self.parse_type_alias(
-                                    access_modifier,
-                                    type_keyword.clone(),
-                                    handler,
-                                )?
-                                .into(),
-                            );
-                        }
-                        found => {
-                            handler.recieve(
-                                MemberExpected {
-                                    found: found.cloned(),
-                                }
-                                .into(),
-                            );
-                            self.forward_until(|token| {
-                                matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
-                                || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
-                                    || kw.keyword == KeywordKind::Private
-                                    || kw.keyword == KeywordKind::Internal)
-                            });
+                    #[allow(clippy::option_if_let_else)]
+                    match self.parse_struct_member(access_modifier, handler) {
+                        Some(member) => members.push(member),
+                        None => {
+                            // skip to either access modifier or right brace
+                            self.forward_until(member_recoverer);
                         }
                     }
                 }
@@ -736,12 +741,7 @@ impl<'a> Parser<'a> {
                         }
                         .into(),
                     );
-                    self.forward_until(|token| {
-                        matches!(token, Token::Punctuation(punc) if punc.punctuation == '}')
-                        || matches!(token, Token::Keyword(kw) if kw.keyword == KeywordKind::Public
-                            || kw.keyword == KeywordKind::Private
-                            || kw.keyword == KeywordKind::Internal)
-                    });
+                    self.forward_until(member_recoverer);
                 }
             }
         };

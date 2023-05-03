@@ -1,6 +1,6 @@
 //! Contains the definition of [`Builder`] -- the main interface for building the HIR.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
@@ -9,11 +9,12 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self,
     expression::{
+        Binary as BinarySyntaxTree, BinaryOperator as BinaryOperatorSyntaxTree,
         BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,
         FunctionCall as FunctionCallSyntaxTree, Functional as FunctionalSyntaxTree,
-        Imperative as ImperativeSyntaxTree, Named as NamedSyntaxTree,
-        NumericLiteral as NumericLiteralSyntaxTree, Prefix as PrefixSyntaxTree, PrefixOperator,
-        StructLiteral as StructLiteralSyntaxTree,
+        Imperative as ImperativeSyntaxTree, MemberAccess as MemberAccessSyntaxTree,
+        Named as NamedSyntaxTree, NumericLiteral as NumericLiteralSyntaxTree,
+        Prefix as PrefixSyntaxTree, PrefixOperator, StructLiteral as StructLiteralSyntaxTree,
     },
     statement::{
         Declarative, Expressive, Statement as StatementSyntaxTree,
@@ -33,18 +34,24 @@ use super::{
     },
     instruction::RegisterAssignment,
     value::{
-        binding::{FunctionCall, Prefix},
-        Address, BooleanLiteral, Constant, EnumLiteral, NumericLiteral, Placeholder, Value,
+        binding::{
+            ArithmeticOperator, Binary, BinaryOperator, Binding, FunctionCall, MemberAccess,
+            Prefix, StructLiteral,
+        },
+        Address, AddressWithSpan, BooleanLiteral, Constant, EnumLiteral, FieldAddress,
+        NumericLiteral, Placeholder, Value,
     },
-    Container, ErrorHandler, InvalidValueError, Register, RegisterID, TypeBinding, TypeSystem,
-    ValueInspect,
+    Container, ErrorHandler, InvalidValueError, Register, RegisterID, TypeSystem, ValueInspect,
 };
 use crate::{
     cfg::BasicBlockID,
     hir::{
-        error::TypeMismatch,
+        error::{
+            DuplicateFieldInitialization, FieldInaccessible, NoFieldOnType, StructExpected,
+            TypeMismatch, UninitializedFields, UnknownField,
+        },
         instruction::{Store, VariableDeclaration},
-        value::binding::{LoadType, NamedLoad},
+        value::binding::{Load, LoadType},
         Alloca,
     },
     infer::{
@@ -54,7 +61,7 @@ use crate::{
     symbol::{
         table::Table,
         ty::{PrimitiveType, Type},
-        GlobalID, Overload, OverloadID, OverloadSetID,
+        FieldID, GlobalID, Overload, OverloadID, OverloadSetID, StructID, TypedID,
     },
 };
 
@@ -73,11 +80,6 @@ pub enum BindingTarget {
     ///
     /// This is used for obtaining the address of r-values.
     ForAddress,
-
-    /// Specifes that the expression is bound at a statement level.
-    ///
-    /// This is useful for avoiding allocating a register for some expressions.
-    ForStatement,
 }
 
 /// Is a data passed to every `bind_*` method that specifies how the binding should be done.
@@ -145,28 +147,21 @@ impl Builder {
         })
     }
 
-    /// Obtains [`TypeBinding`] for the given value.
+    /// Obtains [`InferableType`] for the given value.
     ///
     /// # Errors
     /// - If the given value wasn't created from this [`Builder`].
-    pub fn get_type_binding<T>(
-        &self,
-        value: &T,
-    ) -> Result<TypeBinding<InferableType>, InvalidValueError>
+    pub fn get_inferable_type<T>(&self, value: &T) -> Result<InferableType, InvalidValueError>
     where
         Container<IntermediateTypeID>: ValueInspect<IntermediateTypeID, T>,
     {
-        let intermediate_ty_id = self.get_intermediate_type_id(value)?;
-        let reachability = self.container.get_reachability(value)?;
-        let ty = match intermediate_ty_id {
+        Ok(match self.get_intermediate_type_id(value)? {
             IntermediateTypeID::InferenceID(inference_id) => self
                 .inference_context
                 .get_inferable_type(inference_id)
                 .map_err(|_| InvalidValueError)?,
             IntermediateTypeID::Type(ty) => InferableType::Type(ty),
-        };
-
-        Ok(TypeBinding { ty, reachability })
+        })
     }
 
     /// Obtains [`IntermediateTypeID`] for the given value.
@@ -210,10 +205,7 @@ pub enum BindingResult {
     Value(Value<IntermediateTypeID>),
 
     /// The binding process returns an address to a value.
-    Address(Address),
-
-    /// The binding process doesn't return anything but does update the control flow graph.
-    None,
+    AddressWithSpan(AddressWithSpan),
 }
 
 impl Builder {
@@ -235,7 +227,7 @@ impl Builder {
             }
             StatementSyntaxTree::Expressive(syntax_tree) => {
                 let binding_option = BindingOption {
-                    binding_target: BindingTarget::ForStatement,
+                    binding_target: BindingTarget::ForAddress,
                 };
                 match syntax_tree {
                     Expressive::Semi(syntax_tree) => self
@@ -386,8 +378,12 @@ impl Builder {
             FunctionalSyntaxTree::Parenthesized(syn) => {
                 self.bind_expression(syn.expression(), binding_option, handler)
             }
-            FunctionalSyntaxTree::StructLiteral(_) => todo!(),
-            FunctionalSyntaxTree::MemberAccess(_) => todo!(),
+            FunctionalSyntaxTree::StructLiteral(syntax_tree) => self
+                .bind_struct_literal(syntax_tree, handler)
+                .map(|x| BindingResult::Value(Value::Register(x))),
+            FunctionalSyntaxTree::MemberAccess(syntax_tree) => {
+                self.bind_member_access(syntax_tree, binding_option, handler)
+            }
             FunctionalSyntaxTree::Continue(_) => todo!(),
             FunctionalSyntaxTree::Break(_) => todo!(),
             FunctionalSyntaxTree::Return(_) => todo!(),
@@ -592,7 +588,7 @@ impl Builder {
                         symbol_span: syntax_tree.qualified_identifier().span(),
                         argument_types: arguments
                             .iter()
-                            .map(|a| self.get_type_binding(a).unwrap().ty)
+                            .map(|a| self.get_inferable_type(a).unwrap())
                             .collect(),
                     },
                 ));
@@ -619,9 +615,8 @@ impl Builder {
                     })
                 {
                     let inference_id = if self
-                        .get_type_binding(argument)
+                        .get_inferable_type(argument)
                         .unwrap()
-                        .ty
                         .as_constraint()
                         .is_some()
                     {
@@ -645,18 +640,7 @@ impl Builder {
                     arguments,
                 };
 
-                let id = self.container.registers.insert(Register {
-                    binding: function_call.into(),
-                });
-
-                // create assignment
-                self.container
-                    .control_flow_graph
-                    .get_mut(self.current_block)
-                    .unwrap()
-                    .add_basic_instruction(RegisterAssignment { register_id: id }.into());
-
-                Ok(id)
+                Ok(self.assign_new_register_binding(function_call.into()))
             }
             // ambiguous function call
             _ => {
@@ -763,8 +747,8 @@ impl Builder {
                 .map(|x| self.container.table.get_parameter(*x).unwrap())
                 .zip(arguments.iter())
             {
-                let bound_type = self.get_type_binding(argument).unwrap();
-                let ty_match = match bound_type.ty {
+                let bound_type = self.get_inferable_type(argument).unwrap();
+                let ty_match = match bound_type {
                     InferableType::Type(ty) => ty == parameter.type_binding().ty,
                     InferableType::Constraint(constraint) => {
                         constraint.satisfies(parameter.type_binding().ty)
@@ -835,14 +819,7 @@ impl Builder {
         }
         .into();
 
-        let register_id = self.container.registers.insert(Register { binding });
-        self.container
-            .control_flow_graph
-            .get_mut(self.current_block)
-            .unwrap()
-            .add_basic_instruction(RegisterAssignment { register_id }.into());
-
-        Ok(register_id)
+        Ok(self.assign_new_register_binding(binding))
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -894,24 +871,23 @@ impl Builder {
                 match binding_option.binding_target {
                     BindingTarget::ForValue => {
                         // load the value
-                        let binding = NamedLoad {
+                        let binding = Load {
                             span: syntax_tree.span(),
                             load_type: LoadType::Copy, // auto move will be applied later
                             address,
                         }
                         .into();
 
-                        let register_id = self.container.registers.insert(Register { binding });
-                        self.container
-                            .control_flow_graph
-                            .get_mut(self.current_block)
-                            .unwrap()
-                            .add_basic_instruction(RegisterAssignment { register_id }.into());
-
-                        return Ok(BindingResult::Value(Value::Register(register_id)));
+                        return Ok(BindingResult::Value(Value::Register(
+                            self.assign_new_register_binding(binding),
+                        )));
                     }
-                    BindingTarget::ForAddress => return Ok(BindingResult::Address(address)),
-                    BindingTarget::ForStatement => return Ok(BindingResult::None),
+                    BindingTarget::ForAddress => {
+                        return Ok(BindingResult::AddressWithSpan(AddressWithSpan {
+                            address,
+                            span: syntax_tree.span(),
+                        }))
+                    }
                 }
             }
         }
@@ -947,32 +923,405 @@ impl Builder {
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
+    fn get_struct_id(
+        &self,
+        syntax_tree: &StructLiteralSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Result<StructID, BindingError> {
+        let found_id = self
+            .container
+            .table
+            .resolve_symbol(
+                self.container.parent_scoped_id,
+                syntax_tree.qualified_identifier(),
+                handler,
+            )
+            .map_err(|_| BindingError(syntax_tree.span()))?;
+
+        // resolve the struct id
+        let struct_id = match found_id {
+            GlobalID::Struct(struct_id) => Some(struct_id),
+            GlobalID::TypeAlias(type_alias_id) => self
+                .container
+                .table
+                .get_type_alias(type_alias_id)
+                .unwrap()
+                .alias()
+                .into_typed_id()
+                .ok()
+                .and_then(|x| x.into_struct().ok()),
+            _ => None,
+        };
+
+        // expect struct id
+        let Some(struct_id) = struct_id else {
+            handler.recieve(Error::StructExpected(StructExpected {
+                found_id,
+                symbol_span: syntax_tree.qualified_identifier().span()
+            }));
+            return Err(BindingError(syntax_tree.span()));
+        };
+
+        Ok(struct_id)
+    }
+
     /// Binds the given [`StructLiteralSyntaxTree`] and returns the [`RegisterID`] where the result
     /// is stored.
     ///
     /// # Errors
     /// - If the binding process encounters a fatal semantic error.
+    #[allow(clippy::too_many_lines)]
     pub fn bind_struct_literal(
         &mut self,
         syntax_tree: &StructLiteralSyntaxTree,
         handler: &impl ErrorHandler,
     ) -> Result<RegisterID, BindingError> {
-        // resolve the struct id
-        let GlobalID::Struct(struct_id) = self.container.table.resolve_symbol(
-            self.container.parent_scoped_id,
-            syntax_tree.qualified_identifier(),
-            handler,
-        ).unwrap() else {
-            return Err(BindingError(syntax_tree.span()))
+        // get struct id
+        let struct_id = self.get_struct_id(syntax_tree, handler)?;
+        let table = self.container.table.clone();
+        let struct_sym = table.get_struct(struct_id).unwrap();
+        let mut initializations: HashMap<FieldID, (Span, Value<IntermediateTypeID>)> =
+            HashMap::new();
+        let mut field_initialize_order = Vec::new();
+
+        for initialization in syntax_tree
+            .field_initializations()
+            .iter()
+            .flat_map(ConnectedList::elements)
+        {
+            let value = self
+                .bind_expression(
+                    initialization.expression(),
+                    BindingOption::default(),
+                    handler,
+                )?
+                .into_value()
+                .unwrap();
+
+            let Some(field_id) = struct_sym
+                .field_ids_by_name()
+                .get(initialization.identifier().span.str()).copied() else {
+                handler.recieve(Error::UnknownField(UnknownField {
+                    struct_id,
+                    field_name_span: initialization.identifier().span.clone(),
+                }));
+                continue;
+            };
+
+            let field_sym = table.get_field(field_id).unwrap();
+
+            // check if the symbol accessible
+            if !self
+                .container
+                .table
+                .symbol_accessible(
+                    self.container.parent_scoped_id,
+                    struct_id.into(),
+                    field_sym.accessibility(),
+                )
+                .unwrap()
+            {
+                handler.recieve(Error::FieldInaccessible(FieldInaccessible {
+                    field_id,
+                    struct_id,
+                    field_span: initialization.identifier().span.clone(),
+                    current_scope: self.container.parent_scoped_id,
+                }));
+            }
+
+            let redefined = if let Some((span, _)) = initializations.get(&field_id) {
+                // field initialization duplication
+                handler.recieve(Error::DuplicateFieldInitialization(
+                    DuplicateFieldInitialization {
+                        duplicate_initialization_span: initialization.span(),
+                        previous_initialization_span: span.clone(),
+                        struct_id,
+                        field_id,
+                    },
+                ));
+                true
+            } else {
+                false
+            };
+
+            if !redefined {
+                initializations.insert(
+                    field_id,
+                    (
+                        initialization.span(),
+                        match self.type_check(
+                            self.get_span(&value).unwrap(),
+                            self.get_intermediate_type_id(&value).unwrap(),
+                            field_sym.ty().into(),
+                            handler,
+                        ) {
+                            Ok(..) => value,
+                            Err(..) => Value::Placeholder(Placeholder {
+                                span: initialization.expression().span(),
+                                ty: field_sym.ty().into(),
+                            }),
+                        },
+                    ),
+                );
+                field_initialize_order.push(field_id);
+            }
+        }
+
+        // check for uninitialized fields
+        let mut uninitialized_fields = Vec::new();
+        for field in struct_sym.field_order() {
+            if !initializations.contains_key(field) {
+                uninitialized_fields.push(*field);
+            }
+        }
+
+        if !uninitialized_fields.is_empty() {
+            handler.recieve(Error::UninitializedFields(UninitializedFields {
+                struct_literal_span: syntax_tree.span(),
+                struct_id,
+                uninitialized_fields,
+            }));
+        }
+
+        let binding = StructLiteral {
+            span: syntax_tree.span(),
+            struct_id,
+            initializations: field_initialize_order
+                .into_iter()
+                .map(|field_id| (field_id, initializations.remove(&field_id).unwrap().1))
+                .collect(),
+        }
+        .into();
+
+        Ok(self.assign_new_register_binding(binding))
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds the [`MemberAccessSyntaxTree`] into a [`BindingResult`]
+    ///
+    /// # Errors
+    /// - If encounters a fatal semantic error
+    pub fn bind_member_access(
+        &mut self,
+        syntax_tree: &MemberAccessSyntaxTree,
+        binding_option: BindingOption,
+        handler: &impl ErrorHandler,
+    ) -> Result<BindingResult, BindingError> {
+        let operand = self.bind_expression(syntax_tree.operand(), binding_option, handler)?;
+        let ty = match &operand {
+            BindingResult::Value(value) => self.get_inferable_type(value).unwrap(),
+            BindingResult::AddressWithSpan(address) => self.get_address_type(&address.address),
         };
 
+        // expect the type to be a struct
+        let InferableType::Type(Type::TypedID(TypedID::Struct(struct_id))) = ty else {
+            handler.recieve(Error::NoFieldOnType(NoFieldOnType {
+                operand_span: syntax_tree.operand().span(),
+                operand_type: ty
+            }));
+            return Err(BindingError(syntax_tree.span()));
+        };
+
+        // search for the field
+        let table_arc = self.container.table.clone();
+        let struct_sym = table_arc.get_struct(struct_id).unwrap();
+
+        // search for the field
+        let Some(field_id) = struct_sym.field_ids_by_name().get(
+            syntax_tree.identifier().span.str()
+        ).copied() else {
+            handler.recieve(Error::UnknownField(UnknownField {
+                struct_id,
+                field_name_span: syntax_tree.identifier().span.clone()
+            }));
+            return Err(BindingError(syntax_tree.span()));
+        };
+
+        let field_sym = table_arc.get_field(field_id).unwrap();
+
+        if !table_arc
+            .symbol_accessible(
+                self.container.parent_scoped_id(),
+                struct_id.into(),
+                field_sym.accessibility(),
+            )
+            .unwrap()
+        {
+            handler.recieve(Error::FieldInaccessible(FieldInaccessible {
+                field_id,
+                struct_id,
+                field_span: syntax_tree.identifier().span.clone(),
+                current_scope: self.container.parent_scoped_id(),
+            }));
+        }
+
+        Ok(match operand {
+            BindingResult::Value(value) => {
+                let binding = MemberAccess {
+                    span: syntax_tree.span(),
+                    operand: value,
+                    field_id,
+                }
+                .into();
+
+                BindingResult::Value(Value::Register(self.assign_new_register_binding(binding)))
+            }
+            BindingResult::AddressWithSpan(address) => {
+                BindingResult::AddressWithSpan(AddressWithSpan {
+                    address: FieldAddress {
+                        operand_address: Box::new(address.address),
+                        field_id,
+                    }
+                    .into(),
+                    span: syntax_tree.span(),
+                })
+            }
+        })
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    fn handle_arithmetic_binary(
+        &mut self,
+        syntax_tree: &BinarySyntaxTree,
+        arithmetic_operator: ArithmeticOperator,
+        handler: &impl ErrorHandler,
+    ) -> Result<RegisterID, BindingError> {
+        let left = self
+            .bind_expression(
+                syntax_tree.left_operand(),
+                BindingOption::default(),
+                handler,
+            )?
+            .into_value()
+            .unwrap();
+        let right = self
+            .bind_expression(
+                syntax_tree.right_operand(),
+                BindingOption::default(),
+                handler,
+            )?
+            .into_value()
+            .unwrap();
+
+        let left_intermediate_ty = self.get_intermediate_type_id(&left).unwrap();
+
+        // must be number
+        self.type_check(
+            self.get_span(&left).unwrap(),
+            self.get_intermediate_type_id(&left).unwrap(),
+            Constraint::Number.into(),
+            handler,
+        )
+        .map_err(|_| BindingError(syntax_tree.span()))?;
+
+        let right_intermediate_ty = self.get_intermediate_type_id(&right).unwrap();
+
+        self.type_check_unify(
+            self.get_span(&right).unwrap(),
+            left_intermediate_ty,
+            right_intermediate_ty,
+            handler,
+        )
+        .map_err(|_| BindingError(syntax_tree.span()))?;
+
+        let binding = Binary {
+            lhs_operand: left,
+            rhs_operand: right,
+            binary_operator: arithmetic_operator.into(),
+            span: syntax_tree.span(),
+        }
+        .into();
+
+        Ok(self.assign_new_register_binding(binding))
+    }
+
+    fn as_arithmetic_operator(binary_operator: &BinaryOperatorSyntaxTree) -> ArithmeticOperator {
+        match binary_operator {
+            BinaryOperatorSyntaxTree::Add(_) => ArithmeticOperator::Add,
+            BinaryOperatorSyntaxTree::Subtract(_) => ArithmeticOperator::Subtract,
+            BinaryOperatorSyntaxTree::Multiply(_) => ArithmeticOperator::Multiply,
+            BinaryOperatorSyntaxTree::Divide(_) => ArithmeticOperator::Divide,
+            BinaryOperatorSyntaxTree::Modulo(_) => ArithmeticOperator::Modulo,
+            _ => unreachable!(),
+        }
+    }
+
+    fn handle_assign(
+        &mut self,
+        syntax_tree: &BinarySyntaxTree,
+        binding_option: BindingOption,
+        handler: &impl ErrorHandler,
+    ) -> Result<BindingResult, BindingError> {
         todo!()
+    }
+
+    /// Binds the [`NamedSyntaxTree`] into a [`BindingResult`]
+    ///
+    /// # Errors
+    /// - If encounters a fatal semantic error
+    pub fn bind_binary(
+        &mut self,
+        syntax_tree: &BinarySyntaxTree,
+        binding_option: BindingOption,
+        handler: &impl ErrorHandler,
+    ) -> Result<BindingResult, BindingError> {
+        match syntax_tree.binary_operator() {
+            BinaryOperatorSyntaxTree::Add(..)
+            | BinaryOperatorSyntaxTree::Subtract(..)
+            | BinaryOperatorSyntaxTree::Multiply(..)
+            | BinaryOperatorSyntaxTree::Divide(..)
+            | BinaryOperatorSyntaxTree::Modulo(..) => self
+                .handle_arithmetic_binary(
+                    syntax_tree,
+                    Self::as_arithmetic_operator(syntax_tree.binary_operator()),
+                    handler,
+                )
+                .map(|x| BindingResult::Value(Value::Register(x))),
+            BinaryOperatorSyntaxTree::Assign(..) => todo!(),
+            BinaryOperatorSyntaxTree::CompoundAdd(..) => todo!(),
+            BinaryOperatorSyntaxTree::CompoundSubtract(..) => {
+                todo!()
+            }
+            BinaryOperatorSyntaxTree::CompoundMultiply(..) => {
+                todo!()
+            }
+            BinaryOperatorSyntaxTree::CompoundDivide(..) => {
+                todo!()
+            }
+            BinaryOperatorSyntaxTree::CompoundModulo(..) => {
+                todo!()
+            }
+            BinaryOperatorSyntaxTree::Equal(..) => todo!(),
+            BinaryOperatorSyntaxTree::NotEqual(..) => todo!(),
+            BinaryOperatorSyntaxTree::LessThan(..) => todo!(),
+            BinaryOperatorSyntaxTree::LessThanOrEqual(..) => {
+                todo!()
+            }
+            BinaryOperatorSyntaxTree::GreaterThan(..) => todo!(),
+            BinaryOperatorSyntaxTree::GreaterThanOrEqual(..) => {
+                todo!()
+            }
+            BinaryOperatorSyntaxTree::LogicalAnd(..) => todo!(),
+            BinaryOperatorSyntaxTree::LogicalOr(..) => todo!(),
+        }
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 }
 
 impl Builder {
+    fn assign_new_register_binding(&mut self, binding: Binding<IntermediateTypeID>) -> RegisterID {
+        let register_id = self.container.registers.insert(Register { binding });
+        self.container
+            .control_flow_graph
+            .get_mut(self.current_block)
+            .unwrap()
+            .add_basic_instruction(RegisterAssignment { register_id }.into());
+        register_id
+    }
+
     fn get_address_type(&self, address: &Address) -> InferableType {
         let intermediate_type = self.get_address_intermediate_type_id(address);
         match intermediate_type {
@@ -1013,12 +1362,6 @@ impl Builder {
         expect: InferableType,
         handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
-        assert!(
-            binding_option.binding_target != BindingTarget::ForStatement,
-            "`BindingTarget::ForStatement` with type checking doesn't seem applicable since the \
-             expression might not return anything when binding"
-        );
-
         let value = self.bind_expression(syntax_tree, binding_option, handler)?;
 
         match &value {
@@ -1028,18 +1371,88 @@ impl Builder {
                 expect,
                 handler,
             )?,
-            BindingResult::Address(address) => {
+            BindingResult::AddressWithSpan(address) => {
                 self.type_check(
                     syntax_tree.span(),
-                    self.get_address_intermediate_type_id(address),
+                    self.get_address_intermediate_type_id(&address.address),
                     expect,
                     handler,
                 )?;
             }
-            BindingResult::None => todo!(),
         }
 
         Ok(value)
+    }
+
+    fn type_check_unify(
+        &mut self,
+        span: Span,
+        lhs: IntermediateTypeID,
+        rhs: IntermediateTypeID,
+        handler: &impl ErrorHandler,
+    ) -> Result<(), BindingError> {
+        let (unification_error, swap) = match (lhs, rhs) {
+            (IntermediateTypeID::InferenceID(lhs), IntermediateTypeID::InferenceID(rhs)) => {
+                match self.inference_context.unify(lhs, rhs).err() {
+                    Some(err) => (err, false),
+                    None => return Ok(()),
+                }
+            }
+            (IntermediateTypeID::InferenceID(lhs), IntermediateTypeID::Type(rhs)) => {
+                match self.inference_context.unify_with_concrete(lhs, rhs).err() {
+                    Some(err) => (err, false),
+                    None => return Ok(()),
+                }
+            }
+            (IntermediateTypeID::Type(lhs), IntermediateTypeID::InferenceID(rhs)) => {
+                match self.inference_context.unify_with_concrete(rhs, lhs).err() {
+                    Some(err) => (err, true),
+                    None => return Ok(()),
+                }
+            }
+            (IntermediateTypeID::Type(lhs), IntermediateTypeID::Type(rhs)) => {
+                if lhs != rhs {
+                    handler.recieve(Error::TypeMismatch(TypeMismatch {
+                        expression_span: span.clone(),
+                        expect: lhs.into(),
+                        found: rhs.into(),
+                    }));
+                    return Err(BindingError(span));
+                }
+                return Ok(());
+            }
+        };
+
+        let error = Self::handle_unification_error(span.clone(), unification_error, swap);
+        handler.recieve(error);
+
+        Err(BindingError(span))
+    }
+
+    fn handle_unification_error(expression_span: Span, err: UnificationError, swap: bool) -> Error {
+        let (mut left, mut right) = match err {
+            UnificationError::TypeMismatchError(TypeMismatchError { left, right }) => {
+                (left.into(), right.into())
+            }
+            UnificationError::ConstraintNotSatisfiedError(ConstraintNotSatisfiedError {
+                constraint,
+                concrete_type,
+            }) => (constraint.into(), concrete_type.into()),
+            UnificationError::InvalidIDError(..) => unreachable!(
+                "Internal Compiler Error: InvalidIDError should never be returned from unify"
+            ),
+        };
+
+        if swap {
+            std::mem::swap(&mut left, &mut right);
+        }
+
+        TypeMismatch {
+            expression_span,
+            found: left,
+            expect: right,
+        }
+        .into()
     }
 
     fn type_check(
@@ -1049,28 +1462,6 @@ impl Builder {
         expect: InferableType,
         handler: &impl ErrorHandler,
     ) -> Result<(), BindingError> {
-        fn handle_unification_error(expression_span: Span, err: UnificationError) -> Error {
-            let (left, right) = match err {
-                UnificationError::TypeMismatchError(TypeMismatchError { left, right }) => {
-                    (left.into(), right.into())
-                }
-                UnificationError::ConstraintNotSatisfiedError(ConstraintNotSatisfiedError {
-                    constraint,
-                    concrete_type,
-                }) => (constraint.into(), concrete_type.into()),
-                UnificationError::InvalidIDError(..) => unreachable!(
-                    "Internal Compiler Error: InvalidIDError should never be returned from unify"
-                ),
-            };
-
-            TypeMismatch {
-                expression_span,
-                found: left,
-                expect: right,
-            }
-            .into()
-        }
-
         let err = match (found, expect) {
             (IntermediateTypeID::InferenceID(found), InferableType::Type(expected)) => {
                 let Err(err) = self
@@ -1115,7 +1506,7 @@ impl Builder {
             }
         };
 
-        handler.recieve(handle_unification_error(span.clone(), err));
+        handler.recieve(Self::handle_unification_error(span.clone(), err, false));
 
         Err(BindingError(span))
     }

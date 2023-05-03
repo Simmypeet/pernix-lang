@@ -1,0 +1,31 @@
+public struct Vector3 
+{
+    public  let x: float32;
+    private let y: float32;
+    public  let z: float32;
+}
+
+public struct Empty {}
+
+public function main(): void 
+{
+    Vector3 {
+        x: 6,
+        y: 9,
+        z: 420, 
+    };
+
+    Vector3 {
+        x: 6,
+        z: 42,
+    };
+
+    Vector3 {
+        z: 6,
+        y: 9,
+        x: 2,
+        z: 0,
+    };
+
+    Empty {};
+}

@@ -199,23 +199,35 @@ impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
     }
 }
 
-/// Represents an adress to a particular field member.
+/// Represents an address to a particular field member.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct FieldAddress {
     /// Specifies the address of the struct that contains the field.
     #[get = "pub"]
-    base_address: Box<Address>,
+    pub(super) operand_address: Box<Address>,
 
     /// The ID of the field that is being addressed.
     #[get_copy = "pub"]
-    field_id: FieldID,
+    pub(super) field_id: FieldID,
 }
 
-/// Represents an address to a particular stack allocated memory.
+/// Represents a value that yields an address to a particular value in memory.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Address {
     AllocaID(AllocaID),
     ParameterID(ParameterID),
     FieldAddress(FieldAddress),
+}
+
+/// Is a struct containing an address and the span of the expression that yielded the address.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct AddressWithSpan {
+    /// The address
+    #[get = "pub"]
+    pub address: Address,
+
+    /// Gets the span of the expression that yielded the address.
+    #[get = "pub"]
+    pub span: Span,
 }

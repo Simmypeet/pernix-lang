@@ -25,7 +25,10 @@ pub enum Error {
     ValueExpected(ValueExpected),
     UninitializedFields(UninitializedFields),
     FieldInaccessible(FieldInaccessible),
-    FieldInitializeDuplication(FieldInitializeDuplication),
+    DuplicateFieldInitialization(DuplicateFieldInitialization),
+    StructExpected(StructExpected),
+    UnknownField(UnknownField),
+    NoFieldOnType(NoFieldOnType),
 }
 
 /// The numeric literal suffix is not applicable to the literal's type.
@@ -162,7 +165,7 @@ pub struct UninitializedFields {
 
 /// A field of a struct was initialized multiple times.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
-pub struct FieldInitializeDuplication {
+pub struct DuplicateFieldInitialization {
     /// The span of the duplicate initialization.
     #[get = "pub"]
     pub(super) duplicate_initialization_span: Span,
@@ -174,6 +177,10 @@ pub struct FieldInitializeDuplication {
     /// The ID of the field that was initialized multiple times.
     #[get_copy = "pub"]
     pub(super) field_id: FieldID,
+
+    /// The ID of the struct that the field belongs to.
+    #[get_copy = "pub"]
+    pub(super) struct_id: StructID,
 }
 
 /// The field of the struct is not accessible from the current scope.
@@ -194,4 +201,40 @@ pub struct FieldInaccessible {
     /// The ID of the scope that the field was accessed from.
     #[get_copy = "pub"]
     pub(super) current_scope: ScopedID,
+}
+
+/// The symbol found in the struct literal syntax is not a struct symbol.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct StructExpected {
+    /// The ID of the symbol that was found in the struct literal syntax.
+    #[get_copy = "pub"]
+    pub(super) found_id: GlobalID,
+
+    /// The span of the symbol that was found in the struct literal syntax.
+    #[get = "pub"]
+    pub(super) symbol_span: Span,
+}
+
+/// The struct does not have a field with the given name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct UnknownField {
+    /// The ID of the struct that does not have the field.
+    #[get_copy = "pub"]
+    pub(super) struct_id: StructID,
+
+    /// The name of the field that was not found.
+    #[get = "pub"]
+    pub(super) field_name_span: Span,
+}
+
+/// The expression cannot be accessed as a field.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct NoFieldOnType {
+    /// The span of the expression that was used to access the field.
+    #[get = "pub"]
+    pub(super) operand_span: Span,
+
+    /// The type of the expression that was used to access the field.
+    #[get_copy = "pub"]
+    pub(super) operand_type: InferableType,
 }

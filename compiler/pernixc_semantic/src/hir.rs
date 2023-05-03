@@ -18,8 +18,8 @@ use crate::{
     cfg::ControlFlowGraph,
     infer::InferableType,
     symbol::{
-        error::Error as SymbolError, table::Table, ty::Type, Global, ModuleID, OverloadID,
-        OverloadSetID, ScopedID,
+        error::Error as SymbolError, table::Table, ty::Type, Global, OverloadID, OverloadSetID,
+        ScopedID,
     },
 };
 
@@ -174,16 +174,6 @@ pub enum Reachability {
 
     /// The value is reachable.
     Reachable,
-}
-
-/// Is a struct composed of the type of the value and its reachability.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeBinding<T: TypeSystem> {
-    /// The type of the value.
-    pub ty: T,
-
-    /// Specifies whether if the value is reachable or not.
-    pub reachability: Reachability,
 }
 
 /// Occurs when a value is used in a context where it wasn't created from.
