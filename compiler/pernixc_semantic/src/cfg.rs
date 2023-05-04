@@ -3,7 +3,6 @@
 
 use std::{collections::HashSet, fmt::Debug};
 
-use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_system::{

@@ -6,7 +6,7 @@ use pernixc_system::error_handler::ErrorVec;
 
 use crate::{
     hir::{
-        builder::{BindingOption, BindingResult, BindingTarget, Builder},
+        builder::{BindingOption, BindingTarget, Builder},
         value::binding::{ComparisonOperator, EqualityOperator},
         AllHirError,
     },
