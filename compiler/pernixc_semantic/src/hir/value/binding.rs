@@ -21,7 +21,7 @@ use crate::{
 /// Represents a bound syntax tree.
 ///
 /// The bound syntax tree is attached with type information and additional semantics.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Binding<T: TypeSystem> {
     FunctionCall(FunctionCall<T>),
@@ -30,6 +30,7 @@ pub enum Binding<T: TypeSystem> {
     StructLiteral(StructLiteral<T>),
     MemberAccess(MemberAccess<T>),
     Binary(Binary<T>),
+    PhiNode(PhiNode<T>),
 }
 
 impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
@@ -41,6 +42,7 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::StructLiteral(value) => self.get_type(value),
             Binding::MemberAccess(value) => self.get_type(value),
             Binding::Binary(value) => self.get_type(value),
+            Binding::PhiNode(value) => self.get_type(value),
         }
     }
 
@@ -52,6 +54,7 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::StructLiteral(value) => self.get_span(value),
             Binding::MemberAccess(value) => self.get_span(value),
             Binding::Binary(value) => self.get_span(value),
+            Binding::PhiNode(value) => self.get_span(value),
         }
     }
 
@@ -63,6 +66,7 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::StructLiteral(value) => self.get_reachability(value),
             Binding::MemberAccess(value) => self.get_reachability(value),
             Binding::Binary(value) => self.get_reachability(value),
+            Binding::PhiNode(value) => self.get_reachability(value),
         }
     }
 }
@@ -300,6 +304,21 @@ pub struct PhiNode<T: TypeSystem> {
     pub(in crate::hir) phi_node_source: PhiNodeSource,
 }
 
+impl<T: TypeSystem> ValueInspect<T, PhiNode<T>> for Container<T> {
+    fn get_type(&self, value: &PhiNode<T>) -> Result<T, InvalidValueError> {
+        // assume that all values are of the same type, take the first one
+        self.get_type(value.values_by_predecessor.values().next().unwrap())
+    }
+
+    fn get_span(&self, value: &PhiNode<T>) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
+
+    fn get_reachability(&self, _: &PhiNode<T>) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Reachable)
+    }
+}
+
 /// Is an enumeration of expressions that can be lowered into `phi` instructions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -328,11 +347,11 @@ pub struct Binary<T: TypeSystem> {
 
     /// The left-hand-side operand of the binary.
     #[get = "pub"]
-    pub(in crate::hir) lhs_operand: Value<T>,
+    pub(in crate::hir) left_operand: Value<T>,
 
     /// The right-hand-side operand of the binary.
     #[get = "pub"]
-    pub(in crate::hir) rhs_operand: Value<T>,
+    pub(in crate::hir) right_operand: Value<T>,
 
     /// The operator of the binary.
     #[get_copy = "pub"]
@@ -342,7 +361,7 @@ pub struct Binary<T: TypeSystem> {
 impl<T: TypeSystem> ValueInspect<T, Binary<T>> for Container<T> {
     fn get_type(&self, value: &Binary<T>) -> Result<T, InvalidValueError> {
         match value.binary_operator {
-            BinaryOperator::ArithmeticOperator(..) => self.get_type(&value.lhs_operand),
+            BinaryOperator::ArithmeticOperator(..) => self.get_type(&value.left_operand),
             BinaryOperator::ComparisonOperator(..) | BinaryOperator::EqualityOperator(..) => {
                 Ok(T::from_type(PrimitiveType::Bool.into()))
             }

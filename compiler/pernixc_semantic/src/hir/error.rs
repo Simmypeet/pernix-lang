@@ -29,6 +29,8 @@ pub enum Error {
     StructExpected(StructExpected),
     UnknownField(UnknownField),
     NoFieldOnType(NoFieldOnType),
+    LValueExpected(LValueExpected),
+    MutableLValueExpected(MutableLValueExpected),
 }
 
 /// The numeric literal suffix is not applicable to the literal's type.
@@ -237,4 +239,20 @@ pub struct NoFieldOnType {
     /// The type of the expression that was used to access the field.
     #[get_copy = "pub"]
     pub(super) operand_type: InferableType,
+}
+
+/// Expected an lvalue, but got an rvalue.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct LValueExpected {
+    /// The span of the expression that was used as an lvalue.
+    #[get = "pub"]
+    pub(super) expression_span: Span,
+}
+
+/// The given lvalue is not mutable.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct MutableLValueExpected {
+    /// The span of the expression that was used as an lvalue.
+    #[get = "pub"]
+    pub(super) expression_span: Span,
 }

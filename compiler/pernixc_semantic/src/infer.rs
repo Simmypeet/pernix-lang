@@ -17,14 +17,17 @@ pub enum Constraint {
     /// The type can be any type.
     All = 0,
 
+    /// The type can be only primitive types.
+    PrimitiveType = 1,
+
     /// The type can be any number type. (`i32-64`, `u32-64`, `f32-64`)
-    Number = 1,
+    Number = 2,
 
     /// The type can be only signed number types. (`i32-64`, `f32-64`)
-    Signed = 2,
+    Signed = 3,
 
     /// The type can be only floating point number types. (`f32-64`)
-    Float = 3,
+    Float = 4,
 }
 
 impl Constraint {
@@ -37,6 +40,7 @@ impl Constraint {
     pub fn satisfies(self, concrete_type: Type) -> bool {
         match self {
             Self::All => true,
+            Self::PrimitiveType => matches!(concrete_type, Type::PrimitiveType(_)),
             Self::Number => matches!(
                 concrete_type,
                 Type::PrimitiveType(
@@ -270,6 +274,10 @@ impl InferenceContext {
     ///  a concrete type that does not satisfy the constraint.
     #[allow(clippy::too_many_lines)]
     pub fn unify(&mut self, left: InferenceID, right: InferenceID) -> Result<(), UnificationError> {
+        if left == right {
+            return Ok(());
+        }
+
         if let (Some(left), Some(right)) = (
             self.inferences
                 .get(left)?
@@ -282,10 +290,6 @@ impl InferenceContext {
                 .as_type_variable()
                 .copied(),
         ) {
-            if left == right {
-                return Ok(());
-            }
-
             // Check if the left type variable is more constrainted than the right type
             // variable.
             let left_more_constraint = self

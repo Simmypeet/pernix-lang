@@ -7,7 +7,6 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
-    self,
     expression::{
         Binary as BinarySyntaxTree, BinaryOperator as BinaryOperatorSyntaxTree,
         BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,
@@ -29,29 +28,31 @@ use self::scope::Stack;
 use super::{
     error::{
         AmbiguousFunctionCall, Error, FloatingPointLiteralHasIntegralSuffix,
-        InvalidNumericLiteralSuffix, NoAccessibleOverload, NoOverloadWithMatchingArgumentTypes,
-        NoOverloadWithMatchingNumberOfArguments, SymbolNotCallable, ValueExpected,
+        InvalidNumericLiteralSuffix, LValueExpected, NoAccessibleOverload,
+        NoOverloadWithMatchingArgumentTypes, NoOverloadWithMatchingNumberOfArguments,
+        SymbolNotCallable, ValueExpected,
     },
-    instruction::RegisterAssignment,
+    instruction::{Basic, RegisterAssignment},
     value::{
         binding::{
-            ArithmeticOperator, Binary, BinaryOperator, Binding, FunctionCall, MemberAccess,
-            Prefix, StructLiteral,
+            ArithmeticOperator, Binary, BinaryOperator, Binding, ComparisonOperator,
+            EqualityOperator, FunctionCall, MemberAccess, Prefix, StructLiteral,
         },
         Address, AddressWithSpan, BooleanLiteral, Constant, EnumLiteral, FieldAddress,
         NumericLiteral, Placeholder, Value,
     },
-    Container, ErrorHandler, InvalidValueError, Register, RegisterID, TypeSystem, ValueInspect,
+    AllocaID, Container, ErrorHandler, InvalidValueError, Register, RegisterID, TypeSystem,
+    ValueInspect,
 };
 use crate::{
     cfg::BasicBlockID,
     hir::{
         error::{
-            DuplicateFieldInitialization, FieldInaccessible, NoFieldOnType, StructExpected,
-            TypeMismatch, UninitializedFields, UnknownField,
+            DuplicateFieldInitialization, FieldInaccessible, MutableLValueExpected, NoFieldOnType,
+            StructExpected, TypeMismatch, UninitializedFields, UnknownField,
         },
-        instruction::{Store, VariableDeclaration},
-        value::binding::{Load, LoadType},
+        instruction::{ConditionalJump, Jump, Store, VariableDeclaration},
+        value::binding::{Load, LoadType, PhiNode, PhiNodeSource},
         Alloca,
     },
     infer::{
@@ -122,7 +123,7 @@ impl TypeSystem for IntermediateTypeID {
 #[derive(Debug, Getters)]
 pub struct Builder {
     container: Container<IntermediateTypeID>,
-    current_block: BasicBlockID,
+    current_basic_block_id: BasicBlockID,
     inference_context: InferenceContext,
     stack: Stack,
 }
@@ -140,7 +141,7 @@ impl Builder {
         let container = Container::new(table, overload_id)?;
 
         Ok(Self {
-            current_block: container.control_flow_graph.entry_block(),
+            current_basic_block_id: container.control_flow_graph.entry_block(),
             container,
             inference_context: InferenceContext::new(),
             stack: Stack::new(),
@@ -155,7 +156,7 @@ impl Builder {
     where
         Container<IntermediateTypeID>: ValueInspect<IntermediateTypeID, T>,
     {
-        Ok(match self.get_intermediate_type_id(value)? {
+        Ok(match self.get_value_intermediate_type_id(value)? {
             IntermediateTypeID::InferenceID(inference_id) => self
                 .inference_context
                 .get_inferable_type(inference_id)
@@ -171,7 +172,7 @@ impl Builder {
     ///
     /// # Errors
     /// - If the given value wasn't created from this [`Builder`].
-    pub fn get_intermediate_type_id<T>(
+    pub fn get_value_intermediate_type_id<T>(
         &self,
         value: &T,
     ) -> Result<IntermediateTypeID, InvalidValueError>
@@ -222,9 +223,9 @@ impl Builder {
         handler: &impl ErrorHandler,
     ) -> Result<(), BindingError> {
         match syntax_tree {
-            StatementSyntaxTree::Declarative(Declarative::VariableDeclaration(syntax_tree)) => {
-                self.bind_variable_declaration_statement(syntax_tree, handler)
-            }
+            StatementSyntaxTree::Declarative(Declarative::VariableDeclaration(syntax_tree)) => self
+                .bind_variable_declaration_statement(syntax_tree, handler)
+                .map(|_| ()),
             StatementSyntaxTree::Expressive(syntax_tree) => {
                 let binding_option = BindingOption {
                     binding_target: BindingTarget::ForAddress,
@@ -252,7 +253,7 @@ impl Builder {
         &mut self,
         syntax_tree: &VariableDeclarationSyntaxTree,
         handler: &impl ErrorHandler,
-    ) -> Result<(), BindingError> {
+    ) -> Result<AllocaID, BindingError> {
         // gets the type of the variable
         let ty = if let Some(type_annotation) = syntax_tree.type_annotation() {
             // gets the type of the variable
@@ -286,7 +287,7 @@ impl Builder {
             });
 
         // gets the type of the variable
-        let ty = self.get_intermediate_type_id(&value).unwrap();
+        let ty = self.get_value_intermediate_type_id(&value).unwrap();
 
         // inserts a new alloca
         let alloca_id = self.container.allocas.insert(Alloca {
@@ -297,19 +298,20 @@ impl Builder {
 
         self.container
             .control_flow_graph
-            .get_mut(self.current_block)
+            .get_mut(self.current_basic_block_id)
             .unwrap()
             .add_basic_instruction(VariableDeclaration { alloca_id }.into());
 
         // inserts a new store
         self.container
             .control_flow_graph
-            .get_mut(self.current_block)
+            .get_mut(self.current_basic_block_id)
             .unwrap()
             .add_basic_instruction(
                 Store {
                     address: Address::AllocaID(alloca_id),
                     value,
+                    span: syntax_tree.span(),
                 }
                 .into(),
             );
@@ -319,7 +321,7 @@ impl Builder {
             .top_mut()
             .insert(syntax_tree.identifier().span.str().to_owned(), alloca_id);
 
-        Ok(())
+        Ok(alloca_id)
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -367,7 +369,7 @@ impl Builder {
             FunctionalSyntaxTree::BooleanLiteral(syn) => Ok(BindingResult::Value(Value::Constant(
                 Constant::BooleanLiteral(Self::bind_boolean_literal(syn)),
             ))),
-            FunctionalSyntaxTree::Binary(_) => todo!(),
+            FunctionalSyntaxTree::Binary(syn) => self.bind_binary(syn, binding_option, handler),
             FunctionalSyntaxTree::Prefix(syn) => self
                 .bind_prefix(syn, handler)
                 .map(|x| BindingResult::Value(Value::Register(x))),
@@ -1051,7 +1053,7 @@ impl Builder {
                         initialization.span(),
                         match self.type_check(
                             self.get_span(&value).unwrap(),
-                            self.get_intermediate_type_id(&value).unwrap(),
+                            self.get_value_intermediate_type_id(&value).unwrap(),
                             field_sym.ty().into(),
                             handler,
                         ) {
@@ -1182,61 +1184,6 @@ impl Builder {
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
-    fn handle_arithmetic_binary(
-        &mut self,
-        syntax_tree: &BinarySyntaxTree,
-        arithmetic_operator: ArithmeticOperator,
-        handler: &impl ErrorHandler,
-    ) -> Result<RegisterID, BindingError> {
-        let left = self
-            .bind_expression(
-                syntax_tree.left_operand(),
-                BindingOption::default(),
-                handler,
-            )?
-            .into_value()
-            .unwrap();
-        let right = self
-            .bind_expression(
-                syntax_tree.right_operand(),
-                BindingOption::default(),
-                handler,
-            )?
-            .into_value()
-            .unwrap();
-
-        let left_intermediate_ty = self.get_intermediate_type_id(&left).unwrap();
-
-        // must be number
-        self.type_check(
-            self.get_span(&left).unwrap(),
-            self.get_intermediate_type_id(&left).unwrap(),
-            Constraint::Number.into(),
-            handler,
-        )
-        .map_err(|_| BindingError(syntax_tree.span()))?;
-
-        let right_intermediate_ty = self.get_intermediate_type_id(&right).unwrap();
-
-        self.type_check_unify(
-            self.get_span(&right).unwrap(),
-            left_intermediate_ty,
-            right_intermediate_ty,
-            handler,
-        )
-        .map_err(|_| BindingError(syntax_tree.span()))?;
-
-        let binding = Binary {
-            lhs_operand: left,
-            rhs_operand: right,
-            binary_operator: arithmetic_operator.into(),
-            span: syntax_tree.span(),
-        }
-        .into();
-
-        Ok(self.assign_new_register_binding(binding))
-    }
-
     fn as_arithmetic_operator(binary_operator: &BinaryOperatorSyntaxTree) -> ArithmeticOperator {
         match binary_operator {
             BinaryOperatorSyntaxTree::Add(_) => ArithmeticOperator::Add,
@@ -1248,13 +1195,344 @@ impl Builder {
         }
     }
 
+    fn as_comparison_operator(binary_operator: &BinaryOperatorSyntaxTree) -> ComparisonOperator {
+        match binary_operator {
+            BinaryOperatorSyntaxTree::LessThan(..) => ComparisonOperator::LessThan,
+            BinaryOperatorSyntaxTree::LessThanOrEqual(..) => ComparisonOperator::LessThanOrEqual,
+            BinaryOperatorSyntaxTree::GreaterThan(..) => ComparisonOperator::GreaterThan,
+            BinaryOperatorSyntaxTree::GreaterThanOrEqual(..) => {
+                ComparisonOperator::GreaterThanOrEqual
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn as_equality_operator(binary_operator: &BinaryOperatorSyntaxTree) -> EqualityOperator {
+        match binary_operator {
+            BinaryOperatorSyntaxTree::Equal(..) => EqualityOperator::Equal,
+            BinaryOperatorSyntaxTree::NotEqual(..) => EqualityOperator::NotEqual,
+            _ => unreachable!(),
+        }
+    }
+
+    fn compound_bianry_operator_syntax_tree_to_arithmetic_operator(
+        binary_operator: &BinaryOperatorSyntaxTree,
+    ) -> ArithmeticOperator {
+        match binary_operator {
+            BinaryOperatorSyntaxTree::CompoundAdd(..) => ArithmeticOperator::Add,
+            BinaryOperatorSyntaxTree::CompoundSubtract(..) => ArithmeticOperator::Subtract,
+            BinaryOperatorSyntaxTree::CompoundMultiply(..) => ArithmeticOperator::Multiply,
+            BinaryOperatorSyntaxTree::CompoundDivide(..) => ArithmeticOperator::Divide,
+            BinaryOperatorSyntaxTree::CompoundModulo(..) => ArithmeticOperator::Modulo,
+            _ => unreachable!(),
+        }
+    }
+
+    fn bind_left_and_right(
+        &mut self,
+        syntax_tree: &BinarySyntaxTree,
+        is_assign: bool,
+        inferable_type_check: Option<InferableType>,
+        handler: &impl ErrorHandler,
+    ) -> Result<(BindingResult, Value<IntermediateTypeID>), BindingError> {
+        let left_binding_option = {
+            let binding_target = if is_assign {
+                BindingTarget::ForAddress
+            } else {
+                BindingTarget::ForValue
+            };
+            BindingOption { binding_target }
+        };
+
+        let left = if let Some(inferable_type_check) = inferable_type_check {
+            self.expect_expression(
+                syntax_tree.left_operand(),
+                left_binding_option,
+                inferable_type_check,
+                handler,
+            )
+        } else {
+            self.bind_expression(syntax_tree.left_operand(), left_binding_option, handler)
+        };
+
+        let right = self.bind_expression(
+            syntax_tree.right_operand(),
+            BindingOption::default(),
+            handler,
+        );
+
+        match (left, right) {
+            (Ok(left), Ok(right)) => {
+                let mut right = right.into_value().unwrap();
+
+                // unifies the types
+                let left_ty = self.get_binding_result_intermediate_type_id(&left);
+                let right_ty = self.get_value_intermediate_type_id(&right).unwrap();
+
+                if let Err(err) = self.type_check_unify(
+                    syntax_tree.right_operand().span(),
+                    left_ty,
+                    right_ty,
+                    handler,
+                ) {
+                    // right must match the left. if not, change right to placeholder value that has
+                    // the same type as the left
+                    right = Value::Placeholder(Placeholder {
+                        span: err.0,
+                        ty: left_ty,
+                    });
+                }
+
+                Ok((left, right))
+            }
+            (Ok(left), Err(_)) => {
+                let left_ty = self.get_binding_result_intermediate_type_id(&left);
+                Ok((
+                    left,
+                    Value::Placeholder(Placeholder {
+                        span: syntax_tree.right_operand().span(),
+                        ty: left_ty,
+                    }),
+                ))
+            }
+            (Err(_), Ok(right)) => {
+                if is_assign {
+                    Err(BindingError(syntax_tree.span()))
+                } else {
+                    Ok((
+                        BindingResult::Value(Value::Placeholder(Placeholder {
+                            span: syntax_tree.left_operand().span(),
+                            ty: self.get_binding_result_intermediate_type_id(&right),
+                        })),
+                        right.into_value().unwrap(),
+                    ))
+                }
+            }
+            (Err(_), Err(_)) => Err(BindingError(syntax_tree.span())),
+        }
+    }
+
+    fn handle_normal_binary(
+        &mut self,
+        syntax_tree: &BinarySyntaxTree,
+        binary_operator: BinaryOperator,
+        inferable_type_check: Option<InferableType>,
+        handler: &impl ErrorHandler,
+    ) -> Result<RegisterID, BindingError> {
+        let (left, rhs) =
+            self.bind_left_and_right(syntax_tree, false, inferable_type_check, handler)?;
+        let left = left.into_value().unwrap();
+
+        let binding = Binary {
+            left_operand: left,
+            right_operand: rhs,
+            span: syntax_tree.span(),
+            binary_operator,
+        };
+
+        Ok(self.assign_new_register_binding(binding.into()))
+    }
+
     fn handle_assign(
         &mut self,
         syntax_tree: &BinarySyntaxTree,
         binding_option: BindingOption,
         handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
-        todo!()
+        let (lhs, rhs) = self.bind_left_and_right(syntax_tree, true, None, handler)?;
+
+        // lhs must be address
+        let BindingResult::AddressWithSpan(address) = lhs else {
+            handler.recieve(Error::LValueExpected(LValueExpected {
+                expression_span: syntax_tree.left_operand().span()
+            }));
+
+            return Err(BindingError(syntax_tree.span()));
+        };
+
+        // lhs address must be mutable
+        if !self.get_address_mutability(&address.address) {
+            handler.recieve(Error::MutableLValueExpected(MutableLValueExpected {
+                expression_span: syntax_tree.left_operand().span(),
+            }));
+        }
+
+        // insert store instruction
+        self.add_basic_instruction(
+            Store {
+                address: address.address.clone(),
+                value: rhs,
+                span: syntax_tree.span(),
+            }
+            .into(),
+        );
+
+        match binding_option.binding_target {
+            BindingTarget::ForValue => {
+                let load = Load {
+                    span: syntax_tree.span(),
+                    load_type: LoadType::Copy,
+                    address: address.address,
+                }
+                .into();
+
+                Ok(BindingResult::Value(Value::Register(
+                    self.assign_new_register_binding(load),
+                )))
+            }
+            BindingTarget::ForAddress => Ok(BindingResult::AddressWithSpan(address)),
+        }
+    }
+
+    fn handle_compound_arithmetic(
+        &mut self,
+        syntax_tree: &BinarySyntaxTree,
+        binding_option: BindingOption,
+        arithmetic_operator: ArithmeticOperator,
+        handler: &impl ErrorHandler,
+    ) -> Result<BindingResult, BindingError> {
+        let (lhs, rhs) = self.bind_left_and_right(syntax_tree, true, None, handler)?;
+
+        // lhs must be address
+        let BindingResult::AddressWithSpan(address) = lhs else {
+            handler.recieve(Error::LValueExpected(LValueExpected {
+                expression_span: syntax_tree.left_operand().span()
+            }));
+
+            return Err(BindingError(syntax_tree.span()));
+        };
+
+        // lhs address must be mutable
+        if !self.get_address_mutability(&address.address) {
+            handler.recieve(Error::MutableLValueExpected(MutableLValueExpected {
+                expression_span: syntax_tree.left_operand().span(),
+            }));
+        }
+
+        let load_temp_register = self.assign_new_register_binding(Binding::Load(Load {
+            span: syntax_tree.left_operand().span(),
+            load_type: LoadType::Copy,
+            address: address.address.clone(),
+        }));
+        let arithmetic_result_register =
+            self.assign_new_register_binding(Binding::Binary(Binary {
+                span: syntax_tree.span(),
+                left_operand: Value::Register(load_temp_register),
+                right_operand: rhs,
+                binary_operator: BinaryOperator::ArithmeticOperator(arithmetic_operator),
+            }));
+        // store the result
+        self.add_basic_instruction(
+            Store {
+                address: address.address.clone(),
+                value: Value::Register(arithmetic_result_register),
+                span: syntax_tree.span(),
+            }
+            .into(),
+        );
+
+        match binding_option.binding_target {
+            BindingTarget::ForValue => Ok(BindingResult::Value(Value::Register(
+                arithmetic_result_register,
+            ))),
+            BindingTarget::ForAddress => Ok(BindingResult::AddressWithSpan(address)),
+        }
+    }
+
+    fn handle_short_circuit(
+        &mut self,
+        syntax_tree: &BinarySyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> RegisterID {
+        let left = self
+            .expect_expression(
+                syntax_tree.left_operand(),
+                BindingOption::default(),
+                InferableType::Type(Type::PrimitiveType(PrimitiveType::Bool)),
+                handler,
+            )
+            .map_or_else(
+                |err| {
+                    Value::Placeholder(Placeholder {
+                        span: err.0,
+                        ty: IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Bool)),
+                    })
+                },
+                |x| x.into_value().unwrap(),
+            );
+
+        let is_or = match syntax_tree.binary_operator() {
+            BinaryOperatorSyntaxTree::LogicalAnd(..) => false,
+            BinaryOperatorSyntaxTree::LogicalOr(..) => true,
+            _ => unreachable!(),
+        };
+
+        let pre_block_id = self.current_basic_block_id;
+        let rhs_condition_block_id = self.container.control_flow_graph.new_basic_block();
+        let continue_block_id = self.container.control_flow_graph.new_basic_block();
+
+        // add condition jump
+        self.container
+            .control_flow_graph
+            .add_conditional_jump_instruction(pre_block_id, ConditionalJump {
+                condition: left.clone(),
+                true_jump_target: if is_or {
+                    continue_block_id
+                } else {
+                    rhs_condition_block_id
+                },
+                false_jump_target: if is_or {
+                    rhs_condition_block_id
+                } else {
+                    continue_block_id
+                },
+            })
+            .unwrap();
+
+        // to the rhs condition block, bind the rhs
+        let rhs_value = {
+            self.current_basic_block_id = rhs_condition_block_id;
+            let rhs_value = self
+                .expect_expression(
+                    syntax_tree.right_operand(),
+                    BindingOption::default(),
+                    InferableType::Type(Type::PrimitiveType(PrimitiveType::Bool)),
+                    handler,
+                )
+                .map_or_else(
+                    |err| {
+                        Value::Placeholder(Placeholder {
+                            span: err.0,
+                            ty: IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Bool)),
+                        })
+                    },
+                    |x| x.into_value().unwrap(),
+                );
+
+            // branch to continue block
+            self.container
+                .control_flow_graph
+                .add_jump_instruction(rhs_condition_block_id, Jump {
+                    jump_target: continue_block_id,
+                })
+                .unwrap();
+
+            rhs_value
+        };
+
+        // to the continue block, add phi node and return the result
+        self.current_basic_block_id = continue_block_id;
+
+        self.assign_new_register_binding(Binding::PhiNode(PhiNode {
+            span: syntax_tree.span(),
+            values_by_predecessor: {
+                let mut values_by_predecessor = HashMap::new();
+                values_by_predecessor.insert(pre_block_id, left);
+                values_by_predecessor.insert(rhs_condition_block_id, rhs_value);
+                values_by_predecessor
+            },
+            phi_node_source: PhiNodeSource::LogicalShortCircuit,
+        }))
     }
 
     /// Binds the [`NamedSyntaxTree`] into a [`BindingResult`]
@@ -1273,38 +1551,52 @@ impl Builder {
             | BinaryOperatorSyntaxTree::Multiply(..)
             | BinaryOperatorSyntaxTree::Divide(..)
             | BinaryOperatorSyntaxTree::Modulo(..) => self
-                .handle_arithmetic_binary(
+                .handle_normal_binary(
                     syntax_tree,
-                    Self::as_arithmetic_operator(syntax_tree.binary_operator()),
+                    Self::as_arithmetic_operator(syntax_tree.binary_operator()).into(),
+                    Some(InferableType::Constraint(Constraint::Number)),
                     handler,
                 )
                 .map(|x| BindingResult::Value(Value::Register(x))),
-            BinaryOperatorSyntaxTree::Assign(..) => todo!(),
-            BinaryOperatorSyntaxTree::CompoundAdd(..) => todo!(),
-            BinaryOperatorSyntaxTree::CompoundSubtract(..) => {
-                todo!()
+            BinaryOperatorSyntaxTree::Assign(..) => {
+                self.handle_assign(syntax_tree, binding_option, handler)
             }
-            BinaryOperatorSyntaxTree::CompoundMultiply(..) => {
-                todo!()
+            BinaryOperatorSyntaxTree::CompoundAdd(..)
+            | BinaryOperatorSyntaxTree::CompoundSubtract(..)
+            | BinaryOperatorSyntaxTree::CompoundMultiply(..)
+            | BinaryOperatorSyntaxTree::CompoundDivide(..)
+            | BinaryOperatorSyntaxTree::CompoundModulo(..) => self.handle_compound_arithmetic(
+                syntax_tree,
+                binding_option,
+                Self::compound_bianry_operator_syntax_tree_to_arithmetic_operator(
+                    syntax_tree.binary_operator(),
+                ),
+                handler,
+            ),
+            BinaryOperatorSyntaxTree::Equal(..) | BinaryOperatorSyntaxTree::NotEqual(..) => self
+                .handle_normal_binary(
+                    syntax_tree,
+                    Self::as_equality_operator(syntax_tree.binary_operator()).into(),
+                    Some(InferableType::Constraint(Constraint::PrimitiveType)),
+                    handler,
+                )
+                .map(|x| BindingResult::Value(Value::Register(x))),
+            BinaryOperatorSyntaxTree::LessThan(..)
+            | BinaryOperatorSyntaxTree::LessThanOrEqual(..)
+            | BinaryOperatorSyntaxTree::GreaterThan(..)
+            | BinaryOperatorSyntaxTree::GreaterThanOrEqual(..) => self
+                .handle_normal_binary(
+                    syntax_tree,
+                    Self::as_comparison_operator(syntax_tree.binary_operator()).into(),
+                    Some(InferableType::Constraint(Constraint::Number)),
+                    handler,
+                )
+                .map(|x| BindingResult::Value(Value::Register(x))),
+            BinaryOperatorSyntaxTree::LogicalAnd(..) | BinaryOperatorSyntaxTree::LogicalOr(..) => {
+                Ok(BindingResult::Value(Value::Register(
+                    self.handle_short_circuit(syntax_tree, handler),
+                )))
             }
-            BinaryOperatorSyntaxTree::CompoundDivide(..) => {
-                todo!()
-            }
-            BinaryOperatorSyntaxTree::CompoundModulo(..) => {
-                todo!()
-            }
-            BinaryOperatorSyntaxTree::Equal(..) => todo!(),
-            BinaryOperatorSyntaxTree::NotEqual(..) => todo!(),
-            BinaryOperatorSyntaxTree::LessThan(..) => todo!(),
-            BinaryOperatorSyntaxTree::LessThanOrEqual(..) => {
-                todo!()
-            }
-            BinaryOperatorSyntaxTree::GreaterThan(..) => todo!(),
-            BinaryOperatorSyntaxTree::GreaterThanOrEqual(..) => {
-                todo!()
-            }
-            BinaryOperatorSyntaxTree::LogicalAnd(..) => todo!(),
-            BinaryOperatorSyntaxTree::LogicalOr(..) => todo!(),
         }
     }
 
@@ -1312,14 +1604,41 @@ impl Builder {
 }
 
 impl Builder {
+    fn add_basic_instruction(&mut self, inst: Basic<IntermediateTypeID>) {
+        self.container
+            .control_flow_graph
+            .get_mut(self.current_basic_block_id)
+            .unwrap()
+            .add_basic_instruction(inst);
+    }
+
     fn assign_new_register_binding(&mut self, binding: Binding<IntermediateTypeID>) -> RegisterID {
         let register_id = self.container.registers.insert(Register { binding });
         self.container
             .control_flow_graph
-            .get_mut(self.current_block)
+            .get_mut(self.current_basic_block_id)
             .unwrap()
             .add_basic_instruction(RegisterAssignment { register_id }.into());
         register_id
+    }
+
+    fn get_address_mutability(&self, address: &Address) -> bool {
+        match address {
+            Address::AllocaID(alloca_id) => {
+                self.container.allocas.get(*alloca_id).unwrap().is_mutable
+            }
+            Address::ParameterID(param_id) => {
+                self.container
+                    .table
+                    .get_parameter(*param_id)
+                    .unwrap()
+                    .type_binding()
+                    .is_mutable
+            }
+            Address::FieldAddress(field_address) => {
+                self.get_address_mutability(&field_address.operand_address)
+            }
+        }
     }
 
     fn get_address_type(&self, address: &Address) -> InferableType {
@@ -1343,14 +1662,25 @@ impl Builder {
                 .type_binding()
                 .ty
                 .into(),
-            Address::FieldAddress(address) => IntermediateTypeID::Type(Type::TypedID(
-                self.container
-                    .table
-                    .get_field(address.field_id())
-                    .unwrap()
-                    .parent_struct_id()
-                    .into(),
-            )),
+            Address::FieldAddress(address) => self
+                .container
+                .table
+                .get_field(address.field_id())
+                .unwrap()
+                .ty()
+                .into(),
+        }
+    }
+
+    fn get_binding_result_intermediate_type_id(
+        &self,
+        binding_result: &BindingResult,
+    ) -> IntermediateTypeID {
+        match binding_result {
+            BindingResult::Value(value) => self.get_value_intermediate_type_id(value).unwrap(),
+            BindingResult::AddressWithSpan(address) => {
+                self.get_address_intermediate_type_id(&address.address)
+            }
         }
     }
 
@@ -1367,7 +1697,7 @@ impl Builder {
         match &value {
             BindingResult::Value(value) => self.type_check(
                 syntax_tree.span(),
-                self.get_intermediate_type_id(value).unwrap(),
+                self.get_value_intermediate_type_id(value).unwrap(),
                 expect,
                 handler,
             )?,

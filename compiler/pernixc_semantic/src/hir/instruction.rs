@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
+use pernixc_source::Span;
 
 use super::{
     value::{Address, Value},
@@ -90,6 +91,10 @@ pub struct Store<T: TypeSystem> {
     /// Gets the [`Value`] that is being stored to the [`Address`].
     #[get = "pub"]
     pub(super) value: Value<T>,
+
+    /// Specifies the location in the source code that generates this instruction.
+    #[get = "pub"]
+    pub(super) span: Span,
 }
 
 impl<T: TypeSystem> BasicInstruction for Basic<T> {}

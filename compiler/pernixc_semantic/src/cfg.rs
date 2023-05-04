@@ -3,6 +3,8 @@
 
 use std::{collections::HashSet, fmt::Debug};
 
+use derive_more::From;
+use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_system::{
     arena::{Arena, InvalidIDError},
@@ -85,7 +87,7 @@ pub trait InstructionBackend {
 
 /// Represents a unit of instructions that are stored in the [`BasicBlock`] for a sequential
 /// execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Instruction<T: InstructionBackend> {
     Jump(T::Jump),
@@ -166,6 +168,84 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
         id: BasicBlockID,
     ) -> Result<&mut BasicBlockSymbol<T>, InvalidIDError> {
         self.basic_blocks.get_mut(id)
+    }
+
+    /// Adds a new [`ConditionalJumpInstruction`] into the [`BasicBlock`] of the given ID.
+    ///
+    /// # Parameters
+    /// - `id`: The [`BasicBlockID`] of the [`BasicBlock`] to add the [`ConditionalJumpInstruction`]
+    ///   into.
+    /// - `jump`: The [`ConditionalJumpInstruction`] to add.
+    ///
+    /// # Errors
+    /// - [`InvalidIDError`]: if the given [`BasicBlockID`], or the jump target IDs are invalid.
+    pub fn add_conditional_jump_instruction(
+        &mut self,
+        id: BasicBlockID,
+        jump: T::ConditionalJump,
+    ) -> Result<(), InvalidIDError> {
+        // check for id validity
+        if self.get(jump.true_jump_target()).is_err() || self.get(jump.false_jump_target()).is_err()
+        {
+            return Err(InvalidIDError);
+        }
+        let true_jump_target = jump.true_jump_target();
+        let false_jump_target = jump.false_jump_target();
+
+        // add the jump instruction
+        {
+            let target = self.get_mut(id)?;
+            target.instructions.push(Instruction::ConditionalJump(jump));
+            target.successors.insert(true_jump_target);
+            target.successors.insert(false_jump_target);
+        }
+
+        // add predecessor for both jump target
+        {
+            let true_jump_target = self.get_mut(true_jump_target)?;
+            true_jump_target.predecessors.insert(id);
+        }
+        {
+            let false_jump_target = self.get_mut(false_jump_target)?;
+            false_jump_target.predecessors.insert(id);
+        }
+
+        Ok(())
+    }
+
+    /// Adds a new [`JumpInstruction`] into the [`BasicBlock`] of the given ID.
+    ///
+    /// # Parameters
+    /// - `id`: The [`BasicBlockID`] of the [`BasicBlock`] to add the [`JumpInstruction`] into.
+    /// - `jump`: The [`JumpInstruction`] to add.
+    ///
+    /// # Errors
+    /// - [`InvalidIDError`]: if the given [`BasicBlockID`], or the jump target ID is invalid.
+    pub fn add_jump_instruction(
+        &mut self,
+        id: BasicBlockID,
+        jump: T::Jump,
+    ) -> Result<(), InvalidIDError> {
+        // check for id validity
+        if self.get(jump.jump_target()).is_err() {
+            return Err(InvalidIDError);
+        }
+        let jump_target = jump.jump_target();
+
+        // add the jump instruction
+        {
+            let target = self.get_mut(id)?;
+            target.instructions.push(Instruction::Jump(jump));
+            target.successors.insert(jump_target);
+        }
+
+        // add predecessor for both jump target
+        {
+            let jump_target = self.get_mut(jump_target)?;
+            jump_target.predecessors.insert(id);
+        }
+
+        Ok(())
     }
 }
 

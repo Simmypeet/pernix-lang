@@ -6,7 +6,8 @@ use pernixc_system::error_handler::ErrorVec;
 
 use crate::{
     hir::{
-        builder::{BindingOption, BindingTarget, Builder},
+        builder::{BindingOption, BindingResult, BindingTarget, Builder},
+        value::binding::{ComparisonOperator, EqualityOperator},
         AllHirError,
     },
     infer::{Constraint, InferableType},
@@ -1278,5 +1279,601 @@ fn struct_literal_binding_test() -> Result<(), Box<dyn std::error::Error>> {
 
         assert_eq!(struct_literal_binding.initializations.len(), 0);
     }
+    Ok(())
+}
+
+#[test]
+#[allow(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    clippy::similar_names
+)]
+fn member_access_binding_test() -> Result<(), Box<dyn std::error::Error>> {
+    let source_file = SourceFile::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resource/hir/memberAccessBinding/main.pnx"),
+        vec!["test".to_string()],
+    )?;
+
+    let errors: ErrorVec<AllParsingError> = ErrorVec::new();
+    let target = TargetParsing::parse(source_file, &errors)?;
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let table = Arc::new(Table::analyze(target, &errors));
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let overload_set = table.get_overload_set(
+        table
+            .get_global_id_by_full_name(["test", "main"].into_iter())
+            .unwrap()
+            .into_overload_set()
+            .unwrap(),
+    )?;
+    let overload_id = overload_set.overloads()[0];
+    let overload = table.get_overload(overload_id)?;
+    let vector3_id = table
+        .get_global_id_by_full_name(["test", "vector", "Vector3"].into_iter())
+        .unwrap()
+        .into_struct()
+        .unwrap();
+    let vector2_id = table
+        .get_global_id_by_full_name(["test", "vector", "Vector2"].into_iter())
+        .unwrap()
+        .into_struct()
+        .unwrap();
+
+    let vector3_sym = table.get_struct(vector3_id).unwrap();
+    let vector2_sym = table.get_struct(vector2_id).unwrap();
+
+    let vector3_vector2_id = vector3_sym
+        .field_ids_by_name()
+        .get("vector2")
+        .copied()
+        .unwrap();
+    let vector3_z_id = vector3_sym.field_ids_by_name().get("z").copied().unwrap();
+    let vector2_x_id = vector2_sym.field_ids_by_name().get("x").copied().unwrap();
+    let vector2_y_id = vector2_sym.field_ids_by_name().get("y").copied().unwrap();
+
+    let mut builder = Builder::new(table.clone(), overload_id)?;
+    let statements = overload.syntax_tree().block_without_label.statements();
+
+    let errors: ErrorVec<AllHirError> = ErrorVec::new();
+    let address_binding_option = BindingOption {
+        binding_target: BindingTarget::ForAddress,
+    };
+
+    let first_alloca_id = {
+        let alloca_id = builder
+            .bind_variable_declaration_statement(
+                statements[0]
+                    .as_declarative()
+                    .unwrap()
+                    .as_variable_declaration()
+                    .unwrap(),
+                &errors,
+            )
+            .unwrap();
+        assert_eq!(errors.as_vec().len(), 0);
+        alloca_id
+    };
+    {
+        let field_address = builder
+            .bind_member_access(
+                statements[1]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_member_access()
+                    .unwrap(),
+                address_binding_option,
+                &errors,
+            )?
+            .into_address_with_span()
+            .unwrap()
+            .address
+            .into_field_address()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        assert_eq!(
+            field_address.operand_address.into_alloca_id().unwrap(),
+            first_alloca_id
+        );
+        assert_eq!(field_address.field_id, vector3_z_id);
+    }
+    {
+        let field_address = builder
+            .bind_member_access(
+                statements[2]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_member_access()
+                    .unwrap(),
+                address_binding_option,
+                &errors,
+            )?
+            .into_address_with_span()
+            .unwrap()
+            .address
+            .into_field_address()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let inner_field_address = field_address.operand_address.into_field_address().unwrap();
+        assert_eq!(
+            inner_field_address
+                .operand_address
+                .into_alloca_id()
+                .unwrap(),
+            first_alloca_id
+        );
+        assert_eq!(inner_field_address.field_id, vector3_vector2_id);
+        assert_eq!(field_address.field_id, vector2_x_id);
+    }
+    {
+        let field_address = builder
+            .bind_member_access(
+                statements[3]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_member_access()
+                    .unwrap(),
+                address_binding_option,
+                &errors,
+            )?
+            .into_address_with_span()
+            .unwrap()
+            .address
+            .into_field_address()
+            .unwrap();
+
+        let err = {
+            let mut errors = errors.as_vec_mut();
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_field_inaccessible()
+                .unwrap()
+        };
+        assert_eq!(err.field_id, vector2_y_id);
+
+        let inner_field_address = field_address.operand_address.into_field_address().unwrap();
+        assert_eq!(
+            inner_field_address
+                .operand_address
+                .into_alloca_id()
+                .unwrap(),
+            first_alloca_id
+        );
+        assert_eq!(inner_field_address.field_id, vector3_vector2_id);
+        assert_eq!(field_address.field_id, vector2_y_id);
+    }
+    Ok(())
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+fn binary_binding_test() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::hir::value::binding::{ArithmeticOperator, BinaryOperator};
+
+    let source_file = SourceFile::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/hir/binaryBinding/main.pnx"),
+        vec!["test".to_string()],
+    )?;
+
+    let errors: ErrorVec<AllParsingError> = ErrorVec::new();
+    let target = TargetParsing::parse(source_file, &errors)?;
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let table = Arc::new(Table::analyze(target, &errors));
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let overload_set = table.get_overload_set(
+        table
+            .get_global_id_by_full_name(["test", "main"].into_iter())
+            .unwrap()
+            .into_overload_set()
+            .unwrap(),
+    )?;
+    let overload_id = overload_set.overloads()[0];
+    let mut builder = Builder::new(table, overload_id)?;
+    let table = builder.container.table.clone();
+
+    let number_sym = table.get_struct(
+        table
+            .get_global_id_by_full_name(["test", "Number"].into_iter())
+            .unwrap()
+            .into_struct()
+            .unwrap(),
+    )?;
+    let number_x_field_id = number_sym.field_ids_by_name().get("x").copied().unwrap();
+
+    let new_bool_first_id = table
+        .get_overload_set(
+            table
+                .get_global_id_by_full_name(["test", "newBoolFirst"].into_iter())
+                .unwrap()
+                .into_overload_set()
+                .unwrap(),
+        )?
+        .overloads()[0];
+    let new_bool_second_id = table
+        .get_overload_set(
+            table
+                .get_global_id_by_full_name(["test", "newBoolSecond"].into_iter())
+                .unwrap()
+                .into_overload_set()
+                .unwrap(),
+        )?
+        .overloads()[0];
+
+    let overload = table.get_overload(overload_id)?;
+    let statements = overload.syntax_tree().block_without_label.statements();
+    let errors: ErrorVec<AllHirError> = ErrorVec::new();
+
+    {
+        let register_id = builder
+            .bind_binary(
+                statements[0]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_binary()
+                    .unwrap(),
+                BindingOption::default(),
+                &errors,
+            )?
+            .into_value()
+            .unwrap()
+            .into_register()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let binding = builder
+            .container
+            .registers
+            .get(register_id)
+            .unwrap()
+            .binding
+            .as_binary()
+            .unwrap();
+
+        assert_eq!(
+            builder
+                .get_inferable_type(&register_id)
+                .unwrap()
+                .into_type()
+                .unwrap(),
+            Type::PrimitiveType(PrimitiveType::Float32)
+        );
+        assert_eq!(
+            builder
+                .get_inferable_type(binding.left_operand())
+                .unwrap()
+                .into_type()
+                .unwrap(),
+            Type::PrimitiveType(PrimitiveType::Float32)
+        );
+        assert_eq!(
+            builder
+                .get_inferable_type(binding.right_operand())
+                .unwrap()
+                .into_type()
+                .unwrap(),
+            Type::PrimitiveType(PrimitiveType::Float32)
+        );
+        assert_eq!(
+            binding.binary_operator,
+            BinaryOperator::ArithmeticOperator(ArithmeticOperator::Add)
+        );
+    }
+    {
+        let register_id = builder
+            .bind_binary(
+                statements[1]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_binary()
+                    .unwrap(),
+                BindingOption::default(),
+                &errors,
+            )?
+            .into_value()
+            .unwrap()
+            .into_register()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let binding = builder
+            .container
+            .registers
+            .get(register_id)
+            .unwrap()
+            .binding
+            .as_binary()
+            .unwrap();
+
+        assert_eq!(
+            builder
+                .get_inferable_type(&register_id)
+                .unwrap()
+                .into_type()
+                .unwrap(),
+            Type::PrimitiveType(PrimitiveType::Bool)
+        );
+        assert_eq!(
+            builder
+                .get_inferable_type(binding.left_operand())
+                .unwrap()
+                .into_constraint()
+                .unwrap(),
+            Constraint::Signed,
+        );
+        assert_eq!(
+            builder
+                .get_inferable_type(binding.right_operand())
+                .unwrap()
+                .into_constraint()
+                .unwrap(),
+            Constraint::Signed,
+        );
+        assert_eq!(
+            binding.binary_operator,
+            BinaryOperator::ComparisonOperator(ComparisonOperator::GreaterThanOrEqual)
+        );
+    }
+    {
+        let register_id = builder
+            .bind_binary(
+                statements[2]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_binary()
+                    .unwrap(),
+                BindingOption::default(),
+                &errors,
+            )?
+            .into_value()
+            .unwrap()
+            .into_register()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let binding = builder
+            .container
+            .registers
+            .get(register_id)
+            .unwrap()
+            .binding
+            .as_binary()
+            .unwrap();
+
+        assert_eq!(
+            builder
+                .get_inferable_type(&register_id)
+                .unwrap()
+                .into_type()
+                .unwrap(),
+            Type::PrimitiveType(PrimitiveType::Bool)
+        );
+        assert_eq!(
+            builder
+                .get_inferable_type(binding.left_operand())
+                .unwrap()
+                .into_type()
+                .unwrap(),
+            Type::PrimitiveType(PrimitiveType::Bool)
+        );
+        assert_eq!(
+            builder
+                .get_inferable_type(binding.right_operand())
+                .unwrap()
+                .into_type()
+                .unwrap(),
+            Type::PrimitiveType(PrimitiveType::Bool)
+        );
+        assert_eq!(
+            binding.binary_operator,
+            BinaryOperator::EqualityOperator(EqualityOperator::Equal)
+        );
+    }
+    // let number = newNumber();
+    // number.x = 4;
+    {
+        let alloca_address = builder.bind_variable_declaration_statement(
+            statements[3]
+                .as_declarative()
+                .unwrap()
+                .as_variable_declaration()
+                .unwrap(),
+            &errors,
+        )?;
+
+        let field_address = builder
+            .bind_binary(
+                statements[4]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_binary()
+                    .unwrap(),
+                BindingOption {
+                    binding_target: BindingTarget::ForAddress,
+                },
+                &errors,
+            )?
+            .into_address_with_span()
+            .unwrap();
+
+        assert_eq!(
+            *field_address
+                .address
+                .as_field_address()
+                .unwrap()
+                .operand_address
+                .as_alloca_id()
+                .unwrap(),
+            alloca_address
+        );
+        assert_eq!(
+            field_address.address.as_field_address().unwrap().field_id,
+            number_x_field_id
+        );
+
+        let err = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_mutable_l_value_expected()
+                .unwrap()
+        };
+
+        assert_eq!(err.expression_span.str(), "number.x");
+        let store_instrcution = builder
+            .container
+            .control_flow_graph
+            .get(builder.current_basic_block_id)?
+            .instructions()
+            .last()
+            .unwrap()
+            .as_basic()
+            .unwrap()
+            .as_store()
+            .unwrap();
+
+        assert_eq!(store_instrcution.address, field_address.address);
+        assert_eq!(
+            builder
+                .get_inferable_type(&store_instrcution.value)?
+                .into_type()
+                .unwrap(),
+            Type::PrimitiveType(PrimitiveType::Float32)
+        );
+    }
+
+    // newBoolFirst() and newBoolSecond();
+    {
+        let pre_block_id = builder.current_basic_block_id;
+
+        // expect phi node
+        let register_id = builder
+            .bind_binary(
+                statements[5]
+                    .as_expressive()
+                    .unwrap()
+                    .as_semi()
+                    .unwrap()
+                    .expression()
+                    .as_binary()
+                    .unwrap(),
+                BindingOption::default(),
+                &errors,
+            )?
+            .into_value()
+            .unwrap()
+            .into_register()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        let phi_node_binding = builder
+            .container
+            .registers
+            .get(register_id)
+            .unwrap()
+            .binding
+            .as_phi_node()
+            .unwrap();
+
+        let (continue_block_id, rhs_block_id) = {
+            let conditional_jump = builder
+                .container
+                .control_flow_graph
+                .get(pre_block_id)?
+                .instructions()
+                .last()
+                .unwrap()
+                .as_conditional_jump()
+                .unwrap();
+
+            (
+                conditional_jump.false_jump_target,
+                conditional_jump.true_jump_target,
+            )
+        };
+
+        assert_eq!(builder.current_basic_block_id, continue_block_id);
+
+        let phi_node = builder
+            .container
+            .registers
+            .get(register_id)?
+            .binding
+            .as_phi_node()
+            .unwrap();
+
+        assert_eq!(phi_node.values_by_predecessor.len(), 2);
+        let pre_incoming_register_id = *phi_node_binding.values_by_predecessor[&pre_block_id]
+            .as_register()
+            .unwrap();
+        let rhs_incoming_register_id = *phi_node_binding.values_by_predecessor[&rhs_block_id]
+            .as_register()
+            .unwrap();
+
+        assert_eq!(
+            builder
+                .container
+                .registers
+                .get(pre_incoming_register_id)?
+                .binding
+                .as_function_call()
+                .unwrap()
+                .overload_id,
+            new_bool_first_id
+        );
+        assert_eq!(
+            builder
+                .container
+                .registers
+                .get(rhs_incoming_register_id)?
+                .binding
+                .as_function_call()
+                .unwrap()
+                .overload_id,
+            new_bool_second_id
+        );
+    }
+
     Ok(())
 }
