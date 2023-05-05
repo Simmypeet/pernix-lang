@@ -21,6 +21,11 @@ create_symbol! {
         #[get = "pub"]
         instructions: Vec<Instruction<T>>,
 
+        /// The list of instructions that were inserted in the basic block after any *terminator*
+        /// instructions.
+        #[get = "pub"]
+        unreachable_instructions: Vec<Instruction<T>>,
+
         /// The list of [`BasicBlockID`] of the basic blocks that are successors of this basic block.
         #[get = "pub"]
         successors: HashSet<BasicBlockID>,
@@ -99,14 +104,34 @@ impl<T: InstructionBackend> BasicBlock<T> {
     fn new() -> Self {
         Self {
             instructions: Vec::new(),
+            unreachable_instructions: Vec::new(),
             successors: HashSet::new(),
             predecessors: HashSet::new(),
         }
     }
 
+    /// Checks if the [`BasicBlock`] is already terminated with one of the terminator instructions.
+    #[must_use]
+    pub fn is_terminated(&self) -> bool {
+        self.instructions.last().map_or(false, |instruction| {
+            matches!(
+                instruction,
+                Instruction::Jump(_) | Instruction::Return(_) | Instruction::ConditionalJump(_)
+            )
+        })
+    }
+
     /// Adds a new basic instruction to the [`BasicBlock`].
     pub fn add_basic_instruction(&mut self, instruction: T::Basic) {
-        self.instructions.push(Instruction::Basic(instruction));
+        self.add_instruction(Instruction::Basic(instruction));
+    }
+
+    fn add_instruction(&mut self, instruction: Instruction<T>) {
+        if self.is_terminated() {
+            self.unreachable_instructions.push(instruction);
+        } else {
+            self.instructions.push(instruction);
+        }
     }
 }
 
@@ -192,21 +217,29 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
         let false_jump_target = jump.false_jump_target();
 
         // add the jump instruction
-        {
+        let is_terminated = {
             let target = self.get_mut(id)?;
-            target.instructions.push(Instruction::ConditionalJump(jump));
-            target.successors.insert(true_jump_target);
-            target.successors.insert(false_jump_target);
-        }
+            let is_terminated = target.is_terminated();
+            target.add_instruction(Instruction::ConditionalJump(jump));
+
+            if !is_terminated {
+                target.successors.insert(true_jump_target);
+                target.successors.insert(false_jump_target);
+            }
+
+            is_terminated
+        };
 
         // add predecessor for both jump target
-        {
-            let true_jump_target = self.get_mut(true_jump_target)?;
-            true_jump_target.predecessors.insert(id);
-        }
-        {
-            let false_jump_target = self.get_mut(false_jump_target)?;
-            false_jump_target.predecessors.insert(id);
+        if !is_terminated {
+            {
+                let true_jump_target = self.get_mut(true_jump_target)?;
+                true_jump_target.predecessors.insert(id);
+            }
+            {
+                let false_jump_target = self.get_mut(false_jump_target)?;
+                false_jump_target.predecessors.insert(id);
+            }
         }
 
         Ok(())
@@ -232,14 +265,20 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
         let jump_target = jump.jump_target();
 
         // add the jump instruction
-        {
+        let is_terminated = {
             let target = self.get_mut(id)?;
-            target.instructions.push(Instruction::Jump(jump));
-            target.successors.insert(jump_target);
-        }
+            let is_terminated = target.is_terminated();
+            target.add_instruction(Instruction::Jump(jump));
+
+            if !is_terminated {
+                target.successors.insert(jump_target);
+            }
+
+            is_terminated
+        };
 
         // add predecessor for both jump target
-        {
+        if !is_terminated {
             let jump_target = self.get_mut(jump_target)?;
             jump_target.predecessors.insert(id);
         }

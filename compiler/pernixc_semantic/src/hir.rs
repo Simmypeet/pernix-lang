@@ -120,12 +120,6 @@ pub trait ValueInspect<T: TypeSystem, V> {
     /// # Errors
     /// - If the given value wasn't created by the same [`Container`] as this one.
     fn get_span(&self, value: &V) -> Result<Span, InvalidValueError>;
-
-    /// Returns the reachability of the given value.
-    ///
-    /// # Errors
-    /// - If the given value wasn't created by the same [`Container`] as this one.j
-    fn get_reachability(&self, value: &V) -> Result<Reachability, InvalidValueError>;
 }
 
 /// Is an enumeration of semantic errors that can occur during HIR construction.
@@ -166,16 +160,6 @@ impl TypeSystem for InferableType {
     fn from_type(ty: Type) -> Self { Self::Type(ty) }
 }
 
-/// Specifies whether if the value is reachable or not.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-pub enum Reachability {
-    /// The value is unreachable.
-    Unreachable,
-
-    /// The value is reachable.
-    Reachable,
-}
-
 /// Occurs when a value is used in a context where it wasn't created from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
 #[error("The value is used in a context where it wasn't created from.")]
@@ -200,11 +184,6 @@ impl<T: TypeSystem> ValueInspect<T, RegisterID> for Container<T> {
     fn get_span(&self, value: &RegisterID) -> Result<Span, InvalidValueError> {
         let register = self.registers.get(*value).map_err(|_| InvalidValueError)?;
         self.get_span(&register.binding)
-    }
-
-    fn get_reachability(&self, value: &RegisterID) -> Result<Reachability, InvalidValueError> {
-        let register = self.registers.get(*value).map_err(|_| InvalidValueError)?;
-        self.get_reachability(&register.binding)
     }
 }
 

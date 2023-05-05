@@ -31,6 +31,8 @@ pub enum Error {
     NoFieldOnType(NoFieldOnType),
     LValueExpected(LValueExpected),
     MutableLValueExpected(MutableLValueExpected),
+    ExpressOutsideBlock(ExpressOutsideBlock),
+    NoBlockWithGivenLabelFound(NoBlockWithGivenLabelFound),
 }
 
 /// The numeric literal suffix is not applicable to the literal's type.
@@ -255,4 +257,20 @@ pub struct MutableLValueExpected {
     /// The span of the expression that was used as an lvalue.
     #[get = "pub"]
     pub(super) expression_span: Span,
+}
+
+/// `express` expression has a label that refers to a block that does not exist.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct NoBlockWithGivenLabelFound {
+    /// The span of the label in the `express` expression.
+    #[get = "pub"]
+    pub(super) label_span: Span,
+}
+
+/// `express` expression was used outside the block.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct ExpressOutsideBlock {
+    /// The span of the invalid `express` expression.
+    #[get = "pub"]
+    pub(super) express_span: Span,
 }

@@ -6,9 +6,7 @@ use getset::{CopyGetters, Getters};
 use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::expression::NumericLiteral as NumericLiteralSyntaxTree;
 
-use super::{
-    AllocaID, Container, InvalidValueError, Reachability, RegisterID, TypeSystem, ValueInspect,
-};
+use super::{AllocaID, Container, InvalidValueError, RegisterID, TypeSystem, ValueInspect};
 use crate::symbol::{
     ty::{PrimitiveType, Type},
     EnumVariantID, FieldID, ParameterID,
@@ -34,10 +32,6 @@ impl<T: TypeSystem> ValueInspect<T, NumericLiteral<T>> for Container<T> {
     fn get_span(&self, value: &NumericLiteral<T>) -> Result<Span, InvalidValueError> {
         Ok(value.numeric_literal_syntax_tree.span())
     }
-
-    fn get_reachability(&self, _: &NumericLiteral<T>) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
-    }
 }
 
 /// Represents a boolean literal constant value.
@@ -59,10 +53,6 @@ impl<T: TypeSystem> ValueInspect<T, BooleanLiteral> for Container<T> {
 
     fn get_span(&self, value: &BooleanLiteral) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
-    }
-
-    fn get_reachability(&self, _: &BooleanLiteral) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
     }
 }
 
@@ -91,10 +81,6 @@ impl<T: TypeSystem> ValueInspect<T, EnumLiteral> for Container<T> {
     fn get_span(&self, value: &EnumLiteral) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
     }
-
-    fn get_reachability(&self, _: &EnumLiteral) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
-    }
 }
 
 /// Represents an unreachable void constant value.
@@ -114,10 +100,6 @@ impl<T: TypeSystem> ValueInspect<T, UnreachableVoid> for Container<T> {
 
     fn get_span(&self, value: &UnreachableVoid) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
-    }
-
-    fn get_reachability(&self, _: &UnreachableVoid) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Unreachable)
     }
 }
 
@@ -149,15 +131,6 @@ impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
             Constant::UnreachableVoid(e) => self.get_span(e),
         }
     }
-
-    fn get_reachability(&self, value: &Constant<T>) -> Result<Reachability, InvalidValueError> {
-        match value {
-            Constant::NumericLiteral(n) => self.get_reachability(n),
-            Constant::BooleanLiteral(b) => self.get_reachability(b),
-            Constant::EnumLiteral(e) => self.get_reachability(e),
-            Constant::UnreachableVoid(e) => self.get_reachability(e),
-        }
-    }
 }
 
 /// Represents a value that doesn't really exist, but is used to replace a value that is unable to
@@ -181,10 +154,6 @@ impl<T: TypeSystem> ValueInspect<T, Placeholder<T>> for Container<T> {
 
     fn get_span(&self, value: &Placeholder<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
-    }
-
-    fn get_reachability(&self, _value: &Placeholder<T>) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
     }
 }
 
@@ -215,14 +184,6 @@ impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
             Value::Register(id) => self.get_span(id),
             Value::Constant(c) => self.get_span(c),
             Value::Placeholder(p) => self.get_span(p),
-        }
-    }
-
-    fn get_reachability(&self, value: &Value<T>) -> Result<Reachability, InvalidValueError> {
-        match value {
-            Value::Register(id) => self.get_reachability(id),
-            Value::Constant(c) => self.get_reachability(c),
-            Value::Placeholder(p) => self.get_reachability(p),
         }
     }
 }

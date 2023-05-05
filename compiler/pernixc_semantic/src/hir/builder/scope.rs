@@ -120,6 +120,10 @@ create_symbol! {
         /// The [`IntermediateTypeID`] of the expression if it has one.
         #[get_copy = "pub"]
         pub(super) express_ty: Option<IntermediateTypeID>,
+
+        /// A map of the incoming values of the block.
+        #[get = "pub"]
+        pub(super) incoming_values: HashMap<BasicBlockID, IntermediateTypeID>,
     }
 
 }

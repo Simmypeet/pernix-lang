@@ -1,5 +1,4 @@
 //! Contains the definition of [`Builder`] -- the main interface for building the HIR.
-
 use std::{collections::HashMap, sync::Arc};
 
 use derive_more::From;
@@ -9,7 +8,8 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     expression::{
         Binary as BinarySyntaxTree, BinaryOperator as BinaryOperatorSyntaxTree,
-        BooleanLiteral as BooleanLiteralSyntaxTree, Expression as ExpressionSyntaxTree,
+        Block as BlockSyntaxTree, BooleanLiteral as BooleanLiteralSyntaxTree,
+        Express as ExpressSyntaxTree, Expression as ExpressionSyntaxTree,
         FunctionCall as FunctionCallSyntaxTree, Functional as FunctionalSyntaxTree,
         Imperative as ImperativeSyntaxTree, MemberAccess as MemberAccessSyntaxTree,
         Named as NamedSyntaxTree, NumericLiteral as NumericLiteralSyntaxTree,
@@ -21,16 +21,16 @@ use pernixc_syntax::syntax_tree::{
     },
     ConnectedList,
 };
-use pernixc_system::arena::{InvalidIDError, Arena};
+use pernixc_system::arena::{Arena, InvalidIDError};
 use thiserror::Error;
 
-use self::scope::{Locals, Stack, BlockPointer, Block};
+use self::scope::{Block, BlockPointer, Locals, Stack};
 use super::{
     error::{
-        AmbiguousFunctionCall, Error, FloatingPointLiteralHasIntegralSuffix,
+        AmbiguousFunctionCall, Error, ExpressOutsideBlock, FloatingPointLiteralHasIntegralSuffix,
         InvalidNumericLiteralSuffix, LValueExpected, NoAccessibleOverload,
-        NoOverloadWithMatchingArgumentTypes, NoOverloadWithMatchingNumberOfArguments,
-        SymbolNotCallable, ValueExpected,
+        NoBlockWithGivenLabelFound, NoOverloadWithMatchingArgumentTypes,
+        NoOverloadWithMatchingNumberOfArguments, SymbolNotCallable, ValueExpected,
     },
     instruction::{Basic, RegisterAssignment},
     value::{
@@ -39,7 +39,7 @@ use super::{
             EqualityOperator, FunctionCall, MemberAccess, Prefix, StructLiteral,
         },
         Address, AddressWithSpan, BooleanLiteral, Constant, EnumLiteral, FieldAddress,
-        NumericLiteral, Placeholder, Value,
+        NumericLiteral, Placeholder, UnreachableVoid, Value,
     },
     AllocaID, Container, ErrorHandler, InvalidValueError, Register, RegisterID, TypeSystem,
     ValueInspect,
@@ -446,6 +446,184 @@ impl Builder {
         _handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         todo!()
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds the given [`BlockSyntaxTree`] and returns the [`Value`] of the expression.
+    ///
+    /// # Errors
+    /// - If the binding process encounters a fatal semantic error.
+    #[allow(unused_must_use)]
+    pub fn bind_block(
+        &mut self,
+        syntax_tree: &BlockSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Result<Value<IntermediateTypeID>, BindingError> {
+        // allocate a successor block
+        let start_basic_block_id = self.current_basic_block_id;
+        let end_basic_block_id = self.container.control_flow_graph.new_basic_block();
+
+        // create new block id
+        let label = syntax_tree
+            .label_specifier()
+            .as_ref()
+            .map(|x| x.label().identifier().span.str().to_owned());
+        let block_id = self.blocks.insert(Block {
+            label: label.clone(),
+            start_basic_block_id,
+            end_basic_block_id,
+            express_ty: None,
+            incoming_values: HashMap::new(),
+        });
+
+        // pushes a new scope
+        self.local_stack.push(Locals::default());
+        self.block_pointer_stack
+            .push(BlockPointer { label, block_id });
+        self.add_basic_instruction(Basic::ScopePush);
+
+        // binds list of statements
+        for statement in syntax_tree.block_without_label().statements() {
+            self.bind_statement(statement, handler);
+        }
+
+        // ends a scope
+        self.local_stack.pop();
+        self.block_pointer_stack.pop();
+        self.add_basic_instruction(Basic::ScopePop);
+
+        // set the current basic block id to the successor block
+        self.current_basic_block_id = end_basic_block_id;
+
+        todo!()
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds the given [`ExpressionSyntaxTree`] into its cooresponding instruction and returns the
+    /// [`UnreachableVoid`] value of it.
+    ///
+    /// # Errors
+    /// - If the binding process encounters a fatal semantic error.
+    pub fn bind_express(
+        &mut self,
+        syntax_tree: &ExpressSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Result<UnreachableVoid, BindingError> {
+        // gets the target block
+        let block_id = if let Some(label) = syntax_tree.label().as_ref() {
+            let block_id = self
+                .block_pointer_stack
+                .serach(label.identifier().span.str());
+
+            if block_id.is_none() {
+                handler.recieve(Error::NoBlockWithGivenLabelFound(
+                    NoBlockWithGivenLabelFound {
+                        label_span: label.identifier().span.clone(),
+                    },
+                ));
+            }
+
+            block_id
+        } else {
+            // no label, gets the nearest block id
+            let block_id = self.block_pointer_stack.top().map(BlockPointer::block_id);
+
+            if block_id.is_none() {
+                handler.recieve(Error::ExpressOutsideBlock(ExpressOutsideBlock {
+                    express_span: syntax_tree.span(),
+                }));
+            }
+
+            block_id
+        };
+
+        let value = syntax_tree
+            .expression()
+            .as_ref()
+            .map(|x| self.bind_expression(x, BindingOption::default(), handler));
+
+        // extract the block value
+        let Some(block_id) = block_id else {
+            return Err(BindingError(syntax_tree.span()))
+        };
+
+        let current_express_ty = self.blocks.get(block_id).unwrap().express_ty();
+
+        let value = match (current_express_ty, value) {
+            // the block has type of void
+            (None, None) => {
+                self.blocks.get_mut(block_id).unwrap().express_ty = Some(IntermediateTypeID::Type(
+                    Type::PrimitiveType(PrimitiveType::Void),
+                ));
+
+                Value::Constant(Constant::UnreachableVoid(UnreachableVoid {
+                    span: syntax_tree.express_keyword().span(),
+                }))
+            }
+            // assigns new type to the block
+            (None, Some(result)) => {
+                let value = result?.into_value().unwrap();
+                self.blocks.get_mut(block_id).unwrap().express_ty =
+                    Some(self.get_value_intermediate_type_id(&value).unwrap());
+
+                value
+            }
+            // the block's type should be void
+            (Some(current), None) => self
+                .type_check(
+                    syntax_tree.express_keyword().span(),
+                    IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Void)),
+                    current.into(),
+                    handler,
+                )
+                .map_or_else(
+                    |err| {
+                        Value::Placeholder(Placeholder {
+                            span: err.0,
+                            ty: current,
+                        })
+                    },
+                    |_| {
+                        Value::Constant(Constant::UnreachableVoid(UnreachableVoid {
+                            span: syntax_tree.express_keyword().span(),
+                        }))
+                    },
+                ),
+            // unifies the block's type and value's type
+            (Some(current), Some(result)) => {
+                let value = result.map_or_else(
+                    |x| {
+                        Value::Placeholder(Placeholder {
+                            span: x.0,
+                            ty: current,
+                        })
+                    },
+                    |x| x.into_value().unwrap(),
+                );
+
+                self.type_check(
+                    self.get_span(&value).unwrap(),
+                    self.get_value_intermediate_type_id(&value).unwrap(),
+                    current.into(),
+                    handler,
+                )
+                .map_or_else(
+                    |err| {
+                        Value::Placeholder(Placeholder {
+                            span: err.0,
+                            ty: current,
+                        })
+                    },
+                    |_| value,
+                )
+            }
+        };
+
+        Ok(UnreachableVoid {
+            span: syntax_tree.span(),
+        })
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -1153,7 +1331,9 @@ impl Builder {
         let operand = self.bind_expression(syntax_tree.operand(), binding_option, handler)?;
         let ty = match &operand {
             BindingResult::Value(value) => self.get_inferable_type(value).unwrap(),
-            BindingResult::AddressWithSpan(address) => self.get_address_inferable_type(&address.address),
+            BindingResult::AddressWithSpan(address) => {
+                self.get_address_inferable_type(&address.address)
+            }
         };
 
         // expect the type to be a struct
@@ -1554,6 +1734,7 @@ impl Builder {
                 .control_flow_graph
                 .add_jump_instruction(rhs_condition_block_id, Jump {
                     jump_target: continue_block_id,
+                    semantic_info: None,
                 })
                 .unwrap();
 

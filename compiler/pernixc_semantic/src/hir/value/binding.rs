@@ -11,7 +11,7 @@ use pernixc_syntax::syntax_tree::expression::PrefixOperator;
 use super::{Address, TypeSystem, Value};
 use crate::{
     cfg::BasicBlockID,
-    hir::{Container, InvalidValueError, Reachability, ValueInspect},
+    hir::{Container, InvalidValueError, ValueInspect},
     symbol::{
         ty::{PrimitiveType, Type},
         FieldID, OverloadID, StructID,
@@ -57,18 +57,6 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::PhiNode(value) => self.get_span(value),
         }
     }
-
-    fn get_reachability(&self, value: &Binding<T>) -> Result<Reachability, InvalidValueError> {
-        match value {
-            Binding::FunctionCall(value) => self.get_reachability(value),
-            Binding::Prefix(value) => self.get_reachability(value),
-            Binding::Load(value) => self.get_reachability(value),
-            Binding::StructLiteral(value) => self.get_reachability(value),
-            Binding::MemberAccess(value) => self.get_reachability(value),
-            Binding::Binary(value) => self.get_reachability(value),
-            Binding::PhiNode(value) => self.get_reachability(value),
-        }
-    }
 }
 
 /// Represents a bound [`FunctionCall`](pernixc_syntax::syntax_tree::expression::FunctionCall)
@@ -101,10 +89,6 @@ impl<T: TypeSystem> ValueInspect<T, FunctionCall<T>> for Container<T> {
     fn get_span(&self, value: &FunctionCall<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
     }
-
-    fn get_reachability(&self, _: &FunctionCall<T>) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
-    }
 }
 
 /// Represents a bound [`Prefix`](pernixc_syntax::syntax_tree::expression::Prefix) syntax tree.
@@ -130,10 +114,6 @@ impl<T: TypeSystem> ValueInspect<T, Prefix<T>> for Container<T> {
 
     fn get_span(&self, value: &Prefix<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
-    }
-
-    fn get_reachability(&self, _: &Prefix<T>) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
     }
 }
 
@@ -184,10 +164,6 @@ impl<T: TypeSystem> ValueInspect<T, Load> for Container<T> {
     }
 
     fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> { Ok(value.span.clone()) }
-
-    fn get_reachability(&self, _: &Load) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
-    }
 }
 
 /// Represents a bound
@@ -214,10 +190,6 @@ impl<T: TypeSystem> ValueInspect<T, StructLiteral<T>> for Container<T> {
 
     fn get_span(&self, value: &StructLiteral<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
-    }
-
-    fn get_reachability(&self, _: &StructLiteral<T>) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
     }
 }
 
@@ -247,10 +219,6 @@ impl<T: TypeSystem> ValueInspect<T, MemberAccess<T>> for Container<T> {
 
     fn get_span(&self, value: &MemberAccess<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
-    }
-
-    fn get_reachability(&self, _: &MemberAccess<T>) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
     }
 }
 
@@ -313,10 +281,6 @@ impl<T: TypeSystem> ValueInspect<T, PhiNode<T>> for Container<T> {
     fn get_span(&self, value: &PhiNode<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
     }
-
-    fn get_reachability(&self, _: &PhiNode<T>) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
-    }
 }
 
 /// Is an enumeration of expressions that can be lowered into `phi` instructions.
@@ -370,9 +334,5 @@ impl<T: TypeSystem> ValueInspect<T, Binary<T>> for Container<T> {
 
     fn get_span(&self, value: &Binary<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
-    }
-
-    fn get_reachability(&self, _: &Binary<T>) -> Result<Reachability, InvalidValueError> {
-        Ok(Reachability::Reachable)
     }
 }
