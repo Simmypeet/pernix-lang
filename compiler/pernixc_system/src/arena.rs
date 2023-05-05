@@ -63,9 +63,15 @@ impl<T: Data> Symbol<T> {
 /// This container is generally used to construct a graph of symbols. Semantic analysis phase
 /// generally uses lots of graphs to represent the program. The symbols would use the
 /// [`UniqueIdentifier`] to store the references to other symbols.
-#[derive(Debug, Default, Deref)]
+#[derive(Debug,  Deref)]
 pub struct Arena<T: Data> {
     symbols_by_id: HashMap<T::ID, Symbol<T>>,
+}
+
+impl<T: Data> Default for Arena<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T: Data> Arena<T> {
@@ -153,11 +159,11 @@ macro_rules! create_id_type {
 /// Is a macro generating a [`Data`] trait impl for a given type and its ID.
 #[macro_export]
 macro_rules! create_symbol {
-    (
+    {
         $(#[$outer:meta])*
         $vis:vis $ty:ident $name:ident $(< $($lt:lifetime),* $($gt:ident $(: $tb:tt)?),* >)?
         { $($t:tt)* }
-    ) => {
+    } => {
         $crate::arena::__private::paste! {
             $(#[$outer])*
             $vis $ty [< $name >] $(< $($lt),* $($gt $( : $tb)?),* >)? { $($t)* }

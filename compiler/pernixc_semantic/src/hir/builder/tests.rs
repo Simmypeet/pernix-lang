@@ -889,7 +889,7 @@ fn named_binding_test() -> Result<(), Box<dyn std::error::Error>> {
         let alloca = builder.container.allocas().get(address).unwrap();
 
         assert_eq!(
-            builder.get_address_type(&address.into()),
+            builder.get_address_inferable_type(&address.into()),
             Type::PrimitiveType(PrimitiveType::Float32).into()
         );
         assert_eq!(alloca.identifier_token().span.str(), "value");
@@ -989,7 +989,7 @@ fn named_binding_test() -> Result<(), Box<dyn std::error::Error>> {
         let alloca = builder.container.allocas().get(address).unwrap();
 
         assert_eq!(
-            builder.get_address_type(&address.into()),
+            builder.get_address_inferable_type(&address.into()),
             Type::PrimitiveType(PrimitiveType::Float64).into()
         );
         assert_eq!(alloca.identifier_token().span.str(), "someParameter");

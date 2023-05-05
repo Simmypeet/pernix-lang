@@ -63,6 +63,8 @@ pub enum Basic<T: TypeSystem> {
     RegisterAssignment(RegisterAssignment),
     VariableDeclaration(VariableDeclaration),
     Store(Store<T>),
+    ScopePush,
+    ScopePop,
 }
 
 /// Represents a register assignment instruction in the HIR.

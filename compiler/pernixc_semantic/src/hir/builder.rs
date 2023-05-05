@@ -21,10 +21,10 @@ use pernixc_syntax::syntax_tree::{
     },
     ConnectedList,
 };
-use pernixc_system::arena::InvalidIDError;
+use pernixc_system::arena::{InvalidIDError, Arena};
 use thiserror::Error;
 
-use self::scope::Stack;
+use self::scope::{Locals, Stack, BlockPointer, Block};
 use super::{
     error::{
         AmbiguousFunctionCall, Error, FloatingPointLiteralHasIntegralSuffix,
@@ -125,7 +125,9 @@ pub struct Builder {
     container: Container<IntermediateTypeID>,
     current_basic_block_id: BasicBlockID,
     inference_context: InferenceContext,
-    stack: Stack,
+    local_stack: Stack<Locals>,
+    block_pointer_stack: Stack<BlockPointer>,
+    blocks: Arena<Block>,
 }
 
 impl Builder {
@@ -139,12 +141,16 @@ impl Builder {
     /// - [`InvalidIDError`] if the `overload_id` is invalid for the `table`.
     pub fn new(table: Arc<Table>, overload_id: OverloadID) -> Result<Self, InvalidIDError> {
         let container = Container::new(table, overload_id)?;
+        let mut local_stack = Stack::default();
+        local_stack.push(Locals::default());
 
         Ok(Self {
             current_basic_block_id: container.control_flow_graph.entry_block(),
             container,
             inference_context: InferenceContext::new(),
-            stack: Stack::new(),
+            local_stack,
+            blocks: Arena::new(),
+            block_pointer_stack: Stack::default(),
         })
     }
 
@@ -209,6 +215,38 @@ pub enum BindingResult {
     AddressWithSpan(AddressWithSpan),
 }
 
+/// Is an enumeration used in type checking/inference process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+pub enum ExpectedType {
+    /// Unifies the type of the value with another inference variable.
+    InferenceID(InferenceID),
+
+    /// Unifies the type of the value with another type.
+    Type(Type),
+
+    /// Checks the if the type of the value satisfies the given constraint and unifies the
+    /// constraint if possible.
+    Constraint(Constraint),
+}
+
+impl From<IntermediateTypeID> for ExpectedType {
+    fn from(id: IntermediateTypeID) -> Self {
+        match id {
+            IntermediateTypeID::InferenceID(id) => Self::InferenceID(id),
+            IntermediateTypeID::Type(ty) => Self::Type(ty),
+        }
+    }
+}
+
+impl From<InferableType> for ExpectedType {
+    fn from(ty: InferableType) -> Self {
+        match ty {
+            InferableType::Constraint(constraint) => Self::Constraint(constraint),
+            InferableType::Type(ty) => Self::Type(ty),
+        }
+    }
+}
+
 impl Builder {
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -264,10 +302,10 @@ impl Builder {
                     type_annotation.type_specifier(),
                     handler,
                 )
-                .map(InferableType::Type)
-                .unwrap_or(InferableType::Constraint(Constraint::All))
+                .map(ExpectedType::Type)
+                .unwrap_or(ExpectedType::Constraint(Constraint::All))
         } else {
-            InferableType::Constraint(Constraint::All)
+            ExpectedType::Constraint(Constraint::All)
         };
 
         // gets the value of the variable
@@ -317,8 +355,9 @@ impl Builder {
             );
 
         // insert into stack
-        self.stack
+        self.local_stack
             .top_mut()
+            .unwrap()
             .insert(syntax_tree.identifier().span.str().to_owned(), alloca_id);
 
         Ok(alloca_id)
@@ -753,7 +792,7 @@ impl Builder {
                 let ty_match = match bound_type {
                     InferableType::Type(ty) => ty == parameter.type_binding().ty,
                     InferableType::Constraint(constraint) => {
-                        constraint.satisfies(parameter.type_binding().ty)
+                        constraint.check_satisfy(parameter.type_binding().ty)
                     }
                 };
 
@@ -789,8 +828,8 @@ impl Builder {
     ) -> Result<RegisterID, BindingError> {
         // get the expected type of the operand based on the operator
         let expected_type = match syntax_tree.prefix_operator() {
-            PrefixOperator::LogicalNot(..) => InferableType::Type(PrimitiveType::Bool.into()),
-            PrefixOperator::Negate(..) => InferableType::Constraint(Constraint::Signed),
+            PrefixOperator::LogicalNot(..) => ExpectedType::Type(PrimitiveType::Bool.into()),
+            PrefixOperator::Negate(..) => ExpectedType::Constraint(Constraint::Signed),
         };
 
         // bind the operand
@@ -805,10 +844,11 @@ impl Builder {
             .unwrap_or(BindingResult::Value(Value::Placeholder(Placeholder {
                 span: syntax_tree.span(),
                 ty: match expected_type {
-                    InferableType::Type(ty) => ty.into(),
-                    InferableType::Constraint(constraint) => {
+                    ExpectedType::Type(ty) => ty.into(),
+                    ExpectedType::Constraint(constraint) => {
                         self.inference_context.new_inference(constraint).into()
                     }
+                    ExpectedType::InferenceID(..) => unreachable!(),
                 },
             })))
             .into_value()
@@ -852,7 +892,7 @@ impl Builder {
 
             // search for local variables then parameters
             let address = self
-                .stack
+                .local_stack
                 .serach(local_ident)
                 .map(Address::AllocaID)
                 .map_or_else(
@@ -1113,7 +1153,7 @@ impl Builder {
         let operand = self.bind_expression(syntax_tree.operand(), binding_option, handler)?;
         let ty = match &operand {
             BindingResult::Value(value) => self.get_inferable_type(value).unwrap(),
-            BindingResult::AddressWithSpan(address) => self.get_address_type(&address.address),
+            BindingResult::AddressWithSpan(address) => self.get_address_inferable_type(&address.address),
         };
 
         // expect the type to be a struct
@@ -1232,7 +1272,7 @@ impl Builder {
         &mut self,
         syntax_tree: &BinarySyntaxTree,
         is_assign: bool,
-        inferable_type_check: Option<InferableType>,
+        expected_type: Option<ExpectedType>,
         handler: &impl ErrorHandler,
     ) -> Result<(BindingResult, Value<IntermediateTypeID>), BindingError> {
         let left_binding_option = {
@@ -1244,7 +1284,7 @@ impl Builder {
             BindingOption { binding_target }
         };
 
-        let left = if let Some(inferable_type_check) = inferable_type_check {
+        let left = if let Some(inferable_type_check) = expected_type {
             self.expect_expression(
                 syntax_tree.left_operand(),
                 left_binding_option,
@@ -1269,10 +1309,10 @@ impl Builder {
                 let left_ty = self.get_binding_result_intermediate_type_id(&left);
                 let right_ty = self.get_value_intermediate_type_id(&right).unwrap();
 
-                if let Err(err) = self.type_check_unify(
+                if let Err(err) = self.type_check(
                     syntax_tree.right_operand().span(),
                     left_ty,
-                    right_ty,
+                    right_ty.into(),
                     handler,
                 ) {
                     // right must match the left. if not, change right to placeholder value that has
@@ -1316,7 +1356,7 @@ impl Builder {
         &mut self,
         syntax_tree: &BinarySyntaxTree,
         binary_operator: BinaryOperator,
-        inferable_type_check: Option<InferableType>,
+        inferable_type_check: Option<ExpectedType>,
         handler: &impl ErrorHandler,
     ) -> Result<RegisterID, BindingError> {
         let (left, rhs) =
@@ -1448,7 +1488,7 @@ impl Builder {
             .expect_expression(
                 syntax_tree.left_operand(),
                 BindingOption::default(),
-                InferableType::Type(Type::PrimitiveType(PrimitiveType::Bool)),
+                ExpectedType::Type(Type::PrimitiveType(PrimitiveType::Bool)),
                 handler,
             )
             .map_or_else(
@@ -1496,7 +1536,7 @@ impl Builder {
                 .expect_expression(
                     syntax_tree.right_operand(),
                     BindingOption::default(),
-                    InferableType::Type(Type::PrimitiveType(PrimitiveType::Bool)),
+                    ExpectedType::Type(Type::PrimitiveType(PrimitiveType::Bool)),
                     handler,
                 )
                 .map_or_else(
@@ -1554,7 +1594,7 @@ impl Builder {
                 .handle_normal_binary(
                     syntax_tree,
                     Self::as_arithmetic_operator(syntax_tree.binary_operator()).into(),
-                    Some(InferableType::Constraint(Constraint::Number)),
+                    Some(ExpectedType::Constraint(Constraint::Number)),
                     handler,
                 )
                 .map(|x| BindingResult::Value(Value::Register(x))),
@@ -1577,7 +1617,7 @@ impl Builder {
                 .handle_normal_binary(
                     syntax_tree,
                     Self::as_equality_operator(syntax_tree.binary_operator()).into(),
-                    Some(InferableType::Constraint(Constraint::PrimitiveType)),
+                    Some(ExpectedType::Constraint(Constraint::PrimitiveType)),
                     handler,
                 )
                 .map(|x| BindingResult::Value(Value::Register(x))),
@@ -1588,7 +1628,7 @@ impl Builder {
                 .handle_normal_binary(
                     syntax_tree,
                     Self::as_comparison_operator(syntax_tree.binary_operator()).into(),
-                    Some(InferableType::Constraint(Constraint::Number)),
+                    Some(ExpectedType::Constraint(Constraint::Number)),
                     handler,
                 )
                 .map(|x| BindingResult::Value(Value::Register(x))),
@@ -1641,7 +1681,7 @@ impl Builder {
         }
     }
 
-    fn get_address_type(&self, address: &Address) -> InferableType {
+    fn get_address_inferable_type(&self, address: &Address) -> InferableType {
         let intermediate_type = self.get_address_intermediate_type_id(address);
         match intermediate_type {
             IntermediateTypeID::InferenceID(id) => {
@@ -1689,74 +1729,16 @@ impl Builder {
         &mut self,
         syntax_tree: &ExpressionSyntaxTree,
         binding_option: BindingOption,
-        expect: InferableType,
+        expected: ExpectedType,
         handler: &impl ErrorHandler,
     ) -> Result<BindingResult, BindingError> {
-        let value = self.bind_expression(syntax_tree, binding_option, handler)?;
+        let result = self.bind_expression(syntax_tree, binding_option, handler)?;
 
-        match &value {
-            BindingResult::Value(value) => self.type_check(
-                syntax_tree.span(),
-                self.get_value_intermediate_type_id(value).unwrap(),
-                expect,
-                handler,
-            )?,
-            BindingResult::AddressWithSpan(address) => {
-                self.type_check(
-                    syntax_tree.span(),
-                    self.get_address_intermediate_type_id(&address.address),
-                    expect,
-                    handler,
-                )?;
-            }
-        }
+        let intermediate_ty = self.get_binding_result_intermediate_type_id(&result);
 
-        Ok(value)
-    }
+        self.type_check(syntax_tree.span(), intermediate_ty, expected, handler)?;
 
-    fn type_check_unify(
-        &mut self,
-        span: Span,
-        lhs: IntermediateTypeID,
-        rhs: IntermediateTypeID,
-        handler: &impl ErrorHandler,
-    ) -> Result<(), BindingError> {
-        let (unification_error, swap) = match (lhs, rhs) {
-            (IntermediateTypeID::InferenceID(lhs), IntermediateTypeID::InferenceID(rhs)) => {
-                match self.inference_context.unify(lhs, rhs).err() {
-                    Some(err) => (err, false),
-                    None => return Ok(()),
-                }
-            }
-            (IntermediateTypeID::InferenceID(lhs), IntermediateTypeID::Type(rhs)) => {
-                match self.inference_context.unify_with_concrete(lhs, rhs).err() {
-                    Some(err) => (err, false),
-                    None => return Ok(()),
-                }
-            }
-            (IntermediateTypeID::Type(lhs), IntermediateTypeID::InferenceID(rhs)) => {
-                match self.inference_context.unify_with_concrete(rhs, lhs).err() {
-                    Some(err) => (err, true),
-                    None => return Ok(()),
-                }
-            }
-            (IntermediateTypeID::Type(lhs), IntermediateTypeID::Type(rhs)) => {
-                if lhs != rhs {
-                    handler.recieve(Error::TypeMismatch(TypeMismatch {
-                        expression_span: span.clone(),
-                        expect: lhs.into(),
-                        found: rhs.into(),
-                    }));
-                    return Err(BindingError(span));
-                }
-                return Ok(());
-            }
-        };
-
-        let error = Self::handle_unification_error(span.clone(), unification_error, swap);
-        handler.recieve(error);
-
-        Err(BindingError(span))
+        Ok(result)
     }
 
     fn handle_unification_error(expression_span: Span, err: UnificationError, swap: bool) -> Error {
@@ -1789,54 +1771,58 @@ impl Builder {
         &mut self,
         span: Span,
         found: IntermediateTypeID,
-        expect: InferableType,
+        expected: ExpectedType,
         handler: &impl ErrorHandler,
     ) -> Result<(), BindingError> {
-        let err = match (found, expect) {
-            (IntermediateTypeID::InferenceID(found), InferableType::Type(expected)) => {
-                let Err(err) = self
-                    .inference_context
-                    .unify_with_concrete(found, expected) else {
-                    return Ok(());
-                };
-                err
+        let (err, swapped) = match (found, expected) {
+            (IntermediateTypeID::InferenceID(found), ExpectedType::InferenceID(expect)) => {
+                (self.inference_context.unify(found, expect), false)
             }
-            (IntermediateTypeID::InferenceID(found), InferableType::Constraint(expected)) => {
-                let Err(err) = self
-                    .inference_context
-                    .unify_with_constraint(found, expected) else {
-                    return Ok(());
-                };
-                err
-            }
-            (IntermediateTypeID::Type(found), InferableType::Constraint(expected)) => {
-                if expected.satisfies(found) {
+            (IntermediateTypeID::InferenceID(found), ExpectedType::Type(expect)) => (
+                self.inference_context.unify_with_concrete(found, expect),
+                false,
+            ),
+            (IntermediateTypeID::InferenceID(found), ExpectedType::Constraint(expect)) => (
+                self.inference_context.unify_with_constraint(found, expect),
+                false,
+            ),
+            (IntermediateTypeID::Type(found), ExpectedType::InferenceID(expect)) => (
+                self.inference_context.unify_with_concrete(expect, found),
+                true,
+            ),
+            (IntermediateTypeID::Type(found), ExpectedType::Type(expect)) => {
+                if found == expect {
                     return Ok(());
                 }
 
                 handler.recieve(Error::TypeMismatch(TypeMismatch {
                     expression_span: span.clone(),
-                    found: found.into(),
-                    expect: expected.into(),
+                    expect: InferableType::Type(expect),
+                    found: InferableType::Type(found),
                 }));
 
                 return Err(BindingError(span));
             }
-            (IntermediateTypeID::Type(found), InferableType::Type(expected)) => {
-                if found == expected {
+            (IntermediateTypeID::Type(found), ExpectedType::Constraint(expect)) => {
+                if expect.check_satisfy(found) {
                     return Ok(());
                 }
 
                 handler.recieve(Error::TypeMismatch(TypeMismatch {
                     expression_span: span.clone(),
-                    found: found.into(),
-                    expect: expected.into(),
+                    expect: InferableType::Constraint(expect),
+                    found: InferableType::Type(found),
                 }));
+
                 return Err(BindingError(span));
             }
         };
 
-        handler.recieve(Self::handle_unification_error(span.clone(), err, false));
+        let Err(err) = err else {
+            return Ok(())
+        };
+
+        handler.recieve(Self::handle_unification_error(span.clone(), err, swapped));
 
         Err(BindingError(span))
     }

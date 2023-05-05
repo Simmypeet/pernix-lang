@@ -97,6 +97,30 @@ impl<T: TypeSystem> ValueInspect<T, EnumLiteral> for Container<T> {
     }
 }
 
+/// Represents an unreachable void constant value.
+///
+/// The value is generally produced by the `terminator` expressions in the IR.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct UnreachableVoid {
+    /// Specifies the location of the `terminator` expression that produced the value.
+    #[get = "pub"]
+    pub(super) span: Span,
+}
+
+impl<T: TypeSystem> ValueInspect<T, UnreachableVoid> for Container<T> {
+    fn get_type(&self, _: &UnreachableVoid) -> Result<T, InvalidValueError> {
+        Ok(T::from_type(Type::PrimitiveType(PrimitiveType::Void)))
+    }
+
+    fn get_span(&self, value: &UnreachableVoid) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
+
+    fn get_reachability(&self, _: &UnreachableVoid) -> Result<Reachability, InvalidValueError> {
+        Ok(Reachability::Unreachable)
+    }
+}
+
 /// Represents a constant value that doesn't require a register assignment.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
@@ -104,6 +128,7 @@ pub enum Constant<T: TypeSystem> {
     NumericLiteral(NumericLiteral<T>),
     BooleanLiteral(BooleanLiteral),
     EnumLiteral(EnumLiteral),
+    UnreachableVoid(UnreachableVoid),
 }
 
 impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
@@ -112,6 +137,7 @@ impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
             Constant::NumericLiteral(n) => self.get_type(n),
             Constant::BooleanLiteral(b) => self.get_type(b),
             Constant::EnumLiteral(e) => self.get_type(e),
+            Constant::UnreachableVoid(e) => self.get_type(e),
         }
     }
 
@@ -120,6 +146,7 @@ impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
             Constant::NumericLiteral(n) => self.get_span(n),
             Constant::BooleanLiteral(b) => self.get_span(b),
             Constant::EnumLiteral(e) => self.get_span(e),
+            Constant::UnreachableVoid(e) => self.get_span(e),
         }
     }
 
@@ -128,6 +155,7 @@ impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
             Constant::NumericLiteral(n) => self.get_reachability(n),
             Constant::BooleanLiteral(b) => self.get_reachability(b),
             Constant::EnumLiteral(e) => self.get_reachability(e),
+            Constant::UnreachableVoid(e) => self.get_reachability(e),
         }
     }
 }

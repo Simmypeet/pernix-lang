@@ -37,7 +37,7 @@ impl Constraint {
 
     /// Returns true if the constraint is satisfied by the concrete type.
     #[must_use]
-    pub fn satisfies(self, concrete_type: Type) -> bool {
+    pub fn check_satisfy(self, concrete_type: Type) -> bool {
         match self {
             Self::All => true,
             Self::PrimitiveType => matches!(concrete_type, Type::PrimitiveType(_)),
@@ -184,7 +184,7 @@ impl InferenceContext {
                 Ok(())
             }
             MonoType::Type(concrete_type) => {
-                if constraint.satisfies(concrete_type) {
+                if constraint.check_satisfy(concrete_type) {
                     Ok(())
                 } else {
                     Err(ConstraintNotSatisfiedError {
@@ -215,7 +215,7 @@ impl InferenceContext {
                 .type_variables
                 .get(ty_var)?
                 .constraint
-                .satisfies(concrete)
+                .check_satisfy(concrete)
             {
                 return Err(ConstraintNotSatisfiedError {
                     constraint: self.type_variables.get(ty_var)?.constraint,

@@ -22,7 +22,6 @@ fn location_test() -> Result<(), Box<dyn Error>> {
     );
 
     assert_eq!(source_file.get_location(18), None);
-    
 
     Ok(())
 }
