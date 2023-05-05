@@ -17,6 +17,10 @@ create_symbol! {
     /// represent the full control flow of a function.
     #[derive(Debug, Clone, Getters, CopyGetters)]
     pub struct BasicBlock<T: InstructionBackend> {
+        /// Specifies whether if the basic block is an entry block or not.
+        #[get_copy = "pub"]
+        is_entry: bool,
+
         /// The list of instructions that are stored in the basic block.
         #[get = "pub"]
         instructions: Vec<Instruction<T>>,
@@ -101,12 +105,13 @@ pub enum Instruction<T: InstructionBackend> {
 }
 
 impl<T: InstructionBackend> BasicBlock<T> {
-    fn new() -> Self {
+    fn new(is_entry: bool) -> Self {
         Self {
             instructions: Vec::new(),
             unreachable_instructions: Vec::new(),
             successors: HashSet::new(),
             predecessors: HashSet::new(),
+            is_entry,
         }
     }
 
@@ -118,7 +123,7 @@ impl<T: InstructionBackend> BasicBlock<T> {
                 instruction,
                 Instruction::Jump(_) | Instruction::Return(_) | Instruction::ConditionalJump(_)
             )
-        })
+        }) || (!self.is_entry && self.predecessors().is_empty())
     }
 
     /// Adds a new basic instruction to the [`BasicBlock`].
@@ -159,7 +164,7 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
     #[must_use]
     pub fn new() -> Self {
         let mut basic_blocks = Arena::new();
-        let entry_block = basic_blocks.insert(BasicBlock::new());
+        let entry_block = basic_blocks.insert(BasicBlock::new(true));
 
         Self {
             basic_blocks,
@@ -172,7 +177,7 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
     /// # Returns
     /// The [`BasicBlockID`] of the newly added basic block.
     pub fn new_basic_block(&mut self) -> BasicBlockID {
-        self.basic_blocks.insert(BasicBlock::new())
+        self.basic_blocks.insert(BasicBlock::new(false))
     }
 
     /// Gets a reference to the [`BasicBlock`] with the given [`BasicBlockID`].
@@ -288,5 +293,7 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
 }
 
 impl<T: InstructionBackend> Default for ControlFlowGraph<T> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

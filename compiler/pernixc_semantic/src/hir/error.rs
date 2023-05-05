@@ -6,6 +6,7 @@ use getset::{CopyGetters, Getters};
 use pernixc_source::Span;
 
 use crate::{
+    cfg::BasicBlockID,
     infer::InferableType,
     symbol::{FieldID, GlobalID, OverloadID, OverloadSetID, ScopedID, StructID},
 };
@@ -33,6 +34,7 @@ pub enum Error {
     MutableLValueExpected(MutableLValueExpected),
     ExpressOutsideBlock(ExpressOutsideBlock),
     NoBlockWithGivenLabelFound(NoBlockWithGivenLabelFound),
+    NotAllFlowPathExpressValue(NotAllFlowPathExpressValue),
 }
 
 /// The numeric literal suffix is not applicable to the literal's type.
@@ -273,4 +275,16 @@ pub struct ExpressOutsideBlock {
     /// The span of the invalid `express` expression.
     #[get = "pub"]
     pub(super) express_span: Span,
+}
+
+///  Not all flow paths in the `block` express a value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct NotAllFlowPathExpressValue {
+    /// The span of the `block` expression.
+    #[get = "pub"]
+    pub(super) block_span: Span,
+
+    /// List of the successors of the `block` expression that do not express a value.
+    #[get = "pub"]
+    pub(super) missing_value_basic_blocks: Vec<BasicBlockID>,
 }

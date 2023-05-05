@@ -163,7 +163,9 @@ impl<T: TypeSystem> ValueInspect<T, Load> for Container<T> {
         }
     }
 
-    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> { Ok(value.span.clone()) }
+    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
 }
 
 /// Represents a bound
@@ -288,7 +290,7 @@ impl<T: TypeSystem> ValueInspect<T, PhiNode<T>> for Container<T> {
 #[allow(missing_docs)]
 pub enum PhiNodeSource {
     LogicalShortCircuit,
-    Express,
+    Block,
     Break,
     IfEsle,
 }
