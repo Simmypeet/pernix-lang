@@ -35,6 +35,7 @@ pub enum Error {
     ExpressOutsideBlock(ExpressOutsideBlock),
     NoBlockWithGivenLabelFound(NoBlockWithGivenLabelFound),
     NotAllFlowPathExpressValue(NotAllFlowPathExpressValue),
+    ReturnValueExpected(ReturnValueExpected),
 }
 
 /// The numeric literal suffix is not applicable to the literal's type.
@@ -287,4 +288,12 @@ pub struct NotAllFlowPathExpressValue {
     /// List of the successors of the `block` expression that do not express a value.
     #[get = "pub"]
     pub(super) missing_value_basic_blocks: Vec<BasicBlockID>,
+}
+
+/// Expects a return value for non-void function.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct ReturnValueExpected {
+    /// The span of the `return` expression.
+    #[get = "pub"]
+    pub(super) return_span: Span,
 }

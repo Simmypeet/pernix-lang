@@ -13,7 +13,8 @@ use pernixc_syntax::syntax_tree::{
         FunctionCall as FunctionCallSyntaxTree, Functional as FunctionalSyntaxTree,
         Imperative as ImperativeSyntaxTree, MemberAccess as MemberAccessSyntaxTree,
         Named as NamedSyntaxTree, NumericLiteral as NumericLiteralSyntaxTree,
-        Prefix as PrefixSyntaxTree, PrefixOperator, StructLiteral as StructLiteralSyntaxTree,
+        Prefix as PrefixSyntaxTree, PrefixOperator, Return as ReturnSyntaxTree,
+        StructLiteral as StructLiteralSyntaxTree,
     },
     statement::{
         Declarative, Expressive, Statement as StatementSyntaxTree,
@@ -30,9 +31,10 @@ use super::{
         AmbiguousFunctionCall, Error, ExpressOutsideBlock, FloatingPointLiteralHasIntegralSuffix,
         InvalidNumericLiteralSuffix, LValueExpected, NoAccessibleOverload,
         NoBlockWithGivenLabelFound, NoOverloadWithMatchingArgumentTypes,
-        NoOverloadWithMatchingNumberOfArguments, SymbolNotCallable, ValueExpected,
+        NoOverloadWithMatchingNumberOfArguments, ReturnValueExpected, SymbolNotCallable,
+        ValueExpected,
     },
-    instruction::{Backend, Basic, JumpKind, RegisterAssignment},
+    instruction::{Backend, Basic, JumpKind, RegisterAssignment, Return},
     value::{
         binding::{
             ArithmeticOperator, Binary, BinaryOperator, Binding, ComparisonOperator,
@@ -208,6 +210,15 @@ impl Builder {
         self.container
             .control_flow_graph
             .get(self.current_basic_block_id)
+            .unwrap()
+    }
+
+    /// Gets a mutable reference to the basic block that is currently being built.
+    #[must_use]
+    fn current_basic_block_mut(&mut self) -> &mut BasicBlock<Backend<IntermediateTypeID>> {
+        self.container
+            .control_flow_graph
+            .get_mut(self.current_basic_block_id)
             .unwrap()
     }
 }
@@ -439,11 +450,74 @@ impl Builder {
             }
             FunctionalSyntaxTree::Continue(_) => todo!(),
             FunctionalSyntaxTree::Break(_) => todo!(),
-            FunctionalSyntaxTree::Return(_) => todo!(),
+            FunctionalSyntaxTree::Return(syn) => Ok(BindingResult::Value(Value::Constant(
+                Constant::Unreachable(self.bind_return(syn, handler)),
+            ))),
             FunctionalSyntaxTree::Express(syn) => self
                 .bind_express(syn, handler)
                 .map(|x| BindingResult::Value(Value::Constant(Constant::Unreachable(x)))),
             FunctionalSyntaxTree::Cast(_) => todo!(),
+        }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Binds the given [`ReturnSyntaxTree`] into its cooresponding instruction and returns the
+    /// [`Unreachable`] void value.
+    pub fn bind_return(
+        &mut self,
+        syntax_tree: &ReturnSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Unreachable<IntermediateTypeID> {
+        let return_type = self
+            .container
+            .table()
+            .get_overload(self.container.overload_id)
+            .unwrap()
+            .return_type();
+        let return_value = if let Some(expression) = syntax_tree.expression().as_ref() {
+            Some(
+                self.expect_expression(
+                    expression,
+                    BindingOption::default(),
+                    ExpectedType::Type(return_type),
+                    handler,
+                )
+                .map_or_else(
+                    |err| {
+                        Value::Placeholder(Placeholder {
+                            span: err.0,
+                            ty: IntermediateTypeID::Type(return_type),
+                        })
+                    },
+                    |x| x.into_value().unwrap(),
+                ),
+            )
+        } else {
+            if self
+                .container
+                .table()
+                .get_overload(self.container.overload_id)
+                .unwrap()
+                .return_type()
+                != Type::PrimitiveType(PrimitiveType::Void)
+            {
+                // expect a return value
+                handler.recieve(Error::ReturnValueExpected(ReturnValueExpected {
+                    return_span: syntax_tree.span(),
+                }));
+            }
+
+            None
+        };
+
+        // add a return value instruction
+        self.current_basic_block_mut()
+            .add_return_instruction(Return { return_value });
+
+        Unreachable {
+            span: syntax_tree.span(),
+            ty: IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Void)),
         }
     }
 
@@ -713,7 +787,7 @@ impl Builder {
     }
 
     /// Binds the given [`ExpressionSyntaxTree`] into its cooresponding instruction and returns the
-    /// [`UnreachableVoid`] value of it.
+    /// [`Unreachable`] value of it.
     ///
     /// # Errors
     /// - If the binding process encounters a fatal semantic error.

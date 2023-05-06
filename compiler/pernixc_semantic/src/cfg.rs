@@ -131,6 +131,11 @@ impl<T: InstructionBackend> BasicBlock<T> {
         self.add_instruction(Instruction::Basic(instruction));
     }
 
+    /// Adds a new return instruction to the [`BasicBlock`].
+    pub fn add_return_instruction(&mut self, instruction: T::Return) {
+        self.add_instruction(Instruction::Return(instruction));
+    }
+
     fn add_instruction(&mut self, instruction: Instruction<T>) {
         if self.is_terminated() {
             self.unreachable_instructions.push(instruction);
