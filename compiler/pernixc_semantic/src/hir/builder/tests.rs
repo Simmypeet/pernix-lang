@@ -1970,6 +1970,85 @@ pub fn block_binding_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap()
             .into_numeric_literal()
             .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        assert_eq!(builder.get_span(&value).unwrap().str(), "1");
+        assert_eq!(
+            builder.get_inferable_type(&value).unwrap(),
+            InferableType::Type(Type::PrimitiveType(PrimitiveType::Uint32))
+        );
     }
+    {
+        let value = builder
+            .bind_block(
+                statements[3]
+                    .as_expressive()
+                    .unwrap()
+                    .as_imperative()
+                    .unwrap()
+                    .as_block()
+                    .unwrap(),
+                &errors,
+            )?
+            .into_unreachable()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        assert_eq!(
+            builder.get_inferable_type(&value).unwrap(),
+            InferableType::Type(Type::PrimitiveType(PrimitiveType::Uint32))
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+fn control_flow_test() -> Result<(), Box<dyn std::error::Error>> {
+    let source_file = SourceFile::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resource/hir/controlFlow/main.pnx"),
+        vec!["test".to_string()],
+    )?;
+
+    let errors: ErrorVec<AllParsingError> = ErrorVec::new();
+    let target = TargetParsing::parse(source_file, &errors)?;
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let errors: ErrorVec<SymbolError> = ErrorVec::new();
+    let table = Arc::new(Table::analyze(target, &errors));
+    assert_eq!(errors.into_vec().len(), 0);
+
+    let overload_set = table.get_overload_set(
+        table
+            .get_global_id_by_full_name(["test", "main"].into_iter())
+            .unwrap()
+            .into_overload_set()
+            .unwrap(),
+    )?;
+    let overload_id = overload_set.overloads()[0];
+    let mut builder = Builder::new(table, overload_id)?;
+    let table = builder.container.table.clone();
+    let overload = table.get_overload(overload_id)?;
+    let statements = overload.syntax_tree().block_without_label.statements();
+    let errors: ErrorVec<AllHirError> = ErrorVec::new();
+
+    {
+        let result = builder.bind_block(
+            statements[0]
+                .as_expressive()
+                .unwrap()
+                .as_imperative()
+                .unwrap()
+                .as_block()
+                .unwrap(),
+            &errors,
+        )?;
+
+        assert_eq!(errors.into_vec().len(), 0);
+        dbg!(builder.container.control_flow_graph());
+    }
+
     Ok(())
 }

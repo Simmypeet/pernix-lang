@@ -27,9 +27,7 @@ pub struct NumericLiteral<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, NumericLiteral<T>> for Container<T> {
-    fn get_type(&self, value: &NumericLiteral<T>) -> Result<T, InvalidValueError> {
-        Ok(value.ty)
-    }
+    fn get_type(&self, value: &NumericLiteral<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
     fn get_span(&self, value: &NumericLiteral<T>) -> Result<Span, InvalidValueError> {
         Ok(value.numeric_literal_syntax_tree.span())
@@ -87,7 +85,8 @@ impl<T: TypeSystem> ValueInspect<T, EnumLiteral> for Container<T> {
 
 /// Represents an unreachable constant value.
 ///
-/// When a block expression is unreachable (always terminates in some way), it will produce this value.
+/// When a block expression is unreachable (always terminates in some way), it will produce this
+/// value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
 pub struct Unreachable<T: TypeSystem> {
     /// The span to the expression that produces this value.
@@ -100,9 +99,7 @@ pub struct Unreachable<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, Unreachable<T>> for Container<T> {
-    fn get_type(&self, value: &Unreachable<T>) -> Result<T, InvalidValueError> {
-        Ok(value.ty)
-    }
+    fn get_type(&self, value: &Unreachable<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
     fn get_span(&self, value: &Unreachable<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
@@ -135,7 +132,6 @@ pub enum Constant<T: TypeSystem> {
     NumericLiteral(NumericLiteral<T>),
     BooleanLiteral(BooleanLiteral),
     EnumLiteral(EnumLiteral),
-    Unreachable(Unreachable<T>),
     VoidConstant(VoidConstant),
 }
 
@@ -145,7 +141,6 @@ impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
             Constant::NumericLiteral(n) => self.get_type(n),
             Constant::BooleanLiteral(b) => self.get_type(b),
             Constant::EnumLiteral(e) => self.get_type(e),
-            Constant::Unreachable(e) => self.get_type(e),
             Constant::VoidConstant(e) => self.get_type(e),
         }
     }
@@ -155,7 +150,6 @@ impl<T: TypeSystem> ValueInspect<T, Constant<T>> for Container<T> {
             Constant::NumericLiteral(n) => self.get_span(n),
             Constant::BooleanLiteral(b) => self.get_span(b),
             Constant::EnumLiteral(e) => self.get_span(e),
-            Constant::Unreachable(e) => self.get_span(e),
             Constant::VoidConstant(e) => self.get_span(e),
         }
     }
@@ -178,9 +172,7 @@ pub struct Placeholder<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, Placeholder<T>> for Container<T> {
-    fn get_type(&self, value: &Placeholder<T>) -> Result<T, InvalidValueError> {
-        Ok(value.ty)
-    }
+    fn get_type(&self, value: &Placeholder<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
     fn get_span(&self, value: &Placeholder<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
@@ -198,6 +190,9 @@ pub enum Value<T: TypeSystem> {
 
     /// Is used when encountering an error.
     Placeholder(Placeholder<T>),
+
+    /// Is used when an expression is unreachable.
+    Unreachable(Unreachable<T>),
 }
 
 impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
@@ -206,6 +201,7 @@ impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
             Value::Register(id) => self.get_type(id),
             Value::Constant(c) => self.get_type(c),
             Value::Placeholder(p) => self.get_type(p),
+            Value::Unreachable(u) => self.get_type(u),
         }
     }
 
@@ -214,6 +210,7 @@ impl<T: TypeSystem> ValueInspect<T, Value<T>> for Container<T> {
             Value::Register(id) => self.get_span(id),
             Value::Constant(c) => self.get_span(c),
             Value::Placeholder(p) => self.get_span(p),
+            Value::Unreachable(u) => self.get_span(u),
         }
     }
 }

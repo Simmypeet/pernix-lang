@@ -12,4 +12,10 @@ public function main(): void {
         express 1;
         express 2u32; // unreachable 
     }
+
+    // unreachable block
+    {
+        return;
+        express 3u32;
+    }
 }

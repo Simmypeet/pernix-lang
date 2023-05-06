@@ -8,13 +8,13 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     expression::{
         Binary as BinarySyntaxTree, BinaryOperator as BinaryOperatorSyntaxTree,
-        Block as BlockSyntaxTree, BooleanLiteral as BooleanLiteralSyntaxTree,
+        Block as BlockSyntaxTree, BlockOrIfElse, BooleanLiteral as BooleanLiteralSyntaxTree,
         Express as ExpressSyntaxTree, Expression as ExpressionSyntaxTree,
         FunctionCall as FunctionCallSyntaxTree, Functional as FunctionalSyntaxTree,
-        Imperative as ImperativeSyntaxTree, MemberAccess as MemberAccessSyntaxTree,
-        Named as NamedSyntaxTree, NumericLiteral as NumericLiteralSyntaxTree,
-        Prefix as PrefixSyntaxTree, PrefixOperator, Return as ReturnSyntaxTree,
-        StructLiteral as StructLiteralSyntaxTree,
+        IfElse as IfElseSyntaxTree, Imperative as ImperativeSyntaxTree,
+        MemberAccess as MemberAccessSyntaxTree, Named as NamedSyntaxTree,
+        NumericLiteral as NumericLiteralSyntaxTree, Prefix as PrefixSyntaxTree, PrefixOperator,
+        Return as ReturnSyntaxTree, StructLiteral as StructLiteralSyntaxTree,
     },
     statement::{
         Declarative, Expressive, Statement as StatementSyntaxTree,
@@ -220,6 +220,18 @@ impl Builder {
             .control_flow_graph
             .get_mut(self.current_basic_block_id)
             .unwrap()
+    }
+
+    fn add_implicit_basic_instruction(
+        &mut self,
+        basic_block_id: BasicBlockID,
+        basic: Basic<IntermediateTypeID>,
+    ) {
+        self.container
+            .control_flow_graph
+            .get_mut(basic_block_id)
+            .unwrap()
+            .add_basic_instruction(basic);
     }
 }
 
@@ -450,12 +462,12 @@ impl Builder {
             }
             FunctionalSyntaxTree::Continue(_) => todo!(),
             FunctionalSyntaxTree::Break(_) => todo!(),
-            FunctionalSyntaxTree::Return(syn) => Ok(BindingResult::Value(Value::Constant(
-                Constant::Unreachable(self.bind_return(syn, handler)),
+            FunctionalSyntaxTree::Return(syn) => Ok(BindingResult::Value(Value::Unreachable(
+                self.bind_return(syn, handler),
             ))),
             FunctionalSyntaxTree::Express(syn) => self
                 .bind_express(syn, handler)
-                .map(|x| BindingResult::Value(Value::Constant(Constant::Unreachable(x)))),
+                .map(|x| BindingResult::Value(Value::Unreachable(x))),
             FunctionalSyntaxTree::Cast(_) => todo!(),
         }
     }
@@ -517,7 +529,9 @@ impl Builder {
 
         Unreachable {
             span: syntax_tree.span(),
-            ty: IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Void)),
+            ty: IntermediateTypeID::InferenceID(
+                self.inference_context.new_inference(Constraint::All),
+            ),
         }
     }
 
@@ -537,12 +551,205 @@ impl Builder {
             ImperativeSyntaxTree::Block(syn) => {
                 self.bind_block(syn, handler).map(BindingResult::Value)
             }
-            ImperativeSyntaxTree::IfElse(_) => todo!(),
+            ImperativeSyntaxTree::IfElse(syn) => {
+                self.bind_if_else(syn, handler).map(BindingResult::Value)
+            }
             ImperativeSyntaxTree::Loop(_) => todo!(),
         }
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    fn handle_then_else_values(
+        &mut self,
+        syntax_tree: &IfElseSyntaxTree,
+        (then_value, then_end_basic_block_id): (Value<IntermediateTypeID>, BasicBlockID),
+        (else_value, else_end_basic_block_id): (Value<IntermediateTypeID>, BasicBlockID),
+    ) -> Value<IntermediateTypeID> {
+        // merge the two path
+        match (then_value, else_value) {
+            // unreachable
+            (Value::Unreachable(..), Value::Unreachable(..)) => Value::Unreachable(Unreachable {
+                span: syntax_tree.span(),
+                ty: IntermediateTypeID::InferenceID(
+                    self.inference_context.new_inference(Constraint::All),
+                ),
+            }),
+
+            // then value only
+            (then_value, Value::Unreachable(..)) => then_value,
+
+            // else value only
+            (Value::Unreachable(..), else_value) => else_value,
+
+            // phi node
+            (then_value, else_value) => {
+                Value::Register(self.assign_new_register_binding(Binding::PhiNode(PhiNode {
+                    span: syntax_tree.span(),
+                    values_by_predecessor: {
+                        let mut result = HashMap::new();
+                        result.insert(then_end_basic_block_id, then_value);
+                        result.insert(else_end_basic_block_id, else_value);
+                        result
+                    },
+                    phi_node_source: PhiNodeSource::IfEsle,
+                })))
+            }
+        }
+    }
+
+    /// Binds the given [`IfElseSyntaxTree`] into its cooresponding instructions and returns its
+    /// value.
+    ///
+    /// # Errors
+    /// - If the binding process encounters a fatal semantic error.
+    #[allow(clippy::too_many_lines)]
+    pub fn bind_if_else(
+        &mut self,
+        syntax_tree: &IfElseSyntaxTree,
+        handler: &impl ErrorHandler,
+    ) -> Result<Value<IntermediateTypeID>, BindingError> {
+        let pre_basic_block_id = self.current_basic_block_id;
+        let true_basic_block_id = self.container.control_flow_graph.new_basic_block();
+        let false_basic_block_id = self.container.control_flow_graph.new_basic_block();
+        let continue_basic_block_id = self.container.control_flow_graph.new_basic_block();
+
+        let condition = self
+            .expect_expression(
+                syntax_tree.condition(),
+                BindingOption::default(),
+                ExpectedType::Type(Type::PrimitiveType(PrimitiveType::Bool)),
+                handler,
+            )
+            .map_or_else(
+                |err| {
+                    Value::Placeholder(Placeholder {
+                        span: err.0,
+                        ty: IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Bool)),
+                    })
+                },
+                |x| x.into_value().unwrap(),
+            );
+
+        // add conditional jump expression
+        if !self
+            .container
+            .control_flow_graph()
+            .get(pre_basic_block_id)
+            .unwrap()
+            .is_terminated()
+        {
+            self.container
+                .control_flow_graph
+                .add_conditional_jump_instruction(
+                    pre_basic_block_id,
+                    ConditionalJump {
+                        condition,
+                        true_jump_target: true_basic_block_id,
+                        false_jump_target: false_basic_block_id,
+                    },
+                )
+                .unwrap();
+        }
+
+        // bind true block
+        let (then_value, then_end_basic_block_id) = {
+            self.current_basic_block_id = true_basic_block_id;
+            let value = self
+                .bind_block(syntax_tree.then_expression(), handler)
+                .unwrap_or_else(|err| {
+                    Value::Placeholder(Placeholder {
+                        span: err.0,
+                        ty: IntermediateTypeID::InferenceID(
+                            self.inference_context.new_inference(Constraint::All),
+                        ),
+                    })
+                });
+
+            // jump to continue block
+            if !self.current_basic_block().is_terminated() {
+                self.container
+                    .control_flow_graph
+                    .add_jump_instruction(
+                        self.current_basic_block_id,
+                        Jump {
+                            jump_target: continue_basic_block_id,
+                            jump_kind: JumpKind::Implicit,
+                        },
+                    )
+                    .unwrap();
+            }
+
+            (value, self.current_basic_block_id)
+        };
+
+        // bind false block
+        let (mut else_value, else_end_basic_block_id) = {
+            self.current_basic_block_id = false_basic_block_id;
+            let value = syntax_tree
+                .else_expression()
+                .as_ref()
+                .map_or_else(
+                    || {
+                        Ok(Value::Constant(Constant::VoidConstant(VoidConstant {
+                            span: syntax_tree.span(),
+                        })))
+                    },
+                    |else_expression| match else_expression.expression().as_ref() {
+                        BlockOrIfElse::Block(block) => self.bind_block(block, handler),
+                        BlockOrIfElse::IfElse(if_else) => self.bind_if_else(if_else, handler),
+                    },
+                )
+                .unwrap_or_else(|err| {
+                    Value::Placeholder(Placeholder {
+                        span: err.0,
+                        ty: IntermediateTypeID::InferenceID(
+                            self.inference_context.new_inference(Constraint::All),
+                        ),
+                    })
+                });
+
+            // jump to continue block
+            if !self.current_basic_block().is_terminated() {
+                self.container
+                    .control_flow_graph
+                    .add_jump_instruction(
+                        self.current_basic_block_id,
+                        Jump {
+                            jump_target: continue_basic_block_id,
+                            jump_kind: JumpKind::Implicit,
+                        },
+                    )
+                    .unwrap();
+            }
+
+            (value, self.current_basic_block_id)
+        };
+
+        self.current_basic_block_id = continue_basic_block_id;
+
+        {
+            // unify the two values
+            let then_value_ty = self.get_value_intermediate_type_id(&then_value).unwrap();
+            if let Err(err) = self.type_check(
+                self.get_span(&else_value).unwrap(),
+                self.get_value_intermediate_type_id(&else_value).unwrap(),
+                then_value_ty.into(),
+                handler,
+            ) {
+                else_value = Value::Placeholder(Placeholder {
+                    span: err.0,
+                    ty: then_value_ty,
+                });
+            }
+        }
+
+        Ok(self.handle_then_else_values(
+            syntax_tree,
+            (then_value, then_end_basic_block_id),
+            (else_value, else_end_basic_block_id),
+        ))
+    }
 
     /// Binds the given [`BlockSyntaxTree`] and returns the [`Value`] of the expression.
     ///
@@ -585,16 +792,19 @@ impl Builder {
         self.local_stack.pop();
         self.block_pointer_stack.pop();
         self.add_basic_instruction(Basic::ScopePop);
-        self.container
-            .control_flow_graph
-            .add_jump_instruction(
-                self.current_basic_block_id,
-                Jump {
-                    jump_target: end_basic_block_id,
-                    jump_kind: JumpKind::Implicit,
-                },
-            )
-            .unwrap();
+
+        if !self.current_basic_block().is_terminated() {
+            self.container
+                .control_flow_graph
+                .add_jump_instruction(
+                    self.current_basic_block_id,
+                    Jump {
+                        jump_target: end_basic_block_id,
+                        jump_kind: JumpKind::Implicit,
+                    },
+                )
+                .unwrap();
+        }
 
         // set the current basic block id to the successor block
         self.current_basic_block_id = end_basic_block_id;
@@ -637,10 +847,12 @@ impl Builder {
             match block.incoming_values().len() {
                 0 => {
                     // unreachable constant value
-                    Ok(Value::Constant(Constant::Unreachable(Unreachable {
+                    Ok(Value::Unreachable(Unreachable {
                         span: syntax_tree.span(),
-                        ty,
-                    })))
+                        ty: IntermediateTypeID::InferenceID(
+                            self.inference_context.new_inference(Constraint::All),
+                        ),
+                    }))
                 }
                 1 => {
                     // return the incoming value
@@ -720,9 +932,8 @@ impl Builder {
                     Type::PrimitiveType(PrimitiveType::Void),
                 ));
 
-                Value::Constant(Constant::Unreachable(Unreachable {
-                    span: syntax_tree.express_keyword().span(),
-                    ty: IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Void)),
+                Value::Constant(Constant::VoidConstant(VoidConstant {
+                    span: syntax_tree.span(),
                 }))
             }
             // assigns new type to the block
@@ -749,9 +960,8 @@ impl Builder {
                         })
                     },
                     |_| {
-                        Value::Constant(Constant::Unreachable(Unreachable {
-                            span: syntax_tree.express_keyword().span(),
-                            ty: IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Void)),
+                        Value::Constant(Constant::VoidConstant(VoidConstant {
+                            span: syntax_tree.span(),
                         }))
                     },
                 ),
@@ -813,16 +1023,18 @@ impl Builder {
         let block = self.blocks.get(block_id).unwrap();
 
         // insert a jump instruction to the target block
-        self.container
-            .control_flow_graph
-            .add_jump_instruction(
-                self.current_basic_block_id,
-                Jump {
-                    jump_target: block.end_basic_block_id(),
-                    jump_kind: JumpKind::Explicit(syntax_tree.span()),
-                },
-            )
-            .unwrap();
+        if !self.current_basic_block().is_terminated() {
+            self.container
+                .control_flow_graph
+                .add_jump_instruction(
+                    self.current_basic_block_id,
+                    Jump {
+                        jump_target: block.end_basic_block_id(),
+                        jump_kind: JumpKind::Explicit(syntax_tree.span()),
+                    },
+                )
+                .unwrap();
+        }
 
         // in the end basic block, if the it has a predecessor to current basic block (which means
         // this `express` is reachable), then insert an incoming value to the phi node
@@ -843,7 +1055,9 @@ impl Builder {
 
         Ok(Unreachable {
             span: syntax_tree.span(),
-            ty: IntermediateTypeID::Type(Type::PrimitiveType(PrimitiveType::Void)),
+            ty: IntermediateTypeID::InferenceID(
+                self.inference_context.new_inference(Constraint::All),
+            ),
         })
     }
 
@@ -1880,6 +2094,7 @@ impl Builder {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_short_circuit(
         &mut self,
         syntax_tree: &BinarySyntaxTree,
@@ -1913,25 +2128,33 @@ impl Builder {
         let continue_block_id = self.container.control_flow_graph.new_basic_block();
 
         // add condition jump
-        self.container
-            .control_flow_graph
-            .add_conditional_jump_instruction(
-                pre_block_id,
-                ConditionalJump {
-                    condition: left.clone(),
-                    true_jump_target: if is_or {
-                        continue_block_id
-                    } else {
-                        rhs_condition_block_id
+        if !self
+            .container
+            .control_flow_graph()
+            .get(pre_block_id)
+            .unwrap()
+            .is_terminated()
+        {
+            self.container
+                .control_flow_graph
+                .add_conditional_jump_instruction(
+                    pre_block_id,
+                    ConditionalJump {
+                        condition: left.clone(),
+                        true_jump_target: if is_or {
+                            continue_block_id
+                        } else {
+                            rhs_condition_block_id
+                        },
+                        false_jump_target: if is_or {
+                            rhs_condition_block_id
+                        } else {
+                            continue_block_id
+                        },
                     },
-                    false_jump_target: if is_or {
-                        rhs_condition_block_id
-                    } else {
-                        continue_block_id
-                    },
-                },
-            )
-            .unwrap();
+                )
+                .unwrap();
+        }
 
         // to the rhs condition block, bind the rhs
         let rhs_value = {
@@ -1954,16 +2177,24 @@ impl Builder {
                 );
 
             // branch to continue block
-            self.container
-                .control_flow_graph
-                .add_jump_instruction(
-                    rhs_condition_block_id,
-                    Jump {
-                        jump_target: continue_block_id,
-                        jump_kind: JumpKind::Implicit,
-                    },
-                )
-                .unwrap();
+            if !self
+                .container
+                .control_flow_graph()
+                .get(rhs_condition_block_id)
+                .unwrap()
+                .is_terminated()
+            {
+                self.container
+                    .control_flow_graph
+                    .add_jump_instruction(
+                        rhs_condition_block_id,
+                        Jump {
+                            jump_target: continue_block_id,
+                            jump_kind: JumpKind::Implicit,
+                        },
+                    )
+                    .unwrap();
+            }
 
             rhs_value
         };

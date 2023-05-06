@@ -1,0 +1,8 @@
+
+public function main(): int32 
+{
+    'test: {
+        if (true) { express 'test 32; }
+        express 32u32;
+    }
+}
