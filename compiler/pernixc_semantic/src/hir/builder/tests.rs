@@ -1927,8 +1927,49 @@ pub fn block_binding_test() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         assert_eq!(errors.as_vec().len(), 0);
-
         assert_eq!(builder.get_span(&value).unwrap().str(), "{}");
+    }
+    {
+        let value = builder
+            .bind_block(
+                statements[1]
+                    .as_expressive()
+                    .unwrap()
+                    .as_imperative()
+                    .unwrap()
+                    .as_block()
+                    .unwrap(),
+                &errors,
+            )?
+            .into_constant()
+            .unwrap()
+            .into_numeric_literal()
+            .unwrap();
+
+        assert_eq!(errors.as_vec().len(), 0);
+
+        assert_eq!(builder.get_span(&value).unwrap().str(), "0");
+        assert_eq!(
+            builder.get_inferable_type(&value).unwrap(),
+            InferableType::Constraint(Constraint::Number)
+        );
+    }
+    {
+        let value = builder
+            .bind_block(
+                statements[2]
+                    .as_expressive()
+                    .unwrap()
+                    .as_imperative()
+                    .unwrap()
+                    .as_block()
+                    .unwrap(),
+                &errors,
+            )?
+            .into_constant()
+            .unwrap()
+            .into_numeric_literal()
+            .unwrap();
     }
     Ok(())
 }
