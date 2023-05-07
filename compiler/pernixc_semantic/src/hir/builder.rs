@@ -1,4 +1,5 @@
 //! Contains the definition of [`Builder`] -- the main interface for building the HIR.
+
 use std::{collections::HashMap, sync::Arc};
 
 use derive_more::From;
@@ -220,18 +221,6 @@ impl Builder {
             .control_flow_graph
             .get_mut(self.current_basic_block_id)
             .unwrap()
-    }
-
-    fn add_implicit_basic_instruction(
-        &mut self,
-        basic_block_id: BasicBlockID,
-        basic: Basic<IntermediateTypeID>,
-    ) {
-        self.container
-            .control_flow_graph
-            .get_mut(basic_block_id)
-            .unwrap()
-            .add_basic_instruction(basic);
     }
 }
 
@@ -487,6 +476,7 @@ impl Builder {
             .get_overload(self.container.overload_id)
             .unwrap()
             .return_type();
+
         let return_value = if let Some(expression) = syntax_tree.expression().as_ref() {
             Some(
                 self.expect_expression(
@@ -632,25 +622,17 @@ impl Builder {
             );
 
         // add conditional jump expression
-        if !self
-            .container
-            .control_flow_graph()
-            .get(pre_basic_block_id)
-            .unwrap()
-            .is_terminated()
-        {
-            self.container
-                .control_flow_graph
-                .add_conditional_jump_instruction(
-                    pre_basic_block_id,
-                    ConditionalJump {
-                        condition,
-                        true_jump_target: true_basic_block_id,
-                        false_jump_target: false_basic_block_id,
-                    },
-                )
-                .unwrap();
-        }
+        self.container
+            .control_flow_graph
+            .add_conditional_jump_instruction(
+                pre_basic_block_id,
+                ConditionalJump {
+                    condition,
+                    true_jump_target: true_basic_block_id,
+                    false_jump_target: false_basic_block_id,
+                },
+            )
+            .unwrap();
 
         // bind true block
         let (then_value, then_end_basic_block_id) = {
@@ -667,18 +649,16 @@ impl Builder {
                 });
 
             // jump to continue block
-            if !self.current_basic_block().is_terminated() {
-                self.container
-                    .control_flow_graph
-                    .add_jump_instruction(
-                        self.current_basic_block_id,
-                        Jump {
-                            jump_target: continue_basic_block_id,
-                            jump_kind: JumpKind::Implicit,
-                        },
-                    )
-                    .unwrap();
-            }
+            self.container
+                .control_flow_graph
+                .add_jump_instruction(
+                    self.current_basic_block_id,
+                    Jump {
+                        jump_target: continue_basic_block_id,
+                        jump_kind: JumpKind::Implicit,
+                    },
+                )
+                .unwrap();
 
             (value, self.current_basic_block_id)
         };
@@ -710,18 +690,16 @@ impl Builder {
                 });
 
             // jump to continue block
-            if !self.current_basic_block().is_terminated() {
-                self.container
-                    .control_flow_graph
-                    .add_jump_instruction(
-                        self.current_basic_block_id,
-                        Jump {
-                            jump_target: continue_basic_block_id,
-                            jump_kind: JumpKind::Implicit,
-                        },
-                    )
-                    .unwrap();
-            }
+            self.container
+                .control_flow_graph
+                .add_jump_instruction(
+                    self.current_basic_block_id,
+                    Jump {
+                        jump_target: continue_basic_block_id,
+                        jump_kind: JumpKind::Implicit,
+                    },
+                )
+                .unwrap();
 
             (value, self.current_basic_block_id)
         };
@@ -788,23 +766,22 @@ impl Builder {
             self.bind_statement(statement, handler).unwrap();
         }
 
+
         // ends a scope
         self.local_stack.pop();
         self.block_pointer_stack.pop();
         self.add_basic_instruction(Basic::ScopePop);
 
-        if !self.current_basic_block().is_terminated() {
-            self.container
-                .control_flow_graph
-                .add_jump_instruction(
-                    self.current_basic_block_id,
-                    Jump {
-                        jump_target: end_basic_block_id,
-                        jump_kind: JumpKind::Implicit,
-                    },
-                )
-                .unwrap();
-        }
+        self.container
+            .control_flow_graph
+            .add_jump_instruction(
+                self.current_basic_block_id,
+                Jump {
+                    jump_target: end_basic_block_id,
+                    jump_kind: JumpKind::Implicit,
+                },
+            )
+            .unwrap();
 
         // set the current basic block id to the successor block
         self.current_basic_block_id = end_basic_block_id;
@@ -1023,18 +1000,16 @@ impl Builder {
         let block = self.blocks.get(block_id).unwrap();
 
         // insert a jump instruction to the target block
-        if !self.current_basic_block().is_terminated() {
-            self.container
-                .control_flow_graph
-                .add_jump_instruction(
-                    self.current_basic_block_id,
-                    Jump {
-                        jump_target: block.end_basic_block_id(),
-                        jump_kind: JumpKind::Explicit(syntax_tree.span()),
-                    },
-                )
-                .unwrap();
-        }
+        self.container
+            .control_flow_graph
+            .add_jump_instruction(
+                self.current_basic_block_id,
+                Jump {
+                    jump_target: block.end_basic_block_id(),
+                    jump_kind: JumpKind::Explicit(syntax_tree.span()),
+                },
+            )
+            .unwrap();
 
         // in the end basic block, if the it has a predecessor to current basic block (which means
         // this `express` is reachable), then insert an incoming value to the phi node
@@ -2128,33 +2103,25 @@ impl Builder {
         let continue_block_id = self.container.control_flow_graph.new_basic_block();
 
         // add condition jump
-        if !self
-            .container
-            .control_flow_graph()
-            .get(pre_block_id)
-            .unwrap()
-            .is_terminated()
-        {
-            self.container
-                .control_flow_graph
-                .add_conditional_jump_instruction(
-                    pre_block_id,
-                    ConditionalJump {
-                        condition: left.clone(),
-                        true_jump_target: if is_or {
-                            continue_block_id
-                        } else {
-                            rhs_condition_block_id
-                        },
-                        false_jump_target: if is_or {
-                            rhs_condition_block_id
-                        } else {
-                            continue_block_id
-                        },
+        self.container
+            .control_flow_graph
+            .add_conditional_jump_instruction(
+                pre_block_id,
+                ConditionalJump {
+                    condition: left.clone(),
+                    true_jump_target: if is_or {
+                        continue_block_id
+                    } else {
+                        rhs_condition_block_id
                     },
-                )
-                .unwrap();
-        }
+                    false_jump_target: if is_or {
+                        rhs_condition_block_id
+                    } else {
+                        continue_block_id
+                    },
+                },
+            )
+            .unwrap();
 
         // to the rhs condition block, bind the rhs
         let rhs_value = {
@@ -2177,24 +2144,16 @@ impl Builder {
                 );
 
             // branch to continue block
-            if !self
-                .container
-                .control_flow_graph()
-                .get(rhs_condition_block_id)
-                .unwrap()
-                .is_terminated()
-            {
-                self.container
-                    .control_flow_graph
-                    .add_jump_instruction(
-                        rhs_condition_block_id,
-                        Jump {
-                            jump_target: continue_block_id,
-                            jump_kind: JumpKind::Implicit,
-                        },
-                    )
-                    .unwrap();
-            }
+            self.container
+                .control_flow_graph
+                .add_jump_instruction(
+                    rhs_condition_block_id,
+                    Jump {
+                        jump_target: continue_block_id,
+                        jump_kind: JumpKind::Implicit,
+                    },
+                )
+                .unwrap();
 
             rhs_value
         };

@@ -2035,6 +2035,7 @@ fn control_flow_test() -> Result<(), Box<dyn std::error::Error>> {
     let errors: ErrorVec<AllHirError> = ErrorVec::new();
 
     {
+        let another = 32;
         let result = builder.bind_block(
             statements[0]
                 .as_expressive()

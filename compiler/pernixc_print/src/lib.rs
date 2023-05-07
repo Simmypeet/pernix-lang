@@ -64,6 +64,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
     for _ in 0..largest_line_number_digits {
         print!(" ");
     }
+
     println!(
         "{} {}",
         "-->".bright_cyan().bold(),

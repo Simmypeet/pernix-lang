@@ -21,30 +21,20 @@ pub struct Stack<T: Scope> {
 impl<T: Scope> Stack<T> {
     /// Creates a new empty stack of scopes.
     #[must_use]
-    pub fn new() -> Self {
-        Self { scopes: Vec::new() }
-    }
+    pub fn new() -> Self { Self { scopes: Vec::new() } }
 
     /// Pushes a new [`Scope`] to the top of the stack.
-    pub fn push(&mut self, scope: T) {
-        self.scopes.push(scope);
-    }
+    pub fn push(&mut self, scope: T) { self.scopes.push(scope); }
 
     /// Pops the top [`Scope`] from the stack and returns it.
-    pub fn pop(&mut self) -> Option<T> {
-        self.scopes.pop()
-    }
+    pub fn pop(&mut self) -> Option<T> { self.scopes.pop() }
 
     /// Returns a reference to the topmost [`Scope`] in the stack.
     #[must_use]
-    pub fn top(&self) -> Option<&T> {
-        self.scopes.last()
-    }
+    pub fn top(&self) -> Option<&T> { self.scopes.last() }
 
     /// Returns a mutable reference to the topmost [`Scope`] in the stack.
-    pub fn top_mut(&mut self) -> Option<&mut T> {
-        self.scopes.last_mut()
-    }
+    pub fn top_mut(&mut self) -> Option<&mut T> { self.scopes.last_mut() }
 
     /// Searches for a value in the stack and returns a reference to it if it exists.
     ///
@@ -64,9 +54,7 @@ impl<T: Scope> Stack<T> {
 }
 
 impl<T: Scope> Default for Stack<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 /// Is a trait the represents a scope that contains the mapping of keys to values.

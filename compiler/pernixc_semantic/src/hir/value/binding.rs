@@ -163,9 +163,7 @@ impl<T: TypeSystem> ValueInspect<T, Load> for Container<T> {
         }
     }
 
-    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> {
-        Ok(value.span.clone())
-    }
+    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> { Ok(value.span.clone()) }
 }
 
 /// Represents a bound

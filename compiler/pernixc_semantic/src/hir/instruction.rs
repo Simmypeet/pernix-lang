@@ -37,9 +37,7 @@ pub struct Jump {
 }
 
 impl JumpInstruction for Jump {
-    fn jump_target(&self) -> BasicBlockID {
-        self.jump_target
-    }
+    fn jump_target(&self) -> BasicBlockID { self.jump_target }
 }
 
 /// Represents a conditional jump instruction in the HIR.
@@ -53,17 +51,11 @@ pub struct ConditionalJump<T: TypeSystem> {
 impl<T: TypeSystem> ConditionalJumpInstruction for ConditionalJump<T> {
     type Value = Value<T>;
 
-    fn condition_value(&self) -> &Self::Value {
-        &self.condition
-    }
+    fn condition_value(&self) -> &Self::Value { &self.condition }
 
-    fn true_jump_target(&self) -> BasicBlockID {
-        self.true_jump_target
-    }
+    fn true_jump_target(&self) -> BasicBlockID { self.true_jump_target }
 
-    fn false_jump_target(&self) -> BasicBlockID {
-        self.false_jump_target
-    }
+    fn false_jump_target(&self) -> BasicBlockID { self.false_jump_target }
 }
 
 /// Represents a return instruction in the HIR.
@@ -75,9 +67,7 @@ pub struct Return<T: TypeSystem> {
 impl<T: TypeSystem> ReturnInstruction for Return<T> {
     type Value = Value<T>;
 
-    fn return_value(&self) -> Option<&Self::Value> {
-        self.return_value.as_ref()
-    }
+    fn return_value(&self) -> Option<&Self::Value> { self.return_value.as_ref() }
 }
 
 /// Represents a basic instruction in the HIR.

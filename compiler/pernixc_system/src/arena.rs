@@ -63,15 +63,13 @@ impl<T: Data> Symbol<T> {
 /// This container is generally used to construct a graph of symbols. Semantic analysis phase
 /// generally uses lots of graphs to represent the program. The symbols would use the
 /// [`UniqueIdentifier`] to store the references to other symbols.
-#[derive(Debug,  Deref)]
+#[derive(Debug, Deref)]
 pub struct Arena<T: Data> {
     symbols_by_id: HashMap<T::ID, Symbol<T>>,
 }
 
 impl<T: Data> Default for Arena<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl<T: Data> Arena<T> {
