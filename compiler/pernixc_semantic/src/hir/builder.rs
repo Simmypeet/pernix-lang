@@ -35,7 +35,7 @@ use super::{
         NoOverloadWithMatchingNumberOfArguments, ReturnValueExpected, SymbolNotCallable,
         ValueExpected,
     },
-    instruction::{Backend, Basic, JumpKind, RegisterAssignment, Return},
+    instruction::{Backend, Basic, JumpSource, RegisterAssignment, Return, ScopePop, ScopePush},
     value::{
         binding::{
             ArithmeticOperator, Binary, BinaryOperator, Binding, ComparisonOperator,
@@ -48,7 +48,7 @@ use super::{
     ValueInspect,
 };
 use crate::{
-    cfg::{BasicBlock, BasicBlockID},
+    cfg::{BasicBlock, BasicBlockID, BasicInstruction, InstructionBackend},
     hir::{
         error::{
             DuplicateFieldInitialization, FieldInaccessible, MutableLValueExpected, NoFieldOnType,
@@ -655,7 +655,7 @@ impl Builder {
                     self.current_basic_block_id,
                     Jump {
                         jump_target: continue_basic_block_id,
-                        jump_kind: JumpKind::Implicit,
+                        jump_source: None,
                     },
                 )
                 .unwrap();
@@ -696,7 +696,7 @@ impl Builder {
                     self.current_basic_block_id,
                     Jump {
                         jump_target: continue_basic_block_id,
-                        jump_kind: JumpKind::Implicit,
+                        jump_source: None,
                     },
                 )
                 .unwrap();
@@ -757,20 +757,21 @@ impl Builder {
 
         // pushes a new scope
         self.local_stack.push(Locals::default());
+        self.current_basic_block_mut()
+            .add_basic_instruction(Basic::ScopePush(ScopePush {}));
         self.block_pointer_stack
             .push(BlockPointer { label, block_id });
-        self.add_basic_instruction(Basic::ScopePush);
 
         // binds list of statements
         for statement in syntax_tree.block_without_label().statements() {
             self.bind_statement(statement, handler).unwrap();
         }
 
-
         // ends a scope
         self.local_stack.pop();
         self.block_pointer_stack.pop();
-        self.add_basic_instruction(Basic::ScopePop);
+        self.current_basic_block_mut()
+            .add_basic_instruction(Basic::ScopePop(ScopePop { pop_count: 1 }));
 
         self.container
             .control_flow_graph
@@ -778,7 +779,7 @@ impl Builder {
                 self.current_basic_block_id,
                 Jump {
                     jump_target: end_basic_block_id,
-                    jump_kind: JumpKind::Implicit,
+                    jump_source: None,
                 },
             )
             .unwrap();
@@ -996,7 +997,6 @@ impl Builder {
         };
 
         let value = self.handle_express_value(syntax_tree, block_id, value, handler)?;
-
         let block = self.blocks.get(block_id).unwrap();
 
         // insert a jump instruction to the target block
@@ -1006,7 +1006,7 @@ impl Builder {
                 self.current_basic_block_id,
                 Jump {
                     jump_target: block.end_basic_block_id(),
-                    jump_kind: JumpKind::Explicit(syntax_tree.span()),
+                    jump_source: Some(JumpSource::Express(syntax_tree.span())),
                 },
             )
             .unwrap();
@@ -2150,7 +2150,7 @@ impl Builder {
                     rhs_condition_block_id,
                     Jump {
                         jump_target: continue_block_id,
-                        jump_kind: JumpKind::Implicit,
+                        jump_source: None,
                     },
                 )
                 .unwrap();

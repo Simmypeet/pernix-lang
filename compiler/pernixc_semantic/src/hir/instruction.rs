@@ -16,14 +16,11 @@ use crate::cfg::{
     JumpInstruction, ReturnInstruction,
 };
 
-/// Specifies whether the jump instruction is created implicitly or explicitly.
+/// Specifies which expression generated this instruction.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-pub enum JumpKind {
-    /// The jump instruction is generated implicitly by the compiler
-    Implicit,
-
-    /// The jump instruction is specified explicitly by the user and via some syntax.
-    Explicit(Span),
+pub enum JumpSource {
+    /// The jump instruction was generated from a `break` expression.
+    Express(Span),
 }
 
 /// Represents a jump instruciton in the HIR.
@@ -31,13 +28,17 @@ pub enum JumpKind {
 pub struct Jump {
     pub(super) jump_target: BasicBlockID,
 
-    /// Gets the [`JumpKind`] of this jump instruction.
+    /// Gets the source of this jump instruction.
+    ///
+    /// If `None`, this jump instruction was generated implicitly by the compiler.
     #[get = "pub"]
-    pub(super) jump_kind: JumpKind,
+    pub(super) jump_source: Option<JumpSource>,
 }
 
 impl JumpInstruction for Jump {
-    fn jump_target(&self) -> BasicBlockID { self.jump_target }
+    fn jump_target(&self) -> BasicBlockID {
+        self.jump_target
+    }
 }
 
 /// Represents a conditional jump instruction in the HIR.
@@ -51,11 +52,17 @@ pub struct ConditionalJump<T: TypeSystem> {
 impl<T: TypeSystem> ConditionalJumpInstruction for ConditionalJump<T> {
     type Value = Value<T>;
 
-    fn condition_value(&self) -> &Self::Value { &self.condition }
+    fn condition_value(&self) -> &Self::Value {
+        &self.condition
+    }
 
-    fn true_jump_target(&self) -> BasicBlockID { self.true_jump_target }
+    fn true_jump_target(&self) -> BasicBlockID {
+        self.true_jump_target
+    }
 
-    fn false_jump_target(&self) -> BasicBlockID { self.false_jump_target }
+    fn false_jump_target(&self) -> BasicBlockID {
+        self.false_jump_target
+    }
 }
 
 /// Represents a return instruction in the HIR.
@@ -67,7 +74,9 @@ pub struct Return<T: TypeSystem> {
 impl<T: TypeSystem> ReturnInstruction for Return<T> {
     type Value = Value<T>;
 
-    fn return_value(&self) -> Option<&Self::Value> { self.return_value.as_ref() }
+    fn return_value(&self) -> Option<&Self::Value> {
+        self.return_value.as_ref()
+    }
 }
 
 /// Represents a basic instruction in the HIR.
@@ -77,8 +86,20 @@ pub enum Basic<T: TypeSystem> {
     RegisterAssignment(RegisterAssignment),
     VariableDeclaration(VariableDeclaration),
     Store(Store<T>),
-    ScopePush,
-    ScopePop,
+    ScopePush(ScopePush),
+    ScopePop(ScopePop),
+}
+
+/// Is an instruction that is inserted every time a new scope (*block*) is entered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScopePush {}
+
+/// Is an instruction executed every time a scope (*block*) is exited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CopyGetters)]
+pub struct ScopePop {
+    /// The number of scope entries to pop.
+    #[get_copy = "pub"]
+    pub(super) pop_count: usize,
 }
 
 /// Represents a register assignment instruction in the HIR.

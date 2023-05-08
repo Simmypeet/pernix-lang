@@ -2,7 +2,7 @@
 
 use std::{borrow::Borrow, collections::HashMap};
 
-use derive_more::{Deref, DerefMut};
+use derive_more::Deref;
 use getset::{CopyGetters, Getters};
 use pernixc_system::create_symbol;
 
@@ -14,33 +14,44 @@ use crate::{
 
 /// Is a data struct representing the stack of scopes in the program.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Stack<T: Scope> {
+pub struct Stack<T> {
     scopes: Vec<T>,
 }
 
-impl<T: Scope> Stack<T> {
+impl<T> Stack<T> {
     /// Creates a new empty stack of scopes.
     #[must_use]
-    pub fn new() -> Self { Self { scopes: Vec::new() } }
+    pub fn new() -> Self {
+        Self { scopes: Vec::new() }
+    }
 
     /// Pushes a new [`Scope`] to the top of the stack.
-    pub fn push(&mut self, scope: T) { self.scopes.push(scope); }
+    pub fn push(&mut self, scope: T) {
+        self.scopes.push(scope);
+    }
 
     /// Pops the top [`Scope`] from the stack and returns it.
-    pub fn pop(&mut self) -> Option<T> { self.scopes.pop() }
+    pub fn pop(&mut self) -> Option<T> {
+        self.scopes.pop()
+    }
 
     /// Returns a reference to the topmost [`Scope`] in the stack.
     #[must_use]
-    pub fn top(&self) -> Option<&T> { self.scopes.last() }
+    pub fn top(&self) -> Option<&T> {
+        self.scopes.last()
+    }
 
     /// Returns a mutable reference to the topmost [`Scope`] in the stack.
-    pub fn top_mut(&mut self) -> Option<&mut T> { self.scopes.last_mut() }
+    pub fn top_mut(&mut self) -> Option<&mut T> {
+        self.scopes.last_mut()
+    }
 
     /// Searches for a value in the stack and returns a reference to it if it exists.
     ///
     /// The search is done from the top of the stack to the bottom.
-    pub fn serach<Q>(&self, key: &Q) -> Option<T::V>
+    pub fn serach<'a, Q>(&'a self, key: &Q) -> Option<T::V>
     where
+        T: Scope<'a>,
         Q: ?Sized + Eq + std::hash::Hash,
         T::K: std::borrow::Borrow<Q>,
     {
@@ -53,20 +64,22 @@ impl<T: Scope> Stack<T> {
     }
 }
 
-impl<T: Scope> Default for Stack<T> {
-    fn default() -> Self { Self::new() }
+impl<T> Default for Stack<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Is a trait the represents a scope that contains the mapping of keys to values.
-pub trait Scope {
+pub trait Scope<'a> {
     /// The type of the keys in the scope.
     type K: Eq + std::hash::Hash;
 
     /// The type of the values in the scope.
-    type V;
+    type V: 'a;
 
     /// Searches for a value in the scope and returns a reference to it if it exists.
-    fn search<Q>(&self, key: &Q) -> Option<Self::V>
+    fn search<Q>(&'a self, key: &Q) -> Option<Self::V>
     where
         Q: ?Sized + Eq + std::hash::Hash,
         Self::K: std::borrow::Borrow<Q>;
@@ -75,16 +88,29 @@ pub trait Scope {
 /// Represents a [`Scope`] that contains mappings of variable name and its [`AllocaID`].
 ///
 /// This struct is used for variable name resolution.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deref, DerefMut)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deref, Getters)]
 pub struct Locals {
+    #[deref]
     values: HashMap<String, AllocaID>,
+
+    /// The list of declared variables in the scope.
+    #[get = "pub"]
+    variable_declarations: Vec<AllocaID>,
 }
 
-impl Scope for Locals {
+impl Locals {
+    /// Inserts a new variable name and its [`AllocaID`] into the scope.
+    pub fn insert(&mut self, name: String, id: AllocaID) {
+        self.values.insert(name, id);
+        self.variable_declarations.push(id);
+    }
+}
+
+impl<'a> Scope<'a> for Locals {
     type K = String;
     type V = AllocaID;
 
-    fn search<Q>(&self, key: &Q) -> Option<Self::V>
+    fn search<Q>(&'a self, key: &Q) -> Option<Self::V>
     where
         Q: ?Sized + Eq + std::hash::Hash,
         Self::K: std::borrow::Borrow<Q>,
@@ -143,11 +169,11 @@ pub struct BlockPointer {
     pub(super) block_id: BlockID,
 }
 
-impl Scope for BlockPointer {
+impl<'a> Scope<'a> for BlockPointer {
     type K = String;
     type V = BlockID;
 
-    fn search<Q>(&self, key: &Q) -> Option<Self::V>
+    fn search<Q>(&'a self, key: &Q) -> Option<Self::V>
     where
         Q: ?Sized + Eq + std::hash::Hash,
         Self::K: std::borrow::Borrow<Q>,
