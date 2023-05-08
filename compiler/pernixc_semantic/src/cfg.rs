@@ -136,6 +136,14 @@ impl<T: InstructionBackend> BasicBlock<T> {
         self.add_instruction(Instruction::Return(instruction));
     }
 
+    /// Gets an iterator over both the reachable and unreachable instructions of the [`BasicBlock`].
+    #[must_use]
+    pub fn all_instructions(&self) -> impl Iterator<Item = &Instruction<T>> {
+        self.instructions
+            .iter()
+            .chain(self.unreachable_instructions.iter())
+    }
+
     fn add_instruction(&mut self, instruction: Instruction<T>) {
         if self.is_terminated() {
             self.unreachable_instructions.push(instruction);

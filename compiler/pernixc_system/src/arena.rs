@@ -69,7 +69,9 @@ pub struct Arena<T: Data> {
 }
 
 impl<T: Data> Default for Arena<T> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T: Data> Arena<T> {

@@ -46,6 +46,18 @@ impl<T> Stack<T> {
         self.scopes.last_mut()
     }
 
+    /// Returns the number of scopes currently in the stack.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.scopes.len()
+    }
+
+    /// Returns `true` if the stack is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.scopes.is_empty()
+    }
+
     /// Searches for a value in the stack and returns a reference to it if it exists.
     ///
     /// The search is done from the top of the stack to the bottom.
@@ -153,6 +165,11 @@ create_symbol! {
         /// A map of the incoming values of the block.
         #[get = "pub"]
         pub(super) incoming_values: HashMap<BasicBlockID, Value<IntermediateTypeID>>,
+
+        /// The depth of the scope where the block is declared (starts from 0 for the block
+        /// declared in the function's body level)
+        #[get_copy = "pub"]
+        pub(super) scope_depth: usize,
     }
 
 }

@@ -1,6 +1,9 @@
 //! Contains the definition of [`Builder`] -- the main interface for building the HIR.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
@@ -22,7 +25,7 @@ use pernixc_syntax::syntax_tree::{
         VariableDeclaration as VariableDeclarationSyntaxTree,
     },
     ConnectedList,
-};
+n};
 use pernixc_system::arena::{Arena, InvalidIDError};
 use thiserror::Error;
 
@@ -48,7 +51,7 @@ use super::{
     ValueInspect,
 };
 use crate::{
-    cfg::{BasicBlock, BasicBlockID, BasicInstruction, InstructionBackend},
+    cfg::{BasicBlock, BasicBlockID, Instruction},
     hir::{
         error::{
             DuplicateFieldInitialization, FieldInaccessible, MutableLValueExpected, NoFieldOnType,
@@ -729,6 +732,77 @@ impl Builder {
         ))
     }
 
+    fn is_reachable(
+        &mut self,
+        current_basic_block_id: BasicBlockID,
+        instruction_offset: usize,
+        target_basic_block_id: BasicBlockID,
+        mut visisted: HashSet<BasicBlockID>,
+    ) -> bool {
+        if visisted.contains(&current_basic_block_id) {
+            return false;
+        }
+
+        visisted.insert(current_basic_block_id);
+
+        let mut instructions = self
+            .container
+            .control_flow_graph()
+            .get(current_basic_block_id)
+            .unwrap()
+            .all_instructions();
+
+        instructions.skip(instruction_offset);
+
+        // loop through all instructions in the current basic block
+        for instruction in self
+            .container
+            .control_flow_graph()
+            .get(current_basic_block_id)
+            .unwrap()
+            .all_instructions()
+        {
+            match instruction {
+                Instruction::Jump(jump_instruction) => {
+                    if jump_instruction.jump_target == target_basic_block_id {
+                        return true;
+                    }
+
+                    // check if the successor block is reachable
+                    return self.is_reachable(
+                        jump_instruction.jump_target,
+                        target_basic_block_id,
+                        visisted,
+                    );
+                }
+
+                // the flow is terminated, so the target block is not reachable
+                Instruction::Return(_) => return false,
+                Instruction::ConditionalJump(cond_jump) => {
+                    // if one of the target is `target_basic_block_id`
+                    if cond_jump.true_jump_target == target_basic_block_id
+                        || cond_jump.false_jump_target == target_basic_block_id
+                    {
+                        return true;
+                    }
+
+                    return self.is_reachable(
+                        cond_jump.true_jump_target,
+                        target_basic_block_id,
+                        visisted.clone(),
+                    ) || self.is_reachable(
+                        cond_jump.false_jump_target,
+                        target_basic_block_id,
+                        visisted,
+                    );
+                }
+                Instruction::Basic(_) => (),
+            }
+        }
+
+        return false;
+    }
+
     /// Binds the given [`BlockSyntaxTree`] and returns the [`Value`] of the expression.
     ///
     /// # Errors
@@ -753,6 +827,7 @@ impl Builder {
             end_basic_block_id,
             express_ty: None,
             incoming_values: HashMap::new(),
+            scope_depth: self.block_pointer_stack.len(),
         });
 
         // pushes a new scope
@@ -796,62 +871,11 @@ impl Builder {
 
         // if the block does express the value, then we need to check if all path express the value
         if let Some(ty) = block.express_ty {
-            let mut missing_value_basic_blocks = Vec::new();
-            for predecessor_block in current_basic_block.predecessors().iter().copied() {
-                block
-                    .incoming_values
-                    .entry(predecessor_block)
-                    .or_insert_with(|| {
-                        missing_value_basic_blocks.push(predecessor_block);
-
-                        // add a placeholder value for the missing value
-                        Value::Placeholder(Placeholder {
-                            span: syntax_tree.span(),
-                            ty,
-                        })
-                    });
-            }
-
-            // report error if has any missing values
-            if !missing_value_basic_blocks.is_empty() {
-                handler.recieve(Error::NotAllFlowPathExpressValue(
-                    NotAllFlowPathExpressValue {
-                        block_span: syntax_tree.span(),
-                        missing_value_basic_blocks,
-                    },
-                ));
-            }
-
-            match block.incoming_values().len() {
-                0 => {
-                    // unreachable constant value
-                    Ok(Value::Unreachable(Unreachable {
-                        span: syntax_tree.span(),
-                        ty: IntermediateTypeID::InferenceID(
-                            self.inference_context.new_inference(Constraint::All),
-                        ),
-                    }))
-                }
-                1 => {
-                    // return the incoming value
-                    Ok(block.incoming_values().values().next().unwrap().clone())
-                }
-                _ => {
-                    let phi_node_binding = Binding::PhiNode(PhiNode {
-                        span: syntax_tree.span(),
-                        values_by_predecessor: block.incoming_values().clone(),
-                        phi_node_source: PhiNodeSource::Block,
-                    });
-
-                    Ok(Value::Register(
-                        self.assign_new_register_binding(phi_node_binding),
-                    ))
-                }
-            }
+            todo!()
+        } else if !self.is_reachable(current_basic_block_id, target_basic_block_id, visisted) {
+            todo!()
         } else {
-            Ok(Value::Constant(Constant::VoidConstant(VoidConstant {
-                span: syntax_tree.span(),
-            })))
+            todo!()
         }
     }
 
@@ -984,7 +1008,7 @@ impl Builder {
         syntax_tree: &ExpressSyntaxTree,
         handler: &impl ErrorHandler,
     ) -> Result<Unreachable<IntermediateTypeID>, BindingError> {
-        let block_id = self.get_block_id(syntax_tree, handler);
+        let target_block_id = self.get_block_id(syntax_tree, handler);
 
         let value = syntax_tree
             .expression()
@@ -992,14 +1016,26 @@ impl Builder {
             .map(|x| self.bind_expression(x, BindingOption::default(), handler));
 
         // extract the block value
-        let Some(block_id) = block_id else {
+        let Some(target_block_id) = target_block_id else {
             return Err(BindingError(syntax_tree.span()))
         };
 
-        let value = self.handle_express_value(syntax_tree, block_id, value, handler)?;
-        let block = self.blocks.get(block_id).unwrap();
+        // the block that the express is in
+        let current_block_id = self.block_pointer_stack.top().unwrap().block_id();
+        // the number of scope to pop
+        let scope_pop_count = (self.blocks.get(target_block_id).unwrap().scope_depth
+            - self.blocks.get(current_block_id).unwrap().scope_depth)
+            + 1;
 
-        // insert a jump instruction to the target block
+        let value = self.handle_express_value(syntax_tree, target_block_id, value, handler)?;
+
+        // insert a jump instruction and scope pop instruction
+        self.current_basic_block_mut()
+            .add_basic_instruction(Basic::ScopePop(ScopePop {
+                pop_count: scope_pop_count,
+            }));
+
+        let block = self.blocks.get(target_block_id).unwrap();
         self.container
             .control_flow_graph
             .add_jump_instruction(
@@ -1013,15 +1049,8 @@ impl Builder {
 
         // in the end basic block, if the it has a predecessor to current basic block (which means
         // this `express` is reachable), then insert an incoming value to the phi node
-        if self
-            .container
-            .control_flow_graph
-            .get(block.end_basic_block_id)
-            .unwrap()
-            .predecessors()
-            .contains(&self.current_basic_block_id)
         {
-            let block = self.blocks.get_mut(block_id).unwrap();
+            let block = self.blocks.get_mut(target_block_id).unwrap();
             block
                 .incoming_values
                 .entry(self.current_basic_block_id)
