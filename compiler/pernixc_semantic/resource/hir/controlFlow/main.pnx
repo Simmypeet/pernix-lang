@@ -1,12 +1,12 @@
 
 public function main(): int32 
 {
-    'test: { // not all path express the value
-        if (true) { express 'test 32; }
+    'test: { // not all path expresses the value
+        if (true) { express 'test 0; }
     }
 
-    'test: {
-        if (true) { express 'test 32; }
-        express 32u32;
+    'test: { // all path expresses the value
+        if (true) { express 'test 1; }
+        express 2u32;
     }
 }

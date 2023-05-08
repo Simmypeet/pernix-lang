@@ -2095,10 +2095,75 @@ fn control_flow_test() -> Result<(), Box<dyn std::error::Error>> {
                 builder
                     .get_span(numeric)
                     .map(|x| x.str().to_owned())
-                    .map_or(false, |x| x == "32")
+                    .map_or(false, |x| x == "0")
                     && builder.get_inferable_type(numeric)
                         == Ok(InferableType::Constraint(Constraint::Number))
             }));
+    }
+
+    {
+        let register_id = builder
+            .bind_block(
+                statements[1]
+                    .as_expressive()
+                    .unwrap()
+                    .as_imperative()
+                    .unwrap()
+                    .as_block()
+                    .unwrap(),
+                &errors,
+            )?
+            .into_register()
+            .unwrap();
+
+        assert!(errors.as_vec().is_empty());
+
+        let phi_node_register_binding = builder
+            .container
+            .registers()
+            .get(register_id)
+            .unwrap()
+            .binding()
+            .as_phi_node()
+            .unwrap();
+
+        assert!(phi_node_register_binding
+            .values_by_predecessor()
+            .values()
+            .any(|x| {
+                let Value::Constant(Constant::NumericLiteral(numeric)) = x else {
+                    return false;
+                };
+
+                builder
+                    .get_span(numeric)
+                    .map(|x| x.str().to_owned())
+                    .map_or(false, |x| x == "1")
+                    && builder.get_inferable_type(numeric)
+                        == Ok(InferableType::Type(Type::PrimitiveType(
+                            PrimitiveType::Uint32,
+                        )))
+            }));
+
+        assert!(phi_node_register_binding
+            .values_by_predecessor()
+            .values()
+            .any(|x| {
+                let Value::Constant(Constant::NumericLiteral(numeric)) = x else {
+                    return false;
+                };
+
+                builder
+                    .get_span(numeric)
+                    .map(|x| x.str().to_owned())
+                    .map_or(false, |x| x == "2u32")
+                    && builder.get_inferable_type(numeric)
+                        == Ok(InferableType::Type(Type::PrimitiveType(
+                            PrimitiveType::Uint32,
+                        )))
+            }));
+
+        assert_eq!(phi_node_register_binding.values_by_predecessor().len(), 2);
     }
 
     Ok(())

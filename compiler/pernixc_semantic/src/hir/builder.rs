@@ -709,6 +709,7 @@ impl Builder {
             (value, self.current_basic_block_id)
         };
 
+
         self.current_basic_block_id = continue_basic_block_id;
 
         {
@@ -910,7 +911,7 @@ impl Builder {
         // allocate a successor block
         let start_basic_block_id = self.current_basic_block_id;
         let end_basic_block_id = self.container.control_flow_graph.new_basic_block();
-
+        
         // create new block id
         let label = syntax_tree
             .label_specifier()
