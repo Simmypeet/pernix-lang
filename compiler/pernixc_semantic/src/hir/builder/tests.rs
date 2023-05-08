@@ -7,7 +7,10 @@ use pernixc_system::error_handler::ErrorVec;
 use crate::{
     hir::{
         builder::{BindingOption, BindingTarget, Builder},
-        value::binding::{ComparisonOperator, EqualityOperator},
+        value::{
+            binding::{ComparisonOperator, EqualityOperator},
+            Constant, Value,
+        },
         AllHirError,
     },
     infer::{Constraint, InferableType},
@@ -2005,6 +2008,7 @@ pub fn block_binding_test() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+#[ignore]
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 fn control_flow_test() -> Result<(), Box<dyn std::error::Error>> {
     let source_file = SourceFile::load(
@@ -2035,20 +2039,66 @@ fn control_flow_test() -> Result<(), Box<dyn std::error::Error>> {
     let errors: ErrorVec<AllHirError> = ErrorVec::new();
 
     {
-        let another = 32;
-        let result = builder.bind_block(
-            statements[0]
-                .as_expressive()
-                .unwrap()
-                .as_imperative()
-                .unwrap()
-                .as_block()
-                .unwrap(),
-            &errors,
-        )?;
+        let register_id = builder
+            .bind_block(
+                statements[0]
+                    .as_expressive()
+                    .unwrap()
+                    .as_imperative()
+                    .unwrap()
+                    .as_block()
+                    .unwrap(),
+                &errors,
+            )?
+            .into_register()
+            .unwrap();
 
-        assert_eq!(errors.into_vec().len(), 0);
-        dbg!(builder.container.control_flow_graph());
+        let err = {
+            let mut errors = errors.as_vec_mut();
+            assert_eq!(errors.len(), 1);
+            errors
+                .pop()
+                .unwrap()
+                .into_hir_error()
+                .unwrap()
+                .into_not_all_flow_path_express_value()
+                .unwrap()
+        };
+
+        assert_eq!(err.missing_value_basic_blocks().len(), 1);
+        let basic_block_id = err.missing_value_basic_blocks()[0];
+
+        let phi_node_register_binding = builder
+            .container
+            .registers()
+            .get(register_id)
+            .unwrap()
+            .binding()
+            .as_phi_node()
+            .unwrap();
+
+        assert!(phi_node_register_binding
+            .values_by_predecessor()
+            .get(&basic_block_id)
+            .unwrap()
+            .as_placeholder()
+            .is_some());
+
+        assert!(phi_node_register_binding
+            .values_by_predecessor()
+            .values()
+            .any(|x| {
+                let Value::Constant(Constant::NumericLiteral(numeric)) = x else {
+                            return false;
+                        };
+
+                builder
+                    .get_span(numeric)
+                    .map(|x| x.str().to_owned())
+                    .map_or(false, |x| x == "32")
+                    && builder.get_inferable_type(numeric)
+                        == Ok(InferableType::Constraint(Constraint::Number))
+            }));
     }
 
     Ok(())

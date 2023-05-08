@@ -25,7 +25,7 @@ use pernixc_syntax::syntax_tree::{
         VariableDeclaration as VariableDeclarationSyntaxTree,
     },
     ConnectedList,
-n};
+};
 use pernixc_system::arena::{Arena, InvalidIDError};
 use thiserror::Error;
 
@@ -516,6 +516,10 @@ impl Builder {
             None
         };
 
+        // pop all the scopes
+        let pop_count = self.local_stack.len();
+        self.current_basic_block_mut()
+            .add_basic_instruction(Basic::ScopePop(ScopePop { pop_count }));
         // add a return value instruction
         self.current_basic_block_mut()
             .add_return_instruction(Return { return_value });
@@ -562,12 +566,12 @@ impl Builder {
         // merge the two path
         match (then_value, else_value) {
             // unreachable
-            (Value::Unreachable(..), Value::Unreachable(..)) => Value::Unreachable(Unreachable {
-                span: syntax_tree.span(),
-                ty: IntermediateTypeID::InferenceID(
-                    self.inference_context.new_inference(Constraint::All),
-                ),
-            }),
+            (Value::Unreachable(then_value), Value::Unreachable(..)) => {
+                Value::Unreachable(Unreachable {
+                    span: syntax_tree.span(),
+                    ty: (self.get_value_intermediate_type_id(&then_value).unwrap()),
+                })
+            }
 
             // then value only
             (then_value, Value::Unreachable(..)) => then_value,
@@ -686,9 +690,7 @@ impl Builder {
                 .unwrap_or_else(|err| {
                     Value::Placeholder(Placeholder {
                         span: err.0,
-                        ty: IntermediateTypeID::InferenceID(
-                            self.inference_context.new_inference(Constraint::All),
-                        ),
+                        ty: self.get_value_intermediate_type_id(&then_value).unwrap(),
                     })
                 });
 
@@ -733,35 +735,29 @@ impl Builder {
     }
 
     fn is_reachable(
-        &mut self,
+        &self,
         current_basic_block_id: BasicBlockID,
         instruction_offset: usize,
         target_basic_block_id: BasicBlockID,
-        mut visisted: HashSet<BasicBlockID>,
+        mut visited: HashSet<BasicBlockID>,
     ) -> bool {
-        if visisted.contains(&current_basic_block_id) {
+        if visited.contains(&current_basic_block_id) {
             return false;
         }
 
-        visisted.insert(current_basic_block_id);
+        visited.insert(current_basic_block_id);
 
-        let mut instructions = self
+        let instructions = self
             .container
             .control_flow_graph()
             .get(current_basic_block_id)
             .unwrap()
             .all_instructions();
 
-        instructions.skip(instruction_offset);
+        let instructions = instructions.skip(instruction_offset);
 
         // loop through all instructions in the current basic block
-        for instruction in self
-            .container
-            .control_flow_graph()
-            .get(current_basic_block_id)
-            .unwrap()
-            .all_instructions()
-        {
+        for instruction in instructions {
             match instruction {
                 Instruction::Jump(jump_instruction) => {
                     if jump_instruction.jump_target == target_basic_block_id {
@@ -771,13 +767,14 @@ impl Builder {
                     // check if the successor block is reachable
                     return self.is_reachable(
                         jump_instruction.jump_target,
+                        0,
                         target_basic_block_id,
-                        visisted,
+                        visited,
                     );
                 }
 
                 // the flow is terminated, so the target block is not reachable
-                Instruction::Return(_) => return false,
+                Instruction::Return(..) => return false,
                 Instruction::ConditionalJump(cond_jump) => {
                     // if one of the target is `target_basic_block_id`
                     if cond_jump.true_jump_target == target_basic_block_id
@@ -788,25 +785,123 @@ impl Builder {
 
                     return self.is_reachable(
                         cond_jump.true_jump_target,
+                        0,
                         target_basic_block_id,
-                        visisted.clone(),
+                        visited.clone(),
                     ) || self.is_reachable(
                         cond_jump.false_jump_target,
+                        0,
                         target_basic_block_id,
-                        visisted,
+                        visited,
                     );
                 }
-                Instruction::Basic(_) => (),
+                Instruction::Basic(..) => (),
             }
         }
 
-        return false;
+        false
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn collect_incoming_values(
+        &self,
+        block_id: BlockID,
+        current_basic_block_id: BasicBlockID,
+        instruction_offset: usize,
+        target_basic_block_id: BasicBlockID,
+        mut visited: HashSet<BasicBlockID>,
+        incoming_values: &mut HashMap<BasicBlockID, Value<IntermediateTypeID>>,
+        non_expressed_path: &mut Vec<BasicBlockID>,
+    ) {
+        if visited.contains(&current_basic_block_id) {
+            return;
+        }
+
+        visited.insert(current_basic_block_id);
+
+        let instructions = self
+            .container
+            .control_flow_graph()
+            .get(current_basic_block_id)
+            .unwrap()
+            .all_instructions();
+
+        let instructions = instructions.skip(instruction_offset);
+
+        for instruction in instructions {
+            match instruction {
+                Instruction::Jump(jump) => {
+                    match (jump.jump_target, jump.jump_source()) {
+                        // found the target basic block
+                        (target, Some(JumpSource::Express(..)))
+                            if target == target_basic_block_id =>
+                        {
+                            let available_incoming_values =
+                                &self.blocks.get(block_id).unwrap().incoming_values;
+
+                            assert!(incoming_values
+                                .insert(
+                                    current_basic_block_id,
+                                    available_incoming_values
+                                        .get(&current_basic_block_id)
+                                        .cloned()
+                                        .unwrap(),
+                                )
+                                .is_none());
+                        }
+                        // error, not-express the value
+                        (target, ..) if target == target_basic_block_id => {
+                            non_expressed_path.push(current_basic_block_id);
+                        }
+                        (target, ..) => {
+                            self.collect_incoming_values(
+                                block_id,
+                                target,
+                                0,
+                                target_basic_block_id,
+                                visited,
+                                incoming_values,
+                                non_expressed_path,
+                            );
+                        }
+                    };
+                    return;
+                }
+                Instruction::Return(..) => return,
+                Instruction::ConditionalJump(conditional_jump) => {
+                    self.collect_incoming_values(
+                        block_id,
+                        conditional_jump.true_jump_target,
+                        0,
+                        target_basic_block_id,
+                        visited.clone(),
+                        incoming_values,
+                        non_expressed_path,
+                    );
+                    self.collect_incoming_values(
+                        block_id,
+                        conditional_jump.false_jump_target,
+                        0,
+                        target_basic_block_id,
+                        visited,
+                        incoming_values,
+                        non_expressed_path,
+                    );
+
+                    return;
+                }
+                Instruction::Basic(..) => (),
+            }
+        }
+
+        unreachable!()
     }
 
     /// Binds the given [`BlockSyntaxTree`] and returns the [`Value`] of the expression.
     ///
     /// # Errors
     /// - If the binding process encounters a fatal semantic error.
+    #[allow(clippy::too_many_lines)]
     pub fn bind_block(
         &mut self,
         syntax_tree: &BlockSyntaxTree,
@@ -837,6 +932,9 @@ impl Builder {
         self.block_pointer_stack
             .push(BlockPointer { label, block_id });
 
+        let pre_instruction_len = self.current_basic_block().instructions().len()
+            + self.current_basic_block().unreachable_instructions().len();
+
         // binds list of statements
         for statement in syntax_tree.block_without_label().statements() {
             self.bind_statement(statement, handler).unwrap();
@@ -863,20 +961,82 @@ impl Builder {
         self.current_basic_block_id = end_basic_block_id;
 
         let block = self.blocks.get_mut(block_id).unwrap();
-        let current_basic_block = self
-            .container
-            .control_flow_graph
-            .get(self.current_basic_block_id)
-            .unwrap();
 
         // if the block does express the value, then we need to check if all path express the value
-        if let Some(ty) = block.express_ty {
-            todo!()
-        } else if !self.is_reachable(current_basic_block_id, target_basic_block_id, visisted) {
-            todo!()
-        } else {
-            todo!()
+        Ok(if let Some(ty) = block.express_ty {
+            let mut incoming_values = HashMap::new();
+            let mut non_expressed_path = Vec::new();
+
+            // collect all incoming values
+            self.collect_incoming_values(
+                block_id,
+                start_basic_block_id,
+                pre_instruction_len,
+                end_basic_block_id,
+                HashSet::new(),
+                &mut incoming_values,
+                &mut non_expressed_path,
+            );
+
+            if !non_expressed_path.is_empty() {
+                handler.recieve(Error::NotAllFlowPathExpressValue(
+                    NotAllFlowPathExpressValue {
+                        block_span: syntax_tree.span(),
+                        missing_value_basic_blocks: non_expressed_path.clone(),
+                    },
+                ));
+
+                // add to the incoming_values with placeholder
+                for non_expressed_path in non_expressed_path {
+                    assert!(incoming_values
+                        .insert(
+                            non_expressed_path,
+                            Value::Placeholder(Placeholder {
+                                span: syntax_tree.span(),
+                                ty,
+                            }),
+                        )
+                        .is_none());
+                }
+            }
+
+            match incoming_values.len() {
+                0 => Value::Unreachable(Unreachable {
+                    span: syntax_tree.span(),
+                    ty,
+                }),
+                1 => incoming_values.into_iter().next().unwrap().1,
+                _ => {
+                    let phi_node_binding = Binding::PhiNode(PhiNode {
+                        span: syntax_tree.span(),
+                        values_by_predecessor: incoming_values,
+                        phi_node_source: PhiNodeSource::Block,
+                    });
+
+                    Value::Register(self.assign_new_register_binding(phi_node_binding))
+                }
+            }
         }
+        // void constant value
+        else if self.is_reachable(
+            start_basic_block_id,
+            pre_instruction_len,
+            end_basic_block_id,
+            HashSet::new(),
+        ) {
+            // return void Constant
+            Value::Constant(Constant::VoidConstant(VoidConstant {
+                span: syntax_tree.span(),
+            }))
+        } else {
+            // return unreachable
+            Value::Unreachable(Unreachable {
+                span: syntax_tree.span(),
+                ty: IntermediateTypeID::InferenceID(
+                    self.inference_context.new_inference(Constraint::All),
+                ),
+            })
+        })
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -1023,8 +1183,8 @@ impl Builder {
         // the block that the express is in
         let current_block_id = self.block_pointer_stack.top().unwrap().block_id();
         // the number of scope to pop
-        let scope_pop_count = (self.blocks.get(target_block_id).unwrap().scope_depth
-            - self.blocks.get(current_block_id).unwrap().scope_depth)
+        let scope_pop_count = (self.blocks.get(current_block_id).unwrap().scope_depth
+            - self.blocks.get(target_block_id).unwrap().scope_depth)
             + 1;
 
         let value = self.handle_express_value(syntax_tree, target_block_id, value, handler)?;

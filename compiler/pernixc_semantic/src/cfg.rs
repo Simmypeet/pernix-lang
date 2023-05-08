@@ -137,7 +137,6 @@ impl<T: InstructionBackend> BasicBlock<T> {
     }
 
     /// Gets an iterator over both the reachable and unreachable instructions of the [`BasicBlock`].
-    #[must_use]
     pub fn all_instructions(&self) -> impl Iterator<Item = &Instruction<T>> {
         self.instructions
             .iter()

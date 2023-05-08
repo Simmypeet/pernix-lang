@@ -1,6 +1,10 @@
 
 public function main(): int32 
 {
+    'test: { // not all path express the value
+        if (true) { express 'test 32; }
+    }
+
     'test: {
         if (true) { express 'test 32; }
         express 32u32;
