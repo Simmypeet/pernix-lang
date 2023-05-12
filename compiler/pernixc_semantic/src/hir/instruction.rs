@@ -9,7 +9,7 @@ use pernixc_source::Span;
 
 use super::{
     value::{Address, Value},
-    AllocaID, RegisterID, TypeSystem,
+    AllocaID, RegisterID, ScopeID, TypeSystem,
 };
 use crate::cfg::{
     BasicBlockID, BasicInstruction, ConditionalJumpInstruction, InstructionBackend,
@@ -21,6 +21,12 @@ use crate::cfg::{
 pub enum JumpSource {
     /// The jump instruction was generated from a `break` expression.
     Express(Span),
+
+    /// The jump instruction was generated from a `continue` expression.
+    Continue(Span),
+
+    /// The jump instruction was generated from a `break` expression.
+    Break(Span),
 }
 
 /// Represents a jump instruciton in the HIR.
@@ -91,15 +97,19 @@ pub enum Basic<T: TypeSystem> {
 }
 
 /// Is an instruction that is inserted every time a new scope (*block*) is entered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopePush {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CopyGetters)]
+pub struct ScopePush {
+    /// The ID of the scope that is entered.
+    #[get_copy = "pub"]
+    pub(super) scope_id: ScopeID,
+}
 
 /// Is an instruction executed every time a scope (*block*) is exited.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CopyGetters)]
 pub struct ScopePop {
-    /// The number of scope entries to pop.
+    /// The ID of the scope that is exited.
     #[get_copy = "pub"]
-    pub(super) pop_count: usize,
+    pub(super) scope_id: ScopeID, 
 }
 
 /// Represents a register assignment instruction in the HIR.

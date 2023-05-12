@@ -27,7 +27,9 @@ pub struct NumericLiteral<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, NumericLiteral<T>> for Container<T> {
-    fn get_type(&self, value: &NumericLiteral<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
+    fn get_type(&self, value: &NumericLiteral<T>) -> Result<T, InvalidValueError> {
+        Ok(value.ty)
+    }
 
     fn get_span(&self, value: &NumericLiteral<T>) -> Result<Span, InvalidValueError> {
         Ok(value.numeric_literal_syntax_tree.span())
@@ -99,7 +101,9 @@ pub struct Unreachable<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, Unreachable<T>> for Container<T> {
-    fn get_type(&self, value: &Unreachable<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
+    fn get_type(&self, value: &Unreachable<T>) -> Result<T, InvalidValueError> {
+        Ok(value.ty)
+    }
 
     fn get_span(&self, value: &Unreachable<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
@@ -172,7 +176,9 @@ pub struct Placeholder<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, Placeholder<T>> for Container<T> {
-    fn get_type(&self, value: &Placeholder<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
+    fn get_type(&self, value: &Placeholder<T>) -> Result<T, InvalidValueError> {
+        Ok(value.ty)
+    }
 
     fn get_span(&self, value: &Placeholder<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
@@ -227,12 +233,19 @@ pub struct FieldAddress {
     pub(super) field_id: FieldID,
 }
 
+/// Represents an identifier to a local variable whether it is a parameter or an alloca.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum VariableID {
+    AllocaID(AllocaID),
+    ParameterID(ParameterID),
+}
+
 /// Represents a value that yields an address to a particular value in memory.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Address {
-    AllocaID(AllocaID),
-    ParameterID(ParameterID),
+    VariableID(VariableID),
     FieldAddress(FieldAddress),
 }
 
@@ -241,9 +254,9 @@ pub enum Address {
 pub struct AddressWithSpan {
     /// The address
     #[get = "pub"]
-    pub address: Address,
+    pub(super) address: Address,
 
     /// Gets the span of the expression that yielded the address.
     #[get = "pub"]
-    pub span: Span,
+    pub(super) span: Span,
 }

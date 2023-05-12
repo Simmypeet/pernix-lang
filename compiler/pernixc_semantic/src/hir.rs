@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-pub mod builder;
+pub mod binder;
 pub mod error;
 pub mod instruction;
 pub mod value;
@@ -49,7 +49,7 @@ pub struct Hir {
 
 /// The container that holds the contents of the [`Hir`].
 ///
-/// This container is as well used in the [`builder::Builder`] to construct the [`Hir`].
+/// This container is as well used in the [`binder::Binder`] to construct the [`Hir`].
 #[derive(Debug, Getters, CopyGetters)]
 pub struct Container<T: TypeSystem> {
     /// The control flow graph that represents the flow of the function.
@@ -79,6 +79,10 @@ pub struct Container<T: TypeSystem> {
     /// The parent module that the [`Self::parent_overload_set_id`] is defined in.
     #[get_copy = "pub"]
     parent_scoped_id: ScopedID,
+
+    /// The scope tree that represents how the scopes are nested in the function.
+    #[get = "pub"]
+    scope_tree: ScopeTree,
 }
 
 impl<T: TypeSystem> Container<T> {
@@ -102,6 +106,7 @@ impl<T: TypeSystem> Container<T> {
             table,
             registers: Arena::new(),
             allocas: Arena::new(),
+            scope_tree: ScopeTree::new(),
         })
     }
 }
@@ -153,11 +158,15 @@ pub trait TypeSystem: Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord +
 }
 
 impl TypeSystem for Type {
-    fn from_type(ty: Type) -> Self { ty }
+    fn from_type(ty: Type) -> Self {
+        ty
+    }
 }
 
 impl TypeSystem for InferableType {
-    fn from_type(ty: Type) -> Self { Self::Type(ty) }
+    fn from_type(ty: Type) -> Self {
+        Self::Type(ty)
+    }
 }
 
 /// Occurs when a value is used in a context where it wasn't created from.
@@ -202,5 +211,96 @@ create_symbol! {
         /// The type of the variable.
         #[get_copy = "pub"]
         ty: T,
+
+        /// The scope in which the variable was declared.
+        #[get_copy = "pub"]
+        scope_id: ScopeID,
+    }
+}
+
+/// Is an enumeration of either a [`ScopeID`] or [`BranchID`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum ScopeChildID {
+    ScopeID(ScopeID),
+    BranchID(BranchID),
+}
+
+create_symbol! {
+    /// Represents a scope
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
+    pub struct Scope {
+        /// The ID of the parent scope.
+        #[get_copy = "pub"]
+        parent_scope: Option<ScopeID>,
+
+        /// The ID of the branch that this scope participates in (if any).
+        #[get_copy = "pub"]
+        branch: Option<BranchID>,
+
+        /// The list of child scopes/branches in this scope. (The order of the children is the same
+        /// order appearing in the source code.)
+        #[get = "pub"]
+        children: Vec<ScopeChildID>,
+
+        /// The scope depth of this scope. The depth of the root scope is 0.
+        #[get_copy = "pub"]
+        depth: usize,
+    }
+}
+
+create_symbol! {
+    /// Represents a branch that was created by conditional expressions (if, match, etc.)
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
+    pub struct Branch {
+        /// The ID of the scope where this branch was created.
+        #[get_copy = "pub"]
+        parent_scope: ScopeID,
+
+        /// The list of scopes that are in this branch.
+        #[get = "pub"]
+        scopes: Vec<ScopeID>,
+    }
+}
+
+/// Represents a scope tree.
+#[derive(Debug, CopyGetters, Getters)]
+pub struct ScopeTree {
+    /// Contains all the scopes in the tree.
+    #[get = "pub"]
+    scopes: Arena<Scope>,
+
+    /// Contains all the branches in the tree.
+    #[get = "pub"]
+    branches: Arena<Branch>,
+
+    /// The ID of the root scope.
+    #[get_copy = "pub"]
+    root_scope: ScopeID,
+}
+
+impl ScopeTree {
+    /// Creates a new scope tree with a root scope.
+    #[must_use]
+    pub fn new() -> Self {
+        let mut scopes = Arena::new();
+        let root_scope = scopes.insert(Scope {
+            parent_scope: None,
+            branch: None,
+            children: Vec::new(),
+            depth: 0,
+        });
+
+        Self {
+            scopes,
+            branches: Arena::new(),
+            root_scope,
+        }
+    }
+}
+
+impl Default for ScopeTree {
+    fn default() -> Self {
+        Self::new()
     }
 }

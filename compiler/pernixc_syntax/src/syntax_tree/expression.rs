@@ -121,7 +121,9 @@ pub struct NumericLiteral {
 }
 
 impl SourceElement for NumericLiteral {
-    fn span(&self) -> Span { self.numeric_literal_token.span.clone() }
+    fn span(&self) -> Span {
+        self.numeric_literal_token.span.clone()
+    }
 }
 
 /// Represents a cast expression syntax tree.
@@ -378,7 +380,9 @@ pub struct Named {
 }
 
 impl SourceElement for Named {
-    fn span(&self) -> Span { self.qualified_identifier.span() }
+    fn span(&self) -> Span {
+        self.qualified_identifier.span()
+    }
 }
 
 /// Represents a list of expressions separated by commas.
@@ -439,7 +443,9 @@ pub struct Parenthesized {
 }
 
 impl SourceElement for Parenthesized {
-    fn span(&self) -> Span { self.left_paren.span().join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_paren.span().join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Represents a field initializer syntax tree.
@@ -527,7 +533,9 @@ pub struct MemberAccess {
 }
 
 impl SourceElement for MemberAccess {
-    fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
+    fn span(&self) -> Span {
+        self.operand.span().join(&self.identifier.span).unwrap()
+    }
 }
 
 /// Is an enumeration of all kinds of imperative expressions.
@@ -576,7 +584,9 @@ pub struct LabelSpecifier {
 }
 
 impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Span { self.label.span().join(&self.colon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.label.span().join(&self.colon.span).unwrap()
+    }
 }
 
 /// Represents a block syntax tree.
@@ -598,7 +608,9 @@ pub struct BlockWithoutLabel {
 }
 
 impl SourceElement for BlockWithoutLabel {
-    fn span(&self) -> Span { self.left_brace.span().join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span().join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Represents a block syntax tree with an optional label specifier.
@@ -725,7 +737,7 @@ impl SourceElement for IfElse {
 /// Syntax Synopsis:
 /// ``` txt
 /// Loop:
-///     LabelSpecifier? 'loop' Block
+///     LabelSpecifier? 'loop' BlockWithoutLabel
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
@@ -735,7 +747,7 @@ pub struct Loop {
     #[get = "pub"]
     pub(super) loop_keyword: Keyword,
     #[get = "pub"]
-    pub(super) expression: Block,
+    pub(super) block_without_label: BlockWithoutLabel,
 }
 
 impl SourceElement for Loop {
@@ -744,7 +756,7 @@ impl SourceElement for Loop {
             || {
                 self.loop_keyword
                     .span()
-                    .join(&self.expression.span())
+                    .join(&self.block_without_label.span())
                     .unwrap()
             },
             |label_specifier| {
@@ -752,7 +764,7 @@ impl SourceElement for Loop {
                     .span()
                     .join(&self.loop_keyword.span)
                     .unwrap()
-                    .join(&self.expression.span())
+                    .join(&self.block_without_label.span())
                     .unwrap()
             },
         )
@@ -1130,12 +1142,12 @@ impl<'a> Parser<'a> {
             Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == KeywordKind::Loop => {
                 self.next_token();
 
-                let expression = self.parse_block(handler)?;
+                let block_without_label = self.parse_block_without_label(handler)?;
 
                 Some(Expression::Imperative(Imperative::Loop(Loop {
                     label_specifier: None,
                     loop_keyword: loop_keyword.clone(),
-                    expression,
+                    block_without_label,
                 })))
             }
             // Handles block

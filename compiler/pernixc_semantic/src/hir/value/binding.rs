@@ -8,7 +8,7 @@ use getset::{CopyGetters, Getters};
 use pernixc_source::Span;
 use pernixc_syntax::syntax_tree::expression::PrefixOperator;
 
-use super::{Address, TypeSystem, Value};
+use super::{Address, TypeSystem, Value, VariableID};
 use crate::{
     cfg::BasicBlockID,
     hir::{Container, InvalidValueError, ValueInspect},
@@ -31,6 +31,7 @@ pub enum Binding<T: TypeSystem> {
     MemberAccess(MemberAccess<T>),
     Binary(Binary<T>),
     PhiNode(PhiNode<T>),
+    Cast(Cast<T>),
 }
 
 impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
@@ -43,6 +44,7 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::MemberAccess(value) => self.get_type(value),
             Binding::Binary(value) => self.get_type(value),
             Binding::PhiNode(value) => self.get_type(value),
+            Binding::Cast(value) => self.get_type(value),
         }
     }
 
@@ -55,6 +57,7 @@ impl<T: TypeSystem> ValueInspect<T, Binding<T>> for Container<T> {
             Binding::MemberAccess(value) => self.get_span(value),
             Binding::Binary(value) => self.get_span(value),
             Binding::PhiNode(value) => self.get_span(value),
+            Binding::Cast(value) => self.get_span(value),
         }
     }
 }
@@ -146,8 +149,10 @@ pub struct Load {
 impl<T: TypeSystem> ValueInspect<T, Load> for Container<T> {
     fn get_type(&self, value: &Load) -> Result<T, InvalidValueError> {
         match &value.address {
-            Address::AllocaID(id) => Ok(self.allocas.get(*id).map_err(|_| InvalidValueError)?.ty()),
-            Address::ParameterID(id) => Ok(T::from_type(
+            Address::VariableID(VariableID::AllocaID(id)) => {
+                Ok(self.allocas.get(*id).map_err(|_| InvalidValueError)?.ty())
+            }
+            Address::VariableID(VariableID::ParameterID(id)) => Ok(T::from_type(
                 self.table
                     .get_parameter(*id)
                     .map_err(|_| InvalidValueError)?
@@ -163,7 +168,9 @@ impl<T: TypeSystem> ValueInspect<T, Load> for Container<T> {
         }
     }
 
-    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> { Ok(value.span.clone()) }
+    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
 }
 
 /// Represents a bound
@@ -289,7 +296,7 @@ impl<T: TypeSystem> ValueInspect<T, PhiNode<T>> for Container<T> {
 pub enum PhiNodeSource {
     LogicalShortCircuit,
     Block,
-    Break,
+    Loop,
     IfEsle,
 }
 
@@ -333,6 +340,33 @@ impl<T: TypeSystem> ValueInspect<T, Binary<T>> for Container<T> {
     }
 
     fn get_span(&self, value: &Binary<T>) -> Result<Span, InvalidValueError> {
+        Ok(value.span.clone())
+    }
+}
+
+/// Represents a bound [`CastSyntaxTree`](pernixc_syntax::syntax_tree::expression::Cast) syntax
+/// tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+pub struct Cast<T: TypeSystem> {
+    /// Gets the value that is being casted.
+    #[get = "pub"]
+    pub(in crate::hir) operand: Value<T>,
+
+    /// Gets the type that the value is being casted to.
+    #[get_copy = "pub"]
+    pub(in crate::hir) target_type: T,
+
+    /// Gets the span of the cast.
+    #[get = "pub"]
+    pub(in crate::hir) span: Span,
+}
+
+impl<T: TypeSystem> ValueInspect<T, Cast<T>> for Container<T> {
+    fn get_type(&self, value: &Cast<T>) -> Result<T, InvalidValueError> {
+        Ok(value.target_type)
+    }
+
+    fn get_span(&self, value: &Cast<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
     }
 }

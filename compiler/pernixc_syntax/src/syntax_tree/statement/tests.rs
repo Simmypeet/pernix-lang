@@ -276,7 +276,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             .into_loop()
             .unwrap();
 
-        let function_call = loop_expression.expression.block_without_label.statements[0]
+        let function_call = loop_expression.block_without_label.statements[0]
             .as_expressive()
             .unwrap()
             .as_semi()

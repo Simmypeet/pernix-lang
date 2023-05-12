@@ -36,6 +36,8 @@ pub enum Error {
     NoBlockWithGivenLabelFound(NoBlockWithGivenLabelFound),
     NotAllFlowPathExpressValue(NotAllFlowPathExpressValue),
     ReturnValueExpected(ReturnValueExpected),
+    LoopControlExressionOutsideLoop(LoopControlExressionOutsideLoop),
+    NoCastAvailable(NoCastAvailable),
 }
 
 /// The numeric literal suffix is not applicable to the literal's type.
@@ -278,6 +280,14 @@ pub struct ExpressOutsideBlock {
     pub(super) express_span: Span,
 }
 
+/// Loop expression (`continue`, `break`) was used outside the loop.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct LoopControlExressionOutsideLoop {
+    /// The span of the invalid `loop` expression.
+    #[get = "pub"]
+    pub(super) loop_control_span: Span,
+}
+
 ///  Not all flow paths in the `block` express a value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct NotAllFlowPathExpressValue {
@@ -296,4 +306,20 @@ pub struct ReturnValueExpected {
     /// The span of the `return` expression.
     #[get = "pub"]
     pub(super) return_span: Span,
+}
+
+/// No cast expression is available for the given types.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct NoCastAvailable {
+    /// The span of the `cast` expression.
+    #[get = "pub"]
+    pub(super) cast_span: Span,
+
+    /// The type of the expression.
+    #[get = "pub"]
+    pub(super) expression_type: InferableType,
+
+    /// The type to cast to.
+    #[get = "pub"]
+    pub(super) cast_type: InferableType,
 }
