@@ -56,6 +56,12 @@ impl<T: Data> Symbol<T> {
             data,
         }
     }
+
+    /// Dissolves the [`Symbol`] into its [`UniqueIdentifier`] and [`Data`] type.
+    #[must_use]
+    pub fn dissolve(self) -> (T::ID, T) {
+        (self.id, self.data)
+    }
 }
 
 /// Is a container that stores symbols identified by a [`UniqueIdentifier`].
@@ -91,6 +97,21 @@ impl<T: Data> Arena<T> {
         id
     }
 
+    /// Maps the [`Arena`] to a new [`Arena`] with a different [`Data`] type.
+    pub fn map<U: Data<ID = T::ID>>(self, mut f: impl FnMut(T) -> U) -> Arena<U> {
+        let mut arena = Arena::new();
+        for (id, symbol) in self.symbols_by_id {
+            arena.symbols_by_id.insert(
+                id,
+                Symbol {
+                    id,
+                    data: f(symbol.data),
+                },
+            );
+        }
+        arena
+    }
+
     /// Removes a symbol from the [`Arena`] with the given [`UniqueIdentifier`].
     ///
     /// Returns the symbol of the given [`UniqueIdentifier`] if it exists.
@@ -120,6 +141,16 @@ impl<T: Data> Arena<T> {
     /// Returns a mutable iterator over the symbols in the [`Arena`].
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Symbol<T>> {
         self.symbols_by_id.values_mut()
+    }
+}
+
+impl<T: Data> IntoIterator for Arena<T> {
+    type Item = (T::ID, Symbol<T>);
+
+    type IntoIter = std::collections::hash_map::IntoIter<T::ID, Symbol<T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.symbols_by_id.into_iter()
     }
 }
 

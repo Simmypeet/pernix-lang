@@ -1,0 +1,14 @@
+public function take(x: int32): int32 {
+    return x;
+}
+
+public function main(): void {
+    loop {
+        let mutable test = 32;
+        take(test); // should be moved
+
+        if (true) {
+            break;
+        }
+    }
+}

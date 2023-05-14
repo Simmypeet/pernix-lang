@@ -1,6 +1,9 @@
 //! Contains the definition of [`Binder`] -- the main interface for building the HIR.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, RwLock},
+};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
@@ -25,7 +28,10 @@ use pernixc_syntax::syntax_tree::{
     },
     ConnectedList, Label,
 };
-use pernixc_system::arena::InvalidIDError;
+use pernixc_system::{
+    arena::{Arena, InvalidIDError},
+    error_handler::ErrorHandler,
+};
 use thiserror::Error;
 
 use self::stack::Stack;
@@ -53,11 +59,12 @@ use super::{
         Address, AddressWithSpan, BooleanLiteral, Constant, EnumLiteral, FieldAddress,
         NumericLiteral, Placeholder, Unreachable, Value, VariableID, VoidConstant,
     },
-    Alloca, AllocaID, Branch, Container, ErrorHandler, InvalidValueError, Register, RegisterID,
-    Scope, ScopeChildID, ScopeID, ScopeSymbol, TypeSystem, ValueInspect,
+    Alloca, AllocaID, Branch, Container, ErrorHandler as HirErrorHandler, Hir, InvalidValueError,
+    Register, RegisterID, Scope, ScopeChildID, ScopeID, ScopeSymbol, Suboptimal, TypeSystem,
+    ValueInspect,
 };
 use crate::{
-    cfg::{BasicBlock, BasicBlockID},
+    cfg::{BasicBlock, BasicBlockID, ControlFlowGraph, Instruction},
     hir::instruction::JumpSource,
     infer::{
         Constraint, ConstraintNotSatisfiedError, InferableType, InferenceContext, InferenceID,
@@ -151,12 +158,41 @@ impl TypeSystem for IntermediateTypeID {
 /// [`StatementSyntaxTree`](pernixc_syntax::syntax_tree::statement::Statement) to it.
 #[derive(Debug, Getters, MutGetters)]
 pub struct Binder {
+    #[get = "pub(super)"]
     container: Container<IntermediateTypeID>,
     current_basic_block_id: BasicBlockID,
     inference_context: InferenceContext,
     stack: Stack,
     block_scopes_by_scope_id: HashMap<ScopeID, BlockScope>,
     loop_scopes_by_scope_id: HashMap<ScopeID, LoopScope>,
+    suboptimal: Arc<RwLock<bool>>,
+}
+
+struct BinderErrorHandlerAdapter<'a, T> {
+    handler: &'a T,
+    suboptimal: Arc<RwLock<bool>>,
+}
+
+impl<'a, T> pernixc_system::error_handler::ErrorHandler<crate::symbol::error::Error>
+    for BinderErrorHandlerAdapter<'a, T>
+where
+    T: pernixc_system::error_handler::ErrorHandler<crate::symbol::error::Error>,
+{
+    fn recieve(&self, error: crate::symbol::error::Error) {
+        self.handler.recieve(error);
+        *self.suboptimal.write().unwrap() = true;
+    }
+}
+
+impl<'a, T> pernixc_system::error_handler::ErrorHandler<super::error::Error>
+    for BinderErrorHandlerAdapter<'a, T>
+where
+    T: pernixc_system::error_handler::ErrorHandler<super::error::Error>,
+{
+    fn recieve(&self, error: super::error::Error) {
+        self.handler.recieve(error);
+        *self.suboptimal.write().unwrap() = true;
+    }
 }
 
 impl Binder {
@@ -201,6 +237,7 @@ impl Binder {
             stack,
             block_scopes_by_scope_id: HashMap::new(),
             loop_scopes_by_scope_id: HashMap::new(),
+            suboptimal: Arc::new(RwLock::new(false)),
         })
     }
 
@@ -332,7 +369,7 @@ impl Binder {
         span: Span,
         found: IntermediateTypeID,
         expected: ExpectedType,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<(), BindingError> {
         let (err, swapped) = match (found, expected) {
             (IntermediateTypeID::InferenceID(found), ExpectedType::InferenceID(expect)) => {
@@ -355,11 +392,12 @@ impl Binder {
                     return Ok(());
                 }
 
-                handler.recieve(Error::TypeMismatch(TypeMismatch {
-                    expression_span: span.clone(),
-                    expect: InferableType::Type(expect),
-                    found: InferableType::Type(found),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::TypeMismatch(TypeMismatch {
+                        expression_span: span.clone(),
+                        expect: InferableType::Type(expect),
+                        found: InferableType::Type(found),
+                    }));
 
                 return Err(BindingError(span));
             }
@@ -368,11 +406,12 @@ impl Binder {
                     return Ok(());
                 }
 
-                handler.recieve(Error::TypeMismatch(TypeMismatch {
-                    expression_span: span.clone(),
-                    expect: InferableType::Constraint(expect),
-                    found: InferableType::Type(found),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::TypeMismatch(TypeMismatch {
+                        expression_span: span.clone(),
+                        expect: InferableType::Constraint(expect),
+                        found: InferableType::Type(found),
+                    }));
 
                 return Err(BindingError(span));
             }
@@ -382,7 +421,8 @@ impl Binder {
             return Ok(())
         };
 
-        handler.recieve(Self::handle_unification_error(span.clone(), err, swapped));
+        self.create_error_handler_adapter(handler)
+            .recieve(Self::handle_unification_error(span.clone(), err, swapped));
 
         Err(BindingError(span))
     }
@@ -500,6 +540,16 @@ impl Binder {
             .get_mut(self.current_basic_block_id)
             .unwrap()
     }
+
+    fn create_error_handler_adapter<'a, T: HirErrorHandler>(
+        &self,
+        handler: &'a T,
+    ) -> BinderErrorHandlerAdapter<'a, T> {
+        BinderErrorHandlerAdapter {
+            handler,
+            suboptimal: self.suboptimal.clone(),
+        }
+    }
 }
 
 /// Is an error occurred during the binding process.
@@ -563,7 +613,7 @@ impl Binder {
         &mut self,
         syntax_tree: &ExpressionSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree {
             ExpressionSyntaxTree::Functional(syn) => {
@@ -585,14 +635,14 @@ impl Binder {
         &mut self,
         syntax_tree: &FunctionalSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree {
             FunctionalSyntaxTree::NumericLiteral(syn) => {
                 self.bind_numeric_literal(syn, binding_option, handler)
             }
             FunctionalSyntaxTree::BooleanLiteral(syn) => {
-                Self::bind_boolean_literal(syn, binding_option, handler)
+                self.bind_boolean_literal(syn, binding_option, handler)
             }
             FunctionalSyntaxTree::Binary(syn) => self.bind_binary(syn, binding_option, handler),
             FunctionalSyntaxTree::Prefix(syn) => self.bind_prefix(syn, binding_option, handler),
@@ -627,7 +677,7 @@ impl Binder {
         &mut self,
         syntax_tree: &ImperativeSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree {
             ImperativeSyntaxTree::Block(syn) => self.bind_block(syn, binding_option, handler),
@@ -647,7 +697,7 @@ impl Binder {
         syntax_tree: &ExpressionSyntaxTree,
         binding_option: BindingOption,
         expected: ExpectedType,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let result = self.bind_expression(syntax_tree, binding_option, handler)?;
 
@@ -668,7 +718,7 @@ impl Binder {
     pub fn bind_statement(
         &mut self,
         syntax_tree: &StatementSyntaxTree,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<(), BindingError> {
         match syntax_tree {
             StatementSyntaxTree::Declarative(Declarative::VariableDeclaration(syntax_tree)) => self
@@ -700,7 +750,7 @@ impl Binder {
     pub fn bind_variable_declaration_statement(
         &mut self,
         syntax_tree: &VariableDeclarationSyntaxTree,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<AllocaID, BindingError> {
         // gets the type of the variable
         let ty = if let Some(type_annotation) = syntax_tree.type_annotation() {
@@ -710,7 +760,7 @@ impl Binder {
                 .resolve_type(
                     self.container.parent_scoped_id,
                     type_annotation.type_specifier(),
-                    handler,
+                    &self.create_error_handler_adapter(handler),
                 )
                 .map(ExpectedType::Type)
                 .unwrap_or(ExpectedType::Constraint(Constraint::All))
@@ -798,7 +848,7 @@ impl Binder {
         &mut self,
         overload_set_id: OverloadSetID,
         syntax_tree: &FunctionCallSyntaxTree,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<Vec<OverloadID>, BindingError> {
         let overload_set = self
             .container
@@ -820,10 +870,11 @@ impl Binder {
         });
 
         if overload_candidates.is_empty() {
-            handler.recieve(Error::NoAccessibleOverload(NoAccessibleOverload {
-                overload_set_id,
-                symbol_span: syntax_tree.qualified_identifier().span(),
-            }));
+            self.create_error_handler_adapter(handler)
+                .recieve(Error::NoAccessibleOverload(NoAccessibleOverload {
+                    overload_set_id,
+                    symbol_span: syntax_tree.qualified_identifier().span(),
+                }));
             return Err(BindingError(syntax_tree.span()));
         }
 
@@ -839,22 +890,24 @@ impl Binder {
         syntax_tree: &FunctionCallSyntaxTree,
         overload_set_id: OverloadSetID,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         // must be exactly one overload
         match overload_candidates.len() {
             // no overload matches
             0 => {
-                handler.recieve(Error::NoOverloadWithMatchingArgumentTypes(
-                    NoOverloadWithMatchingArgumentTypes {
-                        overload_set_id,
-                        symbol_span: syntax_tree.qualified_identifier().span(),
-                        argument_types: arguments
-                            .iter()
-                            .map(|a| self.get_inferable_type(a).unwrap())
-                            .collect(),
-                    },
-                ));
+                self.create_error_handler_adapter(handler).recieve(
+                    Error::NoOverloadWithMatchingArgumentTypes(
+                        NoOverloadWithMatchingArgumentTypes {
+                            overload_set_id,
+                            symbol_span: syntax_tree.qualified_identifier().span(),
+                            argument_types: arguments
+                                .iter()
+                                .map(|a| self.get_inferable_type(a).unwrap())
+                                .collect(),
+                        },
+                    ),
+                );
 
                 Err(BindingError(syntax_tree.span()))
             }
@@ -908,9 +961,10 @@ impl Binder {
                         Ok(BindingResult::Value(Value::Register(register_id)))
                     }
                     BindingTarget::ForAddress { .. } => {
-                        handler.recieve(Error::LValueExpected(crate::hir::error::LValueExpected {
-                            expression_span: syntax_tree.span(),
-                        }));
+                        self.create_error_handler_adapter(handler)
+                            .recieve(Error::LValueExpected(crate::hir::error::LValueExpected {
+                                expression_span: syntax_tree.span(),
+                            }));
                         Err(BindingError(syntax_tree.span()))
                     }
                     BindingTarget::ForStatement => {
@@ -928,11 +982,13 @@ impl Binder {
             _ => {
                 // since placeholders can match multiple types, it might produce multiple candidates
                 if !has_placeholders {
-                    handler.recieve(Error::AmbiguousFunctionCall(AmbiguousFunctionCall {
-                        candidate_overloads: overload_candidates,
-                        function_call_span: syntax_tree.span(),
-                        overload_set_id,
-                    }));
+                    self.create_error_handler_adapter(handler).recieve(
+                        Error::AmbiguousFunctionCall(AmbiguousFunctionCall {
+                            candidate_overloads: overload_candidates,
+                            function_call_span: syntax_tree.span(),
+                            overload_set_id,
+                        }),
+                    );
                 }
 
                 Err(BindingError(syntax_tree.span()))
@@ -949,13 +1005,13 @@ impl Binder {
         &mut self,
         syntax_tree: &FunctionCallSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         // resolve the symbol
         let symbol = self.container.table.resolve_symbol(
             self.container.parent_scoped_id,
             syntax_tree.qualified_identifier(),
-            handler,
+            &self.create_error_handler_adapter(handler),
         );
 
         let mut arguments = Vec::new();
@@ -974,7 +1030,7 @@ impl Binder {
         let symbol = symbol.map_err(|_| BindingError(syntax_tree.span()))?;
 
         let GlobalID::OverloadSet(overload_set_id) = symbol else {
-            handler.recieve(
+            self.create_error_handler_adapter(handler).recieve(
                 Error::SymbolNotCallable(SymbolNotCallable {
                     found_id: symbol,
                     symbol_span: syntax_tree.span()
@@ -992,13 +1048,15 @@ impl Binder {
             overload.parameter_order().len() == arguments.len()
         });
         if overload_candidates.is_empty() {
-            handler.recieve(Error::NoOverloadWithMatchingNumberOfArguments(
-                NoOverloadWithMatchingNumberOfArguments {
-                    overload_set_id,
-                    argument_count: arguments.len(),
-                    symbol_span: syntax_tree.qualified_identifier().span(),
-                },
-            ));
+            self.create_error_handler_adapter(handler).recieve(
+                Error::NoOverloadWithMatchingNumberOfArguments(
+                    NoOverloadWithMatchingNumberOfArguments {
+                        overload_set_id,
+                        argument_count: arguments.len(),
+                        symbol_span: syntax_tree.qualified_identifier().span(),
+                    },
+                ),
+            );
             return Err(BindingError(syntax_tree.span()));
         }
 
@@ -1068,7 +1126,7 @@ impl Binder {
         &mut self,
         syntax_tree: &PrefixSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         // get the expected type of the operand based on the operator
         let expected_type = match syntax_tree.prefix_operator() {
@@ -1110,9 +1168,10 @@ impl Binder {
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Register(register_id))),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(crate::hir::error::LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(crate::hir::error::LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => Ok(BindingResult::None(
@@ -1132,7 +1191,7 @@ impl Binder {
         &mut self,
         syntax_tree: &NamedSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         // check for locals
         if syntax_tree
@@ -1188,11 +1247,11 @@ impl Binder {
                             };
 
                             if !variable_is_mutable {
-                                handler.recieve(Error::MutableLValueExpected(
-                                    MutableLValueExpected {
+                                self.create_error_handler_adapter(handler).recieve(
+                                    Error::MutableLValueExpected(MutableLValueExpected {
                                         expression_span: syntax_tree.span(),
-                                    },
-                                ));
+                                    }),
+                                );
                             }
                         }
 
@@ -1217,13 +1276,13 @@ impl Binder {
             .resolve_symbol(
                 self.container.parent_scoped_id,
                 syntax_tree.qualified_identifier(),
-                handler,
+                &self.create_error_handler_adapter(handler),
             )
             .map_err(|_| BindingError(syntax_tree.span()))?;
 
         // only enum literal can be used as a value
         let GlobalID::EnumVariant(enum_variant_id) = symbol else {
-            handler.recieve(Error::ValueExpected(ValueExpected {
+            self.create_error_handler_adapter(handler).recieve(Error::ValueExpected(ValueExpected {
                 expression_span: syntax_tree.span(),
                 found_symbol: symbol
             }));
@@ -1239,9 +1298,10 @@ impl Binder {
                 }),
             ))),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
 
                 Err(BindingError(syntax_tree.span()))
             }
@@ -1262,7 +1322,7 @@ impl Binder {
     fn get_struct_id(
         &self,
         syntax_tree: &StructLiteralSyntaxTree,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<StructID, BindingError> {
         let found_id = self
             .container
@@ -1270,7 +1330,7 @@ impl Binder {
             .resolve_symbol(
                 self.container.parent_scoped_id,
                 syntax_tree.qualified_identifier(),
-                handler,
+                &self.create_error_handler_adapter(handler),
             )
             .map_err(|_| BindingError(syntax_tree.span()))?;
 
@@ -1291,7 +1351,7 @@ impl Binder {
 
         // expect struct id
         let Some(struct_id) = struct_id else {
-            handler.recieve(Error::StructExpected(StructExpected {
+            self.create_error_handler_adapter(handler).recieve(Error::StructExpected(StructExpected {
                 found_id,
                 symbol_span: syntax_tree.qualified_identifier().span()
             }));
@@ -1308,7 +1368,7 @@ impl Binder {
         &mut self,
         syntax_tree: &StructLiteralSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         // get struct id
         let struct_id = self.get_struct_id(syntax_tree, handler)?;
@@ -1334,7 +1394,7 @@ impl Binder {
             let Some(field_id) = struct_sym
                 .field_ids_by_name()
                 .get(initialization.identifier().span.str()).copied() else {
-                handler.recieve(Error::UnknownField(UnknownField {
+                self.create_error_handler_adapter(handler).recieve(Error::UnknownField(UnknownField {
                     struct_id,
                     field_name_span: initialization.identifier().span.clone(),
                 }));
@@ -1354,24 +1414,25 @@ impl Binder {
                 )
                 .unwrap()
             {
-                handler.recieve(Error::FieldInaccessible(FieldInaccessible {
-                    field_id,
-                    struct_id,
-                    field_span: initialization.identifier().span.clone(),
-                    current_scope: self.container.parent_scoped_id,
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::FieldInaccessible(FieldInaccessible {
+                        field_id,
+                        struct_id,
+                        field_span: initialization.identifier().span.clone(),
+                        current_scope: self.container.parent_scoped_id,
+                    }));
             }
 
             let redefined = if let Some((span, _)) = initializations.get(&field_id) {
                 // field initialization duplication
-                handler.recieve(Error::DuplicateFieldInitialization(
-                    DuplicateFieldInitialization {
+                self.create_error_handler_adapter(handler).recieve(
+                    Error::DuplicateFieldInitialization(DuplicateFieldInitialization {
                         duplicate_initialization_span: initialization.span(),
                         previous_initialization_span: span.clone(),
                         struct_id,
                         field_id,
-                    },
-                ));
+                    }),
+                );
                 true
             } else {
                 false
@@ -1412,11 +1473,12 @@ impl Binder {
         }
 
         if !uninitialized_fields.is_empty() {
-            handler.recieve(Error::UninitializedFields(UninitializedFields {
-                struct_literal_span: syntax_tree.span(),
-                struct_id,
-                uninitialized_fields,
-            }));
+            self.create_error_handler_adapter(handler)
+                .recieve(Error::UninitializedFields(UninitializedFields {
+                    struct_literal_span: syntax_tree.span(),
+                    struct_id,
+                    uninitialized_fields,
+                }));
         }
 
         let binding = StructLiteral {
@@ -1434,9 +1496,10 @@ impl Binder {
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Register(register_id))),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
 
                 Err(BindingError(syntax_tree.span()))
             }
@@ -1456,7 +1519,7 @@ impl Binder {
         &mut self,
         syntax_tree: &MemberAccessSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let operand = self.bind_expression(syntax_tree.operand(), binding_option, handler)?;
         let ty = match &operand {
@@ -1469,7 +1532,7 @@ impl Binder {
 
         // expect the type to be a struct
         let InferableType::Type(Type::TypedID(TypedID::Struct(struct_id))) = ty else {
-            handler.recieve(Error::NoFieldOnType(NoFieldOnType {
+            self.create_error_handler_adapter(handler).recieve(Error::NoFieldOnType(NoFieldOnType {
                 operand_span: syntax_tree.operand().span(),
                 operand_type: ty
             }));
@@ -1483,7 +1546,7 @@ impl Binder {
         let Some(field_id) = struct_sym.field_ids_by_name().get(
             syntax_tree.identifier().span.str()
         ).copied() else {
-            handler.recieve(Error::UnknownField(UnknownField {
+            self.create_error_handler_adapter(handler).recieve(Error::UnknownField(UnknownField {
                 struct_id,
                 field_name_span: syntax_tree.identifier().span.clone()
             }));
@@ -1502,12 +1565,13 @@ impl Binder {
             )
             .unwrap()
         {
-            handler.recieve(Error::FieldInaccessible(FieldInaccessible {
-                field_id,
-                struct_id,
-                field_span: syntax_tree.identifier().span.clone(),
-                current_scope: self.container.parent_scoped_id,
-            }));
+            self.create_error_handler_adapter(handler)
+                .recieve(Error::FieldInaccessible(FieldInaccessible {
+                    field_id,
+                    struct_id,
+                    field_span: syntax_tree.identifier().span.clone(),
+                    current_scope: self.container.parent_scoped_id,
+                }));
         }
 
         Ok(match operand {
@@ -1545,7 +1609,7 @@ impl Binder {
         &mut self,
         syntax_tree: &NumericLiteralSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         // determine the type of the literal
         let type_id = if let Some(suffix) = &syntax_tree.numeric_literal_token().suffix_span {
@@ -1563,11 +1627,11 @@ impl Binder {
                 "f32" => PrimitiveType::Float32,
                 "f64" => PrimitiveType::Float64,
                 _ => {
-                    handler.recieve(Error::InvalidNumericLiteralSuffix(
-                        InvalidNumericLiteralSuffix {
+                    self.create_error_handler_adapter(handler).recieve(
+                        Error::InvalidNumericLiteralSuffix(InvalidNumericLiteralSuffix {
                             suffix_span: suffix.clone(),
-                        },
-                    ));
+                        }),
+                    );
                     return Err(BindingError(syntax_tree.span()));
                 }
             };
@@ -1591,11 +1655,13 @@ impl Binder {
                 .contains('.');
 
             if primitive_type_is_integral && has_dot {
-                handler.recieve(Error::FloatingPointLiteralHasIntegralSuffix(
-                    FloatingPointLiteralHasIntegralSuffix {
-                        floating_point_span: syntax_tree.numeric_literal_token().span.clone(),
-                    },
-                ));
+                self.create_error_handler_adapter(handler).recieve(
+                    Error::FloatingPointLiteralHasIntegralSuffix(
+                        FloatingPointLiteralHasIntegralSuffix {
+                            floating_point_span: syntax_tree.numeric_literal_token().span.clone(),
+                        },
+                    ),
+                );
                 return Err(BindingError(syntax_tree.span()));
             }
 
@@ -1630,9 +1696,10 @@ impl Binder {
                 )))
             }
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => {
@@ -1647,9 +1714,10 @@ impl Binder {
     /// Binds the give [`BooleanLiteralSyntaxTree`] to a [`BooleanLiteral`].
     #[allow(clippy::missing_errors_doc)]
     pub fn bind_boolean_literal(
+        &mut self,
         syntax_tree: &BooleanLiteralSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let value = match syntax_tree {
             BooleanLiteralSyntaxTree::True(..) => true,
@@ -1664,9 +1732,10 @@ impl Binder {
                 }),
             ))),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => {
@@ -1729,7 +1798,7 @@ impl Binder {
         syntax_tree: &BinarySyntaxTree,
         is_assign: bool,
         expected_type: Option<ExpectedType>,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<(BindingResult, Value<IntermediateTypeID>), BindingError> {
         let left_binding_option = {
             let binding_target = if is_assign {
@@ -1813,7 +1882,7 @@ impl Binder {
         syntax_tree: &BinarySyntaxTree,
         binary_operator: BinaryOperator,
         inferable_type_check: Option<ExpectedType>,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<RegisterID, BindingError> {
         let (left, rhs) =
             self.bind_left_and_right(syntax_tree, false, inferable_type_check, handler)?;
@@ -1833,7 +1902,7 @@ impl Binder {
         &mut self,
         syntax_tree: &BinarySyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let (lhs, rhs) = self.bind_left_and_right(syntax_tree, true, None, handler)?;
 
@@ -1875,7 +1944,7 @@ impl Binder {
         syntax_tree: &BinarySyntaxTree,
         binding_option: BindingOption,
         arithmetic_operator: ArithmeticOperator,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let (lhs, rhs) = self.bind_left_and_right(syntax_tree, true, None, handler)?;
 
@@ -1920,7 +1989,7 @@ impl Binder {
     fn handle_short_circuit(
         &mut self,
         syntax_tree: &BinarySyntaxTree,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Value<IntermediateTypeID> {
         let left = self
             .expect_expression(
@@ -1955,7 +2024,7 @@ impl Binder {
             .add_conditional_jump_instruction(
                 pre_block_id,
                 ConditionalJump {
-                    condition: left.clone(),
+                    condition_value: left.clone(),
                     true_jump_target: if is_or {
                         continue_block_id
                     } else {
@@ -2053,7 +2122,7 @@ impl Binder {
         &mut self,
         syntax_tree: &BinarySyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         match syntax_tree.binary_operator() {
             BinaryOperatorSyntaxTree::Add(..)
@@ -2121,7 +2190,7 @@ impl Binder {
         &mut self,
         syntax_tree: &BlockSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let scope_id = self.container.scope_tree.scopes.insert(Scope {
             parent_scope: Some(self.current_scope().id()),
@@ -2137,9 +2206,10 @@ impl Binder {
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(value)),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => Ok(BindingResult::None(
@@ -2153,7 +2223,7 @@ impl Binder {
         &mut self,
         syntax_tree: &BlockSyntaxTree,
         scope_id: ScopeID,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Value<IntermediateTypeID> {
         // allocate a successor block
         let continue_basic_block_id = self.container.control_flow_graph.new_basic_block();
@@ -2181,7 +2251,7 @@ impl Binder {
 
         // binds list of statements
         for statement in syntax_tree.block_without_label().statements() {
-            self.bind_statement(statement, handler).unwrap();
+            let _: Result<(), BindingError> = self.bind_statement(statement, handler);
         }
 
         // ends a scope
@@ -2230,12 +2300,12 @@ impl Binder {
                 }
 
                 if !missing_value_basic_blocks.is_empty() {
-                    handler.recieve(Error::NotAllFlowPathExpressValue(
-                        NotAllFlowPathExpressValue {
+                    self.create_error_handler_adapter(handler).recieve(
+                        Error::NotAllFlowPathExpressValue(NotAllFlowPathExpressValue {
                             block_span: syntax_tree.span(),
                             missing_value_basic_blocks,
-                        },
-                    ));
+                        }),
+                    );
                 }
 
                 // based on the number of incoming values, create a phi node or return the value
@@ -2273,7 +2343,7 @@ impl Binder {
     fn get_block_scope_id(
         &self,
         syntax_tree: &ExpressSyntaxTree,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Option<ScopeID> {
         // gets the target block
         syntax_tree.label().as_ref().map_or_else(
@@ -2293,9 +2363,10 @@ impl Binder {
                 };
 
                 if scope_id.is_none() {
-                    handler.recieve(Error::ExpressOutsideBlock(ExpressOutsideBlock {
-                        express_span: syntax_tree.span(),
-                    }));
+                    self.create_error_handler_adapter(handler)
+                        .recieve(Error::ExpressOutsideBlock(ExpressOutsideBlock {
+                            express_span: syntax_tree.span(),
+                        }));
                 }
 
                 scope_id
@@ -2318,11 +2389,11 @@ impl Binder {
                 };
 
                 if scope_id.is_none() {
-                    handler.recieve(Error::NoBlockWithGivenLabelFound(
-                        NoBlockWithGivenLabelFound {
+                    self.create_error_handler_adapter(handler).recieve(
+                        Error::NoBlockWithGivenLabelFound(NoBlockWithGivenLabelFound {
                             label_span: label.identifier().span.clone(),
-                        },
-                    ));
+                        }),
+                    );
                 }
 
                 scope_id
@@ -2335,7 +2406,7 @@ impl Binder {
         syntax_tree: &ExpressSyntaxTree,
         scope_id: ScopeID,
         value: Option<Result<BindingResult, BindingError>>,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<Value<IntermediateTypeID>, BindingError> {
         let current_express_ty = self
             .block_scopes_by_scope_id
@@ -2428,7 +2499,7 @@ impl Binder {
         &mut self,
         syntax_tree: &ExpressSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let target_block_id = self.get_block_scope_id(syntax_tree, handler);
 
@@ -2504,9 +2575,10 @@ impl Binder {
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Unreachable(value))),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => Ok(BindingResult::None(value.ty)),
@@ -2524,7 +2596,7 @@ impl Binder {
         &mut self,
         syntax_tree: &ReturnSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let return_type = self
             .container
@@ -2561,9 +2633,10 @@ impl Binder {
                 != Type::PrimitiveType(PrimitiveType::Void)
             {
                 // expect a return value
-                handler.recieve(Error::ReturnValueExpected(ReturnValueExpected {
-                    return_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::ReturnValueExpected(ReturnValueExpected {
+                        return_span: syntax_tree.span(),
+                    }));
             }
 
             None
@@ -2592,9 +2665,10 @@ impl Binder {
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Unreachable(value))),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => Ok(BindingResult::None(value.ty)),
@@ -2645,7 +2719,7 @@ impl Binder {
     fn bind_if_else_internal(
         &mut self,
         syntax_tree: &IfElseSyntaxTree,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Value<IntermediateTypeID> {
         let pre_basic_block_id = self.current_basic_block_id;
         let true_basic_block_id = self.container.control_flow_graph.new_basic_block();
@@ -2675,7 +2749,7 @@ impl Binder {
             .add_conditional_jump_instruction(
                 pre_basic_block_id,
                 ConditionalJump {
-                    condition,
+                    condition_value: condition,
                     true_jump_target: true_basic_block_id,
                     false_jump_target: false_basic_block_id,
                 },
@@ -2820,16 +2894,17 @@ impl Binder {
         &mut self,
         syntax_tree: &IfElseSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let value = self.bind_if_else_internal(syntax_tree, handler);
 
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(value)),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
 
                 Err(BindingError(syntax_tree.span()))
             }
@@ -2850,7 +2925,7 @@ impl Binder {
         &mut self,
         syntax_tree: &LoopSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let pre_basic_block_id = self.current_basic_block_id;
         let loop_header_basic_block = self.container.control_flow_graph.new_basic_block();
@@ -2894,27 +2969,34 @@ impl Binder {
         self.current_basic_block_mut()
             .add_basic_instruction(Basic::ScopePush(ScopePush { scope_id }));
 
+        // push loop scope
+        self.stack.push(scope_id);
+
         // binds all the statements
         for statement in syntax_tree.block_without_label().statements() {
-            self.bind_statement(statement, handler).unwrap();
+            let _: Result<(), BindingError> = self.bind_statement(statement, handler);
         }
+
+        // pop loop scope
+        self.stack.pop();
 
         self.current_basic_block_mut()
             .add_basic_instruction(Basic::ScopePop(ScopePop { scope_id }));
 
-        // exit the loop body
+        // go back to the loop header
         self.container
             .control_flow_graph
             .add_jump_instruction(
                 self.current_basic_block_id,
                 Jump {
-                    jump_target: loop_exit_basic_block,
+                    jump_target: loop_header_basic_block,
                     jump_source: None,
                 },
             )
             .unwrap();
 
         let loop_scope = self.loop_scopes_by_scope_id.remove(&scope_id).unwrap();
+        self.current_basic_block_id = loop_exit_basic_block;
 
         // bind the target value
         let value = if let Some(ty) = loop_scope.break_ty {
@@ -2942,9 +3024,10 @@ impl Binder {
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(value)),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => Ok(BindingResult::None(
@@ -2959,7 +3042,7 @@ impl Binder {
         &self,
         syntax_tree_span: Span,
         label: &Option<Label>,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Option<ScopeID> {
         // gets the target block
         label.as_ref().map_or_else(
@@ -2976,11 +3059,13 @@ impl Binder {
                 };
 
                 if scope_id.is_none() {
-                    handler.recieve(Error::LoopControlExressionOutsideLoop(
-                        super::error::LoopControlExressionOutsideLoop {
-                            loop_control_span: syntax_tree_span,
-                        },
-                    ));
+                    self.create_error_handler_adapter(handler).recieve(
+                        Error::LoopControlExressionOutsideLoop(
+                            super::error::LoopControlExressionOutsideLoop {
+                                loop_control_span: syntax_tree_span,
+                            },
+                        ),
+                    );
                 }
 
                 scope_id
@@ -3005,11 +3090,11 @@ impl Binder {
                 };
 
                 if scope_id.is_none() {
-                    handler.recieve(Error::NoBlockWithGivenLabelFound(
-                        NoBlockWithGivenLabelFound {
+                    self.create_error_handler_adapter(handler).recieve(
+                        Error::NoBlockWithGivenLabelFound(NoBlockWithGivenLabelFound {
                             label_span: label.identifier().span.clone(),
-                        },
-                    ));
+                        }),
+                    );
                 }
 
                 scope_id
@@ -3026,7 +3111,7 @@ impl Binder {
         &mut self,
         syntax_tree: &ContinueSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let target_block_id =
             self.get_loop_scope_id(syntax_tree.span(), syntax_tree.label(), handler);
@@ -3083,9 +3168,10 @@ impl Binder {
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Unreachable(value))),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => Ok(BindingResult::None(value.ty)),
@@ -3099,7 +3185,7 @@ impl Binder {
         syntax_tree: &BreakSyntaxTree,
         scope_id: ScopeID,
         value: Option<Result<BindingResult, BindingError>>,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<Value<IntermediateTypeID>, BindingError> {
         let current_express_ty = self
             .loop_scopes_by_scope_id
@@ -3192,7 +3278,7 @@ impl Binder {
         &mut self,
         syntax_tree: &BreakSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let target_block_id =
             self.get_loop_scope_id(syntax_tree.span(), syntax_tree.label(), handler);
@@ -3269,9 +3355,10 @@ impl Binder {
         match binding_option.binding_target {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Unreachable(value))),
             BindingTarget::ForAddress { .. } => {
-                handler.recieve(Error::LValueExpected(LValueExpected {
-                    expression_span: syntax_tree.span(),
-                }));
+                self.create_error_handler_adapter(handler)
+                    .recieve(Error::LValueExpected(LValueExpected {
+                        expression_span: syntax_tree.span(),
+                    }));
                 Err(BindingError(syntax_tree.span()))
             }
             BindingTarget::ForStatement => Ok(BindingResult::None(value.ty)),
@@ -3288,7 +3375,7 @@ impl Binder {
         &mut self,
         syntax_tree: &CastSyntaxTree,
         binding_option: BindingOption,
-        handler: &impl ErrorHandler,
+        handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
         let value = self
             .bind_expression(syntax_tree.operand(), BindingOption::default(), handler)?
@@ -3362,9 +3449,10 @@ impl Binder {
             match binding_option.binding_target {
                 BindingTarget::ForValue => Ok(BindingResult::Value(Value::Register(register_id))),
                 BindingTarget::ForAddress { .. } => {
-                    handler.recieve(Error::LValueExpected(LValueExpected {
-                        expression_span: syntax_tree.span(),
-                    }));
+                    self.create_error_handler_adapter(handler)
+                        .recieve(Error::LValueExpected(LValueExpected {
+                            expression_span: syntax_tree.span(),
+                        }));
                     Err(BindingError(syntax_tree.span()))
                 }
                 BindingTarget::ForStatement => {
@@ -3372,13 +3460,421 @@ impl Binder {
                 }
             }
         } else {
-            handler.recieve(Error::NoCastAvailable(super::error::NoCastAvailable {
-                cast_span: syntax_tree.span(),
-                expression_type: value_type,
-                cast_type: InferableType::Type(target_type),
-            }));
+            self.create_error_handler_adapter(handler)
+                .recieve(Error::NoCastAvailable(super::error::NoCastAvailable {
+                    cast_span: syntax_tree.span(),
+                    expression_type: value_type,
+                    cast_type: InferableType::Type(target_type),
+                }));
 
             Err(BindingError(syntax_tree.span()))
+        }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+}
+
+impl Binder {
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Finalizes the binding process and returns the resulting [`Hir`] tree.
+    ///
+    /// # Errors
+    /// Returns a [`Suboptimal`] HIR instead if there were any semantic errors during the binding
+    pub fn build(mut self, _handler: &impl HirErrorHandler) -> Result<Hir, Box<Suboptimal>> {
+        // should have no scopes left
+        assert!(self.stack.locals().len() == 1);
+
+        // early return if suboptimal
+        if *self.suboptimal.read().unwrap() {
+            return Err(Box::new(Suboptimal {
+                container: self.container,
+                inference_context: self.inference_context,
+            }));
+        }
+
+        // pop the last stack frame
+        self.container
+            .control_flow_graph
+            .get_mut(self.current_basic_block_id)
+            .unwrap()
+            .add_basic_instruction(Basic::ScopePop(ScopePop {
+                scope_id: self.container.scope_tree.root_scope,
+            }));
+
+        // remove all unreachable instructions
+        for basic_block in self.container.control_flow_graph.basic_blocks_mut() {
+            // TODO: reports a warning if there are unreachable instructions
+            basic_block.take_unreachable_instructions();
+        }
+
+        // transform intermediate types into concrete types
+        let mut container = Self::transform(self.container, &self.inference_context);
+
+        // perform auto moves
+        let mut moved_variables = HashMap::new();
+        Self::auto_move(
+            &container.control_flow_graph,
+            &mut container.registers,
+            container.control_flow_graph.entry_block(),
+            HashSet::new(),
+            &mut Vec::new(),
+            &mut moved_variables,
+        );
+
+        Ok(Hir { container })
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    fn auto_move(
+        control_flow_graph: &ControlFlowGraph<Backend<Type>>,
+        registers: &mut Arena<Register<Type>>,
+        basic_block_id: BasicBlockID,
+        mut visited: HashSet<BasicBlockID>,
+        scope_stack: &mut Vec<ScopeID>,
+        moved_variables: &mut HashMap<ScopeID, Vec<Address>>,
+    ) {
+        if visited.contains(&basic_block_id) {
+            return;
+        }
+
+        visited.insert(basic_block_id);
+
+        for (index, instruction) in control_flow_graph
+            .get(basic_block_id)
+            .unwrap()
+            .instructions()
+            .iter()
+            .enumerate()
+        {
+            match instruction {
+                Instruction::Jump(inst) => {
+                    Self::auto_move(
+                        control_flow_graph,
+                        registers,
+                        inst.jump_target,
+                        visited,
+                        scope_stack,
+                        moved_variables,
+                    );
+                    return;
+                }
+                Instruction::Return(..) => return,
+                Instruction::ConditionalJump(inst) => {
+                    Self::auto_move(
+                        control_flow_graph,
+                        registers,
+                        inst.true_jump_target,
+                        visited.clone(),
+                        scope_stack,
+                        moved_variables,
+                    );
+                    Self::auto_move(
+                        control_flow_graph,
+                        registers,
+                        inst.false_jump_target,
+                        visited,
+                        scope_stack,
+                        moved_variables,
+                    );
+                    return;
+                }
+                Instruction::Basic(inst) => {
+                    match inst {
+                        Basic::RegisterAssignment(register_assignment) => {
+                            // expect load binding
+                            let Binding::Load(load) = &registers.get(register_assignment.register_id).unwrap().binding else {
+                                continue;
+                            };
+                            let address = load.address.clone();
+
+                            if Self::is_movable(
+                                control_flow_graph,
+                                registers,
+                                basic_block_id,
+                                index + 1,
+                                &address,
+                            ) {
+                                registers
+                                    .get_mut(register_assignment.register_id)
+                                    .unwrap()
+                                    .binding
+                                    .as_load_mut()
+                                    .unwrap()
+                                    .load_type = LoadType::Move;
+
+                                moved_variables
+                                    .entry(*scope_stack.last().unwrap())
+                                    .or_default()
+                                    .push(address);
+                            }
+                        }
+                        Basic::ScopePush(new_scope_id) => scope_stack.push(new_scope_id.scope_id),
+                        Basic::ScopePop(pop_scope_id) => {
+                            assert!(scope_stack.pop() == Some(pop_scope_id.scope_id));
+                        }
+
+                        Basic::VariableDeclaration(..) | Basic::Store(..) => (),
+                    }
+                }
+            }
+        }
+    }
+
+    fn is_movable(
+        control_flow_graph: &ControlFlowGraph<Backend<Type>>,
+        registers: &Arena<Register<Type>>,
+        basic_block_id: BasicBlockID,
+        instruction_offset: usize,
+        target_address: &Address,
+    ) -> bool {
+        for instruction in control_flow_graph
+            .get(basic_block_id)
+            .unwrap()
+            .instructions()
+            .iter()
+            .skip(instruction_offset)
+        {
+            match instruction {
+                Instruction::Jump(inst) => {
+                    return Self::is_movable(
+                        control_flow_graph,
+                        registers,
+                        inst.jump_target,
+                        0,
+                        target_address,
+                    );
+                }
+                Instruction::Return(..) => {
+                    return true;
+                }
+                Instruction::ConditionalJump(inst) => {
+                    return Self::is_movable(
+                        control_flow_graph,
+                        registers,
+                        inst.true_jump_target,
+                        0,
+                        target_address,
+                    ) && Self::is_movable(
+                        control_flow_graph,
+                        registers,
+                        inst.false_jump_target,
+                        0,
+                        target_address,
+                    );
+                }
+                Instruction::Basic(basic) => match basic {
+                    Basic::ScopePop(..) | Basic::ScopePush(..) => {}
+                    Basic::VariableDeclaration(inst) => {
+                        if Self::is_subaddress_or_equal(
+                            &Address::VariableID(VariableID::AllocaID(inst.alloca_id)),
+                            target_address,
+                        ) {
+                            return true;
+                        }
+                    }
+                    Basic::Store(inst) => {
+                        if Self::is_subaddress_or_equal(&inst.address, target_address) {
+                            return true;
+                        }
+                    }
+                    Basic::RegisterAssignment(register_assignment) => {
+                        let Binding::Load(load) = &registers.get(register_assignment.register_id).unwrap().binding else {
+                            continue;
+                        };
+
+                        if Self::is_subaddress_or_equal(&load.address, target_address)
+                            || Self::is_subaddress_or_equal(target_address, &load.address)
+                        {
+                            return false;
+                        }
+                    }
+                },
+            }
+        }
+
+        true
+    }
+
+    fn is_subaddress_or_equal(parent_address: &Address, sub_address: &Address) -> bool {
+        match (parent_address, sub_address) {
+            (Address::VariableID(lhs), Address::VariableID(rhs)) => lhs == rhs,
+            (Address::VariableID(..), Address::FieldAddress(rhs)) => {
+                Self::is_subaddress_or_equal(parent_address, &rhs.operand_address)
+            }
+            (Address::FieldAddress(..), Address::VariableID(..)) => false,
+            (Address::FieldAddress(lhs), Address::FieldAddress(rhs)) => {
+                if lhs == rhs {
+                    true
+                } else {
+                    Self::is_subaddress_or_equal(parent_address, &rhs.operand_address)
+                }
+            }
+        }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    fn transform(
+        container: Container<IntermediateTypeID>,
+        inference_context: &InferenceContext,
+    ) -> Container<Type> {
+        let control_flow_graph = container.control_flow_graph.map::<Backend<Type>>(
+            |x| x,
+            |x| Return {
+                return_value: x
+                    .return_value
+                    .map(|x| Self::transform_value(x, inference_context)),
+            },
+            |x| match x {
+                Basic::RegisterAssignment(x) => Basic::RegisterAssignment(x),
+                Basic::VariableDeclaration(x) => Basic::VariableDeclaration(x),
+                Basic::Store(x) => Basic::Store(Store {
+                    address: x.address,
+                    value: Self::transform_value(x.value, inference_context),
+                    span: x.span,
+                }),
+                Basic::ScopePush(x) => Basic::ScopePush(x),
+                Basic::ScopePop(x) => Basic::ScopePop(x),
+            },
+            |x| ConditionalJump {
+                condition_value: Self::transform_value(x.condition_value, inference_context),
+                true_jump_target: x.true_jump_target,
+                false_jump_target: x.false_jump_target,
+            },
+        );
+
+        let allocas = container.allocas.map(|source_alloca| Alloca {
+            identifier_token: source_alloca.identifier_token,
+            is_mutable: source_alloca.is_mutable,
+            ty: Self::transform_intermediate_type_id(source_alloca.ty, inference_context),
+            scope_id: source_alloca.scope_id,
+        });
+
+        let registers = container.registers.map(|x| Register {
+            binding: Self::transform_binding(x.binding, inference_context),
+        });
+
+        Container {
+            control_flow_graph,
+            registers,
+            allocas,
+            table: container.table,
+            overload_id: container.overload_id,
+            parent_overload_set_id: container.parent_overload_set_id,
+            parent_scoped_id: container.parent_scoped_id,
+            scope_tree: container.scope_tree,
+        }
+    }
+
+    fn transform_binding(
+        binding: Binding<IntermediateTypeID>,
+        inference_context: &InferenceContext,
+    ) -> Binding<Type> {
+        match binding {
+            Binding::FunctionCall(binding) => Binding::FunctionCall(FunctionCall {
+                span: binding.span,
+                overload_id: binding.overload_id,
+                arguments: binding
+                    .arguments
+                    .into_iter()
+                    .map(|x| Self::transform_value(x, inference_context))
+                    .collect(),
+            }),
+            Binding::Prefix(binding) => Binding::Prefix(Prefix {
+                span: binding.span,
+                prefix_operator: binding.prefix_operator,
+                operand: Self::transform_value(binding.operand, inference_context),
+            }),
+            Binding::Load(binding) => Binding::Load(Load {
+                span: binding.span,
+                load_type: binding.load_type,
+                address: binding.address,
+            }),
+            Binding::StructLiteral(binding) => Binding::StructLiteral(StructLiteral {
+                span: binding.span,
+                struct_id: binding.struct_id,
+                initializations: binding
+                    .initializations
+                    .into_iter()
+                    .map(|(k, v)| (k, Self::transform_value(v, inference_context)))
+                    .collect(),
+            }),
+            Binding::MemberAccess(binding) => Binding::MemberAccess(MemberAccess {
+                span: binding.span,
+                operand: Self::transform_value(binding.operand, inference_context),
+                field_id: binding.field_id,
+            }),
+            Binding::Binary(binding) => Binding::Binary(Binary {
+                span: binding.span,
+                left_operand: Self::transform_value(binding.left_operand, inference_context),
+                right_operand: Self::transform_value(binding.right_operand, inference_context),
+                binary_operator: binding.binary_operator,
+            }),
+            Binding::PhiNode(binding) => Binding::PhiNode(PhiNode {
+                span: binding.span,
+                values_by_predecessor: binding
+                    .values_by_predecessor
+                    .into_iter()
+                    .map(|(k, v)| (k, Self::transform_value(v, inference_context)))
+                    .collect(),
+                phi_node_source: binding.phi_node_source,
+            }),
+            Binding::Cast(binding) => Binding::Cast(Cast {
+                operand: Self::transform_value(binding.operand, inference_context),
+                target_type: Self::transform_intermediate_type_id(
+                    binding.target_type,
+                    inference_context,
+                ),
+                span: binding.span,
+            }),
+        }
+    }
+
+    fn transform_value(
+        value: Value<IntermediateTypeID>,
+        inference_context: &InferenceContext,
+    ) -> Value<Type> {
+        match value {
+            Value::Register(register) => Value::Register(register),
+            Value::Constant(constant) => match constant {
+                Constant::NumericLiteral(literal) => {
+                    Value::Constant(Constant::NumericLiteral(NumericLiteral {
+                        numeric_literal_syntax_tree: literal.numeric_literal_syntax_tree,
+                        ty: Self::transform_intermediate_type_id(literal.ty, inference_context),
+                    }))
+                }
+                Constant::BooleanLiteral(literal) => {
+                    Value::Constant(Constant::BooleanLiteral(literal))
+                }
+                Constant::EnumLiteral(literal) => Value::Constant(Constant::EnumLiteral(literal)),
+                Constant::VoidConstant(constant) => {
+                    Value::Constant(Constant::VoidConstant(constant))
+                }
+            },
+            Value::Placeholder(..) | Value::Unreachable(..) => unreachable!(),
+        }
+    }
+
+    fn transform_intermediate_type_id(
+        intermediate_type_id: IntermediateTypeID,
+        inference_context: &InferenceContext,
+    ) -> Type {
+        match intermediate_type_id {
+            IntermediateTypeID::InferenceID(inference) => {
+                match inference_context.get_inferable_type(inference).unwrap() {
+                    InferableType::Type(ty) => ty,
+                    InferableType::Constraint(constraint) => match constraint {
+                        Constraint::All | Constraint::PrimitiveType => unreachable!(),
+                        Constraint::Number | Constraint::Signed => {
+                            Type::PrimitiveType(PrimitiveType::Int32)
+                        }
+                        Constraint::Float => Type::PrimitiveType(PrimitiveType::Float64),
+                    },
+                }
+            }
+            IntermediateTypeID::Type(ty) => ty,
         }
     }
 

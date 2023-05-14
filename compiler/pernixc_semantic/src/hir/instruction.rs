@@ -50,7 +50,7 @@ impl JumpInstruction for Jump {
 /// Represents a conditional jump instruction in the HIR.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConditionalJump<T: TypeSystem> {
-    pub(super) condition: Value<T>,
+    pub(super) condition_value: Value<T>,
     pub(super) true_jump_target: BasicBlockID,
     pub(super) false_jump_target: BasicBlockID,
 }
@@ -59,7 +59,7 @@ impl<T: TypeSystem> ConditionalJumpInstruction for ConditionalJump<T> {
     type Value = Value<T>;
 
     fn condition_value(&self) -> &Self::Value {
-        &self.condition
+        &self.condition_value
     }
 
     fn true_jump_target(&self) -> BasicBlockID {
@@ -96,7 +96,7 @@ pub enum Basic<T: TypeSystem> {
     ScopePop(ScopePop),
 }
 
-/// Is an instruction that is inserted every time a new scope (*block*) is entered.
+/// Is an instruction that is inserted every time a new scope (*block*) enters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CopyGetters)]
 pub struct ScopePush {
     /// The ID of the scope that is entered.
@@ -104,12 +104,12 @@ pub struct ScopePush {
     pub(super) scope_id: ScopeID,
 }
 
-/// Is an instruction executed every time a scope (*block*) is exited.
+/// Is an instruction executed every time a scope (*block*) exits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CopyGetters)]
 pub struct ScopePop {
     /// The ID of the scope that is exited.
     #[get_copy = "pub"]
-    pub(super) scope_id: ScopeID, 
+    pub(super) scope_id: ScopeID,
 }
 
 /// Represents a register assignment instruction in the HIR.

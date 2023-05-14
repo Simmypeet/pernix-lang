@@ -5,11 +5,12 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_print::LogSeverity;
-use pernixc_source::Span;
+use pernixc_source::{SourceElement, Span};
 use pernixc_system::arena::InvalidIDError;
 
 use super::{
-    table::Table, Accessibility, EnumVariantID, FieldID, GlobalID, OverloadID, ParameterID, ID,
+    table::Table, Accessibility, EnumVariantID, FieldID, GlobalID, OverloadID, ParameterID,
+    StructID, ID,
 };
 
 /// Is a semantic error that can occur during the symbol resolution/construction phase of the
@@ -28,6 +29,7 @@ pub enum Error {
     CircularDependency(CircularDependency),
     TypeExpected(TypeExpected),
     OverloadRedefinition(OverloadRedefinition),
+    RecursiveType(RecursiveType),
 }
 
 /// Expected a symbol that can be used as a type, but found a symbol that cannot be used as a type.
@@ -377,6 +379,38 @@ impl CircularDependency {
             LogSeverity::Error,
             "found circular dependency between these symbols.",
         );
+        println!();
+    }
+}
+
+/// A recursive type was detected.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct RecursiveType {
+    /// The list of structs that form the recursive type.
+    #[get = "pub"]
+    pub(super) struct_ids: Vec<StructID>,
+}
+
+impl RecursiveType {
+    /// Prints the error message to the console.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn print(&self, table: &Table) -> Result<(), InvalidIDError> {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "found recursive type between these structs.",
+        );
+
+        for struct_id in &self.struct_ids {
+            let struct_symbol = table.get_struct(*struct_id)?;
+
+            pernixc_print::print_source_code(
+                &struct_symbol.syntax_tree().span(),
+                Some("recursive type"),
+            );
+        }
+
+        println!();
+        Ok(())
     }
 }
 
@@ -397,6 +431,7 @@ impl Error {
             Self::SymbolRedifinition(e) => e.print(table)?,
             Self::CircularDependency(e) => e.print(),
             Self::OverloadRedefinition(e) => e.print(table)?,
+            Self::RecursiveType(e) => e.print(table)?,
         })
     }
 }

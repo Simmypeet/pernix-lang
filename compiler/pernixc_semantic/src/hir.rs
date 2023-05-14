@@ -2,7 +2,7 @@
 
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-use derive_more::From;
+use derive_more::{Deref, From};
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_lexical::token::Identifier as IdentifierToken;
@@ -13,10 +13,15 @@ use pernixc_system::{
 };
 use thiserror::Error;
 
-use self::{error::Error as HirError, instruction::Backend, value::binding::Binding};
+use self::{
+    binder::{Binder, IntermediateTypeID},
+    error::Error as HirError,
+    instruction::Backend,
+    value::binding::Binding,
+};
 use crate::{
     cfg::ControlFlowGraph,
-    infer::InferableType,
+    infer::{InferableType, InferenceContext},
     symbol::{
         error::Error as SymbolError, table::Table, ty::Type, Global, OverloadID, OverloadSetID,
         ScopedID,
@@ -34,17 +39,70 @@ pub mod value;
 /// worked with LLVM IR before, you'll find it familiar. This allows the semantic analyzer to
 /// perform complex data flow analysis on the program such as dead code detection, checking return
 /// paths, etc.
-#[derive(Debug, CopyGetters)]
+#[derive(Debug, Deref)]
 pub struct Hir {
-    #[allow(dead_code)]
     container: Container<Type>,
+}
 
-    /// Returns true if the HIR is in a suboptimal state.
+/// Is an error occured during the binding process in [`Hir::bind()`].
+#[derive(Debug, EnumAsInner, From, Error)]
+#[allow(missing_docs)]
+pub enum BindError {
+    #[error("Invalid `overload_id` given")]
+    InvalidIDError(InvalidIDError),
+
+    #[error("Encountered a semantic error during the binding process and the program doesn't fully conform to the language specification")]
+    Suboptimal(Box<Suboptimal>),
+
+    #[error("Encountered a fatal semantic error that completely halts the binding process")]
+    FataSemanticError,
+}
+
+impl Hir {
+    /// Binds the given overload into the [`Hir`].
     ///
-    /// This is used to prevent the compiler from generating code for a program that is not
-    /// semantically correct.
-    #[get_copy = "pub"]
-    is_suboptimal: bool,
+    /// # Parameters
+    /// - `table`: The symbol table to bind the overload from.
+    /// - `overload_id`: The overload to bind.
+    /// - `handler`: The error handler to handle any semantic errors that may occur during the binding process.
+    ///
+    /// # Errors
+    /// - [`BindError::InvalidIDError`]: If the given overload ID is invalid.
+    /// - [`BindError::Suboptimal`]: If the program has a semantic error but still able to be recovered hence producing a suboptimal program.
+    /// - [`BindError::FatalSemanticError`]: If the program has a semantic error that completely halts the binding process.
+    pub fn bind(
+        table: &Arc<Table>,
+        overload_id: OverloadID,
+        handler: &impl ErrorHandler,
+    ) -> Result<Self, BindError> {
+        let mut binder = Binder::new(table.clone(), overload_id)?;
+
+        for statement in table
+            .get_overload(overload_id)
+            .unwrap()
+            .syntax_tree()
+            .block_without_label
+            .statements()
+        {
+            binder
+                .bind_statement(statement, handler)
+                .map_err(|_| BindError::FataSemanticError)?;
+        }
+
+        Ok(binder.build(handler)?)
+    }
+}
+
+/// Represents an [`Hir`] that contains suboptimal semantic information.
+#[derive(Debug, Getters)]
+pub struct Suboptimal {
+    /// The container that holds the contents of the [`Hir`].
+    #[get = "pub"]
+    container: Container<IntermediateTypeID>,
+
+    /// The inference context that holds the type information of the [`Hir`].
+    #[get = "pub"]
+    inference_context: InferenceContext,
 }
 
 /// The container that holds the contents of the [`Hir`].
@@ -304,3 +362,6 @@ impl Default for ScopeTree {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests;

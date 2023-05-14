@@ -143,6 +143,17 @@ impl<T: InstructionBackend> BasicBlock<T> {
             .chain(self.unreachable_instructions.iter())
     }
 
+    /// Takes the unreachable instructions of the [`BasicBlock`] making it empty.
+    pub fn take_unreachable_instructions(&mut self) -> Vec<Instruction<T>> {
+        std::mem::take(&mut self.unreachable_instructions)
+    }
+
+    /// Dissolves the [`BasicBlock`] into a vector of instructions (reachable).
+    #[must_use]
+    pub fn dissolve(self) -> Vec<Instruction<T>> {
+        self.instructions
+    }
+
     fn add_instruction(&mut self, instruction: Instruction<T>) {
         if self.is_terminated() {
             self.unreachable_instructions.push(instruction);
@@ -302,11 +313,89 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
 
         Ok(())
     }
+
+    /// Gets an iterator over all [`BasicBlock`]s in the [`ControlFlowGraph`].
+    pub fn basic_blocks(&self) -> impl Iterator<Item = &BasicBlockSymbol<T>> {
+        self.basic_blocks.values()
+    }
+
+    /// Gets a mutable iterator over all [`BasicBlock`]s in the [`ControlFlowGraph`].
+    pub fn basic_blocks_mut(&mut self) -> impl Iterator<Item = &mut BasicBlockSymbol<T>> {
+        self.basic_blocks.values_mut()
+    }
+
+    /// Dissolves the [`ControlFlowGraph`] into its [`BasicBlock`]s and the entry [`BasicBlockID`].
+    #[must_use]
+    pub fn dissolve(self) -> (Arena<BasicBlock<T>>, BasicBlockID) {
+        (self.basic_blocks, self.entry_block)
+    }
+
+    /// Maps the internal istruction backend to another.
+    pub(crate) fn map<U: InstructionBackend>(
+        self,
+        mut jump_map: impl FnMut(T::Jump) -> U::Jump,
+        mut return_map: impl FnMut(T::Return) -> U::Return,
+        mut basic_map: impl FnMut(T::Basic) -> U::Basic,
+        mut conditional_map: impl FnMut(T::ConditionalJump) -> U::ConditionalJump,
+    ) -> ControlFlowGraph<U> {
+        let mut map_instruction = |instruction: Instruction<T>| match instruction {
+            Instruction::Jump(inst) => {
+                let jump_target = inst.jump_target();
+
+                let mapped_jump = jump_map(inst);
+                assert_eq!(jump_target, mapped_jump.jump_target());
+                Instruction::Jump(mapped_jump)
+            }
+            Instruction::Return(inst) => {
+                let mapped_return = return_map(inst);
+                Instruction::Return(mapped_return)
+            }
+            Instruction::ConditionalJump(inst) => {
+                let true_jump_target = inst.true_jump_target();
+                let false_jump_target = inst.false_jump_target();
+
+                let mapped_conditional_jump = conditional_map(inst);
+                assert_eq!(true_jump_target, mapped_conditional_jump.true_jump_target());
+                assert_eq!(
+                    false_jump_target,
+                    mapped_conditional_jump.false_jump_target()
+                );
+                Instruction::ConditionalJump(mapped_conditional_jump)
+            }
+            Instruction::Basic(inst) => {
+                let mapped_basic = basic_map(inst);
+                Instruction::Basic(mapped_basic)
+            }
+        };
+
+        let mapped_basic_blocks = self.basic_blocks.map(|block| {
+            let mut mapped_instructions = Vec::new();
+            for instruction in block.instructions {
+                mapped_instructions.push(map_instruction(instruction));
+            }
+            let mut mapped_unreachable_instructions = Vec::new();
+            for instruction in block.unreachable_instructions {
+                mapped_unreachable_instructions.push(map_instruction(instruction));
+            }
+
+            BasicBlock {
+                is_entry: block.is_entry,
+                instructions: mapped_instructions,
+                unreachable_instructions: mapped_unreachable_instructions,
+                successors: block.successors,
+                predecessors: block.predecessors,
+            }
+        });
+
+        ControlFlowGraph {
+            basic_blocks: mapped_basic_blocks,
+            entry_block: self.entry_block,
+        }
+    }
 }
 
 impl<T: InstructionBackend> Default for ControlFlowGraph<T> {
     fn default() -> Self {
-
         Self::new()
     }
 }

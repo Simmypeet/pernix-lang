@@ -1,6 +1,9 @@
 //! Contains the definition of [`Table`].
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
@@ -26,7 +29,7 @@ use thiserror::Error;
 use super::{
     error::{
         CircularDependency, EnumVariantRedefinition, Error, FieldRedefinition,
-        OverloadRedefinition, ParameterRedefinition, PrivateSymbolLeak,
+        OverloadRedefinition, ParameterRedefinition, PrivateSymbolLeak, RecursiveType,
         StructMemberMoreAccessibleThanStruct, SymbolNotAccessible, SymbolNotFound,
         SymbolRedifinition, TypeExpected,
     },
@@ -113,6 +116,12 @@ impl Table {
                 .0;
 
             table.construct_symbol(id, &mut symbol_states_by_id, handler);
+        }
+
+        for recursive_type in table.check_recusive_type() {
+            handler.recieve(Error::RecursiveType(RecursiveType {
+                struct_ids: recursive_type.into_iter().collect(),
+            }));
         }
 
         table
@@ -1577,6 +1586,54 @@ impl Table {
                 return Ok(symbol.into_module().unwrap());
             }
         }
+    }
+
+    fn check_recusive_type(&self) -> Vec<HashSet<StructID>> {
+        let mut recursive_types = Vec::new();
+
+        let mut visited_structs = HashSet::new();
+        for symbol in self.structs.keys() {
+            visited_structs.clear();
+
+            if self.is_recursive(&mut visited_structs, *symbol)
+                && !recursive_types.contains(&visited_structs)
+            {
+                recursive_types.push(visited_structs.clone());
+            }
+        }
+
+        recursive_types
+    }
+
+    fn is_recursive(&self, visited_structs: &mut HashSet<StructID>, struct_id: StructID) -> bool {
+        if visited_structs.contains(&struct_id) {
+            return true;
+        }
+
+        visited_structs.insert(struct_id);
+
+        for field in self
+            .get_struct(struct_id)
+            .unwrap()
+            .field_order()
+            .iter()
+            .map(|x| self.get_field(*x).unwrap())
+        {
+            match field.ty() {
+                Type::PrimitiveType(_) => (),
+                Type::TypedID(typed_id) => match typed_id {
+                    super::TypedID::Enum(_) => (),
+                    super::TypedID::Struct(struct_id) => {
+                        if self.is_recursive(visited_structs, struct_id) {
+                            return true;
+                        }
+                    }
+                },
+            }
+        }
+
+        visited_structs.remove(&struct_id);
+        false
     }
 }
 
