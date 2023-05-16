@@ -27,34 +27,24 @@ impl<T: Send + Sync> ErrorVec<T> {
     }
 
     /// Consumes the [`ErrorVec`] and returns the underlying vector of errors.
-    pub fn into_vec(self) -> Vec<T> {
-        self.errors.into_inner().unwrap()
-    }
+    pub fn into_vec(self) -> Vec<T> { self.errors.into_inner().unwrap() }
 
     /// Returns a reference to the underlying vector of errors.
-    pub fn as_vec(&self) -> RwLockReadGuard<Vec<T>> {
-        self.errors.read().unwrap()
-    }
+    pub fn as_vec(&self) -> RwLockReadGuard<Vec<T>> { self.errors.read().unwrap() }
 
     /// Returns a mutable reference to the underlying vector of errors.
-    pub fn as_vec_mut(&self) -> RwLockWriteGuard<Vec<T>> {
-        self.errors.write().unwrap()
-    }
+    pub fn as_vec_mut(&self) -> RwLockWriteGuard<Vec<T>> { self.errors.write().unwrap() }
 }
 
 impl<T: Send + Sync> Default for ErrorVec<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl<T: Send + Sync, U> ErrorHandler<U> for ErrorVec<T>
 where
     U: Into<T>,
 {
-    fn recieve(&self, error: U) {
-        self.errors.write().unwrap().push(error.into());
-    }
+    fn recieve(&self, error: U) { self.errors.write().unwrap().push(error.into()); }
 }
 
 /// Is a struct that implements [`ErrorHandler`] trait by doing nothing with the errors.

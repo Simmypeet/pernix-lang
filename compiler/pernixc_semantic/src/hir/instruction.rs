@@ -8,8 +8,8 @@ use getset::{CopyGetters, Getters};
 use pernixc_source::Span;
 
 use super::{
-    value::{Address, Value},
-    AllocaID, RegisterID, ScopeID, TypeSystem,
+    value::{Address, Value, VariableID},
+    RegisterID, ScopeID, TypeSystem,
 };
 use crate::cfg::{
     BasicBlockID, BasicInstruction, ConditionalJumpInstruction, InstructionBackend,
@@ -42,9 +42,7 @@ pub struct Jump {
 }
 
 impl JumpInstruction for Jump {
-    fn jump_target(&self) -> BasicBlockID {
-        self.jump_target
-    }
+    fn jump_target(&self) -> BasicBlockID { self.jump_target }
 }
 
 /// Represents a conditional jump instruction in the HIR.
@@ -58,17 +56,19 @@ pub struct ConditionalJump<T: TypeSystem> {
 impl<T: TypeSystem> ConditionalJumpInstruction for ConditionalJump<T> {
     type Value = Value<T>;
 
-    fn condition_value(&self) -> &Self::Value {
-        &self.condition_value
-    }
+    fn condition_value(&self) -> &Self::Value { &self.condition_value }
 
-    fn true_jump_target(&self) -> BasicBlockID {
-        self.true_jump_target
-    }
+    fn true_jump_target(&self) -> BasicBlockID { self.true_jump_target }
 
-    fn false_jump_target(&self) -> BasicBlockID {
-        self.false_jump_target
-    }
+    fn false_jump_target(&self) -> BasicBlockID { self.false_jump_target }
+}
+
+/// Represents a call to the destructor of a value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct Destruct {
+    /// The value whose destructor is called.
+    #[get = "pub"]
+    pub(super) address: Address,
 }
 
 /// Represents a return instruction in the HIR.
@@ -80,9 +80,7 @@ pub struct Return<T: TypeSystem> {
 impl<T: TypeSystem> ReturnInstruction for Return<T> {
     type Value = Value<T>;
 
-    fn return_value(&self) -> Option<&Self::Value> {
-        self.return_value.as_ref()
-    }
+    fn return_value(&self) -> Option<&Self::Value> { self.return_value.as_ref() }
 }
 
 /// Represents a basic instruction in the HIR.
@@ -94,6 +92,7 @@ pub enum Basic<T: TypeSystem> {
     Store(Store<T>),
     ScopePush(ScopePush),
     ScopePop(ScopePop),
+    Destruct(Destruct),
 }
 
 /// Is an instruction that is inserted every time a new scope (*block*) enters.
@@ -123,9 +122,9 @@ pub struct RegisterAssignment {
 /// Represents a variable declaration instruction in the HIR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters, CopyGetters)]
 pub struct VariableDeclaration {
-    /// Gets the [`AllocaID`] that was declared at the point of this instruction.
+    /// Gets the [`VariableID`] that was declared at the point of this instruction.
     #[get_copy = "pub"]
-    pub(super) alloca_id: AllocaID,
+    pub(super) variable_id: VariableID,
 }
 
 /// Represents a store a value to an address instruction in the HIR.

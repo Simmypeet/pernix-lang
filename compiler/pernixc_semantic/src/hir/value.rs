@@ -27,9 +27,7 @@ pub struct NumericLiteral<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, NumericLiteral<T>> for Container<T> {
-    fn get_type(&self, value: &NumericLiteral<T>) -> Result<T, InvalidValueError> {
-        Ok(value.ty)
-    }
+    fn get_type(&self, value: &NumericLiteral<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
     fn get_span(&self, value: &NumericLiteral<T>) -> Result<Span, InvalidValueError> {
         Ok(value.numeric_literal_syntax_tree.span())
@@ -101,9 +99,7 @@ pub struct Unreachable<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, Unreachable<T>> for Container<T> {
-    fn get_type(&self, value: &Unreachable<T>) -> Result<T, InvalidValueError> {
-        Ok(value.ty)
-    }
+    fn get_type(&self, value: &Unreachable<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
     fn get_span(&self, value: &Unreachable<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())
@@ -176,9 +172,7 @@ pub struct Placeholder<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, Placeholder<T>> for Container<T> {
-    fn get_type(&self, value: &Placeholder<T>) -> Result<T, InvalidValueError> {
-        Ok(value.ty)
-    }
+    fn get_type(&self, value: &Placeholder<T>) -> Result<T, InvalidValueError> { Ok(value.ty) }
 
     fn get_span(&self, value: &Placeholder<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())

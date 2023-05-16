@@ -32,12 +32,12 @@ fn next_token_until_test() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(token.span.start(), 10);
         assert_eq!(token.span.start_location(), Location {
             line: 1,
-            column: 11
+            column: 11,
         });
         assert_eq!(token.span.end(), 11);
         assert_eq!(token.span.end_location().unwrap(), Location {
             line: 1,
-            column: 12
+            column: 12,
         });
 
         let token = parser.next_token().unwrap().as_punctuation().unwrap();
@@ -45,7 +45,7 @@ fn next_token_until_test() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(token.span.start(), 11);
         assert_eq!(token.span.start_location(), Location {
             line: 1,
-            column: 12
+            column: 12,
         });
         assert_eq!(token.span.end(), 12);
         assert_eq!(token.span.end_location(), None);

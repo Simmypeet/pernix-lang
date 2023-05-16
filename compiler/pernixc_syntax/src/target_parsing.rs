@@ -55,7 +55,7 @@ pub enum ModuleError {
 
 impl ModuleError {
     /// Prints the error message to the console.
-    pub fn print_error(&self) {
+    pub fn print(&self) {
         match self {
             Self::DuplicateModuleDeclaration(error) => error.print(),
             Self::LoadError(error) => match error {
@@ -126,7 +126,7 @@ impl FileParsing {
 /// The error caused by passing a non-root source file to the [`TargetParsing::parse()`] function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Error)]
 #[error("The given source file argument is not a root source file.")]
-pub struct TargetParseError;
+pub struct NonRootSourceFileError;
 
 /// Is a derived [`pernixc_system::error_handler::ErrorHandler`] trait that can handle
 /// [`pernixc_lexical::error::Error`], [`pernixc_lexical::error::Error`], and [`ModuleError`]
@@ -249,9 +249,9 @@ impl TargetParsing {
     pub fn parse(
         root_source_file: Arc<SourceFile>,
         handler: &impl ErrorHandler,
-    ) -> Result<Self, TargetParseError> {
+    ) -> Result<Self, NonRootSourceFileError> {
         if !root_source_file.is_root() {
-            return Err(TargetParseError);
+            return Err(NonRootSourceFileError);
         }
 
         let results = Arc::new(RwLock::new(Vec::new()));

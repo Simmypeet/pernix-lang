@@ -1,7 +1,7 @@
 //! Contains the definition of [`Binder`] -- the main interface for building the HIR.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, RwLock},
 };
 
@@ -9,7 +9,6 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{Getters, MutGetters};
 use pernixc_source::{SourceElement, Span};
-
 use pernixc_syntax::syntax_tree::{
     expression::{
         Binary as BinarySyntaxTree, BinaryOperator as BinaryOperatorSyntaxTree,
@@ -28,14 +27,10 @@ use pernixc_syntax::syntax_tree::{
     },
     ConnectedList, Label,
 };
-use pernixc_system::{
-    arena::{Arena, InvalidIDError},
-    error_handler::ErrorHandler,
-};
+use pernixc_system::{arena::InvalidIDError, error_handler::ErrorHandler};
 use thiserror::Error;
 
 use self::stack::Stack;
-
 use super::{
     error::{
         AmbiguousFunctionCall, DuplicateFieldInitialization, Error, ExpressOutsideBlock,
@@ -64,7 +59,7 @@ use super::{
     ValueInspect,
 };
 use crate::{
-    cfg::{BasicBlock, BasicBlockID, ControlFlowGraph, Instruction},
+    cfg::{BasicBlock, BasicBlockID},
     hir::instruction::JumpSource,
     infer::{
         Constraint, ConstraintNotSatisfiedError, InferableType, InferenceContext, InferenceID,
@@ -149,9 +144,7 @@ pub enum IntermediateTypeID {
 }
 
 impl TypeSystem for IntermediateTypeID {
-    fn from_type(ty: Type) -> Self {
-        ty.into()
-    }
+    fn from_type(ty: Type) -> Self { ty.into() }
 }
 
 /// Is a builder that builds the [`super::Hir`] by inputting the various
@@ -208,7 +201,18 @@ impl Binder {
         let mut container = Container::new(table, overload_id)?;
 
         let overload = container.table.get_overload(overload_id).unwrap();
+
+        // new stack with one scope as root
         let mut stack = Stack::new(container.scope_tree.root_scope());
+
+        let after_parameter_scope_id = container.scope_tree.scopes.insert(Scope {
+            parent_scope: Some(container.scope_tree.root_scope),
+            branch: None,
+            children: Vec::new(),
+            depth: 1,
+        });
+
+        stack.push(after_parameter_scope_id);
 
         for parameter in overload
             .parameter_order()
@@ -222,13 +226,34 @@ impl Binder {
         }
 
         let entry_basic_block_id = container.control_flow_graph.entry_block();
-        container
+        let entry_basic_block = container
             .control_flow_graph
             .get_mut(entry_basic_block_id)
+            .unwrap();
+
+        entry_basic_block.add_basic_instruction(Basic::ScopePush(ScopePush {
+            scope_id: container.scope_tree.root_scope,
+        }));
+
+        // add variable declarations
+        for paramter in container
+            .table
+            .get_overload(container.overload_id)
             .unwrap()
-            .add_basic_instruction(Basic::ScopePush(ScopePush {
-                scope_id: container.scope_tree.root_scope(),
-            }));
+            .parameter_order()
+            .iter()
+            .copied()
+        {
+            entry_basic_block.add_basic_instruction(Basic::VariableDeclaration(
+                VariableDeclaration {
+                    variable_id: VariableID::ParameterID(paramter),
+                },
+            ));
+        }
+
+        entry_basic_block.add_basic_instruction(Basic::ScopePush(ScopePush {
+            scope_id: after_parameter_scope_id,
+        }));
 
         Ok(Self {
             current_basic_block_id: container.control_flow_graph.entry_block(),
@@ -349,7 +374,7 @@ impl Binder {
         TypeMismatch {
             expression_span,
             found: left,
-            expect: right,
+            expected: right,
         }
         .into()
     }
@@ -395,7 +420,7 @@ impl Binder {
                 self.create_error_handler_adapter(handler)
                     .recieve(Error::TypeMismatch(TypeMismatch {
                         expression_span: span.clone(),
-                        expect: InferableType::Type(expect),
+                        expected: InferableType::Type(expect),
                         found: InferableType::Type(found),
                     }));
 
@@ -409,7 +434,7 @@ impl Binder {
                 self.create_error_handler_adapter(handler)
                     .recieve(Error::TypeMismatch(TypeMismatch {
                         expression_span: span.clone(),
-                        expect: InferableType::Constraint(expect),
+                        expected: InferableType::Constraint(expect),
                         found: InferableType::Type(found),
                     }));
 
@@ -793,13 +818,19 @@ impl Binder {
             is_mutable: syntax_tree.mutable_keyword().is_some(),
             scope_id: self.stack.current_local().scope_id(),
             ty,
+            declaration_order: self.stack.current_local().variable_declarations().len(),
         });
 
         self.container
             .control_flow_graph
             .get_mut(self.current_basic_block_id)
             .unwrap()
-            .add_basic_instruction(VariableDeclaration { alloca_id }.into());
+            .add_basic_instruction(
+                VariableDeclaration {
+                    variable_id: VariableID::AllocaID(alloca_id),
+                }
+                .into(),
+            );
 
         // inserts a new store
         self.container
@@ -1515,13 +1546,34 @@ impl Binder {
     ///
     /// # Errors
     /// - If encounters a fatal semantic error
+    #[allow(clippy::too_many_lines)]
     pub fn bind_member_access(
         &mut self,
         syntax_tree: &MemberAccessSyntaxTree,
         binding_option: BindingOption,
         handler: &impl HirErrorHandler,
     ) -> Result<BindingResult, BindingError> {
-        let operand = self.bind_expression(syntax_tree.operand(), binding_option, handler)?;
+        // based on the operand, we can try to request for the address of the operand to reduce the
+        // load duplication
+        let try_request_address = matches!(
+            syntax_tree.operand().as_ref(),
+            ExpressionSyntaxTree::Functional(
+                // only named and member access can be used as an lvalue
+                FunctionalSyntaxTree::Named(..) | FunctionalSyntaxTree::MemberAccess(..)
+            )
+        );
+
+        let operand = self.bind_expression(
+            syntax_tree.operand(),
+            if binding_option.binding_target == BindingTarget::ForValue && try_request_address {
+                BindingOption {
+                    binding_target: BindingTarget::ForAddress { is_mutable: false },
+                }
+            } else {
+                binding_option
+            },
+            handler,
+        )?;
         let ty = match &operand {
             BindingResult::Value(value) => self.get_inferable_type(value).unwrap(),
             BindingResult::AddressWithSpan(address) => {
@@ -1574,28 +1626,47 @@ impl Binder {
                 }));
         }
 
-        Ok(match operand {
-            BindingResult::Value(value) => {
-                let binding = MemberAccess {
-                    span: syntax_tree.span(),
-                    operand: value,
-                    field_id,
-                }
-                .into();
+        Ok(match binding_option.binding_target {
+            BindingTarget::ForValue => match operand {
+                BindingResult::Value(operand) => {
+                    let binding = MemberAccess {
+                        span: syntax_tree.span(),
+                        operand,
+                        field_id,
+                    }
+                    .into();
 
-                BindingResult::Value(Value::Register(self.assign_new_register_binding(binding)))
-            }
-            BindingResult::AddressWithSpan(address) => {
+                    BindingResult::Value(Value::Register(self.assign_new_register_binding(binding)))
+                }
+                BindingResult::AddressWithSpan(operand) => {
+                    let address = Address::FieldAddress(FieldAddress {
+                        operand_address: Box::new(operand.address),
+                        field_id,
+                    });
+
+                    BindingResult::Value(Value::Register(self.assign_new_register_binding(
+                        Binding::Load(Load {
+                            span: syntax_tree.span(),
+                            load_type: LoadType::Copy, // to be changed
+                            address,
+                        }),
+                    )))
+                }
+                BindingResult::None(_) => unreachable!(),
+            },
+            BindingTarget::ForAddress { .. } => {
+                let address_with_span = operand.into_address_with_span().unwrap();
+
                 BindingResult::AddressWithSpan(AddressWithSpan {
                     address: FieldAddress {
-                        operand_address: Box::new(address.address),
+                        operand_address: Box::new(address_with_span.address),
                         field_id,
                     }
                     .into(),
                     span: syntax_tree.span(),
                 })
             }
-            BindingResult::None(..) => {
+            BindingTarget::ForStatement => {
                 BindingResult::None(IntermediateTypeID::Type(field_sym.ty()))
             }
         })
@@ -2021,22 +2092,19 @@ impl Binder {
         // add condition jump
         self.container
             .control_flow_graph
-            .add_conditional_jump_instruction(
-                pre_block_id,
-                ConditionalJump {
-                    condition_value: left.clone(),
-                    true_jump_target: if is_or {
-                        continue_block_id
-                    } else {
-                        rhs_condition_block_id
-                    },
-                    false_jump_target: if is_or {
-                        rhs_condition_block_id
-                    } else {
-                        continue_block_id
-                    },
+            .add_conditional_jump_instruction(pre_block_id, ConditionalJump {
+                condition_value: left.clone(),
+                true_jump_target: if is_or {
+                    continue_block_id
+                } else {
+                    rhs_condition_block_id
                 },
-            )
+                false_jump_target: if is_or {
+                    rhs_condition_block_id
+                } else {
+                    continue_block_id
+                },
+            })
             .unwrap();
 
         // to the rhs condition block, bind the rhs
@@ -2062,13 +2130,10 @@ impl Binder {
             // branch to continue block
             self.container
                 .control_flow_graph
-                .add_jump_instruction(
-                    rhs_condition_block_id,
-                    Jump {
-                        jump_target: continue_block_id,
-                        jump_source: None,
-                    },
-                )
+                .add_jump_instruction(rhs_condition_block_id, Jump {
+                    jump_target: continue_block_id,
+                    jump_source: None,
+                })
                 .unwrap();
 
             rhs_value
@@ -2198,6 +2263,7 @@ impl Binder {
             children: Vec::new(),
             depth: self.current_scope().depth + 1,
         });
+
         self.current_scope_mut()
             .children
             .push(ScopeChildID::ScopeID(scope_id));
@@ -2234,15 +2300,12 @@ impl Binder {
             .as_ref()
             .map(|x| x.label().identifier().span.str().to_owned());
 
-        self.block_scopes_by_scope_id.insert(
-            scope_id,
-            BlockScope {
-                label,
-                incoming_values: HashMap::new(),
-                continue_basic_block_id,
-                express_ty: None,
-            },
-        );
+        self.block_scopes_by_scope_id.insert(scope_id, BlockScope {
+            label,
+            incoming_values: HashMap::new(),
+            continue_basic_block_id,
+            express_ty: None,
+        });
 
         // pushes a new scope
         self.stack.push(scope_id);
@@ -2261,13 +2324,10 @@ impl Binder {
 
         self.container
             .control_flow_graph
-            .add_jump_instruction(
-                self.current_basic_block_id,
-                Jump {
-                    jump_target: continue_basic_block_id,
-                    jump_source: None,
-                },
-            )
+            .add_jump_instruction(self.current_basic_block_id, Jump {
+                jump_target: continue_basic_block_id,
+                jump_source: None,
+            })
             .unwrap();
 
         // set the current basic block id to the successor block
@@ -2546,13 +2606,10 @@ impl Binder {
 
         self.container
             .control_flow_graph
-            .add_jump_instruction(
-                self.current_basic_block_id,
-                Jump {
-                    jump_target: block.continue_basic_block_id,
-                    jump_source: Some(JumpSource::Express(syntax_tree.span())),
-                },
-            )
+            .add_jump_instruction(self.current_basic_block_id, Jump {
+                jump_target: block.continue_basic_block_id,
+                jump_source: Some(JumpSource::Express(syntax_tree.span())),
+            })
             .unwrap();
 
         // in the end basic block, if the it has a predecessor to current basic block (which means
@@ -2746,14 +2803,11 @@ impl Binder {
         // add conditional jump expression
         self.container
             .control_flow_graph
-            .add_conditional_jump_instruction(
-                pre_basic_block_id,
-                ConditionalJump {
-                    condition_value: condition,
-                    true_jump_target: true_basic_block_id,
-                    false_jump_target: false_basic_block_id,
-                },
-            )
+            .add_conditional_jump_instruction(pre_basic_block_id, ConditionalJump {
+                condition_value: condition,
+                true_jump_target: true_basic_block_id,
+                false_jump_target: false_basic_block_id,
+            })
             .unwrap();
 
         let branch_id = self.container.scope_tree.branches.insert(Branch {
@@ -2791,13 +2845,10 @@ impl Binder {
             // jump to continue block
             self.container
                 .control_flow_graph
-                .add_jump_instruction(
-                    self.current_basic_block_id,
-                    Jump {
-                        jump_target: continue_basic_block_id,
-                        jump_source: None,
-                    },
-                )
+                .add_jump_instruction(self.current_basic_block_id, Jump {
+                    jump_target: continue_basic_block_id,
+                    jump_source: None,
+                })
                 .unwrap();
 
             (value, self.current_basic_block_id)
@@ -2817,9 +2868,11 @@ impl Binder {
                             .add_basic_instruction(Basic::ScopePush(ScopePush {
                                 scope_id: false_scope_id,
                             }));
+                        self.stack.push(false_scope_id);
 
                         let value = self.bind_if_else_internal(if_else, handler);
 
+                        self.stack.pop();
                         self.current_basic_block_mut()
                             .add_basic_instruction(Basic::ScopePop(ScopePop {
                                 scope_id: false_scope_id,
@@ -2848,13 +2901,10 @@ impl Binder {
             // jump to continue block
             self.container
                 .control_flow_graph
-                .add_jump_instruction(
-                    self.current_basic_block_id,
-                    Jump {
-                        jump_target: continue_basic_block_id,
-                        jump_source: None,
-                    },
-                )
+                .add_jump_instruction(self.current_basic_block_id, Jump {
+                    jump_target: continue_basic_block_id,
+                    jump_source: None,
+                })
                 .unwrap();
 
             (value, self.current_basic_block_id)
@@ -2942,27 +2992,21 @@ impl Binder {
             children: Vec::new(),
             depth: self.current_scope().depth + 1,
         });
-        self.loop_scopes_by_scope_id.insert(
-            scope_id,
-            LoopScope {
-                label,
-                incoming_values: HashMap::new(),
-                loop_header_basic_block,
-                loop_exit_basic_block,
-                break_ty: None,
-            },
-        );
+        self.loop_scopes_by_scope_id.insert(scope_id, LoopScope {
+            label,
+            incoming_values: HashMap::new(),
+            loop_header_basic_block,
+            loop_exit_basic_block,
+            break_ty: None,
+        });
 
         // enter the loop body
         self.container
             .control_flow_graph
-            .add_jump_instruction(
-                pre_basic_block_id,
-                Jump {
-                    jump_target: loop_header_basic_block,
-                    jump_source: None,
-                },
-            )
+            .add_jump_instruction(pre_basic_block_id, Jump {
+                jump_target: loop_header_basic_block,
+                jump_source: None,
+            })
             .unwrap();
         self.current_basic_block_id = loop_header_basic_block;
 
@@ -2986,13 +3030,10 @@ impl Binder {
         // go back to the loop header
         self.container
             .control_flow_graph
-            .add_jump_instruction(
-                self.current_basic_block_id,
-                Jump {
-                    jump_target: loop_header_basic_block,
-                    jump_source: None,
-                },
-            )
+            .add_jump_instruction(self.current_basic_block_id, Jump {
+                jump_target: loop_header_basic_block,
+                jump_source: None,
+            })
             .unwrap();
 
         let loop_scope = self.loop_scopes_by_scope_id.remove(&scope_id).unwrap();
@@ -3145,17 +3186,14 @@ impl Binder {
 
         self.container
             .control_flow_graph
-            .add_jump_instruction(
-                self.current_basic_block_id,
-                Jump {
-                    jump_target: self
-                        .loop_scopes_by_scope_id
-                        .get(&target_scope_id)
-                        .unwrap()
-                        .loop_header_basic_block,
-                    jump_source: Some(JumpSource::Continue(syntax_tree.span())),
-                },
-            )
+            .add_jump_instruction(self.current_basic_block_id, Jump {
+                jump_target: self
+                    .loop_scopes_by_scope_id
+                    .get(&target_scope_id)
+                    .unwrap()
+                    .loop_header_basic_block,
+                jump_source: Some(JumpSource::Continue(syntax_tree.span())),
+            })
             .unwrap();
 
         let value = Unreachable {
@@ -3238,6 +3276,7 @@ impl Binder {
                         }))
                     },
                 ),
+
             // unifies the block's type and value's type
             (Some(current), Some(result)) => {
                 let value = result.map_or_else(
@@ -3326,13 +3365,10 @@ impl Binder {
 
         self.container
             .control_flow_graph
-            .add_jump_instruction(
-                self.current_basic_block_id,
-                Jump {
-                    jump_target: loop_scope.loop_exit_basic_block,
-                    jump_source: Some(JumpSource::Break(syntax_tree.span())),
-                },
-            )
+            .add_jump_instruction(self.current_basic_block_id, Jump {
+                jump_target: loop_scope.loop_exit_basic_block,
+                jump_source: Some(JumpSource::Break(syntax_tree.span())),
+            })
             .unwrap();
 
         // in the end basic block, if the it has a predecessor to current basic block (which means
@@ -3472,10 +3508,6 @@ impl Binder {
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
-}
-
-impl Binder {
-    ///////////////////////////////////////////////////////////////////////////////////////////////
 
     /// Finalizes the binding process and returns the resulting [`Hir`] tree.
     ///
@@ -3483,7 +3515,25 @@ impl Binder {
     /// Returns a [`Suboptimal`] HIR instead if there were any semantic errors during the binding
     pub fn build(mut self, _handler: &impl HirErrorHandler) -> Result<Hir, Box<Suboptimal>> {
         // should have no scopes left
-        assert!(self.stack.locals().len() == 1);
+        assert!(self.stack.locals().len() == 2);
+
+        // pop the last two scopes
+        {
+            let scope_id_pop = self.stack.current_local().scope_id();
+            self.current_basic_block_mut()
+                .add_basic_instruction(Basic::ScopePop(ScopePop {
+                    scope_id: scope_id_pop,
+                }));
+            self.stack.pop();
+
+            let scope_id_pop = self.stack.current_local().scope_id();
+            self.current_basic_block_mut()
+                .add_basic_instruction(Basic::ScopePop(ScopePop {
+                    scope_id: scope_id_pop,
+                }));
+
+            assert_eq!(scope_id_pop, self.container.scope_tree.root_scope);
+        }
 
         // early return if suboptimal
         if *self.suboptimal.read().unwrap() {
@@ -3492,16 +3542,6 @@ impl Binder {
                 inference_context: self.inference_context,
             }));
         }
-
-        // pop the last stack frame
-        self.container
-            .control_flow_graph
-            .get_mut(self.current_basic_block_id)
-            .unwrap()
-            .add_basic_instruction(Basic::ScopePop(ScopePop {
-                scope_id: self.container.scope_tree.root_scope,
-            }));
-
         // remove all unreachable instructions
         for basic_block in self.container.control_flow_graph.basic_blocks_mut() {
             // TODO: reports a warning if there are unreachable instructions
@@ -3509,377 +3549,24 @@ impl Binder {
         }
 
         // transform intermediate types into concrete types
-        let mut container = Self::transform(self.container, &self.inference_context);
+        let mut container = build::transform_type_system(self.container, &self.inference_context);
 
-        // perform auto moves
-        let mut moved_variables = HashMap::new();
-        Self::auto_move(
-            &container.control_flow_graph,
-            &mut container.registers,
-            container.control_flow_graph.entry_block(),
-            HashSet::new(),
-            &mut Vec::new(),
-            &mut moved_variables,
-        );
+        // performs auto move on all load instructiosn
+        let moved_addresses_by_scope_id = build::auto_move(&mut container);
+
+        // performs alternate move on all branches
+        build::alternate_move(&mut container, &moved_addresses_by_scope_id);
+
+        // insert destruct instructions for all scopes dropped
+        build::insert_destruct(&mut container);
 
         Ok(Hir { container })
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
-
-    fn auto_move(
-        control_flow_graph: &ControlFlowGraph<Backend<Type>>,
-        registers: &mut Arena<Register<Type>>,
-        basic_block_id: BasicBlockID,
-        mut visited: HashSet<BasicBlockID>,
-        scope_stack: &mut Vec<ScopeID>,
-        moved_variables: &mut HashMap<ScopeID, Vec<Address>>,
-    ) {
-        if visited.contains(&basic_block_id) {
-            return;
-        }
-
-        visited.insert(basic_block_id);
-
-        for (index, instruction) in control_flow_graph
-            .get(basic_block_id)
-            .unwrap()
-            .instructions()
-            .iter()
-            .enumerate()
-        {
-            match instruction {
-                Instruction::Jump(inst) => {
-                    Self::auto_move(
-                        control_flow_graph,
-                        registers,
-                        inst.jump_target,
-                        visited,
-                        scope_stack,
-                        moved_variables,
-                    );
-                    return;
-                }
-                Instruction::Return(..) => return,
-                Instruction::ConditionalJump(inst) => {
-                    Self::auto_move(
-                        control_flow_graph,
-                        registers,
-                        inst.true_jump_target,
-                        visited.clone(),
-                        scope_stack,
-                        moved_variables,
-                    );
-                    Self::auto_move(
-                        control_flow_graph,
-                        registers,
-                        inst.false_jump_target,
-                        visited,
-                        scope_stack,
-                        moved_variables,
-                    );
-                    return;
-                }
-                Instruction::Basic(inst) => {
-                    match inst {
-                        Basic::RegisterAssignment(register_assignment) => {
-                            // expect load binding
-                            let Binding::Load(load) = &registers.get(register_assignment.register_id).unwrap().binding else {
-                                continue;
-                            };
-                            let address = load.address.clone();
-
-                            if Self::is_movable(
-                                control_flow_graph,
-                                registers,
-                                basic_block_id,
-                                index + 1,
-                                &address,
-                            ) {
-                                registers
-                                    .get_mut(register_assignment.register_id)
-                                    .unwrap()
-                                    .binding
-                                    .as_load_mut()
-                                    .unwrap()
-                                    .load_type = LoadType::Move;
-
-                                moved_variables
-                                    .entry(*scope_stack.last().unwrap())
-                                    .or_default()
-                                    .push(address);
-                            }
-                        }
-                        Basic::ScopePush(new_scope_id) => scope_stack.push(new_scope_id.scope_id),
-                        Basic::ScopePop(pop_scope_id) => {
-                            assert!(scope_stack.pop() == Some(pop_scope_id.scope_id));
-                        }
-
-                        Basic::VariableDeclaration(..) | Basic::Store(..) => (),
-                    }
-                }
-            }
-        }
-    }
-
-    fn is_movable(
-        control_flow_graph: &ControlFlowGraph<Backend<Type>>,
-        registers: &Arena<Register<Type>>,
-        basic_block_id: BasicBlockID,
-        instruction_offset: usize,
-        target_address: &Address,
-    ) -> bool {
-        for instruction in control_flow_graph
-            .get(basic_block_id)
-            .unwrap()
-            .instructions()
-            .iter()
-            .skip(instruction_offset)
-        {
-            match instruction {
-                Instruction::Jump(inst) => {
-                    return Self::is_movable(
-                        control_flow_graph,
-                        registers,
-                        inst.jump_target,
-                        0,
-                        target_address,
-                    );
-                }
-                Instruction::Return(..) => {
-                    return true;
-                }
-                Instruction::ConditionalJump(inst) => {
-                    return Self::is_movable(
-                        control_flow_graph,
-                        registers,
-                        inst.true_jump_target,
-                        0,
-                        target_address,
-                    ) && Self::is_movable(
-                        control_flow_graph,
-                        registers,
-                        inst.false_jump_target,
-                        0,
-                        target_address,
-                    );
-                }
-                Instruction::Basic(basic) => match basic {
-                    Basic::ScopePop(..) | Basic::ScopePush(..) => {}
-                    Basic::VariableDeclaration(inst) => {
-                        if Self::is_subaddress_or_equal(
-                            &Address::VariableID(VariableID::AllocaID(inst.alloca_id)),
-                            target_address,
-                        ) {
-                            return true;
-                        }
-                    }
-                    Basic::Store(inst) => {
-                        if Self::is_subaddress_or_equal(&inst.address, target_address) {
-                            return true;
-                        }
-                    }
-                    Basic::RegisterAssignment(register_assignment) => {
-                        let Binding::Load(load) = &registers.get(register_assignment.register_id).unwrap().binding else {
-                            continue;
-                        };
-
-                        if Self::is_subaddress_or_equal(&load.address, target_address)
-                            || Self::is_subaddress_or_equal(target_address, &load.address)
-                        {
-                            return false;
-                        }
-                    }
-                },
-            }
-        }
-
-        true
-    }
-
-    fn is_subaddress_or_equal(parent_address: &Address, sub_address: &Address) -> bool {
-        match (parent_address, sub_address) {
-            (Address::VariableID(lhs), Address::VariableID(rhs)) => lhs == rhs,
-            (Address::VariableID(..), Address::FieldAddress(rhs)) => {
-                Self::is_subaddress_or_equal(parent_address, &rhs.operand_address)
-            }
-            (Address::FieldAddress(..), Address::VariableID(..)) => false,
-            (Address::FieldAddress(lhs), Address::FieldAddress(rhs)) => {
-                if lhs == rhs {
-                    true
-                } else {
-                    Self::is_subaddress_or_equal(parent_address, &rhs.operand_address)
-                }
-            }
-        }
-    }
-
-    ///////////////////////////////////////////////////////////////////////////////////////////////
-
-    fn transform(
-        container: Container<IntermediateTypeID>,
-        inference_context: &InferenceContext,
-    ) -> Container<Type> {
-        let control_flow_graph = container.control_flow_graph.map::<Backend<Type>>(
-            |x| x,
-            |x| Return {
-                return_value: x
-                    .return_value
-                    .map(|x| Self::transform_value(x, inference_context)),
-            },
-            |x| match x {
-                Basic::RegisterAssignment(x) => Basic::RegisterAssignment(x),
-                Basic::VariableDeclaration(x) => Basic::VariableDeclaration(x),
-                Basic::Store(x) => Basic::Store(Store {
-                    address: x.address,
-                    value: Self::transform_value(x.value, inference_context),
-                    span: x.span,
-                }),
-                Basic::ScopePush(x) => Basic::ScopePush(x),
-                Basic::ScopePop(x) => Basic::ScopePop(x),
-            },
-            |x| ConditionalJump {
-                condition_value: Self::transform_value(x.condition_value, inference_context),
-                true_jump_target: x.true_jump_target,
-                false_jump_target: x.false_jump_target,
-            },
-        );
-
-        let allocas = container.allocas.map(|source_alloca| Alloca {
-            identifier_token: source_alloca.identifier_token,
-            is_mutable: source_alloca.is_mutable,
-            ty: Self::transform_intermediate_type_id(source_alloca.ty, inference_context),
-            scope_id: source_alloca.scope_id,
-        });
-
-        let registers = container.registers.map(|x| Register {
-            binding: Self::transform_binding(x.binding, inference_context),
-        });
-
-        Container {
-            control_flow_graph,
-            registers,
-            allocas,
-            table: container.table,
-            overload_id: container.overload_id,
-            parent_overload_set_id: container.parent_overload_set_id,
-            parent_scoped_id: container.parent_scoped_id,
-            scope_tree: container.scope_tree,
-        }
-    }
-
-    fn transform_binding(
-        binding: Binding<IntermediateTypeID>,
-        inference_context: &InferenceContext,
-    ) -> Binding<Type> {
-        match binding {
-            Binding::FunctionCall(binding) => Binding::FunctionCall(FunctionCall {
-                span: binding.span,
-                overload_id: binding.overload_id,
-                arguments: binding
-                    .arguments
-                    .into_iter()
-                    .map(|x| Self::transform_value(x, inference_context))
-                    .collect(),
-            }),
-            Binding::Prefix(binding) => Binding::Prefix(Prefix {
-                span: binding.span,
-                prefix_operator: binding.prefix_operator,
-                operand: Self::transform_value(binding.operand, inference_context),
-            }),
-            Binding::Load(binding) => Binding::Load(Load {
-                span: binding.span,
-                load_type: binding.load_type,
-                address: binding.address,
-            }),
-            Binding::StructLiteral(binding) => Binding::StructLiteral(StructLiteral {
-                span: binding.span,
-                struct_id: binding.struct_id,
-                initializations: binding
-                    .initializations
-                    .into_iter()
-                    .map(|(k, v)| (k, Self::transform_value(v, inference_context)))
-                    .collect(),
-            }),
-            Binding::MemberAccess(binding) => Binding::MemberAccess(MemberAccess {
-                span: binding.span,
-                operand: Self::transform_value(binding.operand, inference_context),
-                field_id: binding.field_id,
-            }),
-            Binding::Binary(binding) => Binding::Binary(Binary {
-                span: binding.span,
-                left_operand: Self::transform_value(binding.left_operand, inference_context),
-                right_operand: Self::transform_value(binding.right_operand, inference_context),
-                binary_operator: binding.binary_operator,
-            }),
-            Binding::PhiNode(binding) => Binding::PhiNode(PhiNode {
-                span: binding.span,
-                values_by_predecessor: binding
-                    .values_by_predecessor
-                    .into_iter()
-                    .map(|(k, v)| (k, Self::transform_value(v, inference_context)))
-                    .collect(),
-                phi_node_source: binding.phi_node_source,
-            }),
-            Binding::Cast(binding) => Binding::Cast(Cast {
-                operand: Self::transform_value(binding.operand, inference_context),
-                target_type: Self::transform_intermediate_type_id(
-                    binding.target_type,
-                    inference_context,
-                ),
-                span: binding.span,
-            }),
-        }
-    }
-
-    fn transform_value(
-        value: Value<IntermediateTypeID>,
-        inference_context: &InferenceContext,
-    ) -> Value<Type> {
-        match value {
-            Value::Register(register) => Value::Register(register),
-            Value::Constant(constant) => match constant {
-                Constant::NumericLiteral(literal) => {
-                    Value::Constant(Constant::NumericLiteral(NumericLiteral {
-                        numeric_literal_syntax_tree: literal.numeric_literal_syntax_tree,
-                        ty: Self::transform_intermediate_type_id(literal.ty, inference_context),
-                    }))
-                }
-                Constant::BooleanLiteral(literal) => {
-                    Value::Constant(Constant::BooleanLiteral(literal))
-                }
-                Constant::EnumLiteral(literal) => Value::Constant(Constant::EnumLiteral(literal)),
-                Constant::VoidConstant(constant) => {
-                    Value::Constant(Constant::VoidConstant(constant))
-                }
-            },
-            Value::Placeholder(..) | Value::Unreachable(..) => unreachable!(),
-        }
-    }
-
-    fn transform_intermediate_type_id(
-        intermediate_type_id: IntermediateTypeID,
-        inference_context: &InferenceContext,
-    ) -> Type {
-        match intermediate_type_id {
-            IntermediateTypeID::InferenceID(inference) => {
-                match inference_context.get_inferable_type(inference).unwrap() {
-                    InferableType::Type(ty) => ty,
-                    InferableType::Constraint(constraint) => match constraint {
-                        Constraint::All | Constraint::PrimitiveType => unreachable!(),
-                        Constraint::Number | Constraint::Signed => {
-                            Type::PrimitiveType(PrimitiveType::Int32)
-                        }
-                        Constraint::Float => Type::PrimitiveType(PrimitiveType::Float64),
-                    },
-                }
-            }
-            IntermediateTypeID::Type(ty) => ty,
-        }
-    }
-
-    ///////////////////////////////////////////////////////////////////////////////////////////////
 }
+
+mod build;
 
 #[cfg(test)]
 mod tests;

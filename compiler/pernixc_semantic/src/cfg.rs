@@ -150,9 +150,7 @@ impl<T: InstructionBackend> BasicBlock<T> {
 
     /// Dissolves the [`BasicBlock`] into a vector of instructions (reachable).
     #[must_use]
-    pub fn dissolve(self) -> Vec<Instruction<T>> {
-        self.instructions
-    }
+    pub fn dissolve(self) -> Vec<Instruction<T>> { self.instructions }
 
     fn add_instruction(&mut self, instruction: Instruction<T>) {
         if self.is_terminated() {
@@ -160,6 +158,28 @@ impl<T: InstructionBackend> BasicBlock<T> {
         } else {
             self.instructions.push(instruction);
         }
+    }
+
+    /// Inserts a new instruction at the given index.
+    ///
+    /// The index starts at 0 and is relative to the reachable instructions then the unreachable
+    /// instructions.
+    pub fn insert_basic_instruction(&mut self, index: usize, instruction: T::Basic) -> bool {
+        if index >= self.instructions.len() + self.unreachable_instructions.len() {
+            return false;
+        }
+
+        if index < self.instructions.len() {
+            self.instructions
+                .insert(index, Instruction::Basic(instruction));
+        } else {
+            self.unreachable_instructions.insert(
+                index - self.instructions.len(),
+                Instruction::Basic(instruction),
+            );
+        }
+
+        true
     }
 }
 
@@ -395,7 +415,5 @@ impl<T: InstructionBackend> ControlFlowGraph<T> {
 }
 
 impl<T: InstructionBackend> Default for ControlFlowGraph<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }

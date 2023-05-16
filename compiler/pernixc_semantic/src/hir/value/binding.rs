@@ -168,9 +168,7 @@ impl<T: TypeSystem> ValueInspect<T, Load> for Container<T> {
         }
     }
 
-    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> {
-        Ok(value.span.clone())
-    }
+    fn get_span(&self, value: &Load) -> Result<Span, InvalidValueError> { Ok(value.span.clone()) }
 }
 
 /// Represents a bound
@@ -221,7 +219,7 @@ impl<T: TypeSystem> ValueInspect<T, MemberAccess<T>> for Container<T> {
         self.table
             .get_field(value.field_id)
             .map_err(|_| InvalidValueError)
-            .map(|x| T::from_type(Type::TypedID(x.parent_struct_id().into())))
+            .map(|x| T::from_type(x.ty()))
     }
 
     fn get_span(&self, value: &MemberAccess<T>) -> Result<Span, InvalidValueError> {
@@ -362,9 +360,7 @@ pub struct Cast<T: TypeSystem> {
 }
 
 impl<T: TypeSystem> ValueInspect<T, Cast<T>> for Container<T> {
-    fn get_type(&self, value: &Cast<T>) -> Result<T, InvalidValueError> {
-        Ok(value.target_type)
-    }
+    fn get_type(&self, value: &Cast<T>) -> Result<T, InvalidValueError> { Ok(value.target_type) }
 
     fn get_span(&self, value: &Cast<T>) -> Result<Span, InvalidValueError> {
         Ok(value.span.clone())

@@ -77,7 +77,9 @@ impl AverageNumber {
 }
 ```
 
-In this case, the caller can get the `numbers` vec by calling `let (numbers, _) = average_number.deconstruct()`. If there's no `deconstruct` function, the caller would have to call `average_number.numbers().to_vec()` which is more expensive.
+In this case, the caller can get the `numbers` vec by calling 
+`let (numbers, _) = average_number.deconstruct()`. If there's no `deconstruct` function, the caller 
+would have to call `average_number.numbers().to_vec()` which is more expensive.
 
 ---
 

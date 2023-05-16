@@ -121,9 +121,7 @@ pub struct NumericLiteral {
 }
 
 impl SourceElement for NumericLiteral {
-    fn span(&self) -> Span {
-        self.numeric_literal_token.span.clone()
-    }
+    fn span(&self) -> Span { self.numeric_literal_token.span.clone() }
 }
 
 /// Represents a cast expression syntax tree.
@@ -380,9 +378,7 @@ pub struct Named {
 }
 
 impl SourceElement for Named {
-    fn span(&self) -> Span {
-        self.qualified_identifier.span()
-    }
+    fn span(&self) -> Span { self.qualified_identifier.span() }
 }
 
 /// Represents a list of expressions separated by commas.
@@ -443,9 +439,7 @@ pub struct Parenthesized {
 }
 
 impl SourceElement for Parenthesized {
-    fn span(&self) -> Span {
-        self.left_paren.span().join(&self.right_paren.span).unwrap()
-    }
+    fn span(&self) -> Span { self.left_paren.span().join(&self.right_paren.span).unwrap() }
 }
 
 /// Represents a field initializer syntax tree.
@@ -533,9 +527,7 @@ pub struct MemberAccess {
 }
 
 impl SourceElement for MemberAccess {
-    fn span(&self) -> Span {
-        self.operand.span().join(&self.identifier.span).unwrap()
-    }
+    fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
 }
 
 /// Is an enumeration of all kinds of imperative expressions.
@@ -584,9 +576,7 @@ pub struct LabelSpecifier {
 }
 
 impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Span {
-        self.label.span().join(&self.colon.span).unwrap()
-    }
+    fn span(&self) -> Span { self.label.span().join(&self.colon.span).unwrap() }
 }
 
 /// Represents a block syntax tree.
@@ -608,9 +598,7 @@ pub struct BlockWithoutLabel {
 }
 
 impl SourceElement for BlockWithoutLabel {
-    fn span(&self) -> Span {
-        self.left_brace.span().join(&self.right_brace.span).unwrap()
-    }
+    fn span(&self) -> Span { self.left_brace.span().join(&self.right_brace.span).unwrap() }
 }
 
 /// Represents a block syntax tree with an optional label specifier.

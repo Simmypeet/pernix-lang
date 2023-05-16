@@ -471,10 +471,9 @@ fn function_call_binding_test() -> Result<(), Box<dyn Error>> {
         };
 
         assert_eq!(err.overload_set_id, some_function_overload_set_id);
-        assert_eq!(
-            err.argument_types,
-            [InferableType::Type(PrimitiveType::Int32.into())]
-        );
+        assert_eq!(err.argument_types, [InferableType::Type(
+            PrimitiveType::Int32.into()
+        )]);
     }
     {
         let register_id = binder
@@ -801,7 +800,7 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap()
         };
 
-        assert_eq!(err.expect, Constraint::Signed.into());
+        assert_eq!(err.expected, Constraint::Signed.into());
         assert_eq!(err.found, Type::PrimitiveType(PrimitiveType::Uint32).into());
     }
     {
@@ -846,7 +845,10 @@ fn prefix_binding_test() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap()
         };
 
-        assert_eq!(err.expect, Type::PrimitiveType(PrimitiveType::Bool).into());
+        assert_eq!(
+            err.expected,
+            Type::PrimitiveType(PrimitiveType::Bool).into()
+        );
         assert_eq!(err.found, Constraint::Number.into());
     }
     {

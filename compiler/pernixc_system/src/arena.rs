@@ -59,9 +59,7 @@ impl<T: Data> Symbol<T> {
 
     /// Dissolves the [`Symbol`] into its [`UniqueIdentifier`] and [`Data`] type.
     #[must_use]
-    pub fn dissolve(self) -> (T::ID, T) {
-        (self.id, self.data)
-    }
+    pub fn dissolve(self) -> (T::ID, T) { (self.id, self.data) }
 }
 
 /// Is a container that stores symbols identified by a [`UniqueIdentifier`].
@@ -75,9 +73,7 @@ pub struct Arena<T: Data> {
 }
 
 impl<T: Data> Default for Arena<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl<T: Data> Arena<T> {
@@ -101,13 +97,10 @@ impl<T: Data> Arena<T> {
     pub fn map<U: Data<ID = T::ID>>(self, mut f: impl FnMut(T) -> U) -> Arena<U> {
         let mut arena = Arena::new();
         for (id, symbol) in self.symbols_by_id {
-            arena.symbols_by_id.insert(
+            arena.symbols_by_id.insert(id, Symbol {
                 id,
-                Symbol {
-                    id,
-                    data: f(symbol.data),
-                },
-            );
+                data: f(symbol.data),
+            });
         }
         arena
     }
@@ -145,13 +138,10 @@ impl<T: Data> Arena<T> {
 }
 
 impl<T: Data> IntoIterator for Arena<T> {
+    type IntoIter = std::collections::hash_map::IntoIter<T::ID, Symbol<T>>;
     type Item = (T::ID, Symbol<T>);
 
-    type IntoIter = std::collections::hash_map::IntoIter<T::ID, Symbol<T>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.symbols_by_id.into_iter()
-    }
+    fn into_iter(self) -> Self::IntoIter { self.symbols_by_id.into_iter() }
 }
 
 /// Signifies that the given ID to the container is invalid or wasn't created by that particular

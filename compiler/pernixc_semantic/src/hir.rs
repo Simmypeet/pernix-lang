@@ -51,7 +51,10 @@ pub enum BindError {
     #[error("Invalid `overload_id` given")]
     InvalidIDError(InvalidIDError),
 
-    #[error("Encountered a semantic error during the binding process and the program doesn't fully conform to the language specification")]
+    #[error(
+        "Encountered a semantic error during the binding process and the program doesn't fully \
+         conform to the language specification"
+    )]
     Suboptimal(Box<Suboptimal>),
 
     #[error("Encountered a fatal semantic error that completely halts the binding process")]
@@ -64,12 +67,15 @@ impl Hir {
     /// # Parameters
     /// - `table`: The symbol table to bind the overload from.
     /// - `overload_id`: The overload to bind.
-    /// - `handler`: The error handler to handle any semantic errors that may occur during the binding process.
+    /// - `handler`: The error handler to handle any semantic errors that may occur during the
+    ///   binding process.
     ///
     /// # Errors
     /// - [`BindError::InvalidIDError`]: If the given overload ID is invalid.
-    /// - [`BindError::Suboptimal`]: If the program has a semantic error but still able to be recovered hence producing a suboptimal program.
-    /// - [`BindError::FatalSemanticError`]: If the program has a semantic error that completely halts the binding process.
+    /// - [`BindError::Suboptimal`]: If the program has a semantic error but still able to be
+    ///   recovered hence producing a suboptimal program.
+    /// - [`BindError::FatalSemanticError`]: If the program has a semantic error that completely
+    ///   halts the binding process.
     pub fn bind(
         table: &Arc<Table>,
         overload_id: OverloadID,
@@ -216,15 +222,11 @@ pub trait TypeSystem: Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord +
 }
 
 impl TypeSystem for Type {
-    fn from_type(ty: Type) -> Self {
-        ty
-    }
+    fn from_type(ty: Type) -> Self { ty }
 }
 
 impl TypeSystem for InferableType {
-    fn from_type(ty: Type) -> Self {
-        Self::Type(ty)
-    }
+    fn from_type(ty: Type) -> Self { Self::Type(ty) }
 }
 
 /// Occurs when a value is used in a context where it wasn't created from.
@@ -273,6 +275,10 @@ create_symbol! {
         /// The scope in which the variable was declared.
         #[get_copy = "pub"]
         scope_id: ScopeID,
+
+        /// The order in which the variable was declared (in the scope, starting from 0).
+        #[get_copy = "pub"]
+        declaration_order: usize,
     }
 }
 
@@ -358,10 +364,5 @@ impl ScopeTree {
 }
 
 impl Default for ScopeTree {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
-
-#[cfg(test)]
-mod tests;

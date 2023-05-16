@@ -1,4 +1,5 @@
-//! Contains the definition of [`Stack`], which is used to emulate the scope stack behavior/semantics.
+//! Contains the definition of [`Stack`], which is used to emulate the scope stack
+//! behavior/semantics.
 
 use std::collections::HashMap;
 
@@ -66,25 +67,17 @@ impl Stack {
 
     /// Gets a reference to the topmost [`Local`] scope on the stack.
     #[must_use]
-    pub(super) fn current_local(&self) -> &Local {
-        self.locals.last().unwrap()
-    }
+    pub(super) fn current_local(&self) -> &Local { self.locals.last().unwrap() }
 
     /// Gets a mutable reference to the topmost [`Local`] scope on the stack.
     #[must_use]
-    pub(super) fn current_local_mut(&mut self) -> &mut Local {
-        self.locals.last_mut().unwrap()
-    }
+    pub(super) fn current_local_mut(&mut self) -> &mut Local { self.locals.last_mut().unwrap() }
 
     /// Gets a slice of all the [`Local`]s contanied in the stack.
     #[must_use]
-    pub(super) fn locals(&self) -> &[Local] {
-        &self.locals
-    }
+    pub(super) fn locals(&self) -> &[Local] { &self.locals }
 
-    pub(super) fn push(&mut self, scope_id: ScopeID) {
-        self.locals.push(Local::new(scope_id));
-    }
+    pub(super) fn push(&mut self, scope_id: ScopeID) { self.locals.push(Local::new(scope_id)); }
 
     pub(super) fn pop(&mut self) {
         assert!(self.locals.len() > 1);
