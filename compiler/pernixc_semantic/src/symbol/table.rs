@@ -34,9 +34,11 @@ use super::{
         SymbolRedifinition, TypeExpected,
     },
     ty::{PrimitiveType, Type, TypeBinding},
-    Accessibility, Enum, EnumID, EnumVariant, EnumVariantID, Field, FieldID, GlobalID, Module,
-    ModuleID, Overload, OverloadID, OverloadSet, OverloadSetID, OverloadSyntaxTree, Parameter,
-    ParameterID, ScopedID, Struct, StructID, TypeAlias, TypeAliasID, TypeAliasParentID, ID,
+    Accessibility, Enum, EnumID, EnumSymbol, EnumVariant, EnumVariantID, EnumVariantSymbol, Field,
+    FieldID, FieldSymbol, GlobalID, Module, ModuleID, ModuleSymbol, Overload, OverloadID,
+    OverloadSet, OverloadSetID, OverloadSetSymbol, OverloadSymbol, OverloadSyntaxTree, Parameter,
+    ParameterID, ParameterSymbol, ScopedID, Struct, StructID, StructSymbol, TypeAlias, TypeAliasID,
+    TypeAliasParentID, TypeAliasSymbol, ID,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -59,6 +61,41 @@ pub struct Table {
     parameters: Arena<Parameter>,
 
     root_module_ids_by_name: HashMap<String, ModuleID>,
+}
+
+impl Table {
+    /// Returns an iterator over all [`ModuleSymbol`] in the table.
+    pub fn modules(&self) -> impl Iterator<Item = &ModuleSymbol> { self.modules.values() }
+
+    /// Returns an iterator over all [`StructSymbol`] in the table.
+    pub fn structs(&self) -> impl Iterator<Item = &StructSymbol> { self.structs.values() }
+
+    /// Returns an iterator over all [`EnumSymbol`] in the table.
+    pub fn enums(&self) -> impl Iterator<Item = &EnumSymbol> { self.enums.values() }
+
+    /// Returns an iterator over all [`EnumVariantSymbol`] in the table.
+    pub fn enum_variants(&self) -> impl Iterator<Item = &EnumVariantSymbol> {
+        self.enum_variants.values()
+    }
+
+    /// Returns an iterator over all [`TypeAliasSymbol`] in the table.
+    pub fn type_aliases(&self) -> impl Iterator<Item = &TypeAliasSymbol> {
+        self.type_aliases.values()
+    }
+
+    /// Returns an iterator over all [`OverloadSetSymbol`] in the table.
+    pub fn overload_sets(&self) -> impl Iterator<Item = &OverloadSetSymbol> {
+        self.overload_sets.values()
+    }
+
+    /// Returns an iterator over all [`OverloadSymbol`] in the table.
+    pub fn overloads(&self) -> impl Iterator<Item = &OverloadSymbol> { self.overloads.values() }
+
+    /// Returns an iterator over all [`FeildSymbol`] in the table.
+    pub fn fields(&self) -> impl Iterator<Item = &FieldSymbol> { self.fields.values() }
+
+    /// Returns an iterator over all [`ParameterSymbol`] in the table.
+    pub fn parameters(&self) -> impl Iterator<Item = &ParameterSymbol> { self.parameters.values() }
 }
 
 /// Is an error that can occur when resolving a symbol in the [`Table`].

@@ -1,6 +1,6 @@
 //! Contains the definition of the high-level intermediate representation (HIR) of the compiler.
 
-use std::{fmt::Debug, hash::Hash, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
 
 use derive_more::{Deref, From};
 use enum_as_inner::EnumAsInner;
@@ -59,6 +59,72 @@ pub enum BindError {
 
     #[error("Encountered a fatal semantic error that completely halts the binding process")]
     FataSemanticError,
+}
+
+/// Represents a result returned from the [`Target::bind()`] function where the binding process
+/// encounters a semantic error and the IR might not fully represent the program.
+#[derive(Debug, Getters)]
+pub struct FaultTarget {
+    /// The symbol table that was used in the binding process.
+    #[get = "pub"]
+    table: Arc<Table>,
+
+    /// Maps the overload ID to its binding result.
+    #[get = "pub"]
+    results_by_overload_id: HashMap<OverloadID, Result<Hir, BindError>>,
+}
+
+/// Represents a collection of [`Hir`]s of all the overloads defined in the program.
+///
+/// This is the final output of intermediate representation (IR) of the compiler and will be used
+/// in the code generation phase.
+#[derive(Debug, Getters)]
+pub struct Target {
+    /// The symbol table that was used in the binding process.
+    #[get = "pub"]
+    table: Arc<Table>,
+
+    /// Maps the overload ID to the [`Hir`] of the overloads.
+    #[get = "pub"]
+    hirs_by_overload_id: HashMap<OverloadID, Hir>,
+}
+
+impl Target {
+    /// Binds all the overloads in the given table into a [`Target`].
+    ///
+    /// # Errors
+    /// Returns [`FaultTarget`] if the binding process encounters any semantic errors.
+    pub fn bind(table: Arc<Table>, handler: &impl ErrorHandler) -> Result<Self, FaultTarget> {
+        let results = std::thread::scope(|scope| {
+            let mut results = Vec::new();
+
+            // bind each overload
+            for overload_id in table.overloads().map(pernixc_system::arena::Symbol::id) {
+                let table = table.clone();
+
+                results.push(
+                    scope.spawn(move || (overload_id, Hir::bind(&table, overload_id, handler))),
+                );
+            }
+
+            results
+                .into_iter()
+                .map(|x| x.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+
+        if results.iter().any(|x| x.1.is_err()) {
+            Err(FaultTarget {
+                table,
+                results_by_overload_id: results.into_iter().collect(),
+            })
+        } else {
+            Ok(Self {
+                table,
+                hirs_by_overload_id: results.into_iter().map(|(k, v)| (k, v.unwrap())).collect(),
+            })
+        }
+    }
 }
 
 impl Hir {
