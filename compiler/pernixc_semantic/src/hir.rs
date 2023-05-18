@@ -24,7 +24,7 @@ use crate::{
     infer::{InferableType, InferenceContext},
     symbol::{
         error::Error as SymbolError, table::Table, ty::Type, Global, OverloadID, OverloadSetID,
-        ScopedID,
+        OverloadSymbol, ScopedID,
     },
 };
 
@@ -124,6 +124,12 @@ impl Target {
                 hirs_by_overload_id: results.into_iter().map(|(k, v)| (k, v.unwrap())).collect(),
             })
         }
+    }
+
+    /// Dissolves the [`Target`] into its constituent parts.
+    #[must_use]
+    pub fn dissolve(self) -> (Arc<Table>, HashMap<OverloadID, Hir>) {
+        (self.table, self.hirs_by_overload_id)
     }
 }
 
@@ -239,6 +245,10 @@ impl<T: TypeSystem> Container<T> {
             scope_tree: ScopeTree::new(),
         })
     }
+
+    /// Returns a reference to the [`OverloadSymbol`] that this container is for.
+    #[must_use]
+    pub fn overload(&self) -> &OverloadSymbol { self.table.get_overload(self.overload_id).unwrap() }
 }
 
 /// Is a trait implemented by [`Container`] that allows to inspect various properties of the

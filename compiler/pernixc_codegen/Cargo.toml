@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_driver"
+name = "pernixc_codegen"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,6 +12,8 @@ pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_semantic = { path = "../pernixc_semantic" }
 pernixc_print = { path = "../pernixc_print" }
-clap = { version = "4.2.7", features = ["derive"] }
+llvm-sys = "150"
+enum-as-inner = { workspace = true }
+thiserror = { workspace = true }
 getset = { workspace = true }
-
+derive_more = { workspace = true }

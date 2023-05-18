@@ -1,0 +1,22 @@
+public struct Vector2 {
+    public let x: float32;
+    public let y: float32;
+}
+
+public function max(a: float32, b: float32): float32 {
+    let mutable result = a;
+    if (b > a) {
+        result = b;
+    }
+    return result;
+}
+
+
+public function example(vector: Vector2): float32 {
+    return vector.x + vector.y; 
+}
+
+public function test(a: void, b: int32): int32 {
+    return b;
+}
+

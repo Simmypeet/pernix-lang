@@ -44,6 +44,12 @@ pub enum Type {
     TypedID(TypedID),
 }
 
+impl Type {
+    /// Returns whether the type is [`PrimitiveType::Void`].
+    #[must_use]
+    pub fn is_void(&self) -> bool { matches!(self, Self::PrimitiveType(PrimitiveType::Void)) }
+}
+
 /// Represents a type used to represent a type binding of an l-value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeBinding {
