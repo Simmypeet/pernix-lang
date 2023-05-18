@@ -335,15 +335,13 @@ pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 /// Syntax Synopsis:
 /// ``` text
 /// FunctionSignature:
-///     AccessModifier 'function' Identifier '(' ParameterList? ')' TypeAnnotation
+///     AccessModifier Identifier '(' ParameterList? ')' TypeAnnotation
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct FunctionSignature {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
-    #[get = "pub"]
-    pub(super) function_keyword: Keyword,
     #[get = "pub"]
     pub(super) identifier: Identifier,
     #[get = "pub"]
@@ -363,7 +361,6 @@ impl FunctionSignature {
         self,
     ) -> (
         AccessModifier,
-        Keyword,
         Identifier,
         Punctuation,
         Option<ParameterList>,
@@ -372,7 +369,6 @@ impl FunctionSignature {
     ) {
         (
             self.access_modifier,
-            self.function_keyword,
             self.identifier,
             self.left_paren,
             self.parameters,
@@ -564,13 +560,10 @@ impl<'a> Parser<'a> {
                 )
             }
             // Handles function
-            Some(Token::Keyword(function_keyword))
-                if function_keyword.keyword == KeywordKind::Function =>
-            {
-                // eat function keyword
+            Some(Token::Identifier(identifier)) => {
+                // eat identifier keyword
                 self.next_token();
 
-                let identifier = self.expect_identifier(handler)?.clone();
                 let left_paren = self.expect_punctuation('(', handler)?.clone();
 
                 let (parameters, right_paren) = self.parse_enclosed_list(
@@ -607,8 +600,7 @@ impl<'a> Parser<'a> {
                     Function {
                         signature: FunctionSignature {
                             access_modifier,
-                            function_keyword: function_keyword.clone(),
-                            identifier,
+                            identifier: identifier.clone(),
                             left_paren,
                             parameters,
                             right_paren,

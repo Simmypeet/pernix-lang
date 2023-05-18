@@ -24,8 +24,6 @@ use crate::error::{
 /// `Function` variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter)]
 pub enum KeywordKind {
-    /// `function` keyword.
-    Function,
     /// `public` keyword.
     Public,
     /// `struct` keyword.
@@ -146,7 +144,6 @@ impl KeywordKind {
             Self::Struct => "struct",
             Self::Express => "express",
             Self::Loop => "loop",
-            Self::Function => "function",
             Self::Public => "public",
             Self::Interface => "interface",
             Self::Implement => "implement",
