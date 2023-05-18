@@ -5,7 +5,7 @@ use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_lexical::token::{KeywordKind, Token};
 use pernixc_print::LogSeverity;
-use pernixc_source::SourceElement;
+use pernixc_source::{SourceElement, Span};
 use thiserror::Error;
 
 /// An identifier is expected but found an another invalid token.
@@ -262,8 +262,30 @@ impl KeywordExpected {
     }
 }
 
-/// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
+/// A generic arugment/parameter list cannot be empty.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct GenericArgumentParameterListCannotBeEmpty {
+    /// The span of the generic argument/parameter.
+    #[get = "pub"]
+    pub(super) span: Span,
+}
 
+impl GenericArgumentParameterListCannotBeEmpty {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "a generic argument/parameter list cannot be empty",
+        );
+        pernixc_print::print_source_code(
+            &self.span,
+            Some("generic argument/parameter list cannot be empty"),
+        );
+        println!();
+    }
+}
+
+/// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered a syntactic error while parsing the source code.")]
 #[allow(missing_docs)]
@@ -276,6 +298,7 @@ pub enum Error {
     PunctuationExpected(PunctuationExpected),
     KeywordExpected(KeywordExpected),
     MemberExpected(MemberExpected),
+    GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty),
 }
 
 impl Error {
@@ -290,6 +313,7 @@ impl Error {
             Self::PunctuationExpected(e) => e.print(),
             Self::KeywordExpected(e) => e.print(),
             Self::MemberExpected(e) => e.print(),
+            Self::GenericArgumentParameterListCannotBeEmpty(e) => e.print(),
         }
     }
 }

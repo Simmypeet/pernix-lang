@@ -102,6 +102,8 @@ pub enum KeywordKind {
     As,
     /// `type` keyword.
     Type,
+    /// `static` keyword.
+    Static,
 }
 
 impl ToString for KeywordKind {
@@ -178,6 +180,7 @@ impl KeywordKind {
             Self::Internal => "internal",
             Self::Module => "module",
             Self::Type => "type",
+            Self::Static => "static",
         }
     }
 

@@ -17,7 +17,10 @@ use pernixc_system::error_handler::ErrorHandler;
 
 use self::item::Item;
 use crate::{
-    error::{Error, PunctuationExpected, TypeSpecifierExpected},
+    error::{
+        Error, GenericArgumentParameterListCannotBeEmpty, PunctuationExpected,
+        TypeSpecifierExpected,
+    },
     parser::Parser,
 };
 
@@ -96,12 +99,155 @@ impl SourceElement for ScopeSeparator {
     fn span(&self) -> Span { self.0.span().join(&self.1.span).unwrap() }
 }
 
+/// Represents a syntax tree node of a lifetime argument identifier.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// LifetimeArgumentIdentifier:
+///     Identifier
+///     | 'static'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+pub enum LifetimeArgumentIdentifier {
+    Identifier(Identifier),
+    StaticKeyword(Keyword),
+}
+
+impl SourceElement for LifetimeArgumentIdentifier {
+    fn span(&self) -> Span {
+        match self {
+            Self::Identifier(ident) => ident.span(),
+            Self::StaticKeyword(keyword) => keyword.span(),
+        }
+    }
+}
+
+/// Represents a syntax tree node of a lifetime argument.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// LifetimeArgument:
+///     '/'' LifetimeArgumentIdentifier
+///     ;
+/// ``
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct LifetimeArgument {
+    #[get = "pub"]
+    apostrophe: Punctuation,
+    #[get = "pub"]
+    lifetime_identifier: LifetimeArgumentIdentifier,
+}
+
+impl SourceElement for LifetimeArgument {
+    fn span(&self) -> Span {
+        self.apostrophe
+            .span()
+            .join(&self.lifetime_identifier.span())
+            .unwrap()
+    }
+}
+
+/// Represents a syntax tree node of a generic argument.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// GenericArgument:
+///     TypeSpecifier
+///     | LifetimeArgument
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+pub enum GenericArgument {
+    TypeSpecifier(Box<TypeSpecifier>),
+    LifetimeArgument(LifetimeArgument),
+}
+
+impl SourceElement for GenericArgument {
+    fn span(&self) -> Span {
+        match self {
+            Self::TypeSpecifier(type_specifier) => type_specifier.span(),
+            Self::LifetimeArgument(lifetime_argument) => lifetime_argument.span(),
+        }
+    }
+}
+
+/// Represents a syntax tree node of a list of generic arguments separated by commas.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// GenericArgumentList:
+///     GenericArgument (',' GenericArgument)*
+///     ;
+/// ```
+pub type GenericArgumentList = ConnectedList<GenericArgument, Punctuation>;
+
+/// Represents a syntax tree node of a list of generic arguments.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// GenericArguments:
+///     ':'? '<' GenericArgumentList '>'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct GenericArguments {
+    #[get = "pub"]
+    colon: Option<Punctuation>,
+    #[get = "pub"]
+    left_angle: Punctuation,
+    #[get = "pub"]
+    argument_list: GenericArgumentList,
+    #[get = "pub"]
+    right_angle: Punctuation,
+}
+
+impl SourceElement for GenericArguments {
+    fn span(&self) -> Span {
+        let start = self
+            .colon
+            .as_ref()
+            .map_or_else(|| self.left_angle.span(), |colon| colon.span());
+
+        start.join(&self.right_angle.span()).unwrap()
+    }
+}
+
+/// Represents a syntax tree node of an identifier with optional generic arguments.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// GenericIdentifier:
+///     Identifier GenericArguments?
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct GenericIdentifier {
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    generic_arguments: Option<GenericArguments>,
+}
+
+impl SourceElement for GenericIdentifier {
+    fn span(&self) -> Span {
+        match self.generic_arguments {
+            Some(generic_arguments) => self
+                .identifier
+                .span()
+                .join(&generic_arguments.span())
+                .unwrap(),
+            None => self.identifier.span(),
+        }
+    }
+}
+
 /// Represents a syntax tree node of identifiers separated by scope separators.
 ///
 /// Syntax Synopsis:
 /// ``` txt
 /// QualifiedIdentifier:
-///     '::'? Identifier ('::' Identifier)*
+///     '::'? GenericIdentifier ('::' GenericIdentifier)*
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
@@ -109,13 +255,13 @@ pub struct QualifiedIdentifier {
     #[get = "pub"]
     leading_separator: Option<ScopeSeparator>,
     #[get = "pub"]
-    identifiers: ConnectedList<Identifier, ScopeSeparator>,
+    identifiers: ConnectedList<GenericIdentifier, ScopeSeparator>,
 }
 
 impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Span {
         let start = self.leading_separator.as_ref().map_or_else(
-            || self.identifiers.first.span.clone(),
+            || self.identifiers.first.span().clone(),
             pernixc_source::SourceElement::span,
         );
 
@@ -143,7 +289,6 @@ impl SourceElement for QualifiedIdentifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-
 pub enum PrimitiveTypeSpecifier {
     Bool(Keyword),
     Void(Keyword),
@@ -190,7 +335,6 @@ impl SourceElement for PrimitiveTypeSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-
 pub enum TypeSpecifier {
     PrimitiveTypeSpecifier(PrimitiveTypeSpecifier),
     QualifiedIdentifier(QualifiedIdentifier),
@@ -214,7 +358,6 @@ impl SourceElement for TypeSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-
 pub struct Label {
     #[get = "pub"]
     pub(crate) single_quote: Punctuation,
@@ -262,6 +405,7 @@ impl<'a> Parser<'a> {
     pub fn parse_qualified_identifier(
         &mut self,
         handler: &impl ErrorHandler<Error>,
+        use_turbofish: bool,
     ) -> Option<QualifiedIdentifier> {
         // found a leading separator
         let leading_separator = match self.peek_significant_token().cloned() {
@@ -340,6 +484,73 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses a [`GenericArguments`]
+    pub fn parse_generic_arguments(
+        &mut self,
+        handler: &impl ErrorHandler<Error>,
+        use_turbofish: bool,
+    ) -> Option<GenericArguments> {
+        // colon, if use turbofish syntax
+        let colon = if use_turbofish {
+            Some(self.expect_punctuation(':', handler).cloned()?)
+        } else {
+            None
+        };
+
+        // left angle bracket
+        let left_angle = self.expect_punctuation('<', handler).cloned()?;
+        let (argument_list, right_angle) = self.parse_enclosed_list(
+            '>',
+            ',',
+            |this| match self.peek_significant_token() {
+                Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                    // eat the apostrophe
+                    this.next_token();
+
+                    let lifetime_identifier = match this.peek_significant_token() {
+                        Some(Token::Keyword(static_keyword))
+                            if static_keyword.keyword == KeywordKind::Static =>
+                        {
+                            // eat the static keyword
+                            this.next_token();
+
+                            LifetimeArgumentIdentifier::StaticKeyword(static_keyword.clone())
+                        }
+                        _ => {
+                            let identifier = this.expect_identifier(handler)?;
+                            LifetimeArgumentIdentifier::Identifier(identifier.clone())
+                        }
+                    };
+
+                    Some(GenericArgument::LifetimeArgument(LifetimeArgument {
+                        apostrophe: apostrophe.clone(),
+                        lifetime_identifier,
+                    }))
+                }
+                _ => Some(GenericArgument::TypeSpecifier(Box::new(
+                    this.parse_type_specifier(handler)?,
+                ))),
+            },
+            handler,
+        )?;
+
+        let Some(argument_list) = argument_list else {
+            handler.recieve(Error::GenericArgumentParameterListCannotBeEmpty(
+                GenericArgumentParameterListCannotBeEmpty {
+                    span: left_angle.span.join(&right_angle.span).unwrap(),
+                },
+            ));
+            return None;
+        };
+
+        Some(GenericArguments {
+            colon,
+            left_angle,
+            argument_list,
+            right_angle,
+        })
+    }
+
     /// Parses a [`TypeSpecifier`]
     pub fn parse_type_specifier(
         &mut self,
@@ -347,11 +558,13 @@ impl<'a> Parser<'a> {
     ) -> Option<TypeSpecifier> {
         if let Some(token) = self.peek_significant_token() {
             match token {
-                Token::Punctuation(punc) if punc.punctuation == ':' => Some(
-                    TypeSpecifier::QualifiedIdentifier(self.parse_qualified_identifier(handler)?),
-                ),
+                Token::Punctuation(punc) if punc.punctuation == ':' => {
+                    Some(TypeSpecifier::QualifiedIdentifier(
+                        self.parse_qualified_identifier(handler, false)?,
+                    ))
+                }
                 Token::Identifier(..) => Some(TypeSpecifier::QualifiedIdentifier(
-                    self.parse_qualified_identifier(handler)?,
+                    self.parse_qualified_identifier(handler, false)?,
                 )),
                 Token::Keyword(keyword) => {
                     // eat the token right away

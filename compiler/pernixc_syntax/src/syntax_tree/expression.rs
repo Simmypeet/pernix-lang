@@ -1230,7 +1230,7 @@ impl<'a> Parser<'a> {
     }
 
     fn handle_identifier(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Expression> {
-        let qualified_identifier = self.parse_qualified_identifier(handler)?;
+        let qualified_identifier = self.parse_qualified_identifier(handler, true)?;
 
         match self.peek_significant_token() {
             // Function call
