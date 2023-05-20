@@ -13,7 +13,7 @@ use pernixc_lexical::{
     token_stream::TokenStream,
 };
 use pernixc_source::{SourceElement, Span};
-use pernixc_system::error_handler::ErrorHandler;
+use pernixc_system::error_handler::{Dummy, ErrorHandler};
 
 use self::item::Item;
 use crate::{
@@ -37,18 +37,142 @@ pub mod statement;
 pub struct ConnectedList<Element, Separator> {
     /// The first element of the list.
     #[get = "pub"]
-    pub(crate) first: Element,
+    first: Element,
 
     /// The rest of the elements of the list.
     ///
     /// Each element of the list is a tuple containing the separator and the element. The separator
     /// is the token/syntax tree node that separates the current element from the prior one.
     #[get = "pub"]
-    pub(crate) rest: Vec<(Separator, Element)>,
+    rest: Vec<(Separator, Element)>,
 
     /// The trailing separator of the list.
     #[get = "pub"]
-    pub(crate) trailing_separator: Option<Separator>,
+    trailing_separator: Option<Separator>,
+}
+
+impl<'a> Parser<'a> {
+    /// Parses a list of items that are separated by a particular separator.
+    ///
+    /// This function is useful for parsing patterns of elements that are separated by a single
+    /// character, such as comma-separated lists of expressions; where the list is enclosed in
+    /// parentheses, brackets, or braces.
+    fn parse_enclosed_list<T: std::fmt::Debug>(
+        &mut self,
+        delimiter: char,
+        separator: char,
+        mut parse_item: impl FnMut(&mut Self) -> Option<T>,
+        handler: &impl ErrorHandler<Error>,
+    ) -> Option<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
+        let mut first = None;
+        let mut rest = Vec::new();
+        let mut trailing_separator = None;
+
+        // check for empty list
+        match self.peek_significant_token() {
+            Some(Token::Punctuation(punc)) if punc.punctuation == delimiter => {
+                self.next_token();
+                return Some((None, punc));
+            }
+            None => handler.recieve(
+                PunctuationExpected {
+                    expected: delimiter,
+                    found: None,
+                }
+                .into(),
+            ),
+            _ => (),
+        };
+
+        if let Some(value) = parse_item(self) {
+            first = Some(value);
+        } else {
+            let token = self.forward_until(|token| match token {
+                Token::Punctuation(punc) => {
+                    punc.punctuation == delimiter || punc.punctuation == separator
+                }
+                _ => false,
+            });
+
+            // if found delimiter, return empty list
+            if let Some(Token::Punctuation(token)) = token {
+                if token.punctuation == delimiter {
+                    self.next_token();
+                    return Some((None, token));
+                }
+            }
+        }
+
+        let delimiter = loop {
+            match self.peek_significant_token() {
+                Some(Token::Punctuation(separator_token))
+                    if separator_token.punctuation == separator =>
+                {
+                    // eat the separator
+                    self.next_token();
+
+                    match self.peek_significant_token() {
+                        Some(Token::Punctuation(delimiter_token))
+                            if delimiter_token.punctuation == delimiter =>
+                        {
+                            // eat the delimiter
+                            self.next_token();
+
+                            trailing_separator = Some(separator_token);
+                            break delimiter_token;
+                        }
+                        _ => (),
+                    }
+
+                    parse_item(self).map_or_else(
+                        || {
+                            self.forward_until(|token| {
+                                matches!(
+                                    token,
+                                    Token::Punctuation(punc) if punc.punctuation == delimiter ||
+                                        punc.punctuation == separator
+                                )
+                            });
+                        },
+                        |value| {
+                            if first.is_none() {
+                                first = Some(value);
+                            } else {
+                                rest.push((separator_token.clone(), value));
+                            }
+                        },
+                    );
+                }
+                Some(Token::Punctuation(delimiter_token))
+                    if delimiter_token.punctuation == delimiter =>
+                {
+                    // eat the delimiter
+                    self.next_token();
+
+                    break delimiter_token;
+                }
+                found => {
+                    handler.recieve(
+                        PunctuationExpected {
+                            expected: delimiter,
+                            found,
+                        }
+                        .into(),
+                    );
+                    return None;
+                }
+            }
+        };
+
+        Some((
+            first.map(|first| ConnectedList {
+                first,
+                rest,
+                trailing_separator,
+            }),
+            delimiter,
+        ))
+    }
 }
 
 impl<Element: SourceElement, Separator: SourceElement> SourceElement
@@ -93,7 +217,7 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
 /// This syntax tree is used to represent the scope separator `::` in the qualified identifier
 /// syntax
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ScopeSeparator(pub(crate) Punctuation, pub(crate) Punctuation);
+pub struct ScopeSeparator(Punctuation, Punctuation);
 
 impl SourceElement for ScopeSeparator {
     fn span(&self) -> Span { self.0.span().join(&self.1.span).unwrap() }
@@ -136,14 +260,14 @@ pub struct LifetimeArgument {
     #[get = "pub"]
     apostrophe: Punctuation,
     #[get = "pub"]
-    lifetime_identifier: LifetimeArgumentIdentifier,
+    lifetime_argument_identifier: LifetimeArgumentIdentifier,
 }
 
 impl SourceElement for LifetimeArgument {
     fn span(&self) -> Span {
         self.apostrophe
             .span()
-            .join(&self.lifetime_identifier.span())
+            .join(&self.lifetime_argument_identifier.span())
             .unwrap()
     }
 }
@@ -204,10 +328,10 @@ pub struct GenericArguments {
 
 impl SourceElement for GenericArguments {
     fn span(&self) -> Span {
-        let start = self
-            .colon
-            .as_ref()
-            .map_or_else(|| self.left_angle.span(), |colon| colon.span());
+        let start = self.colon.as_ref().map_or_else(
+            || self.left_angle.span(),
+            pernixc_source::SourceElement::span,
+        );
 
         start.join(&self.right_angle.span()).unwrap()
     }
@@ -231,14 +355,15 @@ pub struct GenericIdentifier {
 
 impl SourceElement for GenericIdentifier {
     fn span(&self) -> Span {
-        match self.generic_arguments {
-            Some(generic_arguments) => self
-                .identifier
-                .span()
-                .join(&generic_arguments.span())
-                .unwrap(),
-            None => self.identifier.span(),
-        }
+        self.generic_arguments.as_ref().map_or_else(
+            || self.identifier.span(),
+            |generic_arguments| {
+                self.identifier
+                    .span()
+                    .join(&generic_arguments.span())
+                    .unwrap()
+            },
+        )
     }
 }
 
@@ -261,7 +386,7 @@ pub struct QualifiedIdentifier {
 impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Span {
         let start = self.leading_separator.as_ref().map_or_else(
-            || self.identifiers.first.span().clone(),
+            || self.identifiers.first.span(),
             pernixc_source::SourceElement::span,
         );
 
@@ -323,6 +448,58 @@ impl SourceElement for PrimitiveTypeSpecifier {
     }
 }
 
+/// Represents a syntax tree node of reference qualifier.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ReferenceQualifier:
+///     'mutable'
+///     | 'restrict'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+pub enum ReferenceQualifier {
+    Mutable(Keyword),
+    Restrict(Keyword),
+}
+
+impl SourceElement for ReferenceQualifier {
+    fn span(&self) -> Span {
+        match self {
+            Self::Mutable(token) | Self::Restrict(token) => token.span.clone(),
+        }
+    }
+}
+
+/// Represents a syntax tree node of reference type specifier.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ReferenceTypeSpecifier:
+///     '&' LifetimeArgument? ReferenceQualifier? TypeSpecifier
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct ReferenceTypeSpecifier {
+    #[get = "pub"]
+    ampersand: Punctuation,
+    #[get = "pub"]
+    lifetime_argument: Option<LifetimeArgument>,
+    #[get = "pub"]
+    reference_qualifier: Option<ReferenceQualifier>,
+    #[get = "pub"]
+    operand_type: Box<TypeSpecifier>,
+}
+
+impl SourceElement for ReferenceTypeSpecifier {
+    fn span(&self) -> Span {
+        self.ampersand
+            .span()
+            .join(&self.operand_type.span())
+            .unwrap()
+    }
+}
+
 /// Represents a syntax tree node of type specifier.
 ///
 /// The type specifier is used to annotate the type of various symbols in the syntax tree.
@@ -332,12 +509,14 @@ impl SourceElement for PrimitiveTypeSpecifier {
 /// TypeSpecifier:
 ///     PrimitiveTypeIdentifier
 ///     | QualifiedIdentifier
+///     | ReferenceTypeSpecifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 pub enum TypeSpecifier {
     PrimitiveTypeSpecifier(PrimitiveTypeSpecifier),
     QualifiedIdentifier(QualifiedIdentifier),
+    ReferenceTypeSpecifier(ReferenceTypeSpecifier),
 }
 
 impl SourceElement for TypeSpecifier {
@@ -345,6 +524,7 @@ impl SourceElement for TypeSpecifier {
         match self {
             Self::PrimitiveTypeSpecifier(primitive) => primitive.span(),
             Self::QualifiedIdentifier(qualified) => qualified.span(),
+            Self::ReferenceTypeSpecifier(reference) => reference.span(),
         }
     }
 }
@@ -360,18 +540,13 @@ impl SourceElement for TypeSpecifier {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Label {
     #[get = "pub"]
-    pub(crate) single_quote: Punctuation,
+    apostrophe: Punctuation,
     #[get = "pub"]
-    pub(crate) identifier: Identifier,
+    identifier: Identifier,
 }
 
 impl SourceElement for Label {
-    fn span(&self) -> Span {
-        self.single_quote
-            .span()
-            .join(&self.identifier.span)
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.apostrophe.span().join(&self.identifier.span).unwrap() }
 }
 
 /// Represents a type annotation used to annotate the type of a symbol.
@@ -385,9 +560,9 @@ impl SourceElement for Label {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct TypeAnnotation {
     #[get = "pub"]
-    pub(crate) colon: Punctuation,
+    colon: Punctuation,
     #[get = "pub"]
-    pub(crate) type_specifier: TypeSpecifier,
+    type_specifier: TypeSpecifier,
 }
 
 impl TypeAnnotation {
@@ -400,7 +575,89 @@ impl SourceElement for TypeAnnotation {
     fn span(&self) -> Span { self.colon.span().join(&self.type_specifier.span()).unwrap() }
 }
 
+/// Represents a moulde path in used in `module` declarations and `using` statements.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ModulePath:
+///     Identifier ('::' Identifier)*
+///     ;
+/// ```
+pub type ModulePath = ConnectedList<Identifier, ScopeSeparator>;
+
 impl<'a> Parser<'a> {
+    /// Parses a [`ModulePath`]
+    pub fn parse_module_path(&mut self, handler: &impl ErrorHandler<Error>) -> Option<ModulePath> {
+        let first = self.expect_identifier(handler)?;
+        let mut rest = Vec::new();
+
+        while let Some(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy))
+        {
+            let identifier = self.expect_identifier(handler)?;
+            rest.push((scope_separator, identifier));
+        }
+
+        Some(ConnectedList {
+            first,
+            rest,
+            trailing_separator: None,
+        })
+    }
+
+    /// Parses a [`GenericIdentifier`]
+    pub fn parse_generic_identifier(
+        &mut self,
+        use_turbofish: bool,
+        handler: &impl ErrorHandler<Error>,
+    ) -> Option<GenericIdentifier> {
+        let identifier = self.expect_identifier(handler)?;
+
+        // parse the generic argument list (if any)
+        let generic_arguments = if use_turbofish {
+            let result = self.try_parse(|this| {
+                let colon = this.expect_punctuation(':', &Dummy)?;
+                match this.next_token() {
+                    Some(Token::Punctuation(punc)) if punc.punctuation == '<' => {
+                        Some((colon, punc))
+                    }
+                    _ => None,
+                }
+            });
+
+            match result {
+                Some((colon, left_angle)) => {
+                    Some(self.parse_generic_arguments(Some(colon), left_angle, handler)?)
+                }
+                None => None,
+            }
+        } else {
+            let left_angle = self.try_parse(|this| this.expect_punctuation('<', &Dummy));
+
+            match left_angle {
+                Some(left_angle) => Some(self.parse_generic_arguments(None, left_angle, handler)?),
+                None => None,
+            }
+        };
+        Some(GenericIdentifier {
+            identifier,
+            generic_arguments,
+        })
+    }
+
+    /// Parses a [`ScopeSeparator`]
+    pub fn parse_scope_separator(
+        &mut self,
+        handler: &impl ErrorHandler<Error>,
+    ) -> Option<ScopeSeparator> {
+        let first_colon = self.expect_punctuation(':', handler)?;
+        match self.next_token() {
+            Some(Token::Punctuation(second_colon)) if second_colon.punctuation == ':' => {
+                Some(ScopeSeparator(first_colon, second_colon))
+            }
+            _ => None,
+        }
+    }
+
     /// Parses a [`QualifiedIdentifier`]
     pub fn parse_qualified_identifier(
         &mut self,
@@ -408,70 +665,20 @@ impl<'a> Parser<'a> {
         use_turbofish: bool,
     ) -> Option<QualifiedIdentifier> {
         // found a leading separator
-        let leading_separator = match self.peek_significant_token().cloned() {
-            Some(Token::Punctuation(first_colon)) if first_colon.punctuation == ':' => {
-                // eat the first colon
-                self.next_significant_token();
-
-                // expect the second colon
-                let second_colon = match self.next_token().cloned() {
-                    Some(Token::Punctuation(second_colon)) if second_colon.punctuation == ':' => {
-                        second_colon
-                    }
-                    found => {
-                        handler.recieve(
-                            PunctuationExpected {
-                                expected: ':',
-                                found,
-                            }
-                            .into(),
-                        );
-                        return None;
-                    }
-                };
-
-                Some(ScopeSeparator(first_colon, second_colon))
-            }
-            _ => None,
-        };
+        let leading_separator = self.try_parse(|this| this.parse_scope_separator(&Dummy));
 
         // expect the first identifier
-        let first_identifier = self.expect_identifier(handler)?.clone();
+        let first_identifier = self.parse_generic_identifier(use_turbofish, handler)?;
 
         let mut rest = Vec::new();
-        let mut cursor = self.cursor;
 
         // check if the next token is a scope separator '::'
-        while let Some((first_colon, second_colon)) = {
-            let first_colon = match self.next_significant_token() {
-                Some(Token::Punctuation(first_colon)) if first_colon.punctuation == ':' => {
-                    Some(first_colon)
-                }
-                _ => None,
-            };
-            let second_colon = match self.next_token() {
-                Some(Token::Punctuation(second_colon)) if second_colon.punctuation == ':' => {
-                    Some(second_colon)
-                }
-                _ => None,
-            };
-
-            // check if two consecutive colons are found
-            if let Some(x) = first_colon.zip(second_colon) {
-                Some(x)
-            } else {
-                self.cursor = cursor;
-                None
-            }
-        } {
-            let scope_separator = ScopeSeparator(first_colon.clone(), second_colon.clone());
-
+        while let Some(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy))
+        {
             // must be followed by an identifier
-            let identifier = self.expect_identifier(handler)?.clone();
+            let identifier = self.parse_generic_identifier(use_turbofish, handler)?;
 
             rest.push((scope_separator, identifier));
-
-            cursor = self.cursor;
         }
 
         Some(QualifiedIdentifier {
@@ -487,44 +694,22 @@ impl<'a> Parser<'a> {
     /// Parses a [`GenericArguments`]
     pub fn parse_generic_arguments(
         &mut self,
+        colon: Option<Punctuation>,
+        left_angle: Punctuation,
         handler: &impl ErrorHandler<Error>,
-        use_turbofish: bool,
     ) -> Option<GenericArguments> {
-        // colon, if use turbofish syntax
-        let colon = if use_turbofish {
-            Some(self.expect_punctuation(':', handler).cloned()?)
-        } else {
-            None
-        };
-
-        // left angle bracket
-        let left_angle = self.expect_punctuation('<', handler).cloned()?;
         let (argument_list, right_angle) = self.parse_enclosed_list(
             '>',
             ',',
-            |this| match self.peek_significant_token() {
+            |this| match this.peek_significant_token() {
                 Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                     // eat the apostrophe
                     this.next_token();
-
-                    let lifetime_identifier = match this.peek_significant_token() {
-                        Some(Token::Keyword(static_keyword))
-                            if static_keyword.keyword == KeywordKind::Static =>
-                        {
-                            // eat the static keyword
-                            this.next_token();
-
-                            LifetimeArgumentIdentifier::StaticKeyword(static_keyword.clone())
-                        }
-                        _ => {
-                            let identifier = this.expect_identifier(handler)?;
-                            LifetimeArgumentIdentifier::Identifier(identifier.clone())
-                        }
-                    };
+                    let lifetime_identifier = this.parse_lifetime_argument_identifier(handler)?;
 
                     Some(GenericArgument::LifetimeArgument(LifetimeArgument {
-                        apostrophe: apostrophe.clone(),
-                        lifetime_identifier,
+                        apostrophe,
+                        lifetime_argument_identifier: lifetime_identifier,
                     }))
                 }
                 _ => Some(GenericArgument::TypeSpecifier(Box::new(
@@ -551,6 +736,80 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_lifetime_argument_identifier(
+        &mut self,
+        handler: &impl ErrorHandler<Error>,
+    ) -> Option<LifetimeArgumentIdentifier> {
+        match self.peek_significant_token() {
+            Some(Token::Keyword(static_keyword))
+                if static_keyword.keyword == KeywordKind::Static =>
+            {
+                // eat the static keyword
+                self.next_token();
+
+                Some(LifetimeArgumentIdentifier::StaticKeyword(static_keyword))
+            }
+            _ => {
+                let identifier = self.expect_identifier(handler)?;
+                Some(LifetimeArgumentIdentifier::Identifier(identifier))
+            }
+        }
+    }
+
+    fn parse_reference_type_specifier(
+        &mut self,
+        ampersand: Punctuation,
+        handler: &impl ErrorHandler<Error>,
+    ) -> Option<ReferenceTypeSpecifier> {
+        // parse additional lifetime argument
+        let lifetime_argument = match self.peek_significant_token() {
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                // eat the apostrophe
+                self.next_token();
+
+                let lifetime_argument_identifier =
+                    self.parse_lifetime_argument_identifier(handler)?;
+
+                Some(LifetimeArgument {
+                    apostrophe,
+                    lifetime_argument_identifier,
+                })
+            }
+            _ => None,
+        };
+
+        // parse additional reference qualifiers
+        let reference_qualifier = match self.peek_significant_token() {
+            Some(Token::Keyword(mutable_keyword))
+                if mutable_keyword.keyword == KeywordKind::Mutable =>
+            {
+                // eat the mut keyword
+                self.next_token();
+
+                Some(ReferenceQualifier::Mutable(mutable_keyword))
+            }
+
+            Some(Token::Keyword(restrict_keyword))
+                if restrict_keyword.keyword == KeywordKind::Restrict =>
+            {
+                // eat the restrict keyword
+                self.next_token();
+
+                Some(ReferenceQualifier::Restrict(restrict_keyword))
+            }
+            _ => None,
+        };
+
+        let operand_type = Box::new(self.parse_type_specifier(handler)?);
+
+        Some(ReferenceTypeSpecifier {
+            ampersand,
+            lifetime_argument,
+            reference_qualifier,
+            operand_type,
+        })
+    }
+
     /// Parses a [`TypeSpecifier`]
     pub fn parse_type_specifier(
         &mut self,
@@ -563,6 +822,13 @@ impl<'a> Parser<'a> {
                         self.parse_qualified_identifier(handler, false)?,
                     ))
                 }
+                Token::Punctuation(ampersand) if ampersand.punctuation == '&' => {
+                    // eat the ampersand
+                    self.next_token();
+
+                    self.parse_reference_type_specifier(ampersand, handler)
+                        .map(TypeSpecifier::ReferenceTypeSpecifier)
+                }
                 Token::Identifier(..) => Some(TypeSpecifier::QualifiedIdentifier(
                     self.parse_qualified_identifier(handler, false)?,
                 )),
@@ -571,18 +837,18 @@ impl<'a> Parser<'a> {
                     self.next_token();
 
                     let primitive_type = match keyword.keyword {
-                        KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword.clone()),
-                        KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword.clone()),
-                        KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword.clone()),
-                        KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(keyword.clone()),
-                        KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword.clone()),
-                        KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword.clone()),
-                        KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(keyword.clone()),
-                        KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(keyword.clone()),
-                        KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(keyword.clone()),
-                        KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(keyword.clone()),
-                        KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(keyword.clone()),
-                        KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(keyword.clone()),
+                        KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword),
+                        KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword),
+                        KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword),
+                        KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(keyword),
+                        KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword),
+                        KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword),
+                        KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(keyword),
+                        KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(keyword),
+                        KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(keyword),
+                        KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(keyword),
+                        KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(keyword),
+                        KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(keyword),
                         _ => return None,
                     };
 
@@ -592,12 +858,7 @@ impl<'a> Parser<'a> {
                     // eat the token, make progress
                     self.next_token();
 
-                    handler.recieve(
-                        TypeSpecifierExpected {
-                            found: Some(token.clone()),
-                        }
-                        .into(),
-                    );
+                    handler.recieve(TypeSpecifierExpected { found: Some(token) }.into());
                     None
                 }
             }
@@ -619,7 +880,7 @@ impl<'a> Parser<'a> {
         let type_specifier = self.parse_type_specifier(handler)?;
 
         Some(TypeAnnotation {
-            colon: colon.clone(),
+            colon,
             type_specifier,
         })
     }

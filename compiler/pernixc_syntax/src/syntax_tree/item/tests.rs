@@ -2,7 +2,7 @@ use std::{error::Error, path::PathBuf};
 
 use pernixc_lexical::token_stream::TokenStream;
 use pernixc_source::{SourceElement, SourceFile};
-use pernixc_system::error_handler::Dummy;
+use pernixc_system::error_handler::{Dummy, ErrorVec};
 
 use crate::{
     parser::Parser,
@@ -29,7 +29,8 @@ fn struct_item_test() -> Result<(), Box<dyn Error>> {
     cursor.next_token();
     let mut parser = Parser::new(cursor)?;
 
-    let struct_item = parser.parse_item(&Dummy).unwrap().into_struct().unwrap();
+    let errors: ErrorVec<crate::error::Error> = ErrorVec::new();
+    let struct_item = parser.parse_item(&errors).unwrap().into_struct().unwrap();
 
     assert!(matches!(
         struct_item.signature.access_modifier,

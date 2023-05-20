@@ -40,7 +40,7 @@ fn next_token_until_test() -> Result<(), Box<dyn std::error::Error>> {
             column: 12,
         });
 
-        let token = parser.next_token().unwrap().as_punctuation().unwrap();
+        let token = parser.next_token().unwrap().into_punctuation().unwrap();
         assert_eq!(token.punctuation, '-');
         assert_eq!(token.span.start(), 11);
         assert_eq!(token.span.start_location(), Location {

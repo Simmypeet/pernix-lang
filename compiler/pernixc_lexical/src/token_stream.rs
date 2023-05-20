@@ -1,24 +1,58 @@
 //! Contains the [`TokenStream`] struct and its related types.
 
-use std::ops::Index;
+use std::{ops::Index, sync::Arc};
 
-use derive_more::Deref;
+use derive_more::{Deref, From};
 use enum_as_inner::EnumAsInner;
-use pernixc_system::error_handler::ErrorHandler;
+use pernixc_source::SourceFile;
+use pernixc_system::diagnostic::Handler;
 
 use crate::{
-    error::Error,
+    error::{Error, UndelimitedDelimiter},
     token::{Token, TokenizationError},
 };
 
-/// Is a list of tokenized [`Token`]s.
+/// Is an enumeration of the different types of delimiters in the [`Delimited`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Delimiter {
+    Parenthesis,
+    Brace,
+    Bracket,
+}
+
+/// Represents a list of tokens enclosed by a pair of delimiters.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Delimited {
+    /// The opening delimiter.
+    pub open: Token,
+
+    /// The stream of tokens inside the delimiter.
+    pub token_stream: TokenStream,
+
+    /// The closing delimiter.
+    pub close: Token,
+
+    /// The type of delimiter.
+    pub delimiter: Delimiter,
+}
+
+/// Is an enumeration of either a [`Token`] or a [`Delimited`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum TokenTree {
+    Token(Token),
+    Delimited(Delimited),
+}
+
+/// Is a list of well structured [`TokenTree`]s.
 ///
 /// This struct is the final output of the lexical analysis phase and is meant to be used by the
 /// next stage of the compilation process.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deref)]
 pub struct TokenStream {
     #[deref]
-    tokens: Vec<Token>,
+    token_trees: Vec<TokenTree>,
 }
 
 impl TokenStream {
@@ -34,237 +68,136 @@ impl TokenStream {
     /// A tuple containing the stream of successfully tokenized tokens and a list of lexical errors
     /// encountered during tokenization.
     #[must_use]
-    pub fn tokenize(
-        mut source_file_iterator: pernixc_source::Iterator,
-        handler: &impl ErrorHandler<Error>,
-    ) -> Self {
+    pub fn tokenize(source_file: &Arc<SourceFile>, handler: &impl Handler<Error>) -> Self {
         // list of tokens to return
         let mut tokens = Vec::new();
+        let mut source_file_iterator = source_file.iter();
 
         loop {
             // Tokenizes the next token
             match Token::tokenize(&mut source_file_iterator, handler) {
                 Ok(token) => tokens.push(token),
                 Err(TokenizationError::EndOfSourceCodeIteratorArgument) => {
-                    break Self { tokens };
+                    break;
                 }
                 Err(TokenizationError::FatalLexicalError) => (),
             }
         }
+
+        // reverse the tokens so that the `pop` method can be used to get the next token
+        tokens.reverse();
+
+        // stucture the tokens into a token stream
+        let mut token_trees = Vec::new();
+        while let Some(token_tree) = Self::handle_token(&mut tokens, handler) {
+            token_trees.push(token_tree);
+        }
+
+        Self {
+            token_trees,
+        }
     }
 
-    /// Returns a cursor over the token stream.
-    #[must_use]
-    pub fn cursor(&self) -> Cursor {
-        Cursor {
-            token_stream: &self.tokens,
-            position: CursorPosition::Before,
+    fn handle_token(tokens: &mut Vec<Token>, handler: &impl Handler<Error>) -> Option<TokenTree> {
+        tokens
+            .pop()
+            .and_then(|x| Self::handle_popped_token(tokens, x, handler))
+    }
+
+    fn handle_popped_token(
+        tokens: &mut Vec<Token>,
+        popped_token: Token,
+        handler: &impl Handler<Error>,
+    ) -> Option<TokenTree> {
+        match popped_token {
+            Token::Punctuation(punc) if punc.punctuation == '{' => {
+                Self::handle_delimited(tokens, Token::Punctuation(punc), Delimiter::Brace, handler)
+                    .map(TokenTree::Delimited)
+            }
+            Token::Punctuation(punc) if punc.punctuation == '[' => Self::handle_delimited(
+                tokens,
+                Token::Punctuation(punc),
+                Delimiter::Bracket,
+                handler,
+            )
+            .map(TokenTree::Delimited),
+            Token::Punctuation(punc) if punc.punctuation == '(' => Self::handle_delimited(
+                tokens,
+                Token::Punctuation(punc),
+                Delimiter::Parenthesis,
+                handler,
+            )
+            .map(TokenTree::Delimited),
+            token => Some(TokenTree::Token(token)),
         }
+    }
+
+    fn handle_delimited(
+        tokens: &mut Vec<Token>,
+        open: Token,
+        delimiter: Delimiter,
+        handler: &impl Handler<Error>,
+    ) -> Option<Delimited> {
+        let mut token_trees = Vec::new();
+
+        while let Some(token) = tokens.pop() {
+            match (token, delimiter) {
+                (Token::Punctuation(punc), Delimiter::Brace) if punc.punctuation == '}' => {
+                    return Some(Delimited {
+                        open,
+                        token_stream: Self { token_trees },
+                        close: Token::Punctuation(punc),
+                        delimiter,
+                    })
+                }
+                (Token::Punctuation(punc), Delimiter::Bracket) if punc.punctuation == ']' => {
+                    return Some(Delimited {
+                        open,
+                        token_stream: Self { token_trees },
+                        close: Token::Punctuation(punc),
+                        delimiter,
+                    })
+                }
+                (Token::Punctuation(punc), Delimiter::Parenthesis) if punc.punctuation == ')' => {
+                    return Some(Delimited {
+                        open,
+                        token_stream: Self { token_trees },
+                        close: Token::Punctuation(punc),
+                        delimiter,
+                    })
+                }
+                (token, _) => {
+                    let Some(token_tree) = Self::handle_popped_token(
+                        tokens, 
+                        token, 
+                        handler
+                    ) else {
+                        break;
+                    };
+
+                    token_trees.push(token_tree);
+                }
+            }
+        }
+
+        handler.recieve(Error::UndelimitedDelimiter(UndelimitedDelimiter {
+            opening_span: open.span().clone(),
+            delimiter,
+        }));
+
+        None
     }
 
     /// Dissolves this struct into a tuple of its components.
     #[must_use]
-    pub fn dissolve(self) -> Vec<Token> { self.tokens }
+    pub fn dissolve(self) -> Vec<TokenTree> { self.token_trees }
 }
 
 impl Index<usize> for TokenStream {
-    type Output = Token;
+    type Output = TokenTree;
 
-    fn index(&self, index: usize) -> &Self::Output { &self.tokens[index] }
+    fn index(&self, index: usize) -> &Self::Output { &self.token_trees[index] }
 }
 
-/// Represents the position of a cursor over a [`TokenStream`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner)]
-pub enum CursorPosition {
-    /// The cursor is before the first token of the token stream.
-    ///
-    /// Reads will return `None`.
-    Before,
-
-    /// The cursor is pointing to a valid token of the token stream.
-    ///
-    /// Reads will return the token pointed by the cursor.
-    Valid(usize),
-
-    /// The cursor is after the last token of the token stream.
-    ///
-    /// Reads will return `None`.
-    After,
-}
-
-impl PartialOrd for CursorPosition {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self {
-            Self::Before => match other {
-                Self::Before => Some(std::cmp::Ordering::Equal),
-                Self::Valid(..) | Self::After => Some(std::cmp::Ordering::Less),
-            },
-            Self::Valid(index) => match other {
-                Self::Before => Some(std::cmp::Ordering::Greater),
-                Self::Valid(other_index) => index.partial_cmp(other_index),
-                Self::After => Some(std::cmp::Ordering::Less),
-            },
-            Self::After => match other {
-                Self::Before => Some(std::cmp::Ordering::Greater),
-                Self::Valid(..) | Self::After => Some(std::cmp::Ordering::Equal),
-            },
-        }
-    }
-}
-
-/// Represents a bidirectional cursor over a [`TokenStream`].
-#[derive(Debug, Clone, Copy)]
-pub struct Cursor<'a> {
-    token_stream: &'a [Token],
-    position: CursorPosition,
-}
-
-impl<'a> Cursor<'a> {
-    /// Returns the current token pointed by the cursor.
-    #[must_use]
-    pub fn read(&self) -> Option<&'a Token> {
-        match self.position {
-            CursorPosition::Valid(index) => Some(&self.token_stream[index]),
-            _ => None,
-        }
-    }
-
-    /// Reads the current token and moves the cursor to the next token.
-    pub fn next_token(&mut self) -> Option<&'a Token> {
-        match self.position {
-            CursorPosition::Valid(index) => {
-                let result = self.token_stream.get(index);
-                if index == self.token_stream.len() - 1 {
-                    self.position = CursorPosition::After;
-                } else {
-                    self.position = CursorPosition::Valid(index + 1);
-                }
-                result
-            }
-            CursorPosition::Before => {
-                if self.token_stream.is_empty() {
-                    self.position = CursorPosition::After;
-                } else {
-                    self.position = CursorPosition::Valid(0);
-                }
-                None
-            }
-            CursorPosition::After => None,
-        }
-    }
-
-    /// Reads the current token and moves the cursor to the previous token.
-    pub fn previous_token(&mut self) -> Option<&'a Token> {
-        match self.position {
-            CursorPosition::Valid(index) => {
-                let result = self.token_stream.get(index);
-                if index == 0 {
-                    self.position = CursorPosition::Before;
-                } else {
-                    self.position = CursorPosition::Valid(index - 1);
-                }
-                result
-            }
-            CursorPosition::Before => None,
-            CursorPosition::After => {
-                if self.token_stream.is_empty() {
-                    self.position = CursorPosition::Before;
-                } else {
-                    self.position = CursorPosition::Valid(self.token_stream.len() - 1);
-                }
-                None
-            }
-        }
-    }
-
-    /// Sets the position of the cursor to the given position.
-    ///
-    /// If the given position is valid, the cursor will be moved to the given position and `true`
-    /// will be returned. Otherwise, the cursor will not be moved and `false` will be returned.
-    pub fn set_position(&mut self, position: CursorPosition) -> bool {
-        if let CursorPosition::Valid(index) = position {
-            if index < self.token_stream.len() {
-                self.position = position;
-                true
-            } else {
-                false
-            }
-        } else {
-            self.position = position;
-            true
-        }
-    }
-
-    /// Moves the cursor to the next token until the given predicate returns `true`.
-    ///
-    /// The token that caused the predicate to return `true` will be consumed by the cursor.
-    pub fn next_token_until(&mut self, predicate: impl Fn(&Token) -> bool) -> Option<&'a Token> {
-        loop {
-            match self.next_token() {
-                Some(token) => {
-                    if predicate(token) {
-                        return Some(token);
-                    }
-                }
-                None => return None,
-            }
-        }
-    }
-
-    /// Moves the cursor to the previous token until the given predicate returns `true`.
-    ///
-    /// The token that caused the predicate to return `true` will be consumed by the cursor.
-    pub fn previous_token_until(
-        &mut self,
-        predicate: impl Fn(&Token) -> bool,
-    ) -> Option<&'a Token> {
-        loop {
-            match self.previous_token() {
-                Some(token) => {
-                    if predicate(token) {
-                        return Some(token);
-                    }
-                }
-                None => return None,
-            }
-        }
-    }
-
-    /// Moves the cursor to the next token until the given predicate returns `true`.
-    ///
-    /// The cursor will be moved to the token that caused the predicate to return `true`.
-    pub fn forward_until(&mut self, predicate: impl Fn(&Token) -> bool) -> Option<&'a Token> {
-        loop {
-            match self.read() {
-                Some(token) => {
-                    if predicate(token) {
-                        return Some(token);
-                    }
-                    self.next_token();
-                }
-                None => return None,
-            }
-        }
-    }
-
-    /// Moves the cursor to the previous token until the given predicate returns `true`.
-    ///
-    /// The cursor will be moved to the token that caused the predicate to return `true`.
-    pub fn backward_until(&mut self, predicate: impl Fn(&Token) -> bool) -> Option<&'a Token> {
-        loop {
-            match self.read() {
-                Some(token) => {
-                    if predicate(token) {
-                        return Some(token);
-                    }
-                    self.previous_token();
-                }
-                None => return None,
-            }
-        }
-    }
-
-    /// Returns the position of the cursor.
-    #[must_use]
-    pub fn position(&self) -> CursorPosition { self.position }
-}
+#[cfg(test)]
+pub mod tests;

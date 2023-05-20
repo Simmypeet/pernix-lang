@@ -87,7 +87,9 @@ pub struct VariableDeclaration {
 }
 
 impl SourceElement for VariableDeclaration {
-    fn span(&self) -> Span { self.let_keyword.span().join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.let_keyword.span().join(&self.semicolon.span).unwrap()
+    }
 }
 
 /// Represents an expressive statement syntax tree node
@@ -136,7 +138,9 @@ pub struct Semi {
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Span { self.expression.span().join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.expression.span().join(&self.semicolon.span).unwrap()
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -155,7 +159,7 @@ impl<'a> Parser<'a> {
                         // eat mutable keyword
                         self.next_token();
 
-                        Some(mutable_keyword.clone())
+                        Some(mutable_keyword)
                     }
                     _ => None,
                 };
@@ -165,14 +169,14 @@ impl<'a> Parser<'a> {
 
                 // parse optional type annotation
                 let type_annotation = match self.peek_significant_token() {
-                    Some(Token::Punctuation(punctuation)) if punctuation.punctuation == ':' => {
+                    Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
                         // eat colon
                         self.next_token();
 
                         let type_specifier = self.parse_type_specifier(handler)?;
 
                         Some(TypeAnnotation {
-                            colon: punctuation.clone(),
+                            colon,
                             type_specifier,
                         })
                     }
@@ -190,13 +194,13 @@ impl<'a> Parser<'a> {
 
                 Some(Statement::Declarative(
                     VariableDeclaration {
-                        let_keyword: let_keyword.clone(),
+                        let_keyword,
                         mutable_keyword,
-                        identifier: identifier.clone(),
+                        identifier,
                         type_annotation,
-                        equals: equals.clone(),
+                        equals,
                         expression,
-                        semicolon: semicolon.clone(),
+                        semicolon,
                     }
                     .into(),
                 ))
@@ -211,7 +215,7 @@ impl<'a> Parser<'a> {
 
                         Some(Statement::Expressive(Expressive::Semi(Semi {
                             expression,
-                            semicolon: semicolon.clone(),
+                            semicolon,
                         })))
                     }
                     Expression::Imperative(expression) => {

@@ -47,10 +47,10 @@ proptest! {
         let mut parser = Parser::new(cursor).unwrap();
 
         // Parses the qualified identifiers
-        let qualified_identifier = parser.parse_qualified_identifier(&Dummy).unwrap();
+        let qualified_identifier = parser.parse_qualified_identifier(&Dummy, false).unwrap();
 
         for (original_identifier, parsed_identifier) in identifiers.iter().zip(qualified_identifier.identifiers().elements()) {
-            prop_assert_eq!(&original_identifier.1, parsed_identifier.span.str());
+            prop_assert_eq!(&original_identifier.1, parsed_identifier.identifier.span.str());
         }
     }
 }

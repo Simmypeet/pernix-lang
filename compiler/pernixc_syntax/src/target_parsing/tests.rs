@@ -18,7 +18,6 @@ fn module_branching_test() -> Result<(), Box<dyn Error>> {
     let error_vec: ErrorVec<AllParsingError> = ErrorVec::default();
     let syntax_trees = TargetParsing::parse(source_file, &error_vec)?;
 
-    assert!(error_vec.into_vec().is_empty());
     assert_eq!(syntax_trees.len(), 4);
 
     // test

@@ -7,6 +7,8 @@ use pernixc_print::LogSeverity;
 use pernixc_source::Span;
 use thiserror::Error;
 
+use crate::token_stream::Delimiter;
+
 /// The source code contains an invalid escape character sequences.
 ///
 /// The spans represent the locations of the invalid escape character sequences.
@@ -114,16 +116,42 @@ impl ControlCharactersMustBeEscaped {
     }
 }
 
+/// The delimiter is not closed by its corresponding closing pair.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct UndelimitedDelimiter {
+    /// The span of the opening delimiter.
+    #[get = "pub"]
+    pub(super) opening_span: Span,
+
+    /// The kind of the delimiter.
+    #[get = "pub"]
+    pub(super) delimiter: Delimiter,
+}
+
+impl UndelimitedDelimiter {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_print::print(LogSeverity::Error, "found an undelimited delimiter");
+        pernixc_print::print_source_code(
+            &self.opening_span,
+            Some("this delimiter is not closed by its corresponding closing pair"),
+        );
+        println!();
+    }
+}
+
 /// Is an enumeration containing all kinds of lexical errors that can occur while tokenizing the
 /// source code.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered an lexical error while tokenizing the source code.")]
+#[allow(missing_docs)]
 pub enum Error {
     InvalidEscapeCharacterSequences(InvalidEscapeCharacterSequences),
     UnterminatedStringLiteral(UnterminatedStringLiteral),
     UnterminatedDelimitedComment(UnterminatedDelimitedComment),
     EmptyCharacterLiteral(EmptyCharacterLiteral),
     ControlCharactersMustBeEscaped(ControlCharactersMustBeEscaped),
+    UndelimitedDelimiter(UndelimitedDelimiter),
 }
 
 impl Error {
@@ -135,6 +163,7 @@ impl Error {
             Self::UnterminatedDelimitedComment(error) => error.print(),
             Self::EmptyCharacterLiteral(error) => error.print(),
             Self::ControlCharactersMustBeEscaped(error) => error.print(),
+            Self::UndelimitedDelimiter(error) => error.print(),
         }
     }
 }

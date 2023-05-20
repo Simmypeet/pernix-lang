@@ -7,7 +7,7 @@ use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
 use pernixc_source::{ByteIndex, SourceElement, SourceFile, Span};
-use pernixc_system::error_handler::ErrorHandler;
+use pernixc_system::diagnostic::Handler;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -104,6 +104,12 @@ pub enum KeywordKind {
     Type,
     /// `static` keyword.
     Static,
+    /// `restrict` keyword.
+    Restrict,
+    /// `where` keyword.
+    Where,
+    /// `trait` keyword.
+    Trait,
 }
 
 impl ToString for KeywordKind {
@@ -131,7 +137,6 @@ impl FromStr for KeywordKind {
                 map
             };
         }
-
         STRING_KEYWORD_MAP.get(s).copied().ok_or(KeywordParseError)
     }
 }
@@ -181,6 +186,9 @@ impl KeywordKind {
             Self::Module => "module",
             Self::Type => "type",
             Self::Static => "static",
+            Self::Restrict => "restrict",
+            Self::Where => "where",
+            Self::Trait => "trait",
         }
     }
 
@@ -205,7 +213,7 @@ impl KeywordKind {
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming language.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
-
+#[allow(missing_docs)]
 pub enum Token {
     WhiteSpace(WhiteSpace),
     Identifier(Identifier),
@@ -217,17 +225,34 @@ pub enum Token {
     Comment(Comment),
 }
 
-impl SourceElement for Token {
-    fn span(&self) -> Span {
+impl Token {
+    /// Returns the span of the token.
+    #[must_use]
+    pub fn span(&self) -> &Span {
         match self {
-            Self::WhiteSpace(token) => token.span.clone(),
-            Self::Identifier(token) => token.span.clone(),
-            Self::Keyword(token) => token.span.clone(),
-            Self::Punctuation(token) => token.span.clone(),
-            Self::NumericLiteral(token) => token.span.clone(),
-            Self::StringLiteral(token) => token.span.clone(),
-            Self::CharacterLiteral(token) => token.span.clone(),
-            Self::Comment(token) => token.span.clone(),
+            Self::WhiteSpace(token) => &token.span,
+            Self::Identifier(token) => &token.span,
+            Self::Keyword(token) => &token.span,
+            Self::Punctuation(token) => &token.span,
+            Self::NumericLiteral(token) => &token.span,
+            Self::StringLiteral(token) => &token.span,
+            Self::CharacterLiteral(token) => &token.span,
+            Self::Comment(token) => &token.span,
+        }
+    }
+}
+
+impl SourceElement for Token {
+    fn span(&self) -> Option<Span> {
+        match self {
+            Self::WhiteSpace(token) => token.span(),
+            Self::Identifier(token) => token.span(),
+            Self::Keyword(token) => token.span(),
+            Self::Punctuation(token) => token.span(),
+            Self::NumericLiteral(token) => token.span(),
+            Self::StringLiteral(token) => token.span(),
+            Self::CharacterLiteral(token) => token.span(),
+            Self::Comment(token) => token.span(),
         }
     }
 }
@@ -240,7 +265,7 @@ pub struct WhiteSpace {
 }
 
 impl SourceElement for WhiteSpace {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> Option<Span> { Some(self.span.clone()) }
 }
 
 /// Represents a contiguous sequence of characters that are valid in an identifier.
@@ -251,7 +276,7 @@ pub struct Identifier {
 }
 
 impl SourceElement for Identifier {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> Option<Span> { Some(self.span.clone()) }
 }
 
 /// Represents a contiguous sequence of characters that are reserved for a keyword.
@@ -265,7 +290,7 @@ pub struct Keyword {
 }
 
 impl SourceElement for Keyword {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> Option<Span> { Some(self.span.clone()) }
 }
 
 /// Represents a single ASCII punctuation character.
@@ -279,7 +304,7 @@ pub struct Punctuation {
 }
 
 impl SourceElement for Punctuation {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> Option<Span> { Some(self.span.clone()) }
 }
 
 /// Represents a hardcoded numeric literal value in the source code.
@@ -296,7 +321,7 @@ pub struct NumericLiteral {
 }
 
 impl SourceElement for NumericLiteral {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> Option<Span> { Some(self.span.clone()) }
 }
 
 /// Represents a single character or escape sequence enclosed in single quotes.
@@ -310,7 +335,7 @@ pub struct CharacterLiteral {
 }
 
 impl SourceElement for CharacterLiteral {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> Option<Span> { Some(self.span.clone()) }
 }
 
 /// Represents a contiguous sequence of characters enclosed in double quotes.
@@ -321,7 +346,7 @@ pub struct StringLiteral {
 }
 
 impl SourceElement for StringLiteral {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> Option<Span> { Some(self.span.clone()) }
 }
 
 /// Is an enumeration representing the two kinds of comments in the Pernix programming language.
@@ -345,12 +370,12 @@ pub struct Comment {
 }
 
 impl SourceElement for Comment {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> Option<Span> { Some(self.span.clone()) }
 }
 
 /// Is an error that can occur when invoking the [Token::tokenize()](Token::tokenize()) method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
-
+#[allow(missing_docs)]
 pub enum TokenizationError {
     #[error("Encountered a fatal lexical error that causes the process to stop.")]
     FatalLexicalError,
@@ -452,7 +477,7 @@ impl Token {
         iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
         character: char,
-        handler: &impl ErrorHandler<Error>,
+        handler: &impl Handler<Error>,
     ) -> Result<Self, TokenizationError> {
         // Single line comment
         if let Some((_, '/')) = iter.peek() {
@@ -516,7 +541,7 @@ impl Token {
     fn handle_string_literal(
         iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
-        handler: &impl ErrorHandler<Error>,
+        handler: &impl Handler<Error>,
     ) -> Result<Self, TokenizationError> {
         let mut found_invalid = false;
         loop {
@@ -575,7 +600,7 @@ impl Token {
     fn handle_character_literal(
         iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
-        handler: &impl ErrorHandler<Error>,
+        handler: &impl Handler<Error>,
     ) -> Result<Self, TokenizationError> {
         // Empty character literal error
         if let Some((_, '\'')) = iter.peek() {
@@ -727,7 +752,7 @@ impl Token {
     /// - [`TokenizationError::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn tokenize(
         iter: &mut pernixc_source::Iterator,
-        handler: &impl ErrorHandler<Error>,
+        handler: &impl Handler<Error>,
     ) -> Result<Self, TokenizationError> {
         // Gets the first character
         let (start, character) = iter
@@ -770,3 +795,6 @@ impl Token {
         }
     }
 }
+
+#[cfg(test)]
+pub mod tests;

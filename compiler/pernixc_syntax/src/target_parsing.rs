@@ -273,7 +273,9 @@ impl TargetParsing {
 
     /// Dissolves this structure into the list of [`FileParsing`].
     #[must_use]
-    pub fn dissolve(self) -> Vec<FileParsing> { self.file_parsings }
+    pub fn dissolve(self) -> Vec<FileParsing> {
+        self.file_parsings
+    }
 }
 
 /// Is an enumeration of all errors that can be reported in the [`TargetParsing::parse()`].

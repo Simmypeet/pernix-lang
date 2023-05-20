@@ -113,12 +113,12 @@ impl ExpressionExpected {
 
 /// A member syntax is expected but found an other invalid token.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
-pub struct MemberExpected {
+pub struct StructMemberExpected {
     /// The invalid token that was found.
     pub(super) found: Option<Token>,
 }
 
-impl MemberExpected {
+impl StructMemberExpected {
     /// Prints the error message to the console
     pub fn print(&self) {
         pernixc_print::print(
@@ -285,6 +285,34 @@ impl GenericArgumentParameterListCannotBeEmpty {
     }
 }
 
+/// A trait member syntax is expected but found an other invalid token.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+pub struct TraitMemberExpected {
+    /// The invalid token that was found.
+    pub(super) found: Option<Token>,
+}
+
+impl TraitMemberExpected {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            format!(
+                "a trait member syntax is expected, found: {}",
+                found_string(&self.found)
+            )
+            .as_str(),
+        );
+        if let Some(token) = self.found.as_ref() {
+            pernixc_print::print_source_code(
+                &token.span(),
+                Some("trait member syntax expected here"),
+            );
+        }
+        println!();
+    }
+}
+
 /// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
 #[error("Encountered a syntactic error while parsing the source code.")]
@@ -297,7 +325,8 @@ pub enum Error {
     AccessModifierExpected(AccessModifierExpected),
     PunctuationExpected(PunctuationExpected),
     KeywordExpected(KeywordExpected),
-    MemberExpected(MemberExpected),
+    StructMemberExpected(StructMemberExpected),
+    TraitMemberExpected(TraitMemberExpected),
     GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty),
 }
 
@@ -312,8 +341,9 @@ impl Error {
             Self::AccessModifierExpected(e) => e.print(),
             Self::PunctuationExpected(e) => e.print(),
             Self::KeywordExpected(e) => e.print(),
-            Self::MemberExpected(e) => e.print(),
+            Self::StructMemberExpected(e) => e.print(),
             Self::GenericArgumentParameterListCannotBeEmpty(e) => e.print(),
+            Self::TraitMemberExpected(e) => e.print(),
         }
     }
 }

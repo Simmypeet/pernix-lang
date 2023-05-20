@@ -1,27 +1,74 @@
-use std::{error::Error, path::PathBuf};
+use std::path::PathBuf;
 
-use super::{Location, SourceFile};
+use proptest::prelude::*;
 
-#[test]
-fn location_test() -> Result<(), Box<dyn Error>> {
-    let source_file = SourceFile::new(
-        PathBuf::default(),
-        "test".to_string(),
-        "first\nsecond\nthird".to_string(),
-        vec!["test".to_string()],
-    )?;
+use super::SourceFile;
+use crate::Location;
 
-    assert_eq!(
-        source_file.get_location(0),
-        Some(Location { line: 1, column: 1 })
-    );
+fn line_string_strategy() -> impl Strategy<Value = String> {
+    proptest::collection::vec(
+        proptest::char::any().prop_filter("only non-control character", |x| !x.is_control()),
+        0..=30,
+    )
+    .prop_map(|vec| vec.into_iter().collect::<String>())
+}
 
-    assert_eq!(
-        source_file.get_location(6),
-        Some(Location { line: 2, column: 1 })
-    );
+fn lines_strategy() -> impl Strategy<Value = Vec<String>> {
+    proptest::collection::vec(line_string_strategy(), 1..=100)
+}
 
-    assert_eq!(source_file.get_location(18), None);
+proptest! {
+    #[test]
+    fn line_test(lines in lines_strategy()) {
+        let source = lines.join(SourceFile::NEW_LINE_STR);
+        let source_file = SourceFile::new(
+            PathBuf::new(),
+            "test".to_string(),
+            source,
+            vec!["test".to_string()]
+        )?;
 
-    Ok(())
+        // line number check
+        prop_assert_eq!(source_file.line_number(), lines.len());
+
+        // line content check
+        for (i, line) in lines.iter().enumerate() {
+
+            if i < lines.len() - 1 {
+                prop_assert_eq!(source_file.get_line(i + 1).unwrap(), line.clone() + SourceFile::NEW_LINE_STR);
+            } else {
+                prop_assert_eq!(source_file.get_line(i + 1).unwrap(), line);
+            }
+        }
+    }
+
+    #[test]
+    fn get_location_test(lines in lines_strategy()) {
+        let source = lines.join(SourceFile::NEW_LINE_STR);
+        let source_file = SourceFile::new(
+            PathBuf::new(),
+            "test".to_string(),
+            source,
+            vec!["test".to_string()]
+        )?;
+
+        let mut line = 1;
+        let mut column = 1;
+
+        // iterator check
+        for (byte_index, c) in source_file.iter() {
+            prop_assert_eq!(
+                source_file.get_location(byte_index).unwrap(),
+                Location { line, column }
+            );
+
+            // update line and column
+            if c == SourceFile::NEW_LINE {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+    }
 }

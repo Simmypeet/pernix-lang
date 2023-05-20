@@ -52,21 +52,10 @@ pub struct SourceFile {
 #[allow(missing_docs)]
 pub enum LoadError {
     #[error("{0}")]
-    IoLoadError(IoLoadError),
+    IoError(std::io::Error),
 
     #[error("The file extension of the source file must be `.pnx`.")]
     CreateError(CreateError),
-}
-
-/// Is an error related to the io operations when using the [`SourceFile::load()`] method.
-#[derive(Debug, Error)]
-#[error("{error}")]
-pub struct IoLoadError {
-    /// The path where the io error occurred.
-    pub path: PathBuf,
-
-    /// The io error that occurred.
-    pub error: std::io::Error,
 }
 
 /// Is an error returned by the [`SourceFile::new()`] method.
@@ -137,10 +126,6 @@ impl SourceFile {
         replace_string_inplace(&mut source_code, "\r\n", Self::NEW_LINE_STR);
         replace_string_inplace(&mut source_code, "\r", Self::NEW_LINE_STR);
 
-        while source_code.ends_with('\n') {
-            source_code.pop();
-        }
-
         // Constructs the line ranges
         for (i, c) in source_code.char_indices() {
             if c == Self::NEW_LINE {
@@ -148,11 +133,9 @@ impl SourceFile {
                 lines.push(start..new_start);
                 start = new_start;
             }
-
-            if i == source_code.len() - 1 {
-                lines.push(start..source_code.len());
-            }
         }
+
+        lines.push(start..source_code.len());
 
         Ok(Arc::new(Self {
             file_name,
@@ -170,12 +153,7 @@ impl SourceFile {
     /// - [`LoadError::IoLoadError`]: An I/O error occurred.
     /// - [`LoadError::CreateError`]: An error occurred while creating the source file.
     pub fn load(path: &PathBuf, module_hierarchy: Vec<String>) -> Result<Arc<Self>, LoadError> {
-        let source_code = std::fs::read_to_string(path).map_err(|err| {
-            LoadError::IoLoadError(IoLoadError {
-                path: path.clone(),
-                error: err,
-            })
-        })?;
+        let source_code = std::fs::read_to_string(path)?;
         let parent_directory = path.parent().unwrap().to_path_buf();
         let file_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
@@ -369,11 +347,11 @@ impl Span {
 /// Represents an element that is located within a source file.
 pub trait SourceElement {
     /// Gets the span location of the element.
-    fn span(&self) -> Span;
+    fn span(&self) -> Option<Span>;
 }
 
 impl<T: SourceElement> SourceElement for Box<T> {
-    fn span(&self) -> Span { self.as_ref().span() }
+    fn span(&self) -> Option<Span> { self.as_ref().span() }
 }
 
 /// Is an iterator iterating over the characters in a source file that can be peeked at.
@@ -395,6 +373,8 @@ impl<'a> std::iter::Iterator for Iterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> { self.iterator.next() }
 }
+
+pub mod utils;
 
 #[cfg(test)]
 mod tests;

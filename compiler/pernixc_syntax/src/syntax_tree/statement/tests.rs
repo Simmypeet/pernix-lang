@@ -52,10 +52,16 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         .unwrap();
 
     assert_eq!(
-        block.label_specifier.unwrap().label.identifier.span().str(),
+        block
+            .label_specifier()
+            .unwrap()
+            .label()
+            .identifier
+            .span()
+            .str(),
         "test"
     );
-    let mut statement_iter = block.block_without_label.statements.into_iter();
+    let mut statement_iter = block.block_without_label().statements().into_iter();
     {
         let variable_declaration = statement_iter
             .next()
@@ -116,7 +122,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
 
         // check lhs expression
         let left = binary_expression
-            .left_operand
+            .left_operand()
             .into_functional()
             .unwrap()
             .into_named()
@@ -125,13 +131,13 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
 
         // check assignment operator
         assert!(matches!(
-            binary_expression.binary_operator,
+            binary_expression.binary_operator(),
             BinaryOperator::Assign(..)
         ));
 
         // check rhs expression
         let right = binary_expression
-            .right_operand
+            .right_operand()
             .into_functional()
             .unwrap()
             .into_numeric_literal()
@@ -153,14 +159,14 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
         // check condition
         {
             let condition = if_else_expression
-                .condition
+                .condition()
                 .into_functional()
                 .unwrap()
                 .into_binary()
                 .unwrap();
 
             let left = condition
-                .left_operand
+                .left_operand()
                 .into_functional()
                 .unwrap()
                 .into_named()
@@ -168,12 +174,12 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
             assert_eq!(left.span().str(), "test");
 
             assert!(matches!(
-                condition.binary_operator,
+                condition.binary_operator(),
                 BinaryOperator::Equal(..)
             ));
 
             let right = condition
-                .right_operand
+                .right_operand()
                 .into_functional()
                 .unwrap()
                 .into_numeric_literal()
@@ -183,7 +189,7 @@ fn statements_in_block_test() -> Result<(), Box<dyn Error>> {
 
         // check then expression
         {
-            let then_expression = if_else_expression.then_expression;
+            let then_expression = if_else_expression.then_expression();
 
             let mut statement_iter = then_expression.block_without_label.statements.into_iter();
 

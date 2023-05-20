@@ -117,7 +117,7 @@ impl SourceElement for Functional {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct NumericLiteral {
     #[get = "pub"]
-    pub(super) numeric_literal_token: NumericLiteralToken,
+    numeric_literal_token: NumericLiteralToken,
 }
 
 impl SourceElement for NumericLiteral {
@@ -135,11 +135,11 @@ impl SourceElement for NumericLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Cast {
     #[get = "pub"]
-    pub(super) operand: Box<Expression>,
+    operand: Box<Expression>,
     #[get = "pub"]
-    pub(super) as_keyword: Keyword,
+    as_keyword: Keyword,
     #[get = "pub"]
-    pub(super) type_specifier: TypeSpecifier,
+    type_specifier: TypeSpecifier,
 }
 
 impl SourceElement for Cast {
@@ -299,11 +299,11 @@ impl SourceElement for BinaryOperator {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Binary {
     #[get = "pub"]
-    pub(super) left_operand: Box<Expression>,
+    left_operand: Box<Expression>,
     #[get = "pub"]
-    pub(super) binary_operator: BinaryOperator,
+    binary_operator: BinaryOperator,
     #[get = "pub"]
-    pub(super) right_operand: Box<Expression>,
+    right_operand: Box<Expression>,
 }
 
 impl SourceElement for Binary {
@@ -349,9 +349,9 @@ impl SourceElement for PrefixOperator {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Prefix {
     #[get = "pub"]
-    pub(super) prefix_operator: PrefixOperator,
+    prefix_operator: PrefixOperator,
     #[get = "pub"]
-    pub(super) operand: Box<Expression>,
+    operand: Box<Expression>,
 }
 
 impl SourceElement for Prefix {
@@ -374,7 +374,7 @@ impl SourceElement for Prefix {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Named {
     #[get = "pub"]
-    pub(super) qualified_identifier: QualifiedIdentifier,
+    qualified_identifier: QualifiedIdentifier,
 }
 
 impl SourceElement for Named {
@@ -402,13 +402,13 @@ pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct FunctionCall {
     #[get = "pub"]
-    pub(super) qualified_identifier: QualifiedIdentifier,
+    qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
-    pub(super) left_paren: Punctuation,
+    left_paren: Punctuation,
     #[get = "pub"]
-    pub(super) arguments: Option<ArgumentList>,
+    arguments: Option<ArgumentList>,
     #[get = "pub"]
-    pub(super) right_paren: Punctuation,
+    right_paren: Punctuation,
 }
 
 impl SourceElement for FunctionCall {
@@ -431,11 +431,11 @@ impl SourceElement for FunctionCall {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Parenthesized {
     #[get = "pub"]
-    pub(super) left_paren: Punctuation,
+    left_paren: Punctuation,
     #[get = "pub"]
-    pub(super) expression: Box<Expression>,
+    expression: Box<Expression>,
     #[get = "pub"]
-    pub(super) right_paren: Punctuation,
+    right_paren: Punctuation,
 }
 
 impl SourceElement for Parenthesized {
@@ -453,11 +453,11 @@ impl SourceElement for Parenthesized {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct FieldInitializer {
     #[get = "pub"]
-    pub(super) identifier: Identifier,
+    identifier: Identifier,
     #[get = "pub"]
-    pub(super) colon: Punctuation,
+    colon: Punctuation,
     #[get = "pub"]
-    pub(super) expression: Box<Expression>,
+    expression: Box<Expression>,
 }
 
 impl SourceElement for FieldInitializer {
@@ -490,13 +490,13 @@ pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct StructLiteral {
     #[get = "pub"]
-    pub(super) qualified_identifier: QualifiedIdentifier,
+    qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
-    pub(super) left_brace: Punctuation,
+    left_brace: Punctuation,
     #[get = "pub"]
-    pub(super) field_initializations: Option<FieldInitializerList>,
+    field_initializations: Option<FieldInitializerList>,
     #[get = "pub"]
-    pub(super) right_brace: Punctuation,
+    right_brace: Punctuation,
 }
 
 impl SourceElement for StructLiteral {
@@ -519,11 +519,11 @@ impl SourceElement for StructLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct MemberAccess {
     #[get = "pub"]
-    pub(super) operand: Box<Expression>,
+    operand: Box<Expression>,
     #[get = "pub"]
-    pub(super) dot: Punctuation,
+    dot: Punctuation,
     #[get = "pub"]
-    pub(super) identifier: Identifier,
+    identifier: Identifier,
 }
 
 impl SourceElement for MemberAccess {
@@ -570,9 +570,9 @@ impl SourceElement for Imperative {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct LabelSpecifier {
     #[get = "pub"]
-    pub(super) label: Label,
+    label: Label,
     #[get = "pub"]
-    pub(super) colon: Punctuation,
+    colon: Punctuation,
 }
 
 impl SourceElement for LabelSpecifier {
@@ -590,11 +590,11 @@ impl SourceElement for LabelSpecifier {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct BlockWithoutLabel {
     #[get = "pub"]
-    pub(super) left_brace: Punctuation,
+    left_brace: Punctuation,
     #[get = "pub"]
-    pub(super) statements: Vec<Statement>,
+    statements: Vec<Statement>,
     #[get = "pub"]
-    pub(super) right_brace: Punctuation,
+    right_brace: Punctuation,
 }
 
 impl SourceElement for BlockWithoutLabel {
@@ -612,9 +612,9 @@ impl SourceElement for BlockWithoutLabel {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Block {
     #[get = "pub"]
-    pub(super) label_specifier: Option<LabelSpecifier>,
+    label_specifier: Option<LabelSpecifier>,
     #[get = "pub"]
-    pub(super) block_without_label: BlockWithoutLabel,
+    block_without_label: BlockWithoutLabel,
 }
 
 impl SourceElement for Block {
@@ -666,9 +666,9 @@ impl SourceElement for BlockOrIfElse {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Else {
     #[get = "pub"]
-    pub(super) else_keyword: Keyword,
+    else_keyword: Keyword,
     #[get = "pub"]
-    pub(super) expression: Box<BlockOrIfElse>,
+    expression: Box<BlockOrIfElse>,
 }
 
 impl SourceElement for Else {
@@ -691,17 +691,17 @@ impl SourceElement for Else {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct IfElse {
     #[get = "pub"]
-    pub(super) if_keyword: Keyword,
+    if_keyword: Keyword,
     #[get = "pub"]
-    pub(super) left_paren: Punctuation,
+    left_paren: Punctuation,
     #[get = "pub"]
-    pub(super) condition: Box<Expression>,
+    condition: Box<Expression>,
     #[get = "pub"]
-    pub(super) right_paren: Punctuation,
+    right_paren: Punctuation,
     #[get = "pub"]
-    pub(super) then_expression: Block,
+    then_expression: Block,
     #[get = "pub"]
-    pub(super) else_expression: Option<Else>,
+    else_expression: Option<Else>,
 }
 
 impl SourceElement for IfElse {
@@ -731,11 +731,11 @@ impl SourceElement for IfElse {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Loop {
     #[get = "pub"]
-    pub(super) label_specifier: Option<LabelSpecifier>,
+    label_specifier: Option<LabelSpecifier>,
     #[get = "pub"]
-    pub(super) loop_keyword: Keyword,
+    loop_keyword: Keyword,
     #[get = "pub"]
-    pub(super) block_without_label: BlockWithoutLabel,
+    block_without_label: BlockWithoutLabel,
 }
 
 impl SourceElement for Loop {
@@ -770,9 +770,9 @@ impl SourceElement for Loop {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Continue {
     #[get = "pub"]
-    pub(super) continue_keyword: Keyword,
+    continue_keyword: Keyword,
     #[get = "pub"]
-    pub(super) label: Option<Label>,
+    label: Option<Label>,
 }
 
 impl SourceElement for Continue {
@@ -796,11 +796,11 @@ impl SourceElement for Continue {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Express {
     #[get = "pub"]
-    pub(super) express_keyword: Keyword,
+    express_keyword: Keyword,
     #[get = "pub"]
-    pub(super) label: Option<Label>,
+    label: Option<Label>,
     #[get = "pub"]
-    pub(super) expression: Option<Box<Expression>>,
+    expression: Option<Box<Expression>>,
 }
 
 impl SourceElement for Express {
@@ -829,11 +829,11 @@ impl SourceElement for Express {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Break {
     #[get = "pub"]
-    pub(super) break_keyword: Keyword,
+    break_keyword: Keyword,
     #[get = "pub"]
-    pub(super) label: Option<Label>,
+    label: Option<Label>,
     #[get = "pub"]
-    pub(super) expression: Option<Box<Expression>>,
+    expression: Option<Box<Expression>>,
 }
 
 impl SourceElement for Break {
@@ -862,9 +862,9 @@ impl SourceElement for Break {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct Return {
     #[get = "pub"]
-    pub(super) return_keyword: Keyword,
+    return_keyword: Keyword,
     #[get = "pub"]
-    pub(super) expression: Option<Box<Expression>>,
+    expression: Option<Box<Expression>>,
 }
 
 impl SourceElement for Return {
@@ -963,32 +963,29 @@ impl<'a> Parser<'a> {
         let next_token = self.next_significant_token();
         match next_token {
             Some(Token::Punctuation(punctuation)) => match punctuation.punctuation {
-                '+' => return Some(BinaryOperator::Add(punctuation.clone())),
-                '-' => return Some(BinaryOperator::Subtract(punctuation.clone())),
-                '*' => return Some(BinaryOperator::Multiply(punctuation.clone())),
-                '/' => return Some(BinaryOperator::Divide(punctuation.clone())),
-                '%' => return Some(BinaryOperator::Modulo(punctuation.clone())),
-                '=' => return Some(BinaryOperator::Assign(punctuation.clone())),
+                '+' => return Some(BinaryOperator::Add(punctuation)),
+                '-' => return Some(BinaryOperator::Subtract(punctuation)),
+                '*' => return Some(BinaryOperator::Multiply(punctuation)),
+                '/' => return Some(BinaryOperator::Divide(punctuation)),
+                '%' => return Some(BinaryOperator::Modulo(punctuation)),
+                '=' => return Some(BinaryOperator::Assign(punctuation)),
                 '!' => {
                     if let Some(Token::Punctuation(punctuation1)) = self.peek_significant_token() {
                         if punctuation1.punctuation == '=' {
                             self.next_significant_token();
-                            return Some(BinaryOperator::NotEqual(
-                                punctuation.clone(),
-                                punctuation1.clone(),
-                            ));
+                            return Some(BinaryOperator::NotEqual(punctuation, punctuation1));
                         }
                     }
                 }
-                '<' => return Some(BinaryOperator::LessThan(punctuation.clone())),
-                '>' => return Some(BinaryOperator::GreaterThan(punctuation.clone())),
+                '<' => return Some(BinaryOperator::LessThan(punctuation)),
+                '>' => return Some(BinaryOperator::GreaterThan(punctuation)),
                 _ => (),
             },
             Some(Token::Keyword(and_keyword)) if and_keyword.keyword == KeywordKind::And => {
-                return Some(BinaryOperator::LogicalAnd(and_keyword.clone()))
+                return Some(BinaryOperator::LogicalAnd(and_keyword))
             }
             Some(Token::Keyword(or_keyword)) if or_keyword.keyword == KeywordKind::Or => {
-                return Some(BinaryOperator::LogicalOr(or_keyword.clone()))
+                return Some(BinaryOperator::LogicalOr(or_keyword))
             }
             _ => (),
         }
@@ -1006,28 +1003,28 @@ impl<'a> Parser<'a> {
             Some(Token::Punctuation(punctuation)) if punctuation.punctuation == '=' => {
                 match first_punctuation_binary_operator {
                     BinaryOperator::Add(prev_punctuation) => {
-                        BinaryOperator::CompoundAdd(prev_punctuation, punctuation.clone())
+                        BinaryOperator::CompoundAdd(prev_punctuation, punctuation)
                     }
                     BinaryOperator::Subtract(prev_punctuation) => {
-                        BinaryOperator::CompoundSubtract(prev_punctuation, punctuation.clone())
+                        BinaryOperator::CompoundSubtract(prev_punctuation, punctuation)
                     }
                     BinaryOperator::Multiply(prev_punctuation) => {
-                        BinaryOperator::CompoundMultiply(prev_punctuation, punctuation.clone())
+                        BinaryOperator::CompoundMultiply(prev_punctuation, punctuation)
                     }
                     BinaryOperator::Divide(prev_punctuation) => {
-                        BinaryOperator::CompoundDivide(prev_punctuation, punctuation.clone())
+                        BinaryOperator::CompoundDivide(prev_punctuation, punctuation)
                     }
                     BinaryOperator::Modulo(prev_punctuation) => {
-                        BinaryOperator::CompoundModulo(prev_punctuation, punctuation.clone())
+                        BinaryOperator::CompoundModulo(prev_punctuation, punctuation)
                     }
                     BinaryOperator::Assign(prev_punctuation) => {
-                        BinaryOperator::Equal(prev_punctuation, punctuation.clone())
+                        BinaryOperator::Equal(prev_punctuation, punctuation)
                     }
                     BinaryOperator::LessThan(prev_punctuation) => {
-                        BinaryOperator::LessThanOrEqual(prev_punctuation, punctuation.clone())
+                        BinaryOperator::LessThanOrEqual(prev_punctuation, punctuation)
                     }
                     BinaryOperator::GreaterThan(prev_punctuation) => {
-                        BinaryOperator::GreaterThanOrEqual(prev_punctuation, punctuation.clone())
+                        BinaryOperator::GreaterThanOrEqual(prev_punctuation, punctuation)
                     }
                     _ => {
                         self.cursor.set_position(starting_cursor_position);
@@ -1113,9 +1110,9 @@ impl<'a> Parser<'a> {
         };
 
         Some(BlockWithoutLabel {
-            left_brace: left_brace.clone(),
+            left_brace,
             statements,
-            right_brace: right_brace.clone(),
+            right_brace,
         })
     }
 
@@ -1134,7 +1131,7 @@ impl<'a> Parser<'a> {
 
                 Some(Expression::Imperative(Imperative::Loop(Loop {
                     label_specifier: None,
-                    loop_keyword: loop_keyword.clone(),
+                    loop_keyword,
                     block_without_label,
                 })))
             }
@@ -1146,13 +1143,8 @@ impl<'a> Parser<'a> {
                     block_without_label,
                 })))
             }
-            token => {
-                handler.recieve(
-                    ExpressionExpected {
-                        found: token.cloned(),
-                    }
-                    .into(),
-                );
+            found => {
+                handler.recieve(ExpressionExpected { found }.into());
                 None
             }
         }
@@ -1161,14 +1153,14 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Block> {
         let label_specifier = if matches!(self.peek_significant_token(), Some(Token::Punctuation(punc)) if punc.punctuation == '\'')
         {
-            let single_quote = self.expect_punctuation('\'', handler)?;
+            let apostrophe = self.expect_punctuation('\'', handler)?;
             let identifier = self.expect_identifier(handler)?;
             let colon = self.expect_punctuation(':', handler)?;
             Some(LabelSpecifier {
-                colon: colon.clone(),
+                colon,
                 label: Label {
-                    single_quote: single_quote.clone(),
-                    identifier: identifier.clone(),
+                    apostrophe,
+                    identifier,
                 },
             })
         } else {
@@ -1196,7 +1188,7 @@ impl<'a> Parser<'a> {
         let else_expression = match self.peek_significant_token() {
             Some(Token::Keyword(else_keyword)) if else_keyword.keyword == KeywordKind::Else => {
                 self.next_token();
-                let block_of_if_else = match self.peek_significant_token().cloned() {
+                let block_of_if_else = match self.peek_significant_token() {
                     Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
                         self.next_token();
 
@@ -1212,7 +1204,7 @@ impl<'a> Parser<'a> {
                 };
 
                 Some(Else {
-                    else_keyword: else_keyword.clone(),
+                    else_keyword,
                     expression: Box::new(block_of_if_else),
                 })
             }
@@ -1221,9 +1213,9 @@ impl<'a> Parser<'a> {
 
         Some(Expression::Imperative(Imperative::IfElse(IfElse {
             if_keyword,
-            left_paren: left_paren.clone(),
+            left_paren,
             condition: Box::new(condition),
-            right_paren: right_paren.clone(),
+            right_paren,
             then_expression,
             else_expression,
         })))
@@ -1248,7 +1240,7 @@ impl<'a> Parser<'a> {
                 Some(Expression::Functional(
                     FunctionCall {
                         qualified_identifier,
-                        left_paren: left_paren.clone(),
+                        left_paren,
                         arguments,
                         right_paren,
                     }
@@ -1272,8 +1264,8 @@ impl<'a> Parser<'a> {
                         let expression = this.parse_expression(handler)?;
 
                         Some(FieldInitializer {
-                            identifier: identifier.clone(),
-                            colon: colon.clone(),
+                            identifier,
+                            colon,
                             expression: Box::new(expression),
                         })
                     },
@@ -1283,7 +1275,7 @@ impl<'a> Parser<'a> {
                 Some(Expression::Functional(
                     StructLiteral {
                         qualified_identifier,
-                        left_brace: left_brace.clone(),
+                        left_brace,
                         field_initializations,
                         right_brace,
                     }
@@ -1303,14 +1295,14 @@ impl<'a> Parser<'a> {
 
     fn try_parse_label(&mut self, handler: &impl ErrorHandler<Error>) -> Option<Label> {
         match self.peek_significant_token() {
-            Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat the single quote
                 self.next_token();
 
-                let identifier = self.expect_identifier(handler)?.clone();
+                let identifier = self.expect_identifier(handler)?;
 
                 Some(Label {
-                    single_quote: single_quote.clone(),
+                    apostrophe,
                     identifier,
                 })
             }
@@ -1349,7 +1341,7 @@ impl<'a> Parser<'a> {
             Parenthesized {
                 left_paren,
                 expression: Box::new(expression),
-                right_paren: right_paren.clone(),
+                right_paren,
             }
             .into(),
         ))
@@ -1364,15 +1356,15 @@ impl<'a> Parser<'a> {
             // Handles if expressions
             Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
                 self.next_token();
-                self.handle_if_keyword(if_keyword.clone(), handler)
+                self.handle_if_keyword(if_keyword, handler)
             }
 
             // Handles numeric literal
-            Some(Token::NumericLiteral(numeric_literal)) => {
+            Some(Token::NumericLiteral(numeric_literal_token)) => {
                 self.next_token();
                 Some(Expression::Functional(
                     NumericLiteral {
-                        numeric_literal_token: numeric_literal.clone(),
+                        numeric_literal_token,
                     }
                     .into(),
                 ))
@@ -1381,22 +1373,22 @@ impl<'a> Parser<'a> {
             // Handles parenthesis
             Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
                 self.next_token();
-                self.handle_parenthesized(left_paren.clone(), handler)
+                self.handle_parenthesized(left_paren, handler)
             }
 
             // Handles label specifier
-            Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 self.next_token();
 
-                let name = self.expect_identifier(handler)?;
+                let identifier = self.expect_identifier(handler)?;
                 let colon = self.expect_punctuation(':', handler)?;
 
                 let label = LabelSpecifier {
                     label: Label {
-                        single_quote: single_quote.clone(),
-                        identifier: name.clone(),
+                        apostrophe,
+                        identifier,
                     },
-                    colon: colon.clone(),
+                    colon,
                 };
 
                 self.parse_block_or_loop_expression(Some(label), handler)
@@ -1413,7 +1405,7 @@ impl<'a> Parser<'a> {
 
                 Some(Expression::Functional(
                     Continue {
-                        continue_keyword: continue_keyword.clone(),
+                        continue_keyword,
                         label,
                     }
                     .into(),
@@ -1430,7 +1422,7 @@ impl<'a> Parser<'a> {
 
                 Some(Expression::Functional(
                     Break {
-                        break_keyword: break_keyword.clone(),
+                        break_keyword,
                         label,
                         expression,
                     }
@@ -1450,7 +1442,7 @@ impl<'a> Parser<'a> {
 
                 Some(Expression::Functional(
                     Express {
-                        express_keyword: express_keyword.clone(),
+                        express_keyword,
                         label,
                         expression,
                     }
@@ -1469,7 +1461,7 @@ impl<'a> Parser<'a> {
 
                 Some(Expression::Functional(
                     Return {
-                        return_keyword: return_keyword.clone(),
+                        return_keyword,
                         expression,
                     }
                     .into(),
@@ -1482,14 +1474,12 @@ impl<'a> Parser<'a> {
             // Handles boolean literal
             Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::True => {
                 self.next_token();
-                Some(Expression::Functional(
-                    BooleanLiteral::True(keyword.clone()).into(),
-                ))
+                Some(Expression::Functional(BooleanLiteral::True(keyword).into()))
             }
             Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::False => {
                 self.next_token();
                 Some(Expression::Functional(
-                    BooleanLiteral::False(keyword.clone()).into(),
+                    BooleanLiteral::False(keyword).into(),
                 ))
             }
 
@@ -1513,8 +1503,8 @@ impl<'a> Parser<'a> {
                 return Some(Expression::Functional(
                     Prefix {
                         prefix_operator: match punc.punctuation {
-                            '!' => PrefixOperator::LogicalNot(punc.clone()),
-                            '-' => PrefixOperator::Negate(punc.clone()),
+                            '!' => PrefixOperator::LogicalNot(punc),
+                            '-' => PrefixOperator::Negate(punc),
                             _ => unreachable!(),
                         },
                         operand: Box::new(operand),
