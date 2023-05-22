@@ -275,6 +275,11 @@ pub struct Location {
     pub column: usize,
 }
 
+/// Is an error that occurs related to [`Span`] operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[error("Is an error that occurs related to `Span` operations.")]
+pub struct SpanError;
+
 impl Span {
     /// Creates a span from the given start and end byte indices in the source file.
     ///
@@ -328,15 +333,15 @@ impl Span {
 
     /// Joins the starting position of this span with the end position of the given span.
     ///
-    /// Returns [`None`] if the spans are not in the same source file or if the end of this span is
+    /// # Errors
+    /// Returns [`Err`] if the spans are not in the same source file or if the end of this span is
     /// after the start of the given span.
-    #[must_use]
-    pub fn join(&self, end: &Self) -> Option<Self> {
+    pub fn join(&self, end: &Self) -> Result<Self, SpanError> {
         if !Arc::ptr_eq(&self.source_file, &end.source_file) || self.start > end.end {
-            return None;
+            return Err(SpanError);
         }
 
-        Some(Self {
+        Ok(Self {
             start: self.start,
             end: end.end,
             source_file: self.source_file.clone(),
@@ -347,11 +352,14 @@ impl Span {
 /// Represents an element that is located within a source file.
 pub trait SourceElement {
     /// Gets the span location of the element.
-    fn span(&self) -> Option<Span>;
+    ///
+    /// # Errors
+    /// Returns [`Err`] if the element's span cannot be properly determined.
+    fn span(&self) -> Result<Span, SpanError>;
 }
 
 impl<T: SourceElement> SourceElement for Box<T> {
-    fn span(&self) -> Option<Span> { self.as_ref().span() }
+    fn span(&self) -> Result<Span, SpanError> { self.as_ref().span() }
 }
 
 /// Is an iterator iterating over the characters in a source file that can be peeked at.

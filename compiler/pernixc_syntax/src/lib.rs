@@ -12,5 +12,7 @@
 )]
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
+pub mod error;
 pub mod parser;
-
+#[allow(missing_docs)]
+pub mod syntax_tree;
