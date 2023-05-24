@@ -41,8 +41,8 @@ pub struct GenericIdentifierInput {
 
 #[derive(Debug, Clone)]
 pub struct QualifiedIdentifierInput {
-    pub leading_separator: bool,
-    pub identifiers: Vec<GenericIdentifierInput>,
+    pub leading_scope_separator: bool,
+    pub generic_identifiers: Vec<GenericIdentifierInput>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,41 +67,81 @@ pub enum TypeSpecifierInput {
     QualifiedIdentifierInput(QualifiedIdentifierInput),
 }
 
-const IDENTIFIER_STR_REGEX: &str = "[a-zA-Z_][a-zA-Z0-9_]*";
+pub const IDENTIFIER_STR_REGEX: &str = "[a-zA-Z_][a-zA-Z0-9_]*";
+
+fn remove_turbo_fish(qualified_identifier: &mut QualifiedIdentifierInput) {
+    for generic_identifier in &mut qualified_identifier.generic_identifiers {
+        if let Some(generic_arguments) = &mut generic_identifier.generic_arguments_input {
+            generic_arguments.use_turbo_fish = false;
+
+            for generic_argument in &mut generic_arguments.arguments {
+                if let GenericArgumentInput::TypeSpecifierInput(
+                    TypeSpecifierInput::QualifiedIdentifierInput(q),
+                ) = generic_argument
+                {
+                    remove_turbo_fish(q);
+                }
+            }
+        }
+    }
+}
 
 pub fn qualified_identifier_strategy() -> impl Strategy<Value = QualifiedIdentifierInput> {
-    proptest::bool::ANY.prop_flat_map(|leading_separator| {
-        proptest::collection::vec(
+    (proptest::bool::ANY, IDENTIFIER_STR_REGEX)
+        .prop_map(|(leading_separator, identifier)| QualifiedIdentifierInput {
+            leading_scope_separator: leading_separator,
+            generic_identifiers: vec![GenericIdentifierInput {
+                identifier,
+                generic_arguments_input: None,
+            }],
+        })
+        .prop_recursive(8, 24, 10, |inner| {
             (
-                IDENTIFIER_STR_REGEX,
-                proptest::option::of(proptest::collection::vec(
-                    prop_oneof![
-                        lifetime_argument_identifier_strategy()
-                            .prop_map(GenericArgumentInput::LifetimeArgumentIdentifierInput),
-                        type_specifier_strategy()
-                            .prop_map(GenericArgumentInput::TypeSpecifierInput)
-                    ],
-                    1..=3,
-                )),
-            )
-                .prop_map(move |(identifier, generic_arguments_input)| {
-                    GenericIdentifierInput {
-                        identifier,
-                        generic_arguments_input: generic_arguments_input.map(|arguments| {
-                            GenericArgumentsInput {
-                                use_turbo_fish: true,
-                                arguments,
+                proptest::bool::ANY,
+                proptest::collection::vec(
+                    (
+                        IDENTIFIER_STR_REGEX,
+                        proptest::option::of(proptest::collection::vec(
+                            prop_oneof![
+                                primitive_type_specifier_strategy().prop_map(|x| {
+                                    GenericArgumentInput::TypeSpecifierInput(
+                                        TypeSpecifierInput::PrimitiveTypeSpecifierInput(x),
+                                    )
+                                }),
+                                inner.prop_map(|mut x| {
+                                    remove_turbo_fish(&mut x);
+                                    GenericArgumentInput::TypeSpecifierInput(
+                                        TypeSpecifierInput::QualifiedIdentifierInput(x),
+                                    )
+                                }),
+                                lifetime_argument_identifier_strategy().prop_map(|x| {
+                                    GenericArgumentInput::LifetimeArgumentIdentifierInput(x)
+                                })
+                            ],
+                            1..=5,
+                        )),
+                    )
+                        .prop_map(|(identifier, generic_arguments)| {
+                            GenericIdentifierInput {
+                                identifier,
+                                generic_arguments_input: generic_arguments.map(|x| {
+                                    GenericArgumentsInput {
+                                        use_turbo_fish: true,
+                                        arguments: x,
+                                    }
+                                }),
                             }
                         }),
+                    1..=5,
+                ),
+            )
+                .prop_map(|(leading_scope_separator, generic_identifiers)| {
+                    QualifiedIdentifierInput {
+                        leading_scope_separator,
+                        generic_identifiers,
                     }
-                }),
-            1..=10,
-        )
-        .prop_map(move |identifiers| QualifiedIdentifierInput {
-            leading_separator,
-            identifiers,
+                })
         })
-    })
 }
 
 pub fn lifetime_argument_identifier_strategy(
@@ -142,8 +182,8 @@ pub fn type_specifier_strategy() -> impl Strategy<Value = TypeSpecifierInput> {
         )
             .prop_map(|(leading_separator, identifiers)| {
                 TypeSpecifierInput::QualifiedIdentifierInput(QualifiedIdentifierInput {
-                    leading_separator,
-                    identifiers,
+                    leading_scope_separator: leading_separator,
+                    generic_identifiers: identifiers,
                 })
             })
     })
@@ -249,13 +289,13 @@ impl ToString for GenericIdentifierInput {
 impl ToString for QualifiedIdentifierInput {
     fn to_string(&self) -> String {
         let mut string = self
-            .identifiers
+            .generic_identifiers
             .iter()
             .map(GenericIdentifierInput::to_string)
             .collect::<Vec<_>>()
             .join("::");
 
-        if self.leading_separator {
+        if self.leading_scope_separator {
             string.insert_str(0, "::");
         }
 
@@ -397,13 +437,17 @@ pub fn validate_qualified_identifier(
 ) -> Result<(), TestCaseError> {
     prop_assert_eq!(
         output.leading_scope_separator.is_some(),
-        input.leading_separator
+        input.leading_scope_separator
     );
 
     // must have the same number of identifiers
-    prop_assert_eq!(output.identifiers.len(), input.identifiers.len());
+    prop_assert_eq!(output.identifiers.len(), input.generic_identifiers.len());
 
-    for (output, input) in output.identifiers.elements().zip(input.identifiers.iter()) {
+    for (output, input) in output
+        .identifiers
+        .elements()
+        .zip(input.generic_identifiers.iter())
+    {
         validate_generic_identifier(output, input)?;
     }
 
@@ -434,6 +478,7 @@ proptest! {
         qualified_identifier_input in qualified_identifier_strategy()
     ) {
         let source = qualified_identifier_input.to_string();
+        println!("source: {source}");
         let qualified_identifier = parse(
             source,
             |parser, handler|
@@ -443,7 +488,7 @@ proptest! {
                 )
         )?;
 
-        validate_qualified_identifier(&qualified_identifier, &qualified_identifier_input).unwrap();
+        validate_qualified_identifier(&qualified_identifier, &qualified_identifier_input)?;
     }
 
     #[test]
