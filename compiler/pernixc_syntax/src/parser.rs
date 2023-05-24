@@ -8,8 +8,9 @@ use pernixc_lexical::{
 use pernixc_system::diagnostic::Handler;
 use thiserror::Error;
 
-use crate::error::{
-    Error as SyntacticError, IdentifierExpected, KeywordExpected, PunctuationExpected,
+use crate::{
+    error::{Error as SyntacticError, IdentifierExpected, KeywordExpected, PunctuationExpected},
+    syntax_tree::ConnectedList,
 };
 
 /// Describes the delimiter of the [`Frame`].
@@ -59,7 +60,6 @@ impl<'a> Frame<'a> {
 
     /// Returns a [`Token`] pointing by the `current_index` of the [`Frame`] and increments the
     /// `current_index` by 1.
-    #[must_use]
     pub fn next_token(&mut self) -> Option<&'a TokenTree> {
         let token = self.peek();
         if token.is_some() {
@@ -105,7 +105,7 @@ impl<'a> Frame<'a> {
             Some(TokenTree::Token(Token::Identifier(ident))) => Ok(ident.clone()),
             found => {
                 handler.recieve(SyntacticError::IdentifierExpected(IdentifierExpected {
-                    found: self.get_found_token_from_tree(found),
+                    found: self.get_found_token_from_token_tree(found),
                 }));
                 Err(Error)
             }
@@ -129,7 +129,7 @@ impl<'a> Frame<'a> {
             }
             found => {
                 handler.recieve(SyntacticError::KeywordExpected(KeywordExpected {
-                    found: self.get_found_token_from_tree(found),
+                    found: self.get_found_token_from_token_tree(found),
                     expected: keyword,
                 }));
                 Err(Error)
@@ -159,7 +159,7 @@ impl<'a> Frame<'a> {
             }
             found => {
                 handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
-                    found: self.get_found_token_from_tree(found),
+                    found: self.get_found_token_from_token_tree(found),
                     expected: punctuation,
                 }));
                 Err(Error)
@@ -167,6 +167,8 @@ impl<'a> Frame<'a> {
         }
     }
 
+    /// Performs a rollback if the parsing fails.
+    #[allow(clippy::missing_errors_doc)]
     pub fn try_parse<T>(&mut self, parser: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         let starting_index = self.current_index;
         match parser(self) {
@@ -178,12 +180,145 @@ impl<'a> Frame<'a> {
         }
     }
 
-    fn get_found_token_from_tree(&self, tree: Option<&TokenTree>) -> Option<Token> {
+    /// Makes the current position stops at the first token that satisfies the predicate.
+    pub fn stop_at(&mut self, predicate: impl Fn(&TokenTree) -> bool) -> Option<&'a TokenTree> {
+        loop {
+            let token = self.peek()?;
+
+            if predicate(token) {
+                return Some(token);
+            }
+
+            self.current_index += 1;
+        }
+    }
+
+    /// Gets the actually found token from the scanned token tree.
+    #[must_use]
+    pub fn get_found_token_from_token_tree(&self, tree: Option<&TokenTree>) -> Option<Token> {
         match tree {
             Some(TokenTree::Token(token)) => Some(token.clone()),
             Some(TokenTree::Delimited(delimited)) => Some(delimited.open.clone()),
             None => self.delimiter_info.as_ref().map(|x| x.close.clone()),
         }
+    }
+}
+
+impl<'a> Frame<'a> {
+    /// Parses a list of items that are separated by a particular separator.
+    ///
+    /// This function is useful for parsing patterns of elements that are separated by a single
+    /// character, such as comma-separated lists of expressions; where the list is enclosed in
+    /// parentheses, brackets, or braces.
+    pub(crate) fn parse_enclosed_list<T>(
+        &mut self,
+        delimiter: char,
+        separator: char,
+        mut parse_item: impl FnMut(&mut Self) -> Result<T>,
+        handler: &impl Handler<SyntacticError>,
+    ) -> Result<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
+        let mut first = None;
+        let mut rest = Vec::new();
+        let mut trailing_separator = None;
+
+        // check for empty list
+        match self.stop_at_significant() {
+            Some(TokenTree::Token(Token::Punctuation(punc))) if punc.punctuation == delimiter => {
+                self.next_token();
+                return Ok((None, punc.clone()));
+            }
+            None => handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+                expected: delimiter,
+                found: None,
+            })),
+            _ => (),
+        };
+
+        if let Ok(value) = parse_item(self) {
+            first = Some(value);
+        } else {
+            let token = self.stop_at(|token| match token {
+                TokenTree::Token(Token::Punctuation(punc)) => {
+                    punc.punctuation == delimiter || punc.punctuation == separator
+                }
+                _ => false,
+            });
+
+            // if found delimiter, return empty list
+            if let Some(TokenTree::Token(Token::Punctuation(token))) = token {
+                if token.punctuation == delimiter {
+                    self.next_token();
+                    return Ok((None, token.clone()));
+                }
+            }
+        }
+
+        let delimiter = loop {
+            match self.stop_at_significant() {
+                Some(TokenTree::Token(Token::Punctuation(separator_token)))
+                    if separator_token.punctuation == separator =>
+                {
+                    // eat the separator
+                    self.next_token();
+
+                    match self.stop_at_significant() {
+                        Some(TokenTree::Token(Token::Punctuation(delimiter_token)))
+                            if delimiter_token.punctuation == delimiter =>
+                        {
+                            // eat the delimiter
+                            self.next_token();
+
+                            trailing_separator = Some(separator_token);
+                            break delimiter_token;
+                        }
+                        _ => (),
+                    }
+
+                    parse_item(self).map_or_else(
+                        |err| {
+                            self.stop_at(|token| {
+                                matches!(
+                                    token,
+                                    TokenTree::Token(Token::Punctuation(punc)) if punc.punctuation == delimiter ||
+                                        punc.punctuation == separator
+                                )
+                            });
+                        },
+                        |value| {
+                            if first.is_none() {
+                                first = Some(value);
+                            } else {
+                                rest.push((separator_token.clone(), value));
+                            }
+                        },
+                    );
+                }
+                Some(TokenTree::Token(Token::Punctuation(delimiter_token)))
+                    if delimiter_token.punctuation == delimiter =>
+                {
+                    // eat the delimiter
+                    self.next_token();
+
+                    break delimiter_token;
+                }
+                found => {
+                    handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+                        expected: delimiter,
+                        found: self.get_found_token_from_token_tree(found),
+                    }));
+                    return Err(Error);
+                }
+            }
+        };
+
+        Ok((
+            first.map(|first| ConnectedList {
+                first,
+                rest,
+                trailing_separator: trailing_separator.cloned(),
+            }),
+            delimiter.clone(),
+        ))
     }
 }
 

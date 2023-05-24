@@ -93,9 +93,7 @@ impl TokenStream {
             token_trees.push(token_tree);
         }
 
-        Self {
-            token_trees,
-        }
+        Self { token_trees }
     }
 
     fn handle_token(tokens: &mut Vec<Token>, handler: &impl Handler<Error>) -> Option<TokenTree> {
@@ -168,8 +166,8 @@ impl TokenStream {
                 }
                 (token, _) => {
                     let Some(token_tree) = Self::handle_popped_token(
-                        tokens, 
-                        token, 
+                        tokens,
+                        token,
                         handler
                     ) else {
                         break;

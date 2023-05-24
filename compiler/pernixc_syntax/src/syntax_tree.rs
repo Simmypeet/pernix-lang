@@ -2,13 +2,18 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::token::{Identifier, Keyword, Punctuation};
+use pernixc_lexical::{
+    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token_stream::TokenTree,
+};
 use pernixc_source::{SourceElement, Span, SpanError};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use crate::{
-    error::Error,
-    parser::{Frame, Parser, Result as ParserResult},
+    error::{
+        Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected, TypeSpecifierExpected,
+    },
+    parser::{Error as ParserError, Frame, Result as ParserResult},
 };
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
@@ -222,13 +227,13 @@ impl SourceElement for GenericIdentifier {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QualifiedIdentifier {
-    pub leading_separator: Option<ScopeSeparator>,
+    pub leading_scope_separator: Option<ScopeSeparator>,
     pub identifiers: ConnectedList<GenericIdentifier, ScopeSeparator>,
 }
 
 impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Result<Span, SpanError> {
-        if let Some(leading_separator) = &self.leading_separator {
+        if let Some(leading_separator) = &self.leading_scope_separator {
             leading_separator.first.span.join(&self.identifiers.span()?)
         } else {
             self.identifiers.span()
@@ -410,8 +415,13 @@ impl SourceElement for TypeAnnotation {
 /// ```
 pub type ModulePath = ConnectedList<Identifier, ScopeSeparator>;
 
+fn is_punctuation(token_tree: &TokenTree, punctuation: char) -> bool {
+    matches!(token_tree, TokenTree::Token(Token::Punctuation(p)) if p.punctuation == punctuation)
+}
+
 impl<'a> Frame<'a> {
     /// Parses a [`ModulePath`]
+    #[allow(clippy::missing_errors_doc)]
     pub fn parse_module_path(&mut self, handler: &impl Handler<Error>) -> ParserResult<ModulePath> {
         let first = self.parse_identifier(handler)?;
         let mut rest = Vec::new();
@@ -429,6 +439,7 @@ impl<'a> Frame<'a> {
     }
 
     /// Parses a [`ScopeSeparator`]
+    #[allow(clippy::missing_errors_doc)]
     pub fn parse_scope_separator(
         &mut self,
         handler: &impl Handler<Error>,
@@ -438,270 +449,252 @@ impl<'a> Frame<'a> {
 
         Ok(ScopeSeparator { first, second })
     }
-}
 
-impl<'a> Parser<'a> {
     /// Parses a [`GenericIdentifier`]
+    #[allow(clippy::missing_errors_doc)]
     pub fn parse_generic_identifier(
         &mut self,
-        use_turbofish: bool,
+        use_turbo_fish: bool,
         handler: &impl Handler<Error>,
-    ) -> Option<GenericIdentifier> {
-        let identifier = self.expect_identifier(handler)?;
+    ) -> ParserResult<GenericIdentifier> {
+        let identifier = self.parse_identifier(handler)?;
 
-        // parse the generic argument list (if any)
-        let generic_arguments = if use_turbofish {
-            let result = self.try_parse(|this| {
-                let colon = this.expect_punctuation(':', &Dummy)?;
-                match this.next_token() {
-                    Some(Token::Punctuation(punc)) if punc.punctuation == '<' => {
-                        Some((colon, punc))
-                    }
-                    _ => None,
-                }
-            });
-
-            match result {
-                Some((colon, left_angle)) => {
-                    Some(self.parse_generic_arguments(Some(colon), left_angle, handler)?)
-                }
-                None => None,
-            }
+        self.stop_at_significant();
+        let parse_generic_arguments = if use_turbo_fish {
+            self.peek()
+                .as_ref()
+                .map_or(false, |token| is_punctuation(token, ':'))
+                && self
+                    .peek_offset(1)
+                    .as_ref()
+                    .map_or(false, |token| is_punctuation(token, '<'))
         } else {
-            let left_angle = self.try_parse(|this| this.expect_punctuation('<', &Dummy));
-
-            match left_angle {
-                Some(left_angle) => Some(self.parse_generic_arguments(None, left_angle, handler)?),
-                None => None,
-            }
+            self.peek()
+                .as_ref()
+                .map_or(false, |token| is_punctuation(token, '<'))
         };
-        Some(GenericIdentifier {
+
+        let generic_arguments = if parse_generic_arguments {
+            Some(self.parse_generic_arguments(use_turbo_fish, handler)?)
+        } else {
+            None
+        };
+
+        Ok(GenericIdentifier {
             identifier,
             generic_arguments,
         })
     }
 
     /// Parses a [`QualifiedIdentifier`]
+    #[allow(clippy::missing_errors_doc)]
     pub fn parse_qualified_identifier(
         &mut self,
+        use_turbo_fish: bool,
         handler: &impl Handler<Error>,
-        use_turbofish: bool,
-    ) -> Option<QualifiedIdentifier> {
-        // found a leading separator
-        let leading_separator = self.try_parse(|this| this.parse_scope_separator(&Dummy));
+    ) -> ParserResult<QualifiedIdentifier> {
+        // stop at significant tokens
+        self.stop_at_significant();
 
-        // expect the first identifier
-        let first_identifier = self.parse_generic_identifier(use_turbofish, handler)?;
+        // leading scope separator
+        let parse_leading_scope_separator = self
+            .peek()
+            .as_ref()
+            .map_or(false, |token| is_punctuation(token, ':'));
 
+        let leading_scope_separator = if parse_leading_scope_separator {
+            Some(self.parse_scope_separator(handler)?)
+        } else {
+            None
+        };
+
+        let first = self.parse_generic_identifier(use_turbo_fish, handler)?;
         let mut rest = Vec::new();
 
-        // check if the next token is a scope separator '::'
-        while let Some(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy))
-        {
-            // must be followed by an identifier
-            let identifier = self.parse_generic_identifier(use_turbofish, handler)?;
+        // parses the identifier chain
+        while let Ok(token) = self.try_parse(|frame| frame.parse_scope_separator(&Dummy)) {
+            let another_identifier = self.parse_generic_identifier(use_turbo_fish, handler)?;
 
-            rest.push((scope_separator, identifier));
+            rest.push((token, another_identifier));
         }
 
-        Some(QualifiedIdentifier {
-            leading_separator,
+        Ok(QualifiedIdentifier {
+            leading_scope_separator,
             identifiers: ConnectedList {
-                first: first_identifier,
+                first,
                 rest,
                 trailing_separator: None,
             },
         })
     }
 
+    /// Parses a [`TypeSpecifier`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_type_specifier(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<TypeSpecifier> {
+        match self.stop_at_significant() {
+            // parse qualified identifier
+            Some(TokenTree::Token(Token::Punctuation(first_colon)))
+                if first_colon.punctuation == ':'
+                    && self
+                        .peek_offset(1)
+                        .map_or(false, |x| is_punctuation(x, ':')) =>
+            {
+                Ok(TypeSpecifier::QualifiedIdentifier(
+                    self.parse_qualified_identifier(false, handler)?,
+                ))
+            }
+
+            // parse qualified identifier
+            Some(TokenTree::Token(Token::Identifier(..))) => {
+                Ok(TypeSpecifier::QualifiedIdentifier(
+                    self.parse_qualified_identifier(false, handler)?,
+                ))
+            }
+
+            // primitive type
+            Some(TokenTree::Token(Token::Keyword(keyword)))
+                if matches!(
+                    keyword.keyword,
+                    KeywordKind::Int8
+                        | KeywordKind::Int16
+                        | KeywordKind::Int32
+                        | KeywordKind::Int64
+                        | KeywordKind::Uint8
+                        | KeywordKind::Uint16
+                        | KeywordKind::Uint32
+                        | KeywordKind::Uint64
+                        | KeywordKind::Float32
+                        | KeywordKind::Float64
+                        | KeywordKind::Bool
+                        | KeywordKind::Void
+                ) =>
+            {
+                // eat primitive type token
+                self.next_token();
+
+                let primitive_type = match keyword.keyword {
+                    KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword.clone()),
+                    KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword.clone()),
+                    KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword.clone()),
+                    KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword.clone()),
+                    KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(keyword.clone()),
+                    KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(keyword.clone()),
+                    KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(keyword.clone()),
+                    KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(keyword.clone()),
+                    KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(keyword.clone()),
+                    KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(keyword.clone()),
+                    KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword.clone()),
+                    KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(keyword.clone()),
+                    _ => unreachable!(),
+                };
+
+                Ok(TypeSpecifier::PrimitiveTypeSpecifier(primitive_type))
+            }
+
+            found => {
+                // eat the current token / make progress
+                self.next_token();
+
+                handler.recieve(Error::TypeSpecifierExpected(TypeSpecifierExpected {
+                    found: self.get_found_token_from_token_tree(found),
+                }));
+
+                Err(ParserError)
+            }
+        }
+    }
+
+    /// Parses a [`GenericArgument`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_generic_argument(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<GenericArgument> {
+        match self.stop_at_significant() {
+            // parse lifetime argument
+            Some(TokenTree::Token(Token::Punctuation(apostrophe)))
+                if apostrophe.punctuation == '\'' =>
+            {
+                // eat apostrophe
+                self.next_token();
+
+                let lifetime_argument_identifier = match self.next_significant_token() {
+                    // static
+                    Some(TokenTree::Token(Token::Keyword(static_keyword)))
+                        if static_keyword.keyword == KeywordKind::Static =>
+                    {
+                        LifetimeArgumentIdentifier::StaticKeyword(static_keyword.clone())
+                    }
+
+                    // identifier
+                    Some(TokenTree::Token(Token::Identifier(identifier))) => {
+                        LifetimeArgumentIdentifier::Identifier(identifier.clone())
+                    }
+
+                    // error: lifetime argument identifier expected
+                    found => {
+                        handler.recieve(Error::IdentifierExpected(IdentifierExpected {
+                            found: self.get_found_token_from_token_tree(found),
+                        }));
+
+                        return Err(ParserError);
+                    }
+                };
+
+                Ok(GenericArgument::LifetimeArgument(LifetimeArgument {
+                    apostrophe: apostrophe.clone(),
+                    lifetime_argument_identifier,
+                }))
+            }
+
+            // parse type argument
+            _ => Ok(GenericArgument::TypeSpecifier(Box::new(
+                self.parse_type_specifier(handler)?,
+            ))),
+        }
+    }
+
     /// Parses a [`GenericArguments`]
+    #[allow(clippy::missing_errors_doc)]
     pub fn parse_generic_arguments(
         &mut self,
-        colon: Option<Punctuation>,
-        left_angle: Punctuation,
+        use_turbo_fish: bool,
         handler: &impl Handler<Error>,
-    ) -> Option<GenericArguments> {
+    ) -> ParserResult<GenericArguments> {
+        let colon = if use_turbo_fish {
+            Some(self.parse_punctuation(':', true, handler)?)
+        } else {
+            None
+        };
+
+        let left_angle = self.parse_punctuation('<', !use_turbo_fish, handler)?;
+
         let (argument_list, right_angle) = self.parse_enclosed_list(
             '>',
             ',',
-            |this| match this.peek_significant_token() {
-                Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
-                    // eat the apostrophe
-                    this.next_token();
-                    let lifetime_identifier = this.parse_lifetime_argument_identifier(handler)?;
-
-                    Some(GenericArgument::LifetimeArgument(LifetimeArgument {
-                        apostrophe,
-                        lifetime_argument_identifier: lifetime_identifier,
-                    }))
-                }
-                _ => Some(GenericArgument::TypeSpecifier(Box::new(
-                    this.parse_type_specifier(handler)?,
-                ))),
-            },
+            |this| this.parse_generic_argument(handler),
             handler,
         )?;
 
+        // cannot be empty
         let Some(argument_list) = argument_list else {
-            handler.recieve(Error::GenericArgumentParameterListCannotBeEmpty(
-                GenericArgumentParameterListCannotBeEmpty {
-                    span: left_angle.span.join(&right_angle.span).unwrap(),
-                },
-            ));
-            return None;
+            handler.recieve(Error::GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty {
+                span: left_angle.span.join(&right_angle.span).unwrap(),
+            }));
+            return Err(ParserError);
         };
 
-        Some(GenericArguments {
+        Ok(GenericArguments {
             colon,
             left_angle,
             argument_list,
             right_angle,
         })
     }
-
-    fn parse_lifetime_argument_identifier(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<LifetimeArgumentIdentifier> {
-        match self.peek_significant_token() {
-            Some(Token::Keyword(static_keyword))
-                if static_keyword.keyword == KeywordKind::Static =>
-            {
-                // eat the static keyword
-                self.next_token();
-
-                Some(LifetimeArgumentIdentifier::StaticKeyword(static_keyword))
-            }
-            _ => {
-                let identifier = self.expect_identifier(handler)?;
-                Some(LifetimeArgumentIdentifier::Identifier(identifier))
-            }
-        }
-    }
-
-    fn parse_reference_type_specifier(
-        &mut self,
-        ampersand: Punctuation,
-        handler: &impl Handler<Error>,
-    ) -> Option<ReferenceTypeSpecifier> {
-        // parse additional lifetime argument
-        let lifetime_argument = match self.peek_significant_token() {
-            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
-                // eat the apostrophe
-                self.next_token();
-
-                let lifetime_argument_identifier =
-                    self.parse_lifetime_argument_identifier(handler)?;
-
-                Some(LifetimeArgument {
-                    apostrophe,
-                    lifetime_argument_identifier,
-                })
-            }
-            _ => None,
-        };
-
-        // parse additional reference qualifiers
-        let reference_qualifier = match self.peek_significant_token() {
-            Some(Token::Keyword(mutable_keyword))
-                if mutable_keyword.keyword == KeywordKind::Mutable =>
-            {
-                // eat the mut keyword
-                self.next_token();
-
-                Some(ReferenceQualifier::Mutable(mutable_keyword))
-            }
-
-            Some(Token::Keyword(restrict_keyword))
-                if restrict_keyword.keyword == KeywordKind::Restrict =>
-            {
-                // eat the restrict keyword
-                self.next_token();
-
-                Some(ReferenceQualifier::Restrict(restrict_keyword))
-            }
-            _ => None,
-        };
-
-        let operand_type = Box::new(self.parse_type_specifier(handler)?);
-
-        Some(ReferenceTypeSpecifier {
-            ampersand,
-            lifetime_argument,
-            reference_qualifier,
-            operand_type,
-        })
-    }
-
-    /// Parses a [`TypeSpecifier`]
-    pub fn parse_type_specifier(&mut self, handler: &impl Handler<Error>) -> Option<TypeSpecifier> {
-        if let Some(token) = self.peek_significant_token() {
-            match token {
-                Token::Punctuation(punc) if punc.punctuation == ':' => {
-                    Some(TypeSpecifier::QualifiedIdentifier(
-                        self.parse_qualified_identifier(handler, false)?,
-                    ))
-                }
-                Token::Punctuation(ampersand) if ampersand.punctuation == '&' => {
-                    // eat the ampersand
-                    self.next_token();
-
-                    self.parse_reference_type_specifier(ampersand, handler)
-                        .map(TypeSpecifier::ReferenceTypeSpecifier)
-                }
-                Token::Identifier(..) => Some(TypeSpecifier::QualifiedIdentifier(
-                    self.parse_qualified_identifier(handler, false)?,
-                )),
-                Token::Keyword(keyword) => {
-                    // eat the token right away
-                    self.next_token();
-
-                    let primitive_type = match keyword.keyword {
-                        KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword),
-                        KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword),
-                        KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword),
-                        KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(keyword),
-                        KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword),
-                        KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword),
-                        KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(keyword),
-                        KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(keyword),
-                        KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(keyword),
-                        KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(keyword),
-                        KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(keyword),
-                        KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(keyword),
-                        _ => return None,
-                    };
-
-                    Some(primitive_type.into())
-                }
-                token => {
-                    // eat the token, make progress
-                    self.next_token();
-
-                    handler.recieve(TypeSpecifierExpected { found: Some(token) }.into());
-                    None
-                }
-            }
-        } else {
-            // make progress
-            self.next_token();
-
-            handler.recieve(TypeSpecifierExpected { found: None }.into());
-            None
-        }
-    }
-
-    /// Parses a [`TypeAnnotation`]
-    pub fn parse_type_annotation(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<TypeAnnotation> {
-        let colon = self.expect_punctuation(':', handler)?;
-        let type_specifier = self.parse_type_specifier(handler)?;
-
-        Some(TypeAnnotation {
-            colon,
-            type_specifier,
-        })
-    }
 }
+
+#[cfg(test)]
+mod tests;
