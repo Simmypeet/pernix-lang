@@ -275,7 +275,7 @@ impl<'a> Frame<'a> {
                     }
 
                     parse_item(self).map_or_else(
-                        |err| {
+                        |_| {
                             self.stop_at(|token| {
                                 matches!(
                                     token,

@@ -16,6 +16,9 @@ use crate::{
     parser::{Error as ParserError, Frame, Result as ParserResult},
 };
 
+pub mod expression;
+pub mod statement;
+
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
 ///
 /// This struct is useful for representing syntax tree nodes that are separated by a separator.
