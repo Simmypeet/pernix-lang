@@ -110,10 +110,9 @@ fn token_tree_string_vec_strategy() -> impl Strategy<Value = Vec<TokenTreeString
 
 fn token_string_strategy() -> impl Strategy<Value = TokenString> {
     prop_oneof![
-        crate::token::tests::identifier_strategy().prop_map(TokenString::Identifier),
-        crate::token::tests::keyword_kind_strategy()
-            .prop_map(|k| TokenString::Keyword(k.to_string())),
-        crate::token::tests::numeric_literal_value_strategy().prop_map(TokenString::NumericLiteral),
+        crate::token::strategy::identifier().prop_map(TokenString::Identifier),
+        crate::token::strategy::keyword_kind().prop_map(|k| TokenString::Keyword(k.to_string())),
+        crate::token::strategy::numeric_literal_value().prop_map(TokenString::NumericLiteral),
         proptest::char::any().prop_filter_map("filter out delimiters", |c| {
             let not_allowed = ['_', '{', '[', '(', '}', ']', ')', '@', '\'', '"'];
             if c.is_ascii_punctuation() && !not_allowed.contains(&c) {

@@ -1,11 +1,16 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token::{
-    Identifier, Keyword, NumericLiteral as NumericLiteralToken, Punctuation,
+    Identifier, Keyword, KeywordKind, NumericLiteral as NumericLiteralToken, Punctuation, Token,
 };
 use pernixc_source::{SourceElement, Span, SpanError};
+use pernixc_system::diagnostic::Handler;
 
 use super::{statement::Statement, ConnectedList, Label, QualifiedIdentifier, TypeSpecifier};
+use crate::{
+    error::{Error, ExpressionExpected},
+    parser::{Error as ParserError, Frame, Result as ParserResult},
+};
 
 /// Is an enumeration of all kinds of expressions.
 ///
@@ -775,3 +780,91 @@ impl SourceElement for Return {
         start.join(&end)
     }
 }
+
+impl<'a> Frame<'a> {
+    fn try_parse_prefix_operator(&mut self) -> Option<PrefixOperator> {
+        self.try_parse(|parser| match parser.next_significant_token().cloned() {
+            Some(Token::Punctuation(p)) if p.punctuation == '!' => {
+                Ok(PrefixOperator::LogicalNot(p))
+            }
+            Some(Token::Punctuation(p)) if p.punctuation == '-' => Ok(PrefixOperator::Negate(p)),
+            _ => Err(ParserError),
+        })
+        .ok()
+    }
+
+    /// Parses a primary [`Expression`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_primary_expression(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Expression> {
+        // early return for prefix expression
+        if let Some(prefix_operator) = self.try_parse_prefix_operator() {
+            return Ok(Expression::Functional(Functional::Prefix(Prefix {
+                prefix_operator,
+                operand: Box::new(self.parse_primary_expression(handler)?),
+            })));
+        }
+
+        let mut expression = match self.stop_at_significant().cloned() {
+            Some(Token::NumericLiteral(numeric_literal_token)) => {
+                // eat numericl iteral
+                self.forward();
+
+                Expression::Functional(Functional::NumericLiteral(NumericLiteral {
+                    numeric_literal_token,
+                }))
+            }
+
+            Some(Token::Keyword(boolean))
+                if matches!(boolean.keyword, KeywordKind::True | KeywordKind::False) =>
+            {
+                // eat token
+                self.forward();
+
+                let boolean_literal = match boolean.keyword {
+                    KeywordKind::True => BooleanLiteral::True,
+                    KeywordKind::False => BooleanLiteral::False,
+                    _ => unreachable!(),
+                };
+
+                Expression::Functional(Functional::BooleanLiteral(boolean_literal(boolean)))
+            }
+
+            found => {
+                // forward/make progress
+                self.forward();
+
+                handler.recieve(Error::ExpressionExpected(ExpressionExpected { found }));
+
+                return Err(ParserError);
+            }
+        };
+
+        loop {
+            let dot = match self.stop_at_significant().cloned() {
+                Some(Token::Punctuation(p)) if p.punctuation == '.' => {
+                    // eat token
+                    self.forward();
+                    p
+                }
+                _ => break,
+            };
+
+            let identifier = self.parse_identifier(handler)?;
+
+            // update expression
+            expression = Expression::Functional(Functional::MemberAccess(MemberAccess {
+                operand: Box::new(expression),
+                dot,
+                identifier,
+            }));
+        }
+
+        Ok(expression)
+    }
+}
+
+#[cfg(test)]
+pub mod tests;

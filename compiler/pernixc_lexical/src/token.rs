@@ -796,5 +796,6 @@ impl Token {
     }
 }
 
+pub mod strategy;
 #[cfg(test)]
 pub mod tests;

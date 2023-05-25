@@ -1,57 +1,13 @@
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
 use pernixc_source::SourceFile;
 use pernixc_system::diagnostic::Storage;
-use proptest::{prop_assert, prop_assert_eq, prop_oneof, proptest, strategy::Strategy};
-use strum::IntoEnumIterator;
+use proptest::{prop_assert, prop_assert_eq, proptest};
 
-use super::KeywordKind;
 use crate::{
     error::Error,
     token::{CommentKind, Token, TokenizationError},
 };
-
-/// Returns a strategy that generates a valid identifier string
-pub fn identifier_strategy() -> impl Strategy<Value = String> {
-    proptest::collection::vec(
-        proptest::char::any().prop_filter("allows only identifier character", |x| {
-            Token::is_identifier_character(*x)
-        }),
-        0..=10,
-    )
-    .prop_map(|vec| vec.into_iter().collect::<String>())
-    .prop_filter(
-        "filter out first strings that have digit as the first character and empty string",
-        |x| x.chars().next().map_or(false, |x| !x.is_ascii_digit()),
-    )
-    .prop_filter(
-        "filter out identifiers that can be used as a keyword",
-        |x| KeywordKind::from_str(x).is_err(),
-    )
-}
-
-/// Returns a strategy that generates one of the variants of the [`KeywordKind`]
-pub fn keyword_kind_strategy() -> impl Strategy<Value = KeywordKind> {
-    proptest::sample::select(KeywordKind::iter().collect::<Vec<_>>())
-}
-
-/// Returns a strategy that generates a valid numeric literal value string
-pub fn numeric_literal_value_strategy() -> impl Strategy<Value = String> {
-    prop_oneof![
-        proptest::num::f64::ANY.prop_filter_map("filter out negative numbers and inf", |x| {
-            if x.is_finite() && x.is_sign_positive() {
-                Some(x.to_string())
-            } else {
-                None
-            }
-        }),
-        proptest::num::u64::ANY.prop_map(|x| x.to_string())
-    ]
-}
-
-fn delimited_comment_strategy() -> impl Strategy<Value = String> {
-    "[^\r]*".prop_filter("must not contain */", |x| !x.contains("*/"))
-}
 
 fn tokenize(source: String) -> Result<Token, proptest::test_runner::TestCaseError> {
     let source_file = SourceFile::new(PathBuf::new(), "test".to_string(), source, vec![
@@ -71,7 +27,7 @@ fn tokenize(source: String) -> Result<Token, proptest::test_runner::TestCaseErro
 
 proptest! {
     #[test]
-    fn identifier_test(source in identifier_strategy()) {
+    fn identifier_test(source in super::strategy::identifier()) {
         let token = tokenize(source.clone())?.into_identifier().unwrap();
 
         // str is equal to source
@@ -79,7 +35,7 @@ proptest! {
     }
 
     #[test]
-    fn keyword_test(keyword in keyword_kind_strategy()) {
+    fn keyword_test(keyword in super::strategy::keyword_kind()) {
         let token = tokenize(keyword.to_string())?.into_keyword().unwrap();
 
         // keyword is equal to source
@@ -89,8 +45,8 @@ proptest! {
 
     #[test]
     fn numeric_literal_test(
-        value in numeric_literal_value_strategy(),
-        optional_suffix in proptest::option::of(identifier_strategy())
+        value in super::strategy::numeric_literal_value(),
+        optional_suffix in proptest::option::of(super::strategy::identifier())
     ) {
         let source = format!("{}{}", value, optional_suffix.clone().unwrap_or_default());
         let token = tokenize(source)?.into_numeric_literal().unwrap();
@@ -122,7 +78,7 @@ proptest! {
 
     #[test]
     fn delimited_comment_test(
-        comment in delimited_comment_strategy()
+        comment in super::strategy::delimited_comment_body()
     ) {
         let source = format!("/*{comment}*/");
         let token = tokenize(source.clone())?.into_comment().unwrap();
@@ -133,7 +89,7 @@ proptest! {
 
     #[test]
     fn undelimiated_comment_test(
-        comment in delimited_comment_strategy()
+        comment in super::strategy::delimited_comment_body()
     ) {
         let source = format!("/*{comment}");
         let source_file = SourceFile::new(

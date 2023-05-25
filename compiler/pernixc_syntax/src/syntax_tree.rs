@@ -541,9 +541,7 @@ impl<'a> Frame<'a> {
                     && self.peek_offset(1).map_or(
                         false,
                         |x| matches!(x, Token::Punctuation(p) if p.punctuation == ':'),
-                    ) =>
-            {
-                Ok(TypeSpecifier::QualifiedIdentifier(
+                    ) => { Ok(TypeSpecifier::QualifiedIdentifier(
                     self.parse_qualified_identifier(false, handler)?,
                 ))
             }
@@ -692,6 +690,8 @@ impl<'a> Frame<'a> {
         })
     }
 }
+
+pub mod strategy;
 
 #[cfg(test)]
 mod tests;
