@@ -2,10 +2,7 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
-    token_stream::TokenTree,
-};
+use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
 use pernixc_source::{SourceElement, Span, SpanError};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
@@ -418,10 +415,6 @@ impl SourceElement for TypeAnnotation {
 /// ```
 pub type ModulePath = ConnectedList<Identifier, ScopeSeparator>;
 
-fn is_punctuation(token_tree: &TokenTree, punctuation: char) -> bool {
-    matches!(token_tree, TokenTree::Token(Token::Punctuation(p)) if p.punctuation == punctuation)
-}
-
 impl<'a> Frame<'a> {
     /// Parses a [`ModulePath`]
     #[allow(clippy::missing_errors_doc)]
@@ -464,17 +457,18 @@ impl<'a> Frame<'a> {
 
         self.stop_at_significant();
         let parse_generic_arguments = if use_turbo_fish {
-            self.peek()
-                .as_ref()
-                .map_or(false, |token| is_punctuation(token, ':'))
-                && self
-                    .peek_offset(1)
-                    .as_ref()
-                    .map_or(false, |token| is_punctuation(token, '<'))
+            self.peek().as_ref().map_or(
+                false,
+                |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
+            ) && self.peek_offset(1).as_ref().map_or(
+                false,
+                |token| matches!(token, Token::Punctuation(p) if p.punctuation == '<'),
+            )
         } else {
-            self.peek()
-                .as_ref()
-                .map_or(false, |token| is_punctuation(token, '<'))
+            self.peek().as_ref().map_or(
+                false,
+                |token| matches!(token, Token::Punctuation(p) if p.punctuation == '<'),
+            )
         };
 
         let generic_arguments = if parse_generic_arguments {
@@ -500,10 +494,13 @@ impl<'a> Frame<'a> {
         self.stop_at_significant();
 
         // leading scope separator
-        let parse_leading_scope_separator = self
-            .peek()
-            .as_ref()
-            .map_or(false, |token| is_punctuation(token, ':'));
+        let parse_leading_scope_separator = self.peek().as_ref().map_or(
+            false,
+            |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
+        ) && self.peek_offset(1).as_ref().map_or(
+            false,
+            |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
+        );
 
         let leading_scope_separator = if parse_leading_scope_separator {
             Some(self.parse_scope_separator(handler)?)
@@ -539,11 +536,12 @@ impl<'a> Frame<'a> {
     ) -> ParserResult<TypeSpecifier> {
         match self.stop_at_significant() {
             // parse qualified identifier
-            Some(TokenTree::Token(Token::Punctuation(first_colon)))
+            Some(Token::Punctuation(first_colon))
                 if first_colon.punctuation == ':'
-                    && self
-                        .peek_offset(1)
-                        .map_or(false, |x| is_punctuation(x, ':')) =>
+                    && self.peek_offset(1).map_or(
+                        false,
+                        |x| matches!(x, Token::Punctuation(p) if p.punctuation == ':'),
+                    ) =>
             {
                 Ok(TypeSpecifier::QualifiedIdentifier(
                     self.parse_qualified_identifier(false, handler)?,
@@ -551,14 +549,12 @@ impl<'a> Frame<'a> {
             }
 
             // parse qualified identifier
-            Some(TokenTree::Token(Token::Identifier(..))) => {
-                Ok(TypeSpecifier::QualifiedIdentifier(
-                    self.parse_qualified_identifier(false, handler)?,
-                ))
-            }
+            Some(Token::Identifier(..)) => Ok(TypeSpecifier::QualifiedIdentifier(
+                self.parse_qualified_identifier(false, handler)?,
+            )),
 
             // primitive type
-            Some(TokenTree::Token(Token::Keyword(keyword)))
+            Some(Token::Keyword(keyword))
                 if matches!(
                     keyword.keyword,
                     KeywordKind::Int8
@@ -602,7 +598,7 @@ impl<'a> Frame<'a> {
                 self.next_token();
 
                 handler.recieve(Error::TypeSpecifierExpected(TypeSpecifierExpected {
-                    found: self.get_found_token_from_token_tree(found),
+                    found: found.cloned(),
                 }));
 
                 Err(ParserError)
@@ -618,29 +614,27 @@ impl<'a> Frame<'a> {
     ) -> ParserResult<GenericArgument> {
         match self.stop_at_significant() {
             // parse lifetime argument
-            Some(TokenTree::Token(Token::Punctuation(apostrophe)))
-                if apostrophe.punctuation == '\'' =>
-            {
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat apostrophe
                 self.next_token();
 
                 let lifetime_argument_identifier = match self.next_significant_token() {
                     // static
-                    Some(TokenTree::Token(Token::Keyword(static_keyword)))
+                    Some(Token::Keyword(static_keyword))
                         if static_keyword.keyword == KeywordKind::Static =>
                     {
                         LifetimeArgumentIdentifier::StaticKeyword(static_keyword.clone())
                     }
 
                     // identifier
-                    Some(TokenTree::Token(Token::Identifier(identifier))) => {
+                    Some(Token::Identifier(identifier)) => {
                         LifetimeArgumentIdentifier::Identifier(identifier.clone())
                     }
 
                     // error: lifetime argument identifier expected
                     found => {
                         handler.recieve(Error::IdentifierExpected(IdentifierExpected {
-                            found: self.get_found_token_from_token_tree(found),
+                            found: found.cloned(),
                         }));
 
                         return Err(ParserError);

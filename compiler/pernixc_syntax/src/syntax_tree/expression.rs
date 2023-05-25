@@ -40,7 +40,7 @@ impl SourceElement for Expression {
 /// Functional:
 ///     NumericLiteral
 ///     | BooleanLiteral
-///     | Binary
+///     | BinaryList
 ///     | Prefix
 ///     | Named
 ///     | FunctionCall
@@ -57,7 +57,7 @@ impl SourceElement for Expression {
 pub enum Functional {
     NumericLiteral(NumericLiteral),
     BooleanLiteral(BooleanLiteral),
-    Binary(Binary),
+    BinaryList(BinaryList),
     Prefix(Prefix),
     Named(Named),
     FunctionCall(FunctionCall),
@@ -78,7 +78,7 @@ impl SourceElement for Functional {
                 Ok(numeric_literal.numeric_literal_token.span.clone())
             }
             Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
-            Self::Binary(binary_expression) => binary_expression.span(),
+            Self::BinaryList(binary_expression) => binary_expression.span(),
             Self::Prefix(prefix_expression) => prefix_expression.span(),
             Self::Named(identifier_expression) => identifier_expression.span(),
             Self::FunctionCall(function_call_expression) => function_call_expression.span(),
@@ -274,21 +274,10 @@ impl SourceElement for BinaryOperator {
 /// Syntax Synopsis:
 /// ``` txt
 /// Binary:
-///     Expression BinaryOperator Expression
+///     Expression (BinaryOperator Expression)+
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Binary {
-    pub left_operand: Box<Expression>,
-    pub binary_operator: BinaryOperator,
-    pub right_operand: Box<Expression>,
-}
-
-impl SourceElement for Binary {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.left_operand.span()?.join(&self.right_operand.span()?)
-    }
-}
+pub type BinaryList = ConnectedList<Box<Expression>, BinaryOperator>;
 
 /// Represents a prefix operator syntax tree.
 ///

@@ -478,7 +478,6 @@ proptest! {
         qualified_identifier_input in qualified_identifier_strategy()
     ) {
         let source = qualified_identifier_input.to_string();
-        println!("source: {source}");
         let qualified_identifier = parse(
             source,
             |parser, handler|
