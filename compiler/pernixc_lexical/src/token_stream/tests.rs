@@ -128,8 +128,8 @@ fn check_delimited_token(
     delimited: &Delimited,
     source: &DelimitedString,
 ) -> Result<(), TestCaseError> {
-    let open_str = delimited.open.span().str();
-    let close_str = delimited.close.span().str();
+    let open_str = delimited.open.span.str();
+    let close_str = delimited.close.span.str();
 
     prop_assert_eq!(open_str, match source.delimiter {
         Delimiter::Brace => "{",

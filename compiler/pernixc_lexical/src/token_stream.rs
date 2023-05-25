@@ -9,7 +9,7 @@ use pernixc_system::diagnostic::Handler;
 
 use crate::{
     error::{Error, UndelimitedDelimiter},
-    token::{Token, TokenizationError},
+    token::{Punctuation, Token, TokenizationError},
 };
 
 /// Is an enumeration of the different types of delimiters in the [`Delimited`].
@@ -25,13 +25,13 @@ pub enum Delimiter {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Delimited {
     /// The opening delimiter.
-    pub open: Token,
+    pub open: Punctuation,
 
     /// The stream of tokens inside the delimiter.
     pub token_stream: TokenStream,
 
     /// The closing delimiter.
-    pub close: Token,
+    pub close: Punctuation,
 
     /// The type of delimiter.
     pub delimiter: Delimiter,
@@ -109,30 +109,24 @@ impl TokenStream {
     ) -> Option<TokenTree> {
         match popped_token {
             Token::Punctuation(punc) if punc.punctuation == '{' => {
-                Self::handle_delimited(tokens, Token::Punctuation(punc), Delimiter::Brace, handler)
+                Self::handle_delimited(tokens, punc, Delimiter::Brace, handler)
                     .map(TokenTree::Delimited)
             }
-            Token::Punctuation(punc) if punc.punctuation == '[' => Self::handle_delimited(
-                tokens,
-                Token::Punctuation(punc),
-                Delimiter::Bracket,
-                handler,
-            )
-            .map(TokenTree::Delimited),
-            Token::Punctuation(punc) if punc.punctuation == '(' => Self::handle_delimited(
-                tokens,
-                Token::Punctuation(punc),
-                Delimiter::Parenthesis,
-                handler,
-            )
-            .map(TokenTree::Delimited),
+            Token::Punctuation(punc) if punc.punctuation == '[' => {
+                Self::handle_delimited(tokens, punc, Delimiter::Bracket, handler)
+                    .map(TokenTree::Delimited)
+            }
+            Token::Punctuation(punc) if punc.punctuation == '(' => {
+                Self::handle_delimited(tokens, punc, Delimiter::Parenthesis, handler)
+                    .map(TokenTree::Delimited)
+            }
             token => Some(TokenTree::Token(token)),
         }
     }
 
     fn handle_delimited(
         tokens: &mut Vec<Token>,
-        open: Token,
+        open: Punctuation,
         delimiter: Delimiter,
         handler: &impl Handler<Error>,
     ) -> Option<Delimited> {
@@ -144,7 +138,7 @@ impl TokenStream {
                     return Some(Delimited {
                         open,
                         token_stream: Self { token_trees },
-                        close: Token::Punctuation(punc),
+                        close: punc,
                         delimiter,
                     })
                 }
@@ -152,7 +146,7 @@ impl TokenStream {
                     return Some(Delimited {
                         open,
                         token_stream: Self { token_trees },
-                        close: Token::Punctuation(punc),
+                        close: punc,
                         delimiter,
                     })
                 }
@@ -160,7 +154,7 @@ impl TokenStream {
                     return Some(Delimited {
                         open,
                         token_stream: Self { token_trees },
-                        close: Token::Punctuation(punc),
+                        close: punc,
                         delimiter,
                     })
                 }
@@ -179,7 +173,7 @@ impl TokenStream {
         }
 
         handler.recieve(Error::UndelimitedDelimiter(UndelimitedDelimiter {
-            opening_span: open.span().clone(),
+            opening_span: open.span,
             delimiter,
         }));
 

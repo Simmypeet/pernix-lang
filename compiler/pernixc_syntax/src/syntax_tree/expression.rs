@@ -1,7 +1,10 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::token::{
-    Identifier, Keyword, KeywordKind, NumericLiteral as NumericLiteralToken, Punctuation, Token,
+use pernixc_lexical::{
+    token::{
+        Identifier, Keyword, KeywordKind, NumericLiteral as NumericLiteralToken, Punctuation, Token,
+    },
+    token_stream::Delimiter,
 };
 use pernixc_source::{SourceElement, Span, SpanError};
 use pernixc_system::diagnostic::Handler;
@@ -9,7 +12,7 @@ use pernixc_system::diagnostic::Handler;
 use super::{statement::Statement, ConnectedList, Label, QualifiedIdentifier, TypeSpecifier};
 use crate::{
     error::{Error, ExpressionExpected},
-    parser::{Error as ParserError, Frame, Result as ParserResult},
+    parser::{Error as ParserError, Parser, Result as ParserResult},
 };
 
 /// Is an enumeration of all kinds of expressions.
@@ -442,7 +445,7 @@ pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 pub struct StructLiteral {
     pub qualified_identifier: QualifiedIdentifier,
     pub left_brace: Punctuation,
-    pub field_initializations: Option<FieldInitializerList>,
+    pub field_initializers: Option<FieldInitializerList>,
     pub right_brace: Punctuation,
 }
 
@@ -781,9 +784,15 @@ impl SourceElement for Return {
     }
 }
 
-impl<'a> Frame<'a> {
+impl<'a> Parser<'a> {
+    /// Parses an [`Expression`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_expression(&mut self, handler: &impl Handler<Error>) -> ParserResult<Expression> {
+        self.parse_primary_expression(handler)
+    }
+
     fn try_parse_prefix_operator(&mut self) -> Option<PrefixOperator> {
-        self.try_parse(|parser| match parser.next_significant_token().cloned() {
+        self.try_parse(|parser| match parser.next_significant_token() {
             Some(Token::Punctuation(p)) if p.punctuation == '!' => {
                 Ok(PrefixOperator::LogicalNot(p))
             }
@@ -791,6 +800,82 @@ impl<'a> Frame<'a> {
             _ => Err(ParserError),
         })
         .ok()
+    }
+
+    fn handle_struct_literal(
+        &mut self,
+        qualified_identifier: QualifiedIdentifier,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Expression> {
+        let (left_brace, field_initializations, right_brace) = self.parse_enclosed_frame(
+            Delimiter::Brace,
+            ',',
+            |this, handler| {
+                let identifier = this.parse_identifier(handler)?;
+                let colon = this.parse_punctuation(':', true, handler)?;
+                let expression = Box::new(this.parse_expression(handler)?);
+
+                // field initializer
+                Ok(FieldInitializer {
+                    identifier,
+                    colon,
+                    expression,
+                })
+            },
+            handler,
+        )?;
+
+        Ok(Expression::Functional(Functional::StructLiteral(
+            StructLiteral {
+                qualified_identifier,
+                left_brace,
+                field_initializers: field_initializations,
+                right_brace,
+            },
+        )))
+    }
+
+    fn handle_function_call(
+        &mut self,
+        qualified_identifier: QualifiedIdentifier,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Expression> {
+        let (left_paren, arguments, right_paren) = self.parse_enclosed_frame(
+            Delimiter::Parenthesis,
+            ',',
+            |this, handler| Ok(Box::new(this.parse_expression(handler)?)),
+            handler,
+        )?;
+
+        Ok(Expression::Functional(Functional::FunctionCall(
+            FunctionCall {
+                qualified_identifier,
+                left_paren,
+                arguments,
+                right_paren,
+            },
+        )))
+    }
+
+    fn parse_identifier_expression(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Expression> {
+        let qualified_identifier = self.parse_qualified_identifier(true, handler)?;
+
+        match self.stop_at_significant() {
+            Some(Token::Punctuation(p)) if p.punctuation == '(' => {
+                self.handle_function_call(qualified_identifier, handler)
+            }
+
+            Some(Token::Punctuation(p)) if p.punctuation == '{' => {
+                self.handle_struct_literal(qualified_identifier, handler)
+            }
+
+            _ => Ok(Expression::Functional(Functional::Named(Named {
+                qualified_identifier,
+            }))),
+        }
     }
 
     /// Parses a primary [`Expression`]
@@ -807,7 +892,7 @@ impl<'a> Frame<'a> {
             })));
         }
 
-        let mut expression = match self.stop_at_significant().cloned() {
+        let mut expression = match self.stop_at_significant() {
             Some(Token::NumericLiteral(numeric_literal_token)) => {
                 // eat numericl iteral
                 self.forward();
@@ -832,6 +917,18 @@ impl<'a> Frame<'a> {
                 Expression::Functional(Functional::BooleanLiteral(boolean_literal(boolean)))
             }
 
+            // parse qualified identifier expression
+            Some(Token::Identifier(..)) => self.parse_identifier_expression(handler)?,
+            Some(Token::Punctuation(p))
+                if p.punctuation == ':'
+                    && self.peek_offset(1).map_or(
+                        false,
+                        |x| matches!(x, Token::Punctuation(p) if p.punctuation == ':'),
+                    ) =>
+            {
+                self.parse_identifier_expression(handler)?
+            }
+
             found => {
                 // forward/make progress
                 self.forward();
@@ -843,7 +940,7 @@ impl<'a> Frame<'a> {
         };
 
         loop {
-            let dot = match self.stop_at_significant().cloned() {
+            let dot = match self.stop_at_significant() {
                 Some(Token::Punctuation(p)) if p.punctuation == '.' => {
                     // eat token
                     self.forward();
@@ -866,5 +963,7 @@ impl<'a> Frame<'a> {
     }
 }
 
+pub mod strategy;
+
 #[cfg(test)]
-pub mod tests;
+mod tests;

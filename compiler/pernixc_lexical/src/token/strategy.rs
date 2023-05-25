@@ -5,22 +5,11 @@ use std::str::FromStr;
 use proptest::{prop_oneof, strategy::Strategy};
 use strum::IntoEnumIterator;
 
-use super::{KeywordKind, Token};
+use super::KeywordKind;
 
 /// A strategy that generates a valid identifier string.
 pub fn identifier() -> impl Strategy<Value = String> {
-    proptest::collection::vec(
-        proptest::char::any().prop_filter("allows only identifier character", |x| {
-            Token::is_identifier_character(*x)
-        }),
-        0..=10,
-    )
-    .prop_map(|vec| vec.into_iter().collect::<String>())
-    .prop_filter(
-        "filter out first strings that have digit as the first character and empty string",
-        |x| x.chars().next().map_or(false, |x| !x.is_ascii_digit()),
-    )
-    .prop_filter(
+    "[A-Za-z_@][A-Za-z0-9_]*".prop_filter(
         "filter out identifiers that can be used as a keyword",
         |x| KeywordKind::from_str(x).is_err(),
     )

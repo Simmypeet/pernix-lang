@@ -2,7 +2,10 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
+use pernixc_lexical::{
+    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token_stream::Delimiter,
+};
 use pernixc_source::{SourceElement, Span, SpanError};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
@@ -10,7 +13,7 @@ use crate::{
     error::{
         Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected, TypeSpecifierExpected,
     },
-    parser::{Error as ParserError, Frame, Result as ParserResult},
+    parser::{Error as ParserError, Frame, Parser, Result as ParserResult},
 };
 
 pub mod expression;
@@ -34,6 +37,100 @@ pub struct ConnectedList<Element, Separator> {
 
     /// The trailing separator of the list.
     pub trailing_separator: Option<Separator>,
+}
+
+pub type EnclosedList<T> = (
+    Punctuation,
+    Option<ConnectedList<T, Punctuation>>,
+    Punctuation,
+);
+
+impl<'a> Parser<'a> {
+    /// Parses a list of elements enclosed by a pair of delimiters, separated by a separator.
+    ///
+    /// The parser position must be at the delimited list of the given delimiter. It will
+    /// consume the whole delimited list and move the next token after the list.
+    ///
+    /// # Errors
+    /// - if the parser position is not at the delimited list of the given delimiter.
+    /// - any error returned by the given parser function.
+    pub fn parse_enclosed_frame<T, H: Handler<Error>>(
+        &mut self,
+        delimiter: Delimiter,
+        separator: char,
+        mut f: impl FnMut(&mut Self, &H) -> ParserResult<T>,
+        handler: &H,
+    ) -> ParserResult<EnclosedList<T>> {
+        fn skip_to_next_separator(this: &mut Parser, separator: char) {
+            // skip to next separator
+            if this
+                .stop_at(|token| {
+                    token
+                        .as_punctuation()
+                        .map_or(false, |x| x.punctuation == separator)
+                })
+                .map_or(false, |x| {
+                    x.as_punctuation()
+                        .map_or(false, |x| x.punctuation == separator)
+                })
+            {
+                this.forward();
+            }
+        }
+
+        // step into the delimited
+        self.step_into(delimiter, handler)?;
+
+        let open = self.token_provider.as_delimited().unwrap().open.clone();
+        let close = self.token_provider.as_delimited().unwrap().close.clone();
+
+        let mut first = None;
+        let mut rest = Vec::new();
+        let mut trailing_separator: Option<Punctuation> = None;
+
+        while !self.is_exhausted() {
+            let Ok(element) = f(self, handler) else {
+                skip_to_next_separator(self, separator);
+                continue;
+            };
+
+            // adds new element
+            match (&first, &trailing_separator) {
+                (None, None) => {
+                    first = Some(element);
+                }
+                (Some(_), Some(separator)) => {
+                    rest.push((separator.clone(), element));
+                    trailing_separator = None;
+                }
+                _ => unreachable!(),
+            }
+
+            // expect separator if not exhausted
+            if !self.is_exhausted() {
+                let Ok(separator) = self.parse_punctuation(separator, true, handler) else {
+                    skip_to_next_separator(self, separator);
+                    continue;
+                };
+
+                trailing_separator = Some(separator);
+            }
+        }
+
+        // step out from the delimited list
+        self.step_out()
+            .expect("must be able to step out, the list is exhausted");
+
+        Ok((
+            open,
+            first.map(|first| ConnectedList {
+                first,
+                rest,
+                trailing_separator,
+            }),
+            close,
+        ))
+    }
 }
 
 impl<Element: SourceElement, Separator: SourceElement> SourceElement
@@ -228,15 +325,18 @@ impl SourceElement for GenericIdentifier {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QualifiedIdentifier {
     pub leading_scope_separator: Option<ScopeSeparator>,
-    pub identifiers: ConnectedList<GenericIdentifier, ScopeSeparator>,
+    pub generic_identifiers: ConnectedList<GenericIdentifier, ScopeSeparator>,
 }
 
 impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Result<Span, SpanError> {
         if let Some(leading_separator) = &self.leading_scope_separator {
-            leading_separator.first.span.join(&self.identifiers.span()?)
+            leading_separator
+                .first
+                .span
+                .join(&self.generic_identifiers.span()?)
         } else {
-            self.identifiers.span()
+            self.generic_identifiers.span()
         }
     }
 }
@@ -520,7 +620,7 @@ impl<'a> Frame<'a> {
 
         Ok(QualifiedIdentifier {
             leading_scope_separator,
-            identifiers: ConnectedList {
+            generic_identifiers: ConnectedList {
                 first,
                 rest,
                 trailing_separator: None,
@@ -541,7 +641,9 @@ impl<'a> Frame<'a> {
                     && self.peek_offset(1).map_or(
                         false,
                         |x| matches!(x, Token::Punctuation(p) if p.punctuation == ':'),
-                    ) => { Ok(TypeSpecifier::QualifiedIdentifier(
+                    ) =>
+            {
+                Ok(TypeSpecifier::QualifiedIdentifier(
                     self.parse_qualified_identifier(false, handler)?,
                 ))
             }
@@ -573,18 +675,18 @@ impl<'a> Frame<'a> {
                 self.next_token();
 
                 let primitive_type = match keyword.keyword {
-                    KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword.clone()),
-                    KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword.clone()),
-                    KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword.clone()),
-                    KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword.clone()),
-                    KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(keyword.clone()),
-                    KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(keyword.clone()),
-                    KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(keyword.clone()),
-                    KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(keyword.clone()),
-                    KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(keyword.clone()),
-                    KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(keyword.clone()),
-                    KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword.clone()),
-                    KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(keyword.clone()),
+                    KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword),
+                    KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword),
+                    KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword),
+                    KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword),
+                    KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(keyword),
+                    KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(keyword),
+                    KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(keyword),
+                    KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(keyword),
+                    KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(keyword),
+                    KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(keyword),
+                    KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword),
+                    KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(keyword),
                     _ => unreachable!(),
                 };
 
@@ -596,7 +698,7 @@ impl<'a> Frame<'a> {
                 self.next_token();
 
                 handler.recieve(Error::TypeSpecifierExpected(TypeSpecifierExpected {
-                    found: found.cloned(),
+                    found,
                 }));
 
                 Err(ParserError)
@@ -621,26 +723,24 @@ impl<'a> Frame<'a> {
                     Some(Token::Keyword(static_keyword))
                         if static_keyword.keyword == KeywordKind::Static =>
                     {
-                        LifetimeArgumentIdentifier::StaticKeyword(static_keyword.clone())
+                        LifetimeArgumentIdentifier::StaticKeyword(static_keyword)
                     }
 
                     // identifier
                     Some(Token::Identifier(identifier)) => {
-                        LifetimeArgumentIdentifier::Identifier(identifier.clone())
+                        LifetimeArgumentIdentifier::Identifier(identifier)
                     }
 
                     // error: lifetime argument identifier expected
                     found => {
-                        handler.recieve(Error::IdentifierExpected(IdentifierExpected {
-                            found: found.cloned(),
-                        }));
+                        handler.recieve(Error::IdentifierExpected(IdentifierExpected { found }));
 
                         return Err(ParserError);
                     }
                 };
 
                 Ok(GenericArgument::LifetimeArgument(LifetimeArgument {
-                    apostrophe: apostrophe.clone(),
+                    apostrophe,
                     lifetime_argument_identifier,
                 }))
             }
@@ -667,7 +767,7 @@ impl<'a> Frame<'a> {
 
         let left_angle = self.parse_punctuation('<', !use_turbo_fish, handler)?;
 
-        let (argument_list, right_angle) = self.parse_enclosed_list(
+        let (argument_list, right_angle) = self.parse_enclosed_list_manual(
             '>',
             ',',
             |this| this.parse_generic_argument(handler),

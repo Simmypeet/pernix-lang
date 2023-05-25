@@ -723,6 +723,7 @@ impl Token {
         // Tokenizes the suffix
         let suffix_span = if let Some((_, character)) = iter.peek() {
             if Self::is_first_identifier_character(character) {
+                iter.next();
                 Self::walk_iter(iter, Self::is_identifier_character);
                 Some(Self::create_span(value_iter_end.peek().unwrap().0, iter))
             } else {
