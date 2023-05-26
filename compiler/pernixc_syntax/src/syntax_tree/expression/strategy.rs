@@ -10,10 +10,29 @@ use proptest::{
 };
 
 use super::{
-    BooleanLiteral, Expression, FunctionCall, Functional, MemberAccess, Named, NumericLiteral,
-    Prefix, PrefixOperator, StructLiteral,
+    Binary, BinaryOperator, BooleanLiteral, Expression, FunctionCall, Functional, MemberAccess,
+    Named, NumericLiteral, Parenthesized, Prefix, PrefixOperator, StructLiteral,
 };
 use crate::syntax_tree::{strategy::QualifiedIdentifierInput, ConnectedList};
+
+/// Represents an input for [`super::Parenthesized`]
+#[derive(Debug, Clone)]
+pub struct ParenthesizedInput {
+    /// The expression inside the parentheses
+    pub expression: Box<ExpressionInput>,
+}
+
+impl ToString for ParenthesizedInput {
+    fn to_string(&self) -> String { format!("({})", self.expression.to_string()) }
+}
+
+impl ParenthesizedInput {
+    /// Validates the input against the [`Parenthesized`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Parenthesized) -> Result<(), TestCaseError> {
+        self.expression.validate(&output.expression)
+    }
+}
 
 /// Represents an input for [`super::BinaryOperator`]
 #[derive(Debug, Clone, Copy)]
@@ -66,6 +85,73 @@ impl ToString for BinaryOperatorInput {
     }
 }
 
+impl BinaryOperatorInput {
+    /// Returns `true` if the operator is assignment (including compound assignment)
+    #[must_use]
+    pub fn is_assignment(&self) -> bool {
+        matches!(
+            self,
+            Self::Assign
+                | Self::CompoundAdd
+                | Self::CompoundSubtract
+                | Self::CompoundMultiply
+                | Self::CompoundDivide
+                | Self::CompoundModulo
+        )
+    }
+
+    /// Validates the input against the [`BinaryOperator`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &BinaryOperator) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Add, BinaryOperator::Add(..))
+            | (Self::Subtract, BinaryOperator::Subtract(..))
+            | (Self::Multiply, BinaryOperator::Multiply(..))
+            | (Self::Divide, BinaryOperator::Divide(..))
+            | (Self::Modulo, BinaryOperator::Modulo(..))
+            | (Self::Assign, BinaryOperator::Assign(..))
+            | (Self::CompoundAdd, BinaryOperator::CompoundAdd(..))
+            | (Self::CompoundSubtract, BinaryOperator::CompoundSubtract(..))
+            | (Self::CompoundMultiply, BinaryOperator::CompoundMultiply(..))
+            | (Self::CompoundDivide, BinaryOperator::CompoundDivide(..))
+            | (Self::CompoundModulo, BinaryOperator::CompoundModulo(..))
+            | (Self::Equal, BinaryOperator::Equal(..))
+            | (Self::NotEqual, BinaryOperator::NotEqual(..))
+            | (Self::GreaterThan, BinaryOperator::GreaterThan(..))
+            | (Self::GreaterThanOrEqual, BinaryOperator::GreaterThanOrEqual(..))
+            | (Self::LessThan, BinaryOperator::LessThan(..))
+            | (Self::LessThanOrEqual, BinaryOperator::LessThanOrEqual(..))
+            | (Self::LogicalAnd, BinaryOperator::LogicalAnd(..))
+            | (Self::LogicalOr, BinaryOperator::LogicalOr(..)) => Ok(()),
+            (_, _) => Err(TestCaseError::fail("Binary operator mismatch")),
+        }
+    }
+
+    /// Gets the precedence of the operator (the higher the number, the first it will be evaluated)
+    ///
+    /// The least operator has precedence 1.
+    #[must_use]
+    pub fn get_precedence(&self) -> u32 {
+        match self {
+            Self::Assign
+            | Self::CompoundAdd
+            | Self::CompoundSubtract
+            | Self::CompoundMultiply
+            | Self::CompoundDivide
+            | Self::CompoundModulo => 1,
+            Self::LogicalOr => 2,
+            Self::LogicalAnd => 3,
+            Self::Equal | Self::NotEqual => 4,
+            Self::LessThan
+            | Self::LessThanOrEqual
+            | Self::GreaterThan
+            | Self::GreaterThanOrEqual => 5,
+            Self::Add | Self::Subtract => 6,
+            Self::Multiply | Self::Divide | Self::Modulo => 7,
+        }
+    }
+}
+
 /// Represents an input for [`super::Binary`]
 #[derive(Debug, Clone)]
 pub struct BinaryInput {
@@ -77,6 +163,16 @@ pub struct BinaryInput {
 
     /// The right operand of the binary expression.
     pub right_operand: Box<ExpressionInput>,
+}
+
+impl BinaryInput {
+    /// Validates the input against the [`Binary`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Binary) -> Result<(), TestCaseError> {
+        self.left_operand.validate(&output.left_operand)?;
+        self.right_operand.validate(&output.right_operand)?;
+        self.binary_operator.validate(&output.binary_operator)
+    }
 }
 
 impl ToString for BinaryInput {
@@ -419,7 +515,9 @@ pub enum FunctionalInput {
     MemberAccess(MemberAccessInput),
     FunctionCall(FunctionCallInput),
     StructLiteral(StructLiteralInput),
+    Binary(BinaryInput),
     Named(NamedInput),
+    Parenthesized(ParenthesizedInput),
 }
 
 impl FunctionalInput {
@@ -434,6 +532,8 @@ impl FunctionalInput {
             (Self::FunctionCall(i), Functional::FunctionCall(o)) => i.validate(o),
             (Self::StructLiteral(i), Functional::StructLiteral(o)) => i.validate(o),
             (Self::Named(i), Functional::Named(o)) => i.validate(o),
+            (Self::Binary(i), Functional::Binary(o)) => i.validate(o),
+            (Self::Parenthesized(i), Functional::Parenthesized(o)) => i.validate(o),
             _ => Err(TestCaseError::fail("Functional type mismatch")),
         }
     }
@@ -449,6 +549,8 @@ impl ToString for FunctionalInput {
             Self::FunctionCall(p) => p.to_string(),
             Self::StructLiteral(p) => p.to_string(),
             Self::Named(p) => p.to_string(),
+            Self::Binary(p) => p.to_string(),
+            Self::Parenthesized(p) => p.to_string(),
         }
     }
 }
@@ -496,6 +598,11 @@ pub fn base_expression() -> impl Strategy<Value = ExpressionInput> {
             .prop_map(|x| ExpressionInput::Functional(FunctionalInput::NumericLiteral(x))),
         boolean_literal()
             .prop_map(|x| ExpressionInput::Functional(FunctionalInput::BooleanLiteral(x))),
+        crate::syntax_tree::strategy::qualified_identifier().prop_map(|qualified_identifier| {
+            ExpressionInput::Functional(FunctionalInput::Named(NamedInput {
+                qualified_identifier,
+            }))
+        })
     ]
 }
 
@@ -514,6 +621,14 @@ pub fn prefix_with(
         .prop_filter_map(
             "prefix input cannot have `binary` as its operand",
             |(prefix_operator, expression)| {
+                if expression
+                    .as_functional()
+                    .and_then(FunctionalInput::as_binary)
+                    .is_some()
+                {
+                    return None;
+                }
+
                 Some(PrefixInput {
                     prefix_operator,
                     operand: Box::new(expression),
@@ -537,6 +652,10 @@ pub fn member_access_with(
                     .as_functional()
                     .and_then(FunctionalInput::as_prefix)
                     .is_some()
+                    || operand
+                        .as_functional()
+                        .and_then(FunctionalInput::as_binary)
+                        .is_some()
                 {
                     return None;
                 }
@@ -549,7 +668,127 @@ pub fn member_access_with(
         )
 }
 
-/// Returns a [`Strategy`] for [`FunctionCallInput`]
+pub fn binary_operator() -> impl Strategy<Value = BinaryOperatorInput> {
+    prop_oneof![
+        Just(BinaryOperatorInput::Add),
+        Just(BinaryOperatorInput::Subtract),
+        Just(BinaryOperatorInput::Multiply),
+        Just(BinaryOperatorInput::Divide),
+        Just(BinaryOperatorInput::Modulo),
+        Just(BinaryOperatorInput::CompoundAdd),
+        Just(BinaryOperatorInput::CompoundSubtract),
+        Just(BinaryOperatorInput::CompoundMultiply),
+        Just(BinaryOperatorInput::CompoundDivide),
+        Just(BinaryOperatorInput::CompoundModulo),
+        Just(BinaryOperatorInput::Assign),
+        Just(BinaryOperatorInput::Equal),
+        Just(BinaryOperatorInput::NotEqual),
+        Just(BinaryOperatorInput::LessThan),
+        Just(BinaryOperatorInput::LessThanOrEqual),
+        Just(BinaryOperatorInput::GreaterThan),
+        Just(BinaryOperatorInput::GreaterThanOrEqual),
+        Just(BinaryOperatorInput::LogicalAnd),
+        Just(BinaryOperatorInput::LogicalOr),
+    ]
+}
+
+fn create_binary(
+    binary_operator: BinaryOperatorInput,
+    binary_input: BinaryInput,
+    expression_input: ExpressionInput,
+    swap: bool,
+) -> Option<BinaryInput> {
+    match binary_operator
+        .get_precedence()
+        .cmp(&binary_input.binary_operator.get_precedence())
+    {
+        std::cmp::Ordering::Less => {
+            let mut left_operand = Box::new(ExpressionInput::Functional(FunctionalInput::Binary(
+                binary_input,
+            )));
+            let mut right_operand = Box::new(expression_input);
+
+            if swap {
+                std::mem::swap(&mut left_operand, &mut right_operand);
+            }
+
+            Some(BinaryInput {
+                left_operand,
+                binary_operator,
+                right_operand,
+            })
+        }
+        std::cmp::Ordering::Equal => {
+            let mut left_operand = Box::new(ExpressionInput::Functional(FunctionalInput::Binary(
+                binary_input,
+            )));
+            let mut right_operand = Box::new(expression_input);
+
+            if binary_operator.is_assignment() {
+                std::mem::swap(&mut left_operand, &mut right_operand);
+            }
+
+            println!("nested");
+            Some(BinaryInput {
+                left_operand,
+                binary_operator,
+                right_operand,
+            })
+        }
+        std::cmp::Ordering::Greater => None,
+    }
+}
+
+pub fn binary_with(
+    expression_strategy: impl Strategy<Value = ExpressionInput> + Clone,
+) -> impl Strategy<Value = BinaryInput> {
+    (
+        expression_strategy.clone(),
+        binary_operator(),
+        expression_strategy,
+    )
+        .prop_filter_map(
+            "disambiguate the syntax",
+            |(left, binary_operator, right)| match (left, right) {
+                (
+                    ExpressionInput::Functional(FunctionalInput::Binary(left_operand)),
+                    ExpressionInput::Functional(FunctionalInput::Binary(right_operand)),
+                ) => {
+                    if left_operand.binary_operator.get_precedence()
+                        < binary_operator.get_precedence()
+                        && right_operand.binary_operator.get_precedence()
+                            < binary_operator.get_precedence()
+                    {
+                        Some(BinaryInput {
+                            left_operand: Box::new(ExpressionInput::Functional(
+                                FunctionalInput::Binary(left_operand),
+                            )),
+                            binary_operator,
+                            right_operand: Box::new(ExpressionInput::Functional(
+                                FunctionalInput::Binary(right_operand),
+                            )),
+                        })
+                    } else {
+                        None
+                    }
+                }
+                (
+                    ExpressionInput::Functional(FunctionalInput::Binary(left_operand)),
+                    right_operand,
+                ) => create_binary(binary_operator, left_operand, right_operand, false),
+                (
+                    left_operand,
+                    ExpressionInput::Functional(FunctionalInput::Binary(right_operand)),
+                ) => create_binary(binary_operator, right_operand, left_operand, true),
+                (left_operand, right_operand) => Some(BinaryInput {
+                    left_operand: Box::new(left_operand),
+                    binary_operator,
+                    right_operand: Box::new(right_operand),
+                }),
+            },
+        )
+}
+
 pub fn function_call_with(
     expression_strategy: impl Strategy<Value = ExpressionInput>,
 ) -> impl Strategy<Value = FunctionCallInput> {
@@ -599,7 +838,7 @@ pub fn struct_literal_with(
 
 /// Returns a [`Strategy`] for [`ExpressionInput`]
 pub fn expression() -> impl Strategy<Value = ExpressionInput> {
-    base_expression().prop_recursive(8, 64, 10, |inner| {
+    base_expression().prop_recursive(8, 256, 10, |inner| {
         prop_oneof![
             prefix_with(inner.clone())
                 .prop_map(|x| ExpressionInput::Functional(FunctionalInput::Prefix(x))),
@@ -607,13 +846,17 @@ pub fn expression() -> impl Strategy<Value = ExpressionInput> {
                 .prop_map(|x| ExpressionInput::Functional(FunctionalInput::MemberAccess(x))),
             function_call_with(inner.clone())
                 .prop_map(|x| ExpressionInput::Functional(FunctionalInput::FunctionCall(x))),
-            struct_literal_with(inner)
+            struct_literal_with(inner.clone())
                 .prop_map(|x| ExpressionInput::Functional(FunctionalInput::StructLiteral(x))),
-            crate::syntax_tree::strategy::qualified_identifier().prop_map(|qualified_identifier| {
-                ExpressionInput::Functional(FunctionalInput::Named(NamedInput {
-                    qualified_identifier,
-                }))
-            })
+            binary_with(inner.clone())
+                .prop_map(|x| ExpressionInput::Functional(FunctionalInput::Binary(x))),
+            inner.prop_map(
+                |x| ExpressionInput::Functional(FunctionalInput::Parenthesized(
+                    ParenthesizedInput {
+                        expression: Box::new(x)
+                    }
+                ))
+            )
         ]
     })
 }

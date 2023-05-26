@@ -1069,6 +1069,30 @@ impl<'a> Parser<'a> {
                 self.parse_identifier_expression(handler)?
             }
 
+            // parenthesized
+            Some(Token::Punctuation(p)) if p.punctuation == '(' => {
+                self.step_into(Delimiter::Parenthesis, handler).expect(
+                    "The found token is parenthesis, so it should be possible to step into it.",
+                );
+
+                // left and right paren
+                let (left_paren, right_paren) = {
+                    let delimited = self.token_provider.as_delimited().unwrap();
+                    (delimited.open.clone(), delimited.close.clone())
+                };
+
+                let expression = Box::new(self.parse_expression(handler)?);
+
+                // step out of the parenthesis
+                self.step_out(handler)?;
+
+                Expression::Functional(Functional::Parenthesized(Parenthesized {
+                    left_paren,
+                    expression,
+                    right_paren,
+                }))
+            }
+
             found => {
                 // forward/make progress
                 self.forward();
