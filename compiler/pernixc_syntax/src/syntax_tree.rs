@@ -118,7 +118,7 @@ impl<'a> Parser<'a> {
         }
 
         // step out from the delimited list
-        self.step_out()
+        self.step_out(handler)
             .expect("must be able to step out, the list is exhausted");
 
         Ok((

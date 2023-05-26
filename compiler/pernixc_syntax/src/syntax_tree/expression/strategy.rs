@@ -15,6 +15,81 @@ use super::{
 };
 use crate::syntax_tree::{strategy::QualifiedIdentifierInput, ConnectedList};
 
+/// Represents an input for [`super::BinaryOperator`]
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryOperatorInput {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+    Assign,
+    CompoundAdd,
+    CompoundSubtract,
+    CompoundMultiply,
+    CompoundDivide,
+    CompoundModulo,
+    Equal,
+    NotEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
+    LogicalAnd,
+    LogicalOr,
+}
+
+impl ToString for BinaryOperatorInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Add => "+",
+            Self::Subtract => "-",
+            Self::Multiply => "*",
+            Self::Divide => "/",
+            Self::Modulo => "%",
+            Self::Assign => "=",
+            Self::CompoundAdd => "+=",
+            Self::CompoundSubtract => "-=",
+            Self::CompoundMultiply => "*=",
+            Self::CompoundDivide => "/=",
+            Self::CompoundModulo => "%=",
+            Self::Equal => "==",
+            Self::NotEqual => "!=",
+            Self::GreaterThan => ">",
+            Self::GreaterThanOrEqual => ">=",
+            Self::LessThan => "<",
+            Self::LessThanOrEqual => "<=",
+            Self::LogicalAnd => "and",
+            Self::LogicalOr => "or",
+        }
+        .to_string()
+    }
+}
+
+/// Represents an input for [`super::Binary`]
+#[derive(Debug, Clone)]
+pub struct BinaryInput {
+    /// The left operand of the binary expression.
+    pub left_operand: Box<ExpressionInput>,
+
+    /// The binary operator.
+    pub binary_operator: BinaryOperatorInput,
+
+    /// The right operand of the binary expression.
+    pub right_operand: Box<ExpressionInput>,
+}
+
+impl ToString for BinaryInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {} {}",
+            self.left_operand.to_string(),
+            self.binary_operator.to_string(),
+            self.right_operand.to_string()
+        )
+    }
+}
+
 /// Represents an input for [`super::NumericLiteral`]
 #[derive(Debug, Clone, Copy)]
 pub struct NumericLiteralInput {
@@ -542,4 +617,3 @@ pub fn expression() -> impl Strategy<Value = ExpressionInput> {
         ]
     })
 }
-

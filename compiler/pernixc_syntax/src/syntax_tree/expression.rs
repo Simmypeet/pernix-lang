@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::{
@@ -7,7 +9,7 @@ use pernixc_lexical::{
     token_stream::Delimiter,
 };
 use pernixc_source::{SourceElement, Span, SpanError};
-use pernixc_system::diagnostic::Handler;
+use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{statement::Statement, ConnectedList, Label, QualifiedIdentifier, TypeSpecifier};
 use crate::{
@@ -65,7 +67,7 @@ impl SourceElement for Expression {
 pub enum Functional {
     NumericLiteral(NumericLiteral),
     BooleanLiteral(BooleanLiteral),
-    BinaryList(BinaryList),
+    Binary(Binary),
     Prefix(Prefix),
     Named(Named),
     FunctionCall(FunctionCall),
@@ -86,7 +88,7 @@ impl SourceElement for Functional {
                 Ok(numeric_literal.numeric_literal_token.span.clone())
             }
             Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
-            Self::BinaryList(binary_expression) => binary_expression.span(),
+            Self::Binary(binary_expression) => binary_expression.span(),
             Self::Prefix(prefix_expression) => prefix_expression.span(),
             Self::Named(identifier_expression) => identifier_expression.span(),
             Self::FunctionCall(function_call_expression) => function_call_expression.span(),
@@ -160,6 +162,27 @@ impl SourceElement for BooleanLiteral {
         match self {
             Self::True(keyword) | Self::False(keyword) => Ok(keyword.span.clone()),
         }
+    }
+}
+
+/// Represents a binary expression syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Binary:
+///     Expression BinaryOperator Expression
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Binary {
+    pub left_operand: Box<Expression>,
+    pub binary_operator: BinaryOperator,
+    pub right_operand: Box<Expression>,
+}
+
+impl SourceElement for Binary {
+    fn span(&self) -> Result<Span, SpanError> {
+        self.left_operand.span()?.join(&self.right_operand.span()?)
     }
 }
 
@@ -276,16 +299,6 @@ impl SourceElement for BinaryOperator {
         }
     }
 }
-
-/// Represents a binary expression syntax tree.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// Binary:
-///     Expression (BinaryOperator Expression)+
-///     ;
-/// ```
-pub type BinaryList = ConnectedList<Box<Expression>, BinaryOperator>;
 
 /// Represents a prefix operator syntax tree.
 ///
@@ -622,7 +635,7 @@ impl SourceElement for Else {
 /// IfElse:
 ///     'if' '(' Expression ')' Block Else?
 ///     ;
-/// ```    
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IfElse {
     pub if_keyword: Keyword,
@@ -788,7 +801,134 @@ impl<'a> Parser<'a> {
     /// Parses an [`Expression`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_expression(&mut self, handler: &impl Handler<Error>) -> ParserResult<Expression> {
-        self.parse_primary_expression(handler)
+        // Gets the first primary expression
+        let mut first_expression = self.parse_primary_expression(handler)?;
+
+        let mut expressions = Vec::new();
+
+        // Parses a list of binary operators and expressions
+        while let Some(binary_operator) = self.try_parse_binary_operator() {
+            expressions.push((
+                binary_operator,
+                Some(self.parse_primary_expression(handler)?),
+            ));
+        }
+
+        // We have to fold the expressions based on the precedence of the binary operators and the
+        // associativity of the binary operators.
+
+        // This a vector of indices of the expressions that are candidates for folding.
+        let mut candidate_index = 0;
+        let mut current_precedence;
+
+        while !expressions.is_empty() {
+            // Reset the current precedence and the candidate indices
+            current_precedence = 0;
+
+            for (index, (binary_operator, _)) in expressions.iter().enumerate() {
+                let new_precedence = binary_operator.get_precedence();
+                match new_precedence.cmp(&current_precedence) {
+                    // Push the index of the binary operator to the candidate indices
+                    Ordering::Equal => {
+                        if binary_operator.is_assignment() {
+                            candidate_index = index;
+                        }
+                    }
+
+                    // Clear the candidate indices and set the current precedence to the
+                    // precedence of the current binary operator.
+                    Ordering::Greater => {
+                        current_precedence = new_precedence;
+                        candidate_index = index;
+                    }
+
+                    Ordering::Less => (),
+                }
+            }
+
+            // ASSUMPTION: The assignments have 1 precedence and are right associative.
+            assert!(current_precedence > 0);
+
+            if candidate_index == 0 {
+                let (binary_operator, right_expression) = expressions.remove(0);
+
+                // Replace the first expression with the folded expression.
+                first_expression = Expression::Functional(
+                    Binary {
+                        left_operand: Box::new(first_expression),
+                        binary_operator,
+                        right_operand: Box::new(right_expression.unwrap()),
+                    }
+                    .into(),
+                );
+            } else {
+                let (binary_operator, right_expression) = expressions.remove(candidate_index);
+
+                // Replace the expression at the index with the folded expression.
+                expressions[candidate_index - 1].1 = Some(Expression::Functional(
+                    Binary {
+                        left_operand: Box::new(expressions[candidate_index - 1].1.take().unwrap()),
+                        binary_operator,
+                        right_operand: Box::new(right_expression.unwrap()),
+                    }
+                    .into(),
+                ));
+            }
+        }
+
+        Ok(first_expression)
+    }
+
+    fn try_parse_binary_operator(&mut self) -> Option<BinaryOperator> {
+        let first_level = self
+            .try_parse(|parser| match parser.next_significant_token() {
+                Some(Token::Punctuation(p)) => match p.punctuation {
+                    '+' => Ok(BinaryOperator::Add(p)),
+                    '-' => Ok(BinaryOperator::Subtract(p)),
+                    '*' => Ok(BinaryOperator::Multiply(p)),
+                    '/' => Ok(BinaryOperator::Divide(p)),
+                    '%' => Ok(BinaryOperator::Modulo(p)),
+                    '=' => Ok(BinaryOperator::Assign(p)),
+                    '!' => {
+                        let equal = parser.parse_punctuation('=', false, &Dummy)?;
+                        Ok(BinaryOperator::NotEqual(p, equal))
+                    }
+                    '>' => Ok(BinaryOperator::GreaterThan(p)),
+                    '<' => Ok(BinaryOperator::LessThan(p)),
+                    _ => Err(ParserError),
+                },
+                Some(Token::Keyword(k)) => match k.keyword {
+                    KeywordKind::And => Ok(BinaryOperator::LogicalAnd(k)),
+                    KeywordKind::Or => Ok(BinaryOperator::LogicalOr(k)),
+                    _ => Err(ParserError),
+                },
+                _ => Err(ParserError),
+            })
+            .ok()?;
+
+        Some(
+            self.try_parse(|parser| match (first_level.clone(), parser.next_token()) {
+                (first_level, Some(Token::Punctuation(n))) => match (first_level, n.punctuation) {
+                    (BinaryOperator::Add(p), '=') => Ok(BinaryOperator::CompoundAdd(p, n)),
+                    (BinaryOperator::Subtract(p), '=') => {
+                        Ok(BinaryOperator::CompoundSubtract(p, n))
+                    }
+                    (BinaryOperator::Multiply(p), '=') => {
+                        Ok(BinaryOperator::CompoundMultiply(p, n))
+                    }
+                    (BinaryOperator::Divide(p), '=') => Ok(BinaryOperator::CompoundDivide(p, n)),
+                    (BinaryOperator::Modulo(p), '=') => Ok(BinaryOperator::CompoundModulo(p, n)),
+                    (BinaryOperator::Assign(p), '=') => Ok(BinaryOperator::Equal(p, n)),
+                    (BinaryOperator::GreaterThan(p), '=') => {
+                        Ok(BinaryOperator::GreaterThanOrEqual(p, n))
+                    }
+                    (BinaryOperator::LessThan(p), '=') => Ok(BinaryOperator::LessThanOrEqual(p, n)),
+                    _ => Err(ParserError),
+                },
+                _ => Err(ParserError),
+            })
+            .unwrap_or(first_level),
+        )
     }
 
     fn try_parse_prefix_operator(&mut self) -> Option<PrefixOperator> {

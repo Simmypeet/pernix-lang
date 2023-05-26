@@ -469,11 +469,31 @@ impl<'a> Parser<'a> {
     ///
     /// # Errors
     /// If the current [`Frame`]'s token provider is not [`Delimited`].
-    pub fn step_out(&mut self) -> Result<()> {
+    pub fn step_out(&mut self, handler: &impl Handler<SyntacticError>) -> Result<()> {
         // pops the current frame off the stack
         let Some(new_frame) = self.stack.pop() else {
             return Err(Error);
         };
+
+        // the current frame must be at the end
+        if !self.current_frame.is_exhausted() {
+            let expected = match self
+                .current_frame
+                .token_provider
+                .as_delimited()
+                .unwrap()
+                .delimiter
+            {
+                Delimiter::Parenthesis => ')',
+                Delimiter::Brace => '}',
+                Delimiter::Bracket => ']',
+            };
+
+            handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+                expected,
+                found: self.current_frame.peek(),
+            }));
+        }
 
         // replaces the current frame with the popped one
         self.current_frame = new_frame;
