@@ -7,7 +7,6 @@ proptest! {
         expression_input in super::strategy::expression()
     ) {
         let source = expression_input.to_string();
-        println!("{source}");
 
         let expression = crate::syntax_tree::tests::parse(
             source,

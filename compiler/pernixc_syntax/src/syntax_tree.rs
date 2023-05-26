@@ -789,6 +789,22 @@ impl<'a> Frame<'a> {
             right_angle,
         })
     }
+
+    /// Parsers a [`TypeAnnotation`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_type_annotation(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<TypeAnnotation> {
+        let colon = self.parse_punctuation(':', true, handler)?;
+
+        let type_specifier = self.parse_type_specifier(handler)?;
+
+        Ok(TypeAnnotation {
+            colon,
+            type_specifier,
+        })
+    }
 }
 
 pub mod strategy;

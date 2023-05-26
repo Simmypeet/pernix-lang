@@ -17,6 +17,8 @@ use crate::{
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
 
+pub mod strategy;
+
 /// Is an enumeration of all kinds of expressions.
 ///
 /// ``` txt
@@ -879,6 +881,26 @@ impl<'a> Parser<'a> {
         Ok(first_expression)
     }
 
+    fn parse_label(&mut self, handler: &impl Handler<Error>) -> ParserResult<Label> {
+        let apostrophe = self.parse_punctuation('\'', true, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+
+        Ok(Label {
+            apostrophe,
+            identifier,
+        })
+    }
+
+    fn parse_label_specifier(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<LabelSpecifier> {
+        let label = self.parse_label(handler)?;
+        let colon = self.parse_punctuation(':', true, handler)?;
+
+        Ok(LabelSpecifier { label, colon })
+    }
+
     fn try_parse_binary_operator(&mut self) -> Option<BinaryOperator> {
         let first_level = self
             .try_parse(|parser| match parser.next_significant_token() {
@@ -1018,6 +1040,72 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_parenthesized_expression(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Expression> {
+        self.step_into(Delimiter::Parenthesis, handler)?;
+
+        // left and right paren
+        let (left_paren, right_paren) = {
+            let delimited = self.token_provider.as_delimited().unwrap();
+            (delimited.open.clone(), delimited.close.clone())
+        };
+
+        let expression = Box::new(self.parse_expression(handler)?);
+
+        // step out of the parenthesis
+        self.step_out(handler)?;
+
+        Ok(Expression::Functional(Functional::Parenthesized(
+            Parenthesized {
+                left_paren,
+                expression,
+                right_paren,
+            },
+        )))
+    }
+
+    fn parse_block_without_label(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<BlockWithoutLabel> {
+        fn skip_to_next_statement(this: &mut Parser) {
+            this.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
+
+            if matches!(this.peek(), Some(Token::Punctuation(p)) if p.punctuation == ';') {
+                this.forward();
+            }
+        }
+
+        self.step_into(Delimiter::Brace, handler)?;
+
+        let (left_brace, right_brace) = {
+            let delimited = self.token_provider.as_delimited().unwrap();
+            (delimited.open.clone(), delimited.close.clone())
+        };
+
+        let mut statements = Vec::new();
+
+        while !self.is_exhausted() {
+            // parse the statement
+            let Ok(statement) = self.parse_statement(handler) else {
+                skip_to_next_statement(self);
+                continue;
+            };
+
+            statements.push(statement);
+        }
+
+        self.step_out(handler)?;
+
+        Ok(BlockWithoutLabel {
+            left_brace,
+            statements,
+            right_brace,
+        })
+    }
+
     /// Parses a primary [`Expression`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_primary_expression(
@@ -1033,6 +1121,7 @@ impl<'a> Parser<'a> {
         }
 
         let mut expression = match self.stop_at_significant() {
+            // parse numeric literal
             Some(Token::NumericLiteral(numeric_literal_token)) => {
                 // eat numericl iteral
                 self.forward();
@@ -1042,6 +1131,7 @@ impl<'a> Parser<'a> {
                 }))
             }
 
+            // parse boolean literal
             Some(Token::Keyword(boolean))
                 if matches!(boolean.keyword, KeywordKind::True | KeywordKind::False) =>
             {
@@ -1071,34 +1161,22 @@ impl<'a> Parser<'a> {
 
             // parenthesized
             Some(Token::Punctuation(p)) if p.punctuation == '(' => {
-                self.step_into(Delimiter::Parenthesis, handler).expect(
-                    "The found token is parenthesis, so it should be possible to step into it.",
-                );
+                self.parse_parenthesized_expression(handler)?
+            }
 
-                // left and right paren
-                let (left_paren, right_paren) = {
-                    let delimited = self.token_provider.as_delimited().unwrap();
-                    (delimited.open.clone(), delimited.close.clone())
-                };
-
-                let expression = Box::new(self.parse_expression(handler)?);
-
-                // step out of the parenthesis
-                self.step_out(handler)?;
-
-                Expression::Functional(Functional::Parenthesized(Parenthesized {
-                    left_paren,
-                    expression,
-                    right_paren,
+            // parse block expression
+            Some(Token::Punctuation(p)) if p.punctuation == '{' => {
+                let block_without_label = self.parse_block_without_label(handler)?;
+                Expression::Imperative(Imperative::Block(Block {
+                    label_specifier: None,
+                    block_without_label,
                 }))
             }
 
             found => {
                 // forward/make progress
                 self.forward();
-
                 handler.recieve(Error::ExpressionExpected(ExpressionExpected { found }));
-
                 return Err(ParserError);
             }
         };
@@ -1126,8 +1204,6 @@ impl<'a> Parser<'a> {
         Ok(expression)
     }
 }
-
-pub mod strategy;
 
 #[cfg(test)]
 mod tests;

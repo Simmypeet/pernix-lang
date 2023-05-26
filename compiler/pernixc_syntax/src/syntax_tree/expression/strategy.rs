@@ -10,10 +10,52 @@ use proptest::{
 };
 
 use super::{
-    Binary, BinaryOperator, BooleanLiteral, Expression, FunctionCall, Functional, MemberAccess,
-    Named, NumericLiteral, Parenthesized, Prefix, PrefixOperator, StructLiteral,
+    Binary, BinaryOperator, BooleanLiteral, Expression, FunctionCall, Functional, Imperative,
+    MemberAccess, Named, NumericLiteral, Parenthesized, Prefix, PrefixOperator, StructLiteral,
 };
-use crate::syntax_tree::{strategy::QualifiedIdentifierInput, ConnectedList};
+use crate::syntax_tree::{
+    statement::strategy::StatementInput, strategy::QualifiedIdentifierInput, ConnectedList,
+};
+
+/// Represents an input for [`super::Block`]
+#[derive(Debug, Clone)]
+pub struct BlockInput {
+    /// The list of statements inside the block
+    pub statements: Vec<StatementInput>,
+}
+
+impl ToString for BlockInput {
+    fn to_string(&self) -> String {
+        let statements_str = self
+            .statements
+            .iter()
+            .map(ToString::to_string)
+            .collect::<String>();
+
+        format!("{{{statements_str}}}")
+    }
+}
+
+impl BlockInput {
+    /// Validates the input against the [`Block`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &super::Block) -> Result<(), TestCaseError> {
+        prop_assert_eq!(
+            self.statements.len(),
+            output.block_without_label.statements.len()
+        );
+
+        for (input, output) in self
+            .statements
+            .iter()
+            .zip(output.block_without_label.statements.iter())
+        {
+            input.validate(output)?;
+        }
+
+        Ok(())
+    }
+}
 
 /// Represents an input for [`super::Parenthesized`]
 #[derive(Debug, Clone)]
@@ -534,7 +576,9 @@ impl FunctionalInput {
             (Self::Named(i), Functional::Named(o)) => i.validate(o),
             (Self::Binary(i), Functional::Binary(o)) => i.validate(o),
             (Self::Parenthesized(i), Functional::Parenthesized(o)) => i.validate(o),
-            _ => Err(TestCaseError::fail("Functional type mismatch")),
+            _ => Err(TestCaseError::fail(format!(
+                "{self:#?}\n{output:#?} mismatch"
+            ))),
         }
     }
 }
@@ -555,11 +599,39 @@ impl ToString for FunctionalInput {
     }
 }
 
+/// Represents an input for [`super::Block`]
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum ImperativeInput {
+    Block(BlockInput),
+}
+
+impl ToString for ImperativeInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Block(b) => b.to_string(),
+        }
+    }
+}
+
+impl ImperativeInput {
+    /// Validates the input against the output
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Imperative) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Block(i), Imperative::Block(o)) => i.validate(o),
+            _ => Err(TestCaseError::fail(format!(
+                "{self:#?}\n{output:#?} mismatch"
+            ))),
+        }
+    }
+}
+
 /// Represents an input for [`super::Expression`]
 #[derive(Debug, Clone, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum ExpressionInput {
     Functional(FunctionalInput),
+    Imperative(ImperativeInput),
 }
 
 impl ExpressionInput {
@@ -568,6 +640,7 @@ impl ExpressionInput {
     pub fn validate(&self, output: &Expression) -> Result<(), TestCaseError> {
         match (self, output) {
             (Self::Functional(i), Expression::Functional(o)) => i.validate(o),
+            (Self::Imperative(i), Expression::Imperative(o)) => i.validate(o),
             _ => Err(TestCaseError::fail("Expression type mismatch")),
         }
     }
@@ -577,6 +650,7 @@ impl ToString for ExpressionInput {
     fn to_string(&self) -> String {
         match self {
             Self::Functional(f) => f.to_string(),
+            Self::Imperative(i) => i.to_string(),
         }
     }
 }
@@ -728,7 +802,6 @@ fn create_binary(
                 std::mem::swap(&mut left_operand, &mut right_operand);
             }
 
-            println!("nested");
             Some(BinaryInput {
                 left_operand,
                 binary_operator,
@@ -739,7 +812,7 @@ fn create_binary(
     }
 }
 
-pub fn binary_with(
+fn binary_with(
     expression_strategy: impl Strategy<Value = ExpressionInput> + Clone,
 ) -> impl Strategy<Value = BinaryInput> {
     (
@@ -751,27 +824,9 @@ pub fn binary_with(
             "disambiguate the syntax",
             |(left, binary_operator, right)| match (left, right) {
                 (
-                    ExpressionInput::Functional(FunctionalInput::Binary(left_operand)),
-                    ExpressionInput::Functional(FunctionalInput::Binary(right_operand)),
-                ) => {
-                    if left_operand.binary_operator.get_precedence()
-                        < binary_operator.get_precedence()
-                        && right_operand.binary_operator.get_precedence()
-                            < binary_operator.get_precedence()
-                    {
-                        Some(BinaryInput {
-                            left_operand: Box::new(ExpressionInput::Functional(
-                                FunctionalInput::Binary(left_operand),
-                            )),
-                            binary_operator,
-                            right_operand: Box::new(ExpressionInput::Functional(
-                                FunctionalInput::Binary(right_operand),
-                            )),
-                        })
-                    } else {
-                        None
-                    }
-                }
+                    ExpressionInput::Functional(FunctionalInput::Binary(..)),
+                    ExpressionInput::Functional(FunctionalInput::Binary(..)),
+                ) => None,
                 (
                     ExpressionInput::Functional(FunctionalInput::Binary(left_operand)),
                     right_operand,
@@ -789,7 +844,7 @@ pub fn binary_with(
         )
 }
 
-pub fn function_call_with(
+fn function_call_with(
     expression_strategy: impl Strategy<Value = ExpressionInput>,
 ) -> impl Strategy<Value = FunctionCallInput> {
     (
@@ -806,8 +861,7 @@ pub fn function_call_with(
         )
 }
 
-/// Returns a [`Strategy`] for [`StructLiteralInput`]
-pub fn struct_literal_with(
+fn struct_literal_with(
     expression_strategy: impl Strategy<Value = ExpressionInput>,
 ) -> impl Strategy<Value = StructLiteralInput> {
     (
@@ -836,9 +890,19 @@ pub fn struct_literal_with(
         )
 }
 
-/// Returns a [`Strategy`] for [`ExpressionInput`]
-pub fn expression() -> impl Strategy<Value = ExpressionInput> {
-    base_expression().prop_recursive(8, 256, 10, |inner| {
+fn block_with(
+    expression_strategy: impl Strategy<Value = ExpressionInput> + Clone,
+) -> impl Strategy<Value = BlockInput> {
+    proptest::collection::vec(
+        crate::syntax_tree::statement::strategy::statement_with(expression_strategy),
+        3,
+    )
+    .prop_map(|statements| BlockInput { statements })
+}
+
+/// Returns a strategy that generates a random [`ExpressionInput`].
+pub fn expression() -> impl Strategy<Value = ExpressionInput> + Clone {
+    base_expression().prop_recursive(8, 64, 10, |inner| {
         prop_oneof![
             prefix_with(inner.clone())
                 .prop_map(|x| ExpressionInput::Functional(FunctionalInput::Prefix(x))),
@@ -850,6 +914,8 @@ pub fn expression() -> impl Strategy<Value = ExpressionInput> {
                 .prop_map(|x| ExpressionInput::Functional(FunctionalInput::StructLiteral(x))),
             binary_with(inner.clone())
                 .prop_map(|x| ExpressionInput::Functional(FunctionalInput::Binary(x))),
+            block_with(inner.clone())
+                .prop_map(|x| ExpressionInput::Imperative(ImperativeInput::Block(x))),
             inner.prop_map(
                 |x| ExpressionInput::Functional(FunctionalInput::Parenthesized(
                     ParenthesizedInput {
