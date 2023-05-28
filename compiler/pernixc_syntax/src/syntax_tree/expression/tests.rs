@@ -8,6 +8,8 @@ proptest! {
     ) {
         let source = expression_input.to_string();
 
+        println!("{source}");
+
         let expression = crate::syntax_tree::tests::parse(
             source,
             |parser, handler| parser.parse_expression(handler)

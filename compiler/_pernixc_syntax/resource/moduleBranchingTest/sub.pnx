@@ -1,3 +1,26 @@
 public module innerSub1;
 public module innerSub2;
 
+
+public struct Vector<T, A>
+{
+    public let begin:     *T;
+    public let end:       *T;
+    public let capacity:  *T;
+    public let allocator: Allocator;
+}
+
+implements<T, A> Vector<T, A>
+{
+    public new(): self 
+    where: 
+        Default<A>
+    {
+        return self {
+            begin:     nil,
+            end:       nil,
+            capacity:  nil,
+            allocator: Default:<A>::default(),
+        };        
+    }
+}

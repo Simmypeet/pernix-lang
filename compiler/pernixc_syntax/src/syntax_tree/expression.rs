@@ -11,7 +11,9 @@ use pernixc_lexical::{
 use pernixc_source::{SourceElement, Span, SpanError};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
-use super::{statement::Statement, ConnectedList, Label, QualifiedIdentifier, TypeSpecifier};
+use super::{
+    statement::Statement, ConnectedList, EnclosedList, Label, QualifiedIdentifier, TypeSpecifier,
+};
 use crate::{
     error::{Error, ExpressionExpected},
     parser::{Error as ParserError, Parser, Result as ParserResult},
@@ -23,21 +25,52 @@ pub mod strategy;
 ///
 /// ``` txt
 /// Expression:
-///     Functional
-///     | ImperativeExpression
+///     Terminator
+///     | Functional
+///     | Primary
 ///     ;
 ///  ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 pub enum Expression {
     Functional(Functional),
+    Terminator(Terminator),
     Imperative(Imperative),
 }
 
 impl SourceElement for Expression {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
-            Self::Functional(functional_expression) => functional_expression.span(),
-            Self::Imperative(imperative_expression) => imperative_expression.span(),
+            Self::Functional(functional) => functional.span(),
+            Self::Terminator(terminator) => terminator.span(),
+            Self::Imperative(imperative) => imperative.span(),
+        }
+    }
+}
+
+/// Is an enumeration of all terminator expressions.
+///
+/// ``` txt
+/// Terminator:
+///     Return
+///     | Continue
+///     | Express
+///     | Break
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+pub enum Terminator {
+    Return(Return),
+    Continue(Continue),
+    Express(Express),
+    Break(Break),
+}
+
+impl SourceElement for Terminator {
+    fn span(&self) -> Result<Span, SpanError> {
+        match self {
+            Self::Return(return_) => return_.span(),
+            Self::Continue(continue_) => continue_.span(),
+            Self::Express(express) => express.span(),
+            Self::Break(break_) => break_.span(),
         }
     }
 }
@@ -59,10 +92,6 @@ impl SourceElement for Expression {
 ///     | Parenthesized
 ///     | StructLiteral
 ///     | MemberAccess
-///     | Continue
-///     | Break
-///     | Return
-///     | Express
 ///     | Cast
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
@@ -76,10 +105,6 @@ pub enum Functional {
     Parenthesized(Parenthesized),
     StructLiteral(StructLiteral),
     MemberAccess(MemberAccess),
-    Continue(Continue),
-    Break(Break),
-    Return(Return),
-    Express(Express),
     Cast(Cast),
 }
 
@@ -97,10 +122,6 @@ impl SourceElement for Functional {
             Self::Parenthesized(parenthesized_expression) => parenthesized_expression.span(),
             Self::StructLiteral(struct_literal) => struct_literal.span(),
             Self::MemberAccess(member_access_expression) => member_access_expression.span(),
-            Self::Continue(continue_) => continue_.span(),
-            Self::Break(break_) => break_.span(),
-            Self::Return(return_) => return_.span(),
-            Self::Express(express) => express.span(),
             Self::Cast(cast) => cast.span(),
         }
     }
@@ -172,14 +193,14 @@ impl SourceElement for BooleanLiteral {
 /// Syntax Synopsis:
 /// ``` txt
 /// Binary:
-///     Expression BinaryOperator Expression
+///     Functional BinaryOperator Functional
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Binary {
-    pub left_operand: Box<Expression>,
+    pub left_operand: Box<Functional>,
     pub binary_operator: BinaryOperator,
-    pub right_operand: Box<Expression>,
+    pub right_operand: Box<Functional>,
 }
 
 impl SourceElement for Binary {
@@ -330,13 +351,13 @@ impl SourceElement for PrefixOperator {
 /// Syntax Synopsis:
 /// ``` txt
 /// Prefix:
-///     PrefixOperator Expression
+///     PrefixOperator Functional
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Prefix {
     pub prefix_operator: PrefixOperator,
-    pub operand: Box<Expression>,
+    pub operand: Box<Functional>,
 }
 
 impl SourceElement for Prefix {
@@ -477,12 +498,12 @@ impl SourceElement for StructLiteral {
 /// Syntax Synopsis:
 /// ``` txt
 /// MemberAccess:
-///     Expression '.' Identifier
+///     Functional '.' Identifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemberAccess {
-    pub operand: Box<Expression>,
+    pub operand: Box<Functional>,
     pub dot: Punctuation,
     pub identifier: Identifier,
 }
@@ -718,14 +739,14 @@ impl SourceElement for Continue {
 /// Syntax Synopsis:
 /// ``` txt
 /// Express:
-///     'express' Label? Expression?
+///     'express' Label? Functional?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Express {
     pub express_keyword: Keyword,
     pub label: Option<Label>,
-    pub expression: Option<Box<Expression>>,
+    pub expression: Option<Functional>,
 }
 
 impl SourceElement for Express {
@@ -748,14 +769,14 @@ impl SourceElement for Express {
 /// Syntax Synopsis:
 /// ``` txt
 /// Break:
-///     'break' Label? Expression?
+///     'break' Label? Functional?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Break {
     pub break_keyword: Keyword,
     pub label: Option<Label>,
-    pub expression: Option<Box<Expression>>,
+    pub expression: Option<Functional>,
 }
 
 impl SourceElement for Break {
@@ -778,13 +799,13 @@ impl SourceElement for Break {
 /// Syntax Synopsis:
 /// ``` txt
 /// Return:
-///     'return' Expression?
+///     'return' Functional?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     pub return_keyword: Keyword,
-    pub expression: Option<Box<Expression>>,
+    pub expression: Option<Functional>,
 }
 
 impl SourceElement for Return {
@@ -800,12 +821,11 @@ impl SourceElement for Return {
 }
 
 impl<'a> Parser<'a> {
-    /// Parses an [`Expression`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_expression(&mut self, handler: &impl Handler<Error>) -> ParserResult<Expression> {
-        // Gets the first primary expression
-        let mut first_expression = self.parse_primary_expression(handler)?;
-
+    fn parse_binary_expression(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Functional> {
+        let mut first_functional = self.parse_primary_expression(handler)?;
         let mut expressions = Vec::new();
 
         // Parses a list of binary operators and expressions
@@ -855,30 +875,169 @@ impl<'a> Parser<'a> {
                 let (binary_operator, right_expression) = expressions.remove(0);
 
                 // Replace the first expression with the folded expression.
-                first_expression = Expression::Functional(
-                    Binary {
-                        left_operand: Box::new(first_expression),
-                        binary_operator,
-                        right_operand: Box::new(right_expression.unwrap()),
-                    }
-                    .into(),
-                );
+                first_functional = Functional::Binary(Binary {
+                    left_operand: Box::new(first_functional),
+                    binary_operator,
+                    right_operand: Box::new(right_expression.unwrap()),
+                });
             } else {
                 let (binary_operator, right_expression) = expressions.remove(candidate_index);
 
                 // Replace the expression at the index with the folded expression.
-                expressions[candidate_index - 1].1 = Some(Expression::Functional(
-                    Binary {
-                        left_operand: Box::new(expressions[candidate_index - 1].1.take().unwrap()),
-                        binary_operator,
-                        right_operand: Box::new(right_expression.unwrap()),
-                    }
-                    .into(),
-                ));
+                expressions[candidate_index - 1].1 = Some(Functional::Binary(Binary {
+                    left_operand: Box::new(expressions[candidate_index - 1].1.take().unwrap()),
+                    binary_operator,
+                    right_operand: Box::new(right_expression.unwrap()),
+                }));
             }
         }
 
-        Ok(first_expression)
+        Ok(first_functional)
+    }
+
+    fn parse_loop_and_block(
+        &mut self,
+        label_specifier: Option<LabelSpecifier>,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Imperative> {
+        Ok(match self.stop_at_significant() {
+            Some(Token::Punctuation(p)) if p.punctuation == '{' => {
+                let block_without_label = self.parse_block_without_label(handler)?;
+
+                // parse block
+                Imperative::Block(Block {
+                    label_specifier,
+                    block_without_label,
+                })
+            }
+            Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == KeywordKind::Loop => {
+                // eat loop keyword
+                self.forward();
+
+                let block_without_label = self.parse_block_without_label(handler)?;
+
+                // parse loop
+                Imperative::Loop(Loop {
+                    label_specifier,
+                    loop_keyword,
+                    block_without_label,
+                })
+            }
+
+            found => {
+                // forward/make progress
+                self.forward();
+                handler.recieve(Error::ExpressionExpected(ExpressionExpected { found }));
+                return Err(ParserError);
+            }
+        })
+    }
+
+    /// Parses an [`Expression`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_expression(&mut self, handler: &impl Handler<Error>) -> ParserResult<Expression> {
+        match self.stop_at_significant() {
+            // parse return expression
+            Some(Token::Keyword(return_keyword))
+                if return_keyword.keyword == KeywordKind::Return =>
+            {
+                // eat return keyword
+                self.next_token();
+
+                let expression = self.try_parse_functional();
+
+                Ok(Expression::Terminator(Terminator::Return(Return {
+                    return_keyword,
+                    expression,
+                })))
+            }
+
+            // parse continue expression
+            Some(Token::Keyword(continue_keyword))
+                if continue_keyword.keyword == KeywordKind::Continue =>
+            {
+                // eat return keyword
+                self.next_token();
+
+                let label = self.try_parse_label(handler)?;
+
+                Ok(Expression::Terminator(Terminator::Continue(Continue {
+                    continue_keyword,
+                    label,
+                })))
+            }
+
+            // parse break expression
+            Some(Token::Keyword(break_keyword)) if break_keyword.keyword == KeywordKind::Break => {
+                // eat return keyword
+                self.next_token();
+
+                let label = self.try_parse_label(handler)?;
+                let expression = self.try_parse_functional();
+
+                Ok(Expression::Terminator(Terminator::Break(Break {
+                    break_keyword,
+                    label,
+                    expression,
+                })))
+            }
+
+            // parse express expression
+            Some(Token::Keyword(express_keyword))
+                if express_keyword.keyword == KeywordKind::Express =>
+            {
+                // eat return keyword
+                self.next_token();
+
+                let label = self.try_parse_label(handler)?;
+                let expression = self.try_parse_functional();
+
+                Ok(Expression::Terminator(Terminator::Express(Express {
+                    express_keyword,
+                    label,
+                    expression,
+                })))
+            }
+
+            // parse if else expression
+            Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => self
+                .parse_if_else(handler)
+                .map(|x| Expression::Imperative(Imperative::IfElse(x))),
+
+            // parse loop or block expression with additional label sepcifier
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                // eat apostrophe
+                self.next_token();
+
+                let identifier = self.parse_identifier(handler)?;
+                let colon = self.parse_punctuation(':', true, handler)?;
+
+                Ok(Expression::Imperative(self.parse_loop_and_block(
+                    Some(LabelSpecifier {
+                        label: Label {
+                            apostrophe,
+                            identifier,
+                        },
+                        colon,
+                    }),
+                    handler,
+                )?))
+            }
+
+            // parse loop or block expression
+            Some(token)
+                if matches!(&token, Token::Punctuation(p) if p.punctuation == '{')
+                    || matches!(&token, Token::Keyword(loop_keyword) if loop_keyword.keyword == KeywordKind::Loop) =>
+            {
+                Ok(Expression::Imperative(
+                    self.parse_loop_and_block(None, handler)?,
+                ))
+            }
+
+            _ => self
+                .parse_binary_expression(handler)
+                .map(Expression::Functional),
+        }
     }
 
     fn parse_label(&mut self, handler: &impl Handler<Error>) -> ParserResult<Label> {
@@ -968,8 +1127,12 @@ impl<'a> Parser<'a> {
         &mut self,
         qualified_identifier: QualifiedIdentifier,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Expression> {
-        let (left_brace, field_initializations, right_brace) = self.parse_enclosed_frame(
+    ) -> ParserResult<Functional> {
+        let EnclosedList {
+            open: left_brace,
+            list: field_initializers,
+            close: right_brace,
+        } = self.parse_enclosed_frame(
             Delimiter::Brace,
             ',',
             |this, handler| {
@@ -987,42 +1150,42 @@ impl<'a> Parser<'a> {
             handler,
         )?;
 
-        Ok(Expression::Functional(Functional::StructLiteral(
-            StructLiteral {
-                qualified_identifier,
-                left_brace,
-                field_initializers: field_initializations,
-                right_brace,
-            },
-        )))
+        Ok(Functional::StructLiteral(StructLiteral {
+            qualified_identifier,
+            left_brace,
+            field_initializers,
+            right_brace,
+        }))
     }
 
     fn handle_function_call(
         &mut self,
         qualified_identifier: QualifiedIdentifier,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Expression> {
-        let (left_paren, arguments, right_paren) = self.parse_enclosed_frame(
+    ) -> ParserResult<Functional> {
+        let EnclosedList {
+            open: left_paren,
+            list: arguments,
+            close: right_paren,
+        } = self.parse_enclosed_frame(
             Delimiter::Parenthesis,
             ',',
             |this, handler| Ok(Box::new(this.parse_expression(handler)?)),
             handler,
         )?;
 
-        Ok(Expression::Functional(Functional::FunctionCall(
-            FunctionCall {
-                qualified_identifier,
-                left_paren,
-                arguments,
-                right_paren,
-            },
-        )))
+        Ok(Functional::FunctionCall(FunctionCall {
+            qualified_identifier,
+            left_paren,
+            arguments,
+            right_paren,
+        }))
     }
 
     fn parse_identifier_expression(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Expression> {
+    ) -> ParserResult<Functional> {
         let qualified_identifier = self.parse_qualified_identifier(true, handler)?;
 
         match self.stop_at_significant() {
@@ -1034,16 +1197,16 @@ impl<'a> Parser<'a> {
                 self.handle_struct_literal(qualified_identifier, handler)
             }
 
-            _ => Ok(Expression::Functional(Functional::Named(Named {
+            _ => Ok(Functional::Named(Named {
                 qualified_identifier,
-            }))),
+            })),
         }
     }
 
     fn parse_parenthesized_expression(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Expression> {
+    ) -> ParserResult<Functional> {
         self.step_into(Delimiter::Parenthesis, handler)?;
 
         // left and right paren
@@ -1057,13 +1220,11 @@ impl<'a> Parser<'a> {
         // step out of the parenthesis
         self.step_out(handler)?;
 
-        Ok(Expression::Functional(Functional::Parenthesized(
-            Parenthesized {
-                left_paren,
-                expression,
-                right_paren,
-            },
-        )))
+        Ok(Functional::Parenthesized(Parenthesized {
+            left_paren,
+            expression,
+            right_paren,
+        }))
     }
 
     fn parse_block_without_label(
@@ -1106,18 +1267,95 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_block(&mut self, handler: &impl Handler<Error>) -> ParserResult<Block> {
+        // parse optional label specifier
+        let label_specifier = if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '\'')
+        {
+            Some(self.parse_label_specifier(handler)?)
+        } else {
+            None
+        };
+
+        // parse the block
+        let block_without_label = self.parse_block_without_label(handler)?;
+
+        Ok(Block {
+            label_specifier,
+            block_without_label,
+        })
+    }
+
+    fn parse_else(&mut self, handler: &impl Handler<Error>) -> ParserResult<Else> {
+        let else_keyword = self.parse_keyword(KeywordKind::Else, handler)?;
+        let expression = Box::new(
+            if matches!(self.stop_at_significant(), Some(Token::Keyword(k)) if k.keyword == KeywordKind::If)
+            {
+                BlockOrIfElse::IfElse(self.parse_if_else(handler)?)
+            } else {
+                BlockOrIfElse::Block(self.parse_block(handler)?)
+            },
+        );
+
+        Ok(Else {
+            else_keyword,
+            expression,
+        })
+    }
+
+    fn parse_if_else(&mut self, handler: &impl Handler<Error>) -> ParserResult<IfElse> {
+        let if_keyword = self.parse_keyword(KeywordKind::If, handler)?;
+        let left_paren = self.parse_punctuation('(', true, handler)?;
+        let condition = Box::new(self.parse_expression(handler)?);
+        let right_paren = self.parse_punctuation(')', true, handler)?;
+        let then_expression = self.parse_block(handler)?;
+        let else_expression = if matches!(self.stop_at_significant(),
+                Some(Token::Keyword(else_keyword))
+                    if else_keyword.keyword == KeywordKind::Else)
+        {
+            Some(self.parse_else(handler)?)
+        } else {
+            None
+        };
+
+        Ok(IfElse {
+            if_keyword,
+            left_paren,
+            condition,
+            right_paren,
+            then_expression,
+            else_expression,
+        })
+    }
+
+    fn try_parse_functional(&mut self) -> Option<Functional> {
+        self.try_parse(|parser| parser.parse_binary_expression(&Dummy))
+            .ok()
+    }
+
+    fn try_parse_label(&mut self, handler: &impl Handler<Error>) -> ParserResult<Option<Label>> {
+        // parse optional label
+        Ok(
+            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '\'')
+            {
+                Some(self.parse_label(handler)?)
+            } else {
+                None
+            },
+        )
+    }
+
     /// Parses a primary [`Expression`]
-    #[allow(clippy::missing_errors_doc)]
+    #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
     pub fn parse_primary_expression(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Expression> {
+    ) -> ParserResult<Functional> {
         // early return for prefix expression
         if let Some(prefix_operator) = self.try_parse_prefix_operator() {
-            return Ok(Expression::Functional(Functional::Prefix(Prefix {
+            return Ok(Functional::Prefix(Prefix {
                 prefix_operator,
                 operand: Box::new(self.parse_primary_expression(handler)?),
-            })));
+            }));
         }
 
         let mut expression = match self.stop_at_significant() {
@@ -1126,9 +1364,9 @@ impl<'a> Parser<'a> {
                 // eat numericl iteral
                 self.forward();
 
-                Expression::Functional(Functional::NumericLiteral(NumericLiteral {
+                Functional::NumericLiteral(NumericLiteral {
                     numeric_literal_token,
-                }))
+                })
             }
 
             // parse boolean literal
@@ -1144,7 +1382,7 @@ impl<'a> Parser<'a> {
                     _ => unreachable!(),
                 };
 
-                Expression::Functional(Functional::BooleanLiteral(boolean_literal(boolean)))
+                Functional::BooleanLiteral(boolean_literal(boolean))
             }
 
             // parse qualified identifier expression
@@ -1162,15 +1400,6 @@ impl<'a> Parser<'a> {
             // parenthesized
             Some(Token::Punctuation(p)) if p.punctuation == '(' => {
                 self.parse_parenthesized_expression(handler)?
-            }
-
-            // parse block expression
-            Some(Token::Punctuation(p)) if p.punctuation == '{' => {
-                let block_without_label = self.parse_block_without_label(handler)?;
-                Expression::Imperative(Imperative::Block(Block {
-                    label_specifier: None,
-                    block_without_label,
-                }))
             }
 
             found => {
@@ -1194,11 +1423,11 @@ impl<'a> Parser<'a> {
             let identifier = self.parse_identifier(handler)?;
 
             // update expression
-            expression = Expression::Functional(Functional::MemberAccess(MemberAccess {
+            expression = Functional::MemberAccess(MemberAccess {
                 operand: Box::new(expression),
                 dot,
                 identifier,
-            }));
+            });
         }
 
         Ok(expression)

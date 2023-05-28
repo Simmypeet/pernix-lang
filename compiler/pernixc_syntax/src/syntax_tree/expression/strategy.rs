@@ -10,40 +10,121 @@ use proptest::{
 };
 
 use super::{
-    Binary, BinaryOperator, BooleanLiteral, Expression, FunctionCall, Functional, Imperative,
-    MemberAccess, Named, NumericLiteral, Parenthesized, Prefix, PrefixOperator, StructLiteral,
+    Binary, BinaryOperator, Block, BooleanLiteral, Break, Continue, Express, Expression,
+    FunctionCall, Functional, Imperative, Loop, MemberAccess, Named, NumericLiteral, Parenthesized,
+    Prefix, PrefixOperator, Return, StructLiteral, Terminator,
 };
 use crate::syntax_tree::{
     statement::strategy::StatementInput, strategy::QualifiedIdentifierInput, ConnectedList,
 };
 
+/// Represents an input for [`super::Loop`]
+#[derive(Debug, Clone)]
+pub struct LoopInput {
+    /// The label of the block
+    pub label: Option<String>,
+
+    /// The list of statements inside the block
+    pub statements: Vec<StatementInput>,
+}
+
+impl ToString for LoopInput {
+    fn to_string(&self) -> String {
+        let mut string = String::new();
+
+        if let Some(label) = &self.label {
+            string.push_str(&format!("'{label}: "));
+        }
+
+        string.push_str("loop {");
+
+        for statement in &self.statements {
+            string.push_str(&statement.to_string());
+        }
+
+        string.push('}');
+
+        string
+    }
+}
+
+impl LoopInput {
+    /// Validates the input against the [`Loop`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Loop) -> Result<(), TestCaseError> {
+        match (&self.label, &output.label_specifier) {
+            (Some(label), Some(output_label)) => {
+                prop_assert_eq!(label, &output_label.label.identifier.span.str());
+            }
+            (None, None) => (),
+            _ => return Err(TestCaseError::fail("Label mismatch")),
+        }
+
+        if self.statements.len() != output.block_without_label.statements.len() {
+            dbg!(&self.statements, &output.block_without_label.statements);
+            return Err(TestCaseError::fail("Statement count mismatch"));
+        }
+
+        for (input, output) in self
+            .statements
+            .iter()
+            .zip(output.block_without_label.statements.iter())
+        {
+            input.validate(output)?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Represents an input for [`super::Block`]
 #[derive(Debug, Clone)]
 pub struct BlockInput {
+    /// The label of the block
+    pub label: Option<String>,
+
     /// The list of statements inside the block
     pub statements: Vec<StatementInput>,
 }
 
 impl ToString for BlockInput {
     fn to_string(&self) -> String {
-        let statements_str = self
-            .statements
-            .iter()
-            .map(ToString::to_string)
-            .collect::<String>();
+        let mut string = String::new();
 
-        format!("{{{statements_str}}}")
+        if let Some(label) = &self.label {
+            string.push_str(&format!("'{label}: "));
+        }
+
+        string.push('{');
+
+        for statement in &self.statements {
+            string.push_str(&statement.to_string());
+        }
+
+        string.push('}');
+
+        string
     }
 }
 
 impl BlockInput {
     /// Validates the input against the [`Block`] output.
     #[allow(clippy::missing_errors_doc)]
-    pub fn validate(&self, output: &super::Block) -> Result<(), TestCaseError> {
-        prop_assert_eq!(
-            self.statements.len(),
-            output.block_without_label.statements.len()
-        );
+    pub fn validate(&self, output: &Block) -> Result<(), TestCaseError> {
+        match (&self.label, &output.label_specifier) {
+            (Some(label), Some(output_label)) => {
+                prop_assert_eq!(label, &output_label.label.identifier.span.str());
+            }
+            (None, None) => (),
+            _ => return Err(TestCaseError::fail("Label mismatch")),
+        }
+
+        if self.statements.len() != output.block_without_label.statements.len() {
+            return Err(TestCaseError::fail(format!(
+                "Statement count mismatch: {:#?}\n{:#?}",
+                &self.statements, &output.block_without_label.statements
+            )));
+        }
 
         for (input, output) in self
             .statements
@@ -198,13 +279,13 @@ impl BinaryOperatorInput {
 #[derive(Debug, Clone)]
 pub struct BinaryInput {
     /// The left operand of the binary expression.
-    pub left_operand: Box<ExpressionInput>,
+    pub left_operand: Box<FunctionalInput>,
 
     /// The binary operator.
     pub binary_operator: BinaryOperatorInput,
 
     /// The right operand of the binary expression.
-    pub right_operand: Box<ExpressionInput>,
+    pub right_operand: Box<FunctionalInput>,
 }
 
 impl BinaryInput {
@@ -415,7 +496,7 @@ pub struct MemberAccessInput {
     pub identifier: String,
 
     /// The operand
-    pub operand: Box<ExpressionInput>,
+    pub operand: Box<FunctionalInput>,
 }
 
 impl MemberAccessInput {
@@ -504,7 +585,7 @@ pub struct PrefixInput {
     pub prefix_operator: PrefixOperatorInput,
 
     /// The operand
-    pub operand: Box<ExpressionInput>,
+    pub operand: Box<FunctionalInput>,
 }
 
 impl PrefixInput {
@@ -599,16 +680,215 @@ impl ToString for FunctionalInput {
     }
 }
 
+/// Represents an input for [`super::Return`]
+#[derive(Debug, Clone)]
+pub struct ReturnInput {
+    /// The return expression of the return statement
+    pub expression: Option<FunctionalInput>,
+}
+
+impl ToString for ReturnInput {
+    fn to_string(&self) -> String {
+        self.expression.as_ref().map_or_else(
+            || "return".to_string(),
+            |e| format!("return {}", e.to_string()),
+        )
+    }
+}
+
+impl ReturnInput {
+    /// Validates the input against the [`Return`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Return) -> Result<(), TestCaseError> {
+        match (&self.expression, &output.expression) {
+            (None, None) => Ok(()),
+            (Some(i), Some(o)) => i.validate(o),
+            _ => Err(TestCaseError::fail(format!(
+                "{self:#?}\n{output:#?} mismatch"
+            ))),
+        }
+    }
+}
+
+/// Represents an input for [`super::Break`]
+#[derive(Debug, Clone)]
+pub struct BreakInput {
+    /// The label of the break statement
+    pub label: Option<String>,
+
+    /// The expression of the break statement
+    pub expression: Option<FunctionalInput>,
+}
+
+impl ToString for BreakInput {
+    fn to_string(&self) -> String {
+        let mut string = "break".to_string();
+
+        if let Some(label) = &self.label {
+            string.push_str(&format!(" '{label}"));
+        }
+
+        if let Some(expression) = &self.expression {
+            string.push_str(&format!(" {}", expression.to_string()));
+        }
+
+        string
+    }
+}
+
+impl BreakInput {
+    /// Validates the input against the [`Break`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Break) -> Result<(), TestCaseError> {
+        match (self.label.as_ref(), output.label.as_ref()) {
+            (Some(i), Some(o)) => {
+                prop_assert_eq!(i, o.identifier.span.str());
+            }
+            (None, None) => {}
+            _ => return Err(TestCaseError::fail("label mismatch")),
+        }
+
+        match (self.expression.as_ref(), output.expression.as_ref()) {
+            (Some(i), Some(o)) => i.validate(o)?,
+            (None, None) => {}
+            _ => return Err(TestCaseError::fail("expression mismatch")),
+        }
+
+        Ok(())
+    }
+}
+
+/// Represents an input for [`super::Express`]
+#[derive(Debug, Clone)]
+pub struct ExpressInput {
+    /// The label of the express statement
+    pub label: Option<String>,
+
+    /// The expression of the express statement
+    pub expression: Option<FunctionalInput>,
+}
+
+impl ToString for ExpressInput {
+    fn to_string(&self) -> String {
+        let mut string = String::from("express");
+
+        if let Some(label) = &self.label {
+            string.push_str(&format!(" '{label}"));
+        }
+
+        if let Some(expression) = &self.expression {
+            string.push_str(&format!(" {}", expression.to_string()));
+        }
+
+        string
+    }
+}
+
+impl ExpressInput {
+    /// Validates the input against the [`Express`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Express) -> Result<(), TestCaseError> {
+        match (self.label.as_ref(), output.label.as_ref()) {
+            (Some(i), Some(o)) => {
+                prop_assert_eq!(i, o.identifier.span.str());
+            }
+            (None, None) => {}
+            _ => return Err(TestCaseError::fail("label mismatch")),
+        }
+
+        match (self.expression.as_ref(), output.expression.as_ref()) {
+            (Some(i), Some(o)) => i.validate(o)?,
+            (None, None) => {}
+            _ => return Err(TestCaseError::fail("expression mismatch")),
+        }
+
+        Ok(())
+    }
+}
+
+/// Represents an input for [`super::Continue`]
+#[derive(Debug, Clone)]
+pub struct ContinueInput {
+    /// The label of the continue statement
+    pub label: Option<String>,
+}
+
+impl ToString for ContinueInput {
+    fn to_string(&self) -> String {
+        let mut string = String::from("continue");
+
+        if let Some(label) = &self.label {
+            string.push_str(&format!(" '{label}"));
+        }
+
+        string
+    }
+}
+
+impl ContinueInput {
+    /// Validates the input against the [`Continue`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Continue) -> Result<(), TestCaseError> {
+        match (self.label.as_ref(), output.label.as_ref()) {
+            (Some(i), Some(o)) => {
+                prop_assert_eq!(i, o.identifier.span.str());
+            }
+            (None, None) => {}
+            _ => return Err(TestCaseError::fail("label mismatch")),
+        }
+
+        Ok(())
+    }
+}
+
+/// Represents an input for [`super::Terminator`]
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum TerminatorInput {
+    Return(ReturnInput),
+    Break(BreakInput),
+    Continue(ContinueInput),
+    Express(ExpressInput),
+}
+
+impl ToString for TerminatorInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Return(r) => r.to_string(),
+            Self::Break(b) => b.to_string(),
+            Self::Continue(c) => c.to_string(),
+            Self::Express(e) => e.to_string(),
+        }
+    }
+}
+
+impl TerminatorInput {
+    /// Validates the input against the [`Terminator`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Terminator) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Return(i), Terminator::Return(o)) => i.validate(o),
+            (Self::Break(i), Terminator::Break(o)) => i.validate(o),
+            (Self::Continue(i), Terminator::Continue(o)) => i.validate(o),
+            (Self::Express(i), Terminator::Express(o)) => i.validate(o),
+            _ => Err(TestCaseError::fail(format!(
+                "{self:#?}\n{output:#?} mismatch"
+            ))),
+        }
+    }
+}
+
 /// Represents an input for [`super::Block`]
 #[derive(Debug, Clone, EnumAsInner)]
 pub enum ImperativeInput {
     Block(BlockInput),
+    Loop(LoopInput),
 }
 
 impl ToString for ImperativeInput {
     fn to_string(&self) -> String {
         match self {
             Self::Block(b) => b.to_string(),
+            Self::Loop(l) => l.to_string(),
         }
     }
 }
@@ -619,6 +899,7 @@ impl ImperativeInput {
     pub fn validate(&self, output: &Imperative) -> Result<(), TestCaseError> {
         match (self, output) {
             (Self::Block(i), Imperative::Block(o)) => i.validate(o),
+            (Self::Loop(i), Imperative::Loop(o)) => i.validate(o),
             _ => Err(TestCaseError::fail(format!(
                 "{self:#?}\n{output:#?} mismatch"
             ))),
@@ -632,6 +913,7 @@ impl ImperativeInput {
 pub enum ExpressionInput {
     Functional(FunctionalInput),
     Imperative(ImperativeInput),
+    Terminator(TerminatorInput),
 }
 
 impl ExpressionInput {
@@ -641,6 +923,7 @@ impl ExpressionInput {
         match (self, output) {
             (Self::Functional(i), Expression::Functional(o)) => i.validate(o),
             (Self::Imperative(i), Expression::Imperative(o)) => i.validate(o),
+            (Self::Terminator(i), Expression::Terminator(o)) => i.validate(o),
             _ => Err(TestCaseError::fail("Expression type mismatch")),
         }
     }
@@ -651,38 +934,33 @@ impl ToString for ExpressionInput {
         match self {
             Self::Functional(f) => f.to_string(),
             Self::Imperative(i) => i.to_string(),
+            Self::Terminator(t) => t.to_string(),
         }
     }
 }
 
-/// Represents a [`Strategy`] for [`NumericLiteralInput`]
-pub fn numeric_literal() -> impl Strategy<Value = NumericLiteralInput> {
+fn numeric_literal() -> impl Strategy<Value = NumericLiteralInput> {
     proptest::num::u64::ANY.prop_map(|number| NumericLiteralInput { number })
 }
 
-/// Represents a [`Strategy`] for [`PrefixInput`]
-pub fn boolean_literal() -> impl Strategy<Value = BooleanLiteralInput> {
+fn boolean_literal() -> impl Strategy<Value = BooleanLiteralInput> {
     proptest::bool::ANY.prop_map(|value| BooleanLiteralInput { value })
 }
 
-/// Returns a [`Strategy`] for [`ExpressionInput`]
-pub fn base_expression() -> impl Strategy<Value = ExpressionInput> {
+fn base_functional() -> impl Strategy<Value = FunctionalInput> {
     prop_oneof![
-        numeric_literal()
-            .prop_map(|x| ExpressionInput::Functional(FunctionalInput::NumericLiteral(x))),
-        boolean_literal()
-            .prop_map(|x| ExpressionInput::Functional(FunctionalInput::BooleanLiteral(x))),
+        numeric_literal().prop_map(FunctionalInput::NumericLiteral),
+        boolean_literal().prop_map(FunctionalInput::BooleanLiteral),
         crate::syntax_tree::strategy::qualified_identifier().prop_map(|qualified_identifier| {
-            ExpressionInput::Functional(FunctionalInput::Named(NamedInput {
+            FunctionalInput::Named(NamedInput {
                 qualified_identifier,
-            }))
+            })
         })
     ]
 }
 
-/// Returns a [`Strategy`] for [`PrefixInput`]
-pub fn prefix_with(
-    expression_strategy: impl Strategy<Value = ExpressionInput>,
+fn prefix_with(
+    functional_strategy: impl Strategy<Value = FunctionalInput>,
 ) -> impl Strategy<Value = PrefixInput> {
     // prefix
     (
@@ -690,16 +968,12 @@ pub fn prefix_with(
             Just(PrefixOperatorInput::LogicalNot),
             Just(PrefixOperatorInput::Negate)
         ],
-        expression_strategy,
+        functional_strategy,
     )
         .prop_filter_map(
             "prefix input cannot have `binary` as its operand",
             |(prefix_operator, expression)| {
-                if expression
-                    .as_functional()
-                    .and_then(FunctionalInput::as_binary)
-                    .is_some()
-                {
+                if matches!(expression, FunctionalInput::Binary(..)) {
                     return None;
                 }
 
@@ -711,26 +985,20 @@ pub fn prefix_with(
         )
 }
 
-/// Returns a [`Strategy`] for [`MemberAccessInput`]
-pub fn member_access_with(
-    expression_strategy: impl Strategy<Value = ExpressionInput>,
+fn member_access_with(
+    functional_strategy: impl Strategy<Value = FunctionalInput>,
 ) -> impl Strategy<Value = MemberAccessInput> {
     (
         pernixc_lexical::token::strategy::identifier(),
-        expression_strategy,
+        functional_strategy,
     )
         .prop_filter_map(
             "member access input cannot have `prefix` and `binary` as its operand",
             |(identifier, operand)| {
-                if operand
-                    .as_functional()
-                    .and_then(FunctionalInput::as_prefix)
-                    .is_some()
-                    || operand
-                        .as_functional()
-                        .and_then(FunctionalInput::as_binary)
-                        .is_some()
-                {
+                if matches!(
+                    operand,
+                    FunctionalInput::Prefix(..) | FunctionalInput::Binary(..)
+                ) {
                     return None;
                 }
 
@@ -742,7 +1010,7 @@ pub fn member_access_with(
         )
 }
 
-pub fn binary_operator() -> impl Strategy<Value = BinaryOperatorInput> {
+fn binary_operator() -> impl Strategy<Value = BinaryOperatorInput> {
     prop_oneof![
         Just(BinaryOperatorInput::Add),
         Just(BinaryOperatorInput::Subtract),
@@ -769,7 +1037,7 @@ pub fn binary_operator() -> impl Strategy<Value = BinaryOperatorInput> {
 fn create_binary(
     binary_operator: BinaryOperatorInput,
     binary_input: BinaryInput,
-    expression_input: ExpressionInput,
+    functional_input: FunctionalInput,
     swap: bool,
 ) -> Option<BinaryInput> {
     match binary_operator
@@ -777,10 +1045,8 @@ fn create_binary(
         .cmp(&binary_input.binary_operator.get_precedence())
     {
         std::cmp::Ordering::Less => {
-            let mut left_operand = Box::new(ExpressionInput::Functional(FunctionalInput::Binary(
-                binary_input,
-            )));
-            let mut right_operand = Box::new(expression_input);
+            let mut left_operand = Box::new(FunctionalInput::Binary(binary_input));
+            let mut right_operand = Box::new(functional_input);
 
             if swap {
                 std::mem::swap(&mut left_operand, &mut right_operand);
@@ -793,10 +1059,8 @@ fn create_binary(
             })
         }
         std::cmp::Ordering::Equal => {
-            let mut left_operand = Box::new(ExpressionInput::Functional(FunctionalInput::Binary(
-                binary_input,
-            )));
-            let mut right_operand = Box::new(expression_input);
+            let mut left_operand = Box::new(FunctionalInput::Binary(binary_input));
+            let mut right_operand = Box::new(functional_input);
 
             if binary_operator.is_assignment() {
                 std::mem::swap(&mut left_operand, &mut right_operand);
@@ -813,28 +1077,23 @@ fn create_binary(
 }
 
 fn binary_with(
-    expression_strategy: impl Strategy<Value = ExpressionInput> + Clone,
+    functional_strategy: impl Strategy<Value = FunctionalInput> + Clone,
 ) -> impl Strategy<Value = BinaryInput> {
     (
-        expression_strategy.clone(),
+        functional_strategy.clone(),
         binary_operator(),
-        expression_strategy,
+        functional_strategy,
     )
         .prop_filter_map(
             "disambiguate the syntax",
             |(left, binary_operator, right)| match (left, right) {
-                (
-                    ExpressionInput::Functional(FunctionalInput::Binary(..)),
-                    ExpressionInput::Functional(FunctionalInput::Binary(..)),
-                ) => None,
-                (
-                    ExpressionInput::Functional(FunctionalInput::Binary(left_operand)),
-                    right_operand,
-                ) => create_binary(binary_operator, left_operand, right_operand, false),
-                (
-                    left_operand,
-                    ExpressionInput::Functional(FunctionalInput::Binary(right_operand)),
-                ) => create_binary(binary_operator, right_operand, left_operand, true),
+                (FunctionalInput::Binary(..), FunctionalInput::Binary(..)) => None,
+                (FunctionalInput::Binary(left_operand), right_operand) => {
+                    create_binary(binary_operator, left_operand, right_operand, false)
+                }
+                (left_operand, FunctionalInput::Binary(right_operand)) => {
+                    create_binary(binary_operator, right_operand, left_operand, true)
+                }
                 (left_operand, right_operand) => Some(BinaryInput {
                     left_operand: Box::new(left_operand),
                     binary_operator,
@@ -849,7 +1108,7 @@ fn function_call_with(
 ) -> impl Strategy<Value = FunctionCallInput> {
     (
         crate::syntax_tree::strategy::qualified_identifier(),
-        proptest::collection::vec(expression_strategy, 0..=10),
+        proptest::collection::vec(expression_strategy, 0..=4),
         proptest::bool::ANY,
     )
         .prop_map(
@@ -871,7 +1130,7 @@ fn struct_literal_with(
                 pernixc_lexical::token::strategy::identifier(),
                 expression_strategy,
             ),
-            0..=10,
+            0..=4,
         ),
         proptest::bool::ANY,
     )
@@ -893,36 +1152,112 @@ fn struct_literal_with(
 fn block_with(
     expression_strategy: impl Strategy<Value = ExpressionInput> + Clone,
 ) -> impl Strategy<Value = BlockInput> {
-    proptest::collection::vec(
-        crate::syntax_tree::statement::strategy::statement_with(expression_strategy),
-        3,
+    (
+        proptest::option::of(pernixc_lexical::token::strategy::identifier()),
+        proptest::collection::vec(
+            crate::syntax_tree::statement::strategy::statement_with(expression_strategy),
+            0..=4,
+        ),
     )
-    .prop_map(|statements| BlockInput { statements })
+        .prop_map(|(label, statements)| BlockInput { label, statements })
 }
 
-/// Returns a strategy that generates a random [`ExpressionInput`].
-pub fn expression() -> impl Strategy<Value = ExpressionInput> + Clone {
-    base_expression().prop_recursive(8, 64, 10, |inner| {
+fn loop_with(
+    expression_strategy: impl Strategy<Value = ExpressionInput> + Clone,
+) -> impl Strategy<Value = LoopInput> {
+    (
+        proptest::option::of(pernixc_lexical::token::strategy::identifier()),
+        proptest::collection::vec(
+            crate::syntax_tree::statement::strategy::statement_with(expression_strategy),
+            0..=4,
+        ),
+    )
+        .prop_map(|(label, statements)| LoopInput { label, statements })
+}
+
+fn functional() -> impl Strategy<Value = FunctionalInput> {
+    base_functional().prop_recursive(4, 16, 4, |inner| {
         prop_oneof![
-            prefix_with(inner.clone())
-                .prop_map(|x| ExpressionInput::Functional(FunctionalInput::Prefix(x))),
-            member_access_with(inner.clone())
-                .prop_map(|x| ExpressionInput::Functional(FunctionalInput::MemberAccess(x))),
-            function_call_with(inner.clone())
-                .prop_map(|x| ExpressionInput::Functional(FunctionalInput::FunctionCall(x))),
-            struct_literal_with(inner.clone())
-                .prop_map(|x| ExpressionInput::Functional(FunctionalInput::StructLiteral(x))),
-            binary_with(inner.clone())
-                .prop_map(|x| ExpressionInput::Functional(FunctionalInput::Binary(x))),
-            block_with(inner.clone())
-                .prop_map(|x| ExpressionInput::Imperative(ImperativeInput::Block(x))),
-            inner.prop_map(
-                |x| ExpressionInput::Functional(FunctionalInput::Parenthesized(
-                    ParenthesizedInput {
-                        expression: Box::new(x)
-                    }
-                ))
-            )
+            prefix_with(inner.clone()).prop_map(FunctionalInput::Prefix),
+            member_access_with(inner.clone()).prop_map(FunctionalInput::MemberAccess),
+            function_call_with(expression_with(inner.clone()))
+                .prop_map(FunctionalInput::FunctionCall),
+            struct_literal_with(expression_with(inner.clone()))
+                .prop_map(FunctionalInput::StructLiteral),
+            binary_with(inner.clone()).prop_map(FunctionalInput::Binary),
+            expression_with(inner).prop_map(|x| (FunctionalInput::Parenthesized(
+                ParenthesizedInput {
+                    expression: Box::new(x)
+                }
+            )))
         ]
     })
+}
+
+fn return_with(
+    functional_strategy: impl Strategy<Value = FunctionalInput>,
+) -> impl Strategy<Value = ReturnInput> {
+    proptest::option::of(functional_strategy).prop_map(|expression| ReturnInput { expression })
+}
+
+fn break_with(
+    functional_strategy: impl Strategy<Value = FunctionalInput>,
+) -> impl Strategy<Value = BreakInput> {
+    (
+        proptest::option::of(pernixc_lexical::token::strategy::identifier()),
+        proptest::option::of(functional_strategy),
+    )
+        .prop_map(|(label, expression)| BreakInput { label, expression })
+}
+
+fn express_with(
+    functional_strategy: impl Strategy<Value = FunctionalInput>,
+) -> impl Strategy<Value = ExpressInput> {
+    (
+        proptest::option::of(pernixc_lexical::token::strategy::identifier()),
+        proptest::option::of(functional_strategy),
+    )
+        .prop_map(|(label, expression)| ExpressInput { label, expression })
+}
+
+fn continue_with() -> impl Strategy<Value = ContinueInput> {
+    proptest::option::of(pernixc_lexical::token::strategy::identifier())
+        .prop_map(|label| ContinueInput { label })
+}
+
+fn expression_with(
+    functional_strategy: impl Strategy<Value = FunctionalInput> + 'static,
+) -> impl Strategy<Value = ExpressionInput> + Clone {
+    functional_strategy
+        .prop_map(ExpressionInput::Functional)
+        .prop_recursive(4, 16, 4, move |inner| {
+            prop_oneof![
+                loop_with(inner.clone())
+                    .prop_map(|x| ExpressionInput::Imperative(ImperativeInput::Loop(x))),
+                block_with(inner.clone())
+                    .prop_map(|x| ExpressionInput::Imperative(ImperativeInput::Block(x))),
+                return_with(
+                    inner
+                        .clone()
+                        .prop_filter_map("extract functional", |x| x.into_functional().ok())
+                )
+                .prop_map(|x| ExpressionInput::Terminator(TerminatorInput::Return(x))),
+                break_with(
+                    inner
+                        .clone()
+                        .prop_filter_map("extract functional", |x| x.into_functional().ok())
+                )
+                .prop_map(|x| ExpressionInput::Terminator(TerminatorInput::Break(x))),
+                express_with(
+                    inner.prop_filter_map("extract functional", |x| x.into_functional().ok())
+                )
+                .prop_map(|x| ExpressionInput::Terminator(TerminatorInput::Express(x))),
+                continue_with()
+                    .prop_map(|x| ExpressionInput::Terminator(TerminatorInput::Continue(x)))
+            ]
+        })
+}
+
+pub fn expression() -> impl Strategy<Value = ExpressionInput> + Clone {
+    expression_with(functional())
 }

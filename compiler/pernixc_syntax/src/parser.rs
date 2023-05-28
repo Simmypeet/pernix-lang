@@ -377,12 +377,13 @@ impl<'a> Frame<'a> {
 }
 
 /// The parser of the compiler.
-#[derive(Debug, Deref, DerefMut)]
+#[derive(Debug, Clone, Deref, DerefMut)]
 pub struct Parser<'a> {
     #[deref]
     #[deref_mut]
     current_frame: Frame<'a>,
     stack: Vec<Frame<'a>>,
+    trying_stack: Vec<usize>,
 }
 
 impl<'a> Parser<'a> {
@@ -395,6 +396,7 @@ impl<'a> Parser<'a> {
                 current_index: 0,
             },
             stack: Vec::new(),
+            trying_stack: Vec::new(),
         }
     }
 
@@ -470,6 +472,10 @@ impl<'a> Parser<'a> {
     /// # Errors
     /// If the current [`Frame`]'s token provider is not [`Delimited`].
     pub fn step_out(&mut self, handler: &impl Handler<SyntacticError>) -> Result<()> {
+        if let Some(threshold) = self.trying_stack.last().copied() {
+            assert!(self.stack.len() > threshold);
+        }
+
         // pops the current frame off the stack
         let Some(new_frame) = self.stack.pop() else {
             return Err(Error);
@@ -499,5 +505,30 @@ impl<'a> Parser<'a> {
         self.current_frame = new_frame;
 
         Ok(())
+    }
+
+    /// Performs a rollback if the parsing fails.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn try_parse<T>(&mut self, parser: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        let current_frame_copy = self.current_frame.clone();
+        self.trying_stack.push(self.stack.len());
+
+        match parser(self) {
+            Ok(value) => {
+                self.trying_stack.pop();
+                Ok(value)
+            }
+            Err(err) => {
+                let stack_len = self.trying_stack.pop().unwrap();
+
+                // the stack must be the same as before the call
+                self.stack.truncate(stack_len);
+
+                // restore the current Frame
+                self.current_frame = current_frame_copy;
+
+                Err(err)
+            }
+        }
     }
 }

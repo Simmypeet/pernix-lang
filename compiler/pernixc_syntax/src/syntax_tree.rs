@@ -17,6 +17,7 @@ use crate::{
 };
 
 pub mod expression;
+pub mod item;
 pub mod statement;
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
@@ -39,11 +40,18 @@ pub struct ConnectedList<Element, Separator> {
     pub trailing_separator: Option<Separator>,
 }
 
-pub type EnclosedList<T> = (
-    Punctuation,
-    Option<ConnectedList<T, Punctuation>>,
-    Punctuation,
-);
+/// Is t he result of [`Parser::parse_enclosed_frame()`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EnclosedList<T> {
+    /// The open delimiter of the list.
+    pub open: Punctuation,
+
+    /// The list of elements.
+    pub list: Option<ConnectedList<T, Punctuation>>,
+
+    /// The close delimiter of the list.
+    pub close: Punctuation,
+}
 
 impl<'a> Parser<'a> {
     /// Parses a list of elements enclosed by a pair of delimiters, separated by a separator.
@@ -121,15 +129,15 @@ impl<'a> Parser<'a> {
         self.step_out(handler)
             .expect("must be able to step out, the list is exhausted");
 
-        Ok((
+        Ok(EnclosedList {
             open,
-            first.map(|first| ConnectedList {
+            list: first.map(|first| ConnectedList {
                 first,
                 rest,
                 trailing_separator,
             }),
             close,
-        ))
+        })
     }
 }
 

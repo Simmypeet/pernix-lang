@@ -5,7 +5,7 @@ use pernixc_source::{SourceElement, Span, SpanError};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
-    expression::{Expression, Functional, Imperative},
+    expression::{Expression, Functional, Imperative, Terminator},
     TypeAnnotation,
 };
 use crate::{
@@ -113,6 +113,30 @@ impl SourceElement for Expressive {
     }
 }
 
+/// Is an enumeration of all expressions that can be used in [`Semi`] statement.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// SemiExpression:
+///     Functional
+///     | Terminator
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+pub enum SemiExpression {
+    Functional(Functional),
+    Terminator(Terminator),
+}
+
+impl SourceElement for SemiExpression {
+    fn span(&self) -> Result<Span, SpanError> {
+        match self {
+            Self::Functional(expression) => expression.span(),
+            Self::Terminator(expression) => expression.span(),
+        }
+    }
+}
+
 /// Represents a semi statement syntax tree node
 ///
 /// Semi statements are statements that are a functional expression followed by a semicolon.
@@ -125,12 +149,14 @@ impl SourceElement for Expressive {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Semi {
-    pub expression: Functional,
+    pub semi_expression: SemiExpression,
     pub semicolon: Punctuation,
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Result<Span, SpanError> { self.expression.span()?.join(&self.semicolon.span) }
+    fn span(&self) -> Result<Span, SpanError> {
+        self.semi_expression.span()?.join(&self.semicolon.span)
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -142,18 +168,19 @@ impl<'a> Parser<'a> {
             self.parse_variable_declaration(handler)
                 .map(|x| Statement::Declarative(Declarative::VariableDeclaration(x)))
         } else {
-            Ok(Statement::Expressive(
-                match self.parse_expression(handler)? {
-                    Expression::Functional(expression) => {
-                        let semicolon = self.parse_punctuation(';', true, handler)?;
-                        Expressive::Semi(Semi {
-                            expression,
-                            semicolon,
-                        })
-                    }
-                    Expression::Imperative(expression) => Expressive::Imperative(expression),
-                },
-            ))
+            let semi_expression = match self.parse_expression(handler)? {
+                Expression::Imperative(imperative) => {
+                    return Ok(Statement::Expressive(Expressive::Imperative(imperative)));
+                }
+                Expression::Functional(functional) => SemiExpression::Functional(functional),
+                Expression::Terminator(terminator) => SemiExpression::Terminator(terminator),
+            };
+
+            let semicolon = self.parse_punctuation(';', true, handler)?;
+            Ok(Statement::Expressive(Expressive::Semi(Semi {
+                semi_expression,
+                semicolon,
+            })))
         }
     }
 

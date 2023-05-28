@@ -1,8 +1,8 @@
 use proptest::{prop_assert_eq, prop_oneof, strategy::Strategy, test_runner::TestCaseError};
 
-use super::{Declarative, Expressive, Semi, Statement, VariableDeclaration};
+use super::{Declarative, Expressive, Semi, SemiExpression, Statement, VariableDeclaration};
 use crate::syntax_tree::{
-    expression::strategy::{ExpressionInput, FunctionalInput, ImperativeInput},
+    expression::strategy::{ExpressionInput, FunctionalInput, ImperativeInput, TerminatorInput},
     strategy::TypeSpecifierInput,
 };
 
@@ -145,11 +145,39 @@ impl VariableDeclarationInput {
     }
 }
 
+/// Represents an input for [`super::SemiInput`]
+#[derive(Debug, Clone)]
+pub enum SemiExpressionInput {
+    Functional(FunctionalInput),
+    Terminator(TerminatorInput),
+}
+
+impl ToString for SemiExpressionInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Functional(input) => input.to_string(),
+            Self::Terminator(input) => input.to_string(),
+        }
+    }
+}
+
+impl SemiExpressionInput {
+    /// Validates the input against the [`SemiExpression`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &SemiExpression) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Functional(input), SemiExpression::Functional(output)) => input.validate(output),
+            (Self::Terminator(input), SemiExpression::Terminator(output)) => input.validate(output),
+            _ => Err(TestCaseError::fail("semi expression mismatch")),
+        }
+    }
+}
+
 /// Represents an input for [`super::Semi`]
 #[derive(Debug, Clone)]
 pub struct SemiInput {
     /// The expression to be evaluated
-    pub expression: FunctionalInput,
+    pub expression: SemiExpressionInput,
 }
 
 impl ToString for SemiInput {
@@ -160,7 +188,7 @@ impl SemiInput {
     /// Validates the input against the [`Semi`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Semi) -> Result<(), TestCaseError> {
-        self.expression.validate(&output.expression)
+        self.expression.validate(&output.semi_expression)
     }
 }
 
@@ -187,7 +215,14 @@ pub(crate) fn expressive_with(
     expression_strategy: impl Strategy<Value = ExpressionInput>,
 ) -> impl Strategy<Value = ExpressiveInput> {
     expression_strategy.prop_map(|expression| match expression {
-        ExpressionInput::Functional(expression) => ExpressiveInput::Semi(SemiInput { expression }),
+        ExpressionInput::Functional(expression) => ExpressiveInput::Semi(SemiInput {
+            expression: SemiExpressionInput::Functional(expression),
+        }),
+
+        ExpressionInput::Terminator(expression) => ExpressiveInput::Semi(SemiInput {
+            expression: SemiExpressionInput::Terminator(expression),
+        }),
+
         ExpressionInput::Imperative(expression) => ExpressiveInput::Imperative(expression),
     })
 }

@@ -7,6 +7,7 @@ proptest! {
         statement_input in super::strategy::statement()
     ) {
         let source = statement_input.to_string();
+
         println!("{source}");
 
         let statement = crate::syntax_tree::tests::parse(
