@@ -1,12 +1,24 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::token::{Identifier, Keyword, Punctuation};
+use pernixc_lexical::{
+    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token_stream::Delimiter,
+};
 use pernixc_source::{SourceElement, Span, SpanError};
+use pernixc_system::diagnostic::Handler;
 
 use super::{
     statement::Statement, ConnectedList, LifetimeArgument, QualifiedIdentifier, TypeAnnotation,
     TypeSpecifier,
 };
+use crate::{
+    error::{
+        AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty, ItemExpected,
+    },
+    parser::{Error as ParserError, Parser, Result as ParserResult},
+};
+
+pub mod strategy;
 
 /// Represents a syntax tree node for a lifetime parameter.
 ///
@@ -48,21 +60,21 @@ impl SourceElement for TypeParameter {
 /// Syntax Synopsis:
 /// ```text
 /// GenericParameter:
-///     Label
-///     | identifier
+///     LifetimeParameter
+///     | TypeParameter
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 pub enum GenericParameter {
-    LifetimeParameter(LifetimeParameter),
-    TypeParameter(TypeParameter),
+    Lifetime(LifetimeParameter),
+    Type(TypeParameter),
 }
 
 impl SourceElement for GenericParameter {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
-            Self::LifetimeParameter(lifetime_parameter) => lifetime_parameter.span(),
-            Self::TypeParameter(type_parameter) => type_parameter.span(),
+            Self::Lifetime(lifetime_parameter) => lifetime_parameter.span(),
+            Self::Type(type_parameter) => type_parameter.span(),
         }
     }
 }
@@ -727,6 +739,74 @@ impl SourceElement for AccessModifier {
     }
 }
 
+/// Represents a syntax tree for an enum signature.
+///
+/// Syntax Synopsis:
+/// ```text
+/// EnumSignature:
+///     'enum' Identifier
+///     ;
+/// ``
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EnumSignature {
+    pub enum_keyword: Keyword,
+    pub identifier: Identifier,
+}
+
+impl SourceElement for EnumSignature {
+    fn span(&self) -> Result<Span, SpanError> { self.enum_keyword.span.join(&self.identifier.span) }
+}
+
+/// Represents a syntax tree for a list of enum variant identifiers separated by commas.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// EnumVariantList:
+///     Identifier (',' Identifier)*
+///     ;
+/// ```
+pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
+
+/// Represents a syntax tree for an enum body.
+///
+/// Syntax Synopsis:
+/// ```text
+/// EnumBody:
+///     '{' EnumVariantList? '}'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EnumBody {
+    pub left_brace: Punctuation,
+    pub enum_variant_list: Option<EnumVariantList>,
+    pub right_brace: Punctuation,
+}
+
+impl SourceElement for EnumBody {
+    fn span(&self) -> Result<Span, SpanError> { self.left_brace.span.join(&self.right_brace.span) }
+}
+
+/// Represents a syntax tree for an enum.
+///
+/// Syntax Synopsis:
+/// ```text
+/// Enum:
+///     AccessModifier EnumSignature EnumBody
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Enum {
+    pub access_modifier: AccessModifier,
+    pub enum_signature: EnumSignature,
+    pub enum_body: EnumBody,
+}
+
+impl SourceElement for Enum {
+    fn span(&self) -> Result<Span, SpanError> {
+        self.access_modifier.span()?.join(&self.enum_body.span()?)
+    }
+}
+
 /// Represents a syntax tree node for an item.
 ///
 /// Syntax Synopsis:
@@ -737,15 +817,18 @@ impl SourceElement for AccessModifier {
 ///     | Type
 ///     | Struct
 ///     | Implements
+///     | Enum
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[allow(clippy::large_enum_variant)]
 pub enum Item {
     Trait(Trait),
     Function(Function),
     Type(Type),
     Struct(Struct),
     Implements(Implements),
+    Enum(Enum),
 }
 
 impl SourceElement for Item {
@@ -756,6 +839,142 @@ impl SourceElement for Item {
             Self::Type(t) => t.span(),
             Self::Struct(s) => s.span(),
             Self::Implements(i) => i.span(),
+            Self::Enum(e) => e.span(),
         }
     }
 }
+
+impl<'a> Parser<'a> {
+    fn parse_access_modifier(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<AccessModifier> {
+        match self.next_significant_token() {
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Public => {
+                Ok(AccessModifier::Public(k))
+            }
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Private => {
+                Ok(AccessModifier::Private(k))
+            }
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Internal => {
+                Ok(AccessModifier::Internal(k))
+            }
+            found => {
+                handler.recieve(Error::AccessModifierExpected(AccessModifierExpected {
+                    found,
+                }));
+                Err(ParserError)
+            }
+        }
+    }
+
+    fn parse_generic_parameters(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<GenericParameters> {
+        let left_angle_bracket = self.parse_punctuation('<', true, handler)?;
+        let (generic_parameter_list, right_angle_bracket) = self.parse_enclosed_list_manual(
+            '>',
+            ',',
+            |parser| match parser.next_significant_token() {
+                Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                    Ok(GenericParameter::Lifetime(LifetimeParameter {
+                        apostrophe,
+                        identifier: parser.parse_identifier(handler)?,
+                    }))
+                }
+                _ => Ok(GenericParameter::Type(TypeParameter {
+                    identifier: parser.parse_identifier(handler)?,
+                })),
+            },
+            handler,
+        )?;
+
+        let Some(generic_parameter_list) = generic_parameter_list else {
+            handler.recieve(
+                Error::GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty {
+                    span: left_angle_bracket.span.join(&right_angle_bracket.span).expect("Span should be joint successfully"),
+                }
+            ));
+            return Err(ParserError);
+        };
+
+        Ok(GenericParameters {
+            left_angle_bracket,
+            generic_parameter_list,
+            right_angle_bracket,
+        })
+    }
+
+    fn try_parse_generic_parameters(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Option<GenericParameters>> {
+        if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '<')
+        {
+            Ok(Some(self.parse_generic_parameters(handler)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_implements_body(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<ImplementsBody> {
+        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+
+        let mut implements_members = Vec::new();
+        while !self.is_exhausted() {
+            todo!("implements members")
+        }
+
+        let right_brace = self
+            .step_out(handler)
+            .expect("All the tokens should be consumed");
+
+        Ok(ImplementsBody {
+            left_brace,
+            implements_members,
+            right_brace,
+        })
+    }
+
+    fn parse_implements(&mut self, handler: &impl Handler<Error>) -> ParserResult<Implements> {
+        let implements_keyword = self.parse_keyword(KeywordKind::Implements, handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
+        let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+        let implements_body = self.parse_implements_body(handler)?;
+
+        Ok(Implements {
+            implements_signature: ImplementsSignature {
+                implements_keyword,
+                generic_parameters,
+                qualified_identifier,
+            },
+            implements_body,
+        })
+    }
+
+    /// Parses an [`Item`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_item(&mut self, handler: &impl Handler<Error>) -> ParserResult<Item> {
+        match self.stop_at_significant() {
+            // parses an item with an access modifier
+            Some(Token::Keyword(k))
+                if matches!(
+                    k.keyword,
+                    KeywordKind::Public | KeywordKind::Private | KeywordKind::Internal
+                ) => todo!("parse item with access modifier"),
+
+            // parses an implements
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Implements => self.parse_implements(handler).map(Item::Implements)
+
+            found => {
+                handler.recieve(Error::ItemExpected(ItemExpected { found }));
+                Err(ParserError)
+            }
+        }
+    }
+}
+

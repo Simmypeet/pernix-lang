@@ -405,11 +405,14 @@ impl<'a> Parser<'a> {
     ///
     /// # Errors
     /// - If the next significant token is not a delimited token tree.
+    ///
+    /// # Returns
+    /// The open punctuation token of the delimited token tree.
     pub fn step_into(
         &mut self,
         delimiter: Delimiter,
         handler: &impl Handler<SyntacticError>,
-    ) -> Result<()> {
+    ) -> Result<Punctuation> {
         self.current_frame.stop_at_significant();
         let raw_token_tree = self
             .current_frame
@@ -464,14 +467,17 @@ impl<'a> Parser<'a> {
         self.stack
             .push(std::mem::replace(&mut self.current_frame, new_frame));
 
-        Ok(())
+        Ok(delimited_stream.open.clone())
     }
 
     /// Steps out from the current frame, replacing it with the frame on top of the stack.
     ///
     /// # Errors
     /// If the current [`Frame`]'s token provider is not [`Delimited`].
-    pub fn step_out(&mut self, handler: &impl Handler<SyntacticError>) -> Result<()> {
+    ///
+    /// # Returns
+    /// The close punctuation token of the delimited token tree.
+    pub fn step_out(&mut self, handler: &impl Handler<SyntacticError>) -> Result<Punctuation> {
         if let Some(threshold) = self.trying_stack.last().copied() {
             assert!(self.stack.len() > threshold);
         }
@@ -501,10 +507,18 @@ impl<'a> Parser<'a> {
             }));
         }
 
+        let close_punctuation = self
+            .current_frame
+            .token_provider
+            .as_delimited()
+            .unwrap()
+            .close
+            .clone();
+
         // replaces the current frame with the popped one
         self.current_frame = new_frame;
 
-        Ok(())
+        Ok(close_punctuation)
     }
 
     /// Performs a rollback if the parsing fails.

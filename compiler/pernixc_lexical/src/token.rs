@@ -30,8 +30,8 @@ pub enum KeywordKind {
     Struct,
     /// `interface` keyword.
     Interface,
-    /// `implement` keyword.
-    Implement,
+    /// `implements` keyword.
+    Implements,
     /// `let` keyword.
     Let,
     /// `const` keyword.
@@ -153,7 +153,7 @@ impl KeywordKind {
             Self::Loop => "loop",
             Self::Public => "public",
             Self::Interface => "interface",
-            Self::Implement => "implement",
+            Self::Implements => "implements",
             Self::Let => "let",
             Self::Const => "const",
             Self::If => "if",

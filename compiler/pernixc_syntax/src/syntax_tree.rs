@@ -87,10 +87,7 @@ impl<'a> Parser<'a> {
         }
 
         // step into the delimited
-        self.step_into(delimiter, handler)?;
-
-        let open = self.token_provider.as_delimited().unwrap().open.clone();
-        let close = self.token_provider.as_delimited().unwrap().close.clone();
+        let open = self.step_into(delimiter, handler)?;
 
         let mut first = None;
         let mut rest = Vec::new();
@@ -126,7 +123,8 @@ impl<'a> Parser<'a> {
         }
 
         // step out from the delimited list
-        self.step_out(handler)
+        let close = self
+            .step_out(handler)
             .expect("must be able to step out, the list is exhausted");
 
         Ok(EnclosedList {

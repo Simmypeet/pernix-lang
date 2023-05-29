@@ -22,10 +22,10 @@ pub enum LifetimeArgumentIdentifierInput {
 }
 
 impl LifetimeArgumentIdentifierInput {
-    /// Validates the input against the [`LifetimeArgument`] output.
+    /// Validates the input against the [`super::LifetimeArgumentIdentifier`] output.
     #[allow(clippy::missing_errors_doc)]
-    pub fn validate(&self, output: &LifetimeArgument) -> Result<(), TestCaseError> {
-        match (self, &output.lifetime_argument_identifier) {
+    pub fn validate(&self, output: &LifetimeArgumentIdentifier) -> Result<(), TestCaseError> {
+        match (self, output) {
             (Self::Identifier(i), LifetimeArgumentIdentifier::Identifier(o)) => {
                 prop_assert_eq!(o.span.str(), i);
                 Ok(())
@@ -40,11 +40,32 @@ impl LifetimeArgumentIdentifierInput {
     }
 }
 
+/// Represents an input for [`super::LifetimeArgument`]
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct LifetimeArgumentInput {
+    /// The lifetime argument identifier
+    pub lifetime_argument_identifier: LifetimeArgumentIdentifierInput,
+}
+
+impl ToString for LifetimeArgumentInput {
+    fn to_string(&self) -> String { format!("'{}", self.lifetime_argument_identifier.to_string()) }
+}
+
+impl LifetimeArgumentInput {
+    /// Validates the input against the [`LifetimeArgument`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &LifetimeArgument) -> Result<(), TestCaseError> {
+        self.lifetime_argument_identifier
+            .validate(&output.lifetime_argument_identifier)
+    }
+}
+
 /// Represents an input for [`super::GenericArgument`]
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum GenericArgumentInput {
-    LifetimeArgumentIdentifier(LifetimeArgumentIdentifierInput),
+    LifetimeArgument(LifetimeArgumentInput),
     TypeSpecifier(TypeSpecifierInput),
 }
 
@@ -56,7 +77,7 @@ impl GenericArgumentInput {
             (Self::TypeSpecifier(this), GenericArgument::TypeSpecifier(output)) => {
                 this.validate(output)
             }
-            (Self::LifetimeArgumentIdentifier(this), GenericArgument::LifetimeArgument(output)) => {
+            (Self::LifetimeArgument(this), GenericArgument::LifetimeArgument(output)) => {
                 this.validate(output)
             }
 
@@ -278,9 +299,8 @@ pub fn qualified_identifier() -> impl Strategy<Value = QualifiedIdentifierInput>
                                         TypeSpecifierInput::QualifiedIdentifierInput(x),
                                     )
                                 }),
-                                lifetime_argument_identifier().prop_map(|x| {
-                                    GenericArgumentInput::LifetimeArgumentIdentifier(x)
-                                })
+                                lifetime_argument()
+                                    .prop_map(GenericArgumentInput::LifetimeArgument)
                             ],
                             1..=5,
                         )),
@@ -316,6 +336,12 @@ fn lifetime_argument_identifier() -> impl Strategy<Value = LifetimeArgumentIdent
     ]
 }
 
+fn lifetime_argument() -> impl Strategy<Value = LifetimeArgumentInput> {
+    lifetime_argument_identifier().prop_map(|x| LifetimeArgumentInput {
+        lifetime_argument_identifier: x,
+    })
+}
+
 /// Returns a strategy that produces [`PrimitiveTypeSpecifierInput`]
 pub fn type_specifier() -> impl Strategy<Value = TypeSpecifierInput> {
     prop_oneof![primitive_type_specifier()
@@ -329,8 +355,7 @@ pub fn type_specifier() -> impl Strategy<Value = TypeSpecifierInput> {
                     proptest::option::of(proptest::collection::vec(
                         prop_oneof![
                             inner.prop_map(GenericArgumentInput::TypeSpecifier),
-                            lifetime_argument_identifier()
-                                .prop_map(GenericArgumentInput::LifetimeArgumentIdentifier)
+                            lifetime_argument().prop_map(GenericArgumentInput::LifetimeArgument)
                         ],
                         1..=10,
                     )),
@@ -388,7 +413,7 @@ impl ToString for LifetimeArgumentIdentifierInput {
 impl ToString for GenericArgumentInput {
     fn to_string(&self) -> String {
         match self {
-            Self::LifetimeArgumentIdentifier(i) => i.to_string(),
+            Self::LifetimeArgument(i) => i.to_string(),
             Self::TypeSpecifier(i) => i.to_string(),
         }
     }
