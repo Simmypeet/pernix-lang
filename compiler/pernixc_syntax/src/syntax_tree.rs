@@ -40,7 +40,7 @@ pub struct ConnectedList<Element, Separator> {
     pub trailing_separator: Option<Separator>,
 }
 
-/// Is t he result of [`Parser::parse_enclosed_frame()`].
+/// Is the result of [`Parser::parse_enclosed_frame()`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnclosedList<T> {
     /// The open delimiter of the list.
