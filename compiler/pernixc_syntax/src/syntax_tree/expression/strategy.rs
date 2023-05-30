@@ -61,7 +61,6 @@ impl LoopInput {
         }
 
         if self.statements.len() != output.block_without_label.statements.len() {
-            dbg!(&self.statements, &output.block_without_label.statements);
             return Err(TestCaseError::fail("Statement count mismatch"));
         }
 

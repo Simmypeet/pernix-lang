@@ -1,13 +1,21 @@
 use enum_as_inner::EnumAsInner;
-use proptest::{prop_assert_eq, test_runner::TestCaseError};
+use proptest::{
+    prop_assert_eq, prop_oneof,
+    strategy::{Just, Strategy},
+    test_runner::TestCaseError,
+};
 
 use super::{
-    AccessModifier, Constraint, ConstraintList, FunctionSignature, GenericParameter,
-    GenericParameters, LifetimeParameter, Parameter, Parameters, ReturnType, Trait, TraitBody,
-    TraitConstraint, TraitFunction, TraitMember, TraitSignature, TypeParameter, WhereClause,
+    AccessModifier, Constraint, ConstraintList, Function, FunctionBody, FunctionSignature,
+    GenericParameter, GenericParameters, Item, LifetimeParameter, Parameter, Parameters,
+    ReturnType, StructSignature, Trait, TraitBody, TraitConstraint, TraitFunction, TraitMember,
+    TraitSignature, TypeParameter, WhereClause,
 };
 use crate::syntax_tree::{
-    strategy::{LifetimeArgumentInput, QualifiedIdentifierInput, TypeSpecifierInput},
+    statement::strategy::StatementInput,
+    strategy::{
+        qualified_identifier, LifetimeArgumentInput, QualifiedIdentifierInput, TypeSpecifierInput,
+    },
     ConnectedList,
 };
 
@@ -201,7 +209,7 @@ impl WhereClauseInput {
 #[derive(Debug, Clone)]
 pub struct TraitSignatureInput {
     pub identifier: String,
-    pub generic_parameters: GenericParametersInput,
+    pub generic_parameters: Option<GenericParametersInput>,
     pub where_clause: Option<WhereClauseInput>,
 }
 
@@ -209,7 +217,9 @@ impl ToString for TraitSignatureInput {
     fn to_string(&self) -> String {
         let mut s = format!("trait {}", self.identifier);
 
-        s.push_str(&self.generic_parameters.to_string());
+        if let Some(generic_parameters) = &self.generic_parameters {
+            s.push_str(&generic_parameters.to_string());
+        }
 
         if let Some(where_clause) = &self.where_clause {
             s.push_str(&format!(" {}", where_clause.to_string()));
@@ -224,9 +234,11 @@ impl TraitSignatureInput {
     pub fn validate(&self, output: &TraitSignature) -> Result<(), TestCaseError> {
         prop_assert_eq!(&self.identifier, output.identifier.span.str());
 
-        self.generic_parameters
-            .validate(&output.generic_parameters)?;
-
+        match (&self.generic_parameters, &output.generic_parameters) {
+            (Some(i), Some(o)) => i.validate(o)?,
+            (None, None) => (),
+            _ => return Err(TestCaseError::fail("generic parameters mismatch")),
+        }
         match (&self.where_clause, &output.where_clause) {
             (Some(i), Some(o)) => {
                 for (i, o) in i
@@ -433,6 +445,51 @@ impl ReturnTypeInput {
 }
 
 #[derive(Debug, Clone)]
+pub struct StructSignatureInput {
+    pub identifier: String,
+    pub generic_parameters: Option<GenericParametersInput>,
+    pub where_clause: Option<WhereClauseInput>,
+}
+
+impl ToString for StructSignatureInput {
+    fn to_string(&self) -> String {
+        let mut s = "struct".to_string();
+        s.push_str(&format!(" {}", self.identifier));
+
+        if let Some(generic_parameters) = &self.generic_parameters {
+            s.push_str(&generic_parameters.to_string());
+        }
+
+        if let Some(where_clause) = &self.where_clause {
+            s.push_str(&format!(" {}", where_clause.to_string()));
+        }
+
+        s
+    }
+}
+
+impl StructSignatureInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &StructSignature) -> Result<(), TestCaseError> {
+        prop_assert_eq!(&self.identifier, output.identifier.span.str());
+
+        match (&self.generic_parameters, &output.generic_parameters) {
+            (Some(i), Some(o)) => i.validate(o)?,
+            (None, None) => (),
+            _ => return Err(TestCaseError::fail("generic parameters mismatch")),
+        }
+
+        match (&self.where_clause, &output.where_clause) {
+            (Some(i), Some(o)) => i.validate(o)?,
+            (None, None) => (),
+            _ => return Err(TestCaseError::fail("where clause mismatch")),
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionSignatureInput {
     pub identifier: String,
     pub generic_parameters: Option<GenericParametersInput>,
@@ -528,6 +585,221 @@ impl TraitInput {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionBodyInput {
+    pub statements: Vec<StatementInput>,
+}
+
+impl ToString for FunctionBodyInput {
+    fn to_string(&self) -> String {
+        let mut string = String::new();
+        string.push('{');
+
+        for statement in &self.statements {
+            string.push_str(&statement.to_string());
+        }
+
+        string.push('}');
+        string
+    }
+}
+
+impl FunctionBodyInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &FunctionBody) -> Result<(), TestCaseError> {
+        prop_assert_eq!(self.statements.len(), output.statements.len());
+
+        for (input, output) in self.statements.iter().zip(output.statements.iter()) {
+            input.validate(output)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionInput {
+    pub access_modifier: AccessModifierInput,
+    pub function_signature: FunctionSignatureInput,
+    pub function_body: FunctionBodyInput,
+}
+
+impl ToString for FunctionInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {} {}",
+            self.access_modifier.to_string(),
+            self.function_signature.to_string(),
+            self.function_body.to_string()
+        )
+    }
+}
+
+impl FunctionInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Function) -> Result<(), TestCaseError> {
+        self.access_modifier.validate(&output.access_modifier)?;
+        self.function_signature
+            .validate(&output.function_signature)?;
+        self.function_body.validate(&output.function_body)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ItemInput {
     Trait(TraitInput),
+    Function(FunctionInput),
+}
+
+impl ToString for ItemInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Trait(i) => i.to_string(),
+            Self::Function(i) => i.to_string(),
+        }
+    }
+}
+
+impl ItemInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Item) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Trait(i), Item::Trait(o)) => i.validate(o),
+            (Self::Function(i), Item::Function(o)) => i.validate(o),
+            _ => Err(TestCaseError::fail("Item types do not match")),
+        }
+    }
+}
+
+fn access_modifier() -> impl Strategy<Value = AccessModifierInput> {
+    prop_oneof![
+        Just(AccessModifierInput::Public),
+        Just(AccessModifierInput::Private),
+        Just(AccessModifierInput::Internal)
+    ]
+}
+
+fn generic_parameter() -> impl Strategy<Value = GenericParameterInput> {
+    prop_oneof![
+        pernixc_lexical::token::strategy::identifier()
+            .prop_map(|identifier| GenericParameterInput::Type(TypeParameterInput { identifier })),
+        pernixc_lexical::token::strategy::identifier().prop_map(|identifier| {
+            GenericParameterInput::Lifetime(LifetimeParameterInput { identifier })
+        })
+    ]
+}
+
+fn generic_parameters() -> impl Strategy<Value = GenericParametersInput> {
+    proptest::collection::vec(generic_parameter(), 1..=4)
+        .prop_map(|generic_parameters| GenericParametersInput { generic_parameters })
+}
+
+fn where_clause() -> impl Strategy<Value = WhereClauseInput> {
+    proptest::collection::vec(
+        prop_oneof![
+            qualified_identifier(false).prop_map(|qualified_identifier| {
+                ConstraintInput::TraitConstraint(TraitConstraintInput {
+                    qualified_identifier,
+                })
+            })
+        ],
+        1..=4,
+    )
+    .prop_map(|x| WhereClauseInput {
+        constraint_list: ConstraintListInput { constraints: x },
+    })
+}
+
+fn trait_signature() -> impl Strategy<Value = TraitSignatureInput> {
+    (
+        pernixc_lexical::token::strategy::identifier(),
+        proptest::option::of(generic_parameters()),
+        proptest::option::of(where_clause()),
+    )
+        .prop_map(
+            |(identifier, generic_parameters, where_clause)| TraitSignatureInput {
+                identifier,
+                generic_parameters,
+                where_clause,
+            },
+        )
+}
+
+fn parameter() -> impl Strategy<Value = ParameterInput> {
+    (
+        proptest::bool::ANY,
+        pernixc_lexical::token::strategy::identifier(),
+        crate::syntax_tree::strategy::type_specifier(),
+    )
+        .prop_map(|(mutable, identifier, type_specifier)| ParameterInput {
+            mutable,
+            identifier,
+            type_specifier,
+        })
+}
+
+fn return_type() -> impl Strategy<Value = ReturnTypeInput> {
+    crate::syntax_tree::strategy::type_specifier()
+        .prop_map(|type_specifier| ReturnTypeInput { type_specifier })
+}
+
+fn function_signature() -> impl Strategy<Value = FunctionSignatureInput> {
+    (
+        pernixc_lexical::token::strategy::identifier(),
+        proptest::option::of(generic_parameters()),
+        proptest::collection::vec(parameter(), 0..=4),
+        proptest::option::of(return_type()),
+        proptest::option::of(where_clause()),
+    )
+        .prop_map(
+            |(identifier, generic_parameters, parameters, return_type, where_clause)| {
+                FunctionSignatureInput {
+                    identifier,
+                    generic_parameters,
+                    parameters: ParametersInput { parameters },
+                    return_type,
+                    where_clause,
+                }
+            },
+        )
+}
+
+fn trait_member() -> impl Strategy<Value = TraitMemberInput> {
+    prop_oneof![
+        function_signature().prop_map(|function_signature| TraitMemberInput::Function(
+            TraitFunctionInput { function_signature }
+        ))
+    ]
+}
+
+fn trait_body() -> impl Strategy<Value = TraitBodyInput> {
+    proptest::collection::vec(trait_member(), 1..=4)
+        .prop_map(|trait_members| TraitBodyInput { trait_members })
+}
+
+fn function_body() -> impl Strategy<Value = FunctionBodyInput> {
+    proptest::collection::vec(crate::syntax_tree::statement::strategy::statement(), 0..=4)
+        .prop_map(|statements| FunctionBodyInput { statements })
+}
+
+pub fn item() -> impl Strategy<Value = ItemInput> {
+    prop_oneof![
+        (access_modifier(), trait_signature(), trait_body()).prop_map(
+            |(access_modifier, trait_signature, trait_body)| ItemInput::Trait(TraitInput {
+                access_modifier,
+                trait_signature,
+                trait_body,
+            })
+        ),
+        (access_modifier(), function_signature(), function_body()).prop_map(
+            |(access_modifier, function_signature, function_body)| {
+                ItemInput::Function(FunctionInput {
+                    access_modifier,
+                    function_signature,
+                    function_body,
+                })
+            }
+        )
+    ]
 }

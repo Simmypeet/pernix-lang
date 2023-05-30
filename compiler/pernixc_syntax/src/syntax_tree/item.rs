@@ -14,6 +14,7 @@ use super::{
 use crate::{
     error::{
         AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty, ItemExpected,
+        StructMemberExpected,
     },
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
@@ -189,14 +190,14 @@ impl SourceElement for WhereClause {
 /// Syntax Synopsis:
 /// ``` text
 /// TraitDeclaration:
-///     'trait' Identifier GenericParameters WhereClause?
+///     'trait' Identifier GenericParameters? WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TraitSignature {
     pub trait_keyword: Keyword,
     pub identifier: Identifier,
-    pub generic_parameters: GenericParameters,
+    pub generic_parameters: Option<GenericParameters>,
     pub where_clause: Option<WhereClause>,
 }
 
@@ -205,7 +206,10 @@ impl SourceElement for TraitSignature {
         let start = &self.trait_keyword.span;
         match &self.where_clause {
             Some(where_clause) => start.join(&where_clause.span()?),
-            None => start.join(&self.generic_parameters.span()?),
+            None => match &self.generic_parameters {
+                Some(generic_parameters) => start.join(&generic_parameters.span()?),
+                None => start.join(&self.identifier.span),
+            },
         }
     }
 }
@@ -523,13 +527,13 @@ impl SourceElement for StructSignature {
 /// Syntax Synopsis:
 /// ``` text
 /// StructDefinition:
-///     '{' StructField* '}'
+///     '{' StructMember* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructBody {
     pub left_brace: Punctuation,
-    pub struct_fields: Vec<StructField>,
+    pub struct_members: Vec<StructMember>,
     pub right_brace: Punctuation,
 }
 
@@ -897,8 +901,11 @@ impl<'a> Parser<'a> {
         let (generic_parameter_list, right_angle_bracket) = self.parse_enclosed_list_manual(
             '>',
             ',',
-            |parser| match parser.next_significant_token() {
+            |parser| match parser.stop_at_significant() {
                 Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                    // eat apostrophe
+                    parser.forward();
+
                     Ok(GenericParameter::Lifetime(LifetimeParameter {
                         apostrophe,
                         identifier: parser.parse_identifier(handler)?,
@@ -994,7 +1001,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<FunctionBody> {
-        let left_brace = self.step_into(Delimiter::Parenthesis, handler)?;
+        let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
         let mut statements = Vec::new();
 
@@ -1099,8 +1106,30 @@ impl<'a> Parser<'a> {
         let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
         let mut implements_members = Vec::new();
+
         while !self.is_exhausted() {
-            todo!("implements members")
+            let result = (|| -> Result<(FunctionSignature, FunctionBody), ParserError> {
+                let function_signature = self.parse_function_signature(handler)?;
+                let function_body = self.parse_function_body(handler)?;
+
+                Ok((function_signature, function_body))
+            })();
+
+            if let Ok((function_signature, function_body)) = result {
+                implements_members.push(ImplementsMember::Function(ImplementsFunction {
+                    function_signature,
+                    function_body,
+                }));
+                continue;
+            }
+
+            // try to stop at next function signature
+            self.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == '{'));
+
+            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '{')
+            {
+                self.forward();
+            }
         }
 
         let right_brace = self
@@ -1130,18 +1159,268 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_trait_signature(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<TraitSignature> {
+        let trait_keyword = self.parse_keyword(KeywordKind::Trait, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
+
+        Ok(TraitSignature {
+            trait_keyword,
+            identifier,
+            generic_parameters,
+            where_clause,
+        })
+    }
+
+    fn parse_trait_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<TraitBody> {
+        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+
+        let mut trait_members = Vec::new();
+
+        while !self.is_exhausted() {
+            let trait_member: Result<TraitMember, ParserError> = (|| {
+                let function_signature = self.parse_function_signature(handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                Ok(TraitMember::Function(TraitFunction {
+                    function_signature,
+                    semicolon,
+                }))
+            })();
+
+            if let Ok(trait_member) = trait_member {
+                trait_members.push(trait_member);
+                continue;
+            }
+
+            // try to stop at the next semicolon
+            self.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
+
+            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == ';')
+            {
+                // eat semicolon
+                self.forward();
+            }
+        }
+
+        let right_brace = self.step_out(handler)?;
+
+        Ok(TraitBody {
+            left_brace,
+            trait_members,
+            right_brace,
+        })
+    }
+
+    fn pare_struct_signature(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<StructSignature> {
+        let struct_keyword = self.parse_keyword(KeywordKind::Struct, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
+
+        Ok(StructSignature {
+            struct_keyword,
+            identifier,
+            generic_parameters,
+            where_clause,
+        })
+    }
+
+    fn parse_type_signature(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<TypeSignature> {
+        let type_keyword = self.parse_keyword(KeywordKind::Type, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
+
+        Ok(TypeSignature {
+            type_keyword,
+            identifier,
+            generic_parameters,
+        })
+    }
+
+    fn parse_type_definition(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<TypeDefinition> {
+        let equals = self.parse_punctuation('=', true, handler)?;
+        let type_specifier = self.parse_type_specifier(handler)?;
+
+        Ok(TypeDefinition {
+            equals,
+            type_specifier,
+        })
+    }
+
+    fn parse_struct_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<StructBody> {
+        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+
+        let mut struct_members = Vec::new();
+
+        while !self.is_exhausted() {
+            let result: Result<StructMember, ParserError> = (|| {
+                let access_modifier = self.parse_access_modifier(handler)?;
+
+                match self.stop_at_significant() {
+                    Some(Token::Keyword(let_keyword))
+                        if let_keyword.keyword == KeywordKind::Let =>
+                    {
+                        // eat let keyword
+                        self.forward();
+
+                        let identifier = self.parse_identifier(handler)?;
+                        let type_annotation = self.parse_type_annotation(handler)?;
+
+                        Ok(StructMember::Field(StructField {
+                            access_modifier,
+                            let_keyword,
+                            identifier,
+                            type_annotation,
+                        }))
+                    }
+                    Some(Token::Keyword(type_keyword))
+                        if type_keyword.keyword == KeywordKind::Type =>
+                    {
+                        let type_signature = self.parse_type_signature(handler)?;
+                        let type_definition = self.parse_type_definition(handler)?;
+                        let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                        Ok(StructMember::Type(StructType {
+                            access_modifier,
+                            type_signature,
+                            type_definition,
+                            semicolon,
+                        }))
+                    }
+                    found => {
+                        self.forward();
+                        handler
+                            .recieve(Error::StructMemberExpected(StructMemberExpected { found }));
+
+                        Err(ParserError)
+                    }
+                }
+            })();
+
+            // pushes a result
+            if let Ok(struct_member) = result {
+                struct_members.push(struct_member);
+                continue;
+            }
+
+            // stop at next member
+            self.stop_at(|token| {
+                matches!(token, Token::Keyword(k)
+                if matches!(k.keyword,
+                    KeywordKind::Public
+                    | KeywordKind::Private
+                    | KeywordKind::Internal)
+                )
+            });
+        }
+
+        let right_brace = self.step_out(handler)?;
+
+        Ok(StructBody {
+            left_brace,
+            struct_members,
+            right_brace,
+        })
+    }
+
+    fn parse_struct_signature(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<StructSignature> {
+        let struct_keyword = self.parse_keyword(KeywordKind::Struct, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
+
+        Ok(StructSignature {
+            struct_keyword,
+            identifier,
+            generic_parameters,
+            where_clause,
+        })
+    }
+
+    fn parse_item_with_access_modifier(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Item> {
+        let access_modifier = self.parse_access_modifier(handler)?;
+        match self.stop_at_significant() {
+            // parse function
+            Some(Token::Identifier(..)) => {
+                let function_signature = self.parse_function_signature(handler)?;
+                let function_body = self.parse_function_body(handler)?;
+
+                Ok(Item::Function(Function {
+                    access_modifier,
+                    function_signature,
+                    function_body,
+                }))
+            }
+
+            // parse trait
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Trait => {
+                let trait_signature = self.parse_trait_signature(handler)?;
+                let trait_body = self.parse_trait_body(handler)?;
+
+                Ok(Item::Trait(Trait {
+                    access_modifier,
+                    trait_signature,
+                    trait_body,
+                }))
+            }
+
+            // parse struct
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Struct => {
+                let struct_signature = self.parse_struct_signature(handler)?;
+                let struct_body = self.parse_struct_body(handler)?;
+
+                Ok(Item::Struct(Struct {
+                    access_modifier,
+                    struct_signature,
+                    struct_body,
+                }))
+            }
+
+            // parse enum
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Enum => {
+                todo!()
+            }
+
+            found => {
+                self.forward();
+                handler.recieve(Error::ItemExpected(ItemExpected { found }));
+                Err(ParserError)
+            }
+        }
+    }
+
     /// Parses an [`Item`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_item(&mut self, handler: &impl Handler<Error>) -> ParserResult<Item> {
         match self.stop_at_significant() {
             // parses an item with an access modifier
-            Some(Token::Keyword(k))
+            Some(Token::Keyword(access_modifier))
                 if matches!(
-                    k.keyword,
+                    access_modifier.keyword,
                     KeywordKind::Public | KeywordKind::Private | KeywordKind::Internal
                 ) =>
             {
-                todo!("parse item with access modifier")
+                self.parse_item_with_access_modifier(handler)
             }
 
             // parses an implements
@@ -1150,9 +1429,13 @@ impl<'a> Parser<'a> {
             }
 
             found => {
+                self.forward();
                 handler.recieve(Error::ItemExpected(ItemExpected { found }));
                 Err(ParserError)
             }
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,7 +1,7 @@
 //! Contains the definition of various `proptest` strategies that produces syntax tree input for
 //! testing purposes.
 
-use pernixc_lexical::token::{strategy::identifier, KeywordKind};
+use pernixc_lexical::token::KeywordKind;
 use proptest::{
     prop_assert_eq, prop_oneof,
     strategy::{Just, Strategy},

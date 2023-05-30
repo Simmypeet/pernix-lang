@@ -701,7 +701,7 @@ impl<'a> Frame<'a> {
 
             found => {
                 // eat the current token / make progress
-                self.next_token();
+                self.forward();
 
                 handler.recieve(Error::TypeSpecifierExpected(TypeSpecifierExpected {
                     found,
