@@ -62,7 +62,7 @@ impl<'a> Parser<'a> {
     /// # Errors
     /// - if the parser position is not at the delimited list of the given delimiter.
     /// - any error returned by the given parser function.
-    pub fn parse_enclosed_frame<T, H: Handler<Error>>(
+    pub fn parse_enclosed_tree<T, H: Handler<Error>>(
         &mut self,
         delimiter: Delimiter,
         separator: char,

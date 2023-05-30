@@ -427,7 +427,8 @@ impl ToString for ReturnTypeInput {
 impl ReturnTypeInput {
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &ReturnType) -> Result<(), TestCaseError> {
-        self.type_specifier.validate(&output.type_specifier)
+        self.type_specifier
+            .validate(&output.type_annotation.type_specifier)
     }
 }
 

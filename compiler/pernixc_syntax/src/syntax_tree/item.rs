@@ -5,11 +5,11 @@ use pernixc_lexical::{
     token_stream::Delimiter,
 };
 use pernixc_source::{SourceElement, Span, SpanError};
-use pernixc_system::diagnostic::Handler;
+use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
-    statement::Statement, ConnectedList, LifetimeArgument, QualifiedIdentifier, TypeAnnotation,
-    TypeSpecifier,
+    statement::Statement, ConnectedList, LifetimeArgument, LifetimeArgumentIdentifier,
+    QualifiedIdentifier, TypeAnnotation, TypeSpecifier,
 };
 use crate::{
     error::{
@@ -346,17 +346,16 @@ impl SourceElement for Parameters {
 /// Syntax Synopsis:
 /// ``` text
 /// ReturnType:
-///     ':' TypeSpecifier
+///     TypeAnnotation
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReturnType {
-    pub colon: Punctuation,
-    pub type_specifier: TypeSpecifier,
+    pub type_annotation: TypeAnnotation,
 }
 
 impl SourceElement for ReturnType {
-    fn span(&self) -> Result<Span, SpanError> { self.colon.span.join(&self.type_specifier.span()?) }
+    fn span(&self) -> Result<Span, SpanError> { self.type_annotation.span() }
 }
 
 /// Represents a syntax tree node for a function signature.
@@ -652,6 +651,28 @@ impl SourceElement for ImplementsSignature {
     }
 }
 
+/// Represents a syntax tree node for an implements function member.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// ImplementsFunction:
+///     FunctionSignature FunctionBody
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImplementsFunction {
+    pub function_signature: FunctionSignature,
+    pub function_body: FunctionBody,
+}
+
+impl SourceElement for ImplementsFunction {
+    fn span(&self) -> Result<Span, SpanError> {
+        self.function_signature
+            .span()?
+            .join(&self.function_body.span()?)
+    }
+}
+
 /// Represents a syntax tree node for a member in an implements block.
 ///
 /// Syntax Synopsis:
@@ -662,7 +683,7 @@ impl SourceElement for ImplementsSignature {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 pub enum ImplementsMember {
-    Function(Function),
+    Function(ImplementsFunction),
 }
 
 impl SourceElement for ImplementsMember {
@@ -906,6 +927,159 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_cosntraint(&mut self, handler: &impl Handler<Error>) -> ParserResult<Constraint> {
+        match self.stop_at_significant() {
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                // eat apostrophe
+                self.forward();
+
+                let lifetime_argument_identifier = match self.stop_at_significant() {
+                    Some(Token::Keyword(static_keyword))
+                        if static_keyword.keyword == KeywordKind::Static =>
+                    {
+                        // eat static keyword
+                        self.forward();
+                        LifetimeArgumentIdentifier::StaticKeyword(static_keyword)
+                    }
+                    _ => {
+                        let identifier = self.parse_identifier(handler)?;
+                        LifetimeArgumentIdentifier::Identifier(identifier)
+                    }
+                };
+
+                Ok(Constraint::LifetimeArgument(LifetimeArgument {
+                    apostrophe,
+                    lifetime_argument_identifier,
+                }))
+            }
+            _ => Ok(Constraint::TraitConstraint(TraitConstraint {
+                qualified_identifier: self.parse_qualified_identifier(false, handler)?,
+            })),
+        }
+    }
+
+    fn parse_where_clause(&mut self, handler: &impl Handler<Error>) -> ParserResult<WhereClause> {
+        let where_keyword = self.parse_keyword(KeywordKind::Where, handler)?;
+        let colon = self.parse_punctuation(':', true, handler)?;
+
+        let first = self.parse_cosntraint(handler)?;
+        let mut rest = Vec::new();
+
+        while let Ok(comma) = self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy)) {
+            let constraint = self.parse_cosntraint(handler)?;
+            rest.push((comma, constraint));
+        }
+
+        Ok(WhereClause {
+            where_keyword,
+            colon,
+            constraint_list: ConnectedList {
+                first,
+                rest,
+                trailing_separator: None,
+            },
+        })
+    }
+
+    fn try_parse_where_clause(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<Option<WhereClause>> {
+        match self.stop_at_significant() {
+            Some(Token::Keyword(where_keyword)) if where_keyword.keyword == KeywordKind::Where => {
+                self.parse_where_clause(handler).map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn parse_function_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<FunctionBody> {
+        let left_brace = self.step_into(Delimiter::Parenthesis, handler)?;
+
+        let mut statements = Vec::new();
+
+        while !self.is_exhausted() {
+            // parse statements
+            if let Ok(statement) = self.parse_statement(handler) {
+                statements.push(statement);
+                continue;
+            }
+
+            // try to stop at next statement
+            self.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
+
+            // go after the semicolon
+            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == ';')
+            {
+                self.forward();
+            }
+        }
+
+        let right_brace = self.step_out(handler)?;
+
+        Ok(FunctionBody {
+            left_brace,
+            statements,
+            right_brace,
+        })
+    }
+
+    fn parse_function_signature(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<FunctionSignature> {
+        let identifier = self.parse_identifier(handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
+
+        let parameters = self.parse_enclosed_tree(
+            Delimiter::Parenthesis,
+            ',',
+            |parser, handler| {
+                // parse optional mutable keyword
+                let mutable_keyword = match parser.stop_at_significant() {
+                    Some(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
+                        parser.forward();
+                        Some(k)
+                    }
+                    _ => None,
+                };
+
+                let identifier = parser.parse_identifier(handler)?;
+                let type_annotation = parser.parse_type_annotation(handler)?;
+
+                Ok(Parameter {
+                    mutable_keyword,
+                    identifier,
+                    type_annotation,
+                })
+            },
+            handler,
+        )?;
+
+        let parameters = Parameters {
+            left_paren: parameters.open,
+            parameter_list: parameters.list,
+            right_paren: parameters.close,
+        };
+
+        let return_type = match self.stop_at_significant() {
+            Some(Token::Punctuation(p)) if p.punctuation == ':' => Some(ReturnType {
+                type_annotation: self.parse_type_annotation(handler)?,
+            }),
+            _ => None,
+        };
+
+        let where_clause = self.try_parse_where_clause(handler)?;
+
+        Ok(FunctionSignature {
+            identifier,
+            generic_parameters,
+            parameters,
+            return_type,
+            where_clause,
+        })
+    }
+
     fn try_parse_generic_parameters(
         &mut self,
         handler: &impl Handler<Error>,
@@ -965,10 +1139,15 @@ impl<'a> Parser<'a> {
                 if matches!(
                     k.keyword,
                     KeywordKind::Public | KeywordKind::Private | KeywordKind::Internal
-                ) => todo!("parse item with access modifier"),
+                ) =>
+            {
+                todo!("parse item with access modifier")
+            }
 
             // parses an implements
-            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Implements => self.parse_implements(handler).map(Item::Implements)
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Implements => {
+                self.parse_implements(handler).map(Item::Implements)
+            }
 
             found => {
                 handler.recieve(Error::ItemExpected(ItemExpected { found }));
@@ -977,4 +1156,3 @@ impl<'a> Parser<'a> {
         }
     }
 }
-

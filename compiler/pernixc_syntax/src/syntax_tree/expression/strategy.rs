@@ -951,7 +951,7 @@ fn base_functional() -> impl Strategy<Value = FunctionalInput> {
     prop_oneof![
         numeric_literal().prop_map(FunctionalInput::NumericLiteral),
         boolean_literal().prop_map(FunctionalInput::BooleanLiteral),
-        crate::syntax_tree::strategy::qualified_identifier().prop_map(|qualified_identifier| {
+        crate::syntax_tree::strategy::qualified_identifier(true).prop_map(|qualified_identifier| {
             FunctionalInput::Named(NamedInput {
                 qualified_identifier,
             })
@@ -1107,7 +1107,7 @@ fn function_call_with(
     expression_strategy: impl Strategy<Value = ExpressionInput>,
 ) -> impl Strategy<Value = FunctionCallInput> {
     (
-        crate::syntax_tree::strategy::qualified_identifier(),
+        crate::syntax_tree::strategy::qualified_identifier(true),
         proptest::collection::vec(expression_strategy, 0..=4),
         proptest::bool::ANY,
     )
@@ -1124,7 +1124,7 @@ fn struct_literal_with(
     expression_strategy: impl Strategy<Value = ExpressionInput>,
 ) -> impl Strategy<Value = StructLiteralInput> {
     (
-        crate::syntax_tree::strategy::qualified_identifier(),
+        crate::syntax_tree::strategy::qualified_identifier(true),
         proptest::collection::vec(
             (
                 pernixc_lexical::token::strategy::identifier(),

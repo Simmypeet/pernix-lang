@@ -20,7 +20,11 @@ pub fn parse<T>(
     let token_stream = TokenStream::tokenize(&source_file, &storage);
 
     if !storage.as_vec().is_empty() {
-        return Err(TestCaseError::reject("Tokenization failed"));
+        return Err(TestCaseError::reject(format!(
+            "{:#?} {} Tokenization failed",
+            storage.as_vec(),
+            source_file.source_code()
+        )));
     }
 
     let mut parser = Parser::new(&token_stream);
@@ -37,7 +41,7 @@ pub fn parse<T>(
 proptest! {
     #[test]
     fn qualified_identifier_test(
-        qualified_identifier_input in super::strategy::qualified_identifier()
+        qualified_identifier_input in super::strategy::qualified_identifier(true)
     ) {
         let source = qualified_identifier_input.to_string();
         let qualified_identifier = parse(

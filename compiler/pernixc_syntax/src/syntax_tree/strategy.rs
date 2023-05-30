@@ -1,7 +1,7 @@
 //! Contains the definition of various `proptest` strategies that produces syntax tree input for
 //! testing purposes.
 
-use pernixc_lexical::token::KeywordKind;
+use pernixc_lexical::token::{strategy::identifier, KeywordKind};
 use proptest::{
     prop_assert_eq, prop_oneof,
     strategy::{Just, Strategy},
@@ -266,9 +266,9 @@ fn remove_turbo_fish(qualified_identifier: &mut QualifiedIdentifierInput) {
 }
 
 /// Returs a strategy that produces [`QualifiedIdentifierInput`].
-///
-/// The produced input will not contain any turbo fish.
-pub fn qualified_identifier() -> impl Strategy<Value = QualifiedIdentifierInput> {
+pub fn qualified_identifier(
+    use_turbo_fish: bool,
+) -> impl Strategy<Value = QualifiedIdentifierInput> {
     (
         proptest::bool::ANY,
         pernixc_lexical::token::strategy::identifier(),
@@ -280,7 +280,7 @@ pub fn qualified_identifier() -> impl Strategy<Value = QualifiedIdentifierInput>
                 generic_arguments_input: None,
             }],
         })
-        .prop_recursive(8, 24, 10, |inner| {
+        .prop_recursive(8, 24, 10, move |inner| {
             (
                 proptest::bool::ANY,
                 proptest::collection::vec(
@@ -305,12 +305,12 @@ pub fn qualified_identifier() -> impl Strategy<Value = QualifiedIdentifierInput>
                             1..=5,
                         )),
                     )
-                        .prop_map(|(identifier, generic_arguments)| {
+                        .prop_map(move |(identifier, generic_arguments)| {
                             GenericIdentifierInput {
                                 identifier,
                                 generic_arguments_input: generic_arguments.map(|x| {
                                     GenericArgumentsInput {
-                                        use_turbo_fish: true,
+                                        use_turbo_fish,
                                         arguments: x,
                                     }
                                 }),
@@ -400,12 +400,8 @@ fn primitive_type_specifier() -> impl Strategy<Value = PrimitiveTypeSpecifierInp
 impl ToString for LifetimeArgumentIdentifierInput {
     fn to_string(&self) -> String {
         match &self {
-            Self::Static => "'static".to_string(),
-            Self::Identifier(identifier) => {
-                let mut identifier = identifier.clone();
-                identifier.insert(0, '\'');
-                identifier
-            }
+            Self::Static => "static".to_string(),
+            Self::Identifier(identifier) => identifier.clone(),
         }
     }
 }

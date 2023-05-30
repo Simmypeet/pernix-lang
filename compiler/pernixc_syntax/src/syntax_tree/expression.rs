@@ -1132,7 +1132,7 @@ impl<'a> Parser<'a> {
             open: left_brace,
             list: field_initializers,
             close: right_brace,
-        } = self.parse_enclosed_frame(
+        } = self.parse_enclosed_tree(
             Delimiter::Brace,
             ',',
             |this, handler| {
@@ -1167,7 +1167,7 @@ impl<'a> Parser<'a> {
             open: left_paren,
             list: arguments,
             close: right_paren,
-        } = self.parse_enclosed_frame(
+        } = self.parse_enclosed_tree(
             Delimiter::Parenthesis,
             ',',
             |this, handler| Ok(Box::new(this.parse_expression(handler)?)),
