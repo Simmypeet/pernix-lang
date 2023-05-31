@@ -8,8 +8,9 @@ use proptest::{
 use super::{
     AccessModifier, Constraint, ConstraintList, Function, FunctionBody, FunctionSignature,
     GenericParameter, GenericParameters, Item, LifetimeParameter, Parameter, Parameters,
-    ReturnType, StructSignature, Trait, TraitBody, TraitConstraint, TraitFunction, TraitMember,
-    TraitSignature, TypeParameter, WhereClause,
+    ReturnType, Struct, StructBody, StructField, StructMember, StructSignature, StructType, Trait,
+    TraitBody, TraitConstraint, TraitFunction, TraitMember, TraitSignature, Type, TypeDefinition,
+    TypeParameter, TypeSignature, WhereClause,
 };
 use crate::syntax_tree::{
     statement::strategy::StatementInput,
@@ -490,6 +491,175 @@ impl StructSignatureInput {
 }
 
 #[derive(Debug, Clone)]
+pub struct StructBodyInput {
+    pub struct_members: Vec<StructMemberInput>,
+}
+
+impl ToString for StructBodyInput {
+    fn to_string(&self) -> String {
+        let mut s = "{".to_string();
+
+        for member in &self.struct_members {
+            s.push_str(&member.to_string());
+        }
+
+        s.push('}');
+
+        s
+    }
+}
+
+impl StructBodyInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &StructBody) -> Result<(), TestCaseError> {
+        prop_assert_eq!(self.struct_members.len(), output.struct_members.len());
+
+        for (i, o) in self.struct_members.iter().zip(&output.struct_members) {
+            i.validate(o)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeDefinitionInput {
+    pub type_specifier: TypeSpecifierInput,
+}
+
+impl ToString for TypeDefinitionInput {
+    fn to_string(&self) -> String { format!("= {}", self.type_specifier.to_string()) }
+}
+
+impl TypeDefinitionInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &TypeDefinition) -> Result<(), TestCaseError> {
+        self.type_specifier.validate(&output.type_specifier)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeSignatureInput {
+    pub identifier: String,
+    pub generic_parameters: Option<GenericParametersInput>,
+}
+
+impl ToString for TypeSignatureInput {
+    fn to_string(&self) -> String {
+        let mut s = "type ".to_string();
+
+        s.push_str(&self.identifier);
+
+        if let Some(generic_parameters) = &self.generic_parameters {
+            s.push_str(&generic_parameters.to_string());
+        }
+
+        s
+    }
+}
+
+impl TypeSignatureInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &TypeSignature) -> Result<(), TestCaseError> {
+        prop_assert_eq!(&self.identifier, output.identifier.span.str());
+
+        match (&self.generic_parameters, &output.generic_parameters) {
+            (None, None) => Ok(()),
+            (Some(generic_parameters), Some(output_generic_parameters)) => {
+                generic_parameters.validate(output_generic_parameters)
+            }
+            _ => Err(TestCaseError::fail("generic parameters mismatch")),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StructFieldInput {
+    pub access_modifier: AccessModifierInput,
+    pub identifier: String,
+    pub type_specifier: TypeSpecifierInput,
+}
+
+impl ToString for StructFieldInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} let {}: {};",
+            self.access_modifier.to_string(),
+            self.identifier,
+            self.type_specifier.to_string()
+        )
+    }
+}
+
+impl StructFieldInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &StructField) -> Result<(), TestCaseError> {
+        self.access_modifier.validate(&output.access_modifier)?;
+        self.type_specifier
+            .validate(&output.type_annotation.type_specifier)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StructTypeInput {
+    pub access_modifier: AccessModifierInput,
+    pub type_signature: TypeSignatureInput,
+    pub type_definition: TypeDefinitionInput,
+}
+
+impl ToString for StructTypeInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {} {};",
+            self.access_modifier.to_string(),
+            self.type_signature.to_string(),
+            self.type_definition.to_string()
+        )
+    }
+}
+
+impl StructTypeInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &StructType) -> Result<(), TestCaseError> {
+        self.access_modifier.validate(&output.access_modifier)?;
+        self.type_signature.validate(&output.type_signature)?;
+        self.type_definition.validate(&output.type_definition)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum StructMemberInput {
+    Field(StructFieldInput),
+    Type(StructTypeInput),
+}
+
+impl ToString for StructMemberInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Field(field) => field.to_string(),
+            Self::Type(ty) => ty.to_string(),
+        }
+    }
+}
+
+impl StructMemberInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &StructMember) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Field(input), StructMember::Field(output)) => input.validate(output),
+            (Self::Type(input), StructMember::Type(output)) => input.validate(output),
+            _ => Err(TestCaseError::fail("struct member mismatch")),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionSignatureInput {
     pub identifier: String,
     pub generic_parameters: Option<GenericParametersInput>,
@@ -647,9 +817,69 @@ impl FunctionInput {
 }
 
 #[derive(Debug, Clone)]
+pub struct StructInput {
+    pub access_modifier: AccessModifierInput,
+    pub struct_signature: StructSignatureInput,
+    pub struct_body: StructBodyInput,
+}
+
+impl ToString for StructInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {} {}",
+            self.access_modifier.to_string(),
+            self.struct_signature.to_string(),
+            self.struct_body.to_string()
+        )
+    }
+}
+
+impl StructInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Struct) -> Result<(), TestCaseError> {
+        self.access_modifier.validate(&output.access_modifier)?;
+        self.struct_signature.validate(&output.struct_signature)?;
+        self.struct_body.validate(&output.struct_body)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeInput {
+    pub access_modifier: AccessModifierInput,
+    pub type_signature: TypeSignatureInput,
+    pub type_definition: TypeDefinitionInput,
+}
+
+impl ToString for TypeInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {} {};",
+            self.access_modifier.to_string(),
+            self.type_signature.to_string(),
+            self.type_definition.to_string()
+        )
+    }
+}
+
+impl TypeInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Type) -> Result<(), TestCaseError> {
+        self.access_modifier.validate(&output.access_modifier)?;
+        self.type_signature.validate(&output.type_signature)?;
+        self.type_definition.validate(&output.type_definition)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ItemInput {
     Trait(TraitInput),
     Function(FunctionInput),
+    Struct(StructInput),
+    Type(TypeInput),
 }
 
 impl ToString for ItemInput {
@@ -657,6 +887,8 @@ impl ToString for ItemInput {
         match self {
             Self::Trait(i) => i.to_string(),
             Self::Function(i) => i.to_string(),
+            Self::Struct(i) => i.to_string(),
+            Self::Type(i) => i.to_string(),
         }
     }
 }
@@ -667,6 +899,8 @@ impl ItemInput {
         match (self, output) {
             (Self::Trait(i), Item::Trait(o)) => i.validate(o),
             (Self::Function(i), Item::Function(o)) => i.validate(o),
+            (Self::Struct(i), Item::Struct(o)) => i.validate(o),
+            (Self::Type(i), Item::Type(o)) => i.validate(o),
             _ => Err(TestCaseError::fail("Item types do not match")),
         }
     }
@@ -783,6 +1017,74 @@ fn function_body() -> impl Strategy<Value = FunctionBodyInput> {
         .prop_map(|statements| FunctionBodyInput { statements })
 }
 
+fn type_definition() -> impl Strategy<Value = TypeDefinitionInput> {
+    (crate::syntax_tree::strategy::type_specifier())
+        .prop_map(|type_specifier| TypeDefinitionInput { type_specifier })
+}
+
+fn type_signature() -> impl Strategy<Value = TypeSignatureInput> {
+    (
+        pernixc_lexical::token::strategy::identifier(),
+        proptest::option::of(generic_parameters()),
+    )
+        .prop_map(|(identifier, generic_parameters)| TypeSignatureInput {
+            identifier,
+            generic_parameters,
+        })
+}
+
+fn struct_type() -> impl Strategy<Value = StructTypeInput> {
+    (access_modifier(), type_signature(), type_definition()).prop_map(
+        |(access_modifier, type_signature, type_definition)| StructTypeInput {
+            access_modifier,
+            type_signature,
+            type_definition,
+        },
+    )
+}
+
+fn struct_field() -> impl Strategy<Value = StructFieldInput> {
+    (
+        access_modifier(),
+        crate::syntax_tree::strategy::type_specifier(),
+        pernixc_lexical::token::strategy::identifier(),
+    )
+        .prop_map(
+            |(access_modifier, type_specifier, identifier)| StructFieldInput {
+                access_modifier,
+                identifier,
+                type_specifier,
+            },
+        )
+}
+
+fn struct_member() -> impl Strategy<Value = StructMemberInput> {
+    prop_oneof![
+        struct_type().prop_map(StructMemberInput::Type),
+        struct_field().prop_map(StructMemberInput::Field),
+    ]
+}
+
+fn struct_signature() -> impl Strategy<Value = StructSignatureInput> {
+    (
+        pernixc_lexical::token::strategy::identifier(),
+        proptest::option::of(generic_parameters()),
+        proptest::option::of(where_clause()),
+    )
+        .prop_map(
+            |(identifier, generic_parameters, where_clause)| StructSignatureInput {
+                identifier,
+                generic_parameters,
+                where_clause,
+            },
+        )
+}
+
+fn struct_body() -> impl Strategy<Value = StructBodyInput> {
+    proptest::collection::vec(struct_member(), 0..=4)
+        .prop_map(|struct_members| StructBodyInput { struct_members })
+}
+
 pub fn item() -> impl Strategy<Value = ItemInput> {
     prop_oneof![
         (access_modifier(), trait_signature(), trait_body()).prop_map(
@@ -798,6 +1100,24 @@ pub fn item() -> impl Strategy<Value = ItemInput> {
                     access_modifier,
                     function_signature,
                     function_body,
+                })
+            }
+        ),
+        (access_modifier(), struct_signature(), struct_body()).prop_map(
+            |(access_modifier, struct_signature, struct_body)| {
+                ItemInput::Struct(StructInput {
+                    access_modifier,
+                    struct_signature,
+                    struct_body,
+                })
+            }
+        ),
+        (access_modifier(), type_signature(), type_definition()).prop_map(
+            |(access_modifier, type_signature, type_definition)| {
+                ItemInput::Type(TypeInput {
+                    access_modifier,
+                    type_signature,
+                    type_definition,
                 })
             }
         )

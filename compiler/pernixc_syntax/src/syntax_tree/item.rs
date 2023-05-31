@@ -567,7 +567,7 @@ impl SourceElement for Struct {
 /// Syntax Synopsis:
 /// ``` text
 /// StructField:
-///     AccessModifier 'let' Identifier TypeAnnotation
+///     AccessModifier 'let' Identifier TypeAnnotation ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -576,13 +576,12 @@ pub struct StructField {
     pub let_keyword: Keyword,
     pub identifier: Identifier,
     pub type_annotation: TypeAnnotation,
+    pub semicolon: Punctuation,
 }
 
 impl SourceElement for StructField {
     fn span(&self) -> Result<Span, SpanError> {
-        self.access_modifier
-            .span()?
-            .join(&self.type_annotation.span()?)
+        self.access_modifier.span()?.join(&self.semicolon.span)
     }
 }
 
@@ -1216,23 +1215,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn pare_struct_signature(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<StructSignature> {
-        let struct_keyword = self.parse_keyword(KeywordKind::Struct, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let generic_parameters = self.try_parse_generic_parameters(handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-
-        Ok(StructSignature {
-            struct_keyword,
-            identifier,
-            generic_parameters,
-            where_clause,
-        })
-    }
-
     fn parse_type_signature(
         &mut self,
         handler: &impl Handler<Error>,
@@ -1279,12 +1261,14 @@ impl<'a> Parser<'a> {
 
                         let identifier = self.parse_identifier(handler)?;
                         let type_annotation = self.parse_type_annotation(handler)?;
+                        let semicolon = self.parse_punctuation(';', true, handler)?;
 
                         Ok(StructMember::Field(StructField {
                             access_modifier,
                             let_keyword,
                             identifier,
                             type_annotation,
+                            semicolon,
                         }))
                     }
                     Some(Token::Keyword(type_keyword))
@@ -1354,6 +1338,19 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_enum_signature(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<EnumSignature> {
+        let enum_keyword = self.parse_keyword(KeywordKind::Enum, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+
+        Ok(EnumSignature {
+            enum_keyword,
+            identifier,
+        })
+    }
+
     fn parse_item_with_access_modifier(
         &mut self,
         handler: &impl Handler<Error>,
@@ -1396,9 +1393,18 @@ impl<'a> Parser<'a> {
                 }))
             }
 
-            // parse enum
-            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Enum => {
-                todo!()
+            // parse type
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Type => {
+                let type_signature = self.parse_type_signature(handler)?;
+                let type_definition = self.parse_type_definition(handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                Ok(Item::Type(Type {
+                    access_modifier,
+                    type_signature,
+                    type_definition,
+                    semicolon,
+                }))
             }
 
             found => {
