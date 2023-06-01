@@ -107,6 +107,13 @@ pub struct Target {
     file: File,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum FileParsingOrder {
+    Usings = 0,
+    Submodules = 1,
+    Items = 2,
+}
+
 impl<'a> Parser<'a> {
     /// Parses a [`ModulePath`]
     #[allow(clippy::missing_errors_doc)]
@@ -154,5 +161,9 @@ impl<'a> Parser<'a> {
             identifier,
             semicolon,
         })
+    }
+
+    fn parse_file(&mut self) -> ParserResult<(Vec<Using>, Vec<Module>, Vec<Item>)> {
+        let mut current_parsing_order = FileParsingOrder::Usings;
     }
 }
