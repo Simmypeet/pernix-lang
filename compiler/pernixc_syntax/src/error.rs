@@ -9,7 +9,7 @@ use pernixc_source::Span;
 use thiserror::Error;
 
 /// An identifier is expected but found an another invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct IdentifierExpected {
     /// The invalid token that was found.
     #[get = "pub"]
@@ -54,7 +54,7 @@ impl IdentifierExpected {
 }
 
 /// A type specifier syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct TypeSpecifierExpected {
     /// The invalid token that was found.
     #[get = "pub"]
@@ -83,7 +83,7 @@ impl TypeSpecifierExpected {
 }
 
 /// An expression syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct ExpressionExpected {
     /// The invalid token that was found.
     #[get = "pub"]
@@ -109,7 +109,7 @@ impl ExpressionExpected {
 }
 
 /// A member syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct StructMemberExpected {
     /// The invalid token that was found.
     pub(super) found: Option<Token>,
@@ -134,7 +134,7 @@ impl StructMemberExpected {
 }
 
 /// An item syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct ItemExpected {
     /// The invalid token that was found.
     #[get = "pub"]
@@ -160,7 +160,7 @@ impl ItemExpected {
 }
 
 /// An access modifier syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct AccessModifierExpected {
     /// The invalid token that was found.
     #[get = "pub"]
@@ -189,7 +189,7 @@ impl AccessModifierExpected {
 }
 
 /// A punctuation of a particular character is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct PunctuationExpected {
     /// The character of the expected punctuation.
     #[get_copy = "pub"]
@@ -226,7 +226,7 @@ impl PunctuationExpected {
 }
 
 /// A keyword of a particular kind is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct KeywordExpected {
     /// The kind of the expected keyword.
     #[get_copy = "pub"]
@@ -260,7 +260,7 @@ impl KeywordExpected {
 }
 
 /// A generic arugment/parameter list cannot be empty.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct GenericArgumentParameterListCannotBeEmpty {
     /// The span of the generic argument/parameter.
     #[get = "pub"]
@@ -283,7 +283,7 @@ impl GenericArgumentParameterListCannotBeEmpty {
 }
 
 /// A trait member syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct TraitMemberExpected {
     /// The invalid token that was found.
     pub(super) found: Option<Token>,
@@ -311,7 +311,7 @@ impl TraitMemberExpected {
 }
 
 /// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
+#[derive(Debug, Clone, EnumAsInner, Error, From)]
 #[error("Encountered a syntactic error while parsing the source code.")]
 #[allow(missing_docs)]
 pub enum Error {

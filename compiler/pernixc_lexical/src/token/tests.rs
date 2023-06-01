@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use pernixc_source::SourceFile;
 use pernixc_system::diagnostic::Storage;
 use proptest::{prop_assert, prop_assert_eq, proptest};
@@ -9,11 +7,8 @@ use crate::{
     token::{CommentKind, Token, TokenizationError},
 };
 
-fn tokenize(source: String) -> Result<Token, proptest::test_runner::TestCaseError> {
-    let source_file = SourceFile::new(PathBuf::new(), "test".to_string(), source, vec![
-        "test".to_string()
-    ])?;
-
+fn tokenize(source: &str) -> Result<Token, proptest::test_runner::TestCaseError> {
+    let source_file = SourceFile::temp(source)?;
     let mut iterator = source_file.iter();
 
     let error_storage: Storage<Error> = Storage::new();
@@ -28,7 +23,7 @@ fn tokenize(source: String) -> Result<Token, proptest::test_runner::TestCaseErro
 proptest! {
     #[test]
     fn identifier_test(source in super::strategy::identifier()) {
-        let token = tokenize(source.clone())?.into_identifier().unwrap();
+        let token = tokenize(&source)?.into_identifier().unwrap();
 
         // str is equal to source
         prop_assert_eq!(token.span.str(), source);
@@ -36,7 +31,7 @@ proptest! {
 
     #[test]
     fn keyword_test(keyword in super::strategy::keyword_kind()) {
-        let token = tokenize(keyword.to_string())?.into_keyword().unwrap();
+        let token = tokenize(&keyword.to_string())?.into_keyword().unwrap();
 
         // keyword is equal to source
         prop_assert_eq!(token.keyword, keyword);
@@ -49,7 +44,7 @@ proptest! {
         optional_suffix in proptest::option::of(super::strategy::identifier())
     ) {
         let source = format!("{}{}", value, optional_suffix.clone().unwrap_or_default());
-        let token = tokenize(source)?.into_numeric_literal().unwrap();
+        let token = tokenize(&source)?.into_numeric_literal().unwrap();
 
         // value is equal to source
         prop_assert_eq!(token.value_span.str(), value);
@@ -70,7 +65,7 @@ proptest! {
             comment.push(SourceFile::NEW_LINE);
         }
         let source = format!("//{comment}");
-        let token = tokenize(source.clone())?.into_comment().unwrap();
+        let token = tokenize(&source)?.into_comment().unwrap();
 
         prop_assert_eq!(token.kind, CommentKind::SingleLine);
         prop_assert_eq!(token.span.str(), source);
@@ -81,7 +76,7 @@ proptest! {
         comment in super::strategy::delimited_comment_body()
     ) {
         let source = format!("/*{comment}*/");
-        let token = tokenize(source.clone())?.into_comment().unwrap();
+        let token = tokenize(&source)?.into_comment().unwrap();
 
         prop_assert_eq!(token.kind, CommentKind::Delimited);
         prop_assert_eq!(token.span.str(), source);
@@ -92,11 +87,7 @@ proptest! {
         comment in super::strategy::delimited_comment_body()
     ) {
         let source = format!("/*{comment}");
-        let source_file = SourceFile::new(
-            PathBuf::new(),
-            "test".to_string(),
-            source, vec!["test".to_string()]
-        )?;
+        let source_file = SourceFile::temp(&source)?;
         let mut iter = source_file.iter();
 
         let storage: Storage<Error> = Storage::new();

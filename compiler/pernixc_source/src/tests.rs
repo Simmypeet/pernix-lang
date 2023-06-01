@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use proptest::prelude::*;
 
 use super::SourceFile;
@@ -21,12 +19,7 @@ proptest! {
     #[test]
     fn line_test(lines in lines_strategy()) {
         let source = lines.join(SourceFile::NEW_LINE_STR);
-        let source_file = SourceFile::new(
-            PathBuf::new(),
-            "test".to_string(),
-            source,
-            vec!["test".to_string()]
-        )?;
+        let source_file = SourceFile::temp(&source)?;
 
         // line number check
         prop_assert_eq!(source_file.line_number(), lines.len());
@@ -45,12 +38,7 @@ proptest! {
     #[test]
     fn get_location_test(lines in lines_strategy()) {
         let source = lines.join(SourceFile::NEW_LINE_STR);
-        let source_file = SourceFile::new(
-            PathBuf::new(),
-            "test".to_string(),
-            source,
-            vec!["test".to_string()]
-        )?;
+        let source_file = SourceFile::temp(&source)?;
 
         let mut line = 1;
         let mut column = 1;

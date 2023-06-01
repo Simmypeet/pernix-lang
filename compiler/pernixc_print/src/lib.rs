@@ -38,15 +38,6 @@ fn get_digit(mut number: usize) -> usize {
 /// Prints and highlights the source code of a span, including the help message if provided.
 #[allow(clippy::too_many_lines)]
 pub fn print_source_code(span: &Span, help_message: Option<&str>) {
-    let file_path = {
-        let mut file_path = span.source_file().parent_directory().clone();
-        file_path.push(span.source_file().file_name());
-
-        // add the .pnx extension to the file path
-        file_path.set_extension("pnx");
-
-        file_path
-    };
     let start_location = span.start_location();
     let end_location = span.end_location();
 
@@ -70,7 +61,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
         "-->".bright_cyan().bold(),
         format_args!(
             "{}:{}:{}",
-            file_path.display(),
+            span.source_file().full_path().display(),
             start_location.line,
             start_location.column
         )

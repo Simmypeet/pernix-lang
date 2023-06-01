@@ -13,16 +13,27 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
 use std::{
-    cmp::Ordering, fmt::Debug, iter::Peekable, ops::Range, path::PathBuf, str::CharIndices,
+    cmp::Ordering,
+    fmt::Debug,
+    fs::File,
+    io::{Read, Write},
+    iter::Peekable,
+    ops::Range,
+    path::PathBuf,
+    str::CharIndices,
     sync::Arc,
 };
 
 use getset::{CopyGetters, Getters};
+use tempfile::TempDir;
 use thiserror::Error;
 
 /// Represents an source file input for the compiler.
-#[derive(Debug, Getters, Clone, PartialEq, Eq, Hash)]
+#[derive(Getters)]
 pub struct SourceFile {
+    #[allow(dead_code)]
+    source: Option<Box<dyn Source + Send + Sync + 'static>>,
+
     /// Gets the full path to the source file.
     #[get = "pub"]
     full_path: PathBuf,
@@ -33,6 +44,29 @@ pub struct SourceFile {
     lines: Vec<Range<usize>>,
 }
 
+impl Debug for SourceFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SourceFile")
+            .field("full_path", &self.full_path)
+            .field("source_code", &self.source_code)
+            .field("lines", &self.lines)
+            .finish()
+    }
+}
+
+/// A blanket trait for all types that can be used as a source for the compiler.
+trait Source {}
+
+impl Source for File {}
+
+struct Temp {
+    #[allow(dead_code)]
+    temp_file: File,
+    #[allow(dead_code)]
+    temp_dir: TempDir,
+}
+impl Source for Temp {}
+
 impl SourceFile {
     /// Is the preferred new line character that the compiler uses.
     ///
@@ -42,7 +76,11 @@ impl SourceFile {
     /// Is the preferred new line string that the compiler uses.
     pub const NEW_LINE_STR: &'static str = "\n";
 
-    fn new(full_path: PathBuf, mut source_code: String) -> Arc<Self> {
+    fn new(
+        full_path: PathBuf,
+        mut source_code: String,
+        source: Option<Box<dyn Source + Send + Sync + 'static>>,
+    ) -> Arc<Self> {
         fn replace_string_inplace(s: &mut String, from: &str, to: &str) {
             let mut start = 0;
             while let Some(i) = s[start..].find(from) {
@@ -69,6 +107,7 @@ impl SourceFile {
         lines.push(start..source_code.len());
 
         Arc::new(Self {
+            source,
             full_path,
             source_code,
             lines,
@@ -77,16 +116,49 @@ impl SourceFile {
 
     /// Loads a source file from the given path.
     ///
+    /// The file is kept open so that it cannot be deleted or modified while the compiler is
+    /// using
+    ///
     /// # Errors
     /// - [`std::io::Error`] if the file cannot be read from the given path.
-    pub fn load(
-        path: &PathBuf,
-        module_hierarchy: Vec<String>,
-    ) -> Result<Arc<Self>, std::io::Error> {
-        let source_code = std::fs::read_to_string(path)?;
+    pub fn load(path: &PathBuf) -> Result<Arc<Self>, std::io::Error> {
+        // keep the file open so that it cannot be deleted or modified while the compiler is using
+        // it
+        let mut file = std::fs::File::open(path)?;
+
+        let mut source_code = String::new();
+        file.read_to_string(&mut source_code)?;
         let full_path = path.canonicalize()?;
 
-        Ok(Self::new(full_path, source_code))
+        Ok(Self::new(full_path, source_code, Some(Box::new(file))))
+    }
+
+    /// Creates a temporary source file from the given source code.
+    ///
+    /// The function creates a temporary directory and a temporary file inside it. The source is
+    /// written to the file. The temporary file is deleted when the [`SourceFile`] is dropped.
+    ///
+    /// # Errors
+    /// - [`std::io::Error`] if the temporary file cannot be created, read, or write.
+    pub fn temp(source: &str) -> Result<Arc<Self>, std::io::Error> {
+        const TEMP_FILE_NAME: &str = "temp";
+
+        let temp_dir = tempfile::tempdir()?;
+        let temp_file_path = temp_dir.path().join(format!("{TEMP_FILE_NAME}.pnx"));
+        let mut temp_file = std::fs::File::create(temp_file_path.clone())?;
+
+        write!(&mut temp_file, "{source}")?;
+
+        let resource = Temp {
+            temp_file,
+            temp_dir,
+        };
+
+        Ok(Self::new(
+            temp_file_path,
+            source.to_owned(),
+            Some(Box::new(resource)),
+        ))
     }
 
     /// Gets the line of the source file at the given line number.
@@ -159,7 +231,7 @@ impl SourceFile {
 pub type ByteIndex = usize;
 
 /// Represents a range of characters in a source file.
-#[derive(Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+#[derive(Clone, Getters, CopyGetters)]
 pub struct Span {
     /// Gets the start byte index of the span.
     #[get_copy = "pub"]
@@ -179,7 +251,6 @@ impl Debug for Span {
         f.debug_struct("Span")
             .field("start", &self.start)
             .field("end", &self.end)
-            .field("source_file", self.source_file.file_name())
             .field("content", &self.str())
             .finish()
     }
@@ -301,8 +372,6 @@ impl<'a> std::iter::Iterator for Iterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> { self.iterator.next() }
 }
-
-pub mod utils;
 
 #[cfg(test)]
 mod tests;

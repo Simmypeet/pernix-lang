@@ -11,7 +11,7 @@ proptest! {
         println!("{source}");
 
         let expression = crate::syntax_tree::tests::parse(
-            source,
+            &source,
             |parser, handler| parser.parse_expression(handler)
         )?;
 

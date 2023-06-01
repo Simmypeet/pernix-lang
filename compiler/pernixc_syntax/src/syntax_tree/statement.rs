@@ -23,7 +23,7 @@ pub mod strategy;
 ///     Declarative
 ///     | Expressive
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum Statement {
     Declarative(Declarative),
     Expressive(Expressive),
@@ -48,7 +48,7 @@ impl SourceElement for Statement {
 ///     VariableDeclaration
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum Declarative {
     VariableDeclaration(VariableDeclaration),
 }
@@ -69,7 +69,7 @@ impl SourceElement for Declarative {
 ///     VariableTypeBindingSpecifier Identifier '=' Expression ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct VariableDeclaration {
     pub let_keyword: Keyword,
     pub mutable_keyword: Option<Keyword>,
@@ -98,7 +98,7 @@ impl SourceElement for VariableDeclaration {
 ///     | Imperative
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum Expressive {
     Semi(Semi),
     Imperative(Imperative),
@@ -122,7 +122,7 @@ impl SourceElement for Expressive {
 ///     | Terminator
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum SemiExpression {
     Functional(Functional),
     Terminator(Terminator),
@@ -147,7 +147,7 @@ impl SourceElement for SemiExpression {
 ///     Functional ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Semi {
     pub semi_expression: SemiExpression,
     pub semicolon: Punctuation,

@@ -25,7 +25,7 @@ pub mod statement;
 /// This struct is useful for representing syntax tree nodes that are separated by a separator.
 /// For example, a comma separated list of expressions such as `1, 2, 3` can be represented by a
 /// [`ConnectedList`] with the separator being a comma token and the elements being the expressions.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ConnectedList<Element, Separator> {
     /// The first element of the list.
     pub first: Element,
@@ -41,7 +41,7 @@ pub struct ConnectedList<Element, Separator> {
 }
 
 /// Is the result of [`Parser::parse_enclosed_frame()`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct EnclosedList<T> {
     /// The open delimiter of the list.
     pub open: Punctuation,
@@ -180,7 +180,7 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
 ///
 /// This syntax tree is used to represent the scope separator `::` in the qualified identifier
 /// syntax
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ScopeSeparator {
     pub first: Punctuation,
     pub second: Punctuation,
@@ -199,7 +199,7 @@ impl SourceElement for ScopeSeparator {
 ///     | 'static'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum LifetimeArgumentIdentifier {
     Identifier(Identifier),
     StaticKeyword(Keyword),
@@ -222,7 +222,7 @@ impl SourceElement for LifetimeArgumentIdentifier {
 ///     '/'' LifetimeArgumentIdentifier
 ///     ;
 /// ``
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct LifetimeArgument {
     pub apostrophe: Punctuation,
     pub lifetime_argument_identifier: LifetimeArgumentIdentifier,
@@ -245,7 +245,7 @@ impl SourceElement for LifetimeArgument {
 ///     | LifetimeArgument
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum GenericArgument {
     TypeSpecifier(Box<TypeSpecifier>),
     LifetimeArgument(LifetimeArgument),
@@ -278,7 +278,7 @@ pub type GenericArgumentList = ConnectedList<GenericArgument, Punctuation>;
 ///     ':'? '<' GenericArgumentList '>'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct GenericArguments {
     pub colon: Option<Punctuation>,
     pub left_angle: Punctuation,
@@ -305,7 +305,7 @@ impl SourceElement for GenericArguments {
 ///     Identifier GenericArguments?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct GenericIdentifier {
     identifier: Identifier,
     generic_arguments: Option<GenericArguments>,
@@ -328,7 +328,7 @@ impl SourceElement for GenericIdentifier {
 ///     '::'? GenericIdentifier ('::' GenericIdentifier)*
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct QualifiedIdentifier {
     pub leading_scope_separator: Option<ScopeSeparator>,
     pub generic_identifiers: ConnectedList<GenericIdentifier, ScopeSeparator>,
@@ -366,7 +366,7 @@ impl SourceElement for QualifiedIdentifier {
 ///     | 'uint64'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum PrimitiveTypeSpecifier {
     Bool(Keyword),
     Void(Keyword),
@@ -410,7 +410,7 @@ impl SourceElement for PrimitiveTypeSpecifier {
 ///     | 'restrict'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum ReferenceQualifier {
     Mutable(Keyword),
     Restrict(Keyword),
@@ -432,7 +432,7 @@ impl SourceElement for ReferenceQualifier {
 ///     '&' LifetimeArgument? ReferenceQualifier? TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ReferenceTypeSpecifier {
     pub ampersand: Punctuation,
     pub lifetime_argument: Option<LifetimeArgument>,
@@ -458,7 +458,7 @@ impl SourceElement for ReferenceTypeSpecifier {
 ///     | ReferenceTypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum TypeSpecifier {
     PrimitiveTypeSpecifier(PrimitiveTypeSpecifier),
     QualifiedIdentifier(QualifiedIdentifier),
@@ -483,7 +483,7 @@ impl SourceElement for TypeSpecifier {
 ///     '\'' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Label {
     pub apostrophe: Punctuation,
     pub identifier: Identifier,
@@ -501,7 +501,7 @@ impl SourceElement for Label {
 ///     ':' TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TypeAnnotation {
     pub colon: Punctuation,
     pub type_specifier: TypeSpecifier,

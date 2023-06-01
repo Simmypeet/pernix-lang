@@ -30,7 +30,7 @@ pub mod strategy;
 ///     | Primary
 ///     ;
 ///  ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum Expression {
     Functional(Functional),
     Terminator(Terminator),
@@ -56,7 +56,7 @@ impl SourceElement for Expression {
 ///     | Express
 ///     | Break
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum Terminator {
     Return(Return),
     Continue(Continue),
@@ -94,7 +94,7 @@ impl SourceElement for Terminator {
 ///     | MemberAccess
 ///     | Cast
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum Functional {
     NumericLiteral(NumericLiteral),
     BooleanLiteral(BooleanLiteral),
@@ -135,7 +135,7 @@ impl SourceElement for Functional {
 ///     NumericLiteralToken
 ///     ;
 /// ````
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct NumericLiteral {
     pub numeric_literal_token: NumericLiteralToken,
 }
@@ -152,7 +152,7 @@ impl SourceElement for NumericLiteral {
 ///     Expression 'as' TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Cast {
     pub operand: Box<Expression>,
     pub as_keyword: Keyword,
@@ -174,7 +174,7 @@ impl SourceElement for Cast {
 ///     | 'false'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum BooleanLiteral {
     True(Keyword),
     False(Keyword),
@@ -196,7 +196,7 @@ impl SourceElement for BooleanLiteral {
 ///     Functional BinaryOperator Functional
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Binary {
     pub left_operand: Box<Functional>,
     pub binary_operator: BinaryOperator,
@@ -235,7 +235,7 @@ impl SourceElement for Binary {
 ///     | 'or'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum BinaryOperator {
     Add(Punctuation),
     Subtract(Punctuation),
@@ -332,7 +332,7 @@ impl SourceElement for BinaryOperator {
 ///     | '-'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum PrefixOperator {
     LogicalNot(Punctuation),
     Negate(Punctuation),
@@ -354,7 +354,7 @@ impl SourceElement for PrefixOperator {
 ///     PrefixOperator Functional
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Prefix {
     pub prefix_operator: PrefixOperator,
     pub operand: Box<Functional>,
@@ -374,7 +374,7 @@ impl SourceElement for Prefix {
 ///     QualifiedIdentifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Named {
     pub qualified_identifier: QualifiedIdentifier,
 }
@@ -401,7 +401,7 @@ pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 ///     QualifiedIdentifier '(' ArgumentList? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct FunctionCall {
     pub qualified_identifier: QualifiedIdentifier,
     pub left_paren: Punctuation,
@@ -425,7 +425,7 @@ impl SourceElement for FunctionCall {
 ///     '(' Expression ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Parenthesized {
     pub left_paren: Punctuation,
     pub expression: Box<Expression>,
@@ -446,7 +446,7 @@ impl SourceElement for Parenthesized {
 ///     Identifier ':' Expression
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct FieldInitializer {
     pub identifier: Identifier,
     pub colon: Punctuation,
@@ -477,7 +477,7 @@ pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 ///     QualifiedIdentifier '{' FieldInitializerList? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct StructLiteral {
     pub qualified_identifier: QualifiedIdentifier,
     pub left_brace: Punctuation,
@@ -501,7 +501,7 @@ impl SourceElement for StructLiteral {
 ///     Functional '.' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct MemberAccess {
     pub operand: Box<Functional>,
     pub dot: Punctuation,
@@ -524,7 +524,7 @@ impl SourceElement for MemberAccess {
 ///     | Loop
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum Imperative {
     Block(Block),
     IfElse(IfElse),
@@ -549,7 +549,7 @@ impl SourceElement for Imperative {
 ///     Label ':'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct LabelSpecifier {
     pub label: Label,
     pub colon: Punctuation,
@@ -567,7 +567,7 @@ impl SourceElement for LabelSpecifier {
 ///     '{' Statement* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct BlockWithoutLabel {
     pub left_brace: Punctuation,
     pub statements: Vec<Statement>,
@@ -588,7 +588,7 @@ impl SourceElement for BlockWithoutLabel {
 ///     LabelSpecifier? '{' Statement* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Block {
     pub label_specifier: Option<LabelSpecifier>,
     pub block_without_label: BlockWithoutLabel,
@@ -616,7 +616,7 @@ impl SourceElement for Block {
 ///     | IfElse
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum BlockOrIfElse {
     Block(Block),
     IfElse(IfElse),
@@ -639,7 +639,7 @@ impl SourceElement for BlockOrIfElse {
 ///     'else' BlockOrIfElse
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Else {
     pub else_keyword: Keyword,
     pub expression: Box<BlockOrIfElse>,
@@ -659,7 +659,7 @@ impl SourceElement for Else {
 ///     'if' '(' Expression ')' Block Else?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct IfElse {
     pub if_keyword: Keyword,
     pub left_paren: Punctuation,
@@ -689,7 +689,7 @@ impl SourceElement for IfElse {
 ///     LabelSpecifier? 'loop' BlockWithoutLabel
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Loop {
     pub label_specifier: Option<LabelSpecifier>,
     pub loop_keyword: Keyword,
@@ -716,7 +716,7 @@ impl SourceElement for Loop {
 ///     'continue' Label?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Continue {
     pub continue_keyword: Keyword,
     pub label: Option<Label>,
@@ -742,7 +742,7 @@ impl SourceElement for Continue {
 ///     'express' Label? Functional?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Express {
     pub express_keyword: Keyword,
     pub label: Option<Label>,
@@ -772,7 +772,7 @@ impl SourceElement for Express {
 ///     'break' Label? Functional?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Break {
     pub break_keyword: Keyword,
     pub label: Option<Label>,
@@ -802,7 +802,7 @@ impl SourceElement for Break {
 ///     'return' Functional?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Return {
     pub return_keyword: Keyword,
     pub expression: Option<Functional>,

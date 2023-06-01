@@ -8,9 +8,9 @@ use proptest::{
 use super::{
     AccessModifier, Constraint, ConstraintList, Enum, EnumBody, EnumSignature, Function,
     FunctionBody, FunctionSignature, GenericParameter, GenericParameters, Item, LifetimeParameter,
-    Module, ModulePath, Parameter, Parameters, ReturnType, Struct, StructBody, StructField,
-    StructMember, StructSignature, StructType, Trait, TraitBody, TraitConstraint, TraitFunction,
-    TraitMember, TraitSignature, Type, TypeDefinition, TypeParameter, TypeSignature, WhereClause,
+    Parameter, Parameters, ReturnType, Struct, StructBody, StructField, StructMember,
+    StructSignature, StructType, Trait, TraitBody, TraitConstraint, TraitFunction, TraitMember,
+    TraitSignature, Type, TypeDefinition, TypeParameter, TypeSignature, WhereClause,
 };
 use crate::syntax_tree::{
     statement::strategy::StatementInput,
@@ -20,8 +20,10 @@ use crate::syntax_tree::{
     ConnectedList,
 };
 
+/// Represents an input for [`super::LifetimeParameter`]
 #[derive(Debug, Clone)]
 pub struct LifetimeParameterInput {
+    /// The identifier of the lifetime parameter
     pub identifier: String,
 }
 
@@ -30,6 +32,7 @@ impl ToString for LifetimeParameterInput {
 }
 
 impl LifetimeParameterInput {
+    /// Validates the input against the [`super::LifetimeParameter`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &LifetimeParameter) -> Result<(), TestCaseError> {
         prop_assert_eq!(&self.identifier, output.identifier.span.str());
@@ -38,8 +41,10 @@ impl LifetimeParameterInput {
     }
 }
 
+/// Represents an input for [`super::TypeParameter`]
 #[derive(Debug, Clone)]
 pub struct TypeParameterInput {
+    /// The identifier of the type parameter
     pub identifier: String,
 }
 
@@ -48,52 +53,9 @@ impl ToString for TypeParameterInput {
 }
 
 impl TypeParameterInput {
+    /// Validates the input against the [`super::TypeParameter`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TypeParameter) -> Result<(), TestCaseError> {
-        prop_assert_eq!(&self.identifier, output.identifier.span.str());
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ModulePathInput {
-    pub identifiers: Vec<String>,
-}
-
-impl ToString for ModulePathInput {
-    fn to_string(&self) -> String { self.identifiers.clone().join("::") }
-}
-
-impl ModulePathInput {
-    #[allow(clippy::missing_errors_doc)]
-    pub fn validate(&self, output: &ModulePath) -> Result<(), TestCaseError> {
-        prop_assert_eq!(self.identifiers.len(), output.len());
-
-        for (input, output) in self.identifiers.iter().zip(output.elements()) {
-            prop_assert_eq!(input, output.span.str());
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleInput {
-    pub access_modifier: AccessModifierInput,
-    pub identifier: String,
-}
-
-impl ToString for ModuleInput {
-    fn to_string(&self) -> String {
-        format!("{} {};", self.access_modifier.to_string(), self.identifier)
-    }
-}
-
-impl ModuleInput {
-    #[allow(clippy::missing_errors_doc)]
-    pub fn validate(&self, output: &Module) -> Result<(), TestCaseError> {
-        self.access_modifier.validate(&output.access_modifier)?;
         prop_assert_eq!(&self.identifier, output.identifier.span.str());
 
         Ok(())
@@ -116,6 +78,7 @@ impl ToString for GenericParameterInput {
 }
 
 impl GenericParameterInput {
+    /// Validates the input against the [`super::GenericParameter`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &GenericParameter) -> Result<(), TestCaseError> {
         match (self, output) {
@@ -145,6 +108,7 @@ impl ToString for GenericParametersInput {
 }
 
 impl GenericParametersInput {
+    /// Validates the input against the [`super::GenericParameters`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &GenericParameters) -> Result<(), TestCaseError> {
         prop_assert_eq!(
@@ -174,6 +138,7 @@ impl ToString for TraitConstraintInput {
 }
 
 impl TraitConstraintInput {
+    /// Validates the input against the [`super::TraitConstraint`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TraitConstraint) -> Result<(), TestCaseError> {
         self.qualified_identifier
@@ -197,6 +162,7 @@ impl ToString for ConstraintInput {
 }
 
 impl ConstraintInput {
+    /// Validates the input against the [`super::Constraint`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Constraint) -> Result<(), TestCaseError> {
         match (self, output) {
@@ -223,6 +189,7 @@ impl ToString for ConstraintListInput {
 }
 
 impl ConstraintListInput {
+    /// Validates the input against the [`super::ConstraintList`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &ConstraintList) -> Result<(), TestCaseError> {
         prop_assert_eq!(self.constraints.len(), output.len());
@@ -245,6 +212,7 @@ impl ToString for WhereClauseInput {
 }
 
 impl WhereClauseInput {
+    /// Validates the input against the [`super::WhereClause`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &WhereClause) -> Result<(), TestCaseError> {
         self.constraint_list.validate(&output.constraint_list)
@@ -275,6 +243,7 @@ impl ToString for TraitSignatureInput {
 }
 
 impl TraitSignatureInput {
+    /// Validates the input against the [`super::TraitSignature`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TraitSignature) -> Result<(), TestCaseError> {
         prop_assert_eq!(&self.identifier, output.identifier.span.str());
@@ -323,6 +292,7 @@ impl ToString for TraitBodyInput {
 }
 
 impl TraitBodyInput {
+    /// Validates the input against the [`super::TraitBody`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TraitBody) -> Result<(), TestCaseError> {
         for (i, o) in self.trait_members.iter().zip(output.trait_members.iter()) {
@@ -343,6 +313,7 @@ impl ToString for TraitFunctionInput {
 }
 
 impl TraitFunctionInput {
+    /// Validates the input against the [`super::TraitFunction`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TraitFunction) -> Result<(), TestCaseError> {
         self.function_signature
@@ -366,6 +337,7 @@ impl ToString for TraitMemberInput {
 }
 
 impl TraitMemberInput {
+    /// Validates the input against the [`super::TraitMember`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TraitMember) -> Result<(), TestCaseError> {
         match (self, output) {
@@ -392,6 +364,7 @@ impl ToString for AccessModifierInput {
 }
 
 impl AccessModifierInput {
+    /// Validates the input against the [`super::AccessModifier`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &AccessModifier) -> Result<(), TestCaseError> {
         match (self, output) {
@@ -424,6 +397,7 @@ impl ToString for ParameterInput {
 }
 
 impl ParameterInput {
+    /// Validates the input against the [`super::Parameter`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Parameter) -> Result<(), TestCaseError> {
         prop_assert_eq!(self.mutable, output.mutable_keyword.is_some());
@@ -452,6 +426,7 @@ impl ToString for ParametersInput {
 }
 
 impl ParametersInput {
+    /// Validates the input against the [`super::Parameters`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Parameters) -> Result<(), TestCaseError> {
         prop_assert_eq!(
@@ -482,6 +457,7 @@ impl ToString for ReturnTypeInput {
 }
 
 impl ReturnTypeInput {
+    /// Validates the input against the [`super::ReturnType`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &ReturnType) -> Result<(), TestCaseError> {
         self.type_specifier
@@ -514,6 +490,7 @@ impl ToString for StructSignatureInput {
 }
 
 impl StructSignatureInput {
+    /// Validates the input against the [`super::StructSignature`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &StructSignature) -> Result<(), TestCaseError> {
         prop_assert_eq!(&self.identifier, output.identifier.span.str());
@@ -554,6 +531,7 @@ impl ToString for StructBodyInput {
 }
 
 impl StructBodyInput {
+    /// Validates the input against the [`super::StructBody`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &StructBody) -> Result<(), TestCaseError> {
         prop_assert_eq!(self.struct_members.len(), output.struct_members.len());
@@ -576,6 +554,7 @@ impl ToString for TypeDefinitionInput {
 }
 
 impl TypeDefinitionInput {
+    /// Validates the input against the [`super::TypeDefinition`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TypeDefinition) -> Result<(), TestCaseError> {
         self.type_specifier.validate(&output.type_specifier)?;
@@ -605,6 +584,7 @@ impl ToString for TypeSignatureInput {
 }
 
 impl TypeSignatureInput {
+    /// Validates the input against the [`super::TypeSignature`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TypeSignature) -> Result<(), TestCaseError> {
         prop_assert_eq!(&self.identifier, output.identifier.span.str());
@@ -638,6 +618,7 @@ impl ToString for StructFieldInput {
 }
 
 impl StructFieldInput {
+    /// Validates the input against the [`super::StructField`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &StructField) -> Result<(), TestCaseError> {
         self.access_modifier.validate(&output.access_modifier)?;
@@ -667,6 +648,7 @@ impl ToString for StructTypeInput {
 }
 
 impl StructTypeInput {
+    /// Validates the input against the [`super::StructType`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &StructType) -> Result<(), TestCaseError> {
         self.access_modifier.validate(&output.access_modifier)?;
@@ -693,6 +675,7 @@ impl ToString for StructMemberInput {
 }
 
 impl StructMemberInput {
+    /// Validates the input against the [`super::StructMember`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &StructMember) -> Result<(), TestCaseError> {
         match (self, output) {
@@ -735,6 +718,7 @@ impl ToString for FunctionSignatureInput {
 }
 
 impl FunctionSignatureInput {
+    /// Validates the input against the [`super::FunctionSignature`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &FunctionSignature) -> Result<(), TestCaseError> {
         prop_assert_eq!(&self.identifier, output.identifier.span.str());
@@ -788,6 +772,7 @@ impl ToString for TraitInput {
 }
 
 impl TraitInput {
+    /// Validates the input against the [`super::Trait`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Trait) -> Result<(), TestCaseError> {
         self.access_modifier.validate(&output.access_modifier)?;
@@ -818,6 +803,7 @@ impl ToString for FunctionBodyInput {
 }
 
 impl FunctionBodyInput {
+    /// Validates the input against the [`super::FunctionBody`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &FunctionBody) -> Result<(), TestCaseError> {
         prop_assert_eq!(self.statements.len(), output.statements.len());
@@ -849,6 +835,7 @@ impl ToString for FunctionInput {
 }
 
 impl FunctionInput {
+    /// Validates the input against the [`super::Function`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Function) -> Result<(), TestCaseError> {
         self.access_modifier.validate(&output.access_modifier)?;
@@ -879,6 +866,7 @@ impl ToString for StructInput {
 }
 
 impl StructInput {
+    /// Validates the input against the [`super::Struct`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Struct) -> Result<(), TestCaseError> {
         self.access_modifier.validate(&output.access_modifier)?;
@@ -908,6 +896,7 @@ impl ToString for TypeInput {
 }
 
 impl TypeInput {
+    /// Validates the input against the [`super::Type`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Type) -> Result<(), TestCaseError> {
         self.access_modifier.validate(&output.access_modifier)?;
@@ -949,6 +938,7 @@ impl ToString for EnumBodyInput {
 }
 
 impl EnumBodyInput {
+    /// Validates the input against the [`super::EnumBody`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &EnumBody) -> Result<(), TestCaseError> {
         prop_assert_eq!(
@@ -991,6 +981,7 @@ impl ToString for EnumInput {
 }
 
 impl EnumInput {
+    /// Validates the input against the [`super::Enum`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Enum) -> Result<(), TestCaseError> {
         self.access_modifier.validate(&output.access_modifier)?;
@@ -1023,6 +1014,7 @@ impl ToString for ItemInput {
 }
 
 impl ItemInput {
+    /// Validates the input against the [`super::Item`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Item) -> Result<(), TestCaseError> {
         match (self, output) {

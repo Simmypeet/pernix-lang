@@ -12,7 +12,7 @@ use crate::token_stream::Delimiter;
 /// The source code contains an invalid escape character sequences.
 ///
 /// The spans represent the locations of the invalid escape character sequences.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct InvalidEscapeCharacterSequences {
     /// The spans represent the locations of the invalid escape character sequences.
     #[get = "pub"]
@@ -36,7 +36,7 @@ impl InvalidEscapeCharacterSequences {
 }
 
 /// The source code contains an unclosed double quote.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct UnterminatedStringLiteral {
     /// The span pointing to the unclosed double quote.
     pub(super) span: Span,
@@ -52,7 +52,7 @@ impl UnterminatedStringLiteral {
 }
 
 /// The source code contains an unclosed `/*` comment.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct UnterminatedDelimitedComment {
     /// The span of the unclosed `/*` that starts the comment.
     #[get = "pub"]
@@ -69,7 +69,7 @@ impl UnterminatedDelimitedComment {
 }
 
 /// The source code contains an empty character literal.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct EmptyCharacterLiteral {
     /// The span of the empty character literal.
     #[get = "pub"]
@@ -86,7 +86,7 @@ impl EmptyCharacterLiteral {
 }
 
 /// In a character literal, it contains the control character that must be escaped explicitly.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct ControlCharactersMustBeEscaped {
     /// The span of the control character that must be escaped explicitly.
     #[get = "pub"]
@@ -117,7 +117,7 @@ impl ControlCharactersMustBeEscaped {
 }
 
 /// The delimiter is not closed by its corresponding closing pair.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct UndelimitedDelimiter {
     /// The span of the opening delimiter.
     #[get = "pub"]
@@ -142,7 +142,7 @@ impl UndelimitedDelimiter {
 
 /// Is an enumeration containing all kinds of lexical errors that can occur while tokenizing the
 /// source code.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
+#[derive(Debug, Clone, EnumAsInner, Error, From)]
 #[error("Encountered an lexical error while tokenizing the source code.")]
 #[allow(missing_docs)]
 pub enum Error {

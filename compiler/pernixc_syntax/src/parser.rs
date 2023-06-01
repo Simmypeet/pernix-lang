@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Is an enumeration of all the possible [`Token`] stream providers.
-#[derive(Debug, Clone, Copy, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, Copy, EnumAsInner, From)]
 pub enum TokenProvider<'a> {
     /// Top-level [`TokenStream`], not enclosed in any delimiters.
     TokenStream(&'a TokenStream),
@@ -36,7 +36,7 @@ impl<'a> TokenProvider<'a> {
 }
 
 /// Represents a subset of parsing logic that handles on a specific range of [`TokenTree`]s.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct Frame<'a> {
     /// The [`TokenProvider`] that provides the [`TokenStream`] to parse.
     pub token_provider: TokenProvider<'a>,

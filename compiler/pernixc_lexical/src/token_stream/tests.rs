@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 use pernixc_source::SourceFile;
 use pernixc_system::diagnostic::Storage;
@@ -196,11 +196,7 @@ proptest! {
             .map(TokenTreeString::into_string)
             .collect::<Vec<_>>().join(" ");
 
-        let source_file = SourceFile::new(
-            PathBuf::new(),
-            "test".to_string(),
-            source, vec!["test".to_string()]
-        )?;
+        let source_file = SourceFile::temp(&source)?;
 
         let storage: Storage<Error> = Storage::new();
         let token_stream = TokenStream::tokenize(&source_file, &storage);
@@ -263,11 +259,7 @@ proptest! {
             }
         }
 
-        let source_file = SourceFile::new(
-            PathBuf::new(),
-            "test".to_string(),
-            source, vec!["test".to_string()]
-        )?;
+        let source_file = SourceFile::temp(&source)?;
 
         let storage: Storage<Error> = Storage::new();
         let _: TokenStream = TokenStream::tokenize(&source_file, &storage);

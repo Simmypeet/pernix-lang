@@ -22,7 +22,7 @@ pub enum Delimiter {
 }
 
 /// Represents a list of tokens enclosed by a pair of delimiters.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Delimited {
     /// The opening delimiter.
     pub open: Punctuation,
@@ -38,7 +38,7 @@ pub struct Delimited {
 }
 
 /// Is an enumeration of either a [`Token`] or a [`Delimited`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum TokenTree {
     Token(Token),
@@ -49,7 +49,7 @@ pub enum TokenTree {
 ///
 /// This struct is the final output of the lexical analysis phase and is meant to be used by the
 /// next stage of the compilation process.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deref)]
+#[derive(Debug, Clone, Deref)]
 pub struct TokenStream {
     #[deref]
     token_trees: Vec<TokenTree>,

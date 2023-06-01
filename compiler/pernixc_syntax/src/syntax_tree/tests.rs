@@ -1,19 +1,15 @@
-use std::path::PathBuf;
-
 use pernixc_lexical::token_stream::TokenStream;
 use pernixc_source::SourceFile;
 use pernixc_system::diagnostic::Storage;
-use proptest::{prop_assert_eq, proptest, test_runner::TestCaseError};
+use proptest::{prop_assert, proptest, test_runner::TestCaseError};
 
 use crate::{error::Error, parser::Parser};
 
-pub fn parse<T>(
-    source: String,
-    f: impl FnOnce(&mut Parser, &Storage<crate::error::Error>) -> super::ParserResult<T>,
-) -> Result<T, TestCaseError> {
-    let source_file = SourceFile::new(PathBuf::new(), "test".to_string(), source, vec![
-        "test".to_string()
-    ])?;
+pub fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
+where
+    for<'a> F: FnOnce(&mut Parser<'a>, &Storage<crate::error::Error>) -> super::ParserResult<T>,
+{
+    let source_file = SourceFile::temp(source)?;
 
     let storage: Storage<pernixc_lexical::error::Error> = Storage::new();
 
@@ -31,7 +27,7 @@ pub fn parse<T>(
 
     let storage: Storage<Error> = Storage::new();
     let output = f(&mut parser, &storage);
-    prop_assert_eq!(&*storage.as_vec(), &[]);
+    prop_assert!(storage.as_vec().is_empty());
 
     let output = output?;
 
@@ -45,7 +41,7 @@ proptest! {
     ) {
         let source = qualified_identifier_input.to_string();
         let qualified_identifier = parse(
-            source,
+            &source,
             |parser, handler|
                 parser.parse_qualified_identifier(
                     true,
@@ -57,11 +53,12 @@ proptest! {
     }
 
     #[test]
+    #[allow(clippy::redundant_closure_for_method_calls)]
     fn type_specifier_test(
         type_specifier_input in super::strategy::type_specifier()
     ) {
         let source = type_specifier_input.to_string();
-        let type_specifier = parse(source, |parser, handler| parser.parse_type_specifier(handler))?;
+        let type_specifier = parse(&source, |parser, handler| parser.parse_type_specifier(handler))?;
 
         type_specifier_input.validate(&type_specifier)?;
     }

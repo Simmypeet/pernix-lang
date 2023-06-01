@@ -215,7 +215,7 @@ impl KeywordKind {
 }
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming language.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Token {
     WhiteSpace(WhiteSpace),
@@ -261,7 +261,7 @@ impl SourceElement for Token {
 }
 
 /// Represents a contiguous sequence of whitespace characters.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct WhiteSpace {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -272,7 +272,7 @@ impl SourceElement for WhiteSpace {
 }
 
 /// Represents a contiguous sequence of characters that are valid in an identifier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct Identifier {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -283,7 +283,7 @@ impl SourceElement for Identifier {
 }
 
 /// Represents a contiguous sequence of characters that are reserved for a keyword.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct Keyword {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -297,7 +297,7 @@ impl SourceElement for Keyword {
 }
 
 /// Represents a single ASCII punctuation character.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct Punctuation {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -311,7 +311,7 @@ impl SourceElement for Punctuation {
 }
 
 /// Represents a hardcoded numeric literal value in the source code.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct NumericLiteral {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -328,7 +328,7 @@ impl SourceElement for NumericLiteral {
 }
 
 /// Represents a single character or escape sequence enclosed in single quotes.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct CharacterLiteral {
     ///  The span that makes up the token.
     pub span: Span,
@@ -342,7 +342,7 @@ impl SourceElement for CharacterLiteral {
 }
 
 /// Represents a contiguous sequence of characters enclosed in double quotes.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Debug, Clone, Getters)]
 pub struct StringLiteral {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -363,7 +363,7 @@ pub enum CommentKind {
 }
 
 /// Represents a portion of the source code that is ignored by the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct Comment {
     /// Is the span that makes up the token.
     pub span: Span,

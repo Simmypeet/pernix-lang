@@ -9,7 +9,7 @@ use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
     statement::Statement, ConnectedList, LifetimeArgument, LifetimeArgumentIdentifier,
-    QualifiedIdentifier, ScopeSeparator, TypeAnnotation, TypeSpecifier,
+    QualifiedIdentifier, TypeAnnotation, TypeSpecifier,
 };
 use crate::{
     error::{
@@ -31,7 +31,7 @@ pub mod strategy;
 ///      | 'internal'
 ///      ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum AccessModifier {
     Public(Keyword),
     Private(Keyword),
@@ -54,7 +54,7 @@ impl SourceElement for AccessModifier {
 ///     Label
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct LifetimeParameter {
     pub apostrophe: Punctuation,
     pub identifier: Identifier,
@@ -72,7 +72,7 @@ impl SourceElement for LifetimeParameter {
 ///     Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TypeParameter {
     pub identifier: Identifier,
 }
@@ -90,7 +90,7 @@ impl SourceElement for TypeParameter {
 ///     | TypeParameter
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
@@ -123,7 +123,7 @@ pub type GenericParameterList = ConnectedList<GenericParameter, Punctuation>;
 ///     '<' GenericParameterList '>'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct GenericParameters {
     pub left_angle_bracket: Punctuation,
     pub generic_parameter_list: GenericParameterList,
@@ -147,7 +147,7 @@ impl SourceElement for GenericParameters {
 ///     | LifetimeArgument
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum Constraint {
     TraitConstraint(TraitConstraint),
     LifetimeArgument(LifetimeArgument),
@@ -170,7 +170,7 @@ impl SourceElement for Constraint {
 ///     QualifiedIdentifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TraitConstraint {
     pub qualified_identifier: QualifiedIdentifier,
 }
@@ -197,7 +197,7 @@ pub type ConstraintList = ConnectedList<Constraint, Punctuation>;
 ///     'where' ':' ConstraintList
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct WhereClause {
     pub where_keyword: Keyword,
     pub colon: Punctuation,
@@ -218,7 +218,7 @@ impl SourceElement for WhereClause {
 ///     'trait' Identifier GenericParameters? WhereClause?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TraitSignature {
     pub trait_keyword: Keyword,
     pub identifier: Identifier,
@@ -247,7 +247,7 @@ impl SourceElement for TraitSignature {
 ///     '{' TraitMember* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TraitBody {
     pub left_brace: Punctuation,
     pub trait_members: Vec<TraitMember>,
@@ -266,7 +266,7 @@ impl SourceElement for TraitBody {
 ///     AccessModifier TraitSignature TraitBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Trait {
     pub access_modifier: AccessModifier,
     pub trait_signature: TraitSignature,
@@ -287,7 +287,7 @@ impl SourceElement for Trait {
 ///     FunctionSignature ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TraitFunction {
     pub function_signature: FunctionSignature,
     pub semicolon: Punctuation,
@@ -307,7 +307,7 @@ impl SourceElement for TraitFunction {
 ///     TraitFunction
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum TraitMember {
     Function(TraitFunction),
 }
@@ -328,7 +328,7 @@ impl SourceElement for TraitMember {
 ///     'mutable'? Identifier TypeAnnotation
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Parameter {
     pub mutable_keyword: Option<Keyword>,
     pub identifier: Identifier,
@@ -359,7 +359,7 @@ pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 ///     '(' ParameterList? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Parameters {
     pub left_paren: Punctuation,
     pub parameter_list: Option<ParameterList>,
@@ -378,7 +378,7 @@ impl SourceElement for Parameters {
 ///     TypeAnnotation
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ReturnType {
     pub type_annotation: TypeAnnotation,
 }
@@ -395,7 +395,7 @@ impl SourceElement for ReturnType {
 ///     Identifier GenericParameters? Parameters ReturnType? WhereClause?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub identifier: Identifier,
     pub generic_parameters: Option<GenericParameters>,
@@ -424,7 +424,7 @@ impl SourceElement for FunctionSignature {
 ///     '{' Statement* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct FunctionBody {
     pub left_brace: Punctuation,
     pub statements: Vec<Statement>,
@@ -443,7 +443,7 @@ impl SourceElement for FunctionBody {
 ///     AccessModifier FunctionSignature FunctionBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub access_modifier: AccessModifier,
     pub function_signature: FunctionSignature,
@@ -466,7 +466,7 @@ impl SourceElement for Function {
 ///     'type' Identifier GenericParameters?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TypeSignature {
     pub type_keyword: Keyword,
     pub identifier: Identifier,
@@ -491,7 +491,7 @@ impl SourceElement for TypeSignature {
 ///     '=' TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct TypeDefinition {
     pub equals: Punctuation,
     pub type_specifier: TypeSpecifier,
@@ -511,7 +511,7 @@ impl SourceElement for TypeDefinition {
 ///     AccessModifier TypeSignature TypeDefinition ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Type {
     pub access_modifier: AccessModifier,
     pub type_signature: TypeSignature,
@@ -533,7 +533,7 @@ impl SourceElement for Type {
 ///     'struct' Identifier GenericParameters? WhereClause?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct StructSignature {
     pub struct_keyword: Keyword,
     pub identifier: Identifier,
@@ -555,7 +555,7 @@ impl SourceElement for StructSignature {
 ///     '{' StructMember* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct StructBody {
     pub left_brace: Punctuation,
     pub struct_members: Vec<StructMember>,
@@ -574,7 +574,7 @@ impl SourceElement for StructBody {
 ///     AccessModifier StructSignature StructBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Struct {
     pub access_modifier: AccessModifier,
     pub struct_signature: StructSignature,
@@ -595,7 +595,7 @@ impl SourceElement for Struct {
 ///     AccessModifier 'let' Identifier TypeAnnotation ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct StructField {
     pub access_modifier: AccessModifier,
     pub let_keyword: Keyword,
@@ -618,7 +618,7 @@ impl SourceElement for StructField {
 ///     AccessModifier TypeSignature TypeDefinition ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct StructType {
     pub access_modifier: AccessModifier,
     pub type_signature: TypeSignature,
@@ -641,7 +641,7 @@ impl SourceElement for StructType {
 ///     | StructType
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum StructMember {
     Field(StructField),
     Type(StructType),
@@ -664,7 +664,7 @@ impl SourceElement for StructMember {
 ///     'implements' GenericParameters? QualifiedIdentifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ImplementsSignature {
     pub implements_keyword: Keyword,
     pub generic_parameters: Option<GenericParameters>,
@@ -687,7 +687,7 @@ impl SourceElement for ImplementsSignature {
 ///     FunctionSignature FunctionBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ImplementsFunction {
     pub function_signature: FunctionSignature,
     pub function_body: FunctionBody,
@@ -709,7 +709,7 @@ impl SourceElement for ImplementsFunction {
 ///     Function
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 pub enum ImplementsMember {
     Function(ImplementsFunction),
 }
@@ -730,7 +730,7 @@ impl SourceElement for ImplementsMember {
 ///     '{' ImplementsMember* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ImplementsBody {
     pub left_brace: Punctuation,
     pub implements_members: Vec<ImplementsMember>,
@@ -749,7 +749,7 @@ impl SourceElement for ImplementsBody {
 ///     ImplementsSignature ImplementsBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Implements {
     pub implements_signature: ImplementsSignature,
     pub implements_body: ImplementsBody,
@@ -771,7 +771,7 @@ impl SourceElement for Implements {
 ///     'enum' Identifier
 ///     ;
 /// ``
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct EnumSignature {
     pub enum_keyword: Keyword,
     pub identifier: Identifier,
@@ -799,7 +799,7 @@ pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
 ///     '{' EnumVariantList? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct EnumBody {
     pub left_brace: Punctuation,
     pub enum_variant_list: Option<EnumVariantList>,
@@ -818,7 +818,7 @@ impl SourceElement for EnumBody {
 ///     AccessModifier EnumSignature EnumBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct Enum {
     pub access_modifier: AccessModifier,
     pub enum_signature: EnumSignature,
@@ -844,7 +844,7 @@ impl SourceElement for Enum {
 ///     | Enum
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
+#[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(clippy::large_enum_variant)]
 pub enum Item {
     Trait(Trait),
@@ -868,99 +868,10 @@ impl SourceElement for Item {
     }
 }
 
-/// Represents a moulde path in used in `module` declarations and `using` statements.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// ModulePath:
-///     Identifier ('::' Identifier)*
-///     ;
-/// ```
-pub type ModulePath = ConnectedList<Identifier, ScopeSeparator>;
-
-/// Represents a syntax tree node for a `module` using statement.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// Using:
-///     'using' ModulePath ';'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Using {
-    pub using_keyword: Keyword,
-    pub module_path: ModulePath,
-    pub semicolon: Punctuation,
-}
-
-/// Represents a syntax tree node for a `module` declaration.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// Module:
-///     AccessModifier 'module' Identifier ';'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Module {
-    pub access_modifier: AccessModifier,
-    pub module_keyword: Keyword,
-    pub identifier: Identifier,
-    pub semicolon: Punctuation,
-}
-
-impl SourceElement for Using {
-    fn span(&self) -> Result<Span, SpanError> { self.using_keyword.span.join(&self.semicolon.span) }
-}
-
 impl<'a> Parser<'a> {
-    /// Parses a [`ModulePath`]
+    /// Parses an [`AccessModifier`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_module_path(&mut self, handler: &impl Handler<Error>) -> ParserResult<ModulePath> {
-        let first = self.parse_identifier(handler)?;
-        let mut rest = Vec::new();
-
-        while let Ok(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy)) {
-            let identifier = self.parse_identifier(handler)?;
-            rest.push((scope_separator, identifier));
-        }
-
-        Ok(ConnectedList {
-            first,
-            rest,
-            trailing_separator: None,
-        })
-    }
-
-    /// Parses a [`Using`] declaration.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_using(&mut self, handler: &impl Handler<Error>) -> ParserResult<Using> {
-        let using_keyword = self.parse_keyword(KeywordKind::Using, handler)?;
-        let module_path = self.parse_module_path(handler)?;
-        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-        Ok(Using {
-            using_keyword,
-            module_path,
-            semicolon,
-        })
-    }
-
-    pub fn parse_module(&mut self, handler: &impl Handler<Error>) -> ParserResult<Module> {
-        let access_modifier = self.parse_access_modifier(handler)?;
-        let module_keyword = self.parse_keyword(KeywordKind::Module, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-        Ok(Module {
-            access_modifier,
-            module_keyword,
-            identifier,
-            semicolon,
-        })
-    }
-
-    fn parse_access_modifier(
+    pub fn parse_access_modifier(
         &mut self,
         handler: &impl Handler<Error>,
     ) -> ParserResult<AccessModifier> {
@@ -1443,12 +1354,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_enum_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<EnumBody> {
-        let body = self.parse_enclosed_tree(
-            Delimiter::Brace,
-            ',',
-            |parser, handler| parser.parse_identifier(handler),
-            handler,
-        )?;
+        let body =
+            self.parse_enclosed_tree(Delimiter::Brace, ',', Parser::parse_identifier, handler)?;
 
         Ok(EnumBody {
             left_brace: body.open,
