@@ -6,11 +6,11 @@ use proptest::{
 };
 
 use super::{
-    AccessModifier, Constraint, ConstraintList, Function, FunctionBody, FunctionSignature,
-    GenericParameter, GenericParameters, Item, LifetimeParameter, Parameter, Parameters,
-    ReturnType, Struct, StructBody, StructField, StructMember, StructSignature, StructType, Trait,
-    TraitBody, TraitConstraint, TraitFunction, TraitMember, TraitSignature, Type, TypeDefinition,
-    TypeParameter, TypeSignature, WhereClause,
+    AccessModifier, Constraint, ConstraintList, Enum, EnumBody, EnumSignature, Function,
+    FunctionBody, FunctionSignature, GenericParameter, GenericParameters, Item, LifetimeParameter,
+    Module, ModulePath, Parameter, Parameters, ReturnType, Struct, StructBody, StructField,
+    StructMember, StructSignature, StructType, Trait, TraitBody, TraitConstraint, TraitFunction,
+    TraitMember, TraitSignature, Type, TypeDefinition, TypeParameter, TypeSignature, WhereClause,
 };
 use crate::syntax_tree::{
     statement::strategy::StatementInput,
@@ -50,6 +50,50 @@ impl ToString for TypeParameterInput {
 impl TypeParameterInput {
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TypeParameter) -> Result<(), TestCaseError> {
+        prop_assert_eq!(&self.identifier, output.identifier.span.str());
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ModulePathInput {
+    pub identifiers: Vec<String>,
+}
+
+impl ToString for ModulePathInput {
+    fn to_string(&self) -> String { self.identifiers.clone().join("::") }
+}
+
+impl ModulePathInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &ModulePath) -> Result<(), TestCaseError> {
+        prop_assert_eq!(self.identifiers.len(), output.len());
+
+        for (input, output) in self.identifiers.iter().zip(output.elements()) {
+            prop_assert_eq!(input, output.span.str());
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleInput {
+    pub access_modifier: AccessModifierInput,
+    pub identifier: String,
+}
+
+impl ToString for ModuleInput {
+    fn to_string(&self) -> String {
+        format!("{} {};", self.access_modifier.to_string(), self.identifier)
+    }
+}
+
+impl ModuleInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Module) -> Result<(), TestCaseError> {
+        self.access_modifier.validate(&output.access_modifier)?;
         prop_assert_eq!(&self.identifier, output.identifier.span.str());
 
         Ok(())
@@ -875,11 +919,95 @@ impl TypeInput {
 }
 
 #[derive(Debug, Clone)]
+pub struct EnumSignatureInput {
+    pub identifier: String,
+}
+
+impl ToString for EnumSignatureInput {
+    fn to_string(&self) -> String { format!("enum {}", self.identifier) }
+}
+
+impl EnumSignatureInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &EnumSignature) -> Result<(), TestCaseError> {
+        prop_assert_eq!(&self.identifier, output.identifier.span.str());
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumBodyInput {
+    pub variants: Vec<String>,
+}
+
+impl ToString for EnumBodyInput {
+    fn to_string(&self) -> String {
+        let variants = self.variants.clone().join(", ");
+        format!("{{ {variants} }}")
+    }
+}
+
+impl EnumBodyInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &EnumBody) -> Result<(), TestCaseError> {
+        prop_assert_eq!(
+            self.variants.len(),
+            output
+                .enum_variant_list
+                .as_ref()
+                .map_or(0, ConnectedList::len)
+        );
+
+        for (variant, output_variant) in self.variants.iter().zip(
+            output
+                .enum_variant_list
+                .iter()
+                .flat_map(ConnectedList::elements),
+        ) {
+            prop_assert_eq!(variant, output_variant.span.str());
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumInput {
+    pub access_modifier: AccessModifierInput,
+    pub enum_signature: EnumSignatureInput,
+    pub enum_body: EnumBodyInput,
+}
+
+impl ToString for EnumInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{access_modifier} {enum_signature} {enum_body}",
+            access_modifier = self.access_modifier.to_string(),
+            enum_signature = self.enum_signature.to_string(),
+            enum_body = self.enum_body.to_string(),
+        )
+    }
+}
+
+impl EnumInput {
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Enum) -> Result<(), TestCaseError> {
+        self.access_modifier.validate(&output.access_modifier)?;
+        self.enum_signature.validate(&output.enum_signature)?;
+        self.enum_body.validate(&output.enum_body)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ItemInput {
     Trait(TraitInput),
     Function(FunctionInput),
     Struct(StructInput),
     Type(TypeInput),
+    Enum(EnumInput),
 }
 
 impl ToString for ItemInput {
@@ -889,6 +1017,7 @@ impl ToString for ItemInput {
             Self::Function(i) => i.to_string(),
             Self::Struct(i) => i.to_string(),
             Self::Type(i) => i.to_string(),
+            Self::Enum(i) => i.to_string(),
         }
     }
 }
@@ -901,6 +1030,7 @@ impl ItemInput {
             (Self::Function(i), Item::Function(o)) => i.validate(o),
             (Self::Struct(i), Item::Struct(o)) => i.validate(o),
             (Self::Type(i), Item::Type(o)) => i.validate(o),
+            (Self::Enum(i), Item::Enum(o)) => i.validate(o),
             _ => Err(TestCaseError::fail("Item types do not match")),
         }
     }
@@ -1085,6 +1215,16 @@ fn struct_body() -> impl Strategy<Value = StructBodyInput> {
         .prop_map(|struct_members| StructBodyInput { struct_members })
 }
 
+fn enum_signature() -> impl Strategy<Value = EnumSignatureInput> {
+    pernixc_lexical::token::strategy::identifier()
+        .prop_map(|identifier| EnumSignatureInput { identifier })
+}
+
+fn enum_body() -> impl Strategy<Value = EnumBodyInput> {
+    proptest::collection::vec(pernixc_lexical::token::strategy::identifier(), 0..=4)
+        .prop_map(|variants| EnumBodyInput { variants })
+}
+
 pub fn item() -> impl Strategy<Value = ItemInput> {
     prop_oneof![
         (access_modifier(), trait_signature(), trait_body()).prop_map(
@@ -1120,6 +1260,13 @@ pub fn item() -> impl Strategy<Value = ItemInput> {
                     type_definition,
                 })
             }
-        )
+        ),
+        (access_modifier(), enum_signature(), enum_body()).prop_map(
+            |(access_modifier, enum_signature, enum_body)| ItemInput::Enum(EnumInput {
+                access_modifier,
+                enum_signature,
+                enum_body,
+            })
+        ),
     ]
 }

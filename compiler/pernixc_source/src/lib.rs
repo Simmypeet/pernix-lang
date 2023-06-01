@@ -17,56 +17,20 @@ use std::{
     sync::Arc,
 };
 
-use derive_more::From;
-use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use thiserror::Error;
 
 /// Represents an source file input for the compiler.
 #[derive(Debug, Getters, Clone, PartialEq, Eq, Hash)]
 pub struct SourceFile {
-    /// Gets the name of the source file without the extension.
+    /// Gets the full path to the source file.
     #[get = "pub"]
-    file_name: String,
-
-    /// Gets the directory where the source file is located.
-    #[get = "pub"]
-    parent_directory: PathBuf,
-
-    /// Gets whether the source file is the root file that the compiler is compiling.
-    #[get = "pub"]
-    module_hierarchy: Vec<String>,
-
-    /// Gets the module's fully qualified name of the source file.
-    #[get = "pub"]
-    module_qualified_name: String,
+    full_path: PathBuf,
 
     /// Gets the string source_code that the source file contains.
     #[get = "pub"]
     source_code: String,
     lines: Vec<Range<usize>>,
-}
-
-/// Is an error returned by the [`SourceFile::load()`] method.
-#[derive(Debug, EnumAsInner, Error, From)]
-#[allow(missing_docs)]
-pub enum LoadError {
-    #[error("{0}")]
-    IoError(std::io::Error),
-
-    #[error("The file extension of the source file must be `.pnx`.")]
-    CreateError(CreateError),
-}
-
-/// Is an error returned by the [`SourceFile::new()`] method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumAsInner, From, Error)]
-#[allow(missing_docs)]
-pub enum CreateError {
-    #[error("The module hierarchy string was invalid or empty.")]
-    InvalidModulehierarchy,
-
-    #[error("The given module hierarchy was an empty list.")]
-    EmptyModulehierarchy,
 }
 
 impl SourceFile {
@@ -78,45 +42,12 @@ impl SourceFile {
     /// Is the preferred new line string that the compiler uses.
     pub const NEW_LINE_STR: &'static str = "\n";
 
-    /// Creates a new source file.
-    ///
-    /// # Parameters
-    /// - `parent_directory`: The directory where the source file is located.
-    /// - `file_name`: The name of the source file without the extension.
-    /// - `source_code`: The string `source_code` that the source file contains.
-    /// - `module_hierarchy`: The module's fully qualified name of the source file.
-    ///
-    /// # Errors
-    /// - [`CreateError::InvalidModulehierarchy`]: One of the module hierarchy strings was an
-    ///   invalid identifier or empty.
-    /// - [`CreateError::EmptyModulehierarchy`]: The given module hierarchy was an empty list.
-    pub fn new(
-        parent_directory: PathBuf,
-        file_name: String,
-        mut source_code: String,
-        module_hierarchy: Vec<String>,
-    ) -> Result<Arc<Self>, CreateError> {
+    fn new(full_path: PathBuf, mut source_code: String) -> Arc<Self> {
         fn replace_string_inplace(s: &mut String, from: &str, to: &str) {
             let mut start = 0;
             while let Some(i) = s[start..].find(from) {
                 s.replace_range(start + i..start + i + from.len(), to);
                 start += i + to.len();
-            }
-        }
-
-        if module_hierarchy.is_empty() {
-            return Err(CreateError::EmptyModulehierarchy);
-        }
-
-        for module in &module_hierarchy {
-            // the string must not contain any ascii punctuation/control characters
-            // the first character cannot be a number
-            if module
-                .chars()
-                .any(|c| c.is_ascii_punctuation() || c.is_ascii_control())
-                || module.chars().next().map_or(false, |c| c.is_ascii_digit())
-            {
-                return Err(CreateError::InvalidModulehierarchy);
             }
         }
 
@@ -137,37 +68,26 @@ impl SourceFile {
 
         lines.push(start..source_code.len());
 
-        Ok(Arc::new(Self {
-            file_name,
-            parent_directory,
-            module_qualified_name: module_hierarchy.join("::"),
-            module_hierarchy,
+        Arc::new(Self {
+            full_path,
             source_code,
             lines,
-        }))
+        })
     }
 
     /// Loads a source file from the given path.
     ///
     /// # Errors
-    /// - [`LoadError::IoLoadError`]: An I/O error occurred.
-    /// - [`LoadError::CreateError`]: An error occurred while creating the source file.
-    pub fn load(path: &PathBuf, module_hierarchy: Vec<String>) -> Result<Arc<Self>, LoadError> {
+    /// - [`std::io::Error`] if the file cannot be read from the given path.
+    pub fn load(
+        path: &PathBuf,
+        module_hierarchy: Vec<String>,
+    ) -> Result<Arc<Self>, std::io::Error> {
         let source_code = std::fs::read_to_string(path)?;
-        let parent_directory = path.parent().unwrap().to_path_buf();
-        let file_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+        let full_path = path.canonicalize()?;
 
-        Ok(Self::new(
-            parent_directory,
-            file_name,
-            source_code,
-            module_hierarchy,
-        )?)
+        Ok(Self::new(full_path, source_code))
     }
-
-    /// Gets whether the source file is the root file that the compiler is compiling.
-    #[must_use]
-    pub fn is_root(&self) -> bool { self.module_hierarchy.len() == 1 }
 
     /// Gets the line of the source file at the given line number.
     ///

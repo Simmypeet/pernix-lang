@@ -56,12 +56,25 @@ pub struct Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl<'a> Frame<'a> {
-    /// Checks if the current position of the [`Frame`] is exhausted (at the end of the
-    /// [`TokenStream`])
+    /// Checks if the current [`Frame`] doesn't have any more significant [`TokenTree`]s to
+    /// parse.
     #[must_use]
     pub fn is_exhausted(&self) -> bool {
-        self.current_index >= self.token_provider.token_stream().len()
+        let token_stream = self.token_provider.token_stream();
+        for i in self.current_index..self.token_provider.token_stream().len() {
+            if !matches!(
+                token_stream.get(i),
+                Some(TokenTree::Token(Token::WhiteSpace(..) | Token::Comment(..)))
+            ) {
+                return false;
+            }
+        }
+        true
     }
+
+    /// Checks if the current [`Frame`] has reached the end of the [`TokenStream`].
+    #[must_use]
+    pub fn is_end(&self) -> bool { self.current_index >= self.token_provider.token_stream().len() }
 
     fn to_token_output(token: &'a TokenTree) -> Token {
         match token {
@@ -123,7 +136,7 @@ impl<'a> Frame<'a> {
     /// Forwards the `current_index` by 1 if the [`Frame`] is not exhausted.
     pub fn forward(&mut self) {
         // increment the index
-        if !self.is_exhausted() {
+        if !self.is_end() {
             self.current_index += 1;
         }
     }
@@ -144,7 +157,7 @@ impl<'a> Frame<'a> {
     /// # Returns
     /// The significant [`Token`] if found, otherwise `None`.
     pub fn stop_at_significant(&mut self) -> Option<Token> {
-        while !self.is_exhausted() {
+        while !self.is_end() {
             let token = self.peek();
 
             if !matches!(token, Some(Token::WhiteSpace(..) | Token::Comment(..))) {
@@ -157,94 +170,9 @@ impl<'a> Frame<'a> {
         None
     }
 
-    /// Expects the next [`Token`] to be an [`Identifier`], and returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not an [`Identifier`].
-    pub fn parse_identifier(
-        &mut self,
-        handler: &impl Handler<SyntacticError>,
-    ) -> Result<Identifier> {
-        match self.next_significant_token() {
-            Some(Token::Identifier(ident)) => Ok(ident),
-            found => {
-                handler.recieve(SyntacticError::IdentifierExpected(IdentifierExpected {
-                    found,
-                }));
-                Err(Error)
-            }
-        }
-    }
-
-    /// Expects the next [`Token`] to be a [`Keyword`] of specific kind, and returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not a [`Keyword`] of specific kind.
-    pub fn parse_keyword(
-        &mut self,
-        expected: KeywordKind,
-        handler: &impl Handler<SyntacticError>,
-    ) -> Result<Keyword> {
-        match self.next_significant_token() {
-            Some(Token::Keyword(keyword_token)) if keyword_token.keyword == expected => {
-                Ok(keyword_token)
-            }
-            found => {
-                handler.recieve(SyntacticError::KeywordExpected(KeywordExpected {
-                    expected,
-                    found,
-                }));
-                Err(Error)
-            }
-        }
-    }
-
-    /// Expects the next [`Token`] to be a [`Punctuation`] of specific kind, and returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not a [`Punctuation`] of specific kind.
-    pub fn parse_punctuation(
-        &mut self,
-        expected: char,
-        skip_insignificant: bool,
-        handler: &impl Handler<SyntacticError>,
-    ) -> Result<Punctuation> {
-        match if skip_insignificant {
-            self.next_significant_token()
-        } else {
-            self.next_token()
-        } {
-            Some(Token::Punctuation(punctuation_token))
-                if punctuation_token.punctuation == expected =>
-            {
-                Ok(punctuation_token)
-            }
-            found => {
-                handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
-                    expected,
-                    found,
-                }));
-                Err(Error)
-            }
-        }
-    }
-
-    /// Performs a rollback if the parsing fails.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn try_parse<T>(&mut self, parser: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-        let starting_index = self.current_index;
-        match parser(self) {
-            Ok(value) => Ok(value),
-            Err(Error) => {
-                self.current_index = starting_index;
-                Err(Error)
-            }
-        }
-    }
-
     /// Makes the current position stops at the first token that satisfies the predicate.
     pub fn stop_at(&mut self, predicate: impl Fn(&Token) -> bool) -> Option<Token> {
-        while !self.is_exhausted() {
+        while !self.is_end() {
             let token = self.peek()?;
 
             if predicate(&token) {
@@ -258,7 +186,7 @@ impl<'a> Frame<'a> {
     }
 }
 
-impl<'a> Frame<'a> {
+impl<'a> Parser<'a> {
     /// Parses a list of items that are separated by a particular separator.
     ///
     /// This function is useful for parsing patterns of elements that are separated by a single
@@ -542,6 +470,78 @@ impl<'a> Parser<'a> {
                 self.current_frame = current_frame_copy;
 
                 Err(err)
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be an [`Identifier`], and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not an [`Identifier`].
+    pub fn parse_identifier(
+        &mut self,
+        handler: &impl Handler<SyntacticError>,
+    ) -> Result<Identifier> {
+        match self.next_significant_token() {
+            Some(Token::Identifier(ident)) => Ok(ident),
+            found => {
+                handler.recieve(SyntacticError::IdentifierExpected(IdentifierExpected {
+                    found,
+                }));
+                Err(Error)
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be a [`Keyword`] of specific kind, and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not a [`Keyword`] of specific kind.
+    pub fn parse_keyword(
+        &mut self,
+        expected: KeywordKind,
+        handler: &impl Handler<SyntacticError>,
+    ) -> Result<Keyword> {
+        match self.next_significant_token() {
+            Some(Token::Keyword(keyword_token)) if keyword_token.keyword == expected => {
+                Ok(keyword_token)
+            }
+            found => {
+                handler.recieve(SyntacticError::KeywordExpected(KeywordExpected {
+                    expected,
+                    found,
+                }));
+                Err(Error)
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be a [`Punctuation`] of specific kind, and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not a [`Punctuation`] of specific kind.
+    pub fn parse_punctuation(
+        &mut self,
+        expected: char,
+        skip_insignificant: bool,
+        handler: &impl Handler<SyntacticError>,
+    ) -> Result<Punctuation> {
+        match if skip_insignificant {
+            self.next_significant_token()
+        } else {
+            self.next_token()
+        } {
+            Some(Token::Punctuation(punctuation_token))
+                if punctuation_token.punctuation == expected =>
+            {
+                Ok(punctuation_token)
+            }
+            found => {
+                handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+                    expected,
+                    found,
+                }));
+                Err(Error)
             }
         }
     }

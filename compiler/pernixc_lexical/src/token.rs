@@ -110,6 +110,8 @@ pub enum KeywordKind {
     Where,
     /// `trait` keyword.
     Trait,
+    /// `using` keyword.
+    Using,
 }
 
 impl ToString for KeywordKind {
@@ -189,6 +191,7 @@ impl KeywordKind {
             Self::Restrict => "restrict",
             Self::Where => "where",
             Self::Trait => "trait",
+            Self::Using => "using",
         }
     }
 

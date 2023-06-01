@@ -9,7 +9,7 @@ use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
     statement::Statement, ConnectedList, LifetimeArgument, LifetimeArgumentIdentifier,
-    QualifiedIdentifier, TypeAnnotation, TypeSpecifier,
+    QualifiedIdentifier, ScopeSeparator, TypeAnnotation, TypeSpecifier,
 };
 use crate::{
     error::{
@@ -20,6 +20,31 @@ use crate::{
 };
 
 pub mod strategy;
+
+/// Represents a syntax tree for an access modifier.
+///
+/// Syntax Synopsis:
+/// ```text
+/// AccessModifier:
+///     'public'
+///      | 'private'
+///      | 'internal'
+///      ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
+pub enum AccessModifier {
+    Public(Keyword),
+    Private(Keyword),
+    Internal(Keyword),
+}
+
+impl SourceElement for AccessModifier {
+    fn span(&self) -> Result<Span, SpanError> {
+        match self {
+            Self::Public(k) | Self::Private(k) | Self::Internal(k) => Ok(k.span.clone()),
+        }
+    }
+}
 
 /// Represents a syntax tree node for a lifetime parameter.
 ///
@@ -738,31 +763,6 @@ impl SourceElement for Implements {
     }
 }
 
-/// Represents a syntax tree for an access modifier.
-///
-/// Syntax Synopsis:
-/// ```text
-/// AccessModifier:
-///     'public'
-///      | 'private'
-///      | 'internal'
-///      ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner)]
-pub enum AccessModifier {
-    Public(Keyword),
-    Private(Keyword),
-    Internal(Keyword),
-}
-
-impl SourceElement for AccessModifier {
-    fn span(&self) -> Result<Span, SpanError> {
-        match self {
-            Self::Public(k) | Self::Private(k) | Self::Internal(k) => Ok(k.span.clone()),
-        }
-    }
-}
-
 /// Represents a syntax tree for an enum signature.
 ///
 /// Syntax Synopsis:
@@ -868,7 +868,98 @@ impl SourceElement for Item {
     }
 }
 
+/// Represents a moulde path in used in `module` declarations and `using` statements.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ModulePath:
+///     Identifier ('::' Identifier)*
+///     ;
+/// ```
+pub type ModulePath = ConnectedList<Identifier, ScopeSeparator>;
+
+/// Represents a syntax tree node for a `module` using statement.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Using:
+///     'using' ModulePath ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Using {
+    pub using_keyword: Keyword,
+    pub module_path: ModulePath,
+    pub semicolon: Punctuation,
+}
+
+/// Represents a syntax tree node for a `module` declaration.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Module:
+///     AccessModifier 'module' Identifier ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Module {
+    pub access_modifier: AccessModifier,
+    pub module_keyword: Keyword,
+    pub identifier: Identifier,
+    pub semicolon: Punctuation,
+}
+
+impl SourceElement for Using {
+    fn span(&self) -> Result<Span, SpanError> { self.using_keyword.span.join(&self.semicolon.span) }
+}
+
 impl<'a> Parser<'a> {
+    /// Parses a [`ModulePath`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_module_path(&mut self, handler: &impl Handler<Error>) -> ParserResult<ModulePath> {
+        let first = self.parse_identifier(handler)?;
+        let mut rest = Vec::new();
+
+        while let Ok(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy)) {
+            let identifier = self.parse_identifier(handler)?;
+            rest.push((scope_separator, identifier));
+        }
+
+        Ok(ConnectedList {
+            first,
+            rest,
+            trailing_separator: None,
+        })
+    }
+
+    /// Parses a [`Using`] declaration.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_using(&mut self, handler: &impl Handler<Error>) -> ParserResult<Using> {
+        let using_keyword = self.parse_keyword(KeywordKind::Using, handler)?;
+        let module_path = self.parse_module_path(handler)?;
+        let semicolon = self.parse_punctuation(';', true, handler)?;
+
+        Ok(Using {
+            using_keyword,
+            module_path,
+            semicolon,
+        })
+    }
+
+    pub fn parse_module(&mut self, handler: &impl Handler<Error>) -> ParserResult<Module> {
+        let access_modifier = self.parse_access_modifier(handler)?;
+        let module_keyword = self.parse_keyword(KeywordKind::Module, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+        let semicolon = self.parse_punctuation(';', true, handler)?;
+
+        Ok(Module {
+            access_modifier,
+            module_keyword,
+            identifier,
+            semicolon,
+        })
+    }
+
     fn parse_access_modifier(
         &mut self,
         handler: &impl Handler<Error>,
@@ -1351,6 +1442,21 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_enum_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<EnumBody> {
+        let body = self.parse_enclosed_tree(
+            Delimiter::Brace,
+            ',',
+            |parser, handler| parser.parse_identifier(handler),
+            handler,
+        )?;
+
+        Ok(EnumBody {
+            left_brace: body.open,
+            enum_variant_list: body.list,
+            right_brace: body.close,
+        })
+    }
+
     fn parse_item_with_access_modifier(
         &mut self,
         handler: &impl Handler<Error>,
@@ -1404,6 +1510,18 @@ impl<'a> Parser<'a> {
                     type_signature,
                     type_definition,
                     semicolon,
+                }))
+            }
+
+            // parse enum
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Enum => {
+                let enum_signature = self.parse_enum_signature(handler)?;
+                let enum_body = self.parse_enum_body(handler)?;
+
+                Ok(Item::Enum(Enum {
+                    access_modifier,
+                    enum_signature,
+                    enum_body,
                 }))
             }
 

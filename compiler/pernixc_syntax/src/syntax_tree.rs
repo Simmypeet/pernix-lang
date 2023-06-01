@@ -13,7 +13,7 @@ use crate::{
     error::{
         Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected, TypeSpecifierExpected,
     },
-    parser::{Error as ParserError, Frame, Parser, Result as ParserResult},
+    parser::{Error as ParserError, Parser, Result as ParserResult},
 };
 
 pub mod expression;
@@ -511,35 +511,7 @@ impl SourceElement for TypeAnnotation {
     fn span(&self) -> Result<Span, SpanError> { self.colon.span.join(&self.type_specifier.span()?) }
 }
 
-/// Represents a moulde path in used in `module` declarations and `using` statements.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// ModulePath:
-///     Identifier ('::' Identifier)*
-///     ;
-/// ```
-pub type ModulePath = ConnectedList<Identifier, ScopeSeparator>;
-
-impl<'a> Frame<'a> {
-    /// Parses a [`ModulePath`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_module_path(&mut self, handler: &impl Handler<Error>) -> ParserResult<ModulePath> {
-        let first = self.parse_identifier(handler)?;
-        let mut rest = Vec::new();
-
-        while let Ok(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy)) {
-            let identifier = self.parse_identifier(handler)?;
-            rest.push((scope_separator, identifier));
-        }
-
-        Ok(ConnectedList {
-            first,
-            rest,
-            trailing_separator: None,
-        })
-    }
-
+impl<'a> Parser<'a> {
     /// Parses a [`ScopeSeparator`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_scope_separator(
