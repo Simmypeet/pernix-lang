@@ -19,6 +19,7 @@ use crate::{
 pub mod expression;
 pub mod item;
 pub mod statement;
+pub mod target;
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
 ///
@@ -174,6 +175,31 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
     ///
     /// The function will never return `false`.
     pub fn is_empty(&self) -> bool { false }
+}
+
+/// Represents a syntax tree for an access modifier.
+///
+/// Syntax Synopsis:
+/// ```text
+/// AccessModifier:
+///     'public'
+///      | 'private'
+///      | 'internal'
+///      ;
+/// ```
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum AccessModifier {
+    Public(Keyword),
+    Private(Keyword),
+    Internal(Keyword),
+}
+
+impl SourceElement for AccessModifier {
+    fn span(&self) -> Result<Span, SpanError> {
+        match self {
+            Self::Public(k) | Self::Private(k) | Self::Internal(k) => Ok(k.span.clone()),
+        }
+    }
 }
 
 /// Represents a syntax tree node of two consecutive colon tokens.
@@ -788,4 +814,4 @@ impl<'a> Parser<'a> {
 pub mod strategy;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

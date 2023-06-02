@@ -8,8 +8,8 @@ use pernixc_source::{SourceElement, Span, SpanError};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
-    statement::Statement, ConnectedList, LifetimeArgument, LifetimeArgumentIdentifier,
-    QualifiedIdentifier, TypeAnnotation, TypeSpecifier,
+    statement::Statement, AccessModifier, ConnectedList, LifetimeArgument,
+    LifetimeArgumentIdentifier, QualifiedIdentifier, TypeAnnotation, TypeSpecifier,
 };
 use crate::{
     error::{
@@ -20,31 +20,6 @@ use crate::{
 };
 
 pub mod strategy;
-
-/// Represents a syntax tree for an access modifier.
-///
-/// Syntax Synopsis:
-/// ```text
-/// AccessModifier:
-///     'public'
-///      | 'private'
-///      | 'internal'
-///      ;
-/// ```
-#[derive(Debug, Clone, EnumAsInner)]
-pub enum AccessModifier {
-    Public(Keyword),
-    Private(Keyword),
-    Internal(Keyword),
-}
-
-impl SourceElement for AccessModifier {
-    fn span(&self) -> Result<Span, SpanError> {
-        match self {
-            Self::Public(k) | Self::Private(k) | Self::Internal(k) => Ok(k.span.clone()),
-        }
-    }
-}
 
 /// Represents a syntax tree node for a lifetime parameter.
 ///

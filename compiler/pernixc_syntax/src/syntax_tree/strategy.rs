@@ -1,6 +1,7 @@
 //! Contains the definition of various `proptest` strategies that produces syntax tree input for
 //! testing purposes.
 
+use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token::KeywordKind;
 use proptest::{
     prop_assert_eq, prop_oneof,
@@ -9,7 +10,7 @@ use proptest::{
 };
 
 use super::{
-    GenericArgument, GenericArguments, GenericIdentifier, LifetimeArgument,
+    AccessModifier, GenericArgument, GenericArguments, GenericIdentifier, LifetimeArgument,
     LifetimeArgumentIdentifier, PrimitiveTypeSpecifier, QualifiedIdentifier, TypeSpecifier,
 };
 
@@ -38,6 +39,44 @@ impl LifetimeArgumentIdentifierInput {
             _ => Err(TestCaseError::fail("Lifetime argument mismatch")),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, EnumAsInner)]
+pub enum AccessModifierInput {
+    Public,
+    Private,
+    Internal,
+}
+
+impl ToString for AccessModifierInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Public => "public".to_string(),
+            Self::Private => "private".to_string(),
+            Self::Internal => "internal".to_string(),
+        }
+    }
+}
+
+impl AccessModifierInput {
+    /// Validates the input against the [`super::AccessModifier`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &AccessModifier) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Public, AccessModifier::Public(_))
+            | (Self::Private, AccessModifier::Private(_))
+            | (Self::Internal, AccessModifier::Internal(_)) => Ok(()),
+            _ => Err(TestCaseError::fail("access modifier mismatch")),
+        }
+    }
+}
+
+pub fn access_modifier() -> impl Strategy<Value = AccessModifierInput> {
+    prop_oneof![
+        Just(AccessModifierInput::Public),
+        Just(AccessModifierInput::Private),
+        Just(AccessModifierInput::Internal)
+    ]
 }
 
 /// Represents an input for [`super::LifetimeArgument`]

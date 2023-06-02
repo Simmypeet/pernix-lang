@@ -20,4 +20,3 @@ pub mod error;
 pub mod parser;
 #[allow(missing_docs)]
 pub mod syntax_tree;
-pub mod target;

@@ -6,16 +6,17 @@ use proptest::{
 };
 
 use super::{
-    AccessModifier, Constraint, ConstraintList, Enum, EnumBody, EnumSignature, Function,
-    FunctionBody, FunctionSignature, GenericParameter, GenericParameters, Item, LifetimeParameter,
-    Parameter, Parameters, ReturnType, Struct, StructBody, StructField, StructMember,
-    StructSignature, StructType, Trait, TraitBody, TraitConstraint, TraitFunction, TraitMember,
-    TraitSignature, Type, TypeDefinition, TypeParameter, TypeSignature, WhereClause,
+    Constraint, ConstraintList, Enum, EnumBody, EnumSignature, Function, FunctionBody,
+    FunctionSignature, GenericParameter, GenericParameters, Item, LifetimeParameter, Parameter,
+    Parameters, ReturnType, Struct, StructBody, StructField, StructMember, StructSignature,
+    StructType, Trait, TraitBody, TraitConstraint, TraitFunction, TraitMember, TraitSignature,
+    Type, TypeDefinition, TypeParameter, TypeSignature, WhereClause,
 };
 use crate::syntax_tree::{
     statement::strategy::StatementInput,
     strategy::{
-        qualified_identifier, LifetimeArgumentInput, QualifiedIdentifierInput, TypeSpecifierInput,
+        qualified_identifier, AccessModifierInput, LifetimeArgumentInput, QualifiedIdentifierInput,
+        TypeSpecifierInput,
     },
     ConnectedList,
 };
@@ -62,7 +63,9 @@ impl TypeParameterInput {
     }
 }
 
+/// Represents an input for [`super::GenericParameter`]
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum GenericParameterInput {
     Lifetime(LifetimeParameterInput),
     Type(TypeParameterInput),
@@ -89,8 +92,10 @@ impl GenericParameterInput {
     }
 }
 
+/// Represents an input for [`super::GenericParameters`]
 #[derive(Debug, Clone)]
 pub struct GenericParametersInput {
+    /// List of generic parameters
     pub generic_parameters: Vec<GenericParameterInput>,
 }
 
@@ -128,6 +133,7 @@ impl GenericParametersInput {
     }
 }
 
+/// Represents an input for [`super::TraitConstraint`]
 #[derive(Debug, Clone)]
 pub struct TraitConstraintInput {
     pub qualified_identifier: QualifiedIdentifierInput,
@@ -342,36 +348,6 @@ impl TraitMemberInput {
     pub fn validate(&self, output: &TraitMember) -> Result<(), TestCaseError> {
         match (self, output) {
             (Self::Function(i), TraitMember::Function(o)) => i.validate(o),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, EnumAsInner)]
-pub enum AccessModifierInput {
-    Public,
-    Private,
-    Internal,
-}
-
-impl ToString for AccessModifierInput {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Public => "public".to_string(),
-            Self::Private => "private".to_string(),
-            Self::Internal => "internal".to_string(),
-        }
-    }
-}
-
-impl AccessModifierInput {
-    /// Validates the input against the [`super::AccessModifier`] output.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn validate(&self, output: &AccessModifier) -> Result<(), TestCaseError> {
-        match (self, output) {
-            (Self::Public, AccessModifier::Public(_))
-            | (Self::Private, AccessModifier::Private(_))
-            | (Self::Internal, AccessModifier::Internal(_)) => Ok(()),
-            _ => Err(TestCaseError::fail("access modifier mismatch")),
         }
     }
 }
