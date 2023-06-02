@@ -1,0 +1,1 @@
+proptest::strategy::Map<(impl proptest::strategy::Strategy<Value = syntax_tree::item::strategy::AccessModifierInput>, impl proptest::strategy::Strategy<Value = syntax_tree::item::strategy::TraitSignatureInput>, impl proptest::strategy::Strategy<Value = syntax_tree::item::strategy::TraitBodyInput>), [closure@compiler/pernixc_syntax/src/syntax_tree/item/strategy.rs:735:13: 735:61]>

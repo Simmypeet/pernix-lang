@@ -1,0 +1,1 @@
+(std::string::String, std::option::Option<syntax_tree::item::strategy::GenericParametersInput>, std::vec::Vec<syntax_tree::item::strategy::ParameterInput>, std::option::Option<syntax_tree::item::strategy::ReturnTypeInput>)
