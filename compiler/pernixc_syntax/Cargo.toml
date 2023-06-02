@@ -18,3 +18,4 @@ getset = { workspace = true }
 lazy_static = { workspace = true }
 derive_more = { workspace = true }
 proptest = { workspace = true }
+tempfile = { workspace = true }

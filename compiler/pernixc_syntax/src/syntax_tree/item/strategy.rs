@@ -1,9 +1,5 @@
 use enum_as_inner::EnumAsInner;
-use proptest::{
-    prop_assert_eq, prop_oneof,
-    strategy::{Just, Strategy},
-    test_runner::TestCaseError,
-};
+use proptest::{prop_assert_eq, prop_oneof, strategy::Strategy, test_runner::TestCaseError};
 
 use super::{
     Constraint, ConstraintList, Enum, EnumBody, EnumSignature, Function, FunctionBody,
@@ -1124,18 +1120,23 @@ fn type_signature() -> impl Strategy<Value = TypeSignatureInput> {
 }
 
 fn struct_type() -> impl Strategy<Value = StructTypeInput> {
-    (access_modifier(), type_signature(), type_definition()).prop_map(
-        |(access_modifier, type_signature, type_definition)| StructTypeInput {
-            access_modifier,
-            type_signature,
-            type_definition,
-        },
+    (
+        crate::syntax_tree::strategy::access_modifier(),
+        type_signature(),
+        type_definition(),
     )
+        .prop_map(
+            |(access_modifier, type_signature, type_definition)| StructTypeInput {
+                access_modifier,
+                type_signature,
+                type_definition,
+            },
+        )
 }
 
 fn struct_field() -> impl Strategy<Value = StructFieldInput> {
     (
-        access_modifier(),
+        crate::syntax_tree::strategy::access_modifier(),
         crate::syntax_tree::strategy::type_specifier(),
         pernixc_lexical::token::strategy::identifier(),
     )
@@ -1187,46 +1188,65 @@ fn enum_body() -> impl Strategy<Value = EnumBodyInput> {
 
 pub fn item() -> impl Strategy<Value = ItemInput> {
     prop_oneof![
-        (access_modifier(), trait_signature(), trait_body()).prop_map(
-            |(access_modifier, trait_signature, trait_body)| ItemInput::Trait(TraitInput {
-                access_modifier,
-                trait_signature,
-                trait_body,
-            })
-        ),
-        (access_modifier(), function_signature(), function_body()).prop_map(
-            |(access_modifier, function_signature, function_body)| {
+        (
+            crate::syntax_tree::strategy::access_modifier(),
+            trait_signature(),
+            trait_body()
+        )
+            .prop_map(
+                |(access_modifier, trait_signature, trait_body)| ItemInput::Trait(TraitInput {
+                    access_modifier,
+                    trait_signature,
+                    trait_body,
+                })
+            ),
+        (
+            crate::syntax_tree::strategy::access_modifier(),
+            function_signature(),
+            function_body()
+        )
+            .prop_map(|(access_modifier, function_signature, function_body)| {
                 ItemInput::Function(FunctionInput {
                     access_modifier,
                     function_signature,
                     function_body,
                 })
-            }
-        ),
-        (access_modifier(), struct_signature(), struct_body()).prop_map(
-            |(access_modifier, struct_signature, struct_body)| {
+            }),
+        (
+            crate::syntax_tree::strategy::access_modifier(),
+            struct_signature(),
+            struct_body()
+        )
+            .prop_map(|(access_modifier, struct_signature, struct_body)| {
                 ItemInput::Struct(StructInput {
                     access_modifier,
                     struct_signature,
                     struct_body,
                 })
-            }
-        ),
-        (access_modifier(), type_signature(), type_definition()).prop_map(
-            |(access_modifier, type_signature, type_definition)| {
+            }),
+        (
+            crate::syntax_tree::strategy::access_modifier(),
+            type_signature(),
+            type_definition()
+        )
+            .prop_map(|(access_modifier, type_signature, type_definition)| {
                 ItemInput::Type(TypeInput {
                     access_modifier,
                     type_signature,
                     type_definition,
                 })
-            }
-        ),
-        (access_modifier(), enum_signature(), enum_body()).prop_map(
-            |(access_modifier, enum_signature, enum_body)| ItemInput::Enum(EnumInput {
-                access_modifier,
-                enum_signature,
-                enum_body,
-            })
-        ),
+            }),
+        (
+            crate::syntax_tree::strategy::access_modifier(),
+            enum_signature(),
+            enum_body()
+        )
+            .prop_map(
+                |(access_modifier, enum_signature, enum_body)| ItemInput::Enum(EnumInput {
+                    access_modifier,
+                    enum_signature,
+                    enum_body,
+                })
+            ),
     ]
 }

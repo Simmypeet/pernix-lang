@@ -2,7 +2,7 @@
 
 use proptest::{prop_assert_eq, strategy::Strategy, test_runner::TestCaseError};
 
-use super::ModulePath;
+use super::{File, ModulePath};
 use crate::syntax_tree::{item::strategy::ItemInput, strategy::AccessModifierInput};
 
 /// Represents an input for [`super::ModulePath`]
@@ -123,6 +123,31 @@ pub struct FileInput {
     pub items: Vec<ItemInput>,
 }
 
+impl FileInput {
+    /// Validates the input against the [`super::Module`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &File) -> Result<(), TestCaseError> {
+        prop_assert_eq!(self.usings.len(), output.usings.len());
+        prop_assert_eq!(self.submodules.len(), output.submodules.len());
+        prop_assert_eq!(self.items.len(), output.items.len());
+
+        for (input, output) in self.usings.iter().zip(output.usings.iter()) {
+            input.validate(output)?;
+        }
+
+        for (input, output) in self.submodules.iter().zip(output.submodules.iter()) {
+            input.module.validate(&output.module)?;
+            input.file.validate(&output.file)?;
+        }
+
+        for (input, output) in self.items.iter().zip(output.items.iter()) {
+            input.validate(output)?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Returns a strategy that produces [`super::File`]
 pub fn file() -> impl Strategy<Value = FileInput> {
     (
@@ -141,7 +166,10 @@ pub fn file() -> impl Strategy<Value = FileInput> {
                     pernixc_lexical::token::strategy::identifier(),
                     (crate::syntax_tree::strategy::access_modifier(), inner),
                     0..=4,
-                ),
+                )
+                .prop_filter("filter `main` reserved submodule name", |modules| {
+                    modules.keys().all(|module| module != "main")
+                }),
                 proptest::collection::vec(crate::syntax_tree::item::strategy::item(), 0..=4),
             )
                 .prop_map(|(usings, submodules, items)| FileInput {

@@ -1,6 +1,6 @@
 //! Contains the definition of [`Target`]
 
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{collections::HashSet, path::PathBuf, str::FromStr, sync::Arc};
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
@@ -300,6 +300,7 @@ impl<
 pub enum Error {
     RootSubmoduleConflict(RootSubmoduleConflict),
     SourceFileLoadFail(SourceFileLoadFail),
+    ModuleRedefinition(ModuleRedefinition),
 }
 
 /// The submodule of the root source file ends up pointing to the root source file itself.
@@ -322,6 +323,13 @@ pub struct SourceFileLoadFail {
     pub submodule: Module,
 }
 
+/// A module with the given name already exists.
+#[derive(Debug, Clone)]
+pub struct ModuleRedefinition {
+    /// The submodule that is redefined.
+    pub redifinition_submodule: Module,
+}
+
 impl Target {
     fn parse_single_file(
         source_file: Arc<SourceFile>,
@@ -334,8 +342,17 @@ impl Target {
         let (usings, modules, items) = parser.parse_file(handler);
         let submodule_files = std::thread::scope(|scope| {
             let mut submodules = Vec::new();
+            let mut defined_submodules = HashSet::new();
 
             for module in &modules {
+                if !defined_submodules.insert(module.identifier.span.str()) {
+                    submodules.push(None);
+                    handler.recieve(Error::ModuleRedefinition(ModuleRedefinition {
+                        redifinition_submodule: module.clone(),
+                    }));
+                    continue;
+                }
+
                 // get the file path of the module
                 let submodule_path = if is_root {
                     let submodule_path = source_file.full_path().parent().map_or_else(
