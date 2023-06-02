@@ -1004,14 +1004,6 @@ impl ItemInput {
     }
 }
 
-fn access_modifier() -> impl Strategy<Value = AccessModifierInput> {
-    prop_oneof![
-        Just(AccessModifierInput::Public),
-        Just(AccessModifierInput::Private),
-        Just(AccessModifierInput::Internal)
-    ]
-}
-
 fn generic_parameter() -> impl Strategy<Value = GenericParameterInput> {
     prop_oneof![
         pernixc_lexical::token::strategy::identifier()
