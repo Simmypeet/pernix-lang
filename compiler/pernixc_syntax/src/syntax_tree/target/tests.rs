@@ -4,7 +4,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_source::SourceFile;
 use pernixc_system::diagnostic::Storage;
-use proptest::proptest;
+use proptest::{proptest, test_runner::TestCaseError};
 
 use super::strategy::FileInput;
 use crate::syntax_tree::target::Target;
@@ -16,8 +16,6 @@ proptest! {
         module_path_input in super::strategy::module_path()
     ) {
         let source = module_path_input.to_string();
-
-        println!("{source}");
 
         let module_path = crate::syntax_tree::tests::parse(
             &source,
@@ -34,8 +32,6 @@ proptest! {
     ) {
         let source = using_input.to_string();
 
-        println!("{source}");
-
         let using = crate::syntax_tree::tests::parse(
             &source,
             |parser, handler| parser.parse_using(handler)
@@ -50,8 +46,6 @@ proptest! {
         module_input in super::strategy::module()
     ) {
         let source = module_input.to_string();
-
-        println!("{source}");
 
         let module = crate::syntax_tree::tests::parse(
             &source,
@@ -68,13 +62,17 @@ proptest! {
         file_input in super::strategy::file()
     ) {
         let tempdir = tempfile::tempdir()?;
-        let mut files = Vec::new();
-        create_target(&file_input, tempdir.path(), &mut files);
+
+        create_target(&file_input, tempdir.path());
 
         {
             let root_source_file = SourceFile::load(&tempdir.path().join("main.pnx"))?;
-            let stroage = Storage::<Error>::new();
-            let target = Target::parse(root_source_file, &stroage);
+            let storage = Storage::<Error>::new();
+            let target = Target::parse(root_source_file, &storage);
+
+            if !storage.as_vec().is_empty() {
+                return Err(TestCaseError::fail(format!("parsing error: {:#?}",storage.as_vec())));
+            }
 
             file_input.validate(&target.root_file)?;
         }
@@ -88,18 +86,18 @@ enum Error {
     Target(crate::syntax_tree::target::Error),
 }
 
-fn create_file(
-    file_input: &FileInput,
-    file_path: &Path,
-    is_root: bool,
-    files: &mut Vec<std::fs::File>,
-) {
+fn create_file(file_input: &FileInput, file_path: &Path, is_root: bool) {
     use std::io::Write;
 
     let mut file = std::fs::File::create(file_path).unwrap();
 
     for using in &file_input.usings {
         writeln!(&mut file, "{}", using.to_string()).unwrap();
+    }
+
+    if !file_input.submodules.is_empty() && !is_root {
+        // create directory
+        std::fs::create_dir(file_path.with_extension("")).unwrap();
     }
 
     for submodule in &file_input.submodules {
@@ -116,7 +114,6 @@ fn create_file(
                 file_path
             },
             false,
-            files,
         );
 
         writeln!(&mut file, "{}", submodule.module.to_string()).unwrap();
@@ -125,10 +122,8 @@ fn create_file(
     for item in &file_input.items {
         writeln!(&mut file, "{}", item.to_string()).unwrap();
     }
-
-    files.push(file);
 }
 
-fn create_target(file_input: &FileInput, directory_path: &Path, files: &mut Vec<std::fs::File>) {
-    create_file(file_input, &directory_path.join("main.pnx"), true, files);
+fn create_target(file_input: &FileInput, directory_path: &Path) {
+    create_file(file_input, &directory_path.join("main.pnx"), true);
 }

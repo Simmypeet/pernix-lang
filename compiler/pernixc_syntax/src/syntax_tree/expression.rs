@@ -330,18 +330,25 @@ impl SourceElement for BinaryOperator {
 /// PrefixOperator:
 ///     '!'
 ///     | '-'
+///     | '&'
+///     | '*'
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
 pub enum PrefixOperator {
     LogicalNot(Punctuation),
     Negate(Punctuation),
+    ReferenceOf(Punctuation),
+    Dereference(Punctuation),
 }
 
 impl SourceElement for PrefixOperator {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
-            Self::LogicalNot(token) | Self::Negate(token) => Ok(token.span.clone()),
+            Self::LogicalNot(token)
+            | Self::Negate(token)
+            | Self::ReferenceOf(token)
+            | Self::Dereference(token) => Ok(token.span.clone()),
         }
     }
 }
@@ -1118,6 +1125,12 @@ impl<'a> Parser<'a> {
                 Ok(PrefixOperator::LogicalNot(p))
             }
             Some(Token::Punctuation(p)) if p.punctuation == '-' => Ok(PrefixOperator::Negate(p)),
+            Some(Token::Punctuation(p)) if p.punctuation == '&' => {
+                Ok(PrefixOperator::ReferenceOf(p))
+            }
+            Some(Token::Punctuation(p)) if p.punctuation == '*' => {
+                Ok(PrefixOperator::Dereference(p))
+            }
             _ => Err(ParserError),
         })
         .ok()

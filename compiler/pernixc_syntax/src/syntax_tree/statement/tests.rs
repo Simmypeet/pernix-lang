@@ -8,8 +8,6 @@ proptest! {
     ) {
         let source = statement_input.to_string();
 
-        println!("{source}");
-
         let statement = crate::syntax_tree::tests::parse(
             &source,
             |parser, handler| parser.parse_statement(handler)

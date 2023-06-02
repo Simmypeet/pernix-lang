@@ -73,7 +73,13 @@ pub struct ModuleInput {
 }
 
 impl ToString for ModuleInput {
-    fn to_string(&self) -> String { format!("module {};", self.identifier) }
+    fn to_string(&self) -> String {
+        format!(
+            "{} module {};",
+            self.access_modifier.to_string(),
+            self.identifier
+        )
+    }
 }
 
 impl ModuleInput {

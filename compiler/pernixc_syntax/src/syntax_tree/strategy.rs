@@ -11,7 +11,8 @@ use proptest::{
 
 use super::{
     AccessModifier, GenericArgument, GenericArguments, GenericIdentifier, LifetimeArgument,
-    LifetimeArgumentIdentifier, PrimitiveTypeSpecifier, QualifiedIdentifier, TypeSpecifier,
+    LifetimeArgumentIdentifier, PrimitiveTypeSpecifier, QualifiedIdentifier, ReferenceQualifier,
+    ReferenceTypeSpecifier, TypeSpecifier,
 };
 
 /// Represents an input for [`super::LifetimeArgumentIdentifier`]
@@ -38,6 +39,98 @@ impl LifetimeArgumentIdentifierInput {
 
             _ => Err(TestCaseError::fail("Lifetime argument mismatch")),
         }
+    }
+}
+
+/// Represents an input for [`super::ReferenceQualifier`]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub enum ReferenceQualifierInput {
+    Mutable,
+    Restrict,
+}
+
+impl ToString for ReferenceQualifierInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Mutable => "mutable",
+            Self::Restrict => "restrict",
+        }
+        .to_string()
+    }
+}
+
+impl ReferenceQualifierInput {
+    /// Validates the input against the [`super::ReferenceQualifier`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &ReferenceQualifier) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Mutable, ReferenceQualifier::Mutable(o)) => {
+                prop_assert_eq!(o.keyword, KeywordKind::Mutable);
+                Ok(())
+            }
+            (Self::Restrict, ReferenceQualifier::Restrict(o)) => {
+                prop_assert_eq!(o.keyword, KeywordKind::Restrict);
+                Ok(())
+            }
+
+            _ => Err(TestCaseError::fail("Reference qualifier mismatch")),
+        }
+    }
+}
+
+/// Represents an input for [`super::ReferenceQualifier`]
+#[derive(Debug, Clone)]
+pub struct ReferenceTypeSpecifierInput {
+    /// The lifetime argument of the reference type.
+    pub lifetime_argument: Option<LifetimeArgumentInput>,
+
+    /// The reference qualifier of the reference type.
+    pub reference_qualifier: Option<ReferenceQualifierInput>,
+
+    /// The type specifier of the reference type.
+    pub operand_type: Box<TypeSpecifierInput>,
+}
+
+impl ToString for ReferenceTypeSpecifierInput {
+    fn to_string(&self) -> String {
+        let mut s = "&".to_string();
+
+        if let Some(lifetime_argument) = &self.lifetime_argument {
+            s.push_str(&lifetime_argument.to_string());
+            s.push(' ');
+        }
+
+        if let Some(reference_qualififer) = &self.reference_qualifier {
+            s.push_str(&reference_qualififer.to_string());
+            s.push(' ');
+        }
+
+        s.push_str(&self.operand_type.to_string());
+
+        s
+    }
+}
+
+impl ReferenceTypeSpecifierInput {
+    /// Validates the input against the [`super::ReferenceQualifier`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &ReferenceTypeSpecifier) -> Result<(), TestCaseError> {
+        match (&self.lifetime_argument, &output.lifetime_argument) {
+            (Some(input), Some(output)) => input.validate(output)?,
+            (None, None) => {}
+            _ => return Err(TestCaseError::fail("Lifetime argument mismatch")),
+        }
+
+        match (&self.reference_qualifier, &output.reference_qualifier) {
+            (Some(input), Some(output)) => input.validate(output)?,
+            (None, None) => {}
+            _ => return Err(TestCaseError::fail("Reference qualifier mismatch")),
+        }
+
+        self.operand_type.validate(&output.operand_type)?;
+
+        Ok(())
     }
 }
 
@@ -265,8 +358,9 @@ impl PrimitiveTypeSpecifierInput {
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum TypeSpecifierInput {
-    PrimitiveTypeSpecifierInput(PrimitiveTypeSpecifierInput),
-    QualifiedIdentifierInput(QualifiedIdentifierInput),
+    PrimitiveTypeSpecifier(PrimitiveTypeSpecifierInput),
+    QualifiedIdentifier(QualifiedIdentifierInput),
+    ReferenceTypeSpecifier(ReferenceTypeSpecifierInput),
 }
 
 impl TypeSpecifierInput {
@@ -274,15 +368,19 @@ impl TypeSpecifierInput {
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TypeSpecifier) -> Result<(), TestCaseError> {
         match (self, output) {
-            (
-                Self::PrimitiveTypeSpecifierInput(this),
-                TypeSpecifier::PrimitiveTypeSpecifier(output),
-            ) => this.validate(output),
-            (Self::QualifiedIdentifierInput(this), TypeSpecifier::QualifiedIdentifier(output)) => {
+            (Self::PrimitiveTypeSpecifier(this), TypeSpecifier::PrimitiveTypeSpecifier(output)) => {
+                this.validate(output)
+            }
+            (Self::QualifiedIdentifier(this), TypeSpecifier::QualifiedIdentifier(output)) => {
+                this.validate(output)
+            }
+            (Self::ReferenceTypeSpecifier(this), TypeSpecifier::ReferenceTypeSpecifier(output)) => {
                 this.validate(output)
             }
 
-            _ => Err(TestCaseError::fail("Type specifier mismatch")),
+            _ => Err(TestCaseError::fail(format!(
+                "{self:#?},{output:#?} Type specifier mismatch",
+            ))),
         }
     }
 }
@@ -294,7 +392,7 @@ fn remove_turbo_fish(qualified_identifier: &mut QualifiedIdentifierInput) {
 
             for generic_argument in &mut generic_arguments.arguments {
                 if let GenericArgumentInput::TypeSpecifier(
-                    TypeSpecifierInput::QualifiedIdentifierInput(q),
+                    TypeSpecifierInput::QualifiedIdentifier(q),
                 ) = generic_argument
                 {
                     remove_turbo_fish(q);
@@ -327,17 +425,34 @@ pub fn qualified_identifier(
                         pernixc_lexical::token::strategy::identifier(),
                         proptest::option::of(proptest::collection::vec(
                             prop_oneof![
-                                primitive_type_specifier().prop_map(|x| {
-                                    GenericArgumentInput::TypeSpecifier(
-                                        TypeSpecifierInput::PrimitiveTypeSpecifierInput(x),
+                                prop_oneof![
+                                    primitive_type_specifier().prop_map(|x| {
+                                        TypeSpecifierInput::PrimitiveTypeSpecifier(x)
+                                    }),
+                                    inner.prop_map(|mut x| {
+                                        remove_turbo_fish(&mut x);
+                                        TypeSpecifierInput::QualifiedIdentifier(x)
+                                    })
+                                ]
+                                .prop_recursive(4, 16, 4, |inner| {
+                                    (
+                                        proptest::option::of(lifetime_argument()),
+                                        proptest::option::of(reference_qualifier()),
+                                        inner,
                                     )
-                                }),
-                                inner.prop_map(|mut x| {
-                                    remove_turbo_fish(&mut x);
-                                    GenericArgumentInput::TypeSpecifier(
-                                        TypeSpecifierInput::QualifiedIdentifierInput(x),
-                                    )
-                                }),
+                                        .prop_map(
+                                            |(lifetime_argument, reference_qualifier, inner)| {
+                                                TypeSpecifierInput::ReferenceTypeSpecifier(
+                                                    ReferenceTypeSpecifierInput {
+                                                        lifetime_argument,
+                                                        reference_qualifier,
+                                                        operand_type: Box::new(inner),
+                                                    },
+                                                )
+                                            },
+                                        )
+                                })
+                                .prop_map(GenericArgumentInput::TypeSpecifier),
                                 lifetime_argument()
                                     .prop_map(GenericArgumentInput::LifetimeArgument)
                             ],
@@ -381,40 +496,67 @@ fn lifetime_argument() -> impl Strategy<Value = LifetimeArgumentInput> {
     })
 }
 
+fn reference_qualifier() -> impl Strategy<Value = ReferenceQualifierInput> {
+    prop_oneof![
+        Just(ReferenceQualifierInput::Mutable),
+        Just(ReferenceQualifierInput::Restrict),
+    ]
+}
+
 /// Returns a strategy that produces [`PrimitiveTypeSpecifierInput`]
 pub fn type_specifier() -> impl Strategy<Value = TypeSpecifierInput> {
-    prop_oneof![primitive_type_specifier()
-        .prop_map(|x| { TypeSpecifierInput::PrimitiveTypeSpecifierInput(x) }),]
-    .prop_recursive(8, 24, 10, |inner| {
-        (
-            proptest::bool::ANY,
-            proptest::collection::vec(
-                (
-                    pernixc_lexical::token::strategy::identifier(),
-                    proptest::option::of(proptest::collection::vec(
-                        prop_oneof![
-                            inner.prop_map(GenericArgumentInput::TypeSpecifier),
-                            lifetime_argument().prop_map(GenericArgumentInput::LifetimeArgument)
-                        ],
-                        1..=10,
-                    )),
-                )
-                    .prop_map(|(name, generic_arguments)| GenericIdentifierInput {
-                        identifier: name,
-                        generic_arguments_input: generic_arguments.map(|x| GenericArgumentsInput {
-                            use_turbo_fish: false,
-                            arguments: x,
+    prop_oneof![
+        primitive_type_specifier().prop_map(|x| { TypeSpecifierInput::PrimitiveTypeSpecifier(x) }),
+    ]
+    .prop_recursive(4, 16, 4, |inner| {
+        prop_oneof![
+            (
+                proptest::bool::ANY,
+                proptest::collection::vec(
+                    (
+                        pernixc_lexical::token::strategy::identifier(),
+                        proptest::option::of(proptest::collection::vec(
+                            prop_oneof![
+                                inner.clone().prop_map(GenericArgumentInput::TypeSpecifier),
+                                lifetime_argument()
+                                    .prop_map(GenericArgumentInput::LifetimeArgument)
+                            ],
+                            1..=4,
+                        )),
+                    )
+                        .prop_map(|(name, generic_arguments)| {
+                            GenericIdentifierInput {
+                                identifier: name,
+                                generic_arguments_input: generic_arguments.map(|x| {
+                                    GenericArgumentsInput {
+                                        use_turbo_fish: false,
+                                        arguments: x,
+                                    }
+                                }),
+                            }
                         }),
-                    }),
-                1..=10,
-            ),
-        )
-            .prop_map(|(leading_separator, identifiers)| {
-                TypeSpecifierInput::QualifiedIdentifierInput(QualifiedIdentifierInput {
-                    leading_scope_separator: leading_separator,
-                    generic_identifiers: identifiers,
+                    1..=4,
+                ),
+            )
+                .prop_map(|(leading_separator, identifiers)| {
+                    TypeSpecifierInput::QualifiedIdentifier(QualifiedIdentifierInput {
+                        leading_scope_separator: leading_separator,
+                        generic_identifiers: identifiers,
+                    })
+                }),
+            (
+                proptest::option::of(lifetime_argument()),
+                proptest::option::of(reference_qualifier()),
+                inner
+            )
+                .prop_map(|(lifetime_argument, reference_qualifier, inner)| {
+                    TypeSpecifierInput::ReferenceTypeSpecifier(ReferenceTypeSpecifierInput {
+                        lifetime_argument,
+                        reference_qualifier,
+                        operand_type: Box::new(inner),
+                    })
                 })
-            })
+        ]
     })
 }
 
@@ -477,8 +619,9 @@ impl ToString for PrimitiveTypeSpecifierInput {
 impl ToString for TypeSpecifierInput {
     fn to_string(&self) -> String {
         match self {
-            Self::PrimitiveTypeSpecifierInput(i) => i.to_string(),
-            Self::QualifiedIdentifierInput(i) => i.to_string(),
+            Self::PrimitiveTypeSpecifier(i) => i.to_string(),
+            Self::QualifiedIdentifier(i) => i.to_string(),
+            Self::ReferenceTypeSpecifier(i) => i.to_string(),
         }
     }
 }

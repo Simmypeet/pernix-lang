@@ -632,6 +632,76 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_lifetime_argument_identifier(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<LifetimeArgumentIdentifier> {
+        match self.next_significant_token() {
+            // static
+            Some(Token::Keyword(static_keyword))
+                if static_keyword.keyword == KeywordKind::Static =>
+            {
+                Ok(LifetimeArgumentIdentifier::StaticKeyword(static_keyword))
+            }
+
+            // identifier
+            Some(Token::Identifier(identifier)) => {
+                Ok(LifetimeArgumentIdentifier::Identifier(identifier))
+            }
+
+            // error: lifetime argument identifier expected
+            found => {
+                handler.recieve(Error::IdentifierExpected(IdentifierExpected { found }));
+
+                Err(ParserError)
+            }
+        }
+    }
+
+    fn parse_reference_type_specifier(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<ReferenceTypeSpecifier> {
+        let ampersand = self.parse_punctuation('&', true, handler)?;
+        let lifetime_argument = match self.stop_at_significant() {
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                // eat apostrophe
+                self.forward();
+
+                let lifetime_argument_identifier =
+                    self.parse_lifetime_argument_identifier(handler)?;
+
+                Some(LifetimeArgument {
+                    apostrophe,
+                    lifetime_argument_identifier,
+                })
+            }
+
+            _ => None,
+        };
+        let reference_qualifier = match self.stop_at_significant() {
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
+                self.forward();
+                Some(ReferenceQualifier::Mutable(k))
+            }
+
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
+                self.forward();
+                Some(ReferenceQualifier::Restrict(k))
+            }
+
+            _ => None,
+        };
+        let operand_type = Box::new(self.parse_type_specifier(handler)?);
+
+        Ok(ReferenceTypeSpecifier {
+            ampersand,
+            lifetime_argument,
+            reference_qualifier,
+            operand_type,
+        })
+    }
+
     /// Parses a [`TypeSpecifier`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_type_specifier(
@@ -656,6 +726,11 @@ impl<'a> Parser<'a> {
             Some(Token::Identifier(..)) => Ok(TypeSpecifier::QualifiedIdentifier(
                 self.parse_qualified_identifier(false, handler)?,
             )),
+
+            // parse reference
+            Some(Token::Punctuation(p)) if p.punctuation == '&' => self
+                .parse_reference_type_specifier(handler)
+                .map(TypeSpecifier::ReferenceTypeSpecifier),
 
             // primitive type
             Some(Token::Keyword(keyword))
@@ -722,26 +797,8 @@ impl<'a> Parser<'a> {
                 // eat apostrophe
                 self.next_token();
 
-                let lifetime_argument_identifier = match self.next_significant_token() {
-                    // static
-                    Some(Token::Keyword(static_keyword))
-                        if static_keyword.keyword == KeywordKind::Static =>
-                    {
-                        LifetimeArgumentIdentifier::StaticKeyword(static_keyword)
-                    }
-
-                    // identifier
-                    Some(Token::Identifier(identifier)) => {
-                        LifetimeArgumentIdentifier::Identifier(identifier)
-                    }
-
-                    // error: lifetime argument identifier expected
-                    found => {
-                        handler.recieve(Error::IdentifierExpected(IdentifierExpected { found }));
-
-                        return Err(ParserError);
-                    }
-                };
+                let lifetime_argument_identifier =
+                    self.parse_lifetime_argument_identifier(handler)?;
 
                 Ok(GenericArgument::LifetimeArgument(LifetimeArgument {
                     apostrophe,

@@ -1,6 +1,6 @@
 //! Contains the definition of [`Target`]
 
-use std::{collections::HashSet, path::PathBuf, str::FromStr, sync::Arc};
+use std::{collections::HashSet, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
@@ -179,6 +179,7 @@ impl<'a> Parser<'a> {
                 Some(Token::Keyword(using_keyword))
                     if using_keyword.keyword == KeywordKind::Using =>
                 {
+                    self.forward();
                     using_keyword
                 }
                 _ => break,
@@ -217,8 +218,8 @@ impl<'a> Parser<'a> {
 
         loop {
             let result = self.try_parse(|parser| {
-                let access_modifier = parser.parse_access_modifier(handler)?;
-                let module_keyword = parser.parse_keyword(KeywordKind::Module, handler)?;
+                let access_modifier = parser.parse_access_modifier(&Dummy)?;
+                let module_keyword = parser.parse_keyword(KeywordKind::Module, &Dummy)?;
 
                 Ok((access_modifier, module_keyword))
             });
@@ -321,6 +322,9 @@ pub struct SourceFileLoadFail {
 
     /// The submodule that submodule stems from.
     pub submodule: Module,
+
+    /// The failed loading path.
+    pub path: PathBuf,
 }
 
 /// A module with the given name already exists.
@@ -355,13 +359,15 @@ impl Target {
 
                 // get the file path of the module
                 let submodule_path = if is_root {
-                    let submodule_path = source_file.full_path().parent().map_or_else(
+                    let mut submodule_path = source_file.full_path().parent().map_or_else(
                         || {
                             PathBuf::from_str(module.identifier.span.str())
                                 .expect("should not fail")
                         },
                         |parent| parent.join(module.identifier.span.str()),
                     );
+
+                    println!("{}", submodule_path.display());
 
                     // check if the submodule path is the same as the root file path
                     if submodule_path == *source_file.full_path() {
@@ -372,6 +378,8 @@ impl Target {
                         }));
                         continue;
                     }
+
+                    submodule_path.set_extension("pnx");
 
                     submodule_path
                 } else {
@@ -388,6 +396,7 @@ impl Target {
                         submodules.push(None);
                         handler.recieve(Error::SourceFileLoadFail(SourceFileLoadFail {
                             io_error,
+                            path: submodule_path,
                             submodule: module.clone(),
                         }));
                         continue;

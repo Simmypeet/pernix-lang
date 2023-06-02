@@ -547,6 +547,8 @@ impl ToString for BooleanLiteralInput {
 pub enum PrefixOperatorInput {
     LogicalNot,
     Negate,
+    ReferenceOf,
+    Dereference,
 }
 
 impl PrefixOperatorInput {
@@ -562,6 +564,14 @@ impl PrefixOperatorInput {
                 prop_assert_eq!(output.span.str(), "-");
                 Ok(())
             }
+            (Self::ReferenceOf, PrefixOperator::ReferenceOf(output)) => {
+                prop_assert_eq!(output.span.str(), "&");
+                Ok(())
+            }
+            (Self::Dereference, PrefixOperator::Dereference(output)) => {
+                prop_assert_eq!(output.span.str(), "*");
+                Ok(())
+            }
             _ => Err(TestCaseError::fail("Prefix operator mismatch")),
         }
     }
@@ -572,6 +582,8 @@ impl ToString for PrefixOperatorInput {
         match self {
             Self::LogicalNot => "!",
             Self::Negate => "-",
+            Self::ReferenceOf => "&",
+            Self::Dereference => "*",
         }
         .to_string()
     }
