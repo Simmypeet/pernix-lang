@@ -1,1 +1,0 @@
-(std::vec::Vec<syntax_tree::target::strategy::UsingInput>, std::vec::Vec<(std::string::String, syntax_tree::target::strategy::FileInput)>, std::vec::Vec<syntax_tree::item::strategy::ItemInput>)

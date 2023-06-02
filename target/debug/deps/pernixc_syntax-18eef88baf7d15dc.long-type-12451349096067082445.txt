@@ -1,1 +1,0 @@
-proptest::strategy::Map<(proptest::bool::Any, impl proptest::strategy::Strategy<Value = std::string::String>, impl proptest::strategy::Strategy<Value = syntax_tree::strategy::TypeSpecifierInput>), [closure@compiler/pernixc_syntax/src/syntax_tree/item/strategy.rs:690:19: 690:58]>

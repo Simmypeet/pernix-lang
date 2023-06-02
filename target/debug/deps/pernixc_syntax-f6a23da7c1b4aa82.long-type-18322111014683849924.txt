@@ -1,1 +1,0 @@
-proptest::strategy::Map<(proptest::collection::VecStrategy<impl proptest::strategy::Strategy<Value = syntax_tree::target::strategy::UsingInput>>, proptest::collection::VecStrategy<impl proptest::strategy::Strategy<Value = syntax_tree::item::strategy::ItemInput>>), [closure@compiler/pernixc_syntax/src/syntax_tree/target/strategy.rs:119:19: 119:36]>

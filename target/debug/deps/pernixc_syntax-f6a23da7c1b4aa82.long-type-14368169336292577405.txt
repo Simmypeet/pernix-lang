@@ -1,1 +1,0 @@
-proptest::strategy::Map<impl proptest::strategy::Strategy<Value = syntax_tree::strategy::QualifiedIdentifierInput>, [closure@compiler/pernixc_syntax/src/syntax_tree/item/strategy.rs:651:46: 651:49]>

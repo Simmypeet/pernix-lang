@@ -1,1 +1,0 @@
-proptest::strategy::Map<(proptest::strategy::BoxedStrategy<syntax_tree::target::strategy::FileInput>, proptest::collection::HashSetStrategy<impl proptest::strategy::Strategy<Value = std::string::String>>), [closure@compiler/pernixc_syntax/src/syntax_tree/target/strategy.rs:132:27: 132:58]>
