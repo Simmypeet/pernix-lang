@@ -1,6 +1,6 @@
 //! Contains the definition of [`Target`]
 
-use std::{collections::HashSet, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashSet, path::PathBuf, str::FromStr, sync::Arc};
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
@@ -64,7 +64,9 @@ pub struct Module {
 }
 
 impl SourceElement for Using {
-    fn span(&self) -> Result<Span, SpanError> { self.using_keyword.span.join(&self.semicolon.span) }
+    fn span(&self) -> Result<Span, SpanError> {
+        self.using_keyword.span.join(&self.semicolon.span)
+    }
 }
 
 /// Contains all the syntax trees defined within a single file.

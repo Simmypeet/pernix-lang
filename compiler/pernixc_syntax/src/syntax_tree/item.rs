@@ -320,8 +320,6 @@ impl SourceElement for Parameter {
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// ParameterList:
-///     Parameter (',' Parameter)*
 ///     ;
 /// ```
 pub type ParameterList = ConnectedList<Parameter, Punctuation>;
@@ -1344,6 +1342,7 @@ impl<'a> Parser<'a> {
         handler: &impl Handler<Error>,
     ) -> ParserResult<Item> {
         let access_modifier = self.parse_access_modifier(handler)?;
+
         match self.stop_at_significant() {
             // parse function
             Some(Token::Identifier(..)) => {

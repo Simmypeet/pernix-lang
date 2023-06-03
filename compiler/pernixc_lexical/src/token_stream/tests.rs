@@ -89,11 +89,14 @@ fn token_tree_string_strategy() -> impl Strategy<Value = TokenTreeString> {
         256,
         10,
         |inner| {
-            (proptest::collection::vec(inner, 0..10), prop_oneof![
-                Just(Delimiter::Brace),
-                Just(Delimiter::Bracket),
-                Just(Delimiter::Parenthesis)
-            ])
+            (
+                proptest::collection::vec(inner, 0..10),
+                prop_oneof![
+                    Just(Delimiter::Brace),
+                    Just(Delimiter::Bracket),
+                    Just(Delimiter::Parenthesis)
+                ],
+            )
                 .prop_map(|(token_tree_strings, delimiter)| {
                     TokenTreeString::Delimited(DelimitedString {
                         token_tree_strings,
@@ -131,17 +134,23 @@ fn check_delimited_token(
     let open_str = delimited.open.span.str();
     let close_str = delimited.close.span.str();
 
-    prop_assert_eq!(open_str, match source.delimiter {
-        Delimiter::Brace => "{",
-        Delimiter::Bracket => "[",
-        Delimiter::Parenthesis => "(",
-    });
+    prop_assert_eq!(
+        open_str,
+        match source.delimiter {
+            Delimiter::Brace => "{",
+            Delimiter::Bracket => "[",
+            Delimiter::Parenthesis => "(",
+        }
+    );
 
-    prop_assert_eq!(close_str, match source.delimiter {
-        Delimiter::Brace => "}",
-        Delimiter::Bracket => "]",
-        Delimiter::Parenthesis => ")",
-    });
+    prop_assert_eq!(
+        close_str,
+        match source.delimiter {
+            Delimiter::Brace => "}",
+            Delimiter::Bracket => "]",
+            Delimiter::Parenthesis => ")",
+        }
+    );
 
     for (token, token_string) in delimited
         .token_stream
