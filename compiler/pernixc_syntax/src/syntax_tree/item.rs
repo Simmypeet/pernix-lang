@@ -26,7 +26,7 @@ pub mod strategy;
 /// Syntax Synopsis:
 /// ``` text
 /// LifetimeParameter:
-///     Label
+///     '\'' Identifier
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
@@ -113,44 +113,120 @@ impl SourceElement for GenericParameters {
     }
 }
 
-/// Represents a syntax tree node of a constraint used in a where clause.
+/// Represents a syntax tree node of a lifetime bound used in a where clause.
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// Constraint:
-///     TraitConstraint
+/// LifetimeBound:
+///     LifetimeParameter ':' LifetimeParameter
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+pub struct LifetimeBound {
+    pub lhs_lifetime_parameter: LifetimeParameter,
+    pub colon: Punctuation,
+    pub rhs_lifetime_parameter: LifetimeParameter,
+}
+
+impl SourceElement for LifetimeBound {
+    fn span(&self) -> Result<Span, SpanError> {
+        self.lhs_lifetime_parameter
+            .span()?
+            .join(&self.rhs_lifetime_parameter.span()?)
+    }
+}
+
+/// Represents a syntax tree node of a type bound constraint.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// TypeBoundConstraint:
+///     TypeSpecifier
 ///     | LifetimeArgument
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
-pub enum Constraint {
-    TraitConstraint(TraitConstraint),
+pub enum TypeBoundConstraint {
+    TypeSpecifier(TypeSpecifier),
     LifetimeArgument(LifetimeArgument),
 }
 
-impl SourceElement for Constraint {
+impl SourceElement for TypeBoundConstraint {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
-            Self::TraitConstraint(s) => s.span(),
+            Self::TypeSpecifier(s) => s.span(),
             Self::LifetimeArgument(s) => s.span(),
         }
     }
 }
 
-/// Represents a syntax tree node for a trait constraint used in a where clause.
+/// Represents a syntax tree node of a type bound used in a where clause.
 ///
 /// Syntax Synopsis:
 /// ``` text
-/// TraitConstraint:
+/// TypeBound:
+///     QualifiedIdentifier ':' TypeSpecifier
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+pub struct TypeBound {
+    pub qualified_identifier: QualifiedIdentifier,
+    pub colon: Punctuation,
+    pub type_bound_constraint: TypeBoundConstraint,
+}
+
+impl SourceElement for TypeBound {
+    fn span(&self) -> Result<Span, SpanError> {
+        self.qualified_identifier
+            .span()?
+            .join(&self.type_bound_constraint.span()?)
+    }
+}
+
+/// Represents a syntax tree node of a constraint used in a where clause.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// Constraint:
+///     TraitBound
+///     | LifetimeArgument
+///     | LifetimeBound
+///     | TypeBound
+///     ;
+/// ```
+#[derive(Debug, Clone, EnumAsInner, From)]
+pub enum Constraint {
+    TraitBound(TraitBound),
+    LifetimeArgument(LifetimeArgument),
+    LifetimeBound(LifetimeBound),
+    TypeBound(TypeBound),
+}
+
+impl SourceElement for Constraint {
+    fn span(&self) -> Result<Span, SpanError> {
+        match self {
+            Self::TraitBound(s) => s.span(),
+            Self::LifetimeArgument(s) => s.span(),
+            Self::LifetimeBound(s) => s.span(),
+            Self::TypeBound(s) => s.span(),
+        }
+    }
+}
+
+/// Represents a syntax tree node for a trait bound used in a where clause.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// TraitBound:
 ///     QualifiedIdentifier
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
-pub struct TraitConstraint {
+pub struct TraitBound {
     pub qualified_identifier: QualifiedIdentifier,
 }
 
-impl SourceElement for TraitConstraint {
+impl SourceElement for TraitBound {
     fn span(&self) -> Result<Span, SpanError> { self.qualified_identifier.span() }
 }
 
@@ -962,32 +1038,87 @@ impl<'a> Parser<'a> {
 
     fn parse_cosntraint(&mut self, handler: &impl Handler<Error>) -> ParserResult<Constraint> {
         match self.stop_at_significant() {
+            // parses lifetime argument / bound
             Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat apostrophe
                 self.forward();
 
-                let lifetime_argument_identifier = match self.stop_at_significant() {
-                    Some(Token::Keyword(static_keyword))
-                        if static_keyword.keyword == KeywordKind::Static =>
-                    {
-                        // eat static keyword
-                        self.forward();
-                        LifetimeArgumentIdentifier::StaticKeyword(static_keyword)
-                    }
-                    _ => {
-                        let identifier = self.parse_identifier(handler)?;
-                        LifetimeArgumentIdentifier::Identifier(identifier)
-                    }
-                };
+                let lifetime_argument_identifier =
+                    self.parse_lifetime_argument_identifier(handler)?;
 
-                Ok(Constraint::LifetimeArgument(LifetimeArgument {
-                    apostrophe,
-                    lifetime_argument_identifier,
-                }))
+                match (self.stop_at_significant(), lifetime_argument_identifier) {
+                    (
+                        Some(Token::Punctuation(colon)),
+                        LifetimeArgumentIdentifier::Identifier(identifier),
+                    ) if colon.punctuation == ':' => {
+                        // eat colon
+                        self.forward();
+
+                        let lhs_lifetime_parameter = LifetimeParameter {
+                            apostrophe,
+                            identifier,
+                        };
+
+                        let rhs_lifetime_parameter = LifetimeParameter {
+                            apostrophe: self.parse_punctuation('\'', true, handler)?,
+                            identifier: self.parse_identifier(handler)?,
+                        };
+
+                        Ok(Constraint::LifetimeBound(LifetimeBound {
+                            lhs_lifetime_parameter,
+                            colon,
+                            rhs_lifetime_parameter,
+                        }))
+                    }
+                    (_, lifetime_argument_identifier) => {
+                        Ok(Constraint::LifetimeArgument(LifetimeArgument {
+                            apostrophe,
+                            lifetime_argument_identifier,
+                        }))
+                    }
+                }
             }
-            _ => Ok(Constraint::TraitConstraint(TraitConstraint {
-                qualified_identifier: self.parse_qualified_identifier(false, handler)?,
-            })),
+            _ => {
+                let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+
+                match self.stop_at_significant() {
+                    Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
+                        // eat colon
+                        self.forward();
+
+                        let type_bound_constraint = match self.stop_at_significant() {
+                            Some(Token::Punctuation(apostrophe))
+                                if apostrophe.punctuation == '\'' =>
+                            {
+                                // eat apostrophe
+                                self.forward();
+
+                                let lifetime_argument_identifier =
+                                    self.parse_lifetime_argument_identifier(handler)?;
+
+                                TypeBoundConstraint::LifetimeArgument(LifetimeArgument {
+                                    apostrophe,
+                                    lifetime_argument_identifier,
+                                })
+                            }
+
+                            _ => TypeBoundConstraint::TypeSpecifier(
+                                self.parse_type_specifier(handler)?,
+                            ),
+                        };
+
+                        Ok(Constraint::TypeBound(TypeBound {
+                            qualified_identifier,
+                            colon,
+                            type_bound_constraint,
+                        }))
+                    }
+
+                    _ => Ok(Constraint::TraitBound(TraitBound {
+                        qualified_identifier,
+                    })),
+                }
+            }
         }
     }
 

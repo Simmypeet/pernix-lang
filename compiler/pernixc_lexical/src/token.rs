@@ -112,6 +112,8 @@ pub enum KeywordKind {
     Trait,
     /// `using` keyword.
     Using,
+    /// `is` keyword.
+    Is,
 }
 
 impl ToString for KeywordKind {
@@ -192,6 +194,7 @@ impl KeywordKind {
             Self::Where => "where",
             Self::Trait => "trait",
             Self::Using => "using",
+            Self::Is => "is",
         }
     }
 

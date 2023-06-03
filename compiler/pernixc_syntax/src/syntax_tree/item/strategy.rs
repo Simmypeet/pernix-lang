@@ -4,11 +4,11 @@ use proptest::{prop_assert_eq, prop_oneof, strategy::Strategy, test_runner::Test
 use super::{
     Constraint, ConstraintList, Enum, EnumBody, EnumSignature, Function, FunctionBody,
     FunctionSignature, GenericParameter, GenericParameters, Implements, ImplementsBody,
-    ImplementsFunction, ImplementsMember, ImplementsSignature, ImplementsType, Item,
+    ImplementsFunction, ImplementsMember, ImplementsSignature, ImplementsType, Item, LifetimeBound,
     LifetimeParameter, Parameter, Parameters, ReturnType, Struct, StructBody, StructField,
-    StructMember, StructSignature, StructType, Trait, TraitBody, TraitConstraint, TraitFunction,
-    TraitMember, TraitSignature, TraitType, Type, TypeDefinition, TypeParameter, TypeSignature,
-    WhereClause,
+    StructMember, StructSignature, StructType, Trait, TraitBody, TraitBound, TraitFunction,
+    TraitMember, TraitSignature, TraitType, Type, TypeBound, TypeBoundConstraint, TypeDefinition,
+    TypeParameter, TypeSignature, WhereClause,
 };
 use crate::syntax_tree::{
     statement::strategy::StatementInput,
@@ -131,36 +131,133 @@ impl GenericParametersInput {
     }
 }
 
-/// Represents an input for [`super::TraitConstraint`]
+/// Represents an input for [`super::TraitBound`]
 #[derive(Debug, Clone)]
-pub struct TraitConstraintInput {
+pub struct TraitBoundInput {
     pub qualified_identifier: QualifiedIdentifierInput,
 }
 
-impl ToString for TraitConstraintInput {
+impl ToString for TraitBoundInput {
     fn to_string(&self) -> String { self.qualified_identifier.to_string() }
 }
 
-impl TraitConstraintInput {
+impl TraitBoundInput {
     /// Validates the input against the [`super::TraitConstraint`] output.
     #[allow(clippy::missing_errors_doc)]
-    pub fn validate(&self, output: &TraitConstraint) -> Result<(), TestCaseError> {
+    pub fn validate(&self, output: &TraitBound) -> Result<(), TestCaseError> {
         self.qualified_identifier
             .validate(&output.qualified_identifier)
     }
 }
 
+/// Represents an input for [`super::LifetimeBound`]
+#[derive(Debug, Clone)]
+pub struct LifetimeBoundInput {
+    pub lhs_lifetime_parameter: LifetimeParameterInput,
+    pub rhs_lifetime_parameter: LifetimeParameterInput,
+}
+
+impl ToString for LifetimeBoundInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{}: {}",
+            self.lhs_lifetime_parameter.to_string(),
+            self.rhs_lifetime_parameter.to_string()
+        )
+    }
+}
+
+impl LifetimeBoundInput {
+    /// Validates the input against the [`super::LifetimeBound`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &LifetimeBound) -> Result<(), TestCaseError> {
+        self.lhs_lifetime_parameter
+            .validate(&output.lhs_lifetime_parameter)?;
+        self.rhs_lifetime_parameter
+            .validate(&output.rhs_lifetime_parameter)?;
+
+        Ok(())
+    }
+}
+
+/// Represents an input for [`super::TypeBoundConstraint`]
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum TypeBoundConstraintInput {
+    LifetimeArgument(LifetimeArgumentInput),
+    TypeSpecifier(TypeSpecifierInput),
+}
+
+impl ToString for TypeBoundConstraintInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::LifetimeArgument(lifetime_argument) => lifetime_argument.to_string(),
+            Self::TypeSpecifier(type_specifier) => type_specifier.to_string(),
+        }
+    }
+}
+
+impl TypeBoundConstraintInput {
+    /// Validates the input against the [`super::TypeBoundConstraint`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &TypeBoundConstraint) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (
+                Self::LifetimeArgument(lifetime_argument),
+                TypeBoundConstraint::LifetimeArgument(output),
+            ) => lifetime_argument.validate(output),
+            (Self::TypeSpecifier(type_specifier), TypeBoundConstraint::TypeSpecifier(output)) => {
+                type_specifier.validate(output)
+            }
+            _ => Err(TestCaseError::fail("Type bound constraint mismatch")),
+        }
+    }
+}
+
+/// Represents an input for [`super::TypeBound`]
+#[derive(Debug, Clone)]
+pub struct TypeBoundInput {
+    pub qualified_identifier: QualifiedIdentifierInput,
+    pub type_bound_constraint: TypeBoundConstraintInput,
+}
+
+impl ToString for TypeBoundInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{}: {}",
+            self.qualified_identifier.to_string(),
+            self.type_bound_constraint.to_string()
+        )
+    }
+}
+
+impl TypeBoundInput {
+    /// Validates the input against the [`super::TypeBound`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &TypeBound) -> Result<(), TestCaseError> {
+        self.qualified_identifier
+            .validate(&output.qualified_identifier)?;
+        self.type_bound_constraint
+            .validate(&output.type_bound_constraint)?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, EnumAsInner)]
 pub enum ConstraintInput {
-    TraitConstraint(TraitConstraintInput),
+    TraitBound(TraitBoundInput),
     LifetimeArgument(LifetimeArgumentInput),
+    LifetimeBound(LifetimeBoundInput),
+    TypeBound(TypeBoundInput),
 }
 
 impl ToString for ConstraintInput {
     fn to_string(&self) -> String {
         match self {
-            Self::TraitConstraint(c) => c.to_string(),
+            Self::TraitBound(c) => c.to_string(),
             Self::LifetimeArgument(c) => c.to_string(),
+            Self::LifetimeBound(c) => c.to_string(),
+            Self::TypeBound(c) => c.to_string(),
         }
     }
 }
@@ -170,8 +267,10 @@ impl ConstraintInput {
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &Constraint) -> Result<(), TestCaseError> {
         match (self, output) {
-            (Self::TraitConstraint(i), Constraint::TraitConstraint(o)) => i.validate(o),
+            (Self::TraitBound(i), Constraint::TraitBound(o)) => i.validate(o),
             (Self::LifetimeArgument(i), Constraint::LifetimeArgument(o)) => i.validate(o),
+            (Self::LifetimeBound(i), Constraint::LifetimeBound(o)) => i.validate(o),
+            (Self::TypeBound(i), Constraint::TypeBound(o)) => i.validate(o),
             _ => Err(TestCaseError::fail("Constraint mismatch")),
         }
     }
@@ -1262,10 +1361,34 @@ fn where_clause() -> impl Strategy<Value = WhereClauseInput> {
     proptest::collection::vec(
         prop_oneof![
             qualified_identifier(false).prop_map(|qualified_identifier| {
-                ConstraintInput::TraitConstraint(TraitConstraintInput {
+                ConstraintInput::TraitBound(TraitBoundInput {
                     qualified_identifier,
                 })
-            })
+            }),
+            crate::syntax_tree::strategy::lifetime_argument()
+                .prop_map(ConstraintInput::LifetimeArgument),
+            (qualified_identifier(false), prop_oneof![
+                crate::syntax_tree::strategy::type_specifier()
+                    .prop_map(TypeBoundConstraintInput::TypeSpecifier),
+                crate::syntax_tree::strategy::lifetime_argument()
+                    .prop_map(TypeBoundConstraintInput::LifetimeArgument)
+            ])
+                .prop_map(|(qualified_identifier, type_bound_constraint)| {
+                    ConstraintInput::TypeBound(TypeBoundInput {
+                        qualified_identifier,
+                        type_bound_constraint,
+                    })
+                }),
+            (
+                pernixc_lexical::token::strategy::identifier(),
+                pernixc_lexical::token::strategy::identifier(),
+            )
+                .prop_map(|(lhs, rhs)| {
+                    ConstraintInput::LifetimeBound(LifetimeBoundInput {
+                        lhs_lifetime_parameter: LifetimeParameterInput { identifier: lhs },
+                        rhs_lifetime_parameter: LifetimeParameterInput { identifier: rhs },
+                    })
+                })
         ],
         1..=4,
     )

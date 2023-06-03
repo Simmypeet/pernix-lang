@@ -490,7 +490,7 @@ fn lifetime_argument_identifier() -> impl Strategy<Value = LifetimeArgumentIdent
     ]
 }
 
-fn lifetime_argument() -> impl Strategy<Value = LifetimeArgumentInput> {
+pub fn lifetime_argument() -> impl Strategy<Value = LifetimeArgumentInput> {
     lifetime_argument_identifier().prop_map(|x| LifetimeArgumentInput {
         lifetime_argument_identifier: x,
     })
