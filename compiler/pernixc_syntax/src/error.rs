@@ -2,18 +2,17 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use getset::{CopyGetters, Getters};
+use getset::CopyGetters;
 use pernixc_lexical::token::{KeywordKind, Token};
 use pernixc_print::LogSeverity;
 use pernixc_source::Span;
 use thiserror::Error;
 
 /// An identifier is expected but found an another invalid token.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct IdentifierExpected {
     /// The invalid token that was found.
-    #[get = "pub"]
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 fn found_string(found: &Option<Token>) -> String {
@@ -54,11 +53,10 @@ impl IdentifierExpected {
 }
 
 /// A type specifier syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct TypeSpecifierExpected {
     /// The invalid token that was found.
-    #[get = "pub"]
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 impl TypeSpecifierExpected {
@@ -83,11 +81,10 @@ impl TypeSpecifierExpected {
 }
 
 /// An expression syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct ExpressionExpected {
     /// The invalid token that was found.
-    #[get = "pub"]
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 impl ExpressionExpected {
@@ -108,11 +105,11 @@ impl ExpressionExpected {
     }
 }
 
-/// A member syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, Getters)]
+/// A struct member syntax is expected but found an other invalid token.
+#[derive(Debug, Clone)]
 pub struct StructMemberExpected {
     /// The invalid token that was found.
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 impl StructMemberExpected {
@@ -134,11 +131,10 @@ impl StructMemberExpected {
 }
 
 /// An item syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct ItemExpected {
     /// The invalid token that was found.
-    #[get = "pub"]
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 impl ItemExpected {
@@ -160,11 +156,10 @@ impl ItemExpected {
 }
 
 /// An access modifier syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct AccessModifierExpected {
     /// The invalid token that was found.
-    #[get = "pub"]
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 impl AccessModifierExpected {
@@ -189,15 +184,13 @@ impl AccessModifierExpected {
 }
 
 /// A punctuation of a particular character is expected but found an other invalid token.
-#[derive(Debug, Clone, Getters, CopyGetters)]
+#[derive(Debug, Clone, CopyGetters)]
 pub struct PunctuationExpected {
     /// The character of the expected punctuation.
-    #[get_copy = "pub"]
-    pub(super) expected: char,
+    pub expected: char,
 
     /// The invalid token that was found.
-    #[get = "pub"]
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 /// Prints the error message to the console
@@ -226,15 +219,13 @@ impl PunctuationExpected {
 }
 
 /// A keyword of a particular kind is expected but found an other invalid token.
-#[derive(Debug, Clone, Getters, CopyGetters)]
+#[derive(Debug, Clone, CopyGetters)]
 pub struct KeywordExpected {
     /// The kind of the expected keyword.
-    #[get_copy = "pub"]
-    pub(super) expected: KeywordKind,
+    pub expected: KeywordKind,
 
     /// The invalid token that was found.
-    #[get = "pub"]
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 impl KeywordExpected {
@@ -260,11 +251,10 @@ impl KeywordExpected {
 }
 
 /// A generic arugment/parameter list cannot be empty.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct GenericArgumentParameterListCannotBeEmpty {
     /// The span of the generic argument/parameter.
-    #[get = "pub"]
-    pub(super) span: Span,
+    pub span: Span,
 }
 
 impl GenericArgumentParameterListCannotBeEmpty {
@@ -283,10 +273,10 @@ impl GenericArgumentParameterListCannotBeEmpty {
 }
 
 /// A trait member syntax is expected but found an other invalid token.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct TraitMemberExpected {
     /// The invalid token that was found.
-    pub(super) found: Option<Token>,
+    pub found: Option<Token>,
 }
 
 impl TraitMemberExpected {
@@ -310,6 +300,34 @@ impl TraitMemberExpected {
     }
 }
 
+/// An implements member syntax is expected but found an other invalid token.
+#[derive(Debug, Clone)]
+pub struct ImplementsMemberExpected {
+    /// The invalid token that was found.
+    pub found: Option<Token>,
+}
+
+impl ImplementsMemberExpected {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            format!(
+                "an implements member syntax is expected, found: {}",
+                found_string(&self.found)
+            )
+            .as_str(),
+        );
+        if let Some(token) = self.found.as_ref() {
+            pernixc_print::print_source_code(
+                token.span(),
+                Some("implements member syntax expected here"),
+            );
+        }
+        println!();
+    }
+}
+
 /// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
 #[derive(Debug, Clone, EnumAsInner, Error, From)]
 #[error("Encountered a syntactic error while parsing the source code.")]
@@ -324,6 +342,7 @@ pub enum Error {
     KeywordExpected(KeywordExpected),
     StructMemberExpected(StructMemberExpected),
     TraitMemberExpected(TraitMemberExpected),
+    ImplementsMemberExpected(ImplementsMemberExpected),
     GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty),
 }
 
@@ -341,6 +360,7 @@ impl Error {
             Self::StructMemberExpected(e) => e.print(),
             Self::GenericArgumentParameterListCannotBeEmpty(e) => e.print(),
             Self::TraitMemberExpected(e) => e.print(),
+            Self::ImplementsMemberExpected(e) => e.print(),
         }
     }
 }

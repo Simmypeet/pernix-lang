@@ -3,10 +3,12 @@ use proptest::{prop_assert_eq, prop_oneof, strategy::Strategy, test_runner::Test
 
 use super::{
     Constraint, ConstraintList, Enum, EnumBody, EnumSignature, Function, FunctionBody,
-    FunctionSignature, GenericParameter, GenericParameters, Item, LifetimeParameter, Parameter,
-    Parameters, ReturnType, Struct, StructBody, StructField, StructMember, StructSignature,
-    StructType, Trait, TraitBody, TraitConstraint, TraitFunction, TraitMember, TraitSignature,
-    Type, TypeDefinition, TypeParameter, TypeSignature, WhereClause,
+    FunctionSignature, GenericParameter, GenericParameters, Implements, ImplementsBody,
+    ImplementsFunction, ImplementsMember, ImplementsSignature, ImplementsType, Item,
+    LifetimeParameter, Parameter, Parameters, ReturnType, Struct, StructBody, StructField,
+    StructMember, StructSignature, StructType, Trait, TraitBody, TraitConstraint, TraitFunction,
+    TraitMember, TraitSignature, TraitType, Type, TypeDefinition, TypeParameter, TypeSignature,
+    WhereClause,
 };
 use crate::syntax_tree::{
     statement::strategy::StatementInput,
@@ -325,15 +327,53 @@ impl TraitFunctionInput {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct TraitTypeInput {
+    pub type_signature: TypeSignatureInput,
+    pub where_clause: Option<WhereClauseInput>,
+}
+
+impl ToString for TraitTypeInput {
+    fn to_string(&self) -> String {
+        let mut s = self.type_signature.to_string();
+
+        if let Some(where_clause) = &self.where_clause {
+            s.push_str(&format!(" {}", where_clause.to_string()));
+        }
+
+        s.push(';');
+
+        s
+    }
+}
+
+impl TraitTypeInput {
+    /// Validates the input against the [`super::TraitType`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &TraitType) -> Result<(), TestCaseError> {
+        self.type_signature.validate(&output.type_signature)?;
+
+        match (&self.where_clause, &output.where_clause) {
+            (Some(i), Some(o)) => i.validate(o)?,
+            (None, None) => (),
+            _ => return Err(TestCaseError::fail("where clause mismatch")),
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, EnumAsInner)]
 pub enum TraitMemberInput {
     Function(TraitFunctionInput),
+    Type(TraitTypeInput),
 }
 
 impl ToString for TraitMemberInput {
     fn to_string(&self) -> String {
         match self {
             Self::Function(f) => f.to_string(),
+            Self::Type(t) => t.to_string(),
         }
     }
 }
@@ -344,6 +384,8 @@ impl TraitMemberInput {
     pub fn validate(&self, output: &TraitMember) -> Result<(), TestCaseError> {
         match (self, output) {
             (Self::Function(i), TraitMember::Function(o)) => i.validate(o),
+            (Self::Type(i), TraitMember::Type(o)) => i.validate(o),
+            _ => Err(TestCaseError::fail("trait member mismatch")),
         }
     }
 }
@@ -965,12 +1007,211 @@ impl EnumInput {
 }
 
 #[derive(Debug, Clone)]
+pub struct ImplementsSignatureInput {
+    pub generic_parameters: Option<GenericParametersInput>,
+    pub qualified_identifier: QualifiedIdentifierInput,
+}
+
+impl ToString for ImplementsSignatureInput {
+    fn to_string(&self) -> String {
+        let mut string = "implements".to_string();
+
+        if let Some(generic_parameters) = &self.generic_parameters {
+            string.push_str(&generic_parameters.to_string());
+        }
+
+        string.push(' ');
+        string.push_str(&self.qualified_identifier.to_string());
+
+        string
+    }
+}
+
+impl ImplementsSignatureInput {
+    /// Validates the input against the [`super::ImplementsSignature`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &ImplementsSignature) -> Result<(), TestCaseError> {
+        match (&self.generic_parameters, &output.generic_parameters) {
+            (Some(generic_parameters), Some(output_generic_parameters)) => {
+                generic_parameters.validate(output_generic_parameters)?;
+            }
+            (None, None) => (),
+            _ => {
+                return Err(TestCaseError::fail(
+                    "Expected generic parameters to be either both present or both absent.",
+                ))
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplementsFunctionInput {
+    pub function_signature: FunctionSignatureInput,
+    pub function_body: FunctionBodyInput,
+}
+
+impl ToString for ImplementsFunctionInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {}",
+            self.function_signature.to_string(),
+            self.function_body.to_string()
+        )
+    }
+}
+
+impl ImplementsFunctionInput {
+    /// Validates the input against the [`super::ImplementsFunction`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &ImplementsFunction) -> Result<(), TestCaseError> {
+        self.function_signature
+            .validate(&output.function_signature)?;
+        self.function_body.validate(&output.function_body)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplementsTypeInput {
+    pub type_signature: TypeSignatureInput,
+    pub type_definition: TypeDefinitionInput,
+}
+
+impl ToString for ImplementsTypeInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {};",
+            self.type_signature.to_string(),
+            self.type_definition.to_string()
+        )
+    }
+}
+
+impl ImplementsTypeInput {
+    /// Validates the input against the [`super::ImplementsType`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &ImplementsType) -> Result<(), TestCaseError> {
+        self.type_signature.validate(&output.type_signature)?;
+        self.type_definition.validate(&output.type_definition)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum ImplementsMemberInput {
+    Function(ImplementsFunctionInput),
+    Type(ImplementsTypeInput),
+}
+
+impl ToString for ImplementsMemberInput {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Function(i) => i.to_string(),
+            Self::Type(i) => i.to_string(),
+        }
+    }
+}
+
+impl ImplementsMemberInput {
+    /// Validates the input against the [`super::ImplementsMember`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &ImplementsMember) -> Result<(), TestCaseError> {
+        match (self, output) {
+            (Self::Function(i), ImplementsMember::Function(o)) => i.validate(o)?,
+            (Self::Type(i), ImplementsMember::Type(o)) => i.validate(o)?,
+            _ => {
+                return Err(TestCaseError::fail(format!(
+                    "Expected input and output to be of the same variant, but got: {self:?} and \
+                     {output:?}"
+                )))
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplementsBodyInput {
+    pub implements_members: Vec<ImplementsMemberInput>,
+}
+
+impl ToString for ImplementsBodyInput {
+    fn to_string(&self) -> String {
+        let mut string = "{\n".to_string();
+
+        for member in &self.implements_members {
+            string.push_str(&format!("    {}\n", member.to_string()));
+        }
+
+        string.push('}');
+
+        string
+    }
+}
+
+impl ImplementsBodyInput {
+    /// Validates the input against the [`super::ImplementsBody`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &ImplementsBody) -> Result<(), TestCaseError> {
+        prop_assert_eq!(
+            self.implements_members.len(),
+            output.implements_members.len()
+        );
+
+        for (input, output) in self
+            .implements_members
+            .iter()
+            .zip(output.implements_members.iter())
+        {
+            input.validate(output)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplementsInput {
+    pub implements_signature: ImplementsSignatureInput,
+    pub implements_body: ImplementsBodyInput,
+}
+
+impl ToString for ImplementsInput {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {}",
+            self.implements_signature.to_string(),
+            self.implements_body.to_string()
+        )
+    }
+}
+
+impl ImplementsInput {
+    /// Validates the input against the [`super::Implements`] output.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn validate(&self, output: &Implements) -> Result<(), TestCaseError> {
+        self.implements_signature
+            .validate(&output.implements_signature)?;
+        self.implements_body.validate(&output.implements_body)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ItemInput {
     Trait(TraitInput),
     Function(FunctionInput),
     Struct(StructInput),
     Type(TypeInput),
     Enum(EnumInput),
+    Implements(ImplementsInput),
 }
 
 impl ToString for ItemInput {
@@ -981,6 +1222,7 @@ impl ToString for ItemInput {
             Self::Struct(i) => i.to_string(),
             Self::Type(i) => i.to_string(),
             Self::Enum(i) => i.to_string(),
+            Self::Implements(i) => i.to_string(),
         }
     }
 }
@@ -995,6 +1237,7 @@ impl ItemInput {
             (Self::Struct(i), Item::Struct(o)) => i.validate(o),
             (Self::Type(i), Item::Type(o)) => i.validate(o),
             (Self::Enum(i), Item::Enum(o)) => i.validate(o),
+            (Self::Implements(i), Item::Implements(o)) => i.validate(o),
             _ => Err(TestCaseError::fail("Item types do not match")),
         }
     }
@@ -1089,8 +1332,49 @@ fn trait_member() -> impl Strategy<Value = TraitMemberInput> {
     prop_oneof![
         function_signature().prop_map(|function_signature| TraitMemberInput::Function(
             TraitFunctionInput { function_signature }
-        ))
+        )),
+        (type_signature(), proptest::option::of(where_clause())).prop_map(
+            |(type_signature, where_clause)| TraitMemberInput::Type(TraitTypeInput {
+                type_signature,
+                where_clause
+            })
+        )
     ]
+}
+
+fn implements_member() -> impl Strategy<Value = ImplementsMemberInput> {
+    prop_oneof![
+        (function_signature(), function_body()).prop_map(|(function_signature, function_body)| {
+            ImplementsMemberInput::Function(ImplementsFunctionInput {
+                function_signature,
+                function_body,
+            })
+        },),
+        (type_signature(), type_definition()).prop_map(|(type_signature, type_definition)| {
+            ImplementsMemberInput::Type(ImplementsTypeInput {
+                type_signature,
+                type_definition,
+            })
+        })
+    ]
+}
+
+fn implements_signature() -> impl Strategy<Value = ImplementsSignatureInput> {
+    (
+        proptest::option::of(generic_parameters()),
+        qualified_identifier(false),
+    )
+        .prop_map(
+            |(generic_parameters, qualified_identifier)| ImplementsSignatureInput {
+                generic_parameters,
+                qualified_identifier,
+            },
+        )
+}
+
+fn implements_body() -> impl Strategy<Value = ImplementsBodyInput> {
+    proptest::collection::vec(implements_member(), 0..=4)
+        .prop_map(|implements_members| ImplementsBodyInput { implements_members })
 }
 
 fn trait_body() -> impl Strategy<Value = TraitBodyInput> {
@@ -1236,6 +1520,12 @@ pub fn item() -> impl Strategy<Value = ItemInput> {
                     type_definition,
                 })
             }),
+        (implements_signature(), implements_body()).prop_map(
+            |(implements_signature, implements_body)| ItemInput::Implements(ImplementsInput {
+                implements_signature,
+                implements_body
+            })
+        ),
         (
             crate::syntax_tree::strategy::access_modifier(),
             enum_signature(),

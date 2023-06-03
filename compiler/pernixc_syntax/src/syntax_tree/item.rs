@@ -274,23 +274,51 @@ impl SourceElement for TraitFunction {
     }
 }
 
+/// Represents a syntax tree node for a trait type member.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// TraitType:
+///     TypeSignature WhereClause? ';'
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+pub struct TraitType {
+    pub type_signature: TypeSignature,
+    pub where_clause: Option<WhereClause>,
+    pub semicolon: Punctuation,
+}
+
+impl SourceElement for TraitType {
+    fn span(&self) -> Result<Span, SpanError> {
+        let start = &self.type_signature.span()?;
+        match &self.where_clause {
+            Some(where_clause) => start.join(&where_clause.span()?),
+            None => start.join(&self.semicolon.span),
+        }
+    }
+}
+
 /// Represents a syntax tree node for a trait member.
 ///
 /// Syntax Synopsis:
 /// ``` text
 /// TraitMember:
 ///     TraitFunction
+///     | TraitType
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 pub enum TraitMember {
     Function(TraitFunction),
+    Type(TraitType),
 }
 
 impl SourceElement for TraitMember {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
             Self::Function(f) => f.span(),
+            Self::Type(f) => f.span(),
         }
     }
 }
@@ -674,16 +702,39 @@ impl SourceElement for ImplementsFunction {
     }
 }
 
+/// Represents a syntax tree node for an implements type member.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// ImplementsType:
+///     TypeSignature TypeDefinition ';'
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+pub struct ImplementsType {
+    pub type_signature: TypeSignature,
+    pub type_definition: TypeDefinition,
+    pub semicolon: Punctuation,
+}
+
+impl SourceElement for ImplementsType {
+    fn span(&self) -> Result<Span, SpanError> {
+        self.type_signature.span()?.join(&self.semicolon.span()?)
+    }
+}
+
 /// Represents a syntax tree node for a member in an implements block.
 ///
 /// Syntax Synopsis:
 /// ``` text
 /// ImplementsMember:
-///     Function
+///     ImplementsFunction
+///     | ImplementsType
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 pub enum ImplementsMember {
+    Type(ImplementsType),
     Function(ImplementsFunction),
 }
 
@@ -691,6 +742,7 @@ impl SourceElement for ImplementsMember {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
             Self::Function(function) => function.span(),
+            Self::Type(ty) => ty.span(),
         }
     }
 }
@@ -1073,6 +1125,43 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_implements_member(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<ImplementsMember> {
+        match self.stop_at_significant() {
+            Some(Token::Identifier(..)) => {
+                let function_signature = self.parse_function_signature(handler)?;
+                let function_body = self.parse_function_body(handler)?;
+
+                Ok(ImplementsMember::Function(ImplementsFunction {
+                    function_signature,
+                    function_body,
+                }))
+            }
+
+            Some(Token::Keyword(type_keyword)) if type_keyword.keyword == KeywordKind::Type => {
+                let type_signature = self.parse_type_signature(handler)?;
+                let type_definition = self.parse_type_definition(handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                Ok(ImplementsMember::Type(ImplementsType {
+                    type_signature,
+                    type_definition,
+                    semicolon,
+                }))
+            }
+
+            found => {
+                self.forward();
+                handler.recieve(Error::ImplementsMemberExpected(
+                    crate::error::ImplementsMemberExpected { found },
+                ));
+                Err(ParserError)
+            }
+        }
+    }
+
     fn parse_implements_body(
         &mut self,
         handler: &impl Handler<Error>,
@@ -1082,28 +1171,14 @@ impl<'a> Parser<'a> {
         let mut implements_members = Vec::new();
 
         while !self.is_exhausted() {
-            let result = (|| -> Result<(FunctionSignature, FunctionBody), ParserError> {
-                let function_signature = self.parse_function_signature(handler)?;
-                let function_body = self.parse_function_body(handler)?;
-
-                Ok((function_signature, function_body))
-            })();
-
-            if let Ok((function_signature, function_body)) = result {
-                implements_members.push(ImplementsMember::Function(ImplementsFunction {
-                    function_signature,
-                    function_body,
-                }));
+            if let Ok(member) = self.parse_implements_member(handler) {
+                implements_members.push(member);
                 continue;
             }
 
             // try to stop at next function signature
             self.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == '{'));
-
-            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '{')
-            {
-                self.forward();
-            }
+            self.forward();
         }
 
         let right_brace = self
@@ -1150,13 +1225,9 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_trait_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<TraitBody> {
-        let left_brace = self.step_into(Delimiter::Brace, handler)?;
-
-        let mut trait_members = Vec::new();
-
-        while !self.is_exhausted() {
-            let trait_member: Result<TraitMember, ParserError> = (|| {
+    fn parse_trait_member(&mut self, handler: &impl Handler<Error>) -> ParserResult<TraitMember> {
+        match self.stop_at_significant() {
+            Some(Token::Identifier(..)) => {
                 let function_signature = self.parse_function_signature(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
@@ -1164,9 +1235,37 @@ impl<'a> Parser<'a> {
                     function_signature,
                     semicolon,
                 }))
-            })();
+            }
 
-            if let Ok(trait_member) = trait_member {
+            Some(Token::Keyword(type_keyword)) if type_keyword.keyword == KeywordKind::Type => {
+                let type_signature = self.parse_type_signature(handler)?;
+                let where_clause = self.try_parse_where_clause(handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                Ok(TraitMember::Type(TraitType {
+                    type_signature,
+                    where_clause,
+                    semicolon,
+                }))
+            }
+
+            found => {
+                self.forward();
+                handler.recieve(Error::TraitMemberExpected(
+                    crate::error::TraitMemberExpected { found },
+                ));
+                Err(ParserError)
+            }
+        }
+    }
+
+    fn parse_trait_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<TraitBody> {
+        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+
+        let mut trait_members = Vec::new();
+
+        while !self.is_exhausted() {
+            if let Ok(trait_member) = self.parse_trait_member(handler) {
                 trait_members.push(trait_member);
                 continue;
             }
@@ -1174,11 +1273,8 @@ impl<'a> Parser<'a> {
             // try to stop at the next semicolon
             self.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
 
-            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == ';')
-            {
-                // eat semicolon
-                self.forward();
-            }
+            // eat semicolon
+            self.forward();
         }
 
         let right_brace = self.step_out(handler)?;

@@ -74,9 +74,7 @@ impl<'a> Frame<'a> {
 
     /// Checks if the current [`Frame`] has reached the end of the [`TokenStream`].
     #[must_use]
-    pub fn is_end(&self) -> bool {
-        self.current_index >= self.token_provider.token_stream().len()
-    }
+    pub fn is_end(&self) -> bool { self.current_index >= self.token_provider.token_stream().len() }
 
     fn to_token_output(token: &'a TokenTree) -> Token {
         match token {
@@ -504,7 +502,6 @@ impl<'a> Parser<'a> {
         expected: KeywordKind,
         handler: &impl Handler<SyntacticError>,
     ) -> Result<Keyword> {
-        let mut another = 32;
         match self.next_significant_token() {
             Some(Token::Keyword(keyword_token)) if keyword_token.keyword == expected => {
                 Ok(keyword_token)
