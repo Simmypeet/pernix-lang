@@ -14,7 +14,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use derive_more::From;
+use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
 use pernixc_system::create_symbol;
 
@@ -47,6 +47,9 @@ pub enum GenericParameterID {
 /// Is a list of generic parameters defined in a generic symbol.
 #[derive(Debug, Clone)]
 pub struct GenericParameters {
+    /// The list of declared generic parameter IDs (in order of declaration).
+    pub generic_parameter_declaration_ids: Vec<GenericParameterID>,
+
     /// The type parameters of the generic symbol.
     pub type_parameter_ids_by_name: HashMap<String, TypeParameterID>,
 
@@ -61,18 +64,18 @@ pub struct GenericParameters {
 }
 
 create_symbol! {
-    /// Represents a struct symbol with generic parameters.
+    /// Represents a struct symbol.
     #[derive(Debug, Clone)]
-    pub struct GenericStruct {
-        /// The generic parameters of the struct.
+    pub struct Struct {
+        /// Contains the list of accessible generic parameters.
         pub generic_parameters: Arc<GenericParameters>,
     }
 }
 
-/// Is a trait for the symbols having generic parameters.
-pub trait GenericSymbol {
-    /// Gets the generic parameters of the symbol.
-    fn generic_parameters(&self) -> &GenericParameters;
+create_symbol! {
+    /// Represents a struct symbol with generic parameters.
+    #[derive(Debug, Clone, Deref, DerefMut)]
+    pub struct GenericStruct(pub Struct);
 }
 
 /// Is an enumeration of all possible symbol IDs that have generic parameters.

@@ -183,11 +183,11 @@ macro_rules! create_symbol {
     {
         $(#[$outer:meta])*
         $vis:vis $ty:ident $name:ident $(< $($lt:lifetime),* $($gt:ident $(: $tb:tt)?),* >)?
-        { $($t:tt)* }
+        $($t:tt)*
     } => {
         $crate::arena::__private::paste! {
             $(#[$outer])*
-            $vis $ty [< $name >] $(< $($lt),* $($gt $( : $tb)?),* >)? { $($t)* }
+            $vis $ty [< $name >] $(< $($lt),* $($gt $( : $tb)?),* >)? $($t)*
 
             $crate::arena::create_id_type!($name);
 

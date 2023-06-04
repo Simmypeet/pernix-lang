@@ -187,9 +187,7 @@ impl SourceFile {
 
     /// Gets the number of lines in the source file.
     #[must_use]
-    pub fn line_number(&self) -> usize {
-        self.lines.len()
-    }
+    pub fn line_number(&self) -> usize { self.lines.len() }
 
     /// Gets the [`Location`] of the given byte index.
     #[must_use]
@@ -312,23 +310,17 @@ impl Span {
 
     /// Gets the string slice of the source code that the span represents.
     #[must_use]
-    pub fn str(&self) -> &str {
-        &self.source_file.source_code()[self.start..self.end]
-    }
+    pub fn str(&self) -> &str { &self.source_file.source_code()[self.start..self.end] }
 
     /// Gets the starting [`Location`] of the span.
     #[must_use]
-    pub fn start_location(&self) -> Location {
-        self.source_file.get_location(self.start).unwrap()
-    }
+    pub fn start_location(&self) -> Location { self.source_file.get_location(self.start).unwrap() }
 
     /// Gets the ending [`Location`] of the span.
     ///
     /// Returns [`None`] if the end of the span is the end of the source file.
     #[must_use]
-    pub fn end_location(&self) -> Option<Location> {
-        self.source_file.get_location(self.end)
-    }
+    pub fn end_location(&self) -> Option<Location> { self.source_file.get_location(self.end) }
 
     /// Joins the starting position of this span with the end position of the given span.
     ///
@@ -358,9 +350,7 @@ pub trait SourceElement {
 }
 
 impl<T: SourceElement> SourceElement for Box<T> {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.as_ref().span()
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.as_ref().span() }
 }
 
 /// Is an iterator iterating over the characters in a source file that can be peeked at.
@@ -374,17 +364,13 @@ pub struct Iterator<'a> {
 
 impl<'a> Iterator<'a> {
     /// Peeks at the next character in the source file.
-    pub fn peek(&mut self) -> Option<(ByteIndex, char)> {
-        self.iterator.peek().copied()
-    }
+    pub fn peek(&mut self) -> Option<(ByteIndex, char)> { self.iterator.peek().copied() }
 }
 
 impl<'a> std::iter::Iterator for Iterator<'a> {
     type Item = (ByteIndex, char);
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iterator.next()
-    }
+    fn next(&mut self) -> Option<Self::Item> { self.iterator.next() }
 }
 
 #[cfg(test)]

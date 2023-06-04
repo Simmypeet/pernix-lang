@@ -64,9 +64,7 @@ pub struct Module {
 }
 
 impl SourceElement for Using {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.using_keyword.span.join(&self.semicolon.span)
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.using_keyword.span.join(&self.semicolon.span) }
 }
 
 /// Contains all the syntax trees defined within a single file.
