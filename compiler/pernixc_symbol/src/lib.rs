@@ -18,6 +18,8 @@ use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
 use pernixc_system::create_symbol;
 
+pub mod ty;
+
 create_symbol! {
     /// Reprsents a type parameter symbol.
     #[derive(Debug, Clone)]
