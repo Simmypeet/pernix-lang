@@ -6,9 +6,9 @@ use super::{
     FunctionSignature, GenericParameter, GenericParameters, Implements, ImplementsBody,
     ImplementsFunction, ImplementsMember, ImplementsSignature, ImplementsType, Item, LifetimeBound,
     LifetimeParameter, Parameter, Parameters, ReturnType, Struct, StructBody, StructField,
-    StructMember, StructSignature, StructType, Trait, TraitBody, TraitBound, TraitFunction,
-    TraitMember, TraitSignature, TraitType, Type, TypeBound, TypeBoundConstraint, TypeDefinition,
-    TypeParameter, TypeSignature, WhereClause,
+    StructMember, StructSignature, Trait, TraitBody, TraitBound, TraitFunction, TraitMember,
+    TraitSignature, TraitType, Type, TypeBound, TypeBoundConstraint, TypeDefinition, TypeParameter,
+    TypeSignature, WhereClause,
 };
 use crate::syntax_tree::{
     statement::strategy::StatementInput,
@@ -722,7 +722,7 @@ pub struct StructFieldInput {
 impl ToString for StructFieldInput {
     fn to_string(&self) -> String {
         format!(
-            "{} let {}: {};",
+            "{} {}: {};",
             self.access_modifier.to_string(),
             self.identifier,
             self.type_specifier.to_string()
@@ -742,47 +742,15 @@ impl StructFieldInput {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct StructTypeInput {
-    pub access_modifier: AccessModifierInput,
-    pub type_signature: TypeSignatureInput,
-    pub type_definition: TypeDefinitionInput,
-}
-
-impl ToString for StructTypeInput {
-    fn to_string(&self) -> String {
-        format!(
-            "{} {} {};",
-            self.access_modifier.to_string(),
-            self.type_signature.to_string(),
-            self.type_definition.to_string()
-        )
-    }
-}
-
-impl StructTypeInput {
-    /// Validates the input against the [`super::StructType`] output.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn validate(&self, output: &StructType) -> Result<(), TestCaseError> {
-        self.access_modifier.validate(&output.access_modifier)?;
-        self.type_signature.validate(&output.type_signature)?;
-        self.type_definition.validate(&output.type_definition)?;
-
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone, EnumAsInner)]
 pub enum StructMemberInput {
     Field(StructFieldInput),
-    Type(StructTypeInput),
 }
 
 impl ToString for StructMemberInput {
     fn to_string(&self) -> String {
         match self {
             Self::Field(field) => field.to_string(),
-            Self::Type(ty) => ty.to_string(),
         }
     }
 }
@@ -793,8 +761,6 @@ impl StructMemberInput {
     pub fn validate(&self, output: &StructMember) -> Result<(), TestCaseError> {
         match (self, output) {
             (Self::Field(input), StructMember::Field(output)) => input.validate(output),
-            (Self::Type(input), StructMember::Type(output)) => input.validate(output),
-            _ => Err(TestCaseError::fail("struct member mismatch")),
         }
     }
 }
@@ -1526,21 +1492,6 @@ fn type_signature() -> impl Strategy<Value = TypeSignatureInput> {
         })
 }
 
-fn struct_type() -> impl Strategy<Value = StructTypeInput> {
-    (
-        crate::syntax_tree::strategy::access_modifier(),
-        type_signature(),
-        type_definition(),
-    )
-        .prop_map(
-            |(access_modifier, type_signature, type_definition)| StructTypeInput {
-                access_modifier,
-                type_signature,
-                type_definition,
-            },
-        )
-}
-
 fn struct_field() -> impl Strategy<Value = StructFieldInput> {
     (
         crate::syntax_tree::strategy::access_modifier(),
@@ -1557,10 +1508,7 @@ fn struct_field() -> impl Strategy<Value = StructFieldInput> {
 }
 
 fn struct_member() -> impl Strategy<Value = StructMemberInput> {
-    prop_oneof![
-        struct_type().prop_map(StructMemberInput::Type),
-        struct_field().prop_map(StructMemberInput::Field),
-    ]
+    struct_field().prop_map(StructMemberInput::Field)
 }
 
 fn struct_signature() -> impl Strategy<Value = StructSignatureInput> {

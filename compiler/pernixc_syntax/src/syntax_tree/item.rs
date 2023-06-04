@@ -14,7 +14,6 @@ use super::{
 use crate::{
     error::{
         AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty, ItemExpected,
-        StructMemberExpected,
     },
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
@@ -669,13 +668,12 @@ impl SourceElement for Struct {
 /// Syntax Synopsis:
 /// ``` text
 /// StructField:
-///     AccessModifier 'let' Identifier TypeAnnotation ';'
+///     AccessModifier Identifier TypeAnnotation ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
 pub struct StructField {
     pub access_modifier: AccessModifier,
-    pub let_keyword: Keyword,
     pub identifier: Identifier,
     pub type_annotation: TypeAnnotation,
     pub semicolon: Punctuation,
@@ -687,48 +685,23 @@ impl SourceElement for StructField {
     }
 }
 
-/// Represents a syntax tree node for a struct `type` aliias member.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// StructType:
-///     AccessModifier TypeSignature TypeDefinition ';'
-///     ;
-/// ```
-#[derive(Debug, Clone)]
-pub struct StructType {
-    pub access_modifier: AccessModifier,
-    pub type_signature: TypeSignature,
-    pub type_definition: TypeDefinition,
-    pub semicolon: Punctuation,
-}
-
-impl SourceElement for StructType {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.access_modifier.span()?.join(&self.semicolon.span()?)
-    }
-}
-
 /// Represents a syntax tree node for a struct member.
 ///
 /// Syntax Synopsis:
 /// ``` text
 /// StructMember:
 ///     StructField
-///     | StructType
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 pub enum StructMember {
     Field(StructField),
-    Type(StructType),
 }
 
 impl SourceElement for StructMember {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
             Self::Field(field) => field.span(),
-            Self::Type(ty) => ty.span(),
         }
     }
 }
@@ -1453,48 +1426,16 @@ impl<'a> Parser<'a> {
         while !self.is_exhausted() {
             let result: Result<StructMember, ParserError> = (|| {
                 let access_modifier = self.parse_access_modifier(handler)?;
+                let identifier = self.parse_identifier(handler)?;
+                let type_annotation = self.parse_type_annotation(handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                match self.stop_at_significant() {
-                    Some(Token::Keyword(let_keyword))
-                        if let_keyword.keyword == KeywordKind::Let =>
-                    {
-                        // eat let keyword
-                        self.forward();
-
-                        let identifier = self.parse_identifier(handler)?;
-                        let type_annotation = self.parse_type_annotation(handler)?;
-                        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                        Ok(StructMember::Field(StructField {
-                            access_modifier,
-                            let_keyword,
-                            identifier,
-                            type_annotation,
-                            semicolon,
-                        }))
-                    }
-                    Some(Token::Keyword(type_keyword))
-                        if type_keyword.keyword == KeywordKind::Type =>
-                    {
-                        let type_signature = self.parse_type_signature(handler)?;
-                        let type_definition = self.parse_type_definition(handler)?;
-                        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                        Ok(StructMember::Type(StructType {
-                            access_modifier,
-                            type_signature,
-                            type_definition,
-                            semicolon,
-                        }))
-                    }
-                    found => {
-                        self.forward();
-                        handler
-                            .recieve(Error::StructMemberExpected(StructMemberExpected { found }));
-
-                        Err(ParserError)
-                    }
-                }
+                Ok(StructMember::Field(StructField {
+                    access_modifier,
+                    identifier,
+                    type_annotation,
+                    semicolon,
+                }))
             })();
 
             // pushes a result

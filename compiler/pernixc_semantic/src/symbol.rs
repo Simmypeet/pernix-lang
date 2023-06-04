@@ -123,6 +123,11 @@ impl Scoped for ModuleSymbol {
         self.child_ids_by_name.get(name).copied()
     }
 }
+create_symbol! {
+    pub struct LifetimeParameter {
+    
+    }
+}
 
 create_symbol! {
     /// Contains the data of the field symbol.

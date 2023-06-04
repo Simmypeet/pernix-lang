@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{GenericStructID, LifetimeParameterID, StructID, TypeParameterID};
+use crate::{LifetimeParameterID, StructID, TypeParameterID};
 
 /// Enumeration of all possible primitive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -42,19 +42,18 @@ pub struct ReferenceType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Instantiation {
-    pub generic_struct_id: GenericStructID,
-    pub type_arguments: HashMap<TypeParameterID, Type>,
-    pub lifetime_arguments: HashMap<LifetimeParameterID, LifetimeArgument>,
+pub struct Struct {
+    pub struct_id: StructID,
+    pub type_arguments_by_parameter: HashMap<TypeParameterID, Type>,
+    pub lifetime_arguments_by_parameter: HashMap<LifetimeParameterID, LifetimeArgument>,
 }
 
 /// Represents a type symbol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum Type {
-    Struct(StructID),
+    Struct(Struct),
     PrimitiveType(PrimitiveType),
     ReferenceType(Arc<ReferenceType>),
     TypeParameter(TypeParameterID),
-    Instantiation(Arc<Instantiation>),
 }
