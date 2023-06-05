@@ -125,7 +125,7 @@ impl Scoped for ModuleSymbol {
 }
 create_symbol! {
     pub struct LifetimeParameter {
-    
+
     }
 }
 

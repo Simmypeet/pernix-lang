@@ -1,4 +1,4 @@
-//! Contains the code related to the symbol resolution pass of the compiler.
+//! Contains definitions related to the symbol resolution pass of the compiler.
 
 #![deny(
     missing_docs,
@@ -12,7 +12,7 @@
 )]
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
-use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
+use std::{collections::HashMap, convert::Into, fmt::Debug, hash::Hash, sync::Arc};
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
@@ -86,42 +86,191 @@ create_symbol! {
     }
 }
 
+impl Symbol for AssociatedTypeSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_trait_id.into()) }
+}
+
 impl Global for AssociatedTypeSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
     fn name(&self) -> &str { &self.name }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_trait_id.into()) }
 }
 
-create_symbol! {
-    #[derive(Debug, Clone)]
-    pub struct Implements {
-        pub generics: Generics,
-        pub trait_id: TraitID,
-        pub type_arguments_by_parameter: HashMap<TypeParameterID, Type>,
-        pub lifetime_arguments_by_parameter: HashMap<LifetimeParameterID, LifetimeArgument>,
-   }
+/// Represents generic parameters substitution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Substitution {
+    /// Maps type parameters to their type arguments.
+    pub type_arguments_by_parameter: HashMap<TypeParameterID, Type>,
+
+    /// Maps lifetime parameters to their lifetime arguments.
+    pub lifetime_arguments_by_parameter: HashMap<LifetimeParameterID, LifetimeArgument>,
 }
 
-create_symbol! {
-    #[derive(Debug, Clone)]
-    pub struct Trait {
-        pub name: String,
-        pub parent_module_id: ModuleID,
-        pub generics: Generics,
-        pub implements: Vec<Implements>,
-        pub associated_type_ids_by_name: HashMap<String, AssociatedTypeID>,
-        pub trait_function_ids_by_name: HashMap<String, TraitFunctionID>,
+impl Substitution {
+    /// Checks if the type parameter substitution is empty.
+    #[must_use]
+    pub fn type_parameter_is_empty(&self) -> bool { self.type_arguments_by_parameter.is_empty() }
+
+    /// Checks if the lifetime parameter substitution is empty.
+    #[must_use]
+    pub fn lifetime_parameter_is_empty(&self) -> bool {
+        self.lifetime_arguments_by_parameter.is_empty()
+    }
+
+    /// Checks if both type and lifetime parameter substitutions are empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.type_parameter_is_empty() && self.lifetime_parameter_is_empty()
     }
 }
 
+/// Represents a trait bound constraint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraitBound {
+    /// The ID of the trait that is bound.
+    pub trait_id: TraitID,
+
+    /// Contains the generic parameters substitution.
+    pub substitution: Substitution,
+}
+
+create_symbol! {
+    /// Represents an implements block.
+    #[derive(Debug, Clone)]
+    pub struct Implements {
+        /// The generics of the implements block.
+        pub generics: Generics,
+
+        /// The trait that is implemented.
+        pub trait_id: TraitID,
+
+        /// Contains the generic parameters substitution of the trait.
+        pub substitution: Substitution,
+
+        /// Maps associated type to their type implementation.
+        pub implements_types_by_associated_type: HashMap<AssociatedTypeID, ImplementsTypeID>,
+
+        /// Maps function to their function implementation.
+        pub implements_functions_by_trait_function: HashMap<TraitFunctionID, ImplementsFunctionID>,
+   }
+}
+
+impl Symbol for ImplementsSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { None }
+}
+
+create_symbol! {
+    /// Represents an implements-member type.
+    #[derive(Debug, Clone)]
+    pub struct ImplementsType {
+        /// The generic parameters of the type.
+        pub generics: Generics,
+
+        /// The ID of the associated type that is implemented.
+        pub associated_type_id: AssociatedTypeID,
+
+        /// The type that implements the associated type.
+        pub alias: Type,
+
+        /// The ID of the implements that contains this symbol.
+        pub parent_implements_id: ImplementsID,
+    }
+}
+
+impl Symbol for ImplementsTypeSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_implements_id.into()) }
+}
+
+impl Genericable for ImplementsTypeSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
+}
+
+create_symbol! {
+    /// Represents an implements-member function.
+    #[derive(Debug, Clone, Deref, DerefMut)]
+    pub struct ImplementsFunction {
+        /// Contains the data of function signature.
+        #[deref]
+        #[deref_mut]
+        pub function_signature: FunctionSignature,
+
+        /// The ID of the implements that contains the function.
+        pub parent_implements_id: TraitID,
+
+        /// The ID of the trait function that is implemented.
+        pub trait_function_id: TraitFunctionID,
+    }
+}
+
+impl Symbol for ImplementsFunctionSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_implements_id.into()) }
+}
+
+impl Genericable for ImplementsFunctionSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
+}
+
+/// Is an enumeration of symbol IDs that can be used as a trait member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum TraitMemberID {
+    TraitFunction(TraitFunctionID),
+    AssociatedType(AssociatedTypeID),
+}
+
+impl From<TraitMemberID> for GlobalID {
+    fn from(id: TraitMemberID) -> Self {
+        match id {
+            TraitMemberID::TraitFunction(id) => id.into(),
+            TraitMemberID::AssociatedType(id) => id.into(),
+        }
+    }
+}
+
+create_symbol! {
+    /// Represents a trait symbol.
+    #[derive(Debug, Clone)]
+    pub struct Trait {
+        /// The name of the trait.
+        pub name: String,
+
+        /// The ID of the module that contains this trait.
+        pub parent_module_id: ModuleID,
+
+        /// The generics of the trait.
+        pub generics: Generics,
+
+        /// The list of implements of the trait.
+        pub implements: Vec<ImplementsID>,
+
+        /// Maps the name of the trait member to its ID.
+        pub trait_member_ids_by_name: HashMap<String, TraitMemberID>,
+    }
+}
+
+impl Symbol for TraitSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+}
+
 impl Global for TraitSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
     fn name(&self) -> &str { &self.name }
+}
 
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_module_id.into()) }
+impl Scoped for TraitSymbol {
+    fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
+        self.trait_member_ids_by_name
+            .get(name)
+            .copied()
+            .map(Into::into)
+    }
 }
 
 create_symbol! {
@@ -138,15 +287,21 @@ create_symbol! {
     }
 }
 
-impl Global for TraitFunctionSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
+impl Symbol for TraitFunctionSymbol {
+    fn id(&self) -> ID { self.id().into() }
 
-    fn name(&self) -> &str { &self.name }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_trait_id.into()) }
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_trait_id.into()) }
 }
 
-/// Is an enumeration of symbols that accept generic parameters.
+impl Global for TraitFunctionSymbol {
+    fn name(&self) -> &str { &self.name }
+}
+
+impl Genericable for TraitFunctionSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
+}
+
+/// Is an enumeration of symbol IDs that accept generic parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum GenericableID {
@@ -156,10 +311,55 @@ pub enum GenericableID {
     Trait(TraitID),
     AssociatedType(AssociatedTypeID),
     TraitFunction(TraitFunctionID),
+    TypeAlias(TypeAliasID),
+    ImplementsFunction(ImplementsFunctionID),
+    ImplementsType(ImplementsTypeID),
+}
+
+impl From<GenericableID> for ID {
+    fn from(id: GenericableID) -> Self {
+        match id {
+            GenericableID::Struct(id) => id.into(),
+            GenericableID::Function(id) => id.into(),
+            GenericableID::Implements(id) => id.into(),
+            GenericableID::Trait(id) => id.into(),
+            GenericableID::AssociatedType(id) => id.into(),
+            GenericableID::TraitFunction(id) => id.into(),
+            GenericableID::TypeAlias(id) => id.into(),
+            GenericableID::ImplementsFunction(id) => id.into(),
+            GenericableID::ImplementsType(id) => id.into(),
+        }
+    }
+}
+
+/// Represents a symbol with generics
+pub trait Genericable: Symbol {
+    /// Returns the generics of the symbol.
+    fn generics(&self) -> &Generics;
+}
+
+impl Genericable for StructSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
+}
+
+impl Genericable for FunctionSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
+}
+
+impl Genericable for ImplementsSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
+}
+
+impl Genericable for TraitSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
+}
+
+impl Genericable for AssociatedTypeSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
 }
 
 /// Is a trait for symbols that can be used as a generic parameter.
-pub trait GenericParameter {
+pub trait GenericParameter: Symbol {
     /// Returns the name of the generic parameter.
     fn name(&self) -> &str;
 
@@ -167,16 +367,16 @@ pub trait GenericParameter {
     fn parent_genericable_id(&self) -> GenericableID;
 }
 
-impl GenericParameter for LifetimeParameter {
+impl GenericParameter for LifetimeParameterSymbol {
     fn name(&self) -> &str { &self.name }
 
-    fn parent_genericable_id(&self) -> GenericableID { self.parent_id }
+    fn parent_genericable_id(&self) -> GenericableID { self.parent_genericable_id }
 }
 
-impl GenericParameter for TypeParameter {
+impl GenericParameter for TypeParameterSymbol {
     fn name(&self) -> &str { &self.name }
 
-    fn parent_genericable_id(&self) -> GenericableID { self.parent_id }
+    fn parent_genericable_id(&self) -> GenericableID { self.parent_genericable_id }
 }
 
 /// Is an enumeration of symbols ID that can be used as a generic parameter.
@@ -195,8 +395,14 @@ create_symbol! {
         pub name: String,
 
         /// The ID of the parent genericable.
-        pub parent_id: GenericableID,
+        pub parent_genericable_id: GenericableID,
     }
+}
+
+impl Symbol for LifetimeParameterSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_genericable_id.into()) }
 }
 
 create_symbol! {
@@ -207,8 +413,14 @@ create_symbol! {
         pub name: String,
 
         /// The ID of the parent genericable.
-        pub parent_id: GenericableID,
+        pub parent_genericable_id: GenericableID,
     }
+}
+
+impl Symbol for TypeParameterSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_genericable_id.into()) }
 }
 
 /// Is an enumeration of either a lifetime parameter or a static lifetime.
@@ -244,19 +456,20 @@ pub struct Generics {
     pub type_parameter_bounds: HashMap<TypeParameterID, Vec<LifetimeArgument>>,
 }
 
+/// Is a trait that all symbols must implement.
+pub trait Symbol {
+    /// The ID of the symbol.
+    fn id(&self) -> ID;
+
+    /// The ID of the symbol in the higher level.
+    fn parent_symbol(&self) -> Option<ID>;
+}
+
 /// A trait representing the symbol that can be referred in the global scope and has a clear
 /// hierarchy.
-pub trait Global {
-    /// Returns the ID of the symbol.
-    fn id(&self) -> GlobalID;
-
+pub trait Global: Symbol {
     /// Returns the name of the symbol.
     fn name(&self) -> &str;
-
-    /// Returns the ID of the symbol.
-    ///
-    /// If the symbol is at the root and has no preceding scope, then it returns `None`.
-    fn parent_scoped_id(&self) -> Option<ScopedID>;
 }
 
 /// A trait representing the symbol that introduces a new scope and can contain child symbols.
@@ -264,9 +477,6 @@ pub trait Scoped: Global {
     /// Returns the ID of the child symbol contained in this scope from the given name.
     fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID>;
 }
-
-/// A trait representing the symbol that can be used as a type.
-pub trait Typed: Global {}
 
 create_symbol! {
     /// Contains the data of the module symbol.
@@ -286,12 +496,14 @@ create_symbol! {
     }
 }
 
+impl Symbol for ModuleSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { self.parent_module_id.map(ID::Module) }
+}
+
 impl Global for ModuleSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
     fn name(&self) -> &str { &self.name }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { self.parent_module_id.map(ScopedID::Module) }
 }
 
 impl Scoped for ModuleSymbol {
@@ -324,6 +536,12 @@ create_symbol! {
     }
 }
 
+impl Symbol for FieldSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_struct_id.into()) }
+}
+
 create_symbol! {
     /// Contains the data of the struct symbol.
     #[derive(Debug, Clone)]
@@ -351,14 +569,14 @@ create_symbol! {
     }
 }
 
-impl Typed for StructSymbol {}
+impl Symbol for StructSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+}
 
 impl Global for StructSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
     fn name(&self) -> &str { &self.name }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
 }
 
 create_symbol! {
@@ -379,12 +597,14 @@ create_symbol! {
     }
 }
 
+impl Symbol for EnumVariantSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_enum_id.into()) }
+}
+
 impl Global for EnumVariantSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
     fn name(&self) -> &str { &self.name }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Enum(self.parent_enum_id)) }
 }
 
 create_symbol! {
@@ -411,7 +631,11 @@ create_symbol! {
     }
 }
 
-impl Typed for EnumSymbol {}
+impl Symbol for EnumSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+}
 
 impl Scoped for EnumSymbol {
     fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
@@ -423,11 +647,7 @@ impl Scoped for EnumSymbol {
 }
 
 impl Global for EnumSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
     fn name(&self) -> &str { &self.name }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
 }
 
 /// Represents an overload signature syntax tree.
@@ -444,6 +664,16 @@ pub struct FunctionSignatureSyntaxTree {
 #[allow(missing_docs)]
 pub enum ParentParameterID {
     Function(FunctionID),
+    TraitFunction(TraitFunctionID),
+}
+
+impl From<ParentParameterID> for ID {
+    fn from(id: ParentParameterID) -> Self {
+        match id {
+            ParentParameterID::Function(id) => id.into(),
+            ParentParameterID::TraitFunction(id) => id.into(),
+        }
+    }
 }
 
 create_symbol! {
@@ -468,6 +698,12 @@ create_symbol! {
         /// Whether the parameter is mutable.
         pub is_mutable: bool,
     }
+}
+
+impl Symbol for ParameterSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_parameter_id.into()) }
 }
 
 /// Contains the data of the function signature symbol.
@@ -499,12 +735,14 @@ pub struct FunctionBodySyntaxTree {
     pub statements: Vec<StatementSyntaxTree>,
 }
 
+impl Symbol for FunctionSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+}
+
 impl Global for FunctionSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
     fn name(&self) -> &str { &self.name }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_module_id.into()) }
 }
 
 create_symbol! {
@@ -551,17 +789,26 @@ create_symbol! {
         /// The type that the type alias represents.
         pub alias: Type,
 
+        /// The generics of the type alias.
+        pub generics: Generics,
+
         /// The syntax tree that was used to create the type alias.
         pub syntax_tree: Arc<TypeSyntaxTree>
     }
 }
 
+impl Genericable for TypeAliasSymbol {
+    fn generics(&self) -> &Generics { &self.generics }
+}
+
+impl Symbol for TypeAliasSymbol {
+    fn id(&self) -> ID { self.id().into() }
+
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+}
+
 impl Global for TypeAliasSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
     fn name(&self) -> &str { &self.name }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_module_id.into()) }
 }
 
 /// Is an enumeration of ID of the symbols that can be used as a type.
@@ -696,4 +943,6 @@ pub enum ID {
     LifetimeParameter(LifetimeParameterID),
     TraitFunction(TraitFunctionID),
     Implements(ImplementsID),
+    ImplementsFunction(ImplementsFunctionID),
+    ImplementsType(ImplementsTypeID),
 }
