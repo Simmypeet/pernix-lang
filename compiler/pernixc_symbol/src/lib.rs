@@ -14,19 +14,19 @@
 
 use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
 
-use derive_more::From;
+use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token::Identifier as IdentifierToken;
 use pernixc_syntax::syntax_tree::{
-    expression::BlockWithoutLabel,
     item::{
         EnumSignature as EnumSignatureSyntaxTree, Parameter as ParameterSyntaxTree,
         StructField as StructFieldSyntaxTree, StructSignature as StructSignatureSyntaxTree,
         Type as TypeSyntaxTree,
     },
+    statement::Statement as StatementSyntaxTree,
     AccessModifier, TypeAnnotation,
 };
-use pernixc_system::{arena::Data, create_symbol};
+use pernixc_system::create_symbol;
 use ty::Type;
 
 pub mod ty;
@@ -68,15 +68,46 @@ impl Accessibility {
 }
 
 create_symbol! {
-    pub struct Implements {
-
+    #[derive(Debug, Clone)]
+    pub struct AssociatedType {
+        pub lifetime_bounds: Vec<LifetimeArgument>,
+        pub generics: Generics,
     }
 }
 
 create_symbol! {
+    #[derive(Debug, Clone)]
+    pub struct Implements {
+        pub generics: Generics,
+        pub trait_id: TraitID,
+        pub type_arguments_by_parameter: HashMap<TypeParameterID, Type>,
+        pub lifetime_arguments_by_parameter: HashMap<LifetimeParameterID, LifetimeArgument>,
+   }
+}
+
+create_symbol! {
+    #[derive(Debug, Clone)]
     pub struct Trait {
         pub name: String,
         pub parent_module_id: ModuleID,
+        pub generics: Generics,
+        pub implements: Vec<Implements>,
+        pub associated_type_ids_by_name: HashMap<String, AssociatedTypeID>,
+        pub trait_function_ids_by_name: HashMap<String, TraitFunctionID>,
+    }
+}
+
+create_symbol! {
+    /// Represents a trait-member function symbol.
+    #[derive(Debug, Clone, Deref, DerefMut)]
+    pub struct TraitFunction {
+        /// Contains the data of function signature.
+        #[deref]
+        #[deref_mut]
+        pub function_signature: FunctionSignature,
+
+        /// The ID of the module that contains the function.
+        pub parent_trait_id: TraitID,
     }
 }
 
@@ -85,19 +116,17 @@ create_symbol! {
 #[allow(missing_docs)]
 pub enum GenericableID {
     Struct(StructID),
-    OverloadID(OverloadID),
+    Function(FunctionID),
     Implements(ImplementsID),
     Trait(TraitID),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GenericParameters<T: Data> {
-    pub generic_parameter_order: Vec<T::ID>,
-    pub generic_parameter_id_by_name: HashMap<String, T::ID>,
-}
-
+/// Is a trait for symbols that can be used as a generic parameter.
 pub trait GenericParameter {
+    /// Returns the name of the generic parameter.
     fn name(&self) -> &str;
+
+    /// Returns the ID of the parent genericable.
     fn parent_genericable_id(&self) -> GenericableID;
 }
 
@@ -122,19 +151,52 @@ pub enum GenericParameterID {
 }
 
 create_symbol! {
+    /// Represents a lifetime parameter symbol.
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct LifetimeParameter {
+        /// The name of the lifetime parameter.
         pub name: String,
+
+        /// The ID of the parent genericable.
         pub parent_id: GenericableID,
     }
 }
 
 create_symbol! {
+    /// Represents a type parameter symbol.
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TypeParameter {
+        /// The name of the type parameter.
         pub name: String,
+
+        /// The ID of the parent genericable.
         pub parent_id: GenericableID,
     }
+}
+
+/// Is an enumeration of either a lifetime parameter or a static lifetime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum LifetimeArgument {
+    Static,
+    LifetimeParamter(LifetimeParameterID),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner, From)]
+pub enum AssociatedTypeConstraint {
+    Lifetime(LifetimeArgument),
+    Type(Type),
+}
+
+#[derive(Debug, Clone)]
+pub struct Generics {
+    pub type_parameter_order: Vec<TypeParameterID>,
+    pub type_parameter_id_by_name: HashMap<String, TypeParameterID>,
+    pub lifetime_parameter_order: Vec<LifetimeParameterID>,
+    pub lifetime_parameter_id_by_name: HashMap<String, LifetimeParameterID>,
+    pub lifetime_bounds: HashMap<LifetimeParameterID, Vec<LifetimeArgument>>,
+    pub associated_type_bounds: HashMap<AssociatedType, Vec<AssociatedTypeConstraint>>,
+    pub type_parameter_bounds: HashMap<TypeParameterID, Vec<LifetimeArgument>>,
 }
 
 /// A trait representing the symbol that can be referred in the global scope and has a clear
@@ -241,11 +303,8 @@ create_symbol! {
         /// Maps the name of the field to its corresponding ID.
         pub field_ids_by_name: HashMap<String, FieldID>,
 
-        /// List of type parameters defined in the struct.
-        pub type_parameters: GenericParameters<TypeParameter>,
-
-        /// List of lifetime parameters defined in the struct.
-        pub lifetime_parameters: GenericParameters<LifetimeParameter>,
+        /// Maps the name of the field to its corresponding ID.
+        pub generics: Generics,
 
         /// List of the fields in the order in which they were declared.
         pub field_order: Vec<FieldID>,
@@ -340,11 +399,17 @@ impl Global for EnumSymbol {
 /// Represents an overload signature syntax tree.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
-pub struct OverloadSyntaxTree {
+pub struct FunctionSignatureSyntaxTree {
     pub access_modifier: AccessModifier,
     pub identifier: IdentifierToken,
     pub type_annotation: TypeAnnotation,
-    pub block_without_label: BlockWithoutLabel,
+}
+
+/// Is an enumeration of all symbols that are allowed to be a parent of a parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum ParentParameterID {
+    Function(FunctionID),
 }
 
 create_symbol! {
@@ -358,7 +423,7 @@ create_symbol! {
         pub syntax_tree: Arc<ParameterSyntaxTree>,
 
         /// The order in which the parameter was declared.
-        pub parent_overload_id: OverloadID,
+        pub parent_parameter_id: ParentParameterID,
 
         /// The order in which the parameter was declared.
         pub declaration_order: usize,
@@ -371,53 +436,61 @@ create_symbol! {
     }
 }
 
-create_symbol! {
-    /// Contains the data of overload symbol.
-    #[derive(Debug, Clone)]
-    pub struct Overload {
-        /// The ID of the overload set that contains the overload.
-        pub parent_overload_set_id: OverloadSetID,
+/// Contains the data of the function signature symbol.
+#[derive(Debug, Clone)]
+pub struct FunctionSignature {
+    /// The name of the overload set.
+    pub name: String,
 
-        /// The syntax tree that was used to create the overload.
-        pub syntax_tree: Arc<OverloadSyntaxTree>,
+    /// The syntax tree that was used to create the overload.
+    pub syntax_tree: Arc<FunctionSignatureSyntaxTree>,
 
-        /// The accessibility of the overload.
-        pub accessibility: Accessibility,
+    /// The accessibility of the overload.
+    pub accessibility: Accessibility,
 
-        /// Maps the name of the parameter to its corresponding ID.
-        pub parameter_ids_by_name: HashMap<String, ParameterID>,
+    /// Maps the name of the parameter to its corresponding ID.
+    pub parameter_ids_by_name: HashMap<String, ParameterID>,
 
-        /// List of the parameters in the order in which they were declared.
-        pub parameter_order: Vec<ParameterID>,
+    /// List of the parameters in the order in which they were declared.
+    pub parameter_order: Vec<ParameterID>,
 
-        /// The return type of the overload.
-        pub return_type: Type,
-    }
+    /// The return type of the overload.
+    pub return_type: Type,
+
+    /// The generics of the overload.
+    pub generics: Generics,
+}
+
+/// The syntax tree of the function  body.
+#[derive(Debug, Clone)]
+pub struct FunctionBodySyntaxTree {
+    /// List of statements in the function body.
+    pub statements: Vec<StatementSyntaxTree>,
 }
 
 create_symbol! {
-    /// Contains the data of overload set symbol.
-    #[derive(Debug, Clone)]
-    pub struct OverloadSet {
-        /// The ID of the module that contains the overload set.
+    /// Contains the data of function symbol.
+    #[derive(Debug, Clone, Deref, DerefMut)]
+    pub struct Function {
+        /// Contains the data of function signature.
+        #[deref]
+        #[deref_mut]
+        pub function_signature: FunctionSignature,
+
+        /// The ID of the module that contains the function.
         pub parent_module_id: ModuleID,
 
-        /// The name of the overload set.
-        pub name: String,
-
-        /// Maps the name of the overload to its corresponding ID.
-        pub overloads: Vec<OverloadID>,
+        /// The syntax tree of the function body.
+        pub definition_syntax_tree: Arc<FunctionBodySyntaxTree>,
     }
 }
 
-impl Global for OverloadSetSymbol {
-    fn id(&self) -> GlobalID { self.id().into() }
-
-    fn name(&self) -> &str { &self.name }
-
-    fn accessibility(&self) -> Accessibility { Accessibility::Public }
-
-    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
+/// Is an enumeration of symbols that can be used as a parent of an overload set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum ParentOverloadSetID {
+    Module(ModuleID),
+    Trait(TraitID),
 }
 
 create_symbol! {
@@ -483,6 +556,7 @@ impl From<TypedID> for ID {
 pub enum ScopedID {
     Module(ModuleID),
     Enum(EnumID),
+    Trait(TraitID),
 }
 
 impl From<ScopedID> for GlobalID {
@@ -490,6 +564,7 @@ impl From<ScopedID> for GlobalID {
         match value {
             ScopedID::Module(id) => Self::Module(id),
             ScopedID::Enum(id) => Self::Enum(id),
+            ScopedID::Trait(id) => Self::Trait(id),
         }
     }
 }
@@ -499,6 +574,7 @@ impl From<ScopedID> for ID {
         match value {
             ScopedID::Module(id) => Self::Module(id),
             ScopedID::Enum(id) => Self::Enum(id),
+            ScopedID::Trait(id) => Self::Trait(id),
         }
     }
 }
@@ -511,8 +587,9 @@ pub enum GlobalID {
     Struct(StructID),
     Enum(EnumID),
     EnumVariant(EnumVariantID),
-    OverloadSet(OverloadSetID),
+    Function(FunctionID),
     TypeAlias(TypeAliasID),
+    Trait(TraitID),
 }
 
 impl From<GlobalID> for ID {
@@ -521,9 +598,10 @@ impl From<GlobalID> for ID {
             GlobalID::Module(id) => Self::Module(id),
             GlobalID::Struct(id) => Self::Struct(id),
             GlobalID::Enum(id) => Self::Enum(id),
-            GlobalID::OverloadSet(id) => Self::OverloadSet(id),
+            GlobalID::Function(id) => Self::Function(id),
             GlobalID::TypeAlias(id) => Self::TypeAlias(id),
             GlobalID::EnumVariant(id) => Self::EnumVariant(id),
+            GlobalID::Trait(id) => Self::Trait(id),
         }
     }
 }
@@ -534,16 +612,22 @@ impl From<GlobalID> for ID {
 #[allow(missing_docs)]
 pub enum LocalID {
     Field(FieldID),
-    Overload(OverloadID),
     Parameter(ParameterID),
+    LifetimeParameter(LifetimeParameterID),
+    TypeParameter(TypeParameterID),
+    AssociatedType(AssociatedTypeID),
+    TraitFunction(TraitFunctionID),
 }
 
 impl From<LocalID> for ID {
     fn from(value: LocalID) -> Self {
         match value {
             LocalID::Field(id) => Self::Field(id),
-            LocalID::Overload(id) => Self::Overload(id),
             LocalID::Parameter(id) => Self::Parameter(id),
+            LocalID::LifetimeParameter(id) => Self::LifetimeParameter(id),
+            LocalID::TypeParameter(id) => Self::TypeParameter(id),
+            LocalID::AssociatedType(id) => Self::AssociatedType(id),
+            LocalID::TraitFunction(id) => Self::TraitFunction(id),
         }
     }
 }
@@ -556,9 +640,13 @@ pub enum ID {
     Struct(StructID),
     Enum(EnumID),
     EnumVariant(EnumVariantID),
-    OverloadSet(OverloadSetID),
+    Function(FunctionID),
     TypeAlias(TypeAliasID),
     Field(FieldID),
-    Overload(OverloadID),
     Parameter(ParameterID),
+    Trait(TraitID),
+    AssociatedType(AssociatedTypeID),
+    TypeParameter(TypeParameterID),
+    LifetimeParameter(LifetimeParameterID),
+    TraitFunction(TraitFunctionID),
 }

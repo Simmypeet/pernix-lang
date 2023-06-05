@@ -2,7 +2,9 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{LifetimeParameterID, StructID, TypeParameterID};
+use crate::{
+    AssociatedTypeID, LifetimeArgument, LifetimeParameterID, StructID, TraitID, TypeParameterID,
+};
 
 /// Enumeration of all possible primitive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -28,12 +30,6 @@ pub enum ReferenceQualifier {
     Restrict,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LifetimeArgument {
-    Static,
-    LifetimeParamter(LifetimeParameterID),
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceType {
     pub inner: Type,
@@ -48,6 +44,17 @@ pub struct Struct {
     pub lifetime_arguments_by_parameter: HashMap<LifetimeParameterID, LifetimeArgument>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssociatedType {
+    pub trait_id: TraitID,
+    pub trait_type_arguments_by_parameter: HashMap<TypeParameterID, Type>,
+    pub trait_lifetime_arguments_by_parameter: HashMap<LifetimeParameterID, LifetimeArgument>,
+    pub associated_type_id: AssociatedTypeID,
+    pub associated_type_type_arguments_by_parameter: HashMap<TypeParameterID, Type>,
+    pub associated_type_lifetime_arguments_by_parameter:
+        HashMap<LifetimeParameterID, LifetimeArgument>,
+}
+
 /// Represents a type symbol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
@@ -56,4 +63,5 @@ pub enum Type {
     PrimitiveType(PrimitiveType),
     ReferenceType(Arc<ReferenceType>),
     TypeParameter(TypeParameterID),
+    AssociatedType(AssociatedType),
 }

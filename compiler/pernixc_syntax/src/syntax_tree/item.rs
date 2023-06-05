@@ -117,21 +117,21 @@ impl SourceElement for GenericParameters {
 /// Syntax Synopsis:
 /// ``` text
 /// LifetimeBound:
-///     LifetimeParameter ':' LifetimeParameter
+///     LifetimeParameter ':' LifetimeParameter ('+' LifetimeParameter)*
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
 pub struct LifetimeBound {
-    pub lhs_lifetime_parameter: LifetimeParameter,
+    pub operand: LifetimeParameter,
     pub colon: Punctuation,
-    pub rhs_lifetime_parameter: LifetimeParameter,
+    pub lifetime_parameters: ConnectedList<LifetimeParameter, Punctuation>,
 }
 
 impl SourceElement for LifetimeBound {
     fn span(&self) -> Result<Span, SpanError> {
-        self.lhs_lifetime_parameter
+        self.operand
             .span()?
-            .join(&self.rhs_lifetime_parameter.span()?)
+            .join(&self.lifetime_parameters.span()?)
     }
 }
 
@@ -164,21 +164,21 @@ impl SourceElement for TypeBoundConstraint {
 /// Syntax Synopsis:
 /// ``` text
 /// TypeBound:
-///     QualifiedIdentifier ':' TypeSpecifier
+///     QualifiedIdentifier ':' TypeBoundConstraint ('+' TypeBoundConstraint)*
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
 pub struct TypeBound {
     pub qualified_identifier: QualifiedIdentifier,
     pub colon: Punctuation,
-    pub type_bound_constraint: TypeBoundConstraint,
+    pub type_bound_constraints: ConnectedList<TypeBoundConstraint, Punctuation>,
 }
 
 impl SourceElement for TypeBound {
     fn span(&self) -> Result<Span, SpanError> {
         self.qualified_identifier
             .span()?
-            .join(&self.type_bound_constraint.span()?)
+            .join(&self.type_bound_constraints.span()?)
     }
 }
 
@@ -1009,6 +1009,43 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_lifetime_parameter(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<LifetimeParameter> {
+        let apostrophe = self.parse_punctuation('\'', true, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+
+        Ok(LifetimeParameter {
+            apostrophe,
+            identifier,
+        })
+    }
+
+    fn parse_type_bound_constraint(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<TypeBoundConstraint> {
+        match self.stop_at_significant() {
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                // eat apostrophe
+                self.forward();
+
+                let lifetime_argument_identifier =
+                    self.parse_lifetime_argument_identifier(handler)?;
+
+                Ok(TypeBoundConstraint::LifetimeArgument(LifetimeArgument {
+                    apostrophe,
+                    lifetime_argument_identifier,
+                }))
+            }
+
+            _ => Ok(TypeBoundConstraint::TypeSpecifier(
+                self.parse_type_specifier(handler)?,
+            )),
+        }
+    }
+
     fn parse_cosntraint(&mut self, handler: &impl Handler<Error>) -> ParserResult<Constraint> {
         match self.stop_at_significant() {
             // parses lifetime argument / bound
@@ -1032,15 +1069,27 @@ impl<'a> Parser<'a> {
                             identifier,
                         };
 
-                        let rhs_lifetime_parameter = LifetimeParameter {
-                            apostrophe: self.parse_punctuation('\'', true, handler)?,
-                            identifier: self.parse_identifier(handler)?,
+                        let lifetime_bounds = {
+                            let mut first = self.parse_lifetime_parameter(handler)?;
+                            let mut rest = Vec::new();
+
+                            while let Ok(plus) =
+                                self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
+                            {
+                                rest.push((plus, self.parse_lifetime_parameter(handler)?));
+                            }
+
+                            ConnectedList {
+                                first,
+                                rest,
+                                trailing_separator: None,
+                            }
                         };
 
                         Ok(Constraint::LifetimeBound(LifetimeBound {
-                            lhs_lifetime_parameter,
+                            operand: lhs_lifetime_parameter,
                             colon,
-                            rhs_lifetime_parameter,
+                            lifetime_parameters: lifetime_bounds,
                         }))
                     }
                     (_, lifetime_argument_identifier) => {
@@ -1059,31 +1108,27 @@ impl<'a> Parser<'a> {
                         // eat colon
                         self.forward();
 
-                        let type_bound_constraint = match self.stop_at_significant() {
-                            Some(Token::Punctuation(apostrophe))
-                                if apostrophe.punctuation == '\'' =>
+                        let type_bound_constraints = {
+                            let first = self.parse_type_bound_constraint(handler)?;
+                            let mut rest = Vec::new();
+
+                            while let Ok(plus) =
+                                self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
                             {
-                                // eat apostrophe
-                                self.forward();
-
-                                let lifetime_argument_identifier =
-                                    self.parse_lifetime_argument_identifier(handler)?;
-
-                                TypeBoundConstraint::LifetimeArgument(LifetimeArgument {
-                                    apostrophe,
-                                    lifetime_argument_identifier,
-                                })
+                                rest.push((plus, self.parse_type_bound_constraint(handler)?));
                             }
 
-                            _ => TypeBoundConstraint::TypeSpecifier(
-                                self.parse_type_specifier(handler)?,
-                            ),
+                            ConnectedList {
+                                first,
+                                rest,
+                                trailing_separator: None,
+                            }
                         };
 
                         Ok(Constraint::TypeBound(TypeBound {
                             qualified_identifier,
                             colon,
-                            type_bound_constraint,
+                            type_bound_constraints,
                         }))
                     }
 

@@ -153,16 +153,20 @@ impl TraitBoundInput {
 /// Represents an input for [`super::LifetimeBound`]
 #[derive(Debug, Clone)]
 pub struct LifetimeBoundInput {
-    pub lhs_lifetime_parameter: LifetimeParameterInput,
-    pub rhs_lifetime_parameter: LifetimeParameterInput,
+    pub operand: LifetimeParameterInput,
+    pub lifetime_parameters: Vec<LifetimeParameterInput>,
 }
 
 impl ToString for LifetimeBoundInput {
     fn to_string(&self) -> String {
         format!(
             "{}: {}",
-            self.lhs_lifetime_parameter.to_string(),
-            self.rhs_lifetime_parameter.to_string()
+            self.operand.to_string(),
+            self.lifetime_parameters
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" + ")
         )
     }
 }
@@ -171,10 +175,21 @@ impl LifetimeBoundInput {
     /// Validates the input against the [`super::LifetimeBound`] output.
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &LifetimeBound) -> Result<(), TestCaseError> {
-        self.lhs_lifetime_parameter
-            .validate(&output.lhs_lifetime_parameter)?;
-        self.rhs_lifetime_parameter
-            .validate(&output.rhs_lifetime_parameter)?;
+        self.operand.validate(&output.operand)?;
+
+        prop_assert_eq!(
+            self.lifetime_parameters.len(),
+            output.lifetime_parameters.len(),
+            "lifetime parameters count mismatch"
+        );
+
+        for (input, output) in self
+            .lifetime_parameters
+            .iter()
+            .zip(output.lifetime_parameters.elements())
+        {
+            input.validate(output)?;
+        }
 
         Ok(())
     }
@@ -217,7 +232,7 @@ impl TypeBoundConstraintInput {
 #[derive(Debug, Clone)]
 pub struct TypeBoundInput {
     pub qualified_identifier: QualifiedIdentifierInput,
-    pub type_bound_constraint: TypeBoundConstraintInput,
+    pub type_bound_constraints: Vec<TypeBoundConstraintInput>,
 }
 
 impl ToString for TypeBoundInput {
@@ -225,7 +240,11 @@ impl ToString for TypeBoundInput {
         format!(
             "{}: {}",
             self.qualified_identifier.to_string(),
-            self.type_bound_constraint.to_string()
+            self.type_bound_constraints
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" + ")
         )
     }
 }
@@ -236,8 +255,19 @@ impl TypeBoundInput {
     pub fn validate(&self, output: &TypeBound) -> Result<(), TestCaseError> {
         self.qualified_identifier
             .validate(&output.qualified_identifier)?;
-        self.type_bound_constraint
-            .validate(&output.type_bound_constraint)?;
+
+        prop_assert_eq!(
+            self.type_bound_constraints.len(),
+            output.type_bound_constraints.len()
+        );
+
+        for (input, output) in self
+            .type_bound_constraints
+            .iter()
+            .zip(output.type_bound_constraints.elements())
+        {
+            input.validate(output)?;
+        }
 
         Ok(())
     }
@@ -1333,26 +1363,36 @@ fn where_clause() -> impl Strategy<Value = WhereClauseInput> {
             }),
             crate::syntax_tree::strategy::lifetime_argument()
                 .prop_map(ConstraintInput::LifetimeArgument),
-            (qualified_identifier(false), prop_oneof![
-                crate::syntax_tree::strategy::type_specifier()
-                    .prop_map(TypeBoundConstraintInput::TypeSpecifier),
-                crate::syntax_tree::strategy::lifetime_argument()
-                    .prop_map(TypeBoundConstraintInput::LifetimeArgument)
-            ])
-                .prop_map(|(qualified_identifier, type_bound_constraint)| {
+            (
+                qualified_identifier(false),
+                proptest::collection::vec(
+                    prop_oneof![
+                        crate::syntax_tree::strategy::type_specifier()
+                            .prop_map(TypeBoundConstraintInput::TypeSpecifier),
+                        crate::syntax_tree::strategy::lifetime_argument()
+                            .prop_map(TypeBoundConstraintInput::LifetimeArgument)
+                    ],
+                    1..=4
+                )
+            )
+                .prop_map(|(qualified_identifier, type_bound_constraints)| {
                     ConstraintInput::TypeBound(TypeBoundInput {
                         qualified_identifier,
-                        type_bound_constraint,
+                        type_bound_constraints,
                     })
                 }),
             (
                 pernixc_lexical::token::strategy::identifier(),
-                pernixc_lexical::token::strategy::identifier(),
+                proptest::collection::vec(
+                    pernixc_lexical::token::strategy::identifier()
+                        .prop_map(|identifier| LifetimeParameterInput { identifier }),
+                    1..=4
+                ),
             )
-                .prop_map(|(lhs, rhs)| {
+                .prop_map(|(identifier, lifetime_parameters)| {
                     ConstraintInput::LifetimeBound(LifetimeBoundInput {
-                        lhs_lifetime_parameter: LifetimeParameterInput { identifier: lhs },
-                        rhs_lifetime_parameter: LifetimeParameterInput { identifier: rhs },
+                        operand: LifetimeParameterInput { identifier },
+                        lifetime_parameters,
                     })
                 })
         ],
