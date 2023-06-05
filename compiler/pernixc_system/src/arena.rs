@@ -111,24 +111,24 @@ impl<T: Data> Arena<T> {
     ///
     /// # Errors
     /// - If the ID wasn't created by this [`Arena`].
-    pub fn remove(&mut self, id: T::ID) -> Result<Symbol<T>, InvalidIDError> {
-        self.symbols_by_id.remove(&id).ok_or(InvalidIDError)
+    pub fn remove(&mut self, id: T::ID) -> Result<Symbol<T>> {
+        self.symbols_by_id.remove(&id).ok_or(Error)
     }
 
     /// Returns a reference to the symbol of the given [`UniqueIdentifier`].
     ///
     /// # Errors
     /// - If the ID wasn't created by this [`Arena`].
-    pub fn get(&self, id: T::ID) -> Result<&Symbol<T>, InvalidIDError> {
-        self.symbols_by_id.get(&id).ok_or(InvalidIDError)
+    pub fn get(&self, id: T::ID) -> Result<&Symbol<T>> {
+        self.symbols_by_id.get(&id).ok_or(Error)
     }
 
     /// Returns a mutable reference to the symbol of the given [`UniqueIdentifier`].
     ///
     /// # Errors
     /// - If the ID wasn't created by this [`Arena`].
-    pub fn get_mut(&mut self, id: T::ID) -> Result<&mut Symbol<T>, InvalidIDError> {
-        self.symbols_by_id.get_mut(&id).ok_or(InvalidIDError)
+    pub fn get_mut(&mut self, id: T::ID) -> Result<&mut Symbol<T>> {
+        self.symbols_by_id.get_mut(&id).ok_or(Error)
     }
 
     /// Returns a mutable iterator over the symbols in the [`Arena`].
@@ -148,7 +148,10 @@ impl<T: Data> IntoIterator for Arena<T> {
 /// container.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
 #[error("The given ID is invalid or wasn't created by this container.")]
-pub struct InvalidIDError;
+pub struct Error;
+
+/// Type alias for [`Result`] with the [`Error`] type.
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// Is a macro that generates a new ID type and implements the [`UniqueIdentifier`]
 #[macro_export]

@@ -29,6 +29,7 @@ use pernixc_syntax::syntax_tree::{
 use pernixc_system::create_symbol;
 use ty::Type;
 
+pub mod table;
 pub mod ty;
 
 /// The accessibility of the symbol. Determines where the symbol can be accessed from.
@@ -68,11 +69,29 @@ impl Accessibility {
 }
 
 create_symbol! {
+    /// Represents an trait-member associated type symbol.
     #[derive(Debug, Clone)]
     pub struct AssociatedType {
+        /// The name of the associated type.
+        pub name: String,
+
+        /// The list of lifetime bounds that the associated type must satisfy.
         pub lifetime_bounds: Vec<LifetimeArgument>,
+
+        /// The generics of the associated type.
         pub generics: Generics,
+
+        /// The ID of the trait that contais the associated type.
+        pub parent_trait_id: TraitID,
     }
+}
+
+impl Global for AssociatedTypeSymbol {
+    fn id(&self) -> GlobalID { self.id().into() }
+
+    fn name(&self) -> &str { &self.name }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_trait_id.into()) }
 }
 
 create_symbol! {
@@ -97,6 +116,14 @@ create_symbol! {
     }
 }
 
+impl Global for TraitSymbol {
+    fn id(&self) -> GlobalID { self.id().into() }
+
+    fn name(&self) -> &str { &self.name }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_module_id.into()) }
+}
+
 create_symbol! {
     /// Represents a trait-member function symbol.
     #[derive(Debug, Clone, Deref, DerefMut)]
@@ -111,6 +138,14 @@ create_symbol! {
     }
 }
 
+impl Global for TraitFunctionSymbol {
+    fn id(&self) -> GlobalID { self.id().into() }
+
+    fn name(&self) -> &str { &self.name }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_trait_id.into()) }
+}
+
 /// Is an enumeration of symbols that accept generic parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
@@ -119,6 +154,8 @@ pub enum GenericableID {
     Function(FunctionID),
     Implements(ImplementsID),
     Trait(TraitID),
+    AssociatedType(AssociatedTypeID),
+    TraitFunction(TraitFunctionID),
 }
 
 /// Is a trait for symbols that can be used as a generic parameter.
@@ -182,20 +219,28 @@ pub enum LifetimeArgument {
     LifetimeParamter(LifetimeParameterID),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner, From)]
-pub enum AssociatedTypeConstraint {
-    Lifetime(LifetimeArgument),
-    Type(Type),
-}
-
+/// Contains all the information related to the generics.
 #[derive(Debug, Clone)]
 pub struct Generics {
+    /// The declaration order of the type parameters.
     pub type_parameter_order: Vec<TypeParameterID>,
+
+    /// Maps the name of the type parameter to its ID.
     pub type_parameter_id_by_name: HashMap<String, TypeParameterID>,
+
+    /// The declaration order of the lifetime parameters.
     pub lifetime_parameter_order: Vec<LifetimeParameterID>,
+
+    /// Maps the name of the lifetime parameter to its ID.
     pub lifetime_parameter_id_by_name: HashMap<String, LifetimeParameterID>,
+
+    /// Maps the lifetime parameter to its lifetime bounds.
     pub lifetime_bounds: HashMap<LifetimeParameterID, Vec<LifetimeArgument>>,
-    pub associated_type_bounds: HashMap<AssociatedType, Vec<AssociatedTypeConstraint>>,
+
+    /// Maps the associated type to its type bound.
+    pub associated_type_bounds: HashMap<AssociatedType, Type>,
+
+    /// Maps the type parameter to its lifetime bounds.
     pub type_parameter_bounds: HashMap<TypeParameterID, Vec<LifetimeArgument>>,
 }
 
@@ -207,9 +252,6 @@ pub trait Global {
 
     /// Returns the name of the symbol.
     fn name(&self) -> &str;
-
-    /// Returns the accessibility of the symbol.
-    fn accessibility(&self) -> Accessibility;
 
     /// Returns the ID of the symbol.
     ///
@@ -248,8 +290,6 @@ impl Global for ModuleSymbol {
     fn id(&self) -> GlobalID { self.id().into() }
 
     fn name(&self) -> &str { &self.name }
-
-    fn accessibility(&self) -> Accessibility { self.accessibility }
 
     fn parent_scoped_id(&self) -> Option<ScopedID> { self.parent_module_id.map(ScopedID::Module) }
 }
@@ -318,8 +358,6 @@ impl Global for StructSymbol {
 
     fn name(&self) -> &str { &self.name }
 
-    fn accessibility(&self) -> Accessibility { self.accessibility }
-
     fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
 }
 
@@ -345,8 +383,6 @@ impl Global for EnumVariantSymbol {
     fn id(&self) -> GlobalID { self.id().into() }
 
     fn name(&self) -> &str { &self.name }
-
-    fn accessibility(&self) -> Accessibility { Accessibility::Public }
 
     fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Enum(self.parent_enum_id)) }
 }
@@ -390,8 +426,6 @@ impl Global for EnumSymbol {
     fn id(&self) -> GlobalID { self.id().into() }
 
     fn name(&self) -> &str { &self.name }
-
-    fn accessibility(&self) -> Accessibility { self.accessibility }
 
     fn parent_scoped_id(&self) -> Option<ScopedID> { Some(ScopedID::Module(self.parent_module_id)) }
 }
@@ -445,9 +479,6 @@ pub struct FunctionSignature {
     /// The syntax tree that was used to create the overload.
     pub syntax_tree: Arc<FunctionSignatureSyntaxTree>,
 
-    /// The accessibility of the overload.
-    pub accessibility: Accessibility,
-
     /// Maps the name of the parameter to its corresponding ID.
     pub parameter_ids_by_name: HashMap<String, ParameterID>,
 
@@ -468,6 +499,14 @@ pub struct FunctionBodySyntaxTree {
     pub statements: Vec<StatementSyntaxTree>,
 }
 
+impl Global for FunctionSymbol {
+    fn id(&self) -> GlobalID { self.id().into() }
+
+    fn name(&self) -> &str { &self.name }
+
+    fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_module_id.into()) }
+}
+
 create_symbol! {
     /// Contains the data of function symbol.
     #[derive(Debug, Clone, Deref, DerefMut)]
@@ -482,6 +521,9 @@ create_symbol! {
 
         /// The syntax tree of the function body.
         pub definition_syntax_tree: Arc<FunctionBodySyntaxTree>,
+
+        /// The accessibility of the function.
+        pub accessibility: Accessibility,
     }
 }
 
@@ -518,8 +560,6 @@ impl Global for TypeAliasSymbol {
     fn id(&self) -> GlobalID { self.id().into() }
 
     fn name(&self) -> &str { &self.name }
-
-    fn accessibility(&self) -> Accessibility { self.accessibility }
 
     fn parent_scoped_id(&self) -> Option<ScopedID> { Some(self.parent_module_id.into()) }
 }
@@ -590,6 +630,8 @@ pub enum GlobalID {
     Function(FunctionID),
     TypeAlias(TypeAliasID),
     Trait(TraitID),
+    TraitFunction(TraitFunctionID),
+    AssociatedType(AssociatedTypeID),
 }
 
 impl From<GlobalID> for ID {
@@ -602,6 +644,8 @@ impl From<GlobalID> for ID {
             GlobalID::TypeAlias(id) => Self::TypeAlias(id),
             GlobalID::EnumVariant(id) => Self::EnumVariant(id),
             GlobalID::Trait(id) => Self::Trait(id),
+            GlobalID::TraitFunction(id) => Self::TraitFunction(id),
+            GlobalID::AssociatedType(id) => Self::AssociatedType(id),
         }
     }
 }
@@ -617,6 +661,7 @@ pub enum LocalID {
     TypeParameter(TypeParameterID),
     AssociatedType(AssociatedTypeID),
     TraitFunction(TraitFunctionID),
+    Implements(ImplementsID),
 }
 
 impl From<LocalID> for ID {
@@ -628,6 +673,7 @@ impl From<LocalID> for ID {
             LocalID::TypeParameter(id) => Self::TypeParameter(id),
             LocalID::AssociatedType(id) => Self::AssociatedType(id),
             LocalID::TraitFunction(id) => Self::TraitFunction(id),
+            LocalID::Implements(id) => Self::Implements(id),
         }
     }
 }
@@ -649,4 +695,5 @@ pub enum ID {
     TypeParameter(TypeParameterID),
     LifetimeParameter(LifetimeParameterID),
     TraitFunction(TraitFunctionID),
+    Implements(ImplementsID),
 }
