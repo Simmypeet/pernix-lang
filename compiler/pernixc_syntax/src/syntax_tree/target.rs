@@ -4,6 +4,7 @@ use std::{collections::HashSet, path::PathBuf, str::FromStr, sync::Arc};
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::TokenStream,
@@ -104,11 +105,15 @@ pub struct Submodule {
 }
 
 /// The syntax tree containing the definition of the whole target's module tree.
-#[derive(Debug, Deref, DerefMut)]
+#[derive(Debug, Deref, DerefMut, Getters)]
 pub struct Target {
     #[deref]
     #[deref_mut]
     root_file: File,
+
+    /// The name of the target.
+    #[get = "pub"]
+    name: String,
 }
 
 impl<'a> Parser<'a> {
@@ -432,9 +437,10 @@ impl Target {
     }
 
     /// Parses the whole target tree
-    pub fn parse(module_root_file: Arc<SourceFile>, handler: &impl Handler) -> Self {
+    pub fn parse(module_root_file: Arc<SourceFile>, name: String, handler: &impl Handler) -> Self {
         Self {
             root_file: Self::parse_single_file(module_root_file, handler, true),
+            name,
         }
     }
 }

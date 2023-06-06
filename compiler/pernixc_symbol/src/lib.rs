@@ -29,6 +29,7 @@ use pernixc_syntax::syntax_tree::{
 use pernixc_system::create_symbol;
 use ty::Type;
 
+pub mod error;
 pub mod table;
 pub mod ty;
 
@@ -493,6 +494,9 @@ create_symbol! {
 
         /// Maps the name of the symbol defined in this module to its corresponding ID.
         pub child_ids_by_name: HashMap<String, GlobalID>,
+
+        /// The IDs of modules that are used in the `using` statements.
+        pub usings: Vec<ModuleID>,
     }
 }
 

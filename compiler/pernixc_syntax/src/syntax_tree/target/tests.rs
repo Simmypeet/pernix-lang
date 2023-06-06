@@ -68,7 +68,7 @@ proptest! {
         {
             let root_source_file = SourceFile::load(&tempdir.path().join("main.pnx"))?;
             let storage = Storage::<Error>::new();
-            let target = Target::parse(root_source_file, &storage);
+            let target = Target::parse(root_source_file, "test".to_string(), &storage);
 
             if !storage.as_vec().is_empty() {
                 return Err(TestCaseError::fail(format!("parsing error: {:#?}",storage.as_vec())));

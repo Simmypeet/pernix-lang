@@ -119,9 +119,7 @@ impl<T: Data> Arena<T> {
     ///
     /// # Errors
     /// - If the ID wasn't created by this [`Arena`].
-    pub fn get(&self, id: T::ID) -> Result<&Symbol<T>> {
-        self.symbols_by_id.get(&id).ok_or(Error)
-    }
+    pub fn get(&self, id: T::ID) -> Result<&Symbol<T>> { self.symbols_by_id.get(&id).ok_or(Error) }
 
     /// Returns a mutable reference to the symbol of the given [`UniqueIdentifier`].
     ///

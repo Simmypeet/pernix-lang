@@ -129,9 +129,7 @@ pub struct LifetimeBound {
 
 impl SourceElement for LifetimeBound {
     fn span(&self) -> Result<Span, SpanError> {
-        self.operand
-            .span()?
-            .join(&self.lifetime_parameters.span()?)
+        self.operand.span()?.join(&self.lifetime_parameters.span()?)
     }
 }
 
@@ -1070,7 +1068,7 @@ impl<'a> Parser<'a> {
                         };
 
                         let lifetime_bounds = {
-                            let mut first = self.parse_lifetime_parameter(handler)?;
+                            let first = self.parse_lifetime_parameter(handler)?;
                             let mut rest = Vec::new();
 
                             while let Ok(plus) =
