@@ -8,6 +8,7 @@ use pernixc_system::{
     diagnostic::Handler,
 };
 
+use self::builder::Drafting;
 use crate::{
     error, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global, GlobalID,
     Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, ModuleID, Parameter,
@@ -30,7 +31,7 @@ pub struct Table {
     fields: Arena<Field>,
     parameters: Arena<Parameter>,
     traits: Arena<Trait>,
-    associated_types: Arena<TraitType>,
+    trait_types: Arena<TraitType>,
     type_parameters: Arena<TypeParameter>,
     lifetime_parameters: Arena<LifetimeParameter>,
     trait_functions: Arena<TraitFunction>,
@@ -56,7 +57,7 @@ impl Table {
             GlobalID::Type(s) => self.types.get(s).map(|x| x as _),
             GlobalID::Trait(s) => self.traits.get(s).map(|x| x as _),
             GlobalID::TraitFunction(s) => self.trait_functions.get(s).map(|x| x as _),
-            GlobalID::TraitType(s) => self.associated_types.get(s).map(|x| x as _),
+            GlobalID::TraitType(s) => self.trait_types.get(s).map(|x| x as _),
         }
     }
 
@@ -73,7 +74,7 @@ impl Table {
             GenericableID::Function(s) => self.functions.get(s).map(|x| x as _),
             GenericableID::Implements(s) => self.implements.get(s).map(|x| x as _),
             GenericableID::Trait(s) => self.traits.get(s).map(|x| x as _),
-            GenericableID::TraitType(s) => self.associated_types.get(s).map(|x| x as _),
+            GenericableID::TraitType(s) => self.trait_types.get(s).map(|x| x as _),
             GenericableID::TraitFunction(s) => self.trait_functions.get(s).map(|x| x as _),
             GenericableID::Type(s) => self.types.get(s).map(|x| x as _),
             GenericableID::ImplementsType(s) => self.implements_types.get(s).map(|x| x as _),
@@ -98,7 +99,7 @@ impl Table {
             ID::Field(s) => self.fields.get(s).map(|x| x as _),
             ID::Parameter(s) => self.parameters.get(s).map(|x| x as _),
             ID::Trait(s) => self.traits.get(s).map(|x| x as _),
-            ID::TraitType(s) => self.associated_types.get(s).map(|x| x as _),
+            ID::TraitType(s) => self.trait_types.get(s).map(|x| x as _),
             ID::TypeParameter(s) => self.type_parameters.get(s).map(|x| x as _),
             ID::LifetimeParameter(s) => self.lifetime_parameters.get(s).map(|x| x as _),
             ID::TraitFunction(s) => self.trait_functions.get(s).map(|x| x as _),
@@ -161,7 +162,6 @@ impl Table {
     ///
     /// # Errors
     /// - If found duplicated target names.
-    #[allow(clippy::needless_pass_by_value)]
     pub fn build(
         targets: Vec<Target>,
         handler: &impl Handler<error::Error>,
@@ -179,7 +179,7 @@ impl Table {
             fields: Arena::new(),
             parameters: Arena::new(),
             traits: Arena::new(),
-            associated_types: Arena::new(),
+            trait_types: Arena::new(),
             type_parameters: Arena::new(),
             lifetime_parameters: Arena::new(),
             trait_functions: Arena::new(),
@@ -198,7 +198,9 @@ impl Table {
         // populates usings statements
         table.populate_usings_in_targets(&targets, handler);
 
+        // drafts the symbols
+        let drafting = table.draft_symbols(targets, handler);
+
         Ok(table)
     }
 }
-

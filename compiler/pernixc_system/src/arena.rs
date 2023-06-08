@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
+    ops::{Index, IndexMut},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -140,6 +141,18 @@ impl<T: Data> IntoIterator for Arena<T> {
     type Item = (T::ID, Symbol<T>);
 
     fn into_iter(self) -> Self::IntoIter { self.symbols_by_id.into_iter() }
+}
+
+impl<T: Data> Index<T::ID> for Arena<T> {
+    type Output = Symbol<T>;
+
+    fn index(&self, index: T::ID) -> &Self::Output { self.symbols_by_id.get(&index).unwrap() }
+}
+
+impl<T: Data> IndexMut<T::ID> for Arena<T> {
+    fn index_mut(&mut self, index: T::ID) -> &mut Self::Output {
+        self.symbols_by_id.get_mut(&index).unwrap()
+    }
 }
 
 /// Signifies that the given ID to the container is invalid or wasn't created by that particular

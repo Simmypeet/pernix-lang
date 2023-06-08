@@ -26,11 +26,10 @@ use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
     self,
     item::{
-        EnumSignature as EnumSignatureSyntaxTree, StructField as StructFieldSyntaxTree,
+        EnumSignature as EnumSignatureSyntaxTree, ReturnType, StructField as StructFieldSyntaxTree,
         StructSignature as StructSignatureSyntaxTree, Type as TypeSyntaxTree,
     },
-    statement::Statement as StatementSyntaxTree,
-    AccessModifier, TypeAnnotation,
+    AccessModifier,
 };
 use pernixc_system::create_symbol;
 
@@ -81,14 +80,14 @@ create_symbol! {
         /// The name of the associated type.
         pub name: String,
 
-        /// The list of lifetime bounds that the associated type must satisfy.
-        pub lifetime_bounds: Vec<LifetimeArgument>,
-
         /// The generics of the associated type.
-        pub generics: Generics,
+        pub generic_parameters: GenericParameters,
 
         /// The ID of the trait that contais the associated type.
         pub parent_trait_id: TraitID,
+
+        /// The syntax tree of the associated type.
+        pub syntax_tree: Arc<syntax_tree::item::TraitType>,
     }
 }
 
@@ -192,7 +191,9 @@ impl Symbol for ImplementsTypeSymbol {
 }
 
 impl Genericable for ImplementsTypeSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 create_symbol! {
@@ -219,7 +220,9 @@ impl Symbol for ImplementsFunctionSymbol {
 }
 
 impl Genericable for ImplementsFunctionSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 /// Is an enumeration of symbol IDs that can be used as a trait member.
@@ -254,6 +257,9 @@ create_symbol! {
 
         /// The list of implements of the trait.
         pub implements: Vec<ImplementsID>,
+
+        /// The syntax tree of the trait.
+        pub syntax_tree: Option<Arc<syntax_tree::item::TraitSignature>>,
 
         /// Maps the name of the trait member to its ID.
         pub trait_member_ids_by_name: HashMap<String, TraitMemberID>,
@@ -304,7 +310,9 @@ impl Global for TraitFunctionSymbol {
 }
 
 impl Genericable for TraitFunctionSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 /// Is an enumeration of symbol IDs that accept generic parameters.
@@ -341,27 +349,40 @@ impl From<GenericableID> for ID {
 /// Represents a symbol with generics
 pub trait Genericable: Symbol {
     /// Returns the generics of the symbol.
-    fn generics(&self) -> &Generics;
+    fn generic_parameters(&self) -> &GenericParameters;
+
+    /// Returns the where clause of the symbol.
+    fn where_clause(&self) -> Option<&WhereClause>;
 }
 
 impl Genericable for StructSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 impl Genericable for FunctionSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 impl Genericable for ImplementsSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 impl Genericable for TraitSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 impl Genericable for TraitTypeSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { None }
 }
 
 /// Is a trait for symbols that can be used as a generic parameter.
@@ -677,9 +698,10 @@ impl Global for EnumSymbol {
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct FunctionSignatureSyntaxTree {
-    pub access_modifier: AccessModifier,
     pub identifier: Identifier,
-    pub type_annotation: TypeAnnotation,
+    pub generic_parameters: Option<syntax_tree::item::GenericParameters>,
+    pub return_type: Option<ReturnType>,
+    pub where_clause: Option<syntax_tree::item::WhereClause>,
 }
 
 /// Is an enumeration of all symbols that are allowed to be a parent of a parameter.
@@ -706,7 +728,7 @@ create_symbol! {
         /// The name of the parameter
         pub name: String,
 
-        /// The order in which the parameter was declared.
+        /// The id to the parent symbol of the parameter
         pub parent_parameter_id: ParentParameterID,
 
         /// The order in which the parameter was declared.
@@ -745,17 +767,10 @@ pub struct FunctionSignature {
     pub return_type: ty::Type,
 
     /// The syntax tree of the function signature.
-    pub syntax_tree: Option<FunctionSignatureSyntaxTree>,
+    pub syntax_tree: Option<Arc<FunctionSignatureSyntaxTree>>,
 
     /// The generics of the overload.
     pub generics: Generics,
-}
-
-/// The syntax tree of the function  body.
-#[derive(Debug, Clone)]
-pub struct FunctionBodySyntaxTree {
-    /// List of statements in the function body.
-    pub statements: Vec<StatementSyntaxTree>,
 }
 
 impl Symbol for FunctionSymbol {
@@ -781,7 +796,7 @@ create_symbol! {
         pub parent_module_id: ModuleID,
 
         /// The syntax tree of the function body.
-        pub definition_syntax_tree: Arc<FunctionBodySyntaxTree>,
+        pub syntax_tree: Arc<syntax_tree::item::FunctionBody>,
 
         /// The accessibility of the function.
         pub accessibility: Accessibility,
@@ -812,8 +827,8 @@ create_symbol! {
         /// The type that the type alias represents.
         pub alias: ty::Type,
 
-        /// The generics of the type alias.
-        pub generics: Generics,
+        /// The generic parameters of the type alias.
+        pub generic_parameters: GenericParameters,
 
         /// The syntax tree that was used to create the type alias.
         pub syntax_tree: Arc<TypeSyntaxTree>
@@ -821,7 +836,9 @@ create_symbol! {
 }
 
 impl Genericable for TypeSymbol {
-    fn generics(&self) -> &Generics { &self.generics }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generic_parameters }
+
+    fn where_clause(&self) -> Option<&WhereClause> { None }
 }
 
 impl Symbol for TypeSymbol {

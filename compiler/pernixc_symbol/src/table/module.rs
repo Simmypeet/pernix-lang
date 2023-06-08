@@ -48,9 +48,7 @@ impl Table {
             });
 
             assert!(
-                self.modules
-                    .get_mut(parent_module_id)
-                    .unwrap()
+                self.modules[parent_module_id]
                     .child_ids_by_name
                     .insert(module_name, id.into())
                     .is_none(),
@@ -94,9 +92,7 @@ impl Table {
         for path in module_path.elements() {
             if let Some(module_id) = current_module_id {
                 // search from current module id
-                let module = self.modules.get(module_id).unwrap();
-
-                let Some(new_module_id) = module
+                let Some(new_module_id) = self.modules[module_id]
                     .child_ids_by_name
                     .get(path.span.str())
                     .copied() else {
@@ -169,7 +165,7 @@ impl Table {
             }
         }
 
-        let module = self.modules.get_mut(module_id).unwrap();
+        let module = &mut self.modules[module_id];
         for module_id in using_spans_by_module_id.into_keys() {
             module.usings.push(module_id);
         }
@@ -186,15 +182,10 @@ impl Table {
 
         // populate usings for submodules
         for submodule in &current_file.submodules {
-            let module_id = self
-                .modules
-                .get(current_module_id)
-                .unwrap()
-                .child_ids_by_name
-                .get(submodule.module.identifier.span.str())
-                .unwrap()
-                .into_module()
-                .unwrap();
+            let module_id = self.modules[current_module_id].child_ids_by_name
+                [submodule.module.identifier.span.str()]
+            .into_module()
+            .unwrap();
 
             self.populate_usings_in_submodules(module_id, &submodule.file, handler);
         }
@@ -207,11 +198,7 @@ impl Table {
         handler: &impl Handler<error::Error>,
     ) {
         for target in targets {
-            let root_module_id = self
-                .root_module_ids_by_target_name
-                .get(target.name())
-                .copied()
-                .unwrap();
+            let root_module_id = self.root_module_ids_by_target_name[target.name()];
 
             self.populate_usings_in_submodules(root_module_id, target, handler);
         }

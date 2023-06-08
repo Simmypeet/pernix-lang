@@ -19,22 +19,17 @@ use crate::{
     TraitID, TraitType, TraitTypeID, Type, TypeID, TypeParameter, ID,
 };
 
-pub(super) enum SymbolState {
+enum SymbolState {
     Drafted,
     Constructing,
 }
 
-pub(super) struct Drafting {
-    symbol_states_by_id: HashMap<ID, SymbolState>,
-    implements_vecs_by_module_id: HashMap<ModuleID, Vec<item::Implements>>,
-}
-
 impl Table {
-    pub(super) fn draft_symbols(
+    fn draft_symbols(
         &mut self,
         targets: Vec<Target>,
         handler: &impl Handler<Error>,
-    ) -> Drafting {
+    ) -> HashMap<ID, SymbolState> {
         let mut symbol_states_by_id = HashMap::new();
         // implements item will be handled separately
         let mut implements_vecs_by_module_id = HashMap::new();
@@ -54,10 +49,7 @@ impl Table {
             );
         }
 
-        Drafting {
-            symbol_states_by_id,
-            implements_vecs_by_module_id,
-        }
+        symbol_states_by_id
     }
 
     fn draft_symbols_in_file(

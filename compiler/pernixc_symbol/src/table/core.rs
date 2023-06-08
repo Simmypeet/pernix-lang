@@ -35,6 +35,7 @@ impl Table {
                 generics: Generics::default(),
                 implements: Vec::new(),
                 trait_member_ids_by_name: HashMap::new(), // to be filled later
+                syntax_tree: None,
             });
 
             // A type parameter for the type being dropped
@@ -43,7 +44,7 @@ impl Table {
                 parent_genericable_id: trait_id.into(),
             });
 
-            let trait_sym = self.traits.get_mut(trait_id).unwrap();
+            let trait_sym = &mut self.traits[trait_id];
 
             trait_sym
                 .generics
@@ -87,7 +88,7 @@ impl Table {
                 syntax_tree: None,
             });
 
-            let trait_function = self.trait_functions.get_mut(trait_function_id).unwrap();
+            let trait_function = &mut self.trait_functions[trait_function_id];
 
             trait_function
                 .parameter_ids_by_name
@@ -98,9 +99,7 @@ impl Table {
             trait_function_id
         };
 
-        let trait_sym = self.traits.get_mut(trait_id).unwrap();
-
-        trait_sym
+        self.traits[trait_id]
             .trait_member_ids_by_name
             .insert("drop".to_string(), trait_function_id.into());
     }
@@ -114,6 +113,7 @@ impl Table {
                 generics: Generics::default(),
                 implements: Vec::new(),
                 trait_member_ids_by_name: HashMap::new(), // to be filled later
+                syntax_tree: None,
             });
 
             // A type parameter for the type being dropped
@@ -122,7 +122,7 @@ impl Table {
                 parent_genericable_id: trait_id.into(),
             });
 
-            let trait_sym = self.traits.get_mut(trait_id).unwrap();
+            let trait_sym = &mut self.traits[trait_id];
 
             trait_sym
                 .generics

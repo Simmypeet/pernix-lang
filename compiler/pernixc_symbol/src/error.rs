@@ -3,7 +3,10 @@
 
 use pernixc_source::Span;
 
-use crate::{FieldID, GlobalID, LifetimeParameterID, ModuleID, StructID, TypeParameterID};
+use crate::{
+    FieldID, GlobalID, LifetimeParameterID, ModuleID, ParameterID, StructID, TraitMemberID,
+    TypeParameterID,
+};
 
 /// No target was found with the given name.
 #[derive(Debug, Clone)]
@@ -83,6 +86,8 @@ pub enum Error {
     LifetimeParameterMustBeDeclaredPriotToTypeParameter(
         LifetimeParameterMustBeDeclaredPriotToTypeParameter,
     ),
+    ParameterRedefinition(SymbolRedefinition<ParameterID>),
     FieldRedefinition(SymbolRedefinition<FieldID>),
     FieldMoreAccessibleThanStruct(FieldMoreAccessibleThanStruct),
+    TraitMemberRedefinition(SymbolRedefinition<TraitMemberID>),
 }
