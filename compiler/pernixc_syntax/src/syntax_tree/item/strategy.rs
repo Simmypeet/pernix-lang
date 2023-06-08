@@ -459,16 +459,11 @@ impl TraitFunctionInput {
 #[derive(Debug, Clone)]
 pub struct TraitTypeInput {
     pub type_signature: TypeSignatureInput,
-    pub where_clause: Option<WhereClauseInput>,
 }
 
 impl ToString for TraitTypeInput {
     fn to_string(&self) -> String {
         let mut s = self.type_signature.to_string();
-
-        if let Some(where_clause) = &self.where_clause {
-            s.push_str(&format!(" {}", where_clause.to_string()));
-        }
 
         s.push(';');
 
@@ -481,12 +476,6 @@ impl TraitTypeInput {
     #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self, output: &TraitType) -> Result<(), TestCaseError> {
         self.type_signature.validate(&output.type_signature)?;
-
-        match (&self.where_clause, &output.where_clause) {
-            (Some(i), Some(o)) => i.validate(o)?,
-            (None, None) => (),
-            _ => return Err(TestCaseError::fail("where clause mismatch")),
-        }
 
         Ok(())
     }
@@ -1462,12 +1451,8 @@ fn trait_member() -> impl Strategy<Value = TraitMemberInput> {
         function_signature().prop_map(|function_signature| TraitMemberInput::Function(
             TraitFunctionInput { function_signature }
         )),
-        (type_signature(), proptest::option::of(where_clause())).prop_map(
-            |(type_signature, where_clause)| TraitMemberInput::Type(TraitTypeInput {
-                type_signature,
-                where_clause
-            })
-        )
+        type_signature()
+            .prop_map(|type_signature| TraitMemberInput::Type(TraitTypeInput { type_signature }))
     ]
 }
 

@@ -12,22 +12,27 @@
 )]
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
-use std::{collections::HashMap, convert::Into, fmt::Debug, hash::Hash, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::Into,
+    fmt::Debug,
+    hash::Hash,
+    sync::Arc,
+};
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::token::Identifier as IdentifierToken;
+use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
+    self,
     item::{
-        EnumSignature as EnumSignatureSyntaxTree, Parameter as ParameterSyntaxTree,
-        StructField as StructFieldSyntaxTree, StructSignature as StructSignatureSyntaxTree,
-        Type as TypeSyntaxTree,
+        EnumSignature as EnumSignatureSyntaxTree, StructField as StructFieldSyntaxTree,
+        StructSignature as StructSignatureSyntaxTree, Type as TypeSyntaxTree,
     },
     statement::Statement as StatementSyntaxTree,
     AccessModifier, TypeAnnotation,
 };
 use pernixc_system::create_symbol;
-use ty::Type;
 
 pub mod error;
 pub mod table;
@@ -72,7 +77,7 @@ impl Accessibility {
 create_symbol! {
     /// Represents an trait-member associated type symbol.
     #[derive(Debug, Clone)]
-    pub struct AssociatedType {
+    pub struct TraitType {
         /// The name of the associated type.
         pub name: String,
 
@@ -87,24 +92,24 @@ create_symbol! {
     }
 }
 
-impl Symbol for AssociatedTypeSymbol {
+impl Symbol for TraitTypeSymbol {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_trait_id.into()) }
 }
 
-impl Global for AssociatedTypeSymbol {
+impl Global for TraitTypeSymbol {
     fn name(&self) -> &str { &self.name }
 }
 
 /// Represents generic parameters substitution.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Substitution {
     /// Maps type parameters to their type arguments.
-    pub type_arguments_by_parameter: HashMap<TypeParameterID, Type>,
+    pub type_arguments_by_parameter: BTreeMap<TypeParameterID, ty::Type>,
 
     /// Maps lifetime parameters to their lifetime arguments.
-    pub lifetime_arguments_by_parameter: HashMap<LifetimeParameterID, LifetimeArgument>,
+    pub lifetime_arguments_by_parameter: BTreeMap<LifetimeParameterID, LifetimeArgument>,
 }
 
 impl Substitution {
@@ -149,7 +154,7 @@ create_symbol! {
         pub substitution: Substitution,
 
         /// Maps associated type to their type implementation.
-        pub implements_types_by_associated_type: HashMap<AssociatedTypeID, ImplementsTypeID>,
+        pub implements_types_by_associated_type: HashMap<TraitTypeID, ImplementsTypeID>,
 
         /// Maps function to their function implementation.
         pub implements_functions_by_trait_function: HashMap<TraitFunctionID, ImplementsFunctionID>,
@@ -170,10 +175,10 @@ create_symbol! {
         pub generics: Generics,
 
         /// The ID of the associated type that is implemented.
-        pub associated_type_id: AssociatedTypeID,
+        pub associated_type_id: TraitTypeID,
 
         /// The type that implements the associated type.
-        pub alias: Type,
+        pub alias: ty::Type,
 
         /// The ID of the implements that contains this symbol.
         pub parent_implements_id: ImplementsID,
@@ -222,14 +227,14 @@ impl Genericable for ImplementsFunctionSymbol {
 #[allow(missing_docs)]
 pub enum TraitMemberID {
     TraitFunction(TraitFunctionID),
-    AssociatedType(AssociatedTypeID),
+    TraitType(TraitTypeID),
 }
 
 impl From<TraitMemberID> for GlobalID {
     fn from(id: TraitMemberID) -> Self {
         match id {
             TraitMemberID::TraitFunction(id) => id.into(),
-            TraitMemberID::AssociatedType(id) => id.into(),
+            TraitMemberID::TraitType(id) => id.into(),
         }
     }
 }
@@ -303,16 +308,16 @@ impl Genericable for TraitFunctionSymbol {
 }
 
 /// Is an enumeration of symbol IDs that accept generic parameters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum GenericableID {
     Struct(StructID),
     Function(FunctionID),
     Implements(ImplementsID),
     Trait(TraitID),
-    AssociatedType(AssociatedTypeID),
+    TraitType(TraitTypeID),
     TraitFunction(TraitFunctionID),
-    TypeAlias(TypeAliasID),
+    Type(TypeID),
     ImplementsFunction(ImplementsFunctionID),
     ImplementsType(ImplementsTypeID),
 }
@@ -324,9 +329,9 @@ impl From<GenericableID> for ID {
             GenericableID::Function(id) => id.into(),
             GenericableID::Implements(id) => id.into(),
             GenericableID::Trait(id) => id.into(),
-            GenericableID::AssociatedType(id) => id.into(),
+            GenericableID::TraitType(id) => id.into(),
             GenericableID::TraitFunction(id) => id.into(),
-            GenericableID::TypeAlias(id) => id.into(),
+            GenericableID::Type(id) => id.into(),
             GenericableID::ImplementsFunction(id) => id.into(),
             GenericableID::ImplementsType(id) => id.into(),
         }
@@ -355,7 +360,7 @@ impl Genericable for TraitSymbol {
     fn generics(&self) -> &Generics { &self.generics }
 }
 
-impl Genericable for AssociatedTypeSymbol {
+impl Genericable for TraitTypeSymbol {
     fn generics(&self) -> &Generics { &self.generics }
 }
 
@@ -432,29 +437,43 @@ pub enum LifetimeArgument {
     LifetimeParamter(LifetimeParameterID),
 }
 
-/// Contains all the information related to the generics.
-#[derive(Debug, Clone)]
-pub struct Generics {
+/// Contains the declaration of the generic parameters (both lifetimes and type parameters).
+#[derive(Debug, Clone, Default)]
+pub struct GenericParameters {
     /// The declaration order of the type parameters.
     pub type_parameter_order: Vec<TypeParameterID>,
 
     /// Maps the name of the type parameter to its ID.
-    pub type_parameter_id_by_name: HashMap<String, TypeParameterID>,
+    pub type_parameter_ids_by_name: HashMap<String, TypeParameterID>,
 
     /// The declaration order of the lifetime parameters.
     pub lifetime_parameter_order: Vec<LifetimeParameterID>,
 
     /// Maps the name of the lifetime parameter to its ID.
     pub lifetime_parameter_id_by_name: HashMap<String, LifetimeParameterID>,
+}
 
+/// Contains all the constraint defined on the where clause of a genericable.
+#[derive(Debug, Clone, Default)]
+pub struct WhereClause {
     /// Maps the lifetime parameter to its lifetime bounds.
     pub lifetime_bounds: HashMap<LifetimeParameterID, Vec<LifetimeArgument>>,
 
     /// Maps the associated type to its type bound.
-    pub associated_type_bounds: HashMap<AssociatedType, Type>,
+    pub trait_type_bounds: HashMap<ty::TraitType, ty::Type>,
 
     /// Maps the type parameter to its lifetime bounds.
     pub type_parameter_bounds: HashMap<TypeParameterID, Vec<LifetimeArgument>>,
+}
+
+/// Contains all the information related to the generics.
+#[derive(Debug, Clone, Default)]
+pub struct Generics {
+    /// The generic parameters of the symbol.
+    pub generic_parameters: GenericParameters,
+
+    /// The where clause of the symbol.
+    pub where_clause: WhereClause,
 }
 
 /// Is a trait that all symbols must implement.
@@ -536,7 +555,7 @@ create_symbol! {
         pub declaration_order: usize,
 
         /// The type of the field.
-        pub ty: Type,
+        pub ty: ty::Type,
     }
 }
 
@@ -597,7 +616,7 @@ create_symbol! {
         pub declaration_order: usize,
 
         /// The syntax tree that was used to create the enum variant.
-        pub syntax_tree: Arc<IdentifierToken>,
+        pub syntax_tree: Arc<Identifier>,
     }
 }
 
@@ -625,7 +644,7 @@ create_symbol! {
         pub parent_module_id: ModuleID,
 
         /// The syntax tree that was used to create the enum.
-        pub syntax_tree: Arc<EnumSignatureSyntaxTree>,
+        pub syntax_tree: EnumSignatureSyntaxTree,
 
         /// Maps the name of the enum variant to the ID of the enum variant.
         pub variant_ids_by_name: HashMap<String, EnumVariantID>,
@@ -659,12 +678,12 @@ impl Global for EnumSymbol {
 #[allow(missing_docs)]
 pub struct FunctionSignatureSyntaxTree {
     pub access_modifier: AccessModifier,
-    pub identifier: IdentifierToken,
+    pub identifier: Identifier,
     pub type_annotation: TypeAnnotation,
 }
 
 /// Is an enumeration of all symbols that are allowed to be a parent of a parameter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum ParentParameterID {
     Function(FunctionID),
@@ -687,9 +706,6 @@ create_symbol! {
         /// The name of the parameter
         pub name: String,
 
-        /// The syntax tree that was used to create the parameter.
-        pub syntax_tree: Arc<ParameterSyntaxTree>,
-
         /// The order in which the parameter was declared.
         pub parent_parameter_id: ParentParameterID,
 
@@ -697,7 +713,10 @@ create_symbol! {
         pub declaration_order: usize,
 
         /// The type of the parameter
-        pub ty: Type,
+        pub ty: ty::Type,
+
+        /// The syntax tree of the parameter.
+        pub syntax_tree: Option<Arc<syntax_tree::item::Parameter>>,
 
         /// Whether the parameter is mutable.
         pub is_mutable: bool,
@@ -716,9 +735,6 @@ pub struct FunctionSignature {
     /// The name of the overload set.
     pub name: String,
 
-    /// The syntax tree that was used to create the overload.
-    pub syntax_tree: Arc<FunctionSignatureSyntaxTree>,
-
     /// Maps the name of the parameter to its corresponding ID.
     pub parameter_ids_by_name: HashMap<String, ParameterID>,
 
@@ -726,7 +742,10 @@ pub struct FunctionSignature {
     pub parameter_order: Vec<ParameterID>,
 
     /// The return type of the overload.
-    pub return_type: Type,
+    pub return_type: ty::Type,
+
+    /// The syntax tree of the function signature.
+    pub syntax_tree: Option<FunctionSignatureSyntaxTree>,
 
     /// The generics of the overload.
     pub generics: Generics,
@@ -780,7 +799,7 @@ pub enum ParentOverloadSetID {
 create_symbol! {
     /// Contains the data of type alias symbol.
     #[derive(Debug, Clone)]
-    pub struct TypeAlias {
+    pub struct Type {
         /// The name of the type alias.
         pub name: String,
 
@@ -791,7 +810,7 @@ create_symbol! {
         pub parent_module_id: ModuleID,
 
         /// The type that the type alias represents.
-        pub alias: Type,
+        pub alias: ty::Type,
 
         /// The generics of the type alias.
         pub generics: Generics,
@@ -801,17 +820,17 @@ create_symbol! {
     }
 }
 
-impl Genericable for TypeAliasSymbol {
+impl Genericable for TypeSymbol {
     fn generics(&self) -> &Generics { &self.generics }
 }
 
-impl Symbol for TypeAliasSymbol {
+impl Symbol for TypeSymbol {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
 }
 
-impl Global for TypeAliasSymbol {
+impl Global for TypeSymbol {
     fn name(&self) -> &str { &self.name }
 }
 
@@ -879,10 +898,10 @@ pub enum GlobalID {
     Enum(EnumID),
     EnumVariant(EnumVariantID),
     Function(FunctionID),
-    TypeAlias(TypeAliasID),
+    Type(TypeID),
     Trait(TraitID),
     TraitFunction(TraitFunctionID),
-    AssociatedType(AssociatedTypeID),
+    TraitType(TraitTypeID),
 }
 
 impl From<GlobalID> for ID {
@@ -892,11 +911,11 @@ impl From<GlobalID> for ID {
             GlobalID::Struct(id) => Self::Struct(id),
             GlobalID::Enum(id) => Self::Enum(id),
             GlobalID::Function(id) => Self::Function(id),
-            GlobalID::TypeAlias(id) => Self::TypeAlias(id),
+            GlobalID::Type(id) => Self::Type(id),
             GlobalID::EnumVariant(id) => Self::EnumVariant(id),
             GlobalID::Trait(id) => Self::Trait(id),
             GlobalID::TraitFunction(id) => Self::TraitFunction(id),
-            GlobalID::AssociatedType(id) => Self::AssociatedType(id),
+            GlobalID::TraitType(id) => Self::TraitType(id),
         }
     }
 }
@@ -910,7 +929,7 @@ pub enum LocalID {
     Parameter(ParameterID),
     LifetimeParameter(LifetimeParameterID),
     TypeParameter(TypeParameterID),
-    AssociatedType(AssociatedTypeID),
+    TraitType(TraitTypeID),
     TraitFunction(TraitFunctionID),
     Implements(ImplementsID),
 }
@@ -922,7 +941,7 @@ impl From<LocalID> for ID {
             LocalID::Parameter(id) => Self::Parameter(id),
             LocalID::LifetimeParameter(id) => Self::LifetimeParameter(id),
             LocalID::TypeParameter(id) => Self::TypeParameter(id),
-            LocalID::AssociatedType(id) => Self::AssociatedType(id),
+            LocalID::TraitType(id) => Self::TraitType(id),
             LocalID::TraitFunction(id) => Self::TraitFunction(id),
             LocalID::Implements(id) => Self::Implements(id),
         }
@@ -938,11 +957,11 @@ pub enum ID {
     Enum(EnumID),
     EnumVariant(EnumVariantID),
     Function(FunctionID),
-    TypeAlias(TypeAliasID),
+    Type(TypeID),
     Field(FieldID),
     Parameter(ParameterID),
     Trait(TraitID),
-    AssociatedType(AssociatedTypeID),
+    TraitType(TraitTypeID),
     TypeParameter(TypeParameterID),
     LifetimeParameter(LifetimeParameterID),
     TraitFunction(TraitFunctionID),

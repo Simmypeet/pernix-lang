@@ -352,23 +352,18 @@ impl SourceElement for TraitFunction {
 /// Syntax Synopsis:
 /// ``` text
 /// TraitType:
-///     TypeSignature WhereClause? ';'
+///     TypeSignature ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
 pub struct TraitType {
     pub type_signature: TypeSignature,
-    pub where_clause: Option<WhereClause>,
     pub semicolon: Punctuation,
 }
 
 impl SourceElement for TraitType {
     fn span(&self) -> Result<Span, SpanError> {
-        let start = &self.type_signature.span()?;
-        match &self.where_clause {
-            Some(where_clause) => start.join(&where_clause.span()?),
-            None => start.join(&self.semicolon.span),
-        }
+        self.type_signature.span()?.join(&self.semicolon.span)
     }
 }
 
@@ -382,6 +377,7 @@ impl SourceElement for TraitType {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(clippy::large_enum_variant)]
 pub enum TraitMember {
     Function(TraitFunction),
     Type(TraitType),
@@ -1386,12 +1382,10 @@ impl<'a> Parser<'a> {
 
             Some(Token::Keyword(type_keyword)) if type_keyword.keyword == KeywordKind::Type => {
                 let type_signature = self.parse_type_signature(handler)?;
-                let where_clause = self.try_parse_where_clause(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Ok(TraitMember::Type(TraitType {
                     type_signature,
-                    where_clause,
                     semicolon,
                 }))
             }

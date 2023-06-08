@@ -1,8 +1,9 @@
 //! This module implements the type system of the compiler.
 
-use std::sync::Arc;
+use derive_more::From;
+use enum_as_inner::EnumAsInner;
 
-use crate::{AssociatedTypeID, LifetimeArgument, StructID, Substitution, TypeParameterID};
+use crate::{LifetimeArgument, StructID, Substitution, TraitTypeID, TypeParameterID};
 
 /// Enumeration of all possible primitive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -33,10 +34,10 @@ pub enum ReferenceQualifier {
 }
 
 /// Represents a reference type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReferenceType {
     /// The type of the reference.
-    pub operand: Type,
+    pub operand: Box<Type>,
 
     /// The optional qualifier of the reference.
     pub qualifier: Option<ReferenceQualifier>,
@@ -46,7 +47,7 @@ pub struct ReferenceType {
 }
 
 /// Represents a type from the struct.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Struct {
     /// The ID of the struct.
     pub struct_id: StructID,
@@ -56,22 +57,22 @@ pub struct Struct {
 }
 
 /// Represents a type from the trait associated type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AssociatedType {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TraitType {
     /// The ID of the associated type.
-    pub associated_type_id: AssociatedTypeID,
+    pub trait_type_id: TraitTypeID,
 
     /// The generic parameter substitution.
     pub substitution: Substitution,
 }
 
 /// Represents a type symbol.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Type {
     Struct(Struct),
     PrimitiveType(PrimitiveType),
-    ReferenceType(Arc<ReferenceType>),
+    ReferenceType(ReferenceType),
     TypeParameter(TypeParameterID),
-    AssociatedType(AssociatedType),
+    TraitType(TraitType),
 }

@@ -340,6 +340,10 @@ pub struct ModuleRedefinition {
 }
 
 impl Target {
+    /// Dissolves the target into the root source file and the name of the root module.
+    #[must_use]
+    pub fn dissolve(self) -> (File, String) { (self.root_file, self.name) }
+
     fn parse_single_file(
         source_file: Arc<SourceFile>,
         handler: &impl Handler,
