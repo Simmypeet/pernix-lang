@@ -8,9 +8,11 @@ use pernixc_source::SourceFile;
 use pernixc_system::diagnostic::Handler;
 
 use crate::{
-    error::{Error, UndelimitedDelimiter},
-    token::{Punctuation, Token, TokenizationError},
+    error::{self, UndelimitedDelimiter},
+    token::{self, Punctuation, Token},
 };
+
+pub mod input;
 
 /// Is an enumeration of the different types of delimiters in the [`Delimited`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -68,7 +70,7 @@ impl TokenStream {
     /// A tuple containing the stream of successfully tokenized tokens and a list of lexical errors
     /// encountered during tokenization.
     #[must_use]
-    pub fn tokenize(source_file: &Arc<SourceFile>, handler: &impl Handler<Error>) -> Self {
+    pub fn tokenize(source_file: &Arc<SourceFile>, handler: &impl Handler<error::Error>) -> Self {
         // list of tokens to return
         let mut tokens = Vec::new();
         let mut source_file_iterator = source_file.iter();
@@ -77,10 +79,10 @@ impl TokenStream {
             // Tokenizes the next token
             match Token::tokenize(&mut source_file_iterator, handler) {
                 Ok(token) => tokens.push(token),
-                Err(TokenizationError::EndOfSourceCodeIteratorArgument) => {
+                Err(token::Error::EndOfSourceCodeIteratorArgument) => {
                     break;
                 }
-                Err(TokenizationError::FatalLexicalError) => (),
+                Err(token::Error::FatalLexicalError) => (),
             }
         }
 
@@ -96,7 +98,10 @@ impl TokenStream {
         Self { token_trees }
     }
 
-    fn handle_token(tokens: &mut Vec<Token>, handler: &impl Handler<Error>) -> Option<TokenTree> {
+    fn handle_token(
+        tokens: &mut Vec<Token>,
+        handler: &impl Handler<error::Error>,
+    ) -> Option<TokenTree> {
         tokens
             .pop()
             .and_then(|x| Self::handle_popped_token(tokens, x, handler))
@@ -105,7 +110,7 @@ impl TokenStream {
     fn handle_popped_token(
         tokens: &mut Vec<Token>,
         popped_token: Token,
-        handler: &impl Handler<Error>,
+        handler: &impl Handler<error::Error>,
     ) -> Option<TokenTree> {
         match popped_token {
             Token::Punctuation(punc) if punc.punctuation == '{' => {
@@ -128,7 +133,7 @@ impl TokenStream {
         tokens: &mut Vec<Token>,
         open: Punctuation,
         delimiter: Delimiter,
-        handler: &impl Handler<Error>,
+        handler: &impl Handler<error::Error>,
     ) -> Option<Delimited> {
         let mut token_trees = Vec::new();
 
@@ -172,7 +177,7 @@ impl TokenStream {
             }
         }
 
-        handler.recieve(Error::UndelimitedDelimiter(UndelimitedDelimiter {
+        handler.recieve(error::Error::UndelimitedDelimiter(UndelimitedDelimiter {
             opening_span: open.span,
             delimiter,
         }));
@@ -192,4 +197,4 @@ impl Index<usize> for TokenStream {
 }
 
 #[cfg(test)]
-pub mod tests;
+mod tests;

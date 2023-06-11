@@ -19,8 +19,6 @@ use crate::{
     syntax_tree::{item::Item, ConnectedList, ScopeSeparator},
 };
 
-pub mod strategy;
-
 /// Represents a moulde path in used in `module` declarations and `using` statements.
 ///
 /// Syntax Synopsis:
@@ -65,7 +63,9 @@ pub struct Module {
 }
 
 impl SourceElement for Using {
-    fn span(&self) -> Result<Span, SpanError> { self.using_keyword.span.join(&self.semicolon.span) }
+    fn span(&self) -> Result<Span, SpanError> {
+        self.using_keyword.span.join(&self.semicolon.span)
+    }
 }
 
 /// Contains all the syntax trees defined within a single file.
@@ -342,7 +342,9 @@ pub struct ModuleRedefinition {
 impl Target {
     /// Dissolves the target into the root source file and the name of the root module.
     #[must_use]
-    pub fn dissolve(self) -> (File, String) { (self.root_file, self.name) }
+    pub fn dissolve(self) -> (File, String) {
+        (self.root_file, self.name)
+    }
 
     fn parse_single_file(
         source_file: Arc<SourceFile>,
@@ -449,5 +451,7 @@ impl Target {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests;
+*/

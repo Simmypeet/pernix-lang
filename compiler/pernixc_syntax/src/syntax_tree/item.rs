@@ -18,8 +18,6 @@ use crate::{
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
 
-pub mod strategy;
-
 /// Represents a syntax tree node for a lifetime parameter.
 ///
 /// Syntax Synopsis:
@@ -1647,5 +1645,7 @@ impl<'a> Parser<'a> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests;
+*/

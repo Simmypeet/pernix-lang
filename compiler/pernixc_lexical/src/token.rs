@@ -12,10 +12,9 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
 
-use crate::error::{
-    ControlCharactersMustBeEscaped, EmptyCharacterLiteral, Error, InvalidEscapeCharacterSequences,
-    UnterminatedDelimitedComment, UnterminatedStringLiteral,
-};
+use crate::error::{self, UnterminatedDelimitedComment};
+
+pub mod input;
 
 /// Is an enumeration representing keywords in the Pernix programming language.
 ///
@@ -221,13 +220,11 @@ impl KeywordKind {
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Token {
-    WhiteSpace(WhiteSpace),
+    WhiteSpaces(WhiteSpaces),
     Identifier(Identifier),
     Keyword(Keyword),
     Punctuation(Punctuation),
     NumericLiteral(NumericLiteral),
-    StringLiteral(StringLiteral),
-    CharacterLiteral(CharacterLiteral),
     Comment(Comment),
 }
 
@@ -236,13 +233,11 @@ impl Token {
     #[must_use]
     pub fn span(&self) -> &Span {
         match self {
-            Self::WhiteSpace(token) => &token.span,
+            Self::WhiteSpaces(token) => &token.span,
             Self::Identifier(token) => &token.span,
             Self::Keyword(token) => &token.span,
             Self::Punctuation(token) => &token.span,
             Self::NumericLiteral(token) => &token.span,
-            Self::StringLiteral(token) => &token.span,
-            Self::CharacterLiteral(token) => &token.span,
             Self::Comment(token) => &token.span,
         }
     }
@@ -251,13 +246,11 @@ impl Token {
 impl SourceElement for Token {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
-            Self::WhiteSpace(token) => token.span(),
+            Self::WhiteSpaces(token) => token.span(),
             Self::Identifier(token) => token.span(),
             Self::Keyword(token) => token.span(),
             Self::Punctuation(token) => token.span(),
             Self::NumericLiteral(token) => token.span(),
-            Self::StringLiteral(token) => token.span(),
-            Self::CharacterLiteral(token) => token.span(),
             Self::Comment(token) => token.span(),
         }
     }
@@ -265,12 +258,12 @@ impl SourceElement for Token {
 
 /// Represents a contiguous sequence of whitespace characters.
 #[derive(Debug, Clone, Getters)]
-pub struct WhiteSpace {
+pub struct WhiteSpaces {
     /// Is the span that makes up the token.
     pub span: Span,
 }
 
-impl SourceElement for WhiteSpace {
+impl SourceElement for WhiteSpaces {
     fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
 }
 
@@ -330,36 +323,11 @@ impl SourceElement for NumericLiteral {
     fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
 }
 
-/// Represents a single character or escape sequence enclosed in single quotes.
-#[derive(Debug, Clone, Getters, CopyGetters)]
-pub struct CharacterLiteral {
-    ///  The span that makes up the token.
-    pub span: Span,
-
-    /// The character value of the literal.
-    pub character: char,
-}
-
-impl SourceElement for CharacterLiteral {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
-}
-
-/// Represents a contiguous sequence of characters enclosed in double quotes.
-#[derive(Debug, Clone, Getters)]
-pub struct StringLiteral {
-    /// Is the span that makes up the token.
-    pub span: Span,
-}
-
-impl SourceElement for StringLiteral {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
-}
-
 /// Is an enumeration representing the two kinds of comments in the Pernix programming language.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CommentKind {
     /// A comment that starts with `//` and ends at the end of the line.
-    SingleLine,
+    Line,
 
     /// A comment that starts with `/*` and ends with `*/`.
     Delimited,
@@ -380,9 +348,9 @@ impl SourceElement for Comment {
 }
 
 /// Is an error that can occur when invoking the [Token::tokenize()](Token::tokenize()) method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner, Error, From)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner, thiserror::Error, From)]
 #[allow(missing_docs)]
-pub enum TokenizationError {
+pub enum Error {
     #[error("Encountered a fatal lexical error that causes the process to stop.")]
     FatalLexicalError,
 
@@ -428,30 +396,10 @@ impl Token {
                 && !character.is_ascii_punctuation())
     }
 
-    /// Maps the character following the `\` character in a string literal to the corresponding
-    /// escape character.
-    fn map_escape_character(character: char) -> Option<char> {
-        match character {
-            '\'' => Some(0x27 as char),
-            '\"' => Some(0x22 as char),
-            '?' => Some(0x3f as char),
-            '\\' => Some(0x5c as char),
-            'a' => Some(0x07 as char),
-            'b' => Some(0x08 as char),
-            'f' => Some(0x0c as char),
-            'n' => Some(0x0a as char),
-            'r' => Some(0x0d as char),
-            't' => Some(0x09 as char),
-            'v' => Some(0x0b as char),
-            '0' => Some('\0'),
-            _ => None,
-        }
-    }
-
     fn handle_whitespace(iter: &mut pernixc_source::Iterator, start: ByteIndex) -> Self {
         Self::walk_iter(iter, char::is_whitespace);
 
-        WhiteSpace {
+        WhiteSpaces {
             span: Self::create_span(start, iter),
         }
         .into()
@@ -483,8 +431,8 @@ impl Token {
         iter: &mut pernixc_source::Iterator,
         start: ByteIndex,
         character: char,
-        handler: &impl Handler<Error>,
-    ) -> Result<Self, TokenizationError> {
+        handler: &impl Handler<error::Error>,
+    ) -> Result<Self, Error> {
         // Single line comment
         if let Some((_, '/')) = iter.peek() {
             iter.next();
@@ -495,7 +443,7 @@ impl Token {
 
             Ok(Comment {
                 span: Self::create_span(start, iter),
-                kind: CommentKind::SingleLine,
+                kind: CommentKind::Line,
             }
             .into())
         }
@@ -531,7 +479,7 @@ impl Token {
                     }
                     .into(),
                 );
-                return Err(TokenizationError::FatalLexicalError);
+                return Err(Error::FatalLexicalError);
             }
         }
         // Just a single slash punctuation
@@ -541,162 +489,6 @@ impl Token {
                 punctuation: character,
             }
             .into())
-        }
-    }
-
-    fn handle_string_literal(
-        iter: &mut pernixc_source::Iterator,
-        start: ByteIndex,
-        handler: &impl Handler<Error>,
-    ) -> Result<Self, TokenizationError> {
-        let mut found_invalid = false;
-        loop {
-            let character = iter.next().map_or('\0', |x| x.1);
-
-            // Stops when the string literal is terminated
-            if character == '"' {
-                break;
-            }
-            // Handles escape characters
-            else if character == '\\' {
-                let escape_character = iter.next();
-                let Some((location, character)) = escape_character else {
-                        continue;
-                    };
-
-                let escape_character = Self::map_escape_character(character);
-
-                if escape_character.is_none() {
-                    handler.recieve(
-                        InvalidEscapeCharacterSequences {
-                            span: Self::create_span(location - 1, iter),
-                        }
-                        .into(),
-                    );
-                    found_invalid = true;
-                }
-            }
-            // Unterminated string literal
-            else if character == '\0' {
-                handler.recieve(
-                    UnterminatedStringLiteral {
-                        span: Span::new(iter.source_file().clone(), start, start + 1).unwrap(),
-                    }
-                    .into(),
-                );
-                return Err(TokenizationError::FatalLexicalError);
-            }
-        }
-
-        // No error found, returns the string literal token
-        if found_invalid {
-            // couldn't construct the string literal with the invalid escape characters since it
-            // might be used later on
-            Err(TokenizationError::FatalLexicalError)
-        }
-        // Found invalid escape characters
-        else {
-            Ok(StringLiteral {
-                span: Self::create_span(start, iter),
-            }
-            .into())
-        }
-    }
-
-    fn handle_character_literal(
-        iter: &mut pernixc_source::Iterator,
-        start: ByteIndex,
-        handler: &impl Handler<Error>,
-    ) -> Result<Self, TokenizationError> {
-        // Empty character literal error
-        if let Some((_, '\'')) = iter.peek() {
-            iter.next();
-
-            handler.recieve(
-                EmptyCharacterLiteral {
-                    span: Self::create_span(start, iter),
-                }
-                .into(),
-            );
-
-            Err(TokenizationError::FatalLexicalError)
-        }
-        // Might found a character literal or a single quote punctuation
-        else {
-            // If we found a backslash, we need to look ahead by two characters to check if the
-            // next character is a single quote. Otherwise, we only need to look ahead by one
-
-            let is_escape_character_sequence = matches!(iter.peek(), Some((_, '\\')));
-            let look_ahead_count = if is_escape_character_sequence { 2 } else { 1 };
-            let mut cloned_iter = iter.clone();
-
-            if matches!(cloned_iter.nth(look_ahead_count), Some((_, '\''))) {
-                // Maps the escape character to the actual value
-                if is_escape_character_sequence {
-                    iter.next();
-
-                    let (escape_source_location, escape_character) = iter.next().unwrap();
-                    let escape_character = Self::map_escape_character(escape_character);
-
-                    let mut end_escape_character_iter = iter.clone();
-
-                    iter.next();
-
-                    escape_character.map_or_else(
-                        || {
-                            handler.recieve(
-                                InvalidEscapeCharacterSequences {
-                                    span: Self::create_span(
-                                        escape_source_location - 1,
-                                        &mut end_escape_character_iter,
-                                    ),
-                                }
-                                .into(),
-                            );
-
-                            Err(TokenizationError::FatalLexicalError)
-                        },
-                        |character| {
-                            Ok(CharacterLiteral {
-                                span: Self::create_span(start, iter),
-                                character,
-                            }
-                            .into())
-                        },
-                    )
-                }
-                // Found a normal character literal
-                else {
-                    let character = iter.next().unwrap().1;
-
-                    iter.next();
-
-                    // The control characters must be escaped
-                    if character.is_control() {
-                        handler.recieve(
-                            ControlCharactersMustBeEscaped {
-                                span: Self::create_span(start, iter),
-                            }
-                            .into(),
-                        );
-                        Err(TokenizationError::FatalLexicalError)
-                    } else {
-                        Ok(CharacterLiteral {
-                            span: Self::create_span(start, iter),
-                            character,
-                        }
-                        .into())
-                    }
-                }
-            }
-            // It's just a single quote punctuation
-            else {
-                Ok(Punctuation {
-                    span: Self::create_span(start, iter),
-                    punctuation: '\'',
-                }
-                .into())
-            }
         }
     }
 
@@ -754,17 +546,15 @@ impl Token {
     /// iterator is left at the next character that is not part of the token.
     ///
     /// # Errors
-    /// - [`TokenizationError::EndOfSourceCodeIteratorArgument`] - The iterator argument is at the
-    ///   end of the source code.
-    /// - [`TokenizationError::FatalLexicalError`] - A fatal lexical error occurred.
+    /// - [`Error::EndOfSourceCodeIteratorArgument`] - The iterator argument is at the end of the
+    ///   source code.
+    /// - [`Error::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn tokenize(
         iter: &mut pernixc_source::Iterator,
-        handler: &impl Handler<Error>,
-    ) -> Result<Self, TokenizationError> {
+        handler: &impl Handler<error::Error>,
+    ) -> Result<Self, Error> {
         // Gets the first character
-        let (start, character) = iter
-            .next()
-            .ok_or(TokenizationError::EndOfSourceCodeIteratorArgument)?;
+        let (start, character) = iter.next().ok_or(Error::EndOfSourceCodeIteratorArgument)?;
 
         // Found whitespaces
         if character.is_whitespace() {
@@ -778,14 +568,6 @@ impl Token {
         else if character == '/' {
             Self::handle_comment(iter, start, character, handler)
         }
-        // Found a string literal
-        else if character == '"' {
-            Self::handle_string_literal(iter, start, handler).map_err(Into::into)
-        }
-        // Found a character literal
-        else if character == '\'' {
-            Self::handle_character_literal(iter, start, handler).map_err(Into::into)
-        }
         // Found numeric literal
         else if character.is_ascii_digit() {
             Ok(Self::handle_numeric_literal(iter, start))
@@ -798,11 +580,10 @@ impl Token {
             }
             .into())
         } else {
-            todo!()
+            unreachable!("should've been handled by earlier cases")
         }
     }
 }
 
-pub mod strategy;
 #[cfg(test)]
-pub mod tests;
+mod tests;

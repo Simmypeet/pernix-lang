@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Index, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use pernixc_lexical::token::Identifier;
 use pernixc_source::SourceElement;

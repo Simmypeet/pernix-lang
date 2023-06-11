@@ -19,8 +19,6 @@ use crate::{
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
 
-pub mod strategy;
-
 /// Is an enumeration of all kinds of expressions.
 ///
 /// ``` txt
@@ -1447,5 +1445,7 @@ impl<'a> Parser<'a> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests;
+*/

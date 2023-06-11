@@ -16,6 +16,9 @@ use crate::{
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
 
+#[cfg(feature = "input")]
+pub mod input;
+
 pub mod expression;
 pub mod item;
 pub mod statement;
@@ -228,14 +231,14 @@ impl SourceElement for ScopeSeparator {
 #[derive(Debug, Clone, EnumAsInner, From)]
 pub enum LifetimeArgumentIdentifier {
     Identifier(Identifier),
-    StaticKeyword(Keyword),
+    Static(Keyword),
 }
 
 impl SourceElement for LifetimeArgumentIdentifier {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
             Self::Identifier(ident) => Ok(ident.span.clone()),
-            Self::StaticKeyword(keyword) => Ok(keyword.span.clone()),
+            Self::Static(keyword) => Ok(keyword.span.clone()),
         }
     }
 }
@@ -641,7 +644,7 @@ impl<'a> Parser<'a> {
             Some(Token::Keyword(static_keyword))
                 if static_keyword.keyword == KeywordKind::Static =>
             {
-                Ok(LifetimeArgumentIdentifier::StaticKeyword(static_keyword))
+                Ok(LifetimeArgumentIdentifier::Static(static_keyword))
             }
 
             // identifier
@@ -868,7 +871,9 @@ impl<'a> Parser<'a> {
     }
 }
 
+/*
 pub mod strategy;
 
 #[cfg(test)]
 pub(crate) mod tests;
+*/

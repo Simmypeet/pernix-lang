@@ -64,7 +64,9 @@ impl<'a> Frame<'a> {
         for i in self.current_index..self.token_provider.token_stream().len() {
             if !matches!(
                 token_stream.get(i),
-                Some(TokenTree::Token(Token::WhiteSpace(..) | Token::Comment(..)))
+                Some(TokenTree::Token(
+                    Token::WhiteSpaces(..) | Token::Comment(..)
+                ))
             ) {
                 return false;
             }
@@ -160,7 +162,7 @@ impl<'a> Frame<'a> {
         while !self.is_end() {
             let token = self.peek();
 
-            if !matches!(token, Some(Token::WhiteSpace(..) | Token::Comment(..))) {
+            if !matches!(token, Some(Token::WhiteSpaces(..) | Token::Comment(..))) {
                 return token;
             }
 

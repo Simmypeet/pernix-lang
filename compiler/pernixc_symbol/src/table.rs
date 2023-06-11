@@ -8,7 +8,6 @@ use pernixc_system::{
     diagnostic::Handler,
 };
 
-use self::builder::Drafting;
 use crate::{
     error, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global, GlobalID,
     Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, ModuleID, Parameter,
@@ -157,19 +156,36 @@ pub struct Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Table {
-    /// Performs symbol resolution/analysis and builds a table populated with symbols from the
-    /// given target syntax trees.
+    /// Finds a symbol by the given path.
     ///
-    /// # Errors
-    /// - If found duplicated target names.
-    pub fn build(
-        targets: Vec<Target>,
-        handler: &impl Handler<error::Error>,
-    ) -> std::result::Result<Self, BuildError> {
-        // checks input validity
-        module::target_check(&targets)?;
+    /// The search starts from the root of the table.
+    pub fn find_by_path<'a>(&self, path: impl Iterator<Item = &'a str>) -> Option<GlobalID> {
+        let mut current_symbol: Option<GlobalID> = None;
 
-        let mut table = Self {
+        for path in path {
+            if let Some(id) = current_symbol {
+                let Ok(scoped_id) = ScopedID::try_from(id) else {
+                    break;
+                };
+
+                let scoped_symbol = self.get_scoped(scoped_id).unwrap();
+                current_symbol = Some(scoped_symbol.get_child_id_by_name(path)?);
+            } else {
+                current_symbol = Some(
+                    self.root_module_ids_by_target_name
+                        .get(path)
+                        .copied()?
+                        .into(),
+                );
+            }
+        }
+
+        current_symbol
+    }
+
+    /// Creates a new empty table.
+    fn new() -> Self {
+        Self {
             modules: Arena::new(),
             structs: Arena::new(),
             enums: Arena::new(),
@@ -187,7 +203,22 @@ impl Table {
             implements_types: Arena::new(),
             implements_functions: Arena::new(),
             root_module_ids_by_target_name: HashMap::new(),
-        };
+        }
+    }
+
+    /// Performs symbol resolution/analysis and builds a table populated with symbols from the
+    /// given target syntax trees.
+    ///
+    /// # Errors
+    /// - If found duplicated target names.
+    pub fn build(
+        targets: Vec<Target>,
+        handler: &impl Handler<error::Error>,
+    ) -> std::result::Result<Self, BuildError> {
+        // checks input validity
+        module::target_check(&targets)?;
+
+        let mut table = Self::new();
 
         // creates core-language symbols
         table.create_core_symbols();

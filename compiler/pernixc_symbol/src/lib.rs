@@ -13,7 +13,7 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::Into,
     fmt::Debug,
     hash::Hash,
@@ -536,7 +536,7 @@ create_symbol! {
         pub child_ids_by_name: HashMap<String, GlobalID>,
 
         /// The IDs of modules that are used in the `using` statements.
-        pub usings: Vec<ModuleID>,
+        pub usings: HashSet<ModuleID>,
     }
 }
 
@@ -873,6 +873,19 @@ impl From<TypedID> for ID {
         match value {
             TypedID::Enum(id) => Self::Enum(id),
             TypedID::Struct(id) => Self::Struct(id),
+        }
+    }
+}
+
+impl TryFrom<GlobalID> for ScopedID {
+    type Error = GlobalID;
+
+    fn try_from(value: GlobalID) -> Result<Self, Self::Error> {
+        match value {
+            GlobalID::Module(s) => Ok(Self::Module(s)),
+            GlobalID::Enum(s) => Ok(Self::Enum(s)),
+            GlobalID::Trait(s) => Ok(Self::Trait(s)),
+            value => Err(value),
         }
     }
 }

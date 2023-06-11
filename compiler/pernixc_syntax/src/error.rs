@@ -22,14 +22,12 @@ fn found_string(found: &Option<Token>) -> String {
     };
 
     match token {
-        Token::WhiteSpace(_) => "whitespaces".to_string(),
+        Token::WhiteSpaces(_) => "whitespaces".to_string(),
         Token::Identifier(_) => format!("`{}` identifier", token.span().str()),
         Token::Keyword(_) => format!("`{}` keyword", token.span().str()),
         Token::Punctuation(_) | Token::NumericLiteral(_) => {
             format!("`{}`", token.span().str())
         }
-        Token::StringLiteral(_) => "string literal".to_string(),
-        Token::CharacterLiteral(_) => "character literal".to_string(),
         Token::Comment(_) => "comment".to_string(),
     }
 }

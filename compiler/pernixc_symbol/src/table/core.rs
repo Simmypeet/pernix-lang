@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::Table;
 use crate::{
@@ -15,7 +15,7 @@ impl Table {
             accessibility: Accessibility::Public,
             parent_module_id: None,
             child_ids_by_name: HashMap::new(),
-            usings: Vec::new(),
+            usings: HashSet::new(),
         });
 
         // add to the root

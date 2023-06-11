@@ -44,7 +44,7 @@ impl Table {
                 accessibility: Accessibility::from_syntax_tree(&submodule.module.access_modifier),
                 parent_module_id: Some(parent_module_id),
                 child_ids_by_name: HashMap::new(),
-                usings: Vec::new(),
+                usings: HashSet::new(),
             });
 
             assert!(
@@ -66,7 +66,7 @@ impl Table {
             accessibility: Accessibility::Public,
             parent_module_id: None,
             child_ids_by_name: HashMap::new(),
-            usings: Vec::new(),
+            usings: HashSet::new(),
         });
 
         self.root_module_ids_by_target_name
@@ -167,7 +167,7 @@ impl Table {
 
         let module = &mut self.modules[module_id];
         for module_id in using_spans_by_module_id.into_keys() {
-            module.usings.push(module_id);
+            module.usings.insert(module_id);
         }
     }
 
@@ -204,3 +204,6 @@ impl Table {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

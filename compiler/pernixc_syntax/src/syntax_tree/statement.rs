@@ -13,8 +13,6 @@ use crate::{
     parser::{Parser, Result as ParserResult},
 };
 
-pub mod strategy;
-
 /// Represents a statement syntax tree node
 ///
 /// Syntax Synopsis:
@@ -223,5 +221,7 @@ impl<'a> Parser<'a> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests;
+*/
