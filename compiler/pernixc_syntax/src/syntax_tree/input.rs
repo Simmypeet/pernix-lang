@@ -5,7 +5,7 @@ use std::fmt::{Debug, Display, Write};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::token::{self, input::Identifier};
+use pernixc_lexical::token::{self, input::Identifier, KeywordKind};
 use pernixc_system::input::Input;
 use proptest::{
     prelude::Arbitrary,
@@ -83,7 +83,7 @@ impl Input for LifetimeArgument {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.lifetime_argument_identifier
-            .assert(&output.lifetime_argument_identifier)?;
+            .assert(&output.identifier)?;
         Ok(())
     }
 }
@@ -763,5 +763,63 @@ impl Display for QualifiedIdentifier {
         }
 
         Ok(())
+    }
+}
+
+/// Represents an input for the [`super::AccessModifier`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum AccessModifier {
+    Public,
+    Private,
+    Internal,
+}
+
+impl Input for AccessModifier {
+    type Output = super::AccessModifier;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::Public, super::AccessModifier::Public(k)) => {
+                prop_assert_eq!(k.keyword, KeywordKind::Public);
+            }
+            (Self::Private, super::AccessModifier::Private(k)) => {
+                prop_assert_eq!(k.keyword, KeywordKind::Private);
+            }
+            (Self::Internal, super::AccessModifier::Internal(k)) => {
+                prop_assert_eq!(k.keyword, KeywordKind::Internal);
+            }
+            _ => {
+                return Err(TestCaseError::fail(format!(
+                    "Expected {self:?}, got {output:?}"
+                )))
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Arbitrary for AccessModifier {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::Public),
+            Just(Self::Private),
+            Just(Self::Internal),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for AccessModifier {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Public => write!(formatter, "public"),
+            Self::Private => write!(formatter, "private"),
+            Self::Internal => write!(formatter, "internal"),
+        }
     }
 }

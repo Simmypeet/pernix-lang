@@ -102,7 +102,7 @@ impl Table {
             let name = {
                 let identifier = match &item {
                     Item::Trait(i) => &i.trait_signature.identifier,
-                    Item::Function(i) => &i.function_signature.identifier,
+                    Item::Function(i) => &i.signature.identifier,
                     Item::Type(i) => &i.type_signature.identifier,
                     Item::Struct(i) => &i.struct_signature.identifier,
                     Item::Enum(i) => &i.enum_signature.identifier,
@@ -174,10 +174,7 @@ impl Table {
     ) -> GenericParameters {
         let mut generic_parameters = GenericParameters::default();
 
-        for generic_parameter in generic_parameters_syntax_tree
-            .generic_parameter_list
-            .elements()
-        {
+        for generic_parameter in generic_parameters_syntax_tree.parameter_list.elements() {
             match generic_parameter {
                 item::GenericParameter::Lifetime(lt) => {
                     // lifetime must be declared prior to type parameters
@@ -469,10 +466,10 @@ impl Table {
     ) -> FunctionID {
         // function signature syntax tree (without parameters)
         let function_signature_syntax_tree = Arc::new(FunctionSignatureSyntaxTree {
-            identifier: function_syntax_tree.function_signature.identifier,
-            generic_parameters: function_syntax_tree.function_signature.generic_parameters,
-            return_type: function_syntax_tree.function_signature.return_type,
-            where_clause: function_syntax_tree.function_signature.where_clause,
+            identifier: function_syntax_tree.signature.identifier,
+            generic_parameters: function_syntax_tree.signature.generic_parameters,
+            return_type: function_syntax_tree.signature.return_type,
+            where_clause: function_syntax_tree.signature.where_clause,
         });
 
         let function_id = self.functions.insert(crate::Function {
@@ -489,7 +486,7 @@ impl Table {
                 generics: Generics::default(), // to be filled later
             },
             parent_module_id,
-            syntax_tree: Arc::new(function_syntax_tree.function_body),
+            syntax_tree: Arc::new(function_syntax_tree.body),
             accessibility: Accessibility::from_syntax_tree(&function_syntax_tree.access_modifier),
         });
 
@@ -503,7 +500,7 @@ impl Table {
         }
 
         for parameter in function_syntax_tree
-            .function_signature
+            .signature
             .parameters
             .parameter_list
             .into_iter()

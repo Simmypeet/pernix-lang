@@ -481,7 +481,10 @@ pub struct WhereClause {
     pub lifetime_bounds: HashMap<LifetimeParameterID, Vec<LifetimeArgument>>,
 
     /// Maps the associated type to its type bound.
-    pub trait_type_bounds: HashMap<ty::TraitType, ty::Type>,
+    pub type_bounds_by_trait_type: HashMap<ty::TraitType, ty::Type>,
+
+    /// Maps the associated type to its lifetime bounds.
+    pub lifetime_bound_vecs_by_trait_type: HashMap<ty::TraitType, Vec<LifetimeArgument>>,
 
     /// Maps the type parameter to its lifetime bounds.
     pub type_parameter_bounds: HashMap<TypeParameterID, Vec<LifetimeArgument>>,

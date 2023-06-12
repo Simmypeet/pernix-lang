@@ -10,8 +10,8 @@ use pernixc_source::{SourceElement, Span, SpanError};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
-    statement::Statement, AccessModifier, ConnectedList, LifetimeArgument,
-    LifetimeArgumentIdentifier, QualifiedIdentifier, TypeAnnotation, TypeSpecifier,
+    statement::Statement, AccessModifier, ConnectedList, LifetimeArgument, QualifiedIdentifier,
+    TypeAnnotation, TypeSpecifier,
 };
 use crate::{
     error::{
@@ -19,6 +19,8 @@ use crate::{
     },
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
+
+pub mod input;
 
 /// Represents a syntax tree node for a lifetime parameter.
 ///
@@ -104,7 +106,7 @@ pub type GenericParameterList = ConnectedList<GenericParameter, Punctuation>;
 #[allow(missing_docs)]
 pub struct GenericParameters {
     pub left_angle_bracket: Punctuation,
-    pub generic_parameter_list: GenericParameterList,
+    pub parameter_list: GenericParameterList,
     pub right_angle_bracket: Punctuation,
 }
 
@@ -121,7 +123,7 @@ impl SourceElement for GenericParameters {
 /// Syntax Synopsis:
 /// ``` text
 /// LifetimeBound:
-///     LifetimeParameter ':' LifetimeParameter ('+' LifetimeParameter)*
+///     LifetimeParameter ':' LifetimeArgument ('+' LifetimeArgument)*
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
@@ -129,12 +131,12 @@ impl SourceElement for GenericParameters {
 pub struct LifetimeBound {
     pub operand: LifetimeParameter,
     pub colon: Punctuation,
-    pub lifetime_parameters: ConnectedList<LifetimeParameter, Punctuation>,
+    pub parameters: BoundList<LifetimeArgument>,
 }
 
 impl SourceElement for LifetimeBound {
     fn span(&self) -> Result<Span, SpanError> {
-        self.operand.span()?.join(&self.lifetime_parameters.span()?)
+        self.operand.span()?.join(&self.parameters.span()?)
     }
 }
 
@@ -176,7 +178,7 @@ impl SourceElement for TypeBoundConstraint {
 pub struct TypeBound {
     pub qualified_identifier: QualifiedIdentifier,
     pub colon: Punctuation,
-    pub type_bound_constraints: ConnectedList<TypeBoundConstraint, Punctuation>,
+    pub type_bound_constraints: BoundList<TypeBoundConstraint>,
 }
 
 impl SourceElement for TypeBound {
@@ -187,13 +189,33 @@ impl SourceElement for TypeBound {
     }
 }
 
+/// Similar to [`ConnectedList`] but specifically for list of constraints separated by plus sings
+/// and has no trailing separator.
+#[derive(Debug, Clone)]
+pub struct BoundList<T> {
+    /// The first element of the list.
+    pub first: T,
+
+    /// The rest of the elements of the list.
+    pub rest: Vec<(Punctuation, T)>,
+}
+
+impl<T: SourceElement> SourceElement for BoundList<T> {
+    fn span(&self) -> Result<Span, SpanError> {
+        let first = self.first.span()?;
+        match self.rest.last() {
+            Some(last) => first.join(&last.1.span()?),
+            None => Ok(first),
+        }
+    }
+}
+
 /// Represents a syntax tree node of a constraint used in a where clause.
 ///
 /// Syntax Synopsis:
 /// ``` text
 /// Constraint:
 ///     TraitBound
-///     | LifetimeArgument
 ///     | LifetimeBound
 ///     | TypeBound
 ///     ;
@@ -202,7 +224,6 @@ impl SourceElement for TypeBound {
 #[allow(missing_docs)]
 pub enum Constraint {
     TraitBound(TraitBound),
-    LifetimeArgument(LifetimeArgument),
     LifetimeBound(LifetimeBound),
     TypeBound(TypeBound),
 }
@@ -211,7 +232,6 @@ impl SourceElement for Constraint {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
             Self::TraitBound(s) => s.span(),
-            Self::LifetimeArgument(s) => s.span(),
             Self::LifetimeBound(s) => s.span(),
             Self::TypeBound(s) => s.span(),
         }
@@ -538,15 +558,13 @@ impl SourceElement for FunctionBody {
 #[allow(missing_docs)]
 pub struct Function {
     pub access_modifier: AccessModifier,
-    pub function_signature: FunctionSignature,
-    pub function_body: FunctionBody,
+    pub signature: FunctionSignature,
+    pub body: FunctionBody,
 }
 
 impl SourceElement for Function {
     fn span(&self) -> Result<Span, SpanError> {
-        self.access_modifier
-            .span()?
-            .join(&self.function_body.span()?)
+        self.access_modifier.span()?.join(&self.body.span()?)
     }
 }
 
@@ -1038,21 +1056,8 @@ impl<'a> Parser<'a> {
 
         Ok(GenericParameters {
             left_angle_bracket,
-            generic_parameter_list,
+            parameter_list: generic_parameter_list,
             right_angle_bracket,
-        })
-    }
-
-    fn parse_lifetime_parameter(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<LifetimeParameter> {
-        let apostrophe = self.parse_punctuation('\'', true, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-
-        Ok(LifetimeParameter {
-            apostrophe,
-            identifier,
         })
     }
 
@@ -1070,7 +1075,7 @@ impl<'a> Parser<'a> {
 
                 Ok(TypeBoundConstraint::LifetimeArgument(LifetimeArgument {
                     apostrophe,
-                    lifetime_argument_identifier,
+                    identifier: lifetime_argument_identifier,
                 }))
             }
 
@@ -1080,6 +1085,19 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_lifetime_argument(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> ParserResult<LifetimeArgument> {
+        let apostrophe = self.parse_punctuation('\'', true, handler)?;
+        let identifier = self.parse_lifetime_argument_identifier(handler)?;
+
+        Ok(LifetimeArgument {
+            apostrophe,
+            identifier,
+        })
+    }
+
     fn parse_cosntraint(&mut self, handler: &impl Handler<Error>) -> ParserResult<Constraint> {
         match self.stop_at_significant() {
             // parses lifetime argument / bound
@@ -1087,52 +1105,32 @@ impl<'a> Parser<'a> {
                 // eat apostrophe
                 self.forward();
 
-                let lifetime_argument_identifier =
-                    self.parse_lifetime_argument_identifier(handler)?;
+                let identifier = self.parse_identifier(handler)?;
+                let colon = self.parse_punctuation(':', true, handler)?;
 
-                match (self.stop_at_significant(), lifetime_argument_identifier) {
-                    (
-                        Some(Token::Punctuation(colon)),
-                        LifetimeArgumentIdentifier::Identifier(identifier),
-                    ) if colon.punctuation == ':' => {
-                        // eat colon
-                        self.forward();
+                let lhs_lifetime_parameter = LifetimeParameter {
+                    apostrophe,
+                    identifier,
+                };
 
-                        let lhs_lifetime_parameter = LifetimeParameter {
-                            apostrophe,
-                            identifier,
-                        };
+                let lifetime_bounds = {
+                    let first = self.parse_lifetime_argument(handler)?;
+                    let mut rest = Vec::new();
 
-                        let lifetime_bounds = {
-                            let first = self.parse_lifetime_parameter(handler)?;
-                            let mut rest = Vec::new();
-
-                            while let Ok(plus) =
-                                self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
-                            {
-                                rest.push((plus, self.parse_lifetime_parameter(handler)?));
-                            }
-
-                            ConnectedList {
-                                first,
-                                rest,
-                                trailing_separator: None,
-                            }
-                        };
-
-                        Ok(Constraint::LifetimeBound(LifetimeBound {
-                            operand: lhs_lifetime_parameter,
-                            colon,
-                            lifetime_parameters: lifetime_bounds,
-                        }))
+                    while let Ok(plus) =
+                        self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
+                    {
+                        rest.push((plus, self.parse_lifetime_argument(handler)?));
                     }
-                    (_, lifetime_argument_identifier) => {
-                        Ok(Constraint::LifetimeArgument(LifetimeArgument {
-                            apostrophe,
-                            lifetime_argument_identifier,
-                        }))
-                    }
-                }
+
+                    BoundList { first, rest }
+                };
+
+                Ok(Constraint::LifetimeBound(LifetimeBound {
+                    operand: lhs_lifetime_parameter,
+                    colon,
+                    parameters: lifetime_bounds,
+                }))
             }
             _ => {
                 let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
@@ -1152,11 +1150,7 @@ impl<'a> Parser<'a> {
                                 rest.push((plus, self.parse_type_bound_constraint(handler)?));
                             }
 
-                            ConnectedList {
-                                first,
-                                rest,
-                                trailing_separator: None,
-                            }
+                            BoundList { first, rest }
                         };
 
                         Ok(Constraint::TypeBound(TypeBound {
@@ -1180,8 +1174,15 @@ impl<'a> Parser<'a> {
 
         let first = self.parse_cosntraint(handler)?;
         let mut rest = Vec::new();
+        let mut trailing_separator = None;
 
         while let Ok(comma) = self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy)) {
+            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '{')
+            {
+                trailing_separator = Some(comma);
+                break;
+            }
+
             let constraint = self.parse_cosntraint(handler)?;
             rest.push((comma, constraint));
         }
@@ -1192,7 +1193,7 @@ impl<'a> Parser<'a> {
             constraint_list: ConnectedList {
                 first,
                 rest,
-                trailing_separator: None,
+                trailing_separator,
             },
         })
     }
@@ -1596,8 +1597,8 @@ impl<'a> Parser<'a> {
 
                 Ok(Item::Function(Function {
                     access_modifier,
-                    function_signature,
-                    function_body,
+                    signature: function_signature,
+                    body: function_body,
                 }))
             }
 
@@ -1687,7 +1688,5 @@ impl<'a> Parser<'a> {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests;
-*/

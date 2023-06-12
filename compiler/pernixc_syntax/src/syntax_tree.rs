@@ -256,14 +256,14 @@ impl SourceElement for LifetimeArgumentIdentifier {
 #[allow(missing_docs)]
 pub struct LifetimeArgument {
     pub apostrophe: Punctuation,
-    pub lifetime_argument_identifier: LifetimeArgumentIdentifier,
+    pub identifier: LifetimeArgumentIdentifier,
 }
 
 impl SourceElement for LifetimeArgument {
     fn span(&self) -> Result<Span, SpanError> {
         self.apostrophe
             .span
-            .join(&self.lifetime_argument_identifier.span()?)
+            .join(&self.identifier.span()?)
     }
 }
 
@@ -689,7 +689,7 @@ impl<'a> Parser<'a> {
 
                 Some(LifetimeArgument {
                     apostrophe,
-                    lifetime_argument_identifier,
+                    identifier: lifetime_argument_identifier,
                 })
             }
 
@@ -818,7 +818,7 @@ impl<'a> Parser<'a> {
 
                 Ok(GenericArgument::Lifetime(LifetimeArgument {
                     apostrophe,
-                    lifetime_argument_identifier,
+                    identifier: lifetime_argument_identifier,
                 }))
             }
 
