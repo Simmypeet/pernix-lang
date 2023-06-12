@@ -16,10 +16,8 @@ use crate::{
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
 
-#[cfg(feature = "input")]
-pub mod input;
-
 pub mod expression;
+pub mod input;
 pub mod item;
 pub mod statement;
 pub mod target;
@@ -191,6 +189,7 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
 ///      ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum AccessModifier {
     Public(Keyword),
     Private(Keyword),
@@ -210,6 +209,7 @@ impl SourceElement for AccessModifier {
 /// This syntax tree is used to represent the scope separator `::` in the qualified identifier
 /// syntax
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct ScopeSeparator {
     pub first: Punctuation,
     pub second: Punctuation,
@@ -229,6 +229,7 @@ impl SourceElement for ScopeSeparator {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum LifetimeArgumentIdentifier {
     Identifier(Identifier),
     Static(Keyword),
@@ -252,6 +253,7 @@ impl SourceElement for LifetimeArgumentIdentifier {
 ///     ;
 /// ``
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct LifetimeArgument {
     pub apostrophe: Punctuation,
     pub lifetime_argument_identifier: LifetimeArgumentIdentifier,
@@ -275,16 +277,17 @@ impl SourceElement for LifetimeArgument {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum GenericArgument {
     TypeSpecifier(Box<TypeSpecifier>),
-    LifetimeArgument(LifetimeArgument),
+    Lifetime(LifetimeArgument),
 }
 
 impl SourceElement for GenericArgument {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
             Self::TypeSpecifier(type_specifier) => type_specifier.span(),
-            Self::LifetimeArgument(lifetime_argument) => lifetime_argument.span(),
+            Self::Lifetime(lifetime_argument) => lifetime_argument.span(),
         }
     }
 }
@@ -308,6 +311,7 @@ pub type GenericArgumentList = ConnectedList<GenericArgument, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct GenericArguments {
     pub colon: Option<Punctuation>,
     pub left_angle: Punctuation,
@@ -335,6 +339,7 @@ impl SourceElement for GenericArguments {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct GenericIdentifier {
     identifier: Identifier,
     generic_arguments: Option<GenericArguments>,
@@ -358,21 +363,26 @@ impl SourceElement for GenericIdentifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct QualifiedIdentifier {
     pub leading_scope_separator: Option<ScopeSeparator>,
-    pub generic_identifiers: ConnectedList<GenericIdentifier, ScopeSeparator>,
+    pub first: GenericIdentifier,
+    pub rest: Vec<(ScopeSeparator, GenericIdentifier)>,
 }
 
 impl SourceElement for QualifiedIdentifier {
     fn span(&self) -> Result<Span, SpanError> {
-        if let Some(leading_separator) = &self.leading_scope_separator {
-            leading_separator
-                .first
-                .span
-                .join(&self.generic_identifiers.span()?)
-        } else {
-            self.generic_identifiers.span()
-        }
+        let start = self
+            .leading_scope_separator
+            .as_ref()
+            .map_or_else(|| self.first.span(), pernixc_source::SourceElement::span)?;
+
+        let end = self
+            .rest
+            .last()
+            .map_or_else(|| self.first.span(), |(_, ident)| ident.span())?;
+
+        start.join(&end)
     }
 }
 
@@ -396,6 +406,7 @@ impl SourceElement for QualifiedIdentifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum PrimitiveTypeSpecifier {
     Bool(Keyword),
     Void(Keyword),
@@ -440,6 +451,7 @@ impl SourceElement for PrimitiveTypeSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum ReferenceQualifier {
     Mutable(Keyword),
     Restrict(Keyword),
@@ -462,10 +474,11 @@ impl SourceElement for ReferenceQualifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct ReferenceTypeSpecifier {
     pub ampersand: Punctuation,
     pub lifetime_argument: Option<LifetimeArgument>,
-    pub reference_qualifier: Option<ReferenceQualifier>,
+    pub qualifier: Option<ReferenceQualifier>,
     pub operand_type: Box<TypeSpecifier>,
 }
 
@@ -488,18 +501,19 @@ impl SourceElement for ReferenceTypeSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum TypeSpecifier {
-    PrimitiveTypeSpecifier(PrimitiveTypeSpecifier),
+    Primitive(PrimitiveTypeSpecifier),
     QualifiedIdentifier(QualifiedIdentifier),
-    ReferenceTypeSpecifier(ReferenceTypeSpecifier),
+    Reference(ReferenceTypeSpecifier),
 }
 
 impl SourceElement for TypeSpecifier {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
-            Self::PrimitiveTypeSpecifier(primitive) => primitive.span(),
+            Self::Primitive(primitive) => primitive.span(),
             Self::QualifiedIdentifier(qualified) => qualified.span(),
-            Self::ReferenceTypeSpecifier(reference) => reference.span(),
+            Self::Reference(reference) => reference.span(),
         }
     }
 }
@@ -513,6 +527,7 @@ impl SourceElement for TypeSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Label {
     pub apostrophe: Punctuation,
     pub identifier: Identifier,
@@ -531,6 +546,7 @@ impl SourceElement for Label {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TypeAnnotation {
     pub colon: Punctuation,
     pub type_specifier: TypeSpecifier,
@@ -627,11 +643,8 @@ impl<'a> Parser<'a> {
 
         Ok(QualifiedIdentifier {
             leading_scope_separator,
-            generic_identifiers: ConnectedList {
-                first,
-                rest,
-                trailing_separator: None,
-            },
+            first,
+            rest,
         })
     }
 
@@ -700,7 +713,7 @@ impl<'a> Parser<'a> {
         Ok(ReferenceTypeSpecifier {
             ampersand,
             lifetime_argument,
-            reference_qualifier,
+            qualifier: reference_qualifier,
             operand_type,
         })
     }
@@ -733,7 +746,7 @@ impl<'a> Parser<'a> {
             // parse reference
             Some(Token::Punctuation(p)) if p.punctuation == '&' => self
                 .parse_reference_type_specifier(handler)
-                .map(TypeSpecifier::ReferenceTypeSpecifier),
+                .map(TypeSpecifier::Reference),
 
             // primitive type
             Some(Token::Keyword(keyword))
@@ -772,7 +785,7 @@ impl<'a> Parser<'a> {
                     _ => unreachable!(),
                 };
 
-                Ok(TypeSpecifier::PrimitiveTypeSpecifier(primitive_type))
+                Ok(TypeSpecifier::Primitive(primitive_type))
             }
 
             found => {
@@ -803,7 +816,7 @@ impl<'a> Parser<'a> {
                 let lifetime_argument_identifier =
                     self.parse_lifetime_argument_identifier(handler)?;
 
-                Ok(GenericArgument::LifetimeArgument(LifetimeArgument {
+                Ok(GenericArgument::Lifetime(LifetimeArgument {
                     apostrophe,
                     lifetime_argument_identifier,
                 }))
@@ -871,9 +884,5 @@ impl<'a> Parser<'a> {
     }
 }
 
-/*
-pub mod strategy;
-
 #[cfg(test)]
-pub(crate) mod tests;
-*/
+mod tests;

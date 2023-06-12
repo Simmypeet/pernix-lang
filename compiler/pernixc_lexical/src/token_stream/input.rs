@@ -12,7 +12,7 @@ use proptest::{
 };
 
 use crate::token::input::{
-    Identifier, InsignificantToken, Keyword, NumericLiteral, Punctuation, Token,
+    Comment, Identifier, Keyword, NumericLiteral, Punctuation, Token, WhiteSpaces,
 };
 
 /// Represents an input for the [`super::Delimiter`].
@@ -148,6 +148,44 @@ impl Input for TokenTree {
         }
 
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+enum InsignificantToken {
+    Comment(Comment),
+    WhiteSpaces(WhiteSpaces),
+}
+
+impl From<InsignificantToken> for Token {
+    fn from(val: InsignificantToken) -> Self {
+        match val {
+            InsignificantToken::Comment(c) => Self::Comment(c),
+            InsignificantToken::WhiteSpaces(w) => Self::WhiteSpaces(w),
+        }
+    }
+}
+
+impl Arbitrary for InsignificantToken {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Comment::arbitrary().prop_map(Self::Comment),
+            WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for InsignificantToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Comment(c) => Display::fmt(c, f),
+            Self::WhiteSpaces(w) => Display::fmt(w, f),
+        }
     }
 }
 

@@ -19,7 +19,7 @@ use crate::syntax_tree::{
     ConnectedList,
 };
 
-/// Represents an input for [`super::LifetimeParameter`]
+/// Represents an input for the [`super::LifetimeParameter`]
 #[derive(Debug, Clone)]
 pub struct LifetimeParameterInput {
     /// The identifier of the lifetime parameter
@@ -40,7 +40,7 @@ impl LifetimeParameterInput {
     }
 }
 
-/// Represents an input for [`super::TypeParameter`]
+/// Represents an input for the [`super::TypeParameter`]
 #[derive(Debug, Clone)]
 pub struct TypeParameterInput {
     /// The identifier of the type parameter
@@ -61,7 +61,7 @@ impl TypeParameterInput {
     }
 }
 
-/// Represents an input for [`super::GenericParameter`]
+/// Represents an input for the [`super::GenericParameter`]
 #[derive(Debug, Clone, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum GenericParameterInput {
@@ -90,7 +90,7 @@ impl GenericParameterInput {
     }
 }
 
-/// Represents an input for [`super::GenericParameters`]
+/// Represents an input for the [`super::GenericParameters`]
 #[derive(Debug, Clone)]
 pub struct GenericParametersInput {
     /// List of generic parameters
@@ -131,7 +131,7 @@ impl GenericParametersInput {
     }
 }
 
-/// Represents an input for [`super::TraitBound`]
+/// Represents an input for the [`super::TraitBound`]
 #[derive(Debug, Clone)]
 pub struct TraitBoundInput {
     pub qualified_identifier: QualifiedIdentifierInput,
@@ -150,7 +150,7 @@ impl TraitBoundInput {
     }
 }
 
-/// Represents an input for [`super::LifetimeBound`]
+/// Represents an input for the [`super::LifetimeBound`]
 #[derive(Debug, Clone)]
 pub struct LifetimeBoundInput {
     pub operand: LifetimeParameterInput,
@@ -195,7 +195,7 @@ impl LifetimeBoundInput {
     }
 }
 
-/// Represents an input for [`super::TypeBoundConstraint`]
+/// Represents an input for the [`super::TypeBoundConstraint`]
 #[derive(Debug, Clone, EnumAsInner)]
 pub enum TypeBoundConstraintInput {
     LifetimeArgument(LifetimeArgumentInput),
@@ -228,7 +228,7 @@ impl TypeBoundConstraintInput {
     }
 }
 
-/// Represents an input for [`super::TypeBound`]
+/// Represents an input for the [`super::TypeBound`]
 #[derive(Debug, Clone)]
 pub struct TypeBoundInput {
     pub qualified_identifier: QualifiedIdentifierInput,

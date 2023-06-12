@@ -1,3 +1,5 @@
+//! Contains the definitions of statement syntax tree.
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
@@ -13,48 +15,28 @@ use crate::{
     parser::{Parser, Result as ParserResult},
 };
 
+pub mod input;
+
 /// Represents a statement syntax tree node
 ///
 /// Syntax Synopsis:
 /// ``` text
 /// Statement:
-///     Declarative
+///     VariableDeclaration
 ///     | Expressive
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum Statement {
-    Declarative(Declarative),
+    VariableDeclaration(VariableDeclaration),
     Expressive(Expressive),
 }
 
 impl SourceElement for Statement {
     fn span(&self) -> Result<Span, SpanError> {
         match self {
-            Self::Declarative(declaration) => declaration.span(),
-            Self::Expressive(expression) => expression.span(),
-        }
-    }
-}
-
-/// Represents a declarative statement syntax tree node
-///
-/// Declarative statements are statements that introduce a new symbol into the current scope.
-///
-/// Syntax Synopsis:
-/// ``` text
-/// Declarative:
-///     VariableDeclaration
-///     ;
-/// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
-pub enum Declarative {
-    VariableDeclaration(VariableDeclaration),
-}
-
-impl SourceElement for Declarative {
-    fn span(&self) -> Result<Span, SpanError> {
-        match self {
             Self::VariableDeclaration(declaration) => declaration.span(),
+            Self::Expressive(expression) => expression.span(),
         }
     }
 }
@@ -68,6 +50,7 @@ impl SourceElement for Declarative {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct VariableDeclaration {
     pub let_keyword: Keyword,
     pub mutable_keyword: Option<Keyword>,
@@ -97,6 +80,7 @@ impl SourceElement for VariableDeclaration {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum Expressive {
     Semi(Semi),
     Imperative(Imperative),
@@ -121,6 +105,7 @@ impl SourceElement for Expressive {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum SemiExpression {
     Functional(Functional),
     Terminator(Terminator),
@@ -146,15 +131,14 @@ impl SourceElement for SemiExpression {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Semi {
-    pub semi_expression: SemiExpression,
+    pub expression: SemiExpression,
     pub semicolon: Punctuation,
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.semi_expression.span()?.join(&self.semicolon.span)
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.expression.span()?.join(&self.semicolon.span) }
 }
 
 impl<'a> Parser<'a> {
@@ -164,7 +148,7 @@ impl<'a> Parser<'a> {
         if matches!(self.stop_at_significant(), Some(Token::Keyword(k)) if k.keyword == KeywordKind::Let)
         {
             self.parse_variable_declaration(handler)
-                .map(|x| Statement::Declarative(Declarative::VariableDeclaration(x)))
+                .map(Statement::VariableDeclaration)
         } else {
             let semi_expression = match self.parse_expression(handler)? {
                 Expression::Imperative(imperative) => {
@@ -176,7 +160,7 @@ impl<'a> Parser<'a> {
 
             let semicolon = self.parse_punctuation(';', true, handler)?;
             Ok(Statement::Expressive(Expressive::Semi(Semi {
-                semi_expression,
+                expression: semi_expression,
                 semicolon,
             })))
         }
@@ -221,7 +205,5 @@ impl<'a> Parser<'a> {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests;
-*/

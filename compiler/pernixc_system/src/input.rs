@@ -32,3 +32,9 @@ where
         }
     }
 }
+
+impl<T: Input> Input for Box<T> {
+    type Output = Box<T::Output>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult { (**self).assert(&**output) }
+}

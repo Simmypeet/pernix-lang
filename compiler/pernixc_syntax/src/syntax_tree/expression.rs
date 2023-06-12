@@ -1,3 +1,5 @@
+//! Contains the definitions of expression syntax tree.
+
 use std::cmp::Ordering;
 
 use derive_more::From;
@@ -19,6 +21,8 @@ use crate::{
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
 
+pub mod input;
+
 /// Is an enumeration of all kinds of expressions.
 ///
 /// ``` txt
@@ -29,6 +33,7 @@ use crate::{
 ///     ;
 ///  ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum Expression {
     Functional(Functional),
     Terminator(Terminator),
@@ -55,6 +60,7 @@ impl SourceElement for Expression {
 ///     | Break
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum Terminator {
     Return(Return),
     Continue(Continue),
@@ -93,6 +99,7 @@ impl SourceElement for Terminator {
 ///     | Cast
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum Functional {
     NumericLiteral(NumericLiteral),
     BooleanLiteral(BooleanLiteral),
@@ -134,6 +141,7 @@ impl SourceElement for Functional {
 ///     ;
 /// ````
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct NumericLiteral {
     pub numeric_literal_token: NumericLiteralToken,
 }
@@ -147,20 +155,21 @@ impl SourceElement for NumericLiteral {
 /// Syntax Synopsis:
 /// ``` txt
 /// CastExpression:
-///     Expression 'as' TypeSpecifier
+///     Functional 'as' '(' TypeSpecifier ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Cast {
-    pub operand: Box<Expression>,
+    pub operand: Box<Functional>,
     pub as_keyword: Keyword,
+    pub left_paren: Punctuation,
     pub type_specifier: TypeSpecifier,
+    pub right_paren: Punctuation,
 }
 
 impl SourceElement for Cast {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.operand.span()?.join(&self.type_specifier.span()?)
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.operand.span()?.join(&self.right_paren.span) }
 }
 
 /// Represents a boolean literal syntax tree.
@@ -173,6 +182,7 @@ impl SourceElement for Cast {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum BooleanLiteral {
     True(Keyword),
     False(Keyword),
@@ -195,9 +205,10 @@ impl SourceElement for BooleanLiteral {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Binary {
     pub left_operand: Box<Functional>,
-    pub binary_operator: BinaryOperator,
+    pub operator: BinaryOperator,
     pub right_operand: Box<Functional>,
 }
 
@@ -234,6 +245,7 @@ impl SourceElement for Binary {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum BinaryOperator {
     Add(Punctuation),
     Subtract(Punctuation),
@@ -333,6 +345,7 @@ impl SourceElement for BinaryOperator {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum PrefixOperator {
     LogicalNot(Punctuation),
     Negate(Punctuation),
@@ -360,15 +373,14 @@ impl SourceElement for PrefixOperator {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Prefix {
-    pub prefix_operator: PrefixOperator,
+    pub operator: PrefixOperator,
     pub operand: Box<Functional>,
 }
 
 impl SourceElement for Prefix {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.prefix_operator.span()?.join(&self.operand.span()?)
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.operator.span()?.join(&self.operand.span()?) }
 }
 
 /// Represents a postfix operator syntax tree.
@@ -380,6 +392,7 @@ impl SourceElement for Prefix {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Named {
     pub qualified_identifier: QualifiedIdentifier,
 }
@@ -407,6 +420,7 @@ pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct FunctionCall {
     pub qualified_identifier: QualifiedIdentifier,
     pub left_paren: Punctuation,
@@ -431,6 +445,7 @@ impl SourceElement for FunctionCall {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Parenthesized {
     pub left_paren: Punctuation,
     pub expression: Box<Expression>,
@@ -452,6 +467,7 @@ impl SourceElement for Parenthesized {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct FieldInitializer {
     pub identifier: Identifier,
     pub colon: Punctuation,
@@ -483,6 +499,7 @@ pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct StructLiteral {
     pub qualified_identifier: QualifiedIdentifier,
     pub left_brace: Punctuation,
@@ -507,6 +524,7 @@ impl SourceElement for StructLiteral {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct MemberAccess {
     pub operand: Box<Functional>,
     pub dot: Punctuation,
@@ -530,6 +548,7 @@ impl SourceElement for MemberAccess {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum Imperative {
     Block(Block),
     IfElse(IfElse),
@@ -555,6 +574,7 @@ impl SourceElement for Imperative {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct LabelSpecifier {
     pub label: Label,
     pub colon: Punctuation,
@@ -573,6 +593,7 @@ impl SourceElement for LabelSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct BlockWithoutLabel {
     pub left_brace: Punctuation,
     pub statements: Vec<Statement>,
@@ -594,6 +615,7 @@ impl SourceElement for BlockWithoutLabel {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Block {
     pub label_specifier: Option<LabelSpecifier>,
     pub block_without_label: BlockWithoutLabel,
@@ -622,6 +644,7 @@ impl SourceElement for Block {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum BlockOrIfElse {
     Block(Block),
     IfElse(IfElse),
@@ -645,6 +668,7 @@ impl SourceElement for BlockOrIfElse {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Else {
     pub else_keyword: Keyword,
     pub expression: Box<BlockOrIfElse>,
@@ -665,6 +689,7 @@ impl SourceElement for Else {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct IfElse {
     pub if_keyword: Keyword,
     pub left_paren: Punctuation,
@@ -695,6 +720,7 @@ impl SourceElement for IfElse {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Loop {
     pub label_specifier: Option<LabelSpecifier>,
     pub loop_keyword: Keyword,
@@ -722,6 +748,7 @@ impl SourceElement for Loop {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Continue {
     pub continue_keyword: Keyword,
     pub label: Option<Label>,
@@ -748,6 +775,7 @@ impl SourceElement for Continue {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Express {
     pub express_keyword: Keyword,
     pub label: Option<Label>,
@@ -778,6 +806,7 @@ impl SourceElement for Express {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Break {
     pub break_keyword: Keyword,
     pub label: Option<Label>,
@@ -808,6 +837,7 @@ impl SourceElement for Break {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Return {
     pub return_keyword: Keyword,
     pub expression: Option<Functional>,
@@ -882,7 +912,7 @@ impl<'a> Parser<'a> {
                 // Replace the first expression with the folded expression.
                 first_functional = Functional::Binary(Binary {
                     left_operand: Box::new(first_functional),
-                    binary_operator,
+                    operator: binary_operator,
                     right_operand: Box::new(right_expression.unwrap()),
                 });
             } else {
@@ -891,7 +921,7 @@ impl<'a> Parser<'a> {
                 // Replace the expression at the index with the folded expression.
                 expressions[candidate_index - 1].1 = Some(Functional::Binary(Binary {
                     left_operand: Box::new(expressions[candidate_index - 1].1.take().unwrap()),
-                    binary_operator,
+                    operator: binary_operator,
                     right_operand: Box::new(right_expression.unwrap()),
                 }));
             }
@@ -1218,18 +1248,9 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &impl Handler<Error>,
     ) -> ParserResult<Functional> {
-        self.step_into(Delimiter::Parenthesis, handler)?;
-
-        // left and right paren
-        let (left_paren, right_paren) = {
-            let delimited = self.token_provider.as_delimited().unwrap();
-            (delimited.open.clone(), delimited.close.clone())
-        };
-
+        let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
         let expression = Box::new(self.parse_expression(handler)?);
-
-        // step out of the parenthesis
-        self.step_out(handler)?;
+        let right_paren = self.step_out(handler)?;
 
         Ok(Functional::Parenthesized(Parenthesized {
             left_paren,
@@ -1315,9 +1336,9 @@ impl<'a> Parser<'a> {
 
     fn parse_if_else(&mut self, handler: &impl Handler<Error>) -> ParserResult<IfElse> {
         let if_keyword = self.parse_keyword(KeywordKind::If, handler)?;
-        let left_paren = self.parse_punctuation('(', true, handler)?;
+        let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
         let condition = Box::new(self.parse_expression(handler)?);
-        let right_paren = self.parse_punctuation(')', true, handler)?;
+        let right_paren = self.step_out(handler)?;
         let then_expression = self.parse_block(handler)?;
         let else_expression = if matches!(self.stop_at_significant(),
                 Some(Token::Keyword(else_keyword))
@@ -1364,7 +1385,7 @@ impl<'a> Parser<'a> {
         // early return for prefix expression
         if let Some(prefix_operator) = self.try_parse_prefix_operator() {
             return Ok(Functional::Prefix(Prefix {
-                prefix_operator,
+                operator: prefix_operator,
                 operand: Box::new(self.parse_primary_expression(handler)?),
             }));
         }
@@ -1422,30 +1443,44 @@ impl<'a> Parser<'a> {
         };
 
         loop {
-            let dot = match self.stop_at_significant() {
-                Some(Token::Punctuation(p)) if p.punctuation == '.' => {
+            match self.stop_at_significant() {
+                Some(Token::Punctuation(dot)) if dot.punctuation == '.' => {
                     // eat token
                     self.forward();
-                    p
+
+                    let identifier = self.parse_identifier(handler)?;
+
+                    // update expression
+                    expression = Functional::MemberAccess(MemberAccess {
+                        operand: Box::new(expression),
+                        dot,
+                        identifier,
+                    });
+                }
+                Some(Token::Keyword(as_keyword)) if as_keyword.keyword == KeywordKind::As => {
+                    // eat token
+                    self.forward();
+
+                    let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
+                    let type_specifier = self.parse_type_specifier(handler)?;
+                    let right_paren = self.step_out(handler)?;
+
+                    // update expression
+                    expression = Functional::Cast(Cast {
+                        operand: Box::new(expression),
+                        as_keyword,
+                        left_paren,
+                        type_specifier,
+                        right_paren,
+                    });
                 }
                 _ => break,
             };
-
-            let identifier = self.parse_identifier(handler)?;
-
-            // update expression
-            expression = Functional::MemberAccess(MemberAccess {
-                operand: Box::new(expression),
-                dot,
-                identifier,
-            });
         }
 
         Ok(expression)
     }
 }
 
-/*
 #[cfg(test)]
 mod tests;
-*/

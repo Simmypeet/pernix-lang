@@ -1,3 +1,5 @@
+//! Contains the definitions of item syntax tree.
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::{
@@ -27,6 +29,7 @@ use crate::{
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct LifetimeParameter {
     pub apostrophe: Punctuation,
     pub identifier: Identifier,
@@ -45,6 +48,7 @@ impl SourceElement for LifetimeParameter {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TypeParameter {
     pub identifier: Identifier,
 }
@@ -63,6 +67,7 @@ impl SourceElement for TypeParameter {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
@@ -96,6 +101,7 @@ pub type GenericParameterList = ConnectedList<GenericParameter, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct GenericParameters {
     pub left_angle_bracket: Punctuation,
     pub generic_parameter_list: GenericParameterList,
@@ -119,6 +125,7 @@ impl SourceElement for GenericParameters {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct LifetimeBound {
     pub operand: LifetimeParameter,
     pub colon: Punctuation,
@@ -141,6 +148,7 @@ impl SourceElement for LifetimeBound {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum TypeBoundConstraint {
     TypeSpecifier(TypeSpecifier),
     LifetimeArgument(LifetimeArgument),
@@ -164,6 +172,7 @@ impl SourceElement for TypeBoundConstraint {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TypeBound {
     pub qualified_identifier: QualifiedIdentifier,
     pub colon: Punctuation,
@@ -190,6 +199,7 @@ impl SourceElement for TypeBound {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum Constraint {
     TraitBound(TraitBound),
     LifetimeArgument(LifetimeArgument),
@@ -217,6 +227,7 @@ impl SourceElement for Constraint {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TraitBound {
     pub qualified_identifier: QualifiedIdentifier,
 }
@@ -244,6 +255,7 @@ pub type ConstraintList = ConnectedList<Constraint, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct WhereClause {
     pub where_keyword: Keyword,
     pub colon: Punctuation,
@@ -265,6 +277,7 @@ impl SourceElement for WhereClause {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TraitSignature {
     pub trait_keyword: Keyword,
     pub identifier: Identifier,
@@ -294,6 +307,7 @@ impl SourceElement for TraitSignature {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TraitBody {
     pub left_brace: Punctuation,
     pub trait_members: Vec<TraitMember>,
@@ -313,6 +327,7 @@ impl SourceElement for TraitBody {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Trait {
     pub access_modifier: AccessModifier,
     pub trait_signature: TraitSignature,
@@ -334,6 +349,7 @@ impl SourceElement for Trait {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TraitFunction {
     pub function_signature: FunctionSignature,
     pub semicolon: Punctuation,
@@ -354,6 +370,7 @@ impl SourceElement for TraitFunction {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TraitType {
     pub type_signature: TypeSignature,
     pub semicolon: Punctuation,
@@ -376,6 +393,7 @@ impl SourceElement for TraitType {
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(clippy::large_enum_variant)]
+#[allow(missing_docs)]
 pub enum TraitMember {
     Function(TraitFunction),
     Type(TraitType),
@@ -399,6 +417,7 @@ impl SourceElement for TraitMember {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Parameter {
     pub mutable_keyword: Option<Keyword>,
     pub identifier: Identifier,
@@ -428,6 +447,7 @@ pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Parameters {
     pub left_paren: Punctuation,
     pub parameter_list: Option<ParameterList>,
@@ -447,6 +467,7 @@ impl SourceElement for Parameters {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct ReturnType {
     pub type_annotation: TypeAnnotation,
 }
@@ -464,6 +485,7 @@ impl SourceElement for ReturnType {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct FunctionSignature {
     pub identifier: Identifier,
     pub generic_parameters: Option<GenericParameters>,
@@ -493,6 +515,7 @@ impl SourceElement for FunctionSignature {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct FunctionBody {
     pub left_brace: Punctuation,
     pub statements: Vec<Statement>,
@@ -512,6 +535,7 @@ impl SourceElement for FunctionBody {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Function {
     pub access_modifier: AccessModifier,
     pub function_signature: FunctionSignature,
@@ -535,6 +559,7 @@ impl SourceElement for Function {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TypeSignature {
     pub type_keyword: Keyword,
     pub identifier: Identifier,
@@ -560,6 +585,7 @@ impl SourceElement for TypeSignature {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct TypeDefinition {
     pub equals: Punctuation,
     pub type_specifier: TypeSpecifier,
@@ -580,6 +606,7 @@ impl SourceElement for TypeDefinition {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Type {
     pub access_modifier: AccessModifier,
     pub type_signature: TypeSignature,
@@ -602,6 +629,7 @@ impl SourceElement for Type {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct StructSignature {
     pub struct_keyword: Keyword,
     pub identifier: Identifier,
@@ -624,6 +652,7 @@ impl SourceElement for StructSignature {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct StructBody {
     pub left_brace: Punctuation,
     pub struct_members: Vec<StructMember>,
@@ -643,6 +672,7 @@ impl SourceElement for StructBody {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Struct {
     pub access_modifier: AccessModifier,
     pub struct_signature: StructSignature,
@@ -664,6 +694,7 @@ impl SourceElement for Struct {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct StructField {
     pub access_modifier: AccessModifier,
     pub identifier: Identifier,
@@ -686,6 +717,7 @@ impl SourceElement for StructField {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum StructMember {
     Field(StructField),
 }
@@ -707,6 +739,7 @@ impl SourceElement for StructMember {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct ImplementsSignature {
     pub implements_keyword: Keyword,
     pub generic_parameters: Option<GenericParameters>,
@@ -730,6 +763,7 @@ impl SourceElement for ImplementsSignature {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct ImplementsFunction {
     pub function_signature: FunctionSignature,
     pub function_body: FunctionBody,
@@ -752,6 +786,7 @@ impl SourceElement for ImplementsFunction {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct ImplementsType {
     pub type_signature: TypeSignature,
     pub type_definition: TypeDefinition,
@@ -774,6 +809,7 @@ impl SourceElement for ImplementsType {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
+#[allow(missing_docs)]
 pub enum ImplementsMember {
     Type(ImplementsType),
     Function(ImplementsFunction),
@@ -797,6 +833,7 @@ impl SourceElement for ImplementsMember {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct ImplementsBody {
     pub left_brace: Punctuation,
     pub implements_members: Vec<ImplementsMember>,
@@ -816,6 +853,7 @@ impl SourceElement for ImplementsBody {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Implements {
     pub implements_signature: ImplementsSignature,
     pub implements_body: ImplementsBody,
@@ -838,6 +876,7 @@ impl SourceElement for Implements {
 ///     ;
 /// ``
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct EnumSignature {
     pub enum_keyword: Keyword,
     pub identifier: Identifier,
@@ -866,6 +905,7 @@ pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct EnumBody {
     pub left_brace: Punctuation,
     pub enum_variant_list: Option<EnumVariantList>,
@@ -885,6 +925,7 @@ impl SourceElement for EnumBody {
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct Enum {
     pub access_modifier: AccessModifier,
     pub enum_signature: EnumSignature,
@@ -912,6 +953,7 @@ impl SourceElement for Enum {
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(clippy::large_enum_variant)]
+#[allow(missing_docs)]
 pub enum Item {
     Trait(Trait),
     Function(Function),

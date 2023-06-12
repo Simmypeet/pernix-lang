@@ -5,7 +5,7 @@ use proptest::{prop_assert_eq, strategy::Strategy, test_runner::TestCaseError};
 use super::{File, ModulePath};
 use crate::syntax_tree::{item::strategy::ItemInput, strategy::AccessModifierInput};
 
-/// Represents an input for [`super::ModulePath`]
+/// Represents an input for the [`super::ModulePath`]
 #[derive(Debug, Clone)]
 pub struct ModulePathInput {
     /// List of identifiers that make up the path.
@@ -30,7 +30,7 @@ impl ModulePathInput {
     }
 }
 
-/// Represents an input for [`super::Using`]
+/// Represents an input for the [`super::Using`]
 #[derive(Debug, Clone)]
 pub struct UsingInput {
     /// The path to the module.
@@ -62,7 +62,7 @@ pub fn using() -> impl Strategy<Value = UsingInput> {
     module_path().prop_map(|path| UsingInput { path })
 }
 
-/// Represents an input for [`super::Module`]
+/// Represents an input for the [`super::Module`]
 #[derive(Debug, Clone)]
 pub struct ModuleInput {
     /// The access modifier of the module.
@@ -106,7 +106,7 @@ pub fn module() -> impl Strategy<Value = ModuleInput> {
         })
 }
 
-/// Represents an input for [`super::Submodule`]
+/// Represents an input for the [`super::Submodule`]
 #[derive(Debug, Clone)]
 pub struct SubmoduleInput {
     /// The module declaration syntax tree of the submodule.
