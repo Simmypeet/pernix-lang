@@ -52,10 +52,10 @@ impl Arbitrary for Identifier {
     }
 }
 
-impl Identifier {
-    /// Verifies that the given [`super::Identifier`] complies with this input.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn assert(&self, output: &super::Identifier) -> TestCaseResult {
+impl Input for Identifier {
+    type Output = super::Identifier;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.string.as_str(), output.span.str());
         Ok(())
     }

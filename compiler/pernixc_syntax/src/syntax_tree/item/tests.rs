@@ -9,6 +9,8 @@ proptest! {
     ) {
         let source = item_input.to_string();
 
+        println!("{source}");
+
         let item = crate::syntax_tree::tests::parse(
             &source,
             |parser, handler| parser.parse_item(handler)

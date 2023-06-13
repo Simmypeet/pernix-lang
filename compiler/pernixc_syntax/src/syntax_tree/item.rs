@@ -330,7 +330,7 @@ impl SourceElement for TraitSignature {
 #[allow(missing_docs)]
 pub struct TraitBody {
     pub left_brace: Punctuation,
-    pub trait_members: Vec<TraitMember>,
+    pub members: Vec<TraitMember>,
     pub right_brace: Punctuation,
 }
 
@@ -350,13 +350,13 @@ impl SourceElement for TraitBody {
 #[allow(missing_docs)]
 pub struct Trait {
     pub access_modifier: AccessModifier,
-    pub trait_signature: TraitSignature,
-    pub trait_body: TraitBody,
+    pub signature: TraitSignature,
+    pub body: TraitBody,
 }
 
 impl SourceElement for Trait {
     fn span(&self) -> Result<Span, SpanError> {
-        self.access_modifier.span()?.join(&self.trait_body.span()?)
+        self.access_modifier.span()?.join(&self.body.span()?)
     }
 }
 
@@ -627,8 +627,8 @@ impl SourceElement for TypeDefinition {
 #[allow(missing_docs)]
 pub struct Type {
     pub access_modifier: AccessModifier,
-    pub type_signature: TypeSignature,
-    pub type_definition: TypeDefinition,
+    pub signature: TypeSignature,
+    pub definition: TypeDefinition,
     pub semicolon: Punctuation,
 }
 
@@ -673,7 +673,7 @@ impl SourceElement for StructSignature {
 #[allow(missing_docs)]
 pub struct StructBody {
     pub left_brace: Punctuation,
-    pub struct_members: Vec<StructMember>,
+    pub members: Vec<StructMember>,
     pub right_brace: Punctuation,
 }
 
@@ -693,13 +693,13 @@ impl SourceElement for StructBody {
 #[allow(missing_docs)]
 pub struct Struct {
     pub access_modifier: AccessModifier,
-    pub struct_signature: StructSignature,
-    pub struct_body: StructBody,
+    pub signature: StructSignature,
+    pub body: StructBody,
 }
 
 impl SourceElement for Struct {
     fn span(&self) -> Result<Span, SpanError> {
-        self.access_modifier.span()?.join(&self.struct_body.span()?)
+        self.access_modifier.span()?.join(&self.body.span()?)
     }
 }
 
@@ -753,7 +753,7 @@ impl SourceElement for StructMember {
 /// Syntax Synopsis:
 /// ``` text
 /// ImplementsSignature:
-///     'implements' GenericParameters? QualifiedIdentifier
+///     'implements' GenericParameters? QualifiedIdentifier WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
@@ -762,6 +762,7 @@ pub struct ImplementsSignature {
     pub implements_keyword: Keyword,
     pub generic_parameters: Option<GenericParameters>,
     pub qualified_identifier: QualifiedIdentifier,
+    pub where_clause: Option<WhereClause>,
 }
 
 impl SourceElement for ImplementsSignature {
@@ -783,15 +784,15 @@ impl SourceElement for ImplementsSignature {
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct ImplementsFunction {
-    pub function_signature: FunctionSignature,
-    pub function_body: FunctionBody,
+    pub signature: FunctionSignature,
+    pub body: FunctionBody,
 }
 
 impl SourceElement for ImplementsFunction {
     fn span(&self) -> Result<Span, SpanError> {
-        self.function_signature
+        self.signature
             .span()?
-            .join(&self.function_body.span()?)
+            .join(&self.body.span()?)
     }
 }
 
@@ -806,14 +807,14 @@ impl SourceElement for ImplementsFunction {
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct ImplementsType {
-    pub type_signature: TypeSignature,
-    pub type_definition: TypeDefinition,
+    pub signature: TypeSignature,
+    pub definition: TypeDefinition,
     pub semicolon: Punctuation,
 }
 
 impl SourceElement for ImplementsType {
     fn span(&self) -> Result<Span, SpanError> {
-        self.type_signature.span()?.join(&self.semicolon.span()?)
+        self.signature.span()?.join(&self.semicolon.span()?)
     }
 }
 
@@ -854,7 +855,7 @@ impl SourceElement for ImplementsMember {
 #[allow(missing_docs)]
 pub struct ImplementsBody {
     pub left_brace: Punctuation,
-    pub implements_members: Vec<ImplementsMember>,
+    pub members: Vec<ImplementsMember>,
     pub right_brace: Punctuation,
 }
 
@@ -873,15 +874,15 @@ impl SourceElement for ImplementsBody {
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct Implements {
-    pub implements_signature: ImplementsSignature,
-    pub implements_body: ImplementsBody,
+    pub signature: ImplementsSignature,
+    pub body: ImplementsBody,
 }
 
 impl SourceElement for Implements {
     fn span(&self) -> Result<Span, SpanError> {
-        self.implements_signature
+        self.signature
             .span()?
-            .join(&self.implements_body.span()?)
+            .join(&self.body.span()?)
     }
 }
 
@@ -926,7 +927,7 @@ pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
 #[allow(missing_docs)]
 pub struct EnumBody {
     pub left_brace: Punctuation,
-    pub enum_variant_list: Option<EnumVariantList>,
+    pub variant_list: Option<EnumVariantList>,
     pub right_brace: Punctuation,
 }
 
@@ -946,13 +947,13 @@ impl SourceElement for EnumBody {
 #[allow(missing_docs)]
 pub struct Enum {
     pub access_modifier: AccessModifier,
-    pub enum_signature: EnumSignature,
-    pub enum_body: EnumBody,
+    pub signature: EnumSignature,
+    pub body: EnumBody,
 }
 
 impl SourceElement for Enum {
     fn span(&self) -> Result<Span, SpanError> {
-        self.access_modifier.span()?.join(&self.enum_body.span()?)
+        self.access_modifier.span()?.join(&self.body.span()?)
     }
 }
 
@@ -1177,7 +1178,8 @@ impl<'a> Parser<'a> {
         let mut trailing_separator = None;
 
         while let Ok(comma) = self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy)) {
-            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '{')
+            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) 
+                if p.punctuation == '{' || p.punctuation == ';')
             {
                 trailing_separator = Some(comma);
                 break;
@@ -1319,8 +1321,8 @@ impl<'a> Parser<'a> {
                 let function_body = self.parse_function_body(handler)?;
 
                 Ok(ImplementsMember::Function(ImplementsFunction {
-                    function_signature,
-                    function_body,
+                    signature: function_signature,
+                    body: function_body,
                 }))
             }
 
@@ -1330,8 +1332,8 @@ impl<'a> Parser<'a> {
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Ok(ImplementsMember::Type(ImplementsType {
-                    type_signature,
-                    type_definition,
+                    signature: type_signature,
+                    definition: type_definition,
                     semicolon,
                 }))
             }
@@ -1371,7 +1373,7 @@ impl<'a> Parser<'a> {
 
         Ok(ImplementsBody {
             left_brace,
-            implements_members,
+            members: implements_members,
             right_brace,
         })
     }
@@ -1380,15 +1382,17 @@ impl<'a> Parser<'a> {
         let implements_keyword = self.parse_keyword(KeywordKind::Implements, handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
         let implements_body = self.parse_implements_body(handler)?;
 
         Ok(Implements {
-            implements_signature: ImplementsSignature {
+            signature: ImplementsSignature {
                 implements_keyword,
                 generic_parameters,
                 qualified_identifier,
+                where_clause,
             },
-            implements_body,
+            body: implements_body,
         })
     }
 
@@ -1463,7 +1467,7 @@ impl<'a> Parser<'a> {
 
         Ok(TraitBody {
             left_brace,
-            trait_members,
+            members: trait_members,
             right_brace,
         })
     }
@@ -1537,7 +1541,7 @@ impl<'a> Parser<'a> {
 
         Ok(StructBody {
             left_brace,
-            struct_members,
+            members: struct_members,
             right_brace,
         })
     }
@@ -1578,7 +1582,7 @@ impl<'a> Parser<'a> {
 
         Ok(EnumBody {
             left_brace: body.open,
-            enum_variant_list: body.list,
+            variant_list: body.list,
             right_brace: body.close,
         })
     }
@@ -1609,8 +1613,8 @@ impl<'a> Parser<'a> {
 
                 Ok(Item::Trait(Trait {
                     access_modifier,
-                    trait_signature,
-                    trait_body,
+                    signature: trait_signature,
+                    body: trait_body,
                 }))
             }
 
@@ -1621,8 +1625,8 @@ impl<'a> Parser<'a> {
 
                 Ok(Item::Struct(Struct {
                     access_modifier,
-                    struct_signature,
-                    struct_body,
+                    signature: struct_signature,
+                    body: struct_body,
                 }))
             }
 
@@ -1634,8 +1638,8 @@ impl<'a> Parser<'a> {
 
                 Ok(Item::Type(Type {
                     access_modifier,
-                    type_signature,
-                    type_definition,
+                    signature: type_signature,
+                    definition: type_definition,
                     semicolon,
                 }))
             }
@@ -1647,8 +1651,8 @@ impl<'a> Parser<'a> {
 
                 Ok(Item::Enum(Enum {
                     access_modifier,
-                    enum_signature,
-                    enum_body,
+                    signature: enum_signature,
+                    body: enum_body,
                 }))
             }
 

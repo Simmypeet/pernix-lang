@@ -101,11 +101,11 @@ impl Table {
             // the name of the symbol
             let name = {
                 let identifier = match &item {
-                    Item::Trait(i) => &i.trait_signature.identifier,
+                    Item::Trait(i) => &i.signature.identifier,
                     Item::Function(i) => &i.signature.identifier,
-                    Item::Type(i) => &i.type_signature.identifier,
-                    Item::Struct(i) => &i.struct_signature.identifier,
-                    Item::Enum(i) => &i.enum_signature.identifier,
+                    Item::Type(i) => &i.signature.identifier,
+                    Item::Struct(i) => &i.signature.identifier,
+                    Item::Enum(i) => &i.signature.identifier,
 
                     Item::Implements(_) => unreachable!(),
                 };
@@ -250,12 +250,7 @@ impl Table {
         let type_syntax_tree = Arc::new(type_syntax_tree);
 
         let type_id = self.types.insert(Type {
-            name: type_syntax_tree
-                .type_signature
-                .identifier
-                .span
-                .str()
-                .to_string(),
+            name: type_syntax_tree.signature.identifier.span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&type_syntax_tree.access_modifier),
             parent_module_id,
             alias: ty::Type::PrimitiveType(PrimitiveType::Void), // to be filled later
@@ -264,9 +259,7 @@ impl Table {
         });
 
         // update generic parameters
-        if let Some(generic_parameters) =
-            type_syntax_tree.type_signature.generic_parameters.as_ref()
-        {
+        if let Some(generic_parameters) = type_syntax_tree.signature.generic_parameters.as_ref() {
             let generic_parameters =
                 self.create_generic_parameters(type_id.into(), generic_parameters, handler);
 
@@ -409,7 +402,7 @@ impl Table {
         parent_module_id: ModuleID,
         handler: &impl Handler<Error>,
     ) -> TraitID {
-        let trait_signature = Arc::new(trait_syntax_tree.trait_signature);
+        let trait_signature = Arc::new(trait_syntax_tree.signature);
         let trait_id = self.traits.insert(crate::Trait {
             name: trait_signature.identifier.span.str().to_string(),
             parent_module_id,
@@ -427,7 +420,7 @@ impl Table {
             self.traits[trait_id].generics.generic_parameters = generic_parameters;
         }
 
-        for trait_member in trait_syntax_tree.trait_body.trait_members {
+        for trait_member in trait_syntax_tree.body.members {
             let trait_symbol = &mut self.traits[trait_id];
             let identifier = match &trait_member {
                 item::TraitMember::Function(f) => &f.function_signature.identifier,
@@ -542,7 +535,7 @@ impl Table {
         parent_module_id: ModuleID,
         handler: &impl Handler<Error>,
     ) -> StructID {
-        let struct_signature = Arc::new(struct_syntax_tree.struct_signature);
+        let struct_signature = Arc::new(struct_syntax_tree.signature);
         let struct_id = self.structs.insert(Struct {
             name: struct_signature.identifier.span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&struct_syntax_tree.access_modifier),
@@ -561,7 +554,7 @@ impl Table {
             self.structs[struct_id].generics.generic_parameters = generic_parameters;
         }
 
-        for member in struct_syntax_tree.struct_body.struct_members {
+        for member in struct_syntax_tree.body.members {
             match member {
                 item::StructMember::Field(field) => {
                     let struct_symbol = &mut self.structs[struct_id];
@@ -631,21 +624,21 @@ impl Table {
     ) -> EnumID {
         let enum_id = self.enums.insert(Enum {
             name: enum_syntax_tree
-                .enum_signature
+                .signature
                 .identifier
                 .span
                 .str()
                 .to_string(),
             accessibility: Accessibility::from_syntax_tree(&enum_syntax_tree.access_modifier),
             parent_module_id,
-            syntax_tree: enum_syntax_tree.enum_signature,
+            syntax_tree: enum_syntax_tree.signature,
             variant_ids_by_name: HashMap::new(), // will be filled later
             variant_order: Vec::new(),           // will be filled later,
         });
 
         for variant in enum_syntax_tree
-            .enum_body
-            .enum_variant_list
+            .body
+            .variant_list
             .into_iter()
             .flat_map(ConnectedList::into_elements)
         {
