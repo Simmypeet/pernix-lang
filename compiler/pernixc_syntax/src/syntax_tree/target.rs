@@ -16,8 +16,10 @@ use super::AccessModifier;
 use crate::{
     error::Error as SyntaxError,
     parser::{Error as ParserError, Parser, Result as ParserResult},
-    syntax_tree::{item::Item, ConnectedList, ScopeSeparator},
+    syntax_tree::{item::Item, ScopeSeparator},
 };
+
+pub mod input;
 
 /// Represents a moulde path in used in `module` declarations and `using` statements.
 ///
@@ -27,7 +29,19 @@ use crate::{
 ///     Identifier ('::' Identifier)*
 ///     ;
 /// ```
-pub type ModulePath = ConnectedList<Identifier, ScopeSeparator>;
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct ModulePath {
+    pub first: Identifier,
+    pub rest: Vec<(ScopeSeparator, Identifier)>,
+}
+
+impl ModulePath {
+    /// Returns an iterator over the path identifiers.
+    pub fn paths(&self) -> impl Iterator<Item = &Identifier> {
+        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, id)| id))
+    }
+}
 
 /// Represents a syntax tree node for a `module` using statement.
 ///
@@ -63,9 +77,7 @@ pub struct Module {
 }
 
 impl SourceElement for Using {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.using_keyword.span.join(&self.semicolon.span)
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.using_keyword.span.join(&self.semicolon.span) }
 }
 
 /// Contains all the syntax trees defined within a single file.
@@ -123,7 +135,7 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
     ) -> ParserResult<ModulePath> {
-        let first = self.parse_identifier(handler)?;
+        let first_identifier = self.parse_identifier(handler)?;
         let mut rest = Vec::new();
 
         while let Ok(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy)) {
@@ -131,10 +143,9 @@ impl<'a> Parser<'a> {
             rest.push((scope_separator, identifier));
         }
 
-        Ok(ConnectedList {
-            first,
+        Ok(ModulePath {
+            first: first_identifier,
             rest,
-            trailing_separator: None,
         })
     }
 
@@ -342,9 +353,7 @@ pub struct ModuleRedefinition {
 impl Target {
     /// Dissolves the target into the root source file and the name of the root module.
     #[must_use]
-    pub fn dissolve(self) -> (File, String) {
-        (self.root_file, self.name)
-    }
+    pub fn dissolve(self) -> (File, String) { (self.root_file, self.name) }
 
     fn parse_single_file(
         source_file: Arc<SourceFile>,
@@ -377,8 +386,6 @@ impl Target {
                         },
                         |parent| parent.join(module.identifier.span.str()),
                     );
-
-                    println!("{}", submodule_path.display());
 
                     // check if the submodule path is the same as the root file path
                     if submodule_path == *source_file.full_path() {
@@ -451,7 +458,5 @@ impl Target {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests;
-*/

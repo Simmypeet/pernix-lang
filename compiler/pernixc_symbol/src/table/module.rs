@@ -89,7 +89,7 @@ impl Table {
     ) -> Result<ModuleID> {
         let mut current_module_id = None;
 
-        for path in module_path.elements() {
+        for path in module_path.paths() {
             if let Some(module_id) = current_module_id {
                 // search from current module id
                 let Some(new_module_id) = self.modules[module_id]

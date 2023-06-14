@@ -2,7 +2,10 @@
 
 use std::fmt::Debug;
 
-use proptest::test_runner::{TestCaseError, TestCaseResult};
+use proptest::{
+    prop_assert_eq,
+    test_runner::{TestCaseError, TestCaseResult},
+};
 
 /// Represents an input generated for testing purposes.
 pub trait Input {
@@ -37,4 +40,18 @@ impl<T: Input> Input for Box<T> {
     type Output = Box<T::Output>;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult { (**self).assert(&**output) }
+}
+
+impl<T: Input> Input for Vec<T> {
+    type Output = Vec<T::Output>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(self.len(), output.len());
+
+        for (i, o) in self.iter().zip(output.iter()) {
+            i.assert(o)?;
+        }
+
+        Ok(())
+    }
 }
