@@ -1,16 +1,18 @@
 use std::collections::{HashMap, HashSet};
 
+use pernixc_system::arena;
+
 use super::Table;
 use crate::{
     ty::{PrimitiveType, ReferenceQualifier, Type},
-    Accessibility, Generics, ModuleID, Trait, TraitFunction, TypeParameter,
+    Accessibility, Generics, Module, Trait, TraitFunction, TypeParameter,
 };
 
 impl Table {
     // Creates a table with core-language symbols
     pub(super) fn create_core_symbols(&mut self) {
         // core module id
-        let core_module_id = self.modules.insert(crate::Module {
+        let core_module_id = self.modules.push(crate::Module {
             name: "@core".to_string(),
             accessibility: Accessibility::Public,
             parent_module_id: None,
@@ -19,17 +21,17 @@ impl Table {
         });
 
         // add to the root
-        self.root_module_ids_by_target_name
+        self.target_root_module_ids_by_name
             .insert("@core".to_string(), core_module_id);
 
         self.create_drop_trait(core_module_id);
         self.create_copy_trait(core_module_id);
     }
 
-    fn create_copy_trait(&mut self, core_module_id: ModuleID) {
+    fn create_copy_trait(&mut self, core_module_id: arena::ID<Module>) {
         // Drop trait
         let (trait_id, type_parameter_id) = {
-            let trait_id = self.traits.insert(Trait {
+            let trait_id = self.traits.push(Trait {
                 name: "@Copy".to_string(),
                 parent_module_id: core_module_id,
                 generics: Generics::default(),
@@ -39,7 +41,7 @@ impl Table {
             });
 
             // A type parameter for the type being dropped
-            let type_parameter_id = self.type_parameters.insert(TypeParameter {
+            let type_parameter_id = self.type_parameters.push(TypeParameter {
                 name: "T".to_string(),
                 parent_genericable_id: trait_id.into(),
             });
@@ -63,7 +65,7 @@ impl Table {
 
         // create a function for trait
         let trait_function_id = {
-            let trait_function_id = self.trait_functions.insert(TraitFunction {
+            let trait_function_id = self.trait_functions.push(TraitFunction {
                 function_signature: crate::FunctionSignature {
                     name: "copy".to_string(),
                     parameter_ids_by_name: HashMap::new(), // to be filled later
@@ -75,9 +77,9 @@ impl Table {
                 parent_trait_id: trait_id,
             });
 
-            let parameter_id = self.parameters.insert(crate::Parameter {
+            let parameter_id = self.parameters.push(crate::Parameter {
                 name: "this".to_string(),
-                parent_parameter_id: trait_function_id.into(),
+                parameter_parent_id: trait_function_id.into(),
                 declaration_order: 0,
                 ty: Type::ReferenceType(crate::ty::ReferenceType {
                     operand: Box::new(Type::TypeParameter(type_parameter_id)),
@@ -104,10 +106,10 @@ impl Table {
             .insert("drop".to_string(), trait_function_id.into());
     }
 
-    fn create_drop_trait(&mut self, core_module_id: ModuleID) {
+    fn create_drop_trait(&mut self, core_module_id: arena::ID<Module>) {
         // Drop trait
         let (trait_id, type_parameter_id) = {
-            let trait_id = self.traits.insert(Trait {
+            let trait_id = self.traits.push(Trait {
                 name: "@Drop".to_string(),
                 parent_module_id: core_module_id,
                 generics: Generics::default(),
@@ -117,7 +119,7 @@ impl Table {
             });
 
             // A type parameter for the type being dropped
-            let type_parameter_id = self.type_parameters.insert(TypeParameter {
+            let type_parameter_id = self.type_parameters.push(TypeParameter {
                 name: "T".to_string(),
                 parent_genericable_id: trait_id.into(),
             });
@@ -141,7 +143,7 @@ impl Table {
 
         // create a function for trait
         let trait_function_id = {
-            let trait_function_id = self.trait_functions.insert(TraitFunction {
+            let trait_function_id = self.trait_functions.push(TraitFunction {
                 function_signature: crate::FunctionSignature {
                     name: "drop".to_string(),
                     parameter_ids_by_name: HashMap::new(), // to be filled later
@@ -153,9 +155,9 @@ impl Table {
                 parent_trait_id: trait_id,
             });
 
-            let parameter_id = self.parameters.insert(crate::Parameter {
+            let parameter_id = self.parameters.push(crate::Parameter {
                 name: "this".to_string(),
-                parent_parameter_id: trait_function_id.into(),
+                parameter_parent_id: trait_function_id.into(),
                 declaration_order: 0,
                 ty: Type::ReferenceType(crate::ty::ReferenceType {
                     operand: Box::new(Type::TypeParameter(type_parameter_id)),

@@ -55,9 +55,9 @@ proptest! {
     #[test]
     #[allow(clippy::redundant_closure_for_method_calls)]
     fn target_test(
-        file_input in super::input::File::arbitrary()
+        target_input in super::input::File::arbitrary()
     ) {
-        let target_dir = file_input.create_target()?;
+        let target_dir = target_input.create_target()?;
         let root_source_file = SourceFile::load(&target_dir.path().join("main.pnx"))?;
         let storage = Storage::<Error>::new();
         let target = Target::parse(root_source_file, "test".to_string(), &storage);
@@ -66,7 +66,7 @@ proptest! {
             return Err(TestCaseError::fail(format!("parsing error: {:#?}",storage.as_vec())));
         }
 
-        file_input.assert(&target.root_file)?;
+        target_input.assert(&target.root_file)?;
     }
 }
 

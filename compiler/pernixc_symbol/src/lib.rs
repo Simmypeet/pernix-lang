@@ -31,14 +31,15 @@ use pernixc_syntax::syntax_tree::{
     },
     AccessModifier,
 };
-use pernixc_system::create_symbol;
+use pernixc_system::arena;
 
 pub mod error;
 pub mod table;
 pub mod ty;
+pub mod input;
 
 /// The accessibility of the symbol. Determines where the symbol can be accessed from.
-#[derive(Debug, Clone, Copy, Hash, EnumAsInner)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Accessibility {
     /// The symbol can only be accessed from the same module it is defined in.
     Private,
@@ -73,31 +74,29 @@ impl Accessibility {
     }
 }
 
-create_symbol! {
-    /// Represents an trait-member associated type symbol.
-    #[derive(Debug, Clone)]
-    pub struct TraitType {
-        /// The name of the associated type.
-        pub name: String,
+/// Represents an trait-member associated type symbol.
+#[derive(Debug, Clone)]
+pub struct TraitType {
+    /// The name of the associated type.
+    pub name: String,
 
-        /// The generics of the associated type.
-        pub generic_parameters: GenericParameters,
+    /// The generics of the associated type.
+    pub generic_parameters: GenericParameters,
 
-        /// The ID of the trait that contais the associated type.
-        pub parent_trait_id: TraitID,
+    /// The ID of the trait that contais the associated type.
+    pub parent_trait_id: arena::ID<Trait>,
 
-        /// The syntax tree of the associated type.
-        pub syntax_tree: Arc<syntax_tree::item::TraitType>,
-    }
+    /// The syntax tree of the associated type.
+    pub syntax_tree: Arc<syntax_tree::item::TraitType>,
 }
 
-impl Symbol for TraitTypeSymbol {
+impl Symbol for arena::Symbol<TraitType> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_trait_id.into()) }
 }
 
-impl Global for TraitTypeSymbol {
+impl Global for arena::Symbol<TraitType> {
     fn name(&self) -> &str { &self.name }
 }
 
@@ -105,10 +104,10 @@ impl Global for TraitTypeSymbol {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Substitution {
     /// Maps type parameters to their type arguments.
-    pub type_arguments_by_parameter: BTreeMap<TypeParameterID, ty::Type>,
+    pub type_arguments_by_parameter: BTreeMap<arena::ID<TypeParameter>, ty::Type>,
 
     /// Maps lifetime parameters to their lifetime arguments.
-    pub lifetime_arguments_by_parameter: BTreeMap<LifetimeParameterID, LifetimeArgument>,
+    pub lifetime_arguments_by_parameter: BTreeMap<arena::ID<LifetimeParameter>, LifetimeArgument>,
 }
 
 impl Substitution {
@@ -133,93 +132,89 @@ impl Substitution {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitBound {
     /// The ID of the trait that is bound.
-    pub trait_id: TraitID,
+    pub trait_id: arena::ID<Trait>,
 
     /// Contains the generic parameters substitution.
     pub substitution: Substitution,
 }
 
-create_symbol! {
-    /// Represents an implements block.
-    #[derive(Debug, Clone)]
-    pub struct Implements {
-        /// The generics of the implements block.
-        pub generics: Generics,
+/// Represents an implements block.
+#[derive(Debug, Clone)]
+pub struct Implements {
+    /// The generics of the implements block.
+    pub generics: Generics,
 
-        /// The trait that is implemented.
-        pub trait_id: TraitID,
+    /// The trait that is implemented.
+    pub trait_id: arena::ID<Trait>,
 
-        /// Contains the generic parameters substitution of the trait.
-        pub substitution: Substitution,
+    /// Contains the generic parameters substitution of the trait.
+    pub substitution: Substitution,
 
-        /// Maps associated type to their type implementation.
-        pub implements_types_by_associated_type: HashMap<TraitTypeID, ImplementsTypeID>,
+    /// Maps associated type to their type implementation.
+    pub implements_types_by_associated_type:
+        HashMap<arena::ID<TraitType>, arena::ID<ImplementsType>>,
 
-        /// Maps function to their function implementation.
-        pub implements_functions_by_trait_function: HashMap<TraitFunctionID, ImplementsFunctionID>,
-   }
+    /// Maps function to their function implementation.
+    pub implements_functions_by_trait_function:
+        HashMap<arena::ID<TraitFunction>, arena::ID<ImplementsFunction>>,
 }
 
-impl Symbol for ImplementsSymbol {
+impl Symbol for arena::Symbol<Implements> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { None }
 }
 
-create_symbol! {
-    /// Represents an implements-member type.
-    #[derive(Debug, Clone)]
-    pub struct ImplementsType {
-        /// The generic parameters of the type.
-        pub generics: Generics,
+/// Represents an implements-member type.
+#[derive(Debug, Clone)]
+pub struct ImplementsType {
+    /// The generic parameters of the type.
+    pub generics: Generics,
 
-        /// The ID of the associated type that is implemented.
-        pub associated_type_id: TraitTypeID,
+    /// The ID of the associated type that is implemented.
+    pub associated_type_id: arena::ID<TraitType>,
 
-        /// The type that implements the associated type.
-        pub alias: ty::Type,
+    /// The type that implements the associated type.
+    pub alias: ty::Type,
 
-        /// The ID of the implements that contains this symbol.
-        pub parent_implements_id: ImplementsID,
-    }
+    /// The ID of the implements that contains this symbol.
+    pub parent_implements_id: arena::ID<Implements>,
 }
 
-impl Symbol for ImplementsTypeSymbol {
+impl Symbol for arena::Symbol<ImplementsType> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_implements_id.into()) }
 }
 
-impl Genericable for ImplementsTypeSymbol {
+impl Genericable for arena::Symbol<ImplementsType> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
-create_symbol! {
-    /// Represents an implements-member function.
-    #[derive(Debug, Clone, Deref, DerefMut)]
-    pub struct ImplementsFunction {
-        /// Contains the data of function signature.
-        #[deref]
-        #[deref_mut]
-        pub function_signature: FunctionSignature,
+/// Represents an implements-member function.
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub struct ImplementsFunction {
+    /// Contains the data of function signature.
+    #[deref]
+    #[deref_mut]
+    pub function_signature: FunctionSignature,
 
-        /// The ID of the implements that contains the function.
-        pub parent_implements_id: TraitID,
+    /// The ID of the implements that contains the function.
+    pub parent_implements_id: arena::ID<Trait>,
 
-        /// The ID of the trait function that is implemented.
-        pub trait_function_id: TraitFunctionID,
-    }
+    /// The ID of the trait function that is implemented.
+    pub trait_function_id: arena::ID<TraitFunction>,
 }
 
-impl Symbol for ImplementsFunctionSymbol {
+impl Symbol for arena::Symbol<ImplementsFunction> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_implements_id.into()) }
 }
 
-impl Genericable for ImplementsFunctionSymbol {
+impl Genericable for arena::Symbol<ImplementsFunction> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
@@ -229,8 +224,8 @@ impl Genericable for ImplementsFunctionSymbol {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum TraitMemberID {
-    TraitFunction(TraitFunctionID),
-    TraitType(TraitTypeID),
+    TraitFunction(arena::ID<TraitFunction>),
+    TraitType(arena::ID<TraitType>),
 }
 
 impl From<TraitMemberID> for GlobalID {
@@ -242,41 +237,39 @@ impl From<TraitMemberID> for GlobalID {
     }
 }
 
-create_symbol! {
-    /// Represents a trait symbol.
-    #[derive(Debug, Clone)]
-    pub struct Trait {
-        /// The name of the trait.
-        pub name: String,
+/// Represents a trait symbol.
+#[derive(Debug, Clone)]
+pub struct Trait {
+    /// The name of the trait.
+    pub name: String,
 
-        /// The ID of the module that contains this trait.
-        pub parent_module_id: ModuleID,
+    /// The ID of the module that contains this trait.
+    pub parent_module_id: arena::ID<Module>,
 
-        /// The generics of the trait.
-        pub generics: Generics,
+    /// The generics of the trait.
+    pub generics: Generics,
 
-        /// The list of implements of the trait.
-        pub implements: Vec<ImplementsID>,
+    /// The list of implements of the trait.
+    pub implements: Vec<arena::ID<Implements>>,
 
-        /// The syntax tree of the trait.
-        pub syntax_tree: Option<Arc<syntax_tree::item::TraitSignature>>,
+    /// The syntax tree of the trait.
+    pub syntax_tree: Option<Arc<syntax_tree::item::TraitSignature>>,
 
-        /// Maps the name of the trait member to its ID.
-        pub trait_member_ids_by_name: HashMap<String, TraitMemberID>,
-    }
+    /// Maps the name of the trait member to its ID.
+    pub trait_member_ids_by_name: HashMap<String, TraitMemberID>,
 }
 
-impl Symbol for TraitSymbol {
+impl Symbol for arena::Symbol<Trait> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
 }
 
-impl Global for TraitSymbol {
+impl Global for arena::Symbol<Trait> {
     fn name(&self) -> &str { &self.name }
 }
 
-impl Scoped for TraitSymbol {
+impl Scoped for arena::Symbol<Trait> {
     fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
         self.trait_member_ids_by_name
             .get(name)
@@ -285,31 +278,29 @@ impl Scoped for TraitSymbol {
     }
 }
 
-create_symbol! {
-    /// Represents a trait-member function symbol.
-    #[derive(Debug, Clone, Deref, DerefMut)]
-    pub struct TraitFunction {
-        /// Contains the data of function signature.
-        #[deref]
-        #[deref_mut]
-        pub function_signature: FunctionSignature,
+/// Represents a trait-member function symbol.
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub struct TraitFunction {
+    /// Contains the data of function signature.
+    #[deref]
+    #[deref_mut]
+    pub function_signature: FunctionSignature,
 
-        /// The ID of the module that contains the function.
-        pub parent_trait_id: TraitID,
-    }
+    /// The ID of the module that contains the function.
+    pub parent_trait_id: arena::ID<Trait>,
 }
 
-impl Symbol for TraitFunctionSymbol {
+impl Symbol for arena::Symbol<TraitFunction> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_trait_id.into()) }
 }
 
-impl Global for TraitFunctionSymbol {
+impl Global for arena::Symbol<TraitFunction> {
     fn name(&self) -> &str { &self.name }
 }
 
-impl Genericable for TraitFunctionSymbol {
+impl Genericable for arena::Symbol<TraitFunction> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
@@ -319,15 +310,15 @@ impl Genericable for TraitFunctionSymbol {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum GenericableID {
-    Struct(StructID),
-    Function(FunctionID),
-    Implements(ImplementsID),
-    Trait(TraitID),
-    TraitType(TraitTypeID),
-    TraitFunction(TraitFunctionID),
-    Type(TypeID),
-    ImplementsFunction(ImplementsFunctionID),
-    ImplementsType(ImplementsTypeID),
+    Struct(arena::ID<Struct>),
+    Function(arena::ID<Function>),
+    Implements(arena::ID<Implements>),
+    Trait(arena::ID<Trait>),
+    TraitType(arena::ID<TraitType>),
+    TraitFunction(arena::ID<TraitFunction>),
+    Type(arena::ID<Type>),
+    ImplementsFunction(arena::ID<ImplementsFunction>),
+    ImplementsType(arena::ID<ImplementsType>),
 }
 
 impl From<GenericableID> for ID {
@@ -355,31 +346,31 @@ pub trait Genericable: Symbol {
     fn where_clause(&self) -> Option<&WhereClause>;
 }
 
-impl Genericable for StructSymbol {
+impl Genericable for arena::Symbol<Struct> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
-impl Genericable for FunctionSymbol {
+impl Genericable for arena::Symbol<Function> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
-impl Genericable for ImplementsSymbol {
+impl Genericable for arena::Symbol<Implements> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
-impl Genericable for TraitSymbol {
+impl Genericable for arena::Symbol<Trait> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
-impl Genericable for TraitTypeSymbol {
+impl Genericable for arena::Symbol<TraitType> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { None }
@@ -394,13 +385,13 @@ pub trait GenericParameter: Symbol {
     fn parent_genericable_id(&self) -> GenericableID;
 }
 
-impl GenericParameter for LifetimeParameterSymbol {
+impl GenericParameter for arena::Symbol<LifetimeParameter> {
     fn name(&self) -> &str { &self.name }
 
     fn parent_genericable_id(&self) -> GenericableID { self.parent_genericable_id }
 }
 
-impl GenericParameter for TypeParameterSymbol {
+impl GenericParameter for arena::Symbol<TypeParameter> {
     fn name(&self) -> &str { &self.name }
 
     fn parent_genericable_id(&self) -> GenericableID { self.parent_genericable_id }
@@ -410,41 +401,37 @@ impl GenericParameter for TypeParameterSymbol {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum GenericParameterID {
-    Type(TypeParameterID),
-    Lifetime(LifetimeParameterID),
+    Type(arena::ID<TypeParameter>),
+    Lifetime(arena::ID<LifetimeParameter>),
 }
 
-create_symbol! {
-    /// Represents a lifetime parameter symbol.
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct LifetimeParameter {
-        /// The name of the lifetime parameter.
-        pub name: String,
+/// Represents a lifetime parameter symbol.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LifetimeParameter {
+    /// The name of the lifetime parameter.
+    pub name: String,
 
-        /// The ID of the parent genericable.
-        pub parent_genericable_id: GenericableID,
-    }
+    /// The ID of the parent genericable.
+    pub parent_genericable_id: GenericableID,
 }
 
-impl Symbol for LifetimeParameterSymbol {
+impl Symbol for arena::Symbol<LifetimeParameter> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_genericable_id.into()) }
 }
 
-create_symbol! {
-    /// Represents a type parameter symbol.
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct TypeParameter {
-        /// The name of the type parameter.
-        pub name: String,
+/// Represents a type parameter symbol.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TypeParameter {
+    /// The name of the type parameter.
+    pub name: String,
 
-        /// The ID of the parent genericable.
-        pub parent_genericable_id: GenericableID,
-    }
+    /// The ID of the parent genericable.
+    pub parent_genericable_id: GenericableID,
 }
 
-impl Symbol for TypeParameterSymbol {
+impl Symbol for arena::Symbol<TypeParameter> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_genericable_id.into()) }
@@ -455,30 +442,30 @@ impl Symbol for TypeParameterSymbol {
 #[allow(missing_docs)]
 pub enum LifetimeArgument {
     Static,
-    LifetimeParamter(LifetimeParameterID),
+    LifetimeParamter(arena::ID<LifetimeParameter>),
 }
 
 /// Contains the declaration of the generic parameters (both lifetimes and type parameters).
 #[derive(Debug, Clone, Default)]
 pub struct GenericParameters {
     /// The declaration order of the type parameters.
-    pub type_parameter_order: Vec<TypeParameterID>,
+    pub type_parameter_order: Vec<arena::ID<TypeParameter>>,
 
     /// Maps the name of the type parameter to its ID.
-    pub type_parameter_ids_by_name: HashMap<String, TypeParameterID>,
+    pub type_parameter_ids_by_name: HashMap<String, arena::ID<TypeParameter>>,
 
     /// The declaration order of the lifetime parameters.
-    pub lifetime_parameter_order: Vec<LifetimeParameterID>,
+    pub lifetime_parameter_order: Vec<arena::ID<LifetimeParameter>>,
 
     /// Maps the name of the lifetime parameter to its ID.
-    pub lifetime_parameter_id_by_name: HashMap<String, LifetimeParameterID>,
+    pub lifetime_parameter_id_by_name: HashMap<String, arena::ID<LifetimeParameter>>,
 }
 
 /// Contains all the constraint defined on the where clause of a genericable.
 #[derive(Debug, Clone, Default)]
 pub struct WhereClause {
     /// Maps the lifetime parameter to its lifetime bounds.
-    pub lifetime_bounds: HashMap<LifetimeParameterID, Vec<LifetimeArgument>>,
+    pub lifetime_bounds: HashMap<arena::ID<LifetimeParameter>, Vec<LifetimeArgument>>,
 
     /// Maps the associated type to its type bound.
     pub type_bounds_by_trait_type: HashMap<ty::TraitType, ty::Type>,
@@ -487,7 +474,7 @@ pub struct WhereClause {
     pub lifetime_bound_vecs_by_trait_type: HashMap<ty::TraitType, Vec<LifetimeArgument>>,
 
     /// Maps the type parameter to its lifetime bounds.
-    pub type_parameter_bounds: HashMap<TypeParameterID, Vec<LifetimeArgument>>,
+    pub type_parameter_bounds: HashMap<arena::ID<TypeParameter>, Vec<LifetimeArgument>>,
 }
 
 /// Contains all the information related to the generics.
@@ -522,169 +509,159 @@ pub trait Scoped: Global {
     fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID>;
 }
 
-create_symbol! {
-    /// Contains the data of the module symbol.
-    #[derive(Debug, Clone)]
-    pub struct Module {
-        /// The name of the module
-        pub name: String,
+/// Contains the data of the module symbol.
+#[derive(Debug, Clone)]
+pub struct Module {
+    /// The name of the module
+    pub name: String,
 
-        /// The accessibility of the module
-        pub accessibility: Accessibility,
+    /// The accessibility of the module
+    pub accessibility: Accessibility,
 
-        /// The parent ID of the module. If `None` then the module is the root module.
-        pub parent_module_id: Option<ModuleID>,
+    /// The parent ID of the module. If `None` then the module is the root module.
+    pub parent_module_id: Option<arena::ID<Module>>,
 
-        /// Maps the name of the symbol defined in this module to its corresponding ID.
-        pub child_ids_by_name: HashMap<String, GlobalID>,
+    /// Maps the name of the symbol defined in this module to its corresponding ID.
+    pub child_ids_by_name: HashMap<String, GlobalID>,
 
-        /// The IDs of modules that are used in the `using` statements.
-        pub usings: HashSet<ModuleID>,
-    }
+    /// The IDs of modules that are used in the `using` statements.
+    pub usings: HashSet<arena::ID<Module>>,
 }
 
-impl Symbol for ModuleSymbol {
+impl Symbol for arena::Symbol<Module> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { self.parent_module_id.map(ID::Module) }
 }
 
-impl Global for ModuleSymbol {
+impl Global for arena::Symbol<Module> {
     fn name(&self) -> &str { &self.name }
 }
 
-impl Scoped for ModuleSymbol {
+impl Scoped for arena::Symbol<Module> {
     fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
         self.child_ids_by_name.get(name).copied()
     }
 }
 
-create_symbol! {
-    /// Contains the data of the field symbol.
-    #[derive(Debug, Clone)]
-    pub struct Field {
-        /// The name of the field
-        pub name: String,
+/// Contains the data of the field symbol.
+#[derive(Debug, Clone)]
+pub struct Field {
+    /// The name of the field
+    pub name: String,
 
-        /// The accessibility of the field
-        pub accessibility: Accessibility,
+    /// The accessibility of the field
+    pub accessibility: Accessibility,
 
-        /// The struct ID where the field is defined.
-        pub parent_struct_id: StructID,
+    /// The struct ID where the field is defined.
+    pub parent_struct_id: arena::ID<Struct>,
 
-        /// The syntax tree that was used to create the field.
-        pub syntax_tree: Arc<StructFieldSyntaxTree>,
+    /// The syntax tree that was used to create the field.
+    pub syntax_tree: Arc<StructFieldSyntaxTree>,
 
-        /// The order in which the field was declared.
-        pub declaration_order: usize,
+    /// The order in which the field was declared.
+    pub declaration_order: usize,
 
-        /// The type of the field.
-        pub ty: ty::Type,
-    }
+    /// The type of the field.
+    pub ty: ty::Type,
 }
 
-impl Symbol for FieldSymbol {
+impl Symbol for arena::Symbol<Field> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_struct_id.into()) }
 }
 
-create_symbol! {
-    /// Contains the data of the struct symbol.
-    #[derive(Debug, Clone)]
-    pub struct Struct {
-        /// The name of the struct
-        pub name: String,
+/// Contains the data of the struct symbol.
+#[derive(Debug, Clone)]
+pub struct Struct {
+    /// The name of the struct
+    pub name: String,
 
-        /// The accessibility of the struct
-        pub accessibility: Accessibility,
+    /// The accessibility of the struct
+    pub accessibility: Accessibility,
 
-        /// The parent ID of the struct.
-        pub parent_module_id: ModuleID,
+    /// The parent ID of the struct.
+    pub parent_module_id: arena::ID<Module>,
 
-        /// The syntax tree that was used to create the struct.
-        pub syntax_tree: Arc<StructSignatureSyntaxTree>,
+    /// The syntax tree that was used to create the struct.
+    pub syntax_tree: Arc<StructSignatureSyntaxTree>,
 
-        /// Maps the name of the field to its corresponding ID.
-        pub field_ids_by_name: HashMap<String, FieldID>,
+    /// Maps the name of the field to its corresponding ID.
+    pub field_ids_by_name: HashMap<String, arena::ID<Field>>,
 
-        /// Maps the name of the field to its corresponding ID.
-        pub generics: Generics,
+    /// Maps the name of the field to its corresponding ID.
+    pub generics: Generics,
 
-        /// List of the fields in the order in which they were declared.
-        pub field_order: Vec<FieldID>,
-    }
+    /// List of the fields in the order in which they were declared.
+    pub field_order: Vec<arena::ID<Field>>,
 }
 
-impl Symbol for StructSymbol {
+impl Symbol for arena::Symbol<Struct> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
 }
 
-impl Global for StructSymbol {
+impl Global for arena::Symbol<Struct> {
     fn name(&self) -> &str { &self.name }
 }
 
-create_symbol! {
-    /// Contains the data of the enum symbol.
-    #[derive(Debug, Clone)]
-    pub struct EnumVariant {
-        /// The nae of the enum variant
-        pub name: String,
+/// Contains the data of the enum symbol.
+#[derive(Debug, Clone)]
+pub struct EnumVariant {
+    /// The nae of the enum variant
+    pub name: String,
 
-        /// The ID of the enum that contains the enum variant.
-        pub parent_enum_id: EnumID,
+    /// The ID of the enum that contains the enum variant.
+    pub parent_enum_id: arena::ID<Enum>,
 
-        /// The order in which the enum variant was declared.
-        pub declaration_order: usize,
+    /// The order in which the enum variant was declared.
+    pub declaration_order: usize,
 
-        /// The syntax tree that was used to create the enum variant.
-        pub syntax_tree: Arc<Identifier>,
-    }
+    /// The syntax tree that was used to create the enum variant.
+    pub syntax_tree: Arc<Identifier>,
 }
 
-impl Symbol for EnumVariantSymbol {
+impl Symbol for arena::Symbol<EnumVariant> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_enum_id.into()) }
 }
 
-impl Global for EnumVariantSymbol {
+impl Global for arena::Symbol<EnumVariant> {
     fn name(&self) -> &str { &self.name }
 }
 
-create_symbol! {
-    /// Contains the data of the enum symbol.
-    #[derive(Debug, Clone)]
-    pub struct Enum {
-        /// The name of the enum
-        pub name: String,
+/// Contains the data of the enum symbol.
+#[derive(Debug, Clone)]
+pub struct Enum {
+    /// The name of the enum
+    pub name: String,
 
-        /// The accessibility of the enum
-        pub accessibility: Accessibility,
+    /// The accessibility of the enum
+    pub accessibility: Accessibility,
 
-        /// The ID of the module that contains the enum.
-        pub parent_module_id: ModuleID,
+    /// The ID of the module that contains the enum.
+    pub parent_module_id: arena::ID<Module>,
 
-        /// The syntax tree that was used to create the enum.
-        pub syntax_tree: EnumSignatureSyntaxTree,
+    /// The syntax tree that was used to create the enum.
+    pub syntax_tree: EnumSignatureSyntaxTree,
 
-        /// Maps the name of the enum variant to the ID of the enum variant.
-        pub variant_ids_by_name: HashMap<String, EnumVariantID>,
+    /// Maps the name of the enum variant to the ID of the enum variant.
+    pub variant_ids_by_name: HashMap<String, arena::ID<EnumVariant>>,
 
-        /// List of the enum variants in the order in which they were declared.
-        pub variant_order: Vec<EnumVariantID>,
-    }
+    /// List of the enum variants in the order in which they were declared.
+    pub variant_order: Vec<arena::ID<EnumVariant>>,
 }
 
-impl Symbol for EnumSymbol {
+impl Symbol for arena::Symbol<Enum> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
 }
 
-impl Scoped for EnumSymbol {
+impl Scoped for arena::Symbol<Enum> {
     fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
         self.variant_ids_by_name
             .get(name)
@@ -693,7 +670,7 @@ impl Scoped for EnumSymbol {
     }
 }
 
-impl Global for EnumSymbol {
+impl Global for arena::Symbol<Enum> {
     fn name(&self) -> &str { &self.name }
 }
 
@@ -710,48 +687,46 @@ pub struct FunctionSignatureSyntaxTree {
 /// Is an enumeration of all symbols that are allowed to be a parent of a parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
-pub enum ParentParameterID {
-    Function(FunctionID),
-    TraitFunction(TraitFunctionID),
+pub enum ParameterParentID {
+    Function(arena::ID<Function>),
+    TraitFunction(arena::ID<TraitFunction>),
 }
 
-impl From<ParentParameterID> for ID {
-    fn from(id: ParentParameterID) -> Self {
+impl From<ParameterParentID> for ID {
+    fn from(id: ParameterParentID) -> Self {
         match id {
-            ParentParameterID::Function(id) => id.into(),
-            ParentParameterID::TraitFunction(id) => id.into(),
+            ParameterParentID::Function(id) => id.into(),
+            ParameterParentID::TraitFunction(id) => id.into(),
         }
     }
 }
 
-create_symbol! {
-    /// Contains the data of parameter symbol.
-    #[derive(Debug, Clone)]
-    pub struct Parameter {
-        /// The name of the parameter
-        pub name: String,
+/// Contains the data of parameter symbol.
+#[derive(Debug, Clone)]
+pub struct Parameter {
+    /// The name of the parameter
+    pub name: String,
 
-        /// The id to the parent symbol of the parameter
-        pub parent_parameter_id: ParentParameterID,
+    /// The id to the parent symbol of the parameter
+    pub parameter_parent_id: ParameterParentID,
 
-        /// The order in which the parameter was declared.
-        pub declaration_order: usize,
+    /// The order in which the parameter was declared.
+    pub declaration_order: usize,
 
-        /// The type of the parameter
-        pub ty: ty::Type,
+    /// The type of the parameter
+    pub ty: ty::Type,
 
-        /// The syntax tree of the parameter.
-        pub syntax_tree: Option<Arc<syntax_tree::item::Parameter>>,
+    /// The syntax tree of the parameter.
+    pub syntax_tree: Option<Arc<syntax_tree::item::Parameter>>,
 
-        /// Whether the parameter is mutable.
-        pub is_mutable: bool,
-    }
+    /// Whether the parameter is mutable.
+    pub is_mutable: bool,
 }
 
-impl Symbol for ParameterSymbol {
+impl Symbol for arena::Symbol<Parameter> {
     fn id(&self) -> ID { self.id().into() }
 
-    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_parameter_id.into()) }
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parameter_parent_id.into()) }
 }
 
 /// Contains the data of the function signature symbol.
@@ -761,10 +736,10 @@ pub struct FunctionSignature {
     pub name: String,
 
     /// Maps the name of the parameter to its corresponding ID.
-    pub parameter_ids_by_name: HashMap<String, ParameterID>,
+    pub parameter_ids_by_name: HashMap<String, arena::ID<Parameter>>,
 
     /// List of the parameters in the order in which they were declared.
-    pub parameter_order: Vec<ParameterID>,
+    pub parameter_order: Vec<arena::ID<Parameter>>,
 
     /// The return type of the overload.
     pub return_type: ty::Type,
@@ -776,81 +751,77 @@ pub struct FunctionSignature {
     pub generics: Generics,
 }
 
-impl Symbol for FunctionSymbol {
+impl Symbol for arena::Symbol<Function> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
 }
 
-impl Global for FunctionSymbol {
+impl Global for arena::Symbol<Function> {
     fn name(&self) -> &str { &self.name }
 }
 
-create_symbol! {
-    /// Contains the data of function symbol.
-    #[derive(Debug, Clone, Deref, DerefMut)]
-    pub struct Function {
-        /// Contains the data of function signature.
-        #[deref]
-        #[deref_mut]
-        pub function_signature: FunctionSignature,
+/// Contains the data of function symbol.
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub struct Function {
+    /// Contains the data of function signature.
+    #[deref]
+    #[deref_mut]
+    pub function_signature: FunctionSignature,
 
-        /// The ID of the module that contains the function.
-        pub parent_module_id: ModuleID,
+    /// The ID of the module that contains the function.
+    pub parent_module_id: arena::ID<Module>,
 
-        /// The syntax tree of the function body.
-        pub syntax_tree: Arc<syntax_tree::item::FunctionBody>,
+    /// The syntax tree of the function body.
+    pub syntax_tree: Arc<syntax_tree::item::FunctionBody>,
 
-        /// The accessibility of the function.
-        pub accessibility: Accessibility,
-    }
+    /// The accessibility of the function.
+    pub accessibility: Accessibility,
 }
 
 /// Is an enumeration of symbols that can be used as a parent of an overload set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum ParentOverloadSetID {
-    Module(ModuleID),
-    Trait(TraitID),
+    Module(arena::ID<Module>),
+    Trait(arena::ID<Trait>),
 }
 
-create_symbol! {
-    /// Contains the data of type alias symbol.
-    #[derive(Debug, Clone)]
-    pub struct Type {
-        /// The name of the type alias.
-        pub name: String,
+/// Contains the data of type alias symbol.
+#[derive(Debug, Clone)]
+pub struct Type {
+    /// The name of the type alias.
+    pub name: String,
 
-        /// The accessibility of the type alias.
-        pub accessibility: Accessibility,
+    /// The accessibility of the type alias.
+    pub accessibility: Accessibility,
 
-        /// The ID of the parent symbol that contains the type alias.
-        pub parent_module_id: ModuleID,
+    /// The ID of the parent symbol that contains the type alias.
+    pub parent_module_id: arena::ID<Module>,
 
-        /// The type that the type alias represents.
-        pub alias: ty::Type,
+    /// The type that the type alias represents.
+    pub alias: ty::Type,
 
-        /// The generic parameters of the type alias.
-        pub generic_parameters: GenericParameters,
+    /// The generic parameters of the type alias.
+    pub generic_parameters: GenericParameters,
 
-        /// The syntax tree that was used to create the type alias.
-        pub syntax_tree: Arc<TypeSyntaxTree>
-    }
+    /// The syntax tree that was used to create the type alias.
+    pub syntax_tree: Arc<TypeSyntaxTree>,
 }
 
-impl Genericable for TypeSymbol {
+impl Genericable for arena::Symbol<Type> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generic_parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { None }
 }
 
-impl Symbol for TypeSymbol {
+impl Symbol for arena::Symbol<Type> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
 }
 
-impl Global for TypeSymbol {
+impl Global for arena::Symbol<Type> {
     fn name(&self) -> &str { &self.name }
 }
 
@@ -858,8 +829,8 @@ impl Global for TypeSymbol {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum TypedID {
-    Enum(EnumID),
-    Struct(StructID),
+    Enum(arena::ID<Enum>),
+    Struct(arena::ID<Struct>),
 }
 
 impl From<TypedID> for GlobalID {
@@ -897,9 +868,9 @@ impl TryFrom<GlobalID> for ScopedID {
 #[derive(Debug, Clone, Copy, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum ScopedID {
-    Module(ModuleID),
-    Enum(EnumID),
-    Trait(TraitID),
+    Module(arena::ID<Module>),
+    Enum(arena::ID<Enum>),
+    Trait(arena::ID<Trait>),
 }
 
 impl From<ScopedID> for GlobalID {
@@ -926,15 +897,15 @@ impl From<ScopedID> for ID {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum GlobalID {
-    Module(ModuleID),
-    Struct(StructID),
-    Enum(EnumID),
-    EnumVariant(EnumVariantID),
-    Function(FunctionID),
-    Type(TypeID),
-    Trait(TraitID),
-    TraitFunction(TraitFunctionID),
-    TraitType(TraitTypeID),
+    Module(arena::ID<Module>),
+    Struct(arena::ID<Struct>),
+    Enum(arena::ID<Enum>),
+    EnumVariant(arena::ID<EnumVariant>),
+    Function(arena::ID<Function>),
+    Type(arena::ID<Type>),
+    Trait(arena::ID<Trait>),
+    TraitFunction(arena::ID<TraitFunction>),
+    TraitType(arena::ID<TraitType>),
 }
 
 impl From<GlobalID> for ID {
@@ -958,13 +929,13 @@ impl From<GlobalID> for ID {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum LocalID {
-    Field(FieldID),
-    Parameter(ParameterID),
-    LifetimeParameter(LifetimeParameterID),
-    TypeParameter(TypeParameterID),
-    TraitType(TraitTypeID),
-    TraitFunction(TraitFunctionID),
-    Implements(ImplementsID),
+    Field(arena::ID<Field>),
+    Parameter(arena::ID<Parameter>),
+    LifetimeParameter(arena::ID<LifetimeParameter>),
+    TypeParameter(arena::ID<TypeParameter>),
+    TraitType(arena::ID<TraitType>),
+    TraitFunction(arena::ID<TraitFunction>),
+    Implements(arena::ID<Implements>),
 }
 
 impl From<LocalID> for ID {
@@ -985,20 +956,20 @@ impl From<LocalID> for ID {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum ID {
-    Module(ModuleID),
-    Struct(StructID),
-    Enum(EnumID),
-    EnumVariant(EnumVariantID),
-    Function(FunctionID),
-    Type(TypeID),
-    Field(FieldID),
-    Parameter(ParameterID),
-    Trait(TraitID),
-    TraitType(TraitTypeID),
-    TypeParameter(TypeParameterID),
-    LifetimeParameter(LifetimeParameterID),
-    TraitFunction(TraitFunctionID),
-    Implements(ImplementsID),
-    ImplementsFunction(ImplementsFunctionID),
-    ImplementsType(ImplementsTypeID),
+    Module(arena::ID<Module>),
+    Struct(arena::ID<Struct>),
+    Enum(arena::ID<Enum>),
+    EnumVariant(arena::ID<EnumVariant>),
+    Function(arena::ID<Function>),
+    Type(arena::ID<Type>),
+    Field(arena::ID<Field>),
+    Parameter(arena::ID<Parameter>),
+    Trait(arena::ID<Trait>),
+    TraitType(arena::ID<TraitType>),
+    TypeParameter(arena::ID<TypeParameter>),
+    LifetimeParameter(arena::ID<LifetimeParameter>),
+    TraitFunction(arena::ID<TraitFunction>),
+    Implements(arena::ID<Implements>),
+    ImplementsFunction(arena::ID<ImplementsFunction>),
+    ImplementsType(arena::ID<ImplementsType>),
 }

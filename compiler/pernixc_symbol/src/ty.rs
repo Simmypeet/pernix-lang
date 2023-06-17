@@ -2,8 +2,9 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use pernixc_system::arena;
 
-use crate::{LifetimeArgument, StructID, Substitution, TraitTypeID, TypeParameterID};
+use crate::{LifetimeArgument, Substitution};
 
 /// Enumeration of all possible primitive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -50,7 +51,7 @@ pub struct ReferenceType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Struct {
     /// The ID of the struct.
-    pub struct_id: StructID,
+    pub struct_id: arena::ID<crate::Struct>,
 
     /// The generic parameter substitution.
     pub substitution: Substitution,
@@ -60,7 +61,7 @@ pub struct Struct {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TraitType {
     /// The ID of the associated type.
-    pub trait_type_id: TraitTypeID,
+    pub trait_type_id: arena::ID<crate::TraitType>,
 
     /// The generic parameter substitution.
     pub substitution: Substitution,
@@ -73,6 +74,6 @@ pub enum Type {
     Struct(Struct),
     PrimitiveType(PrimitiveType),
     ReferenceType(ReferenceType),
-    TypeParameter(TypeParameterID),
+    TypeParameter(arena::ID<crate::TypeParameter>),
     TraitType(TraitType),
 }

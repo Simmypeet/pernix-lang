@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Index, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use pernixc_lexical::token::Identifier;
 use pernixc_source::SourceElement;
@@ -7,29 +7,34 @@ use pernixc_syntax::syntax_tree::{
     target::{File, Target},
     ConnectedList,
 };
-use pernixc_system::diagnostic::Handler;
+use pernixc_system::{arena, diagnostic::Handler};
 
 use super::Table;
 use crate::{
     error::{Error, SymbolRedefinition},
     ty::{self, PrimitiveType},
-    Accessibility, Enum, EnumID, EnumVariant, Field, FunctionID, FunctionSignature,
+    Accessibility, Enum, EnumVariant, Field, Function, FunctionSignature,
     FunctionSignatureSyntaxTree, GenericParameters, GenericableID, Generics, GlobalID,
-    LifetimeParameter, ModuleID, Parameter, Struct, StructID, TraitFunction, TraitFunctionID,
-    TraitID, TraitType, TraitTypeID, Type, TypeID, TypeParameter, ID,
+    LifetimeParameter, Module, Parameter, Struct, Trait, TraitFunction, TraitType, Type,
+    TypeParameter, ID,
 };
 
-enum SymbolState {
+pub(super) enum SymbolState {
     Drafted,
     Constructing,
 }
 
+pub(super) struct Drafting {
+    symbol_states_by_id: HashMap<ID, SymbolState>,
+    implements_vecs_by_module_id: HashMap<arena::ID<Module>, Vec<item::Implements>>,
+}
+
 impl Table {
-    fn draft_symbols(
+    pub(super) fn draft_symbols(
         &mut self,
         targets: Vec<Target>,
         handler: &impl Handler<Error>,
-    ) -> HashMap<ID, SymbolState> {
+    ) -> Drafting {
         let mut symbol_states_by_id = HashMap::new();
         // implements item will be handled separately
         let mut implements_vecs_by_module_id = HashMap::new();
@@ -38,7 +43,7 @@ impl Table {
         for target in targets {
             let (file, target_name) = target.dissolve();
 
-            let module_id = self.root_module_ids_by_target_name[&target_name];
+            let module_id = self.target_root_module_ids_by_name[&target_name];
 
             self.draft_symbols_in_file(
                 file,
@@ -49,14 +54,17 @@ impl Table {
             );
         }
 
-        symbol_states_by_id
+        Drafting {
+            symbol_states_by_id,
+            implements_vecs_by_module_id,
+        }
     }
 
     fn draft_symbols_in_file(
         &mut self,
         current_file: File,
-        module_id: ModuleID,
-        implements_vecs_by_module_id: &mut HashMap<ModuleID, Vec<item::Implements>>,
+        module_id: arena::ID<Module>,
+        implements_vecs_by_module_id: &mut HashMap<arena::ID<Module>, Vec<item::Implements>>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
         handler: &impl Handler<Error>,
     ) {
@@ -93,11 +101,11 @@ impl Table {
             // the name of the symbol
             let name = {
                 let identifier = match &item {
-                    Item::Trait(i) => &i.trait_signature.identifier,
-                    Item::Function(i) => &i.function_signature.identifier,
-                    Item::Type(i) => &i.type_signature.identifier,
-                    Item::Struct(i) => &i.struct_signature.identifier,
-                    Item::Enum(i) => &i.enum_signature.identifier,
+                    Item::Trait(i) => &i.signature.identifier,
+                    Item::Function(i) => &i.signature.identifier,
+                    Item::Type(i) => &i.signature.identifier,
+                    Item::Struct(i) => &i.signature.identifier,
+                    Item::Enum(i) => &i.signature.identifier,
 
                     Item::Implements(_) => unreachable!(),
                 };
@@ -166,10 +174,7 @@ impl Table {
     ) -> GenericParameters {
         let mut generic_parameters = GenericParameters::default();
 
-        for generic_parameter in generic_parameters_syntax_tree
-            .generic_parameter_list
-            .elements()
-        {
+        for generic_parameter in generic_parameters_syntax_tree.parameter_list.elements() {
             match generic_parameter {
                 item::GenericParameter::Lifetime(lt) => {
                     // lifetime must be declared prior to type parameters
@@ -193,11 +198,10 @@ impl Table {
                     }
 
                     // add lifetime parameter
-                    let lifetime_parameter_id =
-                        self.lifetime_parameters.insert(LifetimeParameter {
-                            name: lt.identifier.span.str().to_string(),
-                            parent_genericable_id,
-                        });
+                    let lifetime_parameter_id = self.lifetime_parameters.push(LifetimeParameter {
+                        name: lt.identifier.span.str().to_string(),
+                        parent_genericable_id,
+                    });
 
                     generic_parameters
                         .lifetime_parameter_id_by_name
@@ -217,7 +221,7 @@ impl Table {
                         continue;
                     }
 
-                    let type_parameter_id = self.type_parameters.insert(TypeParameter {
+                    let type_parameter_id = self.type_parameters.push(TypeParameter {
                         name: ty.identifier.span.str().to_string(),
                         parent_genericable_id,
                     });
@@ -239,18 +243,13 @@ impl Table {
     fn draft_type(
         &mut self,
         type_syntax_tree: item::Type,
-        parent_module_id: ModuleID,
+        parent_module_id: arena::ID<Module>,
         handler: &impl Handler<Error>,
-    ) -> TypeID {
+    ) -> arena::ID<Type> {
         let type_syntax_tree = Arc::new(type_syntax_tree);
 
-        let type_id = self.types.insert(Type {
-            name: type_syntax_tree
-                .type_signature
-                .identifier
-                .span
-                .str()
-                .to_string(),
+        let type_id = self.types.push(Type {
+            name: type_syntax_tree.signature.identifier.span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&type_syntax_tree.access_modifier),
             parent_module_id,
             alias: ty::Type::PrimitiveType(PrimitiveType::Void), // to be filled later
@@ -259,9 +258,7 @@ impl Table {
         });
 
         // update generic parameters
-        if let Some(generic_parameters) =
-            type_syntax_tree.type_signature.generic_parameters.as_ref()
-        {
+        if let Some(generic_parameters) = type_syntax_tree.signature.generic_parameters.as_ref() {
             let generic_parameters =
                 self.create_generic_parameters(type_id.into(), generic_parameters, handler);
 
@@ -274,9 +271,9 @@ impl Table {
     fn draft_trait_function(
         &mut self,
         function_signature_syntax_tree: item::FunctionSignature,
-        parent_trait_id: TraitID,
+        parent_trait_id: arena::ID<Trait>,
         handler: &impl Handler<Error>,
-    ) -> TraitFunctionID {
+    ) -> arena::ID<TraitFunction> {
         let function_signature_syntax_tree_without_parameters =
             Arc::new(FunctionSignatureSyntaxTree {
                 identifier: function_signature_syntax_tree.identifier,
@@ -285,7 +282,7 @@ impl Table {
                 where_clause: function_signature_syntax_tree.where_clause,
             });
 
-        let trait_function_id = self.trait_functions.insert(TraitFunction {
+        let trait_function_id = self.trait_functions.push(TraitFunction {
             function_signature: FunctionSignature {
                 name: function_signature_syntax_tree_without_parameters
                     .identifier
@@ -339,9 +336,9 @@ impl Table {
 
             let parameter_name = parameter.identifier.span.str().to_string();
 
-            let parameter_id = self.parameters.insert(Parameter {
+            let parameter_id = self.parameters.push(Parameter {
                 name: parameter_name.clone(),
-                parent_parameter_id: trait_function_id.into(),
+                parameter_parent_id: trait_function_id.into(),
                 declaration_order: trait_function_symbol
                     .function_signature
                     .parameter_order
@@ -368,11 +365,11 @@ impl Table {
     fn draft_trait_type(
         &mut self,
         trait_type_syntax_tree: item::TraitType,
-        parent_trait_id: TraitID,
+        parent_trait_id: arena::ID<Trait>,
         handler: &impl Handler<Error>,
-    ) -> TraitTypeID {
+    ) -> arena::ID<TraitType> {
         let trait_type_syntax_tree = Arc::new(trait_type_syntax_tree);
-        let trait_type_id = self.trait_types.insert(TraitType {
+        let trait_type_id = self.trait_types.push(TraitType {
             name: trait_type_syntax_tree
                 .type_signature
                 .identifier
@@ -401,11 +398,11 @@ impl Table {
     fn draft_trait(
         &mut self,
         trait_syntax_tree: item::Trait,
-        parent_module_id: ModuleID,
+        parent_module_id: arena::ID<Module>,
         handler: &impl Handler<Error>,
-    ) -> TraitID {
-        let trait_signature = Arc::new(trait_syntax_tree.trait_signature);
-        let trait_id = self.traits.insert(crate::Trait {
+    ) -> arena::ID<Trait> {
+        let trait_signature = Arc::new(trait_syntax_tree.signature);
+        let trait_id = self.traits.push(crate::Trait {
             name: trait_signature.identifier.span.str().to_string(),
             parent_module_id,
             generics: Generics::default(), // to be filled later
@@ -422,7 +419,7 @@ impl Table {
             self.traits[trait_id].generics.generic_parameters = generic_parameters;
         }
 
-        for trait_member in trait_syntax_tree.trait_body.trait_members {
+        for trait_member in trait_syntax_tree.body.members {
             let trait_symbol = &mut self.traits[trait_id];
             let identifier = match &trait_member {
                 item::TraitMember::Function(f) => &f.function_signature.identifier,
@@ -456,18 +453,18 @@ impl Table {
     fn draft_function(
         &mut self,
         function_syntax_tree: item::Function,
-        parent_module_id: ModuleID,
+        parent_module_id: arena::ID<Module>,
         handler: &impl Handler<Error>,
-    ) -> FunctionID {
+    ) -> arena::ID<Function> {
         // function signature syntax tree (without parameters)
         let function_signature_syntax_tree = Arc::new(FunctionSignatureSyntaxTree {
-            identifier: function_syntax_tree.function_signature.identifier,
-            generic_parameters: function_syntax_tree.function_signature.generic_parameters,
-            return_type: function_syntax_tree.function_signature.return_type,
-            where_clause: function_syntax_tree.function_signature.where_clause,
+            identifier: function_syntax_tree.signature.identifier,
+            generic_parameters: function_syntax_tree.signature.generic_parameters,
+            return_type: function_syntax_tree.signature.return_type,
+            where_clause: function_syntax_tree.signature.where_clause,
         });
 
-        let function_id = self.functions.insert(crate::Function {
+        let function_id = self.functions.push(crate::Function {
             function_signature: crate::FunctionSignature {
                 name: function_signature_syntax_tree
                     .identifier
@@ -481,7 +478,7 @@ impl Table {
                 generics: Generics::default(), // to be filled later
             },
             parent_module_id,
-            syntax_tree: Arc::new(function_syntax_tree.function_body),
+            syntax_tree: Arc::new(function_syntax_tree.body),
             accessibility: Accessibility::from_syntax_tree(&function_syntax_tree.access_modifier),
         });
 
@@ -495,7 +492,7 @@ impl Table {
         }
 
         for parameter in function_syntax_tree
-            .function_signature
+            .signature
             .parameters
             .parameter_list
             .into_iter()
@@ -513,9 +510,9 @@ impl Table {
 
             let parameter_name = parameter.identifier.span.str().to_string();
 
-            let parameter_id = self.parameters.insert(Parameter {
+            let parameter_id = self.parameters.push(Parameter {
                 name: parameter_name.clone(),
-                parent_parameter_id: function_id.into(),
+                parameter_parent_id: function_id.into(),
                 declaration_order: function.parameter_order.len(),
                 ty: ty::Type::PrimitiveType(PrimitiveType::Void), // to be replaced
                 is_mutable: parameter.mutable_keyword.is_some(),
@@ -534,11 +531,11 @@ impl Table {
     fn draft_struct(
         &mut self,
         struct_syntax_tree: item::Struct,
-        parent_module_id: ModuleID,
+        parent_module_id: arena::ID<Module>,
         handler: &impl Handler<Error>,
-    ) -> StructID {
-        let struct_signature = Arc::new(struct_syntax_tree.struct_signature);
-        let struct_id = self.structs.insert(Struct {
+    ) -> arena::ID<Struct> {
+        let struct_signature = Arc::new(struct_syntax_tree.signature);
+        let struct_id = self.structs.push(Struct {
             name: struct_signature.identifier.span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&struct_syntax_tree.access_modifier),
             parent_module_id,
@@ -556,7 +553,7 @@ impl Table {
             self.structs[struct_id].generics.generic_parameters = generic_parameters;
         }
 
-        for member in struct_syntax_tree.struct_body.struct_members {
+        for member in struct_syntax_tree.body.members {
             match member {
                 item::StructMember::Field(field) => {
                     let struct_symbol = &mut self.structs[struct_id];
@@ -575,7 +572,7 @@ impl Table {
                         Accessibility::from_syntax_tree(&field.access_modifier);
 
                     // add the field to the struct
-                    let field_id = self.fields.insert(Field {
+                    let field_id = self.fields.push(Field {
                         name: field_name.clone(),
                         accessibility: field_accessibility,
                         parent_struct_id: struct_id,
@@ -621,26 +618,21 @@ impl Table {
     fn draft_enum(
         &mut self,
         enum_syntax_tree: item::Enum,
-        parent_module_id: ModuleID,
+        parent_module_id: arena::ID<Module>,
         handler: &impl Handler<Error>,
-    ) -> EnumID {
-        let enum_id = self.enums.insert(Enum {
-            name: enum_syntax_tree
-                .enum_signature
-                .identifier
-                .span
-                .str()
-                .to_string(),
+    ) -> arena::ID<Enum> {
+        let enum_id = self.enums.push(Enum {
+            name: enum_syntax_tree.signature.identifier.span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&enum_syntax_tree.access_modifier),
             parent_module_id,
-            syntax_tree: enum_syntax_tree.enum_signature,
+            syntax_tree: enum_syntax_tree.signature,
             variant_ids_by_name: HashMap::new(), // will be filled later
             variant_order: Vec::new(),           // will be filled later,
         });
 
         for variant in enum_syntax_tree
-            .enum_body
-            .enum_variant_list
+            .body
+            .variant_list
             .into_iter()
             .flat_map(ConnectedList::into_elements)
         {
@@ -655,7 +647,7 @@ impl Table {
             let name = variant.span.str().to_string();
 
             // adds variant to enum
-            let variant_id = self.enum_variants.insert(EnumVariant {
+            let variant_id = self.enum_variants.push(EnumVariant {
                 name: name.clone(),
                 parent_enum_id: enum_id,
                 declaration_order: enum_symbol.variant_order.len(),

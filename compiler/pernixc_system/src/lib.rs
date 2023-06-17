@@ -1,4 +1,4 @@
-//! Contains the common code that is used by the other components of the compiler.
+//! A crate containing the core functionality of the Pernix compiler.
 
 #![deny(
     missing_docs,

@@ -1,4 +1,10 @@
-//! Contains the definition of the [`Input`] trait.
+//! A trait for representing inputs generated for testing purposes.
+//!
+//! This module provides a trait [`Input`] for representing inputs generated for testing purposes
+//! (heavily used in lexical and syntactic analysis). An input is a value of some type that is used
+//! as an argument to a function or method that is being tested. The `Input` trait provides a method
+//! `assert` for verifying that the output of the function or method being tested complies with the
+//! input.
 
 use std::fmt::Debug;
 

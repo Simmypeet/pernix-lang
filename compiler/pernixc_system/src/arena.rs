@@ -1,226 +1,166 @@
-//! Contains definitions for the arena and symbol.
-
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    hash::Hash,
-    ops::{Index, IndexMut},
-    sync::atomic::{AtomicU64, Ordering},
-};
+//! A container for storing items of type `T` with unique identifiers.
+//!
+//! This module provides an implementation of an [`Arena`], which is a container for storing items
+//! of type `T` with unique identifiers. The [`Arena`]s implemented as a vector of [`Symbol<T>`]
+//! structs, where each [`Symbol<T>`] struct contains a value of type `T`, and a unique identifier.
+//! The unique identifier is represented by an [`ID<T>`] struct, which contains an index into the
+//! vector and a marker for the type `T`.
 
 use derive_more::{Deref, DerefMut};
 use getset::CopyGetters;
 
-/// Is a unique identifier that guarantees uniqueness across the entire program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Uid(u64);
+/// A unique identifier for a symbol in the arena.
+///
+/// The [`ID`] is only unique within the [`Arena`] it belongs to. Two [`Arena`]s can have two
+/// different symbols with the same ID.
+///
+/// This a newtype wrapper around an index into the [`Arena`]'s internal vector. The extra type
+/// parameter required by this struct is used to prevent indexing into the wrong [`Arena`] type.
+#[derive(Debug)]
+pub struct ID<T> {
+    index: usize,
+    _marker: std::marker::PhantomData<T>,
+}
 
-impl Uid {
-    /// Creates a new [`Uid`] with a unique value.
-    pub fn fresh() -> Self {
-        static ATOMIC_COUNTER: AtomicU64 = AtomicU64::new(0);
-        Self(ATOMIC_COUNTER.fetch_add(1, Ordering::Relaxed))
+impl<T> Clone for ID<T> {
+    fn clone(&self) -> Self {
+        Self {
+            index: self.index,
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
-/// Is a trait that allows generating unique identifiers for a type.
-pub trait UniqueIdentifier:
-    'static + Send + Sync + Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Hash
-{
-    /// Creates a new [`UniqueIdentifier`] with a unique value.
-    fn fresh() -> Self;
+impl<T> Copy for ID<T> {}
+
+impl<T> PartialEq for ID<T> {
+    fn eq(&self, other: &Self) -> bool { self.index == other.index }
 }
 
-/// Represents a type that uses a [`UniqueIdentifier`] to identify itself uniquely.
-pub trait Data {
-    /// The type of the [`UniqueIdentifier`] used to identify the type.
-    type ID: UniqueIdentifier;
+impl<T> Eq for ID<T> {}
+
+impl<T> PartialOrd for ID<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.index.partial_cmp(&other.index)
+    }
 }
 
-/// Is a struct containing a [`UniqueIdentifier`] and a [`Data`] type.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut, CopyGetters)]
-pub struct Symbol<T: Data> {
-    /// Gets the [`UniqueIdentifier`] of the [`Symbol`].
+impl<T> Ord for ID<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.index.cmp(&other.index) }
+}
+
+impl<T> std::hash::Hash for ID<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.index.hash(state) }
+}
+
+/// A symbol in the arena, consisting of an [`ID`] and a value of type `T`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut, CopyGetters)]
+pub struct Symbol<T> {
+    /// The unique identifier of the symbol.
     #[get_copy = "pub"]
-    id: T::ID,
+    id: ID<T>,
 
     #[deref]
     #[deref_mut]
-    data: T,
+    symbol: T,
 }
 
-impl<T: Data> Symbol<T> {
-    /// Creates a new [`Symbol`] with a fresh [`UniqueIdentifier`].
-    pub fn new(data: T) -> Self {
-        Self {
-            id: T::ID::fresh(),
-            data,
-        }
-    }
-
-    /// Dissolves the [`Symbol`] into its [`UniqueIdentifier`] and [`Data`] type.
-    #[must_use]
-    pub fn dissolve(self) -> (T::ID, T) { (self.id, self.data) }
-}
-
-/// Is a container that stores symbols identified by a [`UniqueIdentifier`].
+/// Represents a collection of symbols of type `T`
 ///
-/// This container is generally used to construct a graph of symbols. Semantic analysis phase
-/// generally uses lots of graphs to represent the program. The symbols would use the
-/// [`UniqueIdentifier`] to store the references to other symbols.
-#[derive(Debug, Deref)]
-pub struct Arena<T: Data> {
-    symbols_by_id: HashMap<T::ID, Symbol<T>>,
+/// The [`Arena`] internally stores the symbols in a vector. This enforces more type safety than
+/// just using a `Vec<T>` as each [`Arena`] type has its own [`ID`] type.
+///
+/// The [`Arena`] doesn't allow removing items from it as this would invalidate all the IDs that
+/// have been handed out.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Arena<T> {
+    items: Vec<Symbol<T>>,
 }
 
-impl<T: Data> Default for Arena<T> {
-    fn default() -> Self { Self::new() }
-}
-
-impl<T: Data> Arena<T> {
-    /// Creates a new empty [`Arena`].
+impl<T> Arena<T> {
+    /// Creates a new, empty arena.
     #[must_use]
-    pub fn new() -> Self {
-        Self {
-            symbols_by_id: HashMap::new(),
+    pub fn new() -> Self { Self { items: Vec::new() } }
+
+    /// Adds a symbol to the arena and returns its ID.
+    pub fn push(&mut self, item: T) -> ID<T> {
+        let index = self.items.len();
+        self.items.push(Symbol {
+            id: ID {
+                index,
+                _marker: std::marker::PhantomData,
+            },
+            symbol: item,
+        });
+        ID {
+            index,
+            _marker: std::marker::PhantomData,
         }
     }
 
-    /// Inserts a new symbol into the [`Arena`].
-    pub fn insert(&mut self, data: T) -> T::ID {
-        let symbol = Symbol::new(data);
-        let id = symbol.id;
-        self.symbols_by_id.insert(id, symbol);
-        id
+    /// Returns the number of items in the arena.
+    #[must_use]
+    pub fn len(&self) -> usize { self.items.len() }
+
+    /// Returns `true` if the arena contains no items.
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.items.is_empty() }
+
+    /// Returns an iterator over the [`ID`]s of the symbols in the arena.
+    pub fn ids(&self) -> impl Iterator<Item = ID<T>> {
+        (0..self.items.len()).map(|index| ID {
+            index,
+            _marker: std::marker::PhantomData,
+        })
     }
 
-    /// Maps the [`Arena`] to a new [`Arena`] with a different [`Data`] type.
-    pub fn map<U: Data<ID = T::ID>>(self, mut f: impl FnMut(T) -> U) -> Arena<U> {
-        let mut arena = Arena::new();
-        for (id, symbol) in self.symbols_by_id {
-            arena.symbols_by_id.insert(id, Symbol {
-                id,
-                data: f(symbol.data),
-            });
-        }
-        arena
-    }
+    /// Returns an iterator over the symbols in the arena.
+    pub fn iter(&self) -> std::slice::Iter<'_, Symbol<T>> { self.items.iter() }
 
-    /// Removes a symbol from the [`Arena`] with the given [`UniqueIdentifier`].
-    ///
-    /// Returns the symbol of the given [`UniqueIdentifier`] if it exists.
-    ///
-    /// # Errors
-    /// - If the ID wasn't created by this [`Arena`].
-    pub fn remove(&mut self, id: T::ID) -> Result<Symbol<T>> {
-        self.symbols_by_id.remove(&id).ok_or(Error)
-    }
+    /// Returns a mutable iterator over the symbols in the arena.
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Symbol<T>> { self.items.iter_mut() }
 
-    /// Returns a reference to the symbol of the given [`UniqueIdentifier`].
-    ///
-    /// # Errors
-    /// - If the ID wasn't created by this [`Arena`].
-    pub fn get(&self, id: T::ID) -> Result<&Symbol<T>> { self.symbols_by_id.get(&id).ok_or(Error) }
+    /// Returns a reference to the item in the arena with the given ID.
+    #[must_use]
+    pub fn get(&self, id: ID<T>) -> Option<&Symbol<T>> { self.items.get(id.index) }
 
-    /// Returns a mutable reference to the symbol of the given [`UniqueIdentifier`].
-    ///
-    /// # Errors
-    /// - If the ID wasn't created by this [`Arena`].
-    pub fn get_mut(&mut self, id: T::ID) -> Result<&mut Symbol<T>> {
-        self.symbols_by_id.get_mut(&id).ok_or(Error)
-    }
-
-    /// Returns a mutable iterator over the symbols in the [`Arena`].
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Symbol<T>> {
-        self.symbols_by_id.values_mut()
-    }
+    /// Returns a mutable reference to the item in the arena with the given ID.
+    #[must_use]
+    pub fn get_mut(&mut self, id: ID<T>) -> Option<&mut Symbol<T>> { self.items.get_mut(id.index) }
 }
 
-impl<T: Data> IntoIterator for Arena<T> {
-    type IntoIter = std::collections::hash_map::IntoIter<T::ID, Symbol<T>>;
-    type Item = (T::ID, Symbol<T>);
-
-    fn into_iter(self) -> Self::IntoIter { self.symbols_by_id.into_iter() }
-}
-
-impl<T: Data> Index<T::ID> for Arena<T> {
+impl<T> std::ops::Index<ID<T>> for Arena<T> {
     type Output = Symbol<T>;
 
-    fn index(&self, index: T::ID) -> &Self::Output { self.symbols_by_id.get(&index).unwrap() }
+    /// Returns a reference to the item in the arena with the given ID.
+    fn index(&self, id: ID<T>) -> &Self::Output { &self.items[id.index] }
 }
 
-impl<T: Data> IndexMut<T::ID> for Arena<T> {
-    fn index_mut(&mut self, index: T::ID) -> &mut Self::Output {
-        self.symbols_by_id.get_mut(&index).unwrap()
-    }
+impl<T> std::ops::IndexMut<ID<T>> for Arena<T> {
+    /// Returns a mutable reference to the item in the arena with the given ID.
+    fn index_mut(&mut self, id: ID<T>) -> &mut Self::Output { &mut self.items[id.index] }
 }
 
-/// Signifies that the given ID to the container is invalid or wasn't created by that particular
-/// container.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
-#[error("The given ID is invalid or wasn't created by this container.")]
-pub struct Error;
+impl<T> IntoIterator for Arena<T> {
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+    type Item = Symbol<T>;
 
-/// Type alias for [`Result`] with the [`Error`] type.
-pub type Result<T> = std::result::Result<T, Error>;
-
-/// Is a macro that generates a new ID type and implements the [`UniqueIdentifier`]
-#[macro_export]
-macro_rules! create_id_type {
-    ($name:ident) => {
-        $crate::arena::__private::paste! {
-            #[doc = concat!("Is a unique identifier for a [`", stringify!($name), "`].")]
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-            pub struct [< $name ID >]($crate::arena::Uid);
-
-            impl $crate::arena::UniqueIdentifier for [< $name ID >] {
-                fn fresh() -> Self { Self(pernixc_system::arena::Uid::fresh()) }
-            }
-        }
-    };
-    ($name: ident, $doc: literal) => {
-        $crate::arena::__private::paste! {
-            #[doc = $doc]
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-            pub struct [< $name ID >]($crate::arena::Uid);
-
-        impl $crate::arena::UniqueIdentifier for [< $name ID >] {
-            fn fresh() -> Self { Self(pernixc_system::arena::Uid::fresh()) }
-            }
-        }
-    };
+    /// Returns an iterator over the items in the arena.
+    fn into_iter(self) -> Self::IntoIter { self.items.into_iter() }
 }
 
-/// Is a macro generating a [`Data`] trait impl for a given type and its ID.
-#[macro_export]
-macro_rules! create_symbol {
-    {
-        $(#[$outer:meta])*
-        $vis:vis $ty:ident $name:ident $(< $($lt:lifetime),* $($gt:ident $(: $tb:tt)?),* >)?
-        $($t:tt)*
-    } => {
-        $crate::arena::__private::paste! {
-            $(#[$outer])*
-            $vis $ty [< $name >] $(< $($lt),* $($gt $( : $tb)?),* >)? $($t)*
+impl<'a, T> IntoIterator for &'a Arena<T> {
+    type IntoIter = std::slice::Iter<'a, Symbol<T>>;
+    type Item = &'a Symbol<T>;
 
-            $crate::arena::create_id_type!($name);
-
-            impl $(< $($lt),* $($gt $(: $tb)?),* >)? $crate::arena::Data for $name $(< $($lt),* $($gt),* >)? {
-                type ID = [< $name ID >];
-            }
-
-            #[doc = concat!("Is a symbol with data of type [`", stringify!($name), "`].")]
-            pub type [< $name Symbol >]$(< $($lt),* $($gt),* >)? = $crate::arena::Symbol<$name $(< $($lt),* $($gt),* >)?>;
-        }
-    };
+    /// Returns an iterator over the items in the arena.
+    fn into_iter(self) -> Self::IntoIter { self.items.iter() }
 }
 
-#[doc(hidden)]
-pub mod __private {
-    pub use paste::paste;
-}
+impl<'a, T> IntoIterator for &'a mut Arena<T> {
+    type IntoIter = std::slice::IterMut<'a, Symbol<T>>;
+    type Item = &'a mut Symbol<T>;
 
-pub use create_id_type;
-pub use create_symbol;
-pub use paste::paste;
-use thiserror::Error;
+    /// Returns a mutable iterator over the items in the arena.
+    fn into_iter(self) -> Self::IntoIter { self.items.iter_mut() }
+}

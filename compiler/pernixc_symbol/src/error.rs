@@ -2,10 +2,11 @@
 //! resolution/analysis.
 
 use pernixc_source::Span;
+use pernixc_syntax::syntax_tree::item::TraitMember;
+use pernixc_system::arena;
 
 use crate::{
-    FieldID, GlobalID, LifetimeParameterID, ModuleID, ParameterID, StructID, TraitMemberID,
-    TypeParameterID,
+    Field, GlobalID, LifetimeParameter, Module, Parameter, Struct, TraitMemberID, TypeParameter,
 };
 
 /// No target was found with the given name.
@@ -19,7 +20,7 @@ pub struct TargetNotFound {
 #[derive(Debug, Clone)]
 pub struct ModuleNotFound {
     /// The module where the modules were searched for.
-    pub in_module_id: ModuleID,
+    pub in_module_id: arena::ID<Module>,
 
     /// The span of the unknown module name.
     pub unknown_module_span: Span,
@@ -39,7 +40,7 @@ pub struct UsingDuplication {
 #[derive(Debug, Clone)]
 pub struct UsingOwnModule {
     /// The module that is being used.
-    pub module_id: ModuleID,
+    pub module_id: arena::ID<Module>,
 
     /// The span of the using statement.
     pub using_span: Span,
@@ -66,10 +67,10 @@ pub struct SymbolRedefinition<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldMoreAccessibleThanStruct {
     /// The id of the field.
-    pub field_id: FieldID,
+    pub field_id: arena::ID<Field>,
 
     /// The id of the struct.
-    pub struct_id: StructID,
+    pub struct_id: arena::ID<Struct>,
 }
 
 /// Is an eumeration of all errors occuring during the symbol resolution/analysis.
@@ -81,13 +82,13 @@ pub enum Error {
     UsingDuplication(UsingDuplication),
     UsingOwnModule(UsingOwnModule),
     SymbolRedefinition(SymbolRedefinition<GlobalID>),
-    LifetimeParameterRedefinition(SymbolRedefinition<LifetimeParameterID>),
-    TypeParameterRedefinition(SymbolRedefinition<TypeParameterID>),
+    LifetimeParameterRedefinition(SymbolRedefinition<arena::ID<LifetimeParameter>>),
+    TypeParameterRedefinition(SymbolRedefinition<arena::ID<TypeParameter>>),
     LifetimeParameterMustBeDeclaredPriotToTypeParameter(
         LifetimeParameterMustBeDeclaredPriotToTypeParameter,
     ),
-    ParameterRedefinition(SymbolRedefinition<ParameterID>),
-    FieldRedefinition(SymbolRedefinition<FieldID>),
+    ParameterRedefinition(SymbolRedefinition<arena::ID<Parameter>>),
+    FieldRedefinition(SymbolRedefinition<arena::ID<Field>>),
     FieldMoreAccessibleThanStruct(FieldMoreAccessibleThanStruct),
     TraitMemberRedefinition(SymbolRedefinition<TraitMemberID>),
 }

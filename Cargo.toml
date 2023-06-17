@@ -6,9 +6,9 @@ members = [
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_symbol",
-    #"compiler/pernixc_codegen",
-    #"compiler/pernixc_driver",
-    #"compiler/pernixc"
+    # "compiler/pernixc_codegen",
+    # "compiler/pernixc_driver",
+    # "compiler/pernixc"
 ]
 
 [workspace.dependencies]
@@ -23,6 +23,8 @@ derive_more = "0.99.17"
 colored = "2.0.0"
 paste = "1.0.12"
 tempfile = "3.5.0"
+by_address = "1.1.0"
+quickcheck = "1.0.3"
 
 [workspace.package]
 version = "0.1.0"

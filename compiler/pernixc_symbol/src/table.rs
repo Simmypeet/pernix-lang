@@ -10,16 +10,17 @@ use pernixc_system::{
 
 use crate::{
     error, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global, GlobalID,
-    Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, ModuleID, Parameter,
-    Scoped, ScopedID, Struct, Symbol, Trait, TraitFunction, TraitType, Type, TypeParameter, ID,
+    Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, Parameter, Scoped,
+    ScopedID, Struct, Symbol, Trait, TraitFunction, TraitType, Type, TypeParameter, ID,
 };
 
-mod builder;
 mod core;
+mod drafting;
+mod finalizing;
 mod module;
 
 /// Represents a symbol table of the compiler.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Table {
     modules: Arena<Module>,
     structs: Arena<Struct>,
@@ -38,7 +39,7 @@ pub struct Table {
     implements_types: Arena<ImplementsType>,
     implements_functions: Arena<ImplementsFunction>,
 
-    root_module_ids_by_target_name: HashMap<String, ModuleID>,
+    target_root_module_ids_by_name: HashMap<String, arena::ID<Module>>,
 }
 
 impl Table {
@@ -46,7 +47,8 @@ impl Table {
     ///
     /// # Errors
     /// If the ID is invalid, returns an error.
-    pub fn get_global(&self, global_id: GlobalID) -> arena::Result<&dyn Global> {
+    #[must_use]
+    pub fn get_global(&self, global_id: GlobalID) -> Option<&dyn Global> {
         match global_id {
             GlobalID::Module(s) => self.modules.get(s).map(|x| x as _),
             GlobalID::Struct(s) => self.structs.get(s).map(|x| x as _),
@@ -64,10 +66,8 @@ impl Table {
     ///
     /// # Errors
     /// If the ID is invalid, returns an error.
-    pub fn get_genericable(
-        &self,
-        genericable_id: GenericableID,
-    ) -> arena::Result<&dyn Genericable> {
+    #[must_use]
+    pub fn get_genericable(&self, genericable_id: GenericableID) -> Option<&dyn Genericable> {
         match genericable_id {
             GenericableID::Struct(s) => self.structs.get(s).map(|x| x as _),
             GenericableID::Function(s) => self.functions.get(s).map(|x| x as _),
@@ -87,7 +87,8 @@ impl Table {
     ///
     /// # Errors
     /// If the ID is invalid, returns an error.
-    pub fn get_symbol(&self, id: ID) -> arena::Result<&dyn Symbol> {
+    #[must_use]
+    pub fn get_symbol(&self, id: ID) -> Option<&dyn Symbol> {
         match id {
             ID::Module(s) => self.modules.get(s).map(|x| x as _),
             ID::Struct(s) => self.structs.get(s).map(|x| x as _),
@@ -112,7 +113,8 @@ impl Table {
     ///
     /// # Errors
     /// If the ID is invalid, returns an error.
-    pub fn get_scoped(&self, scoped_id: ScopedID) -> arena::Result<&dyn Scoped> {
+    #[must_use]
+    pub fn get_scoped(&self, scoped_id: ScopedID) -> Option<&dyn Scoped> {
         match scoped_id {
             ScopedID::Module(s) => self.modules.get(s).map(|x| x as _),
             ScopedID::Enum(s) => self.enums.get(s).map(|x| x as _),
@@ -172,7 +174,7 @@ impl Table {
                 current_symbol = Some(scoped_symbol.get_child_id_by_name(path)?);
             } else {
                 current_symbol = Some(
-                    self.root_module_ids_by_target_name
+                    self.target_root_module_ids_by_name
                         .get(path)
                         .copied()?
                         .into(),
@@ -202,7 +204,7 @@ impl Table {
             implements: Arena::new(),
             implements_types: Arena::new(),
             implements_functions: Arena::new(),
-            root_module_ids_by_target_name: HashMap::new(),
+            target_root_module_ids_by_name: HashMap::new(),
         }
     }
 

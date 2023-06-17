@@ -1,4 +1,9 @@
-//!  Contains the definition of [`Handler`] trait and its implementations.
+//! A module for handling compilation diagnostics in the compiler.
+//!
+//! This module provides a trait `Handler<T>` for handling compilation diagnostics in the compiler.
+//! The `Handler<T>` trait is responsible for receiving an error of type `T` and handling it in some
+//! way. The trait is implemented by several structs, including `Storage<T>`, which stores all
+//! errors in a vector.
 
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -52,4 +57,23 @@ pub struct Dummy;
 
 impl<T> Handler<T> for Dummy {
     fn recieve(&self, _error: T) {}
+}
+
+/// Is a struct that implements [`Handler`] trait by counting the number of diagnostics received.
+#[derive(Debug, Default)]
+pub struct Counter {
+    counter: RwLock<usize>,
+}
+
+impl Counter {
+    /// Returns the number of diagnostics received.
+    #[must_use]
+    pub fn count(&self) -> usize { *self.counter.read().unwrap() }
+
+    /// Resets the counter to zero.
+    pub fn reset(&self) { *self.counter.write().unwrap() = 0 }
+}
+
+impl<T> Handler<T> for Counter {
+    fn recieve(&self, _error: T) { *self.counter.write().unwrap() += 1; }
 }

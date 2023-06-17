@@ -41,6 +41,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "by_address"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf8dba2868114ed769a1f2590fc9ae5eb331175b44313b6c9b922f8f7ca813d0"
+
+[[package]]
 name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -283,6 +289,7 @@ dependencies = [
 name = "pernixc_symbol"
 version = "0.1.0"
 dependencies = [
+ "by_address",
  "derive_more",
  "enum-as-inner",
  "getset",
@@ -293,6 +300,7 @@ dependencies = [
  "pernixc_syntax",
  "pernixc_system",
  "proptest",
+ "tempfile",
  "thiserror",
 ]
 

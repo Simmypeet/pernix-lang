@@ -1227,7 +1227,57 @@ pub enum Functional {
     FunctionCall(FunctionCall),
     Parenthesized(Parenthesized),
     StructLiteral(StructLiteral),
+    ArrowOperator(ArrowOperator),
     Cast(Cast),
+}
+
+/// Represents an input for the [`super::ArrowOperator`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ArrowOperator {
+    /// The operand expression of the arrow operator
+    pub operand: Box<Functional>,
+
+    /// The name of the field to access
+    pub identifier: Identifier,
+}
+
+impl Input for ArrowOperator {
+    type Output = super::ArrowOperator;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.operand.assert(&output.operand)?;
+        self.identifier.assert(&output.identifier)
+    }
+}
+
+impl Arbitrary for ArrowOperator {
+    type Parameters = Option<BoxedStrategy<Functional>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let operand = args
+            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
+            .prop_filter_map("filter out grammar ambiguity", |x| {
+                if matches!(x, Functional::Prefix(..) | Functional::Binary(..)) {
+                    None
+                } else {
+                    Some(Box::new(x))
+                }
+            });
+
+        (operand, Identifier::arbitrary())
+            .prop_map(|(operand, identifier)| Self {
+                operand,
+                identifier,
+            })
+            .boxed()
+    }
+}
+
+impl Display for ArrowOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}->{}", self.operand, self.identifier)
+    }
 }
 
 /// Represents an input for the [`super::Return`].
@@ -1458,6 +1508,7 @@ impl Input for Functional {
             (Self::Parenthesized(i), super::Functional::Parenthesized(o)) => i.assert(o),
             (Self::StructLiteral(i), super::Functional::StructLiteral(o)) => i.assert(o),
             (Self::Cast(i), super::Functional::Cast(o)) => i.assert(o),
+            (Self::ArrowOperator(i), super::Functional::ArrowOperator(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "expected functional to be {self:?}, found {output:?}",
             ))),
@@ -1478,6 +1529,7 @@ impl Display for Functional {
             Self::Parenthesized(i) => Display::fmt(i, f),
             Self::StructLiteral(i) => Display::fmt(i, f),
             Self::Cast(i) => Display::fmt(i, f),
+            Self::ArrowOperator(i) => Display::fmt(i, f),
         }
     }
 }
@@ -1555,6 +1607,8 @@ impl Arbitrary for Expression {
                     .prop_map(|x| Self::Functional(Functional::StructLiteral(x))),
                 Cast::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Functional(Functional::Cast(x))),
+                ArrowOperator::arbitrary_with(Some(filter_functional_variant(inner.clone())))
+                    .prop_map(|x| Self::Functional(Functional::ArrowOperator(x))),
                 Block::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Self::Imperative(Imperative::Block(x))),
                 Loop::arbitrary_with(Some(inner.clone()))

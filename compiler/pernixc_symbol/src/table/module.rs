@@ -2,12 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use pernixc_source::SourceElement;
 use pernixc_syntax::syntax_tree::target::{File, ModulePath, Target, Using};
-use pernixc_system::diagnostic::Handler;
+use pernixc_system::{arena, diagnostic::Handler};
 
 use super::{BuildError, CoreTargetNameError, Error, Result, Table, TargetDuplicationError};
 use crate::{
     error::{self, ModuleNotFound, TargetNotFound, UsingOwnModule},
-    Accessibility, Module, ModuleID,
+    Accessibility, Module,
 };
 
 // Checks for the target input validity
@@ -35,11 +35,11 @@ pub(super) fn target_check(targets: &[Target]) -> std::result::Result<(), BuildE
 }
 
 impl Table {
-    fn stem_from(&mut self, file: &File, parent_module_id: ModuleID) {
+    fn stem_from(&mut self, file: &File, parent_module_id: arena::ID<Module>) {
         for submodule in &file.submodules {
             let module_name = submodule.module.identifier.span.str().to_string();
             // Adds a submodule to the module list
-            let id = self.modules.insert(Module {
+            let id = self.modules.push(Module {
                 name: module_name.clone(),
                 accessibility: Accessibility::from_syntax_tree(&submodule.module.access_modifier),
                 parent_module_id: Some(parent_module_id),
@@ -61,7 +61,7 @@ impl Table {
 
     fn create_modules_from_target(&mut self, target: &Target) {
         // create a root module
-        let root_module_id = self.modules.insert(Module {
+        let root_module_id = self.modules.push(Module {
             name: target.name().clone(),
             accessibility: Accessibility::Public,
             parent_module_id: None,
@@ -69,7 +69,7 @@ impl Table {
             usings: HashSet::new(),
         });
 
-        self.root_module_ids_by_target_name
+        self.target_root_module_ids_by_name
             .insert(target.name().clone(), root_module_id);
 
         self.stem_from(target, root_module_id);
@@ -86,7 +86,7 @@ impl Table {
         &self,
         module_path: &ModulePath,
         handler: &impl Handler<error::Error>,
-    ) -> Result<ModuleID> {
+    ) -> Result<arena::ID<Module>> {
         let mut current_module_id = None;
 
         for path in module_path.paths() {
@@ -108,7 +108,7 @@ impl Table {
                 current_module_id = Some(new_module_id.into_module().unwrap());
             } else {
                 // search from the root
-                let Some(module_id) = self.root_module_ids_by_target_name
+                let Some(module_id) = self.target_root_module_ids_by_name
                     .get(path.span.str())
                     .copied() else {
                     handler.recieve(error::Error::TargetNotFound(
@@ -128,7 +128,7 @@ impl Table {
 
     fn populate_usings_in_module(
         &mut self,
-        module_id: ModuleID,
+        module_id: arena::ID<Module>,
         usings: &[Using],
         handler: &impl Handler<error::Error>,
     ) {
@@ -173,7 +173,7 @@ impl Table {
 
     fn populate_usings_in_submodules(
         &mut self,
-        current_module_id: ModuleID,
+        current_module_id: arena::ID<Module>,
         current_file: &File,
         handler: &impl Handler<error::Error>,
     ) {
@@ -198,12 +198,12 @@ impl Table {
         handler: &impl Handler<error::Error>,
     ) {
         for target in targets {
-            let root_module_id = self.root_module_ids_by_target_name[target.name()];
+            let root_module_id = self.target_root_module_ids_by_name[target.name()];
 
             self.populate_usings_in_submodules(root_module_id, target, handler);
         }
     }
 }
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

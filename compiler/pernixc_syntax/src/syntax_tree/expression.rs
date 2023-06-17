@@ -110,6 +110,7 @@ pub enum Functional {
     Parenthesized(Parenthesized),
     StructLiteral(StructLiteral),
     MemberAccess(MemberAccess),
+    ArrowOperator(ArrowOperator),
     Cast(Cast),
 }
 
@@ -127,6 +128,7 @@ impl SourceElement for Functional {
             Self::Parenthesized(parenthesized_expression) => parenthesized_expression.span(),
             Self::StructLiteral(struct_literal) => struct_literal.span(),
             Self::MemberAccess(member_access_expression) => member_access_expression.span(),
+            Self::ArrowOperator(arrow_operator_expression) => arrow_operator_expression.span(),
             Self::Cast(cast) => cast.span(),
         }
     }
@@ -532,6 +534,45 @@ pub struct MemberAccess {
 }
 
 impl SourceElement for MemberAccess {
+    fn span(&self) -> Result<Span, SpanError> { self.operand.span()?.join(&self.identifier.span) }
+}
+
+/// Represents an arrow syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Arrow:
+///     '->'
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct Arrow {
+    pub hyphen: Punctuation,
+    pub right_angle: Punctuation,
+}
+
+impl SourceElement for Arrow {
+    fn span(&self) -> Result<Span, SpanError> { self.hyphen.span.join(&self.right_angle.span) }
+}
+
+/// Represents an arrow operator syntax tree.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ArrowOperator:
+///     Functional Arrow Identifier
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct ArrowOperator {
+    pub operand: Box<Functional>,
+    pub arrow: Arrow,
+    pub identifier: Identifier,
+}
+
+impl SourceElement for ArrowOperator {
     fn span(&self) -> Result<Span, SpanError> { self.operand.span()?.join(&self.identifier.span) }
 }
 
@@ -1376,6 +1417,18 @@ impl<'a> Parser<'a> {
         )
     }
 
+    fn try_parse_arrow(&mut self) -> ParserResult<Arrow> {
+        self.try_parse(|parser| {
+            let hyphen = parser.parse_punctuation('-', true, &Dummy)?;
+            let right_angle = parser.parse_punctuation('>', false, &Dummy)?;
+
+            Ok(Arrow {
+                hyphen,
+                right_angle,
+            })
+        })
+    }
+
     /// Parses a primary [`Expression`]
     #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
     pub fn parse_primary_expression(
@@ -1474,7 +1527,20 @@ impl<'a> Parser<'a> {
                         right_paren,
                     });
                 }
-                _ => break,
+                _ => {
+                    let Ok(arrow) = self.try_parse_arrow() else {
+                        break;
+                    };
+
+                    let identifier = self.parse_identifier(handler)?;
+
+                    // update expression
+                    expression = Functional::ArrowOperator(ArrowOperator {
+                        operand: Box::new(expression),
+                        arrow,
+                        identifier,
+                    });
+                }
             };
         }
 
