@@ -339,8 +339,8 @@ impl SourceElement for GenericArguments {
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct GenericIdentifier {
-    identifier: Identifier,
-    generic_arguments: Option<GenericArguments>,
+    pub identifier: Identifier,
+    pub generic_arguments: Option<GenericArguments>,
 }
 
 impl SourceElement for GenericIdentifier {
@@ -366,6 +366,13 @@ pub struct QualifiedIdentifier {
     pub leading_scope_separator: Option<ScopeSeparator>,
     pub first: GenericIdentifier,
     pub rest: Vec<(ScopeSeparator, GenericIdentifier)>,
+}
+
+impl QualifiedIdentifier {
+    /// Returns an iterator over the generic identifiers in this qualified identifier.
+    pub fn generic_identifiers(&self) -> impl Iterator<Item = &GenericIdentifier> {
+        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, ident)| ident))
+    }
 }
 
 impl SourceElement for QualifiedIdentifier {

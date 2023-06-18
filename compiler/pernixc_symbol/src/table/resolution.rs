@@ -1,10 +1,12 @@
 use pernixc_lexical::token::Identifier;
+use pernixc_source::SourceElement;
+use pernixc_syntax::syntax_tree::QualifiedIdentifier;
 use pernixc_system::{arena, diagnostic::Handler};
 
 use super::{drafting::ImplementsSyntaxTreeWithModuleID, Error, FatalSemanticError, Table};
 use crate::{
     error::{self, ResolutionAmbiguity, SymbolNotFound},
-    GlobalID, Module, ScopedID, ID,
+    GlobalID, Module, ScopedID, Trait, TraitMemberID, ID,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -59,7 +61,7 @@ impl Table {
 
     /// Iterates down through the scope heirarchies and tries to find a symbol with the given name.
     pub(super) fn second_resolution(
-        &mut self,
+        &self,
         identifier: &Identifier,
         mut scoped_id: ScopedID,
         handler: &impl Handler<error::Error>,
@@ -105,6 +107,54 @@ impl Table {
             };
 
             id = parent_id;
+        }
+    }
+
+    pub(super) fn resolve_trait_path(
+        &self,
+        qualified_identifier: &QualifiedIdentifier,
+        scoped_id: ScopedID,
+        handler: &impl Handler<error::Error>,
+    ) -> super::Result<arena::ID<Trait>> {
+        match (
+            qualified_identifier.leading_scope_separator.is_some(),
+            qualified_identifier.rest.is_empty(),
+        ) {
+            (false, true) => {
+                // first pass fail
+                let found_symbol_id = if let Some(id) = self.first_resolution(
+                    &qualified_identifier.first.identifier,
+                    scoped_id,
+                    handler,
+                )? {
+                    id
+                } else {
+                    self.second_resolution(
+                        &qualified_identifier.first.identifier,
+                        scoped_id,
+                        handler,
+                    )?
+                };
+
+                if let GlobalID::Trait(id) = found_symbol_id {
+                    Ok(id)
+                } else {
+                    handler.recieve(error::Error::TraitExpected(error::TraitExpected {
+                        span: qualified_identifier.first.identifier.span.clone(),
+                    }));
+                    Err(Error::FatalSementic(FatalSemanticError))
+                }
+            }
+
+            // it's impossible to have a trait at the root scope
+            (true, true) => {
+                handler.recieve(error::Error::InvalidTraitPath(error::InvalidTraitPath {
+                    span: qualified_identifier.span()?,
+                }));
+                Err(Error::FatalSementic(FatalSemanticError))
+            }
+
+            _ => todo!(),
         }
     }
 

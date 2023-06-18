@@ -187,6 +187,11 @@ pub enum Error {
 
     #[error("{0}")]
     InvalidID(arena::Error),
+
+    #[error(
+        "The syntax tree is malformed, which prevents the retrieving the span of the syntax tree."
+    )]
+    InvalidSyntaxTree(pernixc_source::SpanError),
 }
 
 /// Is a result type returned by various methods in the [`Table`].
