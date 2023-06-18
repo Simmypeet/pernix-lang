@@ -10,10 +10,10 @@ use pernixc_system::{
 };
 
 use crate::{
-    error, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global, GlobalID,
-    Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, Parameter, Scoped,
-    ScopedID, Struct, Substitution, Symbol, Trait, TraitFunction, TraitType, Type, TypeParameter,
-    ID,
+    error, Accessibility, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global,
+    GlobalID, Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, Parameter,
+    Scoped, ScopedID, Struct, Substitution, Symbol, Trait, TraitFunction, TraitType, Type,
+    TypeParameter, ID,
 };
 
 mod core;
@@ -50,18 +50,25 @@ impl Table {
     ///
     /// # Errors
     /// If the ID is invalid, returns an error.
-    #[must_use]
-    pub fn get_global(&self, global_id: GlobalID) -> Option<&dyn Global> {
+    pub fn get_global(&self, global_id: GlobalID) -> Result<&dyn Global, arena::Error> {
         match global_id {
-            GlobalID::Module(s) => self.modules.get(s).map(|x| x as _),
-            GlobalID::Struct(s) => self.structs.get(s).map(|x| x as _),
-            GlobalID::Enum(s) => self.enums.get(s).map(|x| x as _),
-            GlobalID::EnumVariant(s) => self.enum_variants.get(s).map(|x| x as _),
-            GlobalID::Function(s) => self.functions.get(s).map(|x| x as _),
-            GlobalID::Type(s) => self.types.get(s).map(|x| x as _),
-            GlobalID::Trait(s) => self.traits.get(s).map(|x| x as _),
-            GlobalID::TraitFunction(s) => self.trait_functions.get(s).map(|x| x as _),
-            GlobalID::TraitType(s) => self.trait_types.get(s).map(|x| x as _),
+            GlobalID::Module(s) => self.modules.get(s).map(|x| x as _).ok_or(arena::Error),
+            GlobalID::Struct(s) => self.structs.get(s).map(|x| x as _).ok_or(arena::Error),
+            GlobalID::Enum(s) => self.enums.get(s).map(|x| x as _).ok_or(arena::Error),
+            GlobalID::EnumVariant(s) => self
+                .enum_variants
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            GlobalID::Function(s) => self.functions.get(s).map(|x| x as _).ok_or(arena::Error),
+            GlobalID::Type(s) => self.types.get(s).map(|x| x as _).ok_or(arena::Error),
+            GlobalID::Trait(s) => self.traits.get(s).map(|x| x as _).ok_or(arena::Error),
+            GlobalID::TraitFunction(s) => self
+                .trait_functions
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            GlobalID::TraitType(s) => self.trait_types.get(s).map(|x| x as _).ok_or(arena::Error),
         }
     }
 
@@ -69,20 +76,36 @@ impl Table {
     ///
     /// # Errors
     /// If the ID is invalid, returns an error.
-    #[must_use]
-    pub fn get_genericable(&self, genericable_id: GenericableID) -> Option<&dyn Genericable> {
+    pub fn get_genericable(
+        &self,
+        genericable_id: GenericableID,
+    ) -> Result<&dyn Genericable, arena::Error> {
         match genericable_id {
-            GenericableID::Struct(s) => self.structs.get(s).map(|x| x as _),
-            GenericableID::Function(s) => self.functions.get(s).map(|x| x as _),
-            GenericableID::Implements(s) => self.implements.get(s).map(|x| x as _),
-            GenericableID::Trait(s) => self.traits.get(s).map(|x| x as _),
-            GenericableID::TraitType(s) => self.trait_types.get(s).map(|x| x as _),
-            GenericableID::TraitFunction(s) => self.trait_functions.get(s).map(|x| x as _),
-            GenericableID::Type(s) => self.types.get(s).map(|x| x as _),
-            GenericableID::ImplementsType(s) => self.implements_types.get(s).map(|x| x as _),
-            GenericableID::ImplementsFunction(s) => {
-                self.implements_functions.get(s).map(|x| x as _)
+            GenericableID::Struct(s) => self.structs.get(s).map(|x| x as _).ok_or(arena::Error),
+            GenericableID::Function(s) => self.functions.get(s).map(|x| x as _).ok_or(arena::Error),
+            GenericableID::Implements(s) => {
+                self.implements.get(s).map(|x| x as _).ok_or(arena::Error)
             }
+            GenericableID::Trait(s) => self.traits.get(s).map(|x| x as _).ok_or(arena::Error),
+            GenericableID::TraitType(s) => {
+                self.trait_types.get(s).map(|x| x as _).ok_or(arena::Error)
+            }
+            GenericableID::TraitFunction(s) => self
+                .trait_functions
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            GenericableID::Type(s) => self.types.get(s).map(|x| x as _).ok_or(arena::Error),
+            GenericableID::ImplementsType(s) => self
+                .implements_types
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            GenericableID::ImplementsFunction(s) => self
+                .implements_functions
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
         }
     }
 
@@ -90,25 +113,48 @@ impl Table {
     ///
     /// # Errors
     /// If the ID is invalid, returns an error.
-    #[must_use]
-    pub fn get_symbol(&self, id: ID) -> Option<&dyn Symbol> {
+    pub fn get_symbol(&self, id: ID) -> Result<&dyn Symbol, arena::Error> {
         match id {
-            ID::Module(s) => self.modules.get(s).map(|x| x as _),
-            ID::Struct(s) => self.structs.get(s).map(|x| x as _),
-            ID::Enum(s) => self.enums.get(s).map(|x| x as _),
-            ID::EnumVariant(s) => self.enum_variants.get(s).map(|x| x as _),
-            ID::Function(s) => self.functions.get(s).map(|x| x as _),
-            ID::Type(s) => self.types.get(s).map(|x| x as _),
-            ID::Field(s) => self.fields.get(s).map(|x| x as _),
-            ID::Parameter(s) => self.parameters.get(s).map(|x| x as _),
-            ID::Trait(s) => self.traits.get(s).map(|x| x as _),
-            ID::TraitType(s) => self.trait_types.get(s).map(|x| x as _),
-            ID::TypeParameter(s) => self.type_parameters.get(s).map(|x| x as _),
-            ID::LifetimeParameter(s) => self.lifetime_parameters.get(s).map(|x| x as _),
-            ID::TraitFunction(s) => self.trait_functions.get(s).map(|x| x as _),
-            ID::Implements(s) => self.implements.get(s).map(|x| x as _),
-            ID::ImplementsType(s) => self.implements_types.get(s).map(|x| x as _),
-            ID::ImplementsFunction(s) => self.implements_functions.get(s).map(|x| x as _),
+            ID::Module(s) => self.modules.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::Struct(s) => self.structs.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::Enum(s) => self.enums.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::EnumVariant(s) => self
+                .enum_variants
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            ID::Function(s) => self.functions.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::Type(s) => self.types.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::Field(s) => self.fields.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::Parameter(s) => self.parameters.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::Trait(s) => self.traits.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::TraitType(s) => self.trait_types.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::TypeParameter(s) => self
+                .type_parameters
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            ID::LifetimeParameter(s) => self
+                .lifetime_parameters
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            ID::TraitFunction(s) => self
+                .trait_functions
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            ID::Implements(s) => self.implements.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::ImplementsType(s) => self
+                .implements_types
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            ID::ImplementsFunction(s) => self
+                .implements_functions
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
         }
     }
 
@@ -117,19 +163,21 @@ impl Table {
     /// # Errors
     /// If the ID is invalid, returns an error.
     #[must_use]
-    pub fn get_scoped(&self, scoped_id: ScopedID) -> Option<&dyn Scoped> {
+    pub fn get_scoped(&self, scoped_id: ScopedID) -> Result<&dyn Scoped, arena::Error> {
         match scoped_id {
-            ScopedID::Module(s) => self.modules.get(s).map(|x| x as _),
-            ScopedID::Enum(s) => self.enums.get(s).map(|x| x as _),
-            ScopedID::Trait(s) => self.traits.get(s).map(|x| x as _),
+            ScopedID::Module(s) => self.modules.get(s).map(|x| x as _).ok_or(arena::Error),
+            ScopedID::Enum(s) => self.enums.get(s).map(|x| x as _).ok_or(arena::Error),
+            ScopedID::Trait(s) => self.traits.get(s).map(|x| x as _).ok_or(arena::Error),
         }
     }
 
     /// Gets the fully qualified name of the given [`GlobalID`].
     ///
     /// The name doesn't include generics.
-    #[must_use]
-    pub fn get_qualified_name(&self, mut global_id: GlobalID) -> Option<String> {
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    pub fn get_qualified_name(&self, mut global_id: GlobalID) -> Result<String, arena::Error> {
         let mut current_name = self.get_global(global_id)?.name().to_owned();
 
         while let Some(parent_symbol_id) = self.get_global(global_id)?.parent_symbol() {
@@ -143,7 +191,7 @@ impl Table {
             global_id = parent_global_symbol_id;
         }
 
-        Some(current_name)
+        Ok(current_name)
     }
 }
 
@@ -194,9 +242,6 @@ pub enum Error {
     InvalidSyntaxTree(pernixc_source::SpanError),
 }
 
-/// Is a result type returned by various methods in the [`Table`].
-pub type Result<T> = std::result::Result<T, Error>;
-
 /// Represents the result of a symbol resolution from the [`Table`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Resolution {
@@ -233,6 +278,168 @@ impl Table {
         }
 
         current_symbol
+    }
+
+    /// Gets the accessibility of the given [`GlobalID`] symbol.
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    pub fn get_accessibility(&self, global_id: GlobalID) -> Result<Accessibility, arena::Error> {
+        match global_id {
+            GlobalID::Module(module_id) => Ok(self
+                .modules
+                .get(module_id)
+                .ok_or(arena::Error)?
+                .accessibility),
+            GlobalID::Struct(struct_id) => Ok(self
+                .structs
+                .get(struct_id)
+                .ok_or(arena::Error)?
+                .accessibility),
+            GlobalID::Enum(enum_id) => {
+                Ok(self.enums.get(enum_id).ok_or(arena::Error)?.accessibility)
+            }
+            // Accessibility of enum variants is the same as the parent enum.
+            GlobalID::EnumVariant(enum_variant_id) => Ok(self.enums[self
+                .enum_variants
+                .get(enum_variant_id)
+                .ok_or(arena::Error)?
+                .parent_enum_id]
+                .accessibility),
+            GlobalID::Function(function_id) => Ok(self
+                .functions
+                .get(function_id)
+                .ok_or(arena::Error)?
+                .accessibility),
+            GlobalID::Type(type_id) => {
+                Ok(self.types.get(type_id).ok_or(arena::Error)?.accessibility)
+            }
+            GlobalID::Trait(trait_id) => {
+                Ok(self.traits.get(trait_id).ok_or(arena::Error)?.accessibility)
+            }
+            GlobalID::TraitFunction(trait_function_id) => Ok(self.traits[self
+                .trait_functions
+                .get(trait_function_id)
+                .ok_or(arena::Error)?
+                .parent_trait_id]
+                .accessibility),
+            GlobalID::TraitType(trait_type_id) => Ok(self.traits[self
+                .trait_types
+                .get(trait_type_id)
+                .ok_or(arena::Error)?
+                .parent_trait_id]
+                .accessibility),
+        }
+    }
+
+    /// Checks if the given [`GlobalID`] symbol is accessible from the given [`ScopedID`] symbol.
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    pub fn symbol_accessible(
+        &self,
+        referree_global_id: GlobalID,
+        referrer_id: ID,
+    ) -> Result<bool, arena::Error> {
+        match self.get_accessibility(referree_global_id)? {
+            // Private symbol is only accessible from the same module or its children.
+            Accessibility::Private => {
+                let referree_global_module_id =
+                    self.get_current_target_root_module_id(referree_global_id.into())?;
+                let referrer_module_id = self.get_current_target_root_module_id(referrer_id)?;
+
+                // if same module, it is accessible.
+                if referrer_module_id == referree_global_module_id {
+                    return Ok(true);
+                }
+
+                let mut current_referrer_parent_id = referrer_module_id.into();
+
+                while let Some(parent_id) = self
+                    .get_symbol(current_referrer_parent_id)
+                    .unwrap()
+                    .parent_symbol()
+                {
+                    match parent_id {
+                        ID::Module(module_id) if module_id == referree_global_module_id => {
+                            return Ok(true);
+                        }
+                        _ => {
+                            current_referrer_parent_id = parent_id;
+                        }
+                    }
+                }
+
+                Ok(false)
+            }
+
+            // Both symbols are in the same module.
+            Accessibility::Internal => Ok(self
+                .get_current_target_root_module_id(referree_global_id.into())?
+                == self.get_current_target_root_module_id(referrer_id)?),
+
+            // Public symbols are always accessible.
+            Accessibility::Public => {
+                // PEDANTIC: check if the referrer also a valid id.
+                self.get_symbol(referrer_id)?;
+
+                Ok(true)
+            }
+        }
+    }
+
+    /// Gets the target root module ID where the given symbol is defined in (including itself).
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    pub fn get_current_target_root_module_id(
+        &self,
+        mut id: ID,
+    ) -> Result<arena::ID<Module>, arena::Error> {
+        while let Some(parent_id) = self.get_symbol(id)?.parent_symbol() {
+            id = parent_id;
+        }
+
+        Ok(id
+            .into_module()
+            .expect("It should be a module at the root."))
+    }
+
+    /// Gets the module ID that contains the given symbol ID (including itself).
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    pub fn get_current_module_id(&self, mut id: ID) -> Result<arena::ID<Module>, arena::Error> {
+        loop {
+            // If the ID is a module ID, return it.
+            if let ID::Module(module_id) = id {
+                return Ok(module_id);
+            }
+
+            let Some(parent_id) = self.get_symbol(id)?.parent_symbol() else {
+                panic!("should have found parent module ID already!");
+            };
+
+            id = parent_id;
+        }
+    }
+
+    /// Gets the scoped ID that contains the given symbol ID (including itself).
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    pub fn get_current_scoped_id(&self, mut id: ID) -> Result<ScopedID, arena::Error> {
+        loop {
+            if let Ok(scoped_id) = id.try_into() {
+                return Ok(scoped_id);
+            }
+
+            let Some(parent_id) = self.get_symbol(id)?.parent_symbol() else {
+                panic!("should have found parent module ID already!");
+            };
+
+            id = parent_id;
+        }
     }
 
     /// Creates a new empty table.

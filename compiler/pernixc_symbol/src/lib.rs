@@ -256,6 +256,9 @@ pub struct Trait {
     /// The syntax tree of the trait.
     pub syntax_tree: Option<Arc<syntax_tree::item::TraitSignature>>,
 
+    /// The accessibility of the trait.
+    pub accessibility: Accessibility,
+
     /// Maps the name of the trait member to its ID.
     pub trait_member_ids_by_name: HashMap<String, TraitMemberID>,
 }

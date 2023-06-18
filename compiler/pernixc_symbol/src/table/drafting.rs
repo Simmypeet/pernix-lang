@@ -421,6 +421,7 @@ impl Table {
             generics: Generics::default(), // to be filled later
             implements: Vec::new(),        // to be filled later
             syntax_tree: Some(trait_signature.clone()),
+            accessibility: Accessibility::from_syntax_tree(&trait_syntax_tree.access_modifier),
             trait_member_ids_by_name: HashMap::new(), // to be filled later
         });
 

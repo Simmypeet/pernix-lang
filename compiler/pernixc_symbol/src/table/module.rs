@@ -5,8 +5,7 @@ use pernixc_syntax::syntax_tree::target::{File, ModulePath, Target, Using};
 use pernixc_system::{arena, diagnostic::Handler};
 
 use super::{
-    BuildError, CoreTargetNameError, Error, FatalSemanticError, Result, Table,
-    TargetDuplicationError,
+    BuildError, CoreTargetNameError, Error, FatalSemanticError, Table, TargetDuplicationError,
 };
 use crate::{
     error::{self, ModuleNotFound, TargetNotFound, UsingOwnModule},
@@ -89,7 +88,7 @@ impl Table {
         &self,
         module_path: &ModulePath,
         handler: &impl Handler<error::Error>,
-    ) -> Result<arena::ID<Module>> {
+    ) -> Result<arena::ID<Module>, Error> {
         let mut current_module_id = None;
 
         for path in module_path.paths() {

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use pernixc_lexical::token::Identifier;
 use pernixc_source::SourceElement;
 use pernixc_syntax::syntax_tree::QualifiedIdentifier;
@@ -5,54 +7,46 @@ use pernixc_system::{arena, diagnostic::Handler};
 
 use super::{drafting::ImplementsSyntaxTreeWithModuleID, Error, FatalSemanticError, Table};
 use crate::{
-    error::{self, ResolutionAmbiguity, SymbolNotFound},
-    GlobalID, Module, ScopedID, Trait, TraitMemberID, ID,
+    error::{self, ResolutionAmbiguity},
+    GlobalID, ScopedID, Trait, ID,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) enum SearchResult<T, E> {
-    Continue,
-    StopOk(T),
-    StopErr(E),
-}
 
 impl Table {
     /// Resolves the symbol from the current scope and using modules.
     pub(super) fn first_resolution(
         &self,
         identifier: &Identifier,
-        scoped_id: ScopedID,
+        referrer: ID,
         handler: &impl Handler<error::Error>,
-    ) -> super::Result<Option<GlobalID>> {
-        let parent_module = self
-            .get_parent_module_id(scoped_id.into())
-            .ok_or(arena::Error)?;
+    ) -> Result<Option<GlobalID>, Error> {
+        let parent_module = self.get_current_module_id(referrer)?;
 
         let search_locations = self.modules[parent_module]
             .usings
             .iter()
             .copied()
             .map(ScopedID::from)
-            .chain(std::iter::once(scoped_id));
+            .chain(std::iter::once(self.get_current_scoped_id(referrer)?));
 
-        let mut candidates = Vec::new();
+        let mut candidates = HashSet::new();
         for location in search_locations {
             if let Some(id) = self
-                .get_scoped(location)
-                .ok_or(arena::Error)?
+                .get_scoped(location)?
                 .get_child_id_by_name(identifier.span.str())
             {
-                candidates.push(id);
+                if self.symbol_accessible(id, referrer).unwrap() {
+                    candidates.insert(id);
+                }
             }
         }
 
         match candidates.len() {
-            1 => Ok(Some(candidates[0])),
+            1 => Ok(Some(candidates.into_iter().next().unwrap())),
             0 => Ok(None),
             _ => {
                 handler.recieve(error::Error::ResolutionAmbiguity(ResolutionAmbiguity {
                     span: identifier.span.clone(),
-                    candidates,
+                    candidates: candidates.into_iter().collect(),
                 }));
                 Err(super::Error::FatalSementic(FatalSemanticError))
             }
@@ -63,75 +57,57 @@ impl Table {
     pub(super) fn second_resolution(
         &self,
         identifier: &Identifier,
-        mut scoped_id: ScopedID,
+        mut referrer: ID,
         handler: &impl Handler<error::Error>,
     ) -> Result<GlobalID, Error> {
+        // NOTE: Accessibility is not checked here because the symbol serching is done within the
+        // same module ancestor tree.
+
         loop {
-            if let Some(id) = self
-                .get_scoped(scoped_id)
-                .ok_or(arena::Error)?
-                .get_child_id_by_name(identifier.span.str())
-            {
-                return Ok(id);
+            // try to find the symbol in the current scope
+            if let Ok(scoped_id) = referrer.try_into() {
+                if let Some(id) = self
+                    .get_scoped(scoped_id)?
+                    .get_child_id_by_name(identifier.span.str())
+                {
+                    return Ok(id);
+                }
             }
 
-            // no more scope to search
-            let Some(parent_symbol) = self
-                .get_scoped(scoped_id)
-                .ok_or(arena::Error)?
-                .parent_symbol()
-            else {
-                handler.recieve(error::Error::SymbolNotFound(SymbolNotFound {
-                    span: identifier.span.clone()
+            if let Some(parent_id) = self.get_symbol(referrer)?.parent_symbol() {
+                referrer = parent_id;
+            } else {
+                handler.recieve(error::Error::SymbolNotFound(error::SymbolNotFound {
+                    span: identifier.span.clone(),
                 }));
-
-                return Err(super::Error::FatalSementic(FatalSemanticError));
-            };
-
-            scoped_id = parent_symbol
-                .try_into()
-                .expect("parent symbol must be one of the scoped id");
-        }
-    }
-
-    /// Gets the module ID that contains the given symbol ID.
-    pub(super) fn get_parent_module_id(&self, mut id: ID) -> Option<arena::ID<Module>> {
-        loop {
-            // If the ID is a module ID, return it.
-            if let ID::Module(module_id) = id {
-                return Some(module_id);
+                return Err(Error::FatalSementic(FatalSemanticError));
             }
-
-            let Some(parent_id) = self.get_symbol(id)?.parent_symbol() else {
-                panic!("should have found parent module ID already!");
-            };
-
-            id = parent_id;
         }
     }
 
     pub(super) fn resolve_trait_path(
         &self,
         qualified_identifier: &QualifiedIdentifier,
-        scoped_id: ScopedID,
+        referrer: ID,
         handler: &impl Handler<error::Error>,
-    ) -> super::Result<arena::ID<Trait>> {
+    ) -> Result<arena::ID<Trait>, Error> {
         match (
             qualified_identifier.leading_scope_separator.is_some(),
             qualified_identifier.rest.is_empty(),
         ) {
+            // single identifier part with no leading scope separator
             (false, true) => {
                 // first pass fail
                 let found_symbol_id = if let Some(id) = self.first_resolution(
                     &qualified_identifier.first.identifier,
-                    scoped_id,
+                    referrer,
                     handler,
                 )? {
                     id
                 } else {
                     self.second_resolution(
                         &qualified_identifier.first.identifier,
-                        scoped_id,
+                        referrer,
                         handler,
                     )?
                 };
@@ -154,7 +130,29 @@ impl Table {
                 Err(Error::FatalSementic(FatalSemanticError))
             }
 
-            _ => todo!(),
+            // normal case
+            _ => {
+                let mut generic_identifiers = qualified_identifier.generic_identifiers().peekable();
+                let mut current_id = {
+                    // first generic identifier
+                    let generic_identifier = generic_identifiers
+                        .next()
+                        .expect("qualified identifier must at least have one identifier");
+
+                    // check if the path is invalid
+                    if generic_identifier.generic_arguments.is_some() {
+                        handler.recieve(error::Error::InvalidTraitPath(error::InvalidTraitPath {
+                            span: generic_identifier.span()?,
+                        }));
+                    }
+
+                    if qualified_identifier.leading_scope_separator.is_some() {
+                    } else {
+                    };
+                };
+
+                todo!()
+            }
         }
     }
 

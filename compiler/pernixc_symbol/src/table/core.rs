@@ -37,6 +37,7 @@ impl Table {
                 generics: Generics::default(),
                 implements: Vec::new(),
                 trait_member_ids_by_name: HashMap::new(), // to be filled later
+                accessibility: Accessibility::Public,
                 syntax_tree: None,
             });
 
@@ -115,6 +116,7 @@ impl Table {
                 generics: Generics::default(),
                 implements: Vec::new(),
                 trait_member_ids_by_name: HashMap::new(), // to be filled later
+                accessibility: Accessibility::Public,
                 syntax_tree: None,
             });
 
