@@ -19,14 +19,25 @@ use crate::{
     TypeParameter, ID,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum SymbolState {
     Drafted,
-    Constructing,
+    Constructing { constructing_order: usize },
 }
 
-pub(super) struct Drafting {
-    symbol_states_by_id: HashMap<ID, SymbolState>,
-    implements_vecs_by_module_id: HashMap<arena::ID<Module>, Vec<item::Implements>>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct States {
+    pub(super) symbol_states_by_id: HashMap<ID, SymbolState>,
+    pub(super) current_constructing_order: usize,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ImplementsSyntaxTreeWithModuleID {
+    /// The module where the implements item is defined.
+    pub(super) module_id: arena::ID<Module>,
+
+    /// The syntax tree of the implements item.
+    pub(super) implements: item::Implements,
 }
 
 impl Table {
@@ -34,10 +45,9 @@ impl Table {
         &mut self,
         targets: Vec<Target>,
         handler: &impl Handler<Error>,
-    ) -> Drafting {
+    ) -> (States, Vec<ImplementsSyntaxTreeWithModuleID>) {
         let mut symbol_states_by_id = HashMap::new();
-        // implements item will be handled separately
-        let mut implements_vecs_by_module_id = HashMap::new();
+        let mut implements_syntax_tree_with_module_ids = Vec::new();
 
         // iterate through each target
         for target in targets {
@@ -48,23 +58,26 @@ impl Table {
             self.draft_symbols_in_file(
                 file,
                 module_id,
-                &mut implements_vecs_by_module_id,
+                &mut implements_syntax_tree_with_module_ids,
                 &mut symbol_states_by_id,
                 handler,
             );
         }
 
-        Drafting {
-            symbol_states_by_id,
-            implements_vecs_by_module_id,
-        }
+        (
+            States {
+                symbol_states_by_id,
+                current_constructing_order: 0,
+            },
+            implements_syntax_tree_with_module_ids,
+        )
     }
 
     fn draft_symbols_in_file(
         &mut self,
         current_file: File,
         module_id: arena::ID<Module>,
-        implements_vecs_by_module_id: &mut HashMap<arena::ID<Module>, Vec<item::Implements>>,
+        implements_syntax_tree_with_module_ids: &mut Vec<ImplementsSyntaxTreeWithModuleID>,
         symbol_states_by_id: &mut HashMap<ID, SymbolState>,
         handler: &impl Handler<Error>,
     ) {
@@ -78,7 +91,7 @@ impl Table {
             self.draft_symbols_in_file(
                 submodule.file,
                 submodule_id,
-                implements_vecs_by_module_id,
+                implements_syntax_tree_with_module_ids,
                 symbol_states_by_id,
                 handler,
             );
@@ -88,10 +101,10 @@ impl Table {
             // extract implements out
             let item = match item.into_implements() {
                 Ok(implements) => {
-                    implements_vecs_by_module_id
-                        .entry(module_id)
-                        .or_default()
-                        .push(implements);
+                    implements_syntax_tree_with_module_ids.push(ImplementsSyntaxTreeWithModuleID {
+                        module_id,
+                        implements,
+                    });
 
                     continue;
                 }

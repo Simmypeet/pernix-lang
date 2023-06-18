@@ -261,9 +261,7 @@ pub struct LifetimeArgument {
 
 impl SourceElement for LifetimeArgument {
     fn span(&self) -> Result<Span, SpanError> {
-        self.apostrophe
-            .span
-            .join(&self.identifier.span()?)
+        self.apostrophe.span.join(&self.identifier.span()?)
     }
 }
 

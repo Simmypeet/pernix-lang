@@ -789,11 +789,7 @@ pub struct ImplementsFunction {
 }
 
 impl SourceElement for ImplementsFunction {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.signature
-            .span()?
-            .join(&self.body.span()?)
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.signature.span()?.join(&self.body.span()?) }
 }
 
 /// Represents a syntax tree node for an implements type member.
@@ -879,11 +875,7 @@ pub struct Implements {
 }
 
 impl SourceElement for Implements {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.signature
-            .span()?
-            .join(&self.body.span()?)
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.signature.span()?.join(&self.body.span()?) }
 }
 
 /// Represents a syntax tree for an enum signature.
@@ -1178,7 +1170,7 @@ impl<'a> Parser<'a> {
         let mut trailing_separator = None;
 
         while let Ok(comma) = self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy)) {
-            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) 
+            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p))
                 if p.punctuation == '{' || p.punctuation == ';')
             {
                 trailing_separator = Some(comma);

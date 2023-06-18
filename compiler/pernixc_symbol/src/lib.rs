@@ -33,10 +33,11 @@ use pernixc_syntax::syntax_tree::{
 };
 use pernixc_system::arena;
 
+pub(crate) mod input;
+
 pub mod error;
 pub mod table;
 pub mod ty;
-pub mod input;
 
 /// The accessibility of the symbol. Determines where the symbol can be accessed from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -893,6 +894,19 @@ impl From<ScopedID> for ID {
     }
 }
 
+impl TryFrom<ID> for ScopedID {
+    type Error = ID;
+
+    fn try_from(value: ID) -> Result<Self, Self::Error> {
+        match value {
+            ID::Module(s) => Ok(Self::Module(s)),
+            ID::Enum(s) => Ok(Self::Enum(s)),
+            ID::Trait(s) => Ok(Self::Trait(s)),
+            value => Err(value),
+        }
+    }
+}
+
 /// Is an enumeration of ID of the symbols that can be referred in the global scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
@@ -920,6 +934,25 @@ impl From<GlobalID> for ID {
             GlobalID::Trait(id) => Self::Trait(id),
             GlobalID::TraitFunction(id) => Self::TraitFunction(id),
             GlobalID::TraitType(id) => Self::TraitType(id),
+        }
+    }
+}
+
+impl TryFrom<ID> for GlobalID {
+    type Error = ID;
+
+    fn try_from(value: ID) -> Result<Self, Self::Error> {
+        match value {
+            ID::Module(s) => Ok(Self::Module(s)),
+            ID::Struct(s) => Ok(Self::Struct(s)),
+            ID::Enum(s) => Ok(Self::Enum(s)),
+            ID::Function(s) => Ok(Self::Function(s)),
+            ID::Type(s) => Ok(Self::Type(s)),
+            ID::EnumVariant(s) => Ok(Self::EnumVariant(s)),
+            ID::Trait(s) => Ok(Self::Trait(s)),
+            ID::TraitFunction(s) => Ok(Self::TraitFunction(s)),
+            ID::TraitType(s) => Ok(Self::TraitType(s)),
+            value => Err(value),
         }
     }
 }

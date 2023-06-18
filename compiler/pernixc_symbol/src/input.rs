@@ -5,6 +5,7 @@ use proptest::{
 };
 
 use crate::Accessibility;
+
 impl Arbitrary for Accessibility {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;

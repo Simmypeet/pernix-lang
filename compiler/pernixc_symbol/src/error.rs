@@ -2,11 +2,10 @@
 //! resolution/analysis.
 
 use pernixc_source::Span;
-use pernixc_syntax::syntax_tree::item::TraitMember;
 use pernixc_system::arena;
 
 use crate::{
-    Field, GlobalID, LifetimeParameter, Module, Parameter, Struct, TraitMemberID, TypeParameter,
+    Field, GlobalID, LifetimeParameter, Module, Parameter, Struct, TraitMemberID, TypeParameter, ID,
 };
 
 /// No target was found with the given name.
@@ -73,6 +72,54 @@ pub struct FieldMoreAccessibleThanStruct {
     pub struct_id: arena::ID<Struct>,
 }
 
+/// There is a cyclic dependency between the symbols.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CyclicDependency {
+    /// The list of symbols that are involved in the cycle.
+    pub participants: Vec<ID>,
+}
+
+/// Multiples symbol candidates were found for the same symbol reference.
+#[derive(Debug, Clone)]
+pub struct ResolutionAmbiguity {
+    /// The span of the symbol reference.
+    pub span: Span,
+
+    /// The list of candidates.
+    pub candidates: Vec<GlobalID>,
+}
+
+/// Symbol with the given name was not found.
+#[derive(Debug, Clone)]
+pub struct SymbolNotFound {
+    /// The span of the symbol reference.
+    pub span: Span,
+}
+
+/// Found a qualified identifier can't be used as a path to a trait.
+///
+/// This error occurs when resolving the trait symbol of a qualified identifier in the `implements`
+/// block.
+#[derive(Debug, Clone)]
+pub struct InvalidTraitPath {
+    /// The span of the qualified identifier.
+    pub span: Span,
+}
+
+/// Expects the symbol to be module but found something else.
+#[derive(Debug, Clone)]
+pub struct ModuleExpected {
+    /// The span of the symbol reference.
+    pub span: Span,
+}
+
+/// Expects the symbol to be a trait but found something else.
+#[derive(Debug, Clone)]
+pub struct TraitExpected {
+    /// The span of the symbol reference.
+    pub span: Span,
+}
+
 /// Is an eumeration of all errors occuring during the symbol resolution/analysis.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
@@ -91,4 +138,10 @@ pub enum Error {
     FieldRedefinition(SymbolRedefinition<arena::ID<Field>>),
     FieldMoreAccessibleThanStruct(FieldMoreAccessibleThanStruct),
     TraitMemberRedefinition(SymbolRedefinition<TraitMemberID>),
+    CyclicDependency(CyclicDependency),
+    ResolutionAmbiguity(ResolutionAmbiguity),
+    SymbolNotFound(SymbolNotFound),
+    InvalidTraitPath(InvalidTraitPath),
+    ModuleExpected(ModuleExpected),
+    TraitExpected(TraitExpected),
 }

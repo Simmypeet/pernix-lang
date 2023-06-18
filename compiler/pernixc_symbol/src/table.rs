@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, hash::Hash};
 
+use derive_more::From;
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_system::{
     arena::{self, Arena},
@@ -11,13 +12,15 @@ use pernixc_system::{
 use crate::{
     error, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global, GlobalID,
     Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, Parameter, Scoped,
-    ScopedID, Struct, Symbol, Trait, TraitFunction, TraitType, Type, TypeParameter, ID,
+    ScopedID, Struct, Substitution, Symbol, Trait, TraitFunction, TraitType, Type, TypeParameter,
+    ID,
 };
 
 mod core;
 mod drafting;
 mod finalizing;
 mod module;
+mod resolution;
 
 /// Represents a symbol table of the compiler.
 #[derive(Debug, Clone)]
@@ -121,6 +124,27 @@ impl Table {
             ScopedID::Trait(s) => self.traits.get(s).map(|x| x as _),
         }
     }
+
+    /// Gets the fully qualified name of the given [`GlobalID`].
+    ///
+    /// The name doesn't include generics.
+    #[must_use]
+    pub fn get_qualified_name(&self, mut global_id: GlobalID) -> Option<String> {
+        let mut current_name = self.get_global(global_id)?.name().to_owned();
+
+        while let Some(parent_symbol_id) = self.get_global(global_id)?.parent_symbol() {
+            let parent_global_symbol_id: GlobalID = parent_symbol_id
+                .try_into()
+                .expect("Parent symbol ID returned by `Global` must belong to `GlobalID`");
+
+            current_name.insert_str(0, "::");
+            current_name.insert_str(0, self.get_global(parent_global_symbol_id)?.name());
+
+            global_id = parent_global_symbol_id;
+        }
+
+        Some(current_name)
+    }
 }
 
 /// Is an error that occurs when a target name duplication is detected while building a [`Table`].
@@ -147,15 +171,36 @@ pub enum BuildError {
     CoreTargetName(CoreTargetNameError),
 }
 
-/// Is an error that occurs when encountering a fatal semantic error that cannot be recovered.
+/// Encounters a fatal semantic error while working with [`Table`].
 ///
-/// The subsequent errors are reported to the handler.
+/// The [`crate::error::Error`]s are reported to the [`Handler`] passed to the function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
-#[error("Encounters a fatal semantic error that cannot be recovered.")]
-pub struct Error;
+#[error("Encounters a fatal semantic error ")]
+pub struct FatalSemanticError;
+
+/// Is an error returned by various methods in the [`Table`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error, From)]
+#[allow(missing_docs)]
+pub enum Error {
+    #[error("{0}")]
+    FatalSementic(FatalSemanticError),
+
+    #[error("{0}")]
+    InvalidID(arena::Error),
+}
 
 /// Is a result type returned by various methods in the [`Table`].
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Represents the result of a symbol resolution from the [`Table`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Resolution {
+    /// The found symbol.
+    pub symbol: GlobalID,
+
+    /// Contains generics substitutions made during the resolution.
+    pub substitution: Substitution,
+}
 
 impl Table {
     /// Finds a symbol by the given path.
@@ -232,7 +277,7 @@ impl Table {
         table.populate_usings_in_targets(&targets, handler);
 
         // drafts the symbols
-        let drafting = table.draft_symbols(targets, handler);
+        let states = table.draft_symbols(targets, handler);
 
         Ok(table)
     }

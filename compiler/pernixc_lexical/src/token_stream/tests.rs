@@ -1,6 +1,6 @@
 use pernixc_source::SourceFile;
 use pernixc_system::{diagnostic::Storage, input::Input};
-use proptest::{proptest, prelude::Arbitrary};
+use proptest::{prelude::Arbitrary, proptest};
 
 use crate::{error::Error, token_stream::TokenStream};
 
@@ -9,7 +9,7 @@ proptest! {
     fn token_test(
         input in super::input::TokenStream::arbitrary()
     ) {
-        let source = input.to_string(); 
+        let source = input.to_string();
         let source_file = SourceFile::temp(&source)?;
 
         let storage: Storage<Error> = Storage::new();

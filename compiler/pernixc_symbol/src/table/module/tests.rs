@@ -195,7 +195,24 @@ impl Table {
 
         prop_assert_eq!(&module_input.name, &module_output.name);
         prop_assert_eq!(module_input.accessibility, module_output.accessibility);
-        prop_assert_eq!(module_input.usings.len(), module_output.usings.len());
+
+        {
+            let input_usings = module_input
+                .usings
+                .iter()
+                .map(|x| self.get_full_module_path(*x))
+                .collect::<HashSet<_>>();
+
+            let output_usings = module_output
+                .usings
+                .iter()
+                .copied()
+                .map(|x| output_table.get_qualified_name(x.into()).unwrap())
+                .collect::<HashSet<_>>();
+
+            prop_assert_eq!(input_usings, output_usings);
+        }
+
         prop_assert_eq!(
             module_input.submodule_ids_by_name.len(),
             module_output.child_ids_by_name.len()
