@@ -493,10 +493,8 @@ impl Table {
         table.populate_usings_in_workspace(&targets, handler);
 
         // drafts the symbols
-        let (_states, implements_syntax_tree_with_module_ids) =
+        let (_states, _implements_syntax_tree_with_module_ids) =
             table.draft_symbols(targets, handler);
-
-        table.attach_implements(implements_syntax_tree_with_module_ids, handler);
 
         Ok(table)
     }

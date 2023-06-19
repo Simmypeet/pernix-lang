@@ -11,7 +11,7 @@ use pernixc_system::{arena, diagnostic::Handler};
 
 use super::Table;
 use crate::{
-    error::{Error, LifetimeParameterShadowing, SymbolRedefinition},
+    error::{Error, LifetimeParameterShadowing, SymbolRedefinition, TypeParameterShadowing},
     ty::{self, PrimitiveType},
     Accessibility, Enum, EnumVariant, Field, Function, FunctionSignature,
     FunctionSignatureSyntaxTree, GenericParameters, GenericableID, Generics, LifetimeParameter,
@@ -179,12 +179,39 @@ impl Table {
         }
     }
 
-    pub(super) fn check_lifetime_parameter_shadowing(
+    fn check_type_parameter_shadowing(
         &self,
         mut parent: ID,
         identifier: &Identifier,
-        handler: &impl Handler<Error>,
-    ) {
+    ) -> Result<(), Error> {
+        loop {
+            if let Ok(genericable_id) = parent.try_into() {
+                if let Some(shadowed_type_parameter_id) = self
+                    .get_genericable(genericable_id)
+                    .unwrap()
+                    .generic_parameters()
+                    .type_parameter_ids_by_name
+                    .get(identifier.span.str())
+                    .copied()
+                {
+                    break Err(Error::TypeParameterShadowing(TypeParameterShadowing {
+                        span: identifier.span.clone(),
+                        shadowed_type_parameter_id,
+                    }));
+                }
+            }
+            match self.get_symbol(parent).unwrap().parent_symbol() {
+                Some(new_parent_id) => parent = new_parent_id,
+                None => break Ok(()),
+            }
+        }
+    }
+
+    fn check_lifetime_parameter_shadowing(
+        &self,
+        mut parent: ID,
+        identifier: &Identifier,
+    ) -> Result<(), Error> {
         loop {
             if let Ok(genericable_id) = parent.try_into() {
                 if let Some(shadowed_lifetime_parameter_id) = self
@@ -195,17 +222,17 @@ impl Table {
                     .get(identifier.span.str())
                     .copied()
                 {
-                    handler.recieve(Error::LifetimeParameterShadowing(
+                    break Err(Error::LifetimeParameterShadowing(
                         LifetimeParameterShadowing {
                             span: identifier.span.clone(),
                             shadowed_lifetime_parameter_id,
                         },
-                    ))
+                    ));
                 }
             }
             match self.get_symbol(parent).unwrap().parent_symbol() {
                 Some(new_parent_id) => parent = new_parent_id,
-                None => break,
+                None => break Ok(()),
             }
         }
     }
@@ -241,6 +268,17 @@ impl Table {
                         continue;
                     }
 
+                    if let Err(error) = self.check_lifetime_parameter_shadowing(
+                        self.get_genericable(parent_genericable_id)
+                            .unwrap()
+                            .parent_symbol()
+                            .unwrap(),
+                        &lt.identifier,
+                    ) {
+                        handler.recieve(error);
+                        continue;
+                    }
+
                     // add lifetime parameter
                     let lifetime_parameter_id = self.lifetime_parameters.push(LifetimeParameter {
                         name: lt.identifier.span.str().to_string(),
@@ -262,6 +300,17 @@ impl Table {
                         &ty.identifier,
                     ) {
                         handler.recieve(Error::TypeParameterRedefinition(error));
+                        continue;
+                    }
+
+                    if let Err(error) = self.check_type_parameter_shadowing(
+                        self.get_genericable(parent_genericable_id)
+                            .unwrap()
+                            .parent_symbol()
+                            .unwrap(),
+                        &ty.identifier,
+                    ) {
+                        handler.recieve(error);
                         continue;
                     }
 
@@ -704,10 +753,4 @@ impl Table {
 
         enum_id
     }
-}
-
-struct Test {}
-
-struct Another<Test> {
-    test: Test,
 }
