@@ -446,6 +446,22 @@ impl Table {
         }
     }
 
+    /// Gets the [`ScopeWalker`] iterator for the given ID.
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    pub fn scope_walker(&self, id: ID) -> Result<ScopeWalker, arena::Error> {
+        // Checks if the ID is valid.
+        if self.get_symbol(id).is_err() {
+            return Err(arena::Error);
+        }
+
+        Ok(ScopeWalker {
+            table: self,
+            current_id: Some(id),
+        })
+    }
+
     /// Creates a new empty table.
     fn new() -> Self {
         Self {
@@ -497,6 +513,64 @@ impl Table {
             table.draft_symbols(targets, handler);
 
         Ok(table)
+    }
+}
+
+/// Similar to [`ScopeWalker`] but usesh/stores a mutable reference to the [`Table`] .
+pub(crate) struct ScopeWalkerMut<'a> {
+    table: &'a mut Table,
+    current_id: Option<ID>,
+}
+
+impl<'a> ScopeWalkerMut<'a> {
+    /// Creates a new scope walker.
+    #[must_use]
+    pub(crate) fn table(&'a mut self) -> &'a mut Table { self.table }
+}
+
+impl<'a> Iterator for ScopeWalkerMut<'a> {
+    type Item = ID;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current_id {
+            Some(current_id) => {
+                let next_id = self.table.get_symbol(current_id).unwrap().parent_symbol();
+                self.current_id = next_id;
+                Some(current_id)
+            }
+            None => None,
+        }
+    }
+}
+
+pub struct ScopeWalkerReverse {}
+
+/// Represents an iterator that walks through the scope of the given symbol. It goes through all
+/// the parent symbols until it reaches the root.
+#[derive(Debug, Clone)]
+pub struct ScopeWalker<'a> {
+    table: &'a Table,
+    current_id: Option<ID>,
+}
+
+impl<'a> ScopeWalker<'a> {
+    /// Creates a new scope walker.
+    #[must_use]
+    pub fn table(&self) -> &'a Table { self.table }
+}
+
+impl<'a> Iterator for ScopeWalker<'a> {
+    type Item = ID;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current_id {
+            Some(current_id) => {
+                let next_id = self.table.get_symbol(current_id).unwrap().parent_symbol();
+                self.current_id = next_id;
+                Some(current_id)
+            }
+            None => None,
+        }
     }
 }
 

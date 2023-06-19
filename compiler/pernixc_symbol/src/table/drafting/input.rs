@@ -59,7 +59,14 @@ fn struct_strategy() -> impl Strategy<Value = Struct> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Drafting {
+struct Function {
+    accessibility: Accessibility,
+    parameters: Vec<String>,
+    generics_parameters: GenericsParameter,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Drafting {
     Enum(Enum),
     Struct(Struct),
 }

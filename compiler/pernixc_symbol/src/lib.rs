@@ -20,7 +20,7 @@ use std::{
     sync::Arc,
 };
 
-use derive_more::{Deref, DerefMut, From};
+use derive_more::{Deref, DerefMut, Display, From};
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
@@ -40,15 +40,18 @@ pub mod table;
 pub mod ty;
 
 /// The accessibility of the symbol. Determines where the symbol can be accessed from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, Display)]
 pub enum Accessibility {
     /// The symbol can only be accessed from the same module it is defined in.
+    #[display(fmt = "private")]
     Private,
 
     /// The symbol can only be accessed from the same target it is defined in.
+    #[display(fmt = "internal")]
     Internal,
 
     /// The symbol can be accessed from anywhere.
+    #[display(fmt = "public")]
     Public,
 }
 

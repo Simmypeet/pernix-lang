@@ -1,31 +1,22 @@
 use std::{collections::HashSet, ops::Deref, path::Path};
 
-use derive_more::From;
 use pernixc_system::{arena, input::Input};
 use proptest::{
     prop_assert_eq,
-    test_runner::{TestCaseError, TestCaseResult},
+    test_runner::{ResultCache, TestCaseError, TestCaseResult},
 };
 
 use super::Table;
-use crate::{Accessibility, Module, ModuleChildID};
-
-#[derive(Debug, thiserror::Error, From)]
-#[allow(missing_docs)]
-pub(super) enum WorkspaceCreateError {
-    #[error("{0}")]
-    Io(std::io::Error),
-
-    #[error("{0}")]
-    Fmt(std::fmt::Error),
-}
+use crate::{
+    ty, Accessibility, GenericParameters, Genericable, Module, ModuleChildID, Struct, WhereClause,
+};
 
 impl Table {
     fn create_file(
         &self,
         module_id: arena::ID<Module>,
         parent_directory: &Path,
-    ) -> Result<(), WorkspaceCreateError> {
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let module = &self.modules[module_id];
 
@@ -68,7 +59,7 @@ impl Table {
                         self.create_file(module_id, &file_path.with_extension(""))?;
                     }
 
-                    write!(
+                    writeln!(
                         file,
                         "{} module {};",
                         match submodule.accessibility {
@@ -90,12 +81,113 @@ impl Table {
         Ok(())
     }
 
+    fn write_generic_parameters(
+        &self,
+        file: &mut std::fs::File,
+        generic_parameters: &GenericParameters,
+    ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+
+        if !generic_parameters.lifetime_parameter_order.is_empty()
+            || !generic_parameters.type_parameter_order.is_empty()
+        {
+            let generic_parameters = generic_parameters
+                .lifetime_parameter_order
+                .iter()
+                .copied()
+                .map(|x| format!("`{}", self.lifetime_parameters[x].name.clone()))
+                .chain(
+                    generic_parameters
+                        .type_parameter_order
+                        .iter()
+                        .copied()
+                        .map(|x| self.type_parameters[x].name.clone()),
+                )
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            write!(file, "<{generic_parameters}>")?;
+        }
+
+        Ok(())
+    }
+
+    fn write_ty_primitive_type(
+        file: &mut std::fs::File,
+        primitive_type: ty::PrimitiveType,
+    ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+
+        match primitive_type {
+            ty::PrimitiveType::Float32 => write!(file, "float32"),
+            ty::PrimitiveType::Float64 => write!(file, "float64"),
+            ty::PrimitiveType::Int8 => write!(file, "int8"),
+            ty::PrimitiveType::Int16 => write!(file, "int16"),
+            ty::PrimitiveType::Int32 => write!(file, "int32"),
+            ty::PrimitiveType::Int64 => write!(file, "int64"),
+            ty::PrimitiveType::Uint8 => write!(file, "uint8"),
+            ty::PrimitiveType::Uint16 => write!(file, "uint16"),
+            ty::PrimitiveType::Uint32 => write!(file, "uint32"),
+            ty::PrimitiveType::Uint64 => write!(file, "uint64"),
+            ty::PrimitiveType::Bool => write!(file, "bool"),
+            ty::PrimitiveType::Void => write!(file, "void"),
+        }
+    }
+
+    fn write_ty_type(&self, file: &mut std::fs::File, ty: &ty::Type) -> Result<(), std::io::Error> {
+        match ty {
+            ty::Type::Struct(_) => todo!(),
+            ty::Type::PrimitiveType(primitive_type) => {
+                Self::write_ty_primitive_type(file, *primitive_type)
+            }
+            ty::Type::ReferenceType(_) => todo!(),
+            ty::Type::TypeParameter(_) => todo!(),
+            ty::Type::TraitType(_) => todo!(),
+        }
+    }
+
+    fn write_where_caluse(
+        &self,
+        file: &mut std::fs::File,
+        where_clause: &WhereClause,
+    ) -> Result<(), TestCaseError> {
+        use std::io::Write;
+
+        if !where_clause.lifetime_bounds.is_empty()
+            || !where_clause.type_bounds_by_trait_type.is_empty()
+            || !where_clause.lifetime_bound_vecs_by_trait_type.is_empty()
+            || !where_clause.type_parameter_bounds.is_empty()
+        {}
+
+        Ok(())
+    }
+
+    fn write_struct(
+        &self,
+        file: &mut std::fs::File,
+        struct_id: arena::ID<Struct>,
+    ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+        let struct_symbol = &self.structs[struct_id];
+
+        write!(file, "{} struct", struct_symbol.accessibility)?;
+
+        let test = self.scope_walker(struct_id.into()).unwrap().rev();
+
+        // write generics parameters
+        self.write_generic_parameters(file, &struct_symbol.generics.generic_parameters)?;
+
+        write!(file, " {}", struct_symbol.name)?;
+
+        Ok(())
+    }
+
     fn create_target(
         &self,
         root_target_module_id: arena::ID<Module>,
         target_name: &str,
         parent_directory: &Path,
-    ) -> Result<(), WorkspaceCreateError> {
+    ) -> Result<(), std::io::Error> {
         // creates target directory
         let target_directory = parent_directory.join(target_name);
         std::fs::create_dir(&target_directory)?;
@@ -104,7 +196,7 @@ impl Table {
     }
 
     /// Creates a workspace based on the current state of the table in a temporary directory.
-    pub(super) fn create_workspace(&self) -> Result<tempfile::TempDir, WorkspaceCreateError> {
+    pub(super) fn create_workspace(&self) -> Result<tempfile::TempDir, std::io::Error> {
         let tempdir = tempfile::tempdir()?;
 
         for (name, module_id) in &self.target_root_module_ids_by_name {
