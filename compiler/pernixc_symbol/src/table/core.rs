@@ -16,7 +16,7 @@ impl Table {
             name: "@core".to_string(),
             accessibility: Accessibility::Public,
             parent_module_id: None,
-            child_ids_by_name: HashMap::new(),
+            module_child_ids_by_name: HashMap::new(),
             usings: HashSet::new(),
         });
 

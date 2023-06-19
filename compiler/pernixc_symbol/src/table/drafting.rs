@@ -11,13 +11,15 @@ use pernixc_system::{arena, diagnostic::Handler};
 
 use super::Table;
 use crate::{
-    error::{Error, SymbolRedefinition},
+    error::{Error, LifetimeParameterShadowing, SymbolRedefinition},
     ty::{self, PrimitiveType},
     Accessibility, Enum, EnumVariant, Field, Function, FunctionSignature,
-    FunctionSignatureSyntaxTree, GenericParameters, GenericableID, Generics, GlobalID,
-    LifetimeParameter, Module, Parameter, Struct, Trait, TraitFunction, TraitType, Type,
-    TypeParameter, ID,
+    FunctionSignatureSyntaxTree, GenericParameters, GenericableID, Generics, LifetimeParameter,
+    Module, ModuleChildID, Parameter, Struct, Trait, TraitFunction, TraitType, Type, TypeParameter,
+    ID,
 };
+
+mod input;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum SymbolState {
@@ -84,9 +86,10 @@ impl Table {
         for submodule in current_file.submodules {
             let module = &self.modules[module_id];
 
-            let submodule_id = module.child_ids_by_name[submodule.module.identifier.span.str()]
-                .into_module()
-                .unwrap();
+            let submodule_id = module.module_child_ids_by_name
+                [submodule.module.identifier.span.str()]
+            .into_module()
+            .unwrap();
 
             self.draft_symbols_in_file(
                 submodule.file,
@@ -126,7 +129,8 @@ impl Table {
                 let module = &self.modules[module_id];
 
                 // redefinition check
-                if let Err(error) = Self::redefinition_check(&module.child_ids_by_name, identifier)
+                if let Err(error) =
+                    Self::redefinition_check(&module.module_child_ids_by_name, identifier)
                 {
                     handler.recieve(Error::SymbolRedefinition(error));
                     continue;
@@ -135,7 +139,7 @@ impl Table {
                 identifier.span.str().to_string()
             };
 
-            let global_id = match item {
+            let module_child_id = match item {
                 Item::Trait(i) => self.draft_trait(i, module_id, handler).into(),
                 Item::Function(i) => self.draft_function(i, module_id, handler).into(),
                 Item::Type(i) => self.draft_type(i, module_id, handler).into(),
@@ -148,38 +152,65 @@ impl Table {
             // add the symbol as a child of the module
             assert!(
                 self.modules[module_id]
-                    .child_ids_by_name
-                    .insert(name, global_id)
+                    .module_child_ids_by_name
+                    .insert(name, module_child_id)
                     .is_none(),
                 "redefinition should be handled already"
             );
 
-            match global_id {
-                GlobalID::Struct(i) => assert!(symbol_states_by_id
+            match module_child_id {
+                ModuleChildID::Struct(i) => assert!(symbol_states_by_id
                     .insert(i.into(), SymbolState::Drafted)
                     .is_none()),
-                GlobalID::Function(i) => assert!(symbol_states_by_id
+                ModuleChildID::Function(i) => assert!(symbol_states_by_id
                     .insert(i.into(), SymbolState::Drafted)
                     .is_none()),
-                GlobalID::Type(i) => assert!(symbol_states_by_id
+                ModuleChildID::Type(i) => assert!(symbol_states_by_id
                     .insert(i.into(), SymbolState::Drafted)
                     .is_none()),
-                GlobalID::Trait(i) => assert!(symbol_states_by_id
+                ModuleChildID::Trait(i) => assert!(symbol_states_by_id
                     .insert(i.into(), SymbolState::Drafted)
                     .is_none()),
-                GlobalID::Enum(..) => (),
-
-                GlobalID::EnumVariant(..)
-                | GlobalID::TraitFunction(..)
-                | GlobalID::TraitType(..)
-                | GlobalID::Module(..) => {
+                ModuleChildID::Enum(..) => (),
+                ModuleChildID::Module(..) => {
                     unreachable!()
                 }
             };
         }
     }
 
-    fn create_generic_parameters(
+    pub(super) fn check_lifetime_parameter_shadowing(
+        &self,
+        mut parent: ID,
+        identifier: &Identifier,
+        handler: &impl Handler<Error>,
+    ) {
+        loop {
+            if let Ok(genericable_id) = parent.try_into() {
+                if let Some(shadowed_lifetime_parameter_id) = self
+                    .get_genericable(genericable_id)
+                    .unwrap()
+                    .generic_parameters()
+                    .lifetime_parameter_id_by_name
+                    .get(identifier.span.str())
+                    .copied()
+                {
+                    handler.recieve(Error::LifetimeParameterShadowing(
+                        LifetimeParameterShadowing {
+                            span: identifier.span.clone(),
+                            shadowed_lifetime_parameter_id,
+                        },
+                    ))
+                }
+            }
+            match self.get_symbol(parent).unwrap().parent_symbol() {
+                Some(new_parent_id) => parent = new_parent_id,
+                None => break,
+            }
+        }
+    }
+
+    pub(super) fn create_generic_parameters(
         &mut self,
         parent_genericable_id: GenericableID,
         generic_parameters_syntax_tree: &item::GenericParameters,
@@ -556,7 +587,7 @@ impl Table {
             field_ids_by_name: HashMap::new(), // will be filled later.
             field_order: Vec::new(),           // will be filled later.
             generics: Generics::default(),     // type parameters will be filled later.
-            syntax_tree: struct_signature.clone(),
+            syntax_tree: Some(struct_signature.clone()),
         });
 
         // update the generic parameters
@@ -673,4 +704,10 @@ impl Table {
 
         enum_id
     }
+}
+
+struct Test {}
+
+struct Another<Test> {
+    test: Test,
 }

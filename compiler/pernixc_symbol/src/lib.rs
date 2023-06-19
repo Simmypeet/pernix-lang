@@ -33,7 +33,7 @@ use pernixc_syntax::syntax_tree::{
 };
 use pernixc_system::arena;
 
-pub(crate) mod input;
+mod input;
 
 pub mod error;
 pub mod table;
@@ -102,7 +102,7 @@ impl Global for arena::Symbol<TraitType> {
 }
 
 /// Represents generic parameters substitution.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Substitution {
     /// Maps type parameters to their type arguments.
     pub type_arguments_by_parameter: BTreeMap<arena::ID<TypeParameter>, ty::Type>,
@@ -341,6 +341,25 @@ impl From<GenericableID> for ID {
     }
 }
 
+impl TryFrom<ID> for GenericableID {
+    type Error = ID;
+
+    fn try_from(value: ID) -> Result<Self, Self::Error> {
+        match value {
+            ID::Struct(id) => Ok(GenericableID::Struct(id)),
+            ID::Function(id) => Ok(GenericableID::Function(id)),
+            ID::Implements(id) => Ok(GenericableID::Implements(id)),
+            ID::Trait(id) => Ok(GenericableID::Trait(id)),
+            ID::TraitType(id) => Ok(GenericableID::TraitType(id)),
+            ID::TraitFunction(id) => Ok(GenericableID::TraitFunction(id)),
+            ID::Type(id) => Ok(GenericableID::Type(id)),
+            ID::ImplementsFunction(id) => Ok(GenericableID::ImplementsFunction(id)),
+            ID::ImplementsType(id) => Ok(GenericableID::ImplementsType(id)),
+            id => Err(id),
+        }
+    }
+}
+
 /// Represents a symbol with generics
 pub trait Genericable: Symbol {
     /// Returns the generics of the symbol.
@@ -526,7 +545,7 @@ pub struct Module {
     pub parent_module_id: Option<arena::ID<Module>>,
 
     /// Maps the name of the symbol defined in this module to its corresponding ID.
-    pub child_ids_by_name: HashMap<String, GlobalID>,
+    pub module_child_ids_by_name: HashMap<String, ModuleChildID>,
 
     /// The IDs of modules that are used in the `using` statements.
     pub usings: HashSet<arena::ID<Module>>,
@@ -544,7 +563,10 @@ impl Global for arena::Symbol<Module> {
 
 impl Scoped for arena::Symbol<Module> {
     fn get_child_id_by_name(&self, name: &str) -> Option<GlobalID> {
-        self.child_ids_by_name.get(name).copied()
+        self.module_child_ids_by_name
+            .get(name)
+            .copied()
+            .map(GlobalID::from)
     }
 }
 
@@ -589,7 +611,7 @@ pub struct Struct {
     pub parent_module_id: arena::ID<Module>,
 
     /// The syntax tree that was used to create the struct.
-    pub syntax_tree: Arc<StructSignatureSyntaxTree>,
+    pub syntax_tree: Option<Arc<StructSignatureSyntaxTree>>,
 
     /// Maps the name of the field to its corresponding ID.
     pub field_ids_by_name: HashMap<String, arena::ID<Field>>,
@@ -910,6 +932,47 @@ impl TryFrom<ID> for ScopedID {
     }
 }
 
+/// Is an enumeration of ID of the symbols that can be defined in a module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum ModuleChildID {
+    Module(arena::ID<Module>),
+    Struct(arena::ID<Struct>),
+    Enum(arena::ID<Enum>),
+    Function(arena::ID<Function>),
+    Type(arena::ID<Type>),
+    Trait(arena::ID<Trait>),
+}
+
+impl From<ModuleChildID> for ID {
+    fn from(value: ModuleChildID) -> Self {
+        match value {
+            ModuleChildID::Module(id) => Self::Module(id),
+            ModuleChildID::Struct(id) => Self::Struct(id),
+            ModuleChildID::Enum(id) => Self::Enum(id),
+            ModuleChildID::Function(id) => Self::Function(id),
+            ModuleChildID::Type(id) => Self::Type(id),
+            ModuleChildID::Trait(id) => Self::Trait(id),
+        }
+    }
+}
+
+impl TryFrom<ID> for ModuleChildID {
+    type Error = ID;
+
+    fn try_from(value: ID) -> Result<Self, Self::Error> {
+        match value {
+            ID::Module(s) => Ok(Self::Module(s)),
+            ID::Struct(s) => Ok(Self::Struct(s)),
+            ID::Enum(s) => Ok(Self::Enum(s)),
+            ID::Function(s) => Ok(Self::Function(s)),
+            ID::Type(s) => Ok(Self::Type(s)),
+            ID::Trait(s) => Ok(Self::Trait(s)),
+            value => Err(value),
+        }
+    }
+}
+
 /// Is an enumeration of ID of the symbols that can be referred in the global scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
@@ -923,6 +986,19 @@ pub enum GlobalID {
     Trait(arena::ID<Trait>),
     TraitFunction(arena::ID<TraitFunction>),
     TraitType(arena::ID<TraitType>),
+}
+
+impl From<ModuleChildID> for GlobalID {
+    fn from(value: ModuleChildID) -> Self {
+        match value {
+            ModuleChildID::Module(id) => Self::Module(id),
+            ModuleChildID::Struct(id) => Self::Struct(id),
+            ModuleChildID::Enum(id) => Self::Enum(id),
+            ModuleChildID::Function(id) => Self::Function(id),
+            ModuleChildID::Type(id) => Self::Type(id),
+            ModuleChildID::Trait(id) => Self::Trait(id),
+        }
+    }
 }
 
 impl From<GlobalID> for ID {

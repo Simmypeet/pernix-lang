@@ -12,6 +12,8 @@ use crate::{
     Accessibility, Module,
 };
 
+mod input;
+
 // Checks for the target input validity
 pub(super) fn target_check(targets: &[Target]) -> std::result::Result<(), BuildError> {
     let mut duplicated_names = HashSet::new();
@@ -45,13 +47,13 @@ impl Table {
                 name: module_name.clone(),
                 accessibility: Accessibility::from_syntax_tree(&submodule.module.access_modifier),
                 parent_module_id: Some(parent_module_id),
-                child_ids_by_name: HashMap::new(),
+                module_child_ids_by_name: HashMap::new(),
                 usings: HashSet::new(),
             });
 
             assert!(
                 self.modules[parent_module_id]
-                    .child_ids_by_name
+                    .module_child_ids_by_name
                     .insert(module_name, id.into())
                     .is_none(),
                 "Duplication detected, but it should've already been checked."
@@ -67,7 +69,7 @@ impl Table {
             name: target.name().clone(),
             accessibility: Accessibility::Public,
             parent_module_id: None,
-            child_ids_by_name: HashMap::new(),
+            module_child_ids_by_name: HashMap::new(),
             usings: HashSet::new(),
         });
 
@@ -95,7 +97,7 @@ impl Table {
             if let Some(module_id) = current_module_id {
                 // search from current module id
                 let Some(new_module_id) = self.modules[module_id]
-                    .child_ids_by_name
+                    .module_child_ids_by_name
                     .get(path.span.str())
                     .copied() else {
                     handler.recieve(error::Error::ModuleNotFound(
@@ -184,7 +186,7 @@ impl Table {
 
         // populate usings for submodules
         for submodule in &current_file.submodules {
-            let module_id = self.modules[current_module_id].child_ids_by_name
+            let module_id = self.modules[current_module_id].module_child_ids_by_name
                 [submodule.module.identifier.span.str()]
             .into_module()
             .unwrap();
@@ -194,7 +196,7 @@ impl Table {
     }
 
     // Populates usings in the given module.
-    pub(super) fn populate_usings_in_targets(
+    pub(super) fn populate_usings_in_workspace(
         &mut self,
         targets: &[Target],
         handler: &impl Handler<error::Error>,

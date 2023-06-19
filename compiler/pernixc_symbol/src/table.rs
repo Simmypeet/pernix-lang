@@ -3,6 +3,7 @@
 use std::{collections::HashMap, hash::Hash};
 
 use derive_more::From;
+use enum_as_inner::EnumAsInner;
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_system::{
     arena::{self, Arena},
@@ -16,11 +17,13 @@ use crate::{
     TypeParameter, ID,
 };
 
+mod input;
+
 mod core;
 mod drafting;
 mod finalizing;
 mod module;
-mod resolution;
+// mod resolution;
 
 /// Represents a symbol table of the compiler.
 #[derive(Debug, Clone)]
@@ -162,7 +165,6 @@ impl Table {
     ///
     /// # Errors
     /// If the ID is invalid, returns an error.
-    #[must_use]
     pub fn get_scoped(&self, scoped_id: ScopedID) -> Result<&dyn Scoped, arena::Error> {
         match scoped_id {
             ScopedID::Module(s) => self.modules.get(s).map(|x| x as _).ok_or(arena::Error),
@@ -227,7 +229,9 @@ pub enum BuildError {
 pub struct FatalSemanticError;
 
 /// Is an error returned by various methods in the [`Table`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error, From)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error, From, EnumAsInner,
+)]
 #[allow(missing_docs)]
 pub enum Error {
     #[error("{0}")]
@@ -486,11 +490,17 @@ impl Table {
         table.create_modules(&targets);
 
         // populates usings statements
-        table.populate_usings_in_targets(&targets, handler);
+        table.populate_usings_in_workspace(&targets, handler);
 
         // drafts the symbols
-        let states = table.draft_symbols(targets, handler);
+        let (_states, implements_syntax_tree_with_module_ids) =
+            table.draft_symbols(targets, handler);
+
+        table.attach_implements(implements_syntax_tree_with_module_ids, handler);
 
         Ok(table)
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -19,3 +19,10 @@ impl Arbitrary for Accessibility {
         .boxed()
     }
 }
+
+/// Creates a strategy for generating valid names for any kind of symbol.
+pub fn name() -> impl Strategy<Value = String> {
+    "[a-zA-Z_][a-zA-Z0-9_]*".prop_filter("filter out illegal names", |name| {
+        !matches!(name.as_str(), "@core" | "main")
+    })
+}

@@ -5,7 +5,8 @@ use pernixc_source::Span;
 use pernixc_system::arena;
 
 use crate::{
-    Field, GlobalID, LifetimeParameter, Module, Parameter, Struct, TraitMemberID, TypeParameter, ID,
+    Field, GlobalID, LifetimeParameter, Module, Parameter, ScopedID, Struct, TraitMemberID,
+    TypeParameter, ID,
 };
 
 /// No target was found with the given name.
@@ -92,6 +93,9 @@ pub struct ResolutionAmbiguity {
 /// Symbol with the given name was not found.
 #[derive(Debug, Clone)]
 pub struct SymbolNotFound {
+    /// In which scope the symbol was searched.
+    pub searched_scoped_id: ScopedID,
+
     /// The span of the symbol reference.
     pub span: Span,
 }
@@ -111,6 +115,9 @@ pub struct InvalidTraitPath {
 pub struct ModuleExpected {
     /// The span of the symbol reference.
     pub span: Span,
+
+    /// The symbol that was found instead.
+    pub found: GlobalID,
 }
 
 /// Expects the symbol to be a trait but found something else.
@@ -118,6 +125,29 @@ pub struct ModuleExpected {
 pub struct TraitExpected {
     /// The span of the symbol reference.
     pub span: Span,
+
+    /// The symbol that was found instead.
+    pub found: GlobalID,
+}
+
+/// Lifetime parameter shadowing is not allowed.
+#[derive(Debug, Clone)]
+pub struct LifetimeParameterShadowing {
+    /// The span of the lifetime parameter.
+    pub span: Span,
+
+    /// The ID of the shadowed lifetime parameter.
+    pub shadowed_lifetime_parameter_id: arena::ID<LifetimeParameter>,
+}
+
+/// Type parameter shadowing is not allowed.
+#[derive(Debug, Clone)]
+pub struct TypeParameterShadowing {
+    /// The span of the type parameter.
+    pub span: Span,
+
+    /// The ID of the shadowed type parameter.
+    pub shadowed_type_parameter_id: arena::ID<TypeParameter>,
 }
 
 /// Is an eumeration of all errors occuring during the symbol resolution/analysis.
@@ -144,4 +174,6 @@ pub enum Error {
     InvalidTraitPath(InvalidTraitPath),
     ModuleExpected(ModuleExpected),
     TraitExpected(TraitExpected),
+    LifetimeParameterShadowing(LifetimeParameterShadowing),
+    TypeParameterShadowing(TypeParameterShadowing),
 }
