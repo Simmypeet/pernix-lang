@@ -56,7 +56,7 @@ impl Table {
 }
 
 /// Returns a strategy that generates `using` statements for the given [`Table`].
-pub(super) fn table_with_usings_strategy() -> impl Strategy<Value = Table> {
+pub(in crate::table) fn table_with_usings_strategy() -> impl Strategy<Value = Table> {
     let table_with_usings = table_with_module_strategy().prop_flat_map(|table| {
         let module_ids: Cow<[arena::ID<Module>]> = table.modules.ids().collect();
 
@@ -86,7 +86,7 @@ pub(super) fn table_with_usings_strategy() -> impl Strategy<Value = Table> {
 }
 
 /// Returns a strategy that produces [`Table`] with module trees.
-pub(super) fn table_with_module_strategy() -> impl Strategy<Value = Table> {
+pub(in crate::table) fn table_with_module_strategy() -> impl Strategy<Value = Table> {
     let leaf = Just(ModuleTree {
         submodules_by_name: HashMap::new(),
     });

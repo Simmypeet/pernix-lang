@@ -51,13 +51,13 @@ impl Table {
 
             trait_sym
                 .generics
-                .generic_parameters
+                .parameters
                 .type_parameter_order
                 .push(type_parameter_id);
 
             trait_sym
                 .generics
-                .generic_parameters
+                .parameters
                 .type_parameter_ids_by_name
                 .insert("T".to_string(), type_parameter_id);
 
@@ -130,13 +130,13 @@ impl Table {
 
             trait_sym
                 .generics
-                .generic_parameters
+                .parameters
                 .type_parameter_order
                 .push(type_parameter_id);
 
             trait_sym
                 .generics
-                .generic_parameters
+                .parameters
                 .type_parameter_ids_by_name
                 .insert("T".to_string(), type_parameter_id);
 

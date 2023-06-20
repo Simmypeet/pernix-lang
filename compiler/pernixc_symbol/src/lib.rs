@@ -192,7 +192,7 @@ impl Symbol for arena::Symbol<ImplementsType> {
 }
 
 impl Genericable for arena::Symbol<ImplementsType> {
-    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
@@ -219,7 +219,7 @@ impl Symbol for arena::Symbol<ImplementsFunction> {
 }
 
 impl Genericable for arena::Symbol<ImplementsFunction> {
-    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
@@ -308,7 +308,7 @@ impl Global for arena::Symbol<TraitFunction> {
 }
 
 impl Genericable for arena::Symbol<TraitFunction> {
-    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
@@ -344,20 +344,36 @@ impl From<GenericableID> for ID {
     }
 }
 
+impl TryFrom<GlobalID> for GenericableID {
+    type Error = GlobalID;
+
+    fn try_from(value: GlobalID) -> Result<Self, Self::Error> {
+        match value {
+            GlobalID::Struct(id) => Ok(Self::Struct(id)),
+            GlobalID::Function(id) => Ok(Self::Function(id)),
+            GlobalID::Trait(id) => Ok(Self::Trait(id)),
+            GlobalID::TraitType(id) => Ok(Self::TraitType(id)),
+            GlobalID::TraitFunction(id) => Ok(Self::TraitFunction(id)),
+            GlobalID::Type(id) => Ok(Self::Type(id)),
+            id => Err(id),
+        }
+    }
+}
+
 impl TryFrom<ID> for GenericableID {
     type Error = ID;
 
     fn try_from(value: ID) -> Result<Self, Self::Error> {
         match value {
-            ID::Struct(id) => Ok(GenericableID::Struct(id)),
-            ID::Function(id) => Ok(GenericableID::Function(id)),
-            ID::Implements(id) => Ok(GenericableID::Implements(id)),
-            ID::Trait(id) => Ok(GenericableID::Trait(id)),
-            ID::TraitType(id) => Ok(GenericableID::TraitType(id)),
-            ID::TraitFunction(id) => Ok(GenericableID::TraitFunction(id)),
-            ID::Type(id) => Ok(GenericableID::Type(id)),
-            ID::ImplementsFunction(id) => Ok(GenericableID::ImplementsFunction(id)),
-            ID::ImplementsType(id) => Ok(GenericableID::ImplementsType(id)),
+            ID::Struct(id) => Ok(Self::Struct(id)),
+            ID::Function(id) => Ok(Self::Function(id)),
+            ID::Implements(id) => Ok(Self::Implements(id)),
+            ID::Trait(id) => Ok(Self::Trait(id)),
+            ID::TraitType(id) => Ok(Self::TraitType(id)),
+            ID::TraitFunction(id) => Ok(Self::TraitFunction(id)),
+            ID::Type(id) => Ok(Self::Type(id)),
+            ID::ImplementsFunction(id) => Ok(Self::ImplementsFunction(id)),
+            ID::ImplementsType(id) => Ok(Self::ImplementsType(id)),
             id => Err(id),
         }
     }
@@ -373,25 +389,25 @@ pub trait Genericable: Symbol {
 }
 
 impl Genericable for arena::Symbol<Struct> {
-    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 impl Genericable for arena::Symbol<Function> {
-    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 impl Genericable for arena::Symbol<Implements> {
-    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
 impl Genericable for arena::Symbol<Trait> {
-    fn generic_parameters(&self) -> &GenericParameters { &self.generics.generic_parameters }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generics.parameters }
 
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
@@ -468,7 +484,7 @@ impl Symbol for arena::Symbol<TypeParameter> {
 #[allow(missing_docs)]
 pub enum LifetimeArgument {
     Static,
-    LifetimeParamter(arena::ID<LifetimeParameter>),
+    Parameter(arena::ID<LifetimeParameter>),
 }
 
 /// Contains the declaration of the generic parameters (both lifetimes and type parameters).
@@ -484,30 +500,37 @@ pub struct GenericParameters {
     pub lifetime_parameter_order: Vec<arena::ID<LifetimeParameter>>,
 
     /// Maps the name of the lifetime parameter to its ID.
-    pub lifetime_parameter_id_by_name: HashMap<String, arena::ID<LifetimeParameter>>,
+    pub lifetime_parameter_ids_by_name: HashMap<String, arena::ID<LifetimeParameter>>,
+}
+
+/// Represents a bound on the trait type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum TraitTypeBound {
+    Type(ty::Type),
+    LifetimeArguments(Vec<LifetimeArgument>),
 }
 
 /// Contains all the constraint defined on the where clause of a genericable.
 #[derive(Debug, Clone, Default)]
 pub struct WhereClause {
     /// Maps the lifetime parameter to its lifetime bounds.
-    pub lifetime_bounds: HashMap<arena::ID<LifetimeParameter>, Vec<LifetimeArgument>>,
+    pub lifetime_argument_vecs_by_lifetime_parameter:
+        HashMap<arena::ID<LifetimeParameter>, Vec<LifetimeArgument>>,
 
     /// Maps the associated type to its type bound.
-    pub type_bounds_by_trait_type: HashMap<ty::TraitType, ty::Type>,
-
-    /// Maps the associated type to its lifetime bounds.
-    pub lifetime_bound_vecs_by_trait_type: HashMap<ty::TraitType, Vec<LifetimeArgument>>,
+    pub trait_type_bounds_by_trait_type: HashMap<ty::TraitType, TraitTypeBound>,
 
     /// Maps the type parameter to its lifetime bounds.
-    pub type_parameter_bounds: HashMap<arena::ID<TypeParameter>, Vec<LifetimeArgument>>,
+    pub lifetime_argument_vecs_by_type_parameter:
+        HashMap<arena::ID<TypeParameter>, Vec<LifetimeArgument>>,
 }
 
 /// Contains all the information related to the generics.
 #[derive(Debug, Clone, Default)]
 pub struct Generics {
     /// The generic parameters of the symbol.
-    pub generic_parameters: GenericParameters,
+    pub parameters: GenericParameters,
 
     /// The where clause of the symbol.
     pub where_clause: WhereClause,
@@ -586,7 +609,7 @@ pub struct Field {
     pub parent_struct_id: arena::ID<Struct>,
 
     /// The syntax tree that was used to create the field.
-    pub syntax_tree: Arc<StructFieldSyntaxTree>,
+    pub syntax_tree: Option<Arc<StructFieldSyntaxTree>>,
 
     /// The order in which the field was declared.
     pub declaration_order: usize,
@@ -604,7 +627,7 @@ impl Symbol for arena::Symbol<Field> {
 /// Contains the data of the struct symbol.
 #[derive(Debug, Clone)]
 pub struct Struct {
-    /// The name of the struct
+    /// The name of the struct pub name: String,
     pub name: String,
 
     /// The accessibility of the struct
@@ -649,7 +672,7 @@ pub struct EnumVariant {
     pub declaration_order: usize,
 
     /// The syntax tree that was used to create the enum variant.
-    pub syntax_tree: Arc<Identifier>,
+    pub syntax_tree: Option<Arc<Identifier>>,
 }
 
 impl Symbol for arena::Symbol<EnumVariant> {
@@ -675,7 +698,7 @@ pub struct Enum {
     pub parent_module_id: arena::ID<Module>,
 
     /// The syntax tree that was used to create the enum.
-    pub syntax_tree: EnumSignatureSyntaxTree,
+    pub syntax_tree: Option<Arc<EnumSignatureSyntaxTree>>,
 
     /// Maps the name of the enum variant to the ID of the enum variant.
     pub variant_ids_by_name: HashMap<String, arena::ID<EnumVariant>>,

@@ -12,7 +12,7 @@ use crate::{
     Accessibility, Module,
 };
 
-mod input;
+pub(super) mod input;
 
 // Checks for the target input validity
 pub(super) fn target_check(targets: &[Target]) -> std::result::Result<(), BuildError> {

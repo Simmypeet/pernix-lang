@@ -218,7 +218,7 @@ impl Table {
                     .get_genericable(genericable_id)
                     .unwrap()
                     .generic_parameters()
-                    .lifetime_parameter_id_by_name
+                    .lifetime_parameter_ids_by_name
                     .get(identifier.span.str())
                     .copied()
                 {
@@ -261,7 +261,7 @@ impl Table {
 
                     // redefinition check
                     if let Err(error) = Self::redefinition_check(
-                        &generic_parameters.lifetime_parameter_id_by_name,
+                        &generic_parameters.lifetime_parameter_ids_by_name,
                         &lt.identifier,
                     ) {
                         handler.recieve(Error::LifetimeParameterRedefinition(error));
@@ -286,7 +286,7 @@ impl Table {
                     });
 
                     generic_parameters
-                        .lifetime_parameter_id_by_name
+                        .lifetime_parameter_ids_by_name
                         .insert(lt.identifier.span.str().to_string(), lifetime_parameter_id);
 
                     generic_parameters
@@ -405,7 +405,7 @@ impl Table {
             self.trait_functions[trait_function_id]
                 .function_signature
                 .generics
-                .generic_parameters = generic_parameters;
+                .parameters = generic_parameters;
         }
 
         for parameter in function_signature_syntax_tree
@@ -510,7 +510,7 @@ impl Table {
             let generic_parameters =
                 self.create_generic_parameters(trait_id.into(), generic_parameters, handler);
 
-            self.traits[trait_id].generics.generic_parameters = generic_parameters;
+            self.traits[trait_id].generics.parameters = generic_parameters;
         }
 
         for trait_member in trait_syntax_tree.body.members {
@@ -582,7 +582,7 @@ impl Table {
             let generic_parameters =
                 self.create_generic_parameters(function_id.into(), generic_parameters, handler);
 
-            self.functions[function_id].generics.generic_parameters = generic_parameters;
+            self.functions[function_id].generics.parameters = generic_parameters;
         }
 
         for parameter in function_syntax_tree
@@ -644,7 +644,7 @@ impl Table {
             let generic_parameters =
                 self.create_generic_parameters(struct_id.into(), generic_parameters, handler);
 
-            self.structs[struct_id].generics.generic_parameters = generic_parameters;
+            self.structs[struct_id].generics.parameters = generic_parameters;
         }
 
         for member in struct_syntax_tree.body.members {
@@ -670,7 +670,7 @@ impl Table {
                         name: field_name.clone(),
                         accessibility: field_accessibility,
                         parent_struct_id: struct_id,
-                        syntax_tree: Arc::new(field),
+                        syntax_tree: Some(Arc::new(field)),
                         declaration_order: struct_symbol.field_order.len(),
                         ty: ty::Type::PrimitiveType(PrimitiveType::Void), // will be replaced later
                     });
@@ -719,7 +719,7 @@ impl Table {
             name: enum_syntax_tree.signature.identifier.span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&enum_syntax_tree.access_modifier),
             parent_module_id,
-            syntax_tree: enum_syntax_tree.signature,
+            syntax_tree: Some(Arc::new(enum_syntax_tree.signature)),
             variant_ids_by_name: HashMap::new(), // will be filled later
             variant_order: Vec::new(),           // will be filled later,
         });
@@ -745,7 +745,7 @@ impl Table {
                 name: name.clone(),
                 parent_enum_id: enum_id,
                 declaration_order: enum_symbol.variant_order.len(),
-                syntax_tree: Arc::new(variant),
+                syntax_tree: Some(Arc::new(variant)),
             });
 
             enum_symbol.variant_ids_by_name.insert(name, variant_id);
@@ -754,3 +754,6 @@ impl Table {
         enum_id
     }
 }
+
+#[cfg(test)]
+mod tests;
