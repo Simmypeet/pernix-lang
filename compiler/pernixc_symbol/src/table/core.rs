@@ -85,7 +85,7 @@ impl Table {
                 ty: Type::ReferenceType(crate::ty::ReferenceType {
                     operand: Box::new(Type::TypeParameter(type_parameter_id)),
                     qualifier: None,
-                    lifetime: None,
+                    lifetime_argument: None,
                 }),
                 is_mutable: false,
                 syntax_tree: None,
@@ -164,7 +164,7 @@ impl Table {
                 ty: Type::ReferenceType(crate::ty::ReferenceType {
                     operand: Box::new(Type::TypeParameter(type_parameter_id)),
                     qualifier: Some(ReferenceQualifier::Restrict),
-                    lifetime: None,
+                    lifetime_argument: None,
                 }),
                 is_mutable: false,
                 syntax_tree: None,

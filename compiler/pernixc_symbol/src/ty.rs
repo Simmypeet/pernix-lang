@@ -44,7 +44,7 @@ pub struct ReferenceType {
     pub qualifier: Option<ReferenceQualifier>,
 
     /// The optional lifetime of the reference.
-    pub lifetime: Option<LifetimeArgument>,
+    pub lifetime_argument: Option<LifetimeArgument>,
 }
 
 /// Represents a type from the struct.

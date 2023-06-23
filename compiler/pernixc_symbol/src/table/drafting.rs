@@ -19,6 +19,7 @@ use crate::{
     ID,
 };
 
+#[cfg(test)]
 mod input;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -572,7 +573,7 @@ impl Table {
                 generics: Generics::default(), // to be filled later
             },
             parent_module_id,
-            syntax_tree: Arc::new(function_syntax_tree.body),
+            syntax_tree: Some(Arc::new(function_syntax_tree.body)),
             accessibility: Accessibility::from_syntax_tree(&function_syntax_tree.access_modifier),
         });
 

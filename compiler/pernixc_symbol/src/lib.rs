@@ -33,6 +33,7 @@ use pernixc_syntax::syntax_tree::{
 };
 use pernixc_system::arena;
 
+#[cfg(test)]
 mod input;
 
 pub mod error;
@@ -825,7 +826,7 @@ pub struct Function {
     pub parent_module_id: arena::ID<Module>,
 
     /// The syntax tree of the function body.
-    pub syntax_tree: Arc<syntax_tree::item::FunctionBody>,
+    pub syntax_tree: Option<Arc<syntax_tree::item::FunctionBody>>,
 
     /// The accessibility of the function.
     pub accessibility: Accessibility,

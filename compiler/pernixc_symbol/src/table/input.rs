@@ -9,8 +9,9 @@ use proptest::{
 use super::Table;
 use crate::{
     ty::{self, ReferenceQualifier},
-    Enum, EnumVariant, GenericParameters, GlobalID, LifetimeArgument, Module, ModuleChildID,
-    Struct, Substitution, TraitTypeBound, TypeParameter, WhereClause,
+    Enum, EnumVariant, Field, Function, GenericParameters, GenericableID, GlobalID,
+    LifetimeArgument, LifetimeParameter, Module, ModuleChildID, Parameter, Struct, Substitution,
+    TraitTypeBound, TypeParameter, WhereClause,
 };
 
 impl Table {
@@ -69,11 +70,53 @@ impl Table {
                 }
                 ModuleChildID::Struct(struct_id) => self.write_struct(&mut file, struct_id)?,
                 ModuleChildID::Enum(enum_id) => self.write_enum(&mut file, enum_id)?,
-                ModuleChildID::Function(_) => todo!(),
+                ModuleChildID::Function(function_id) => {
+                    self.write_function(&mut file, function_id)?;
+                }
                 ModuleChildID::Type(_) => todo!(),
                 ModuleChildID::Trait(_) => todo!(),
             }
         }
+
+        Ok(())
+    }
+
+    fn write_function(
+        &self,
+        file: &mut std::fs::File,
+        function_id: arena::ID<Function>,
+    ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+
+        let function_symbol = &self.functions[function_id];
+        write!(file, "{}", function_symbol.name)?;
+
+        self.write_generic_parameters(file, &function_symbol.generics.parameters)?;
+
+        write!(file, "(")?;
+        {
+            let mut is_first = true;
+            for parameter in function_symbol
+                .parameter_order
+                .iter()
+                .copied()
+                .map(|x| &self.parameters[x])
+            {
+                if !is_first {
+                    write!(file, ", ")?;
+                }
+
+                write!(file, "{}: ", parameter.name)?;
+                self.write_ty_type(file, &parameter.ty)?;
+
+                is_first = true;
+            }
+        }
+        write!(file, ")")?;
+
+        self.write_where_caluse(file, &function_symbol.generics.where_clause)?;
+
+        writeln!(file, "{{}}")?;
 
         Ok(())
     }
@@ -277,7 +320,7 @@ impl Table {
 
         write!(file, "&")?;
 
-        if let Some(lifetime_argument) = reference_ty.lifetime {
+        if let Some(lifetime_argument) = reference_ty.lifetime_argument {
             match lifetime_argument {
                 LifetimeArgument::Static => write!(file, "'static ")?,
                 LifetimeArgument::Parameter(lt) => {
@@ -510,6 +553,321 @@ impl Table {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Type<'a> {
+    ty: &'a ty::Type,
+    table: &'a Table,
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn assert_substitution(
+    _input_table: &Table,
+    _output_table: &Table,
+    _input_substitution: &Substitution,
+    _output_substitution: &Substitution,
+) -> TestCaseResult {
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn assert_where_clause(
+    _input_table: &Table,
+    _output_table: &Table,
+    _input_where_clause: &WhereClause,
+    _output_where_clause: &WhereClause,
+) -> TestCaseResult {
+    Ok(())
+}
+
+fn assert_generic_parameters(
+    input_table: &Table,
+    output_table: &Table,
+    input_generic_parameters: &GenericParameters,
+    output_generic_parameters: &GenericParameters,
+) -> TestCaseResult {
+    prop_assert_eq!(
+        input_generic_parameters.lifetime_parameter_order.len(),
+        output_generic_parameters.lifetime_parameter_order.len()
+    );
+
+    for (input_lifetime_parameter_id, output_lifetime_parameter_id) in input_generic_parameters
+        .lifetime_parameter_order
+        .iter()
+        .copied()
+        .zip(
+            output_generic_parameters
+                .lifetime_parameter_order
+                .iter()
+                .copied(),
+        )
+    {
+        SymbolRef {
+            table: input_table,
+            symbol_id: input_lifetime_parameter_id,
+        }
+        .assert(&SymbolRef {
+            table: output_table,
+            symbol_id: output_lifetime_parameter_id,
+        })?;
+    }
+
+    prop_assert_eq!(
+        input_generic_parameters
+            .lifetime_parameter_ids_by_name
+            .keys()
+            .collect::<HashSet<_>>(),
+        output_generic_parameters
+            .lifetime_parameter_ids_by_name
+            .keys()
+            .collect::<HashSet<_>>()
+    );
+
+    prop_assert_eq!(
+        input_generic_parameters.type_parameter_order.len(),
+        output_generic_parameters.type_parameter_order.len()
+    );
+
+    for (input_type_parameter_id, output_type_parameter_id) in input_generic_parameters
+        .type_parameter_order
+        .iter()
+        .copied()
+        .zip(
+            output_generic_parameters
+                .type_parameter_order
+                .iter()
+                .copied(),
+        )
+    {
+        SymbolRef {
+            table: input_table,
+            symbol_id: input_type_parameter_id,
+        }
+        .assert(&SymbolRef {
+            table: output_table,
+            symbol_id: output_type_parameter_id,
+        })?;
+    }
+
+    prop_assert_eq!(
+        input_generic_parameters
+            .type_parameter_ids_by_name
+            .keys()
+            .collect::<HashSet<_>>(),
+        output_generic_parameters
+            .type_parameter_ids_by_name
+            .keys()
+            .collect::<HashSet<_>>()
+    );
+
+    Ok(())
+}
+
+fn assert_genericable_id(
+    input_table: &Table,
+    output_table: &Table,
+    input_id: GenericableID,
+    output_id: GenericableID,
+) -> TestCaseResult {
+    match (input_id, output_id) {
+        (GenericableID::Struct(input), GenericableID::Struct(output)) => {
+            prop_assert_eq!(
+                input_table.get_qualified_name(input.into()),
+                output_table.get_qualified_name(output.into())
+            );
+
+            Ok(())
+        }
+        (GenericableID::Trait(input), GenericableID::Trait(output)) => {
+            prop_assert_eq!(
+                input_table.get_qualified_name(input.into()),
+                output_table.get_qualified_name(output.into())
+            );
+
+            Ok(())
+        }
+        (GenericableID::TraitType(input), GenericableID::TraitType(output)) => {
+            prop_assert_eq!(
+                input_table.get_qualified_name(input.into()),
+                output_table.get_qualified_name(output.into())
+            );
+
+            Ok(())
+        }
+        (GenericableID::TraitFunction(input), GenericableID::TraitFunction(output)) => {
+            prop_assert_eq!(
+                input_table.get_qualified_name(input.into()),
+                output_table.get_qualified_name(output.into())
+            );
+
+            Ok(())
+        }
+
+        // Adds proper assertion for the implements
+        (GenericableID::Implements(..), GenericableID::Implements(..))
+        | (GenericableID::ImplementsType(..), GenericableID::ImplementsType(..))
+        | (GenericableID::ImplementsFunction(..), GenericableID::ImplementsFunction(..)) => Ok(()),
+
+        (GenericableID::Function(input), GenericableID::Function(output)) => {
+            prop_assert_eq!(
+                input_table.get_qualified_name(input.into()),
+                output_table.get_qualified_name(output.into())
+            );
+
+            Ok(())
+        }
+        (GenericableID::Type(input), GenericableID::Type(output)) => {
+            prop_assert_eq!(
+                input_table.get_qualified_name(input.into()),
+                output_table.get_qualified_name(output.into())
+            );
+
+            Ok(())
+        }
+
+        (input, output) => Err(TestCaseError::fail(format!(
+            "expected {input:?}, got {output:?}"
+        ))),
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, LifetimeParameter> {
+    type Output = SymbolRef<'a, LifetimeParameter>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        let input_table = self.table;
+        let output_table = output.table;
+
+        assert_genericable_id(
+            input_table,
+            output_table,
+            self.parent_genericable_id,
+            output.parent_genericable_id,
+        )
+    }
+}
+
+impl<'a> Input for Type<'a> {
+    type Output = Type<'a>;
+
+    #[allow(clippy::too_many_lines)]
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self.ty, output.ty) {
+            (ty::Type::TraitType(input_trait), ty::Type::TraitType(output_trait)) => {
+                prop_assert_eq!(
+                    self.table
+                        .get_qualified_name(input_trait.trait_type_id.into()),
+                    output
+                        .table
+                        .get_qualified_name(output_trait.trait_type_id.into())
+                );
+
+                assert_substitution(
+                    self.table,
+                    output.table,
+                    &input_trait.substitution,
+                    &output_trait.substitution,
+                )?;
+
+                Ok(())
+            }
+            (ty::Type::Struct(input_struct), ty::Type::Struct(output_struct)) => {
+                prop_assert_eq!(
+                    self.table.get_qualified_name(input_struct.struct_id.into()),
+                    output
+                        .table
+                        .get_qualified_name(output_struct.struct_id.into())
+                );
+
+                assert_substitution(
+                    self.table,
+                    output.table,
+                    &input_struct.substitution,
+                    &output_struct.substitution,
+                )?;
+
+                Ok(())
+            }
+            (ty::Type::PrimitiveType(input), ty::Type::PrimitiveType(output)) => {
+                prop_assert_eq!(input, output);
+                Ok(())
+            }
+            (
+                ty::Type::ReferenceType(input_reference_type),
+                ty::Type::ReferenceType(output_reference_type),
+            ) => {
+                prop_assert_eq!(
+                    &input_reference_type.qualifier,
+                    &output_reference_type.qualifier
+                );
+                match (
+                    &input_reference_type.qualifier,
+                    &output_reference_type.qualifier,
+                ) {
+                    (None, None) => (),
+                    (Some(input_reference_qualififer), Some(output_reference_qualififer)) => {
+                        prop_assert_eq!(input_reference_qualififer, output_reference_qualififer);
+                    }
+                    (input, output) => {
+                        return Err(TestCaseError::fail(format!(
+                            "expected {input:#?}, got {output:#?}",
+                        )))
+                    }
+                }
+
+                match (
+                    &input_reference_type.lifetime_argument,
+                    &output_reference_type.lifetime_argument,
+                ) {
+                    (None, None) => {}
+                    (Some(input_lifetime_argument), Some(output_lifetime_argument)) => {
+                        match (input_lifetime_argument, output_lifetime_argument) {
+                            (LifetimeArgument::Static, LifetimeArgument::Static) => {}
+                            (
+                                LifetimeArgument::Parameter(input_lifetime_parameter),
+                                LifetimeArgument::Parameter(output_lifetime_parameter),
+                            ) => SymbolRef {
+                                table: self.table,
+                                symbol_id: *input_lifetime_parameter,
+                            }
+                            .assert(&SymbolRef {
+                                table: output.table,
+                                symbol_id: *output_lifetime_parameter,
+                            })?,
+                            (input, output) => {
+                                return Err(TestCaseError::fail(format!(
+                                    "expected {input:#?}, got {output:#?}",
+                                )))
+                            }
+                        }
+                    }
+                    (input, output) => {
+                        return Err(TestCaseError::fail(format!(
+                            "expected {input:#?}, got {output:#?}",
+                        )))
+                    }
+                }
+
+                Ok(())
+            }
+            (
+                ty::Type::TypeParameter(input_type_parameter),
+                ty::Type::TypeParameter(output_type_parameter),
+            ) => SymbolRef {
+                table: self.table,
+                symbol_id: *input_type_parameter,
+            }
+            .assert(&SymbolRef {
+                table: output.table,
+                symbol_id: *output_type_parameter,
+            }),
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:#?}, got {output:#?}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct SymbolRef<'a, T> {
     table: &'a Table,
@@ -532,6 +890,42 @@ impl<'a> Deref for SymbolRef<'a, EnumVariant> {
     type Target = EnumVariant;
 
     fn deref(&self) -> &Self::Target { &self.table.enum_variants[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, Struct> {
+    type Target = Struct;
+
+    fn deref(&self) -> &Self::Target { &self.table.structs[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, Field> {
+    type Target = Field;
+
+    fn deref(&self) -> &Self::Target { &self.table.fields[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, LifetimeParameter> {
+    type Target = LifetimeParameter;
+
+    fn deref(&self) -> &Self::Target { &self.table.lifetime_parameters[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, TypeParameter> {
+    type Target = TypeParameter;
+
+    fn deref(&self) -> &Self::Target { &self.table.type_parameters[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, Function> {
+    type Target = Function;
+
+    fn deref(&self) -> &Self::Target { &self.table.functions[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, Parameter> {
+    type Target = Parameter;
+
+    fn deref(&self) -> &Self::Target { &self.table.parameters[self.symbol_id] }
 }
 
 impl Input for Table {
@@ -559,6 +953,169 @@ impl Input for Table {
             .assert(&SymbolRef {
                 table: output,
                 symbol_id: output_module_id,
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, Parameter> {
+    type Output = SymbolRef<'a, Parameter>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        prop_assert_eq!(self.is_mutable, output.is_mutable);
+        Type {
+            ty: &self.ty,
+            table: self.table,
+        }
+        .assert(&Type {
+            ty: &output.ty,
+            table: output.table,
+        })
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, TypeParameter> {
+    type Output = SymbolRef<'a, TypeParameter>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+
+        assert_genericable_id(
+            self.table,
+            output.table,
+            self.parent_genericable_id,
+            output.parent_genericable_id,
+        )
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, Function> {
+    type Output = SymbolRef<'a, Function>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        prop_assert_eq!(&self.accessibility, &output.accessibility);
+        prop_assert_eq!(
+            self.table.get_qualified_name(self.parent_module_id.into()),
+            output
+                .table
+                .get_qualified_name(output.parent_module_id.into())
+        );
+
+        assert_generic_parameters(
+            self.table,
+            output.table,
+            &self.generics.parameters,
+            &output.generics.parameters,
+        )?;
+        assert_where_clause(
+            self.table,
+            output.table,
+            &self.generics.where_clause,
+            &output.generics.where_clause,
+        )?;
+
+        prop_assert_eq!(self.parameter_order.len(), output.parameter_order.len());
+
+        for (input_parameter_id, output_parameter_id) in self
+            .parameter_order
+            .iter()
+            .zip(output.parameter_order.iter())
+        {
+            SymbolRef {
+                table: self.table,
+                symbol_id: *input_parameter_id,
+            }
+            .assert(&SymbolRef {
+                table: output.table,
+                symbol_id: *output_parameter_id,
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, Field> {
+    type Output = SymbolRef<'a, Field>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        prop_assert_eq!(self.accessibility, output.accessibility);
+        prop_assert_eq!(
+            self.table.get_qualified_name(self.parent_struct_id.into()),
+            output
+                .table
+                .get_qualified_name(output.parent_struct_id.into())
+        );
+
+        Type {
+            ty: &self.ty,
+            table: self.table,
+        }
+        .assert(&Type {
+            ty: &output.ty,
+            table: output.table,
+        })?;
+
+        Ok(())
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, Struct> {
+    type Output = SymbolRef<'a, Struct>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        prop_assert_eq!(&self.accessibility, &output.accessibility);
+        prop_assert_eq!(
+            self.field_order
+                .iter()
+                .copied()
+                .map(|x| &self.table.fields[x].name)
+                .collect::<Vec<_>>(),
+            output
+                .field_order
+                .iter()
+                .copied()
+                .map(|x| &output.table.fields[x].name)
+                .collect::<Vec<_>>()
+        );
+
+        prop_assert_eq!(
+            self.field_ids_by_name.keys().collect::<HashSet<_>>(),
+            output.field_ids_by_name.keys().collect::<HashSet<_>>()
+        );
+
+        assert_generic_parameters(
+            self.table,
+            output.table,
+            &self.generics.parameters,
+            &output.generics.parameters,
+        )?;
+        assert_where_clause(
+            self.table,
+            output.table,
+            &self.generics.where_clause,
+            &output.generics.where_clause,
+        )?;
+
+        for (input_field_id, output_field_id) in self
+            .field_order
+            .iter()
+            .copied()
+            .zip(output.field_order.iter().copied())
+        {
+            SymbolRef {
+                table: self.table,
+                symbol_id: input_field_id,
+            }
+            .assert(&SymbolRef {
+                table: output.table,
+                symbol_id: output_field_id,
             })?;
         }
 
@@ -714,10 +1271,32 @@ impl<'a> Input for SymbolRef<'a, Module> {
                     })?;
                 }
 
-                (ModuleChildID::Struct(_), ModuleChildID::Struct(_))
-                | (ModuleChildID::Function(_), ModuleChildID::Function(_))
-                | (ModuleChildID::Type(_), ModuleChildID::Type(_))
-                | (ModuleChildID::Trait(_), ModuleChildID::Trait(_)) => (),
+                (
+                    ModuleChildID::Struct(input_struct_id),
+                    ModuleChildID::Struct(output_struct_id),
+                ) => {
+                    SymbolRef {
+                        table: self.table,
+                        symbol_id: input_struct_id,
+                    }
+                    .assert(&SymbolRef {
+                        table: output.table,
+                        symbol_id: output_struct_id,
+                    })?;
+                }
+                (
+                    ModuleChildID::Function(input_function_id),
+                    ModuleChildID::Function(output_function_id),
+                ) => SymbolRef {
+                    table: self.table,
+                    symbol_id: input_function_id,
+                }
+                .assert(&SymbolRef {
+                    table: output.table,
+                    symbol_id: output_function_id,
+                })?,
+                (ModuleChildID::Type(_), ModuleChildID::Type(_)) => todo!(),
+                (ModuleChildID::Trait(_), ModuleChildID::Trait(_)) => todo!(),
                 (_, _) => {
                     return Err(TestCaseError::fail(format!(
                         "expected {input_module_child_id:?}, got {output_module_child_id:?}",

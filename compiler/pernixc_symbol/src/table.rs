@@ -17,6 +17,7 @@ use crate::{
     TypeParameter, ID,
 };
 
+#[cfg(test)]
 mod input;
 
 mod core;

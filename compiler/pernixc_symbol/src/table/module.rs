@@ -12,6 +12,7 @@ use crate::{
     Accessibility, Module,
 };
 
+#[cfg(test)]
 pub(super) mod input;
 
 // Checks for the target input validity
