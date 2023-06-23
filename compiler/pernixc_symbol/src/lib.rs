@@ -859,7 +859,7 @@ pub struct Type {
     pub generic_parameters: GenericParameters,
 
     /// The syntax tree that was used to create the type alias.
-    pub syntax_tree: Arc<TypeSyntaxTree>,
+    pub syntax_tree: Option<Arc<TypeSyntaxTree>>,
 }
 
 impl Genericable for arena::Symbol<Type> {

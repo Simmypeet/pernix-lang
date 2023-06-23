@@ -9,7 +9,7 @@ use proptest::{
 
 use crate::{
     table::{module::input::table_with_module_strategy, Table},
-    ty, Accessibility, GenericableID, Generics, Module,
+    ty, Accessibility, GenericableID, Generics, Module, ModuleChildID,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,10 +87,26 @@ fn function_strategy() -> impl Strategy<Value = Function> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct Type {
+    accessibility: Accessibility,
+    generic_parameters: GenericParameters,
+}
+
+fn type_strategy() -> impl Strategy<Value = Type> {
+    (Accessibility::arbitrary(), generic_parameters()).prop_map(
+        |(accessibility, generic_parameters)| Type {
+            accessibility,
+            generic_parameters,
+        },
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Drafting {
     Enum(Enum),
     Struct(Struct),
     Function(Function),
+    Type(Type),
 }
 
 impl Table {
@@ -134,7 +150,7 @@ impl Table {
         parent_module_id: arena::ID<Module>,
         name: String,
         drafting: Function,
-    ) {
+    ) -> ModuleChildID {
         let function_id = self.functions.push(crate::Function {
             function_signature: crate::FunctionSignature {
                 name,
@@ -174,6 +190,8 @@ impl Table {
                 .insert(parameter.0, parameter_id);
             function_symbol.parameter_order.push(parameter_id);
         }
+
+        function_id.into()
     }
 
     fn apply_struct_drafting(
@@ -181,7 +199,7 @@ impl Table {
         parent_module_id: arena::ID<Module>,
         name: String,
         drafting: Struct,
-    ) {
+    ) -> ModuleChildID {
         let struct_id = self.structs.push(crate::Struct {
             name,
             accessibility: drafting.accessibility,
@@ -217,6 +235,34 @@ impl Table {
                 .insert(field.clone(), field_id);
             struct_symbol.field_order.push(field_id);
         }
+
+        struct_id.into()
+    }
+
+    fn apply_type_drafting(
+        &mut self,
+        parent_module_id: arena::ID<Module>,
+        name: String,
+        drafting: &Type,
+    ) -> ModuleChildID {
+        let type_id = self.types.push(crate::Type {
+            name,
+            accessibility: drafting.accessibility,
+            parent_module_id,
+            alias: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+            generic_parameters: crate::GenericParameters::default(), // to be filled later
+            syntax_tree: None,
+        });
+
+        let mut generic_parameters = crate::GenericParameters::default();
+        self.apply_generic_parameters(
+            type_id.into(),
+            &drafting.generic_parameters,
+            &mut generic_parameters,
+        );
+        self.types[type_id].generic_parameters = generic_parameters;
+
+        type_id.into()
     }
 
     fn apply_enum_drafting(
@@ -224,7 +270,7 @@ impl Table {
         parent_module_id: arena::ID<Module>,
         name: String,
         drafting: &Enum,
-    ) {
+    ) -> ModuleChildID {
         let enum_id = self.enums.push(crate::Enum {
             name,
             accessibility: drafting.accessibility,
@@ -248,6 +294,8 @@ impl Table {
                 .insert(variant.clone(), enum_variant_id);
             enum_symbol.variant_order.push(enum_variant_id);
         }
+
+        enum_id.into()
     }
 }
 
@@ -263,6 +311,7 @@ pub(in crate::table) fn table_with_drafting() -> impl Strategy<Value = Table> {
                         enum_strategy().prop_map(Drafting::Enum),
                         struct_strategy().prop_map(Drafting::Struct),
                         function_strategy().prop_map(Drafting::Function),
+                        type_strategy().prop_map(Drafting::Type),
                     ],
                     0..=4,
                 ),
@@ -280,17 +329,24 @@ pub(in crate::table) fn table_with_drafting() -> impl Strategy<Value = Table> {
                     continue;
                 }
 
-                match drafing {
+                let module_child_id = match drafing {
                     Drafting::Enum(drafting) => {
-                        table.apply_enum_drafting(module_id, name, &drafting);
+                        table.apply_enum_drafting(module_id, name.clone(), &drafting)
                     }
                     Drafting::Function(drafting) => {
-                        table.apply_function_drafting(module_id, name, drafting);
+                        table.apply_function_drafting(module_id, name.clone(), drafting)
                     }
                     Drafting::Struct(drafting) => {
-                        table.apply_struct_drafting(module_id, name, drafting);
+                        table.apply_struct_drafting(module_id, name.clone(), drafting)
                     }
-                }
+                    Drafting::Type(drafting) => {
+                        table.apply_type_drafting(module_id, name.clone(), &drafting)
+                    }
+                };
+
+                table.modules[module_id]
+                    .module_child_ids_by_name
+                    .insert(name, module_child_id);
             }
         }
 

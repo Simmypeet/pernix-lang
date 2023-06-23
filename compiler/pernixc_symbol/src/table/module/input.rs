@@ -107,7 +107,10 @@ pub(in crate::table) fn table_with_module_strategy() -> impl Strategy<Value = Ta
     targets.prop_map(|targets| {
         let mut table = Table::new();
         for (name, module_tree) in targets {
-            table.new_module_from_tree(module_tree, name, Accessibility::Public, None);
+            let module_id =
+                table.new_module_from_tree(module_tree, name.clone(), Accessibility::Public, None);
+
+            table.target_root_module_ids_by_name.insert(name, module_id);
         }
         table
     })

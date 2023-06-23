@@ -196,24 +196,6 @@ impl KeywordKind {
             Self::Is => "is",
         }
     }
-
-    /// Parses a string into its corresponding keyword.
-    #[must_use]
-    pub fn from_string(str: &str) -> Option<Self> {
-        lazy_static! {
-            static ref STRING_KEYWORD_MAP: HashMap<&'static str, KeywordKind> = {
-                let mut map = HashMap::new();
-
-                for keyword in KeywordKind::iter() {
-                    map.insert(keyword.as_str(), keyword);
-                }
-
-                map
-            };
-        }
-
-        STRING_KEYWORD_MAP.get(str).copied()
-    }
 }
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming language.
@@ -415,7 +397,7 @@ impl Token {
         let word = span.str();
 
         // Checks if the word is a keyword
-        KeywordKind::from_string(word).map_or_else(
+        KeywordKind::from_str(word).ok().map_or_else(
             || Identifier { span: span.clone() }.into(),
             |kw| {
                 Keyword {

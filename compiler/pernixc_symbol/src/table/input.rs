@@ -51,34 +51,64 @@ impl Table {
         }
 
         // write submodules
-        for module_child_id in module.module_child_ids_by_name.values().copied() {
+        for module_child_id in module
+            .module_child_ids_by_name
+            .values()
+            .copied()
+            .filter_map(|x| x.into_module().ok())
+        {
+            let submodule_name = self.modules[module_child_id].name.clone();
+            let submodule_accessibility = self.modules[module_child_id].accessibility;
+
+            if module.parent_module_id.is_none() {
+                self.create_file(module_child_id, parent_directory)?;
+            } else {
+                self.create_file(module_child_id, &file_path.with_extension(""))?;
+            }
+
+            writeln!(file, "{submodule_accessibility} module {submodule_name};",)?;
+        }
+
+        for module_child_id in module
+            .module_child_ids_by_name
+            .values()
+            .copied()
+            .filter(|x| x.as_module().is_none())
+        {
             match module_child_id {
-                ModuleChildID::Module(module_id) => {
-                    let submodule = self.modules[module_id].clone();
-
-                    if module.parent_module_id.is_none() {
-                        self.create_file(module_id, parent_directory)?;
-                    } else {
-                        self.create_file(module_id, &file_path.with_extension(""))?;
-                    }
-
-                    writeln!(
-                        file,
-                        "{} module {};",
-                        submodule.accessibility, submodule.name
-                    )?;
+                ModuleChildID::Module(..) => {
+                    unreachable!()
                 }
                 ModuleChildID::Struct(struct_id) => self.write_struct(&mut file, struct_id)?,
                 ModuleChildID::Enum(enum_id) => self.write_enum(&mut file, enum_id)?,
                 ModuleChildID::Function(function_id) => {
                     self.write_function(&mut file, function_id)?;
                 }
-                ModuleChildID::Type(_) => todo!(),
-                ModuleChildID::Trait(_) => todo!(),
+                ModuleChildID::Type(type_id) => self.write_type(&mut file, type_id)?,
+                ModuleChildID::Trait(_) => (),
             }
         }
 
         Ok(())
+    }
+
+    fn write_type(
+        &self,
+        file: &mut std::fs::File,
+        type_id: arena::ID<crate::Type>,
+    ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+
+        let type_symbol = &self.types[type_id];
+        write!(
+            file,
+            "{} type {}",
+            type_symbol.accessibility, type_symbol.name
+        )?;
+        self.write_generic_parameters(file, &type_symbol.generic_parameters)?;
+        write!(file, " = ")?;
+        self.write_ty_type(file, &type_symbol.alias)?;
+        writeln!(file, ";")
     }
 
     fn write_function(
@@ -89,7 +119,11 @@ impl Table {
         use std::io::Write;
 
         let function_symbol = &self.functions[function_id];
-        write!(file, "{}", function_symbol.name)?;
+        write!(
+            file,
+            "{} {}",
+            function_symbol.accessibility, function_symbol.name
+        )?;
 
         self.write_generic_parameters(file, &function_symbol.generics.parameters)?;
 
@@ -106,14 +140,19 @@ impl Table {
                     write!(file, ", ")?;
                 }
 
+                if parameter.is_mutable {
+                    write!(file, "mutable ")?;
+                }
+
                 write!(file, "{}: ", parameter.name)?;
                 self.write_ty_type(file, &parameter.ty)?;
 
-                is_first = true;
+                is_first = false;
             }
         }
-        write!(file, ")")?;
+        write!(file, "): ")?;
 
+        self.write_ty_type(file, &function_symbol.return_type)?;
         self.write_where_caluse(file, &function_symbol.generics.where_clause)?;
 
         writeln!(file, "{{}}")?;
@@ -130,7 +169,7 @@ impl Table {
 
         write!(
             file,
-            "{} {} enum {{",
+            "{} enum {} {{",
             self.enums[enum_id].accessibility, self.enums[enum_id].name
         )?;
 
@@ -152,7 +191,7 @@ impl Table {
             first = false;
         }
 
-        Ok(())
+        writeln!(file, "}}")
     }
 
     fn write_generic_parameters(
@@ -162,26 +201,28 @@ impl Table {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
 
-        if !generic_parameters.lifetime_parameter_order.is_empty()
-            || !generic_parameters.type_parameter_order.is_empty()
+        if generic_parameters.lifetime_parameter_order.is_empty()
+            && generic_parameters.type_parameter_order.is_empty()
         {
-            let generic_parameters = generic_parameters
-                .lifetime_parameter_order
-                .iter()
-                .copied()
-                .map(|x| format!("`{}", self.lifetime_parameters[x].name.clone()))
-                .chain(
-                    generic_parameters
-                        .type_parameter_order
-                        .iter()
-                        .copied()
-                        .map(|x| self.type_parameters[x].name.clone()),
-                )
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            write!(file, "<{generic_parameters}>")?;
+            return Ok(());
         }
+
+        let generic_parameters = generic_parameters
+            .lifetime_parameter_order
+            .iter()
+            .copied()
+            .map(|x| format!("'{}", self.lifetime_parameters[x].name.clone()))
+            .chain(
+                generic_parameters
+                    .type_parameter_order
+                    .iter()
+                    .copied()
+                    .map(|x| self.type_parameters[x].name.clone()),
+            )
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        write!(file, "<{generic_parameters}>")?;
 
         Ok(())
     }
@@ -501,13 +542,13 @@ impl Table {
         use std::io::Write;
         let struct_symbol = &self.structs[struct_id];
 
-        write!(file, "{} struct", struct_symbol.accessibility)?;
+        write!(
+            file,
+            "{} struct {}",
+            struct_symbol.accessibility, struct_symbol.name
+        )?;
 
-        // write generics parameters
         self.write_generic_parameters(file, &struct_symbol.generics.parameters)?;
-
-        write!(file, " {}", struct_symbol.name)?;
-
         self.write_where_caluse(file, &struct_symbol.generics.where_clause)?;
 
         write!(file, " {{")?;
@@ -1196,6 +1237,7 @@ impl<'a> Input for SymbolRef<'a, Enum> {
 impl<'a> Input for SymbolRef<'a, Module> {
     type Output = SymbolRef<'a, Module>;
 
+    #[allow(clippy::too_many_lines)]
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(&self.name, &output.name);
         prop_assert_eq!(self.accessibility, output.accessibility);
@@ -1295,8 +1337,8 @@ impl<'a> Input for SymbolRef<'a, Module> {
                     table: output.table,
                     symbol_id: output_function_id,
                 })?,
-                (ModuleChildID::Type(_), ModuleChildID::Type(_)) => todo!(),
-                (ModuleChildID::Trait(_), ModuleChildID::Trait(_)) => todo!(),
+                (ModuleChildID::Type(_), ModuleChildID::Type(_))
+                | (ModuleChildID::Trait(_), ModuleChildID::Trait(_)) => (),
                 (_, _) => {
                     return Err(TestCaseError::fail(format!(
                         "expected {input_module_child_id:?}, got {output_module_child_id:?}",

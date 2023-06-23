@@ -348,7 +348,7 @@ impl Table {
             parent_module_id,
             alias: ty::Type::PrimitiveType(PrimitiveType::Void), // to be filled later
             generic_parameters: GenericParameters::default(),    // to be filled later
-            syntax_tree: type_syntax_tree.clone(),
+            syntax_tree: Some(type_syntax_tree.clone()),
         });
 
         // update generic parameters
@@ -750,6 +750,7 @@ impl Table {
             });
 
             enum_symbol.variant_ids_by_name.insert(name, variant_id);
+            enum_symbol.variant_order.push(variant_id);
         }
 
         enum_id
