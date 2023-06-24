@@ -472,7 +472,7 @@ impl Table {
                 .to_string(),
             generic_parameters: GenericParameters::default(), // to be filled later
             parent_trait_id,
-            syntax_tree: trait_type_syntax_tree.clone(),
+            syntax_tree: Some(trait_type_syntax_tree.clone()),
         });
 
         if let Some(generic_parameters) = trait_type_syntax_tree

@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use derive_more::From;
+use enum_as_inner::EnumAsInner;
 use pernixc_system::arena;
 use proptest::{
     prelude::Arbitrary,
@@ -11,6 +13,86 @@ use crate::{
     table::{module::input::table_with_module_strategy, Table},
     ty, Accessibility, GenericableID, Generics, Module, ModuleChildID,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TraitFunction {
+    parameters: Vec<(String, bool)>,
+    generic_parameters: GenericParameters,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TraitType {
+    generic_parameters: GenericParameters,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner, From)]
+enum TraitMember {
+    Type(TraitType),
+    Function(TraitFunction),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Trait {
+    accessibility: Accessibility,
+    generic_parameters: GenericParameters,
+    trait_members_by_name: HashMap<String, TraitMember>,
+}
+
+fn trait_type_strategy(
+    parent_generic_parameters: GenericParameters,
+) -> impl Strategy<Value = TraitType> {
+    generic_parameters_strategy(Some(parent_generic_parameters))
+        .prop_map(|generic_parameters| TraitType { generic_parameters })
+}
+
+fn trait_function_strategy(
+    parent_generic_parameters: GenericParameters,
+) -> impl Strategy<Value = TraitFunction> {
+    (
+        proptest::collection::hash_map(crate::input::name(), proptest::bool::ANY, 0..=4),
+        generic_parameters_strategy(Some(parent_generic_parameters)),
+    )
+        .prop_map(|(parameters, generic_parameters)| TraitFunction {
+            parameters: parameters
+                .into_iter()
+                .map(|(name, is_mutable)| (name, is_mutable))
+                .collect(),
+            generic_parameters,
+        })
+}
+
+fn trait_strategy() -> impl Strategy<Value = Trait> {
+    let empty_trait = (
+        Accessibility::arbitrary(),
+        generic_parameters_strategy(None),
+    )
+        .prop_map(|(accessibility, generic_parameters)| Trait {
+            accessibility,
+            generic_parameters,
+            trait_members_by_name: HashMap::new(),
+        });
+
+    empty_trait
+        .prop_flat_map(|empty_trait| {
+            (
+                proptest::collection::hash_map(
+                    crate::input::name(),
+                    prop_oneof![
+                        trait_function_strategy(empty_trait.generic_parameters.clone())
+                            .prop_map(TraitMember::Function),
+                        trait_type_strategy(empty_trait.generic_parameters.clone())
+                            .prop_map(TraitMember::Type)
+                    ],
+                    0..=4,
+                ),
+                Just(empty_trait),
+            )
+        })
+        .prop_map(|(trait_members_by_name, mut empty_trait)| {
+            empty_trait.trait_members_by_name = trait_members_by_name;
+            empty_trait
+        })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Enum {
@@ -35,15 +117,33 @@ struct GenericParameters {
     type_parameters: HashSet<String>,
 }
 
-fn generic_parameters() -> impl Strategy<Value = GenericParameters> {
+fn generic_parameters_strategy(
+    parent: Option<GenericParameters>,
+) -> impl Strategy<Value = GenericParameters> {
     (
         proptest::collection::hash_set(crate::input::name(), 0..=3),
         proptest::collection::hash_set(crate::input::name(), 0..=3),
     )
-        .prop_map(|(lifetime_parameters, type_parameters)| GenericParameters {
-            lifetime_parameters,
-            type_parameters,
-        })
+        .prop_map(
+            move |(lifetime_parameters, type_parameters)| GenericParameters {
+                lifetime_parameters: if let Some(parent) = parent.clone() {
+                    lifetime_parameters
+                        .into_iter()
+                        .filter(|name| !parent.lifetime_parameters.contains(name))
+                        .collect()
+                } else {
+                    lifetime_parameters
+                },
+                type_parameters: if let Some(parent) = parent.clone() {
+                    type_parameters
+                        .into_iter()
+                        .filter(|name| !parent.type_parameters.contains(name))
+                        .collect()
+                } else {
+                    type_parameters
+                },
+            },
+        )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,7 +157,7 @@ fn struct_strategy() -> impl Strategy<Value = Struct> {
     (
         Accessibility::arbitrary(),
         proptest::collection::hash_set(crate::input::name(), 0..=4),
-        generic_parameters(),
+        generic_parameters_strategy(None),
     )
         .prop_map(|(accessibility, fields, generic_parameters)| Struct {
             accessibility,
@@ -77,7 +177,7 @@ fn function_strategy() -> impl Strategy<Value = Function> {
     (
         Accessibility::arbitrary(),
         proptest::collection::hash_map(crate::input::name(), proptest::bool::ANY, 0..=4),
-        generic_parameters(),
+        generic_parameters_strategy(None),
     )
         .prop_map(|(accessibility, parameters, generic_parameters)| Function {
             accessibility,
@@ -93,12 +193,14 @@ struct Type {
 }
 
 fn type_strategy() -> impl Strategy<Value = Type> {
-    (Accessibility::arbitrary(), generic_parameters()).prop_map(
-        |(accessibility, generic_parameters)| Type {
+    (
+        Accessibility::arbitrary(),
+        generic_parameters_strategy(None),
+    )
+        .prop_map(|(accessibility, generic_parameters)| Type {
             accessibility,
             generic_parameters,
-        },
-    )
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +209,7 @@ enum Drafting {
     Struct(Struct),
     Function(Function),
     Type(Type),
+    Trait(Trait),
 }
 
 impl Table {
@@ -265,6 +368,105 @@ impl Table {
         type_id.into()
     }
 
+    fn apply_trait_drafting(
+        &mut self,
+        parent_module_id: arena::ID<Module>,
+        name: String,
+        drafting: Trait,
+    ) -> ModuleChildID {
+        let trait_id = self.traits.push(crate::Trait {
+            name,
+            parent_module_id,
+            generics: Generics::default(), // to be filled later
+            implements: Vec::new(),        // to be filled later
+            syntax_tree: None,
+            accessibility: drafting.accessibility,
+            trait_member_ids_by_name: HashMap::new(), // to be filled later
+        });
+
+        let mut generic_parameters = crate::GenericParameters::default();
+        self.apply_generic_parameters(
+            trait_id.into(),
+            &drafting.generic_parameters,
+            &mut generic_parameters,
+        );
+        self.traits[trait_id].generics.parameters = generic_parameters;
+
+        for (name, trait_member) in drafting.trait_members_by_name {
+            let trait_member_id = match trait_member {
+                TraitMember::Type(trait_type) => {
+                    let trait_type_id = self.trait_types.push(crate::TraitType {
+                        name: name.clone(),
+                        generic_parameters: crate::GenericParameters::default(), /* to be filled
+                                                                                  * later */
+                        parent_trait_id: trait_id,
+                        syntax_tree: None,
+                    });
+
+                    let mut generic_parameters = crate::GenericParameters::default();
+                    self.apply_generic_parameters(
+                        trait_type_id.into(),
+                        &trait_type.generic_parameters,
+                        &mut generic_parameters,
+                    );
+                    self.trait_types[trait_type_id].generic_parameters = generic_parameters;
+
+                    trait_type_id.into()
+                }
+                TraitMember::Function(trait_function) => {
+                    let trait_function_id = self.trait_functions.push(crate::TraitFunction {
+                        function_signature: crate::FunctionSignature {
+                            name: name.clone(),
+                            parameter_ids_by_name: HashMap::new(), // to be filled later
+                            parameter_order: Vec::new(),           // to be filled later
+                            return_type: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+                            syntax_tree: None,
+                            generics: Generics::default(), // to be fiiled later
+                        },
+                        parent_trait_id: trait_id,
+                    });
+
+                    let mut generic_parameters = crate::GenericParameters::default();
+                    self.apply_generic_parameters(
+                        trait_function_id.into(),
+                        &trait_function.generic_parameters,
+                        &mut generic_parameters,
+                    );
+                    self.trait_functions[trait_function_id].generics.parameters =
+                        generic_parameters;
+
+                    for (index, (name, is_mutable)) in
+                        trait_function.parameters.into_iter().enumerate()
+                    {
+                        let parameter_id = self.parameters.push(crate::Parameter {
+                            name: name.clone(),
+                            is_mutable,
+                            syntax_tree: None,
+                            parameter_parent_id: trait_function_id.into(),
+                            declaration_order: index,
+                            ty: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+                        });
+
+                        let function_signature =
+                            &mut self.trait_functions[trait_function_id].function_signature;
+                        function_signature
+                            .parameter_ids_by_name
+                            .insert(name.clone(), parameter_id);
+                        function_signature.parameter_order.push(parameter_id);
+                    }
+
+                    trait_function_id.into()
+                }
+            };
+
+            self.traits[trait_id]
+                .trait_member_ids_by_name
+                .insert(name.clone(), trait_member_id);
+        }
+
+        trait_id.into()
+    }
+
     fn apply_enum_drafting(
         &mut self,
         parent_module_id: arena::ID<Module>,
@@ -312,6 +514,7 @@ pub(in crate::table) fn table_with_drafting() -> impl Strategy<Value = Table> {
                         struct_strategy().prop_map(Drafting::Struct),
                         function_strategy().prop_map(Drafting::Function),
                         type_strategy().prop_map(Drafting::Type),
+                        trait_strategy().prop_map(Drafting::Trait),
                     ],
                     0..=4,
                 ),
@@ -341,6 +544,9 @@ pub(in crate::table) fn table_with_drafting() -> impl Strategy<Value = Table> {
                     }
                     Drafting::Type(drafting) => {
                         table.apply_type_drafting(module_id, name.clone(), &drafting)
+                    }
+                    Drafting::Trait(drafting) => {
+                        table.apply_trait_drafting(module_id, name.clone(), drafting)
                     }
                 };
 

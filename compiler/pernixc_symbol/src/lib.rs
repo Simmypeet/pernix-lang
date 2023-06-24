@@ -92,7 +92,7 @@ pub struct TraitType {
     pub parent_trait_id: arena::ID<Trait>,
 
     /// The syntax tree of the associated type.
-    pub syntax_tree: Arc<syntax_tree::item::TraitType>,
+    pub syntax_tree: Option<Arc<syntax_tree::item::TraitType>>,
 }
 
 impl Symbol for arena::Symbol<TraitType> {

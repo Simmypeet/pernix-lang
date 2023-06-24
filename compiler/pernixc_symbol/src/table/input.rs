@@ -11,7 +11,7 @@ use crate::{
     ty::{self, ReferenceQualifier},
     Enum, EnumVariant, Field, Function, GenericParameters, GenericableID, GlobalID,
     LifetimeArgument, LifetimeParameter, Module, ModuleChildID, Parameter, Struct, Substitution,
-    TraitTypeBound, TypeParameter, WhereClause,
+    Trait, TraitFunction, TraitMemberID, TraitType, TraitTypeBound, TypeParameter, WhereClause,
 };
 
 impl Table {
@@ -85,11 +85,99 @@ impl Table {
                     self.write_function(&mut file, function_id)?;
                 }
                 ModuleChildID::Type(type_id) => self.write_type(&mut file, type_id)?,
-                ModuleChildID::Trait(_) => (),
+                ModuleChildID::Trait(trait_id) => self.write_trait(&mut file, trait_id)?,
             }
         }
 
         Ok(())
+    }
+
+    fn write_trait(
+        &self,
+        file: &mut std::fs::File,
+        trait_id: arena::ID<Trait>,
+    ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+
+        let trait_symbol = &self.traits[trait_id];
+        write!(
+            file,
+            "{} trait {}",
+            trait_symbol.accessibility, trait_symbol.name
+        )?;
+
+        self.write_generic_parameters(file, &trait_symbol.generics.parameters)?;
+        self.write_where_caluse(file, &trait_symbol.generics.where_clause)?;
+
+        write!(file, " {{")?;
+
+        for trait_member in trait_symbol.trait_member_ids_by_name.values() {
+            match trait_member {
+                TraitMemberID::TraitFunction(trait_function_id) => {
+                    self.write_trait_function(file, *trait_function_id)?;
+                }
+                TraitMemberID::TraitType(trait_type_id) => {
+                    self.write_trait_type(file, *trait_type_id)?;
+                }
+            }
+        }
+
+        writeln!(file, " }}")
+    }
+
+    fn write_trait_type(
+        &self,
+        file: &mut std::fs::File,
+        trait_type_id: arena::ID<TraitType>,
+    ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+
+        let trait_type_symbol = &self.trait_types[trait_type_id];
+        write!(file, "type {}", trait_type_symbol.name)?;
+        self.write_generic_parameters(file, &trait_type_symbol.generic_parameters)?;
+        writeln!(file, ";")
+    }
+
+    fn write_trait_function(
+        &self,
+        file: &mut std::fs::File,
+        trait_function_id: arena::ID<crate::TraitFunction>,
+    ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+
+        let trait_function_symbol = &self.trait_functions[trait_function_id];
+        write!(file, "{}", trait_function_symbol.name)?;
+        self.write_generic_parameters(file, &trait_function_symbol.generics.parameters)?;
+
+        write!(file, "(")?;
+        {
+            let mut is_first = true;
+            for parameter in trait_function_symbol
+                .parameter_order
+                .iter()
+                .copied()
+                .map(|x| &self.parameters[x])
+            {
+                if !is_first {
+                    write!(file, ", ")?;
+                }
+
+                if parameter.is_mutable {
+                    write!(file, "mutable ")?;
+                }
+
+                write!(file, "{}: ", parameter.name)?;
+                self.write_ty_type(file, &parameter.ty)?;
+
+                is_first = false;
+            }
+        }
+        write!(file, "): ")?;
+
+        self.write_ty_type(file, &trait_function_symbol.return_type)?;
+        self.write_where_caluse(file, &trait_function_symbol.generics.where_clause)?;
+
+        writeln!(file, ";")
     }
 
     fn write_type(
@@ -915,6 +1003,30 @@ struct SymbolRef<'a, T> {
     symbol_id: arena::ID<T>,
 }
 
+impl<'a> Deref for SymbolRef<'a, crate::Type> {
+    type Target = crate::Type;
+
+    fn deref(&self) -> &Self::Target { &self.table.types[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, Trait> {
+    type Target = Trait;
+
+    fn deref(&self) -> &Self::Target { &self.table.traits[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, TraitFunction> {
+    type Target = TraitFunction;
+
+    fn deref(&self) -> &Self::Target { &self.table.trait_functions[self.symbol_id] }
+}
+
+impl<'a> Deref for SymbolRef<'a, TraitType> {
+    type Target = TraitType;
+
+    fn deref(&self) -> &Self::Target { &self.table.trait_types[self.symbol_id] }
+}
+
 impl<'a> Deref for SymbolRef<'a, Module> {
     type Target = Module;
 
@@ -996,6 +1108,171 @@ impl Input for Table {
                 symbol_id: output_module_id,
             })?;
         }
+
+        Ok(())
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, crate::Type> {
+    type Output = SymbolRef<'a, crate::Type>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        prop_assert_eq!(
+            self.table.get_qualified_name(self.parent_module_id.into()),
+            output
+                .table
+                .get_qualified_name(output.parent_module_id.into())
+        );
+        assert_generic_parameters(
+            self.table,
+            output.table,
+            &self.generic_parameters,
+            &output.generic_parameters,
+        )?;
+        Type {
+            table: self.table,
+            ty: &self.alias,
+        }
+        .assert(&Type {
+            table: output.table,
+            ty: &output.alias,
+        })?;
+
+        Ok(())
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, Trait> {
+    type Output = SymbolRef<'a, Trait>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        prop_assert_eq!(self.accessibility, output.accessibility);
+        prop_assert_eq!(
+            self.table.get_qualified_name(self.parent_module_id.into()),
+            output
+                .table
+                .get_qualified_name(output.parent_module_id.into())
+        );
+
+        assert_generic_parameters(
+            self.table,
+            output.table,
+            &self.generics.parameters,
+            &output.generics.parameters,
+        )?;
+
+        prop_assert_eq!(
+            self.trait_member_ids_by_name.keys().collect::<HashSet<_>>(),
+            output
+                .trait_member_ids_by_name
+                .keys()
+                .collect::<HashSet<_>>()
+        );
+
+        for member_name in self.trait_member_ids_by_name.keys() {
+            let input_member_id = self.trait_member_ids_by_name[member_name];
+            let output_member_id = output.trait_member_ids_by_name[member_name];
+
+            match (input_member_id, output_member_id) {
+                (
+                    crate::TraitMemberID::TraitFunction(input_trait_function_id),
+                    crate::TraitMemberID::TraitFunction(output_trait_function_id),
+                ) => SymbolRef {
+                    table: self.table,
+                    symbol_id: input_trait_function_id,
+                }
+                .assert(&SymbolRef {
+                    table: output.table,
+                    symbol_id: output_trait_function_id,
+                })?,
+                (
+                    crate::TraitMemberID::TraitType(input_trait_type_id),
+                    crate::TraitMemberID::TraitType(output_trait_type_id),
+                ) => SymbolRef {
+                    table: self.table,
+                    symbol_id: input_trait_type_id,
+                }
+                .assert(&SymbolRef {
+                    table: output.table,
+                    symbol_id: output_trait_type_id,
+                })?,
+                (input, output) => {
+                    return Err(TestCaseError::fail(format!(
+                        "expected {input:#?}, got {output:#?}"
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, TraitFunction> {
+    type Output = SymbolRef<'a, TraitFunction>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        prop_assert_eq!(
+            self.table.get_qualified_name(self.parent_trait_id.into()),
+            output
+                .table
+                .get_qualified_name(output.parent_trait_id.into())
+        );
+
+        assert_generic_parameters(
+            self.table,
+            output.table,
+            &self.generics.parameters,
+            &output.generics.parameters,
+        )?;
+        assert_where_clause(
+            self.table,
+            output.table,
+            &self.generics.where_clause,
+            &output.generics.where_clause,
+        )?;
+
+        prop_assert_eq!(self.parameter_order.len(), output.parameter_order.len());
+
+        for (input_parameter_id, output_parameter_id) in self
+            .parameter_order
+            .iter()
+            .zip(output.parameter_order.iter())
+        {
+            SymbolRef {
+                table: self.table,
+                symbol_id: *input_parameter_id,
+            }
+            .assert(&SymbolRef {
+                table: output.table,
+                symbol_id: *output_parameter_id,
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> Input for SymbolRef<'a, TraitType> {
+    type Output = SymbolRef<'a, TraitType>;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(&self.name, &output.name);
+        prop_assert_eq!(
+            self.table.get_qualified_name(self.parent_trait_id.into()),
+            output
+                .table
+                .get_qualified_name(output.parent_trait_id.into())
+        );
+        assert_generic_parameters(
+            self.table,
+            output.table,
+            &self.generic_parameters,
+            &output.generic_parameters,
+        )?;
 
         Ok(())
     }
@@ -1337,8 +1614,26 @@ impl<'a> Input for SymbolRef<'a, Module> {
                     table: output.table,
                     symbol_id: output_function_id,
                 })?,
-                (ModuleChildID::Type(_), ModuleChildID::Type(_))
-                | (ModuleChildID::Trait(_), ModuleChildID::Trait(_)) => (),
+                (ModuleChildID::Trait(input_trait_id), ModuleChildID::Trait(output_trait_id)) => {
+                    SymbolRef {
+                        table: self.table,
+                        symbol_id: input_trait_id,
+                    }
+                    .assert(&SymbolRef {
+                        table: output.table,
+                        symbol_id: output_trait_id,
+                    })?;
+                }
+                (ModuleChildID::Type(input_type_id), ModuleChildID::Type(output_type_id)) => {
+                    SymbolRef {
+                        table: self.table,
+                        symbol_id: input_type_id,
+                    }
+                    .assert(&SymbolRef {
+                        table: output.table,
+                        symbol_id: output_type_id,
+                    })?;
+                }
                 (_, _) => {
                     return Err(TestCaseError::fail(format!(
                         "expected {input_module_child_id:?}, got {output_module_child_id:?}",

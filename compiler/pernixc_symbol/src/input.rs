@@ -1,4 +1,4 @@
-use std::{any::type_name, str::FromStr};
+use std::str::FromStr;
 
 use pernixc_lexical::token::KeywordKind;
 use proptest::{
