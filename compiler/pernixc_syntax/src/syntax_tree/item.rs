@@ -131,13 +131,11 @@ impl SourceElement for GenericParameters {
 pub struct LifetimeBound {
     pub operand: LifetimeParameter,
     pub colon: Punctuation,
-    pub parameters: BoundList<LifetimeArgument>,
+    pub arguments: BoundList<LifetimeArgument>,
 }
 
 impl SourceElement for LifetimeBound {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.operand.span()?.join(&self.parameters.span()?)
-    }
+    fn span(&self) -> Result<Span, SpanError> { self.operand.span()?.join(&self.arguments.span()?) }
 }
 
 /// Represents a syntax tree node of a type bound constraint.
@@ -198,6 +196,18 @@ pub struct BoundList<T> {
 
     /// The rest of the elements of the list.
     pub rest: Vec<(Punctuation, T)>,
+}
+
+impl<T> BoundList<T> {
+    /// Returns an iterator containing references to the elements of the list.
+    pub fn elements(&self) -> impl Iterator<Item = &T> {
+        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, t)| t))
+    }
+
+    /// Returns an iterator containing the elements of the list.
+    pub fn into_elements(self) -> impl Iterator<Item = T> {
+        std::iter::once(self.first).chain(self.rest.into_iter().map(|(_, t)| t))
+    }
 }
 
 impl<T: SourceElement> SourceElement for BoundList<T> {
@@ -1122,7 +1132,7 @@ impl<'a> Parser<'a> {
                 Ok(Constraint::LifetimeBound(LifetimeBound {
                     operand: lhs_lifetime_parameter,
                     colon,
-                    parameters: lifetime_bounds,
+                    arguments: lifetime_bounds,
                 }))
             }
             _ => {

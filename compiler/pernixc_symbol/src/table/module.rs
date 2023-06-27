@@ -4,9 +4,7 @@ use pernixc_source::SourceElement;
 use pernixc_syntax::syntax_tree::target::{File, ModulePath, Target, Using};
 use pernixc_system::{arena, diagnostic::Handler};
 
-use super::{
-    BuildError, CoreTargetNameError, Error, FatalSemanticError, Table, TargetDuplicationError,
-};
+use super::{BuildError, CoreTargetNameError, Error, Table, TargetDuplicationError};
 use crate::{
     error::{self, ModuleNotFound, TargetNotFound, UsingOwnModule},
     Accessibility, Module,
@@ -107,7 +105,7 @@ impl Table {
                             unknown_module_span: path.span.clone(),
                         }
                     ));
-                    return Err(Error::FatalSementic(FatalSemanticError));
+                    return Err(Error::FatalSemantic);
                 };
 
                 current_module_id = Some(new_module_id.into_module().unwrap());
@@ -121,7 +119,7 @@ impl Table {
                             unknown_target_span: path.span.clone()
                         }
                     ));
-                    return Err(Error::FatalSementic(FatalSemanticError));
+                    return Err(Error::FatalSemantic);
                 };
 
                 current_module_id = Some(module_id);

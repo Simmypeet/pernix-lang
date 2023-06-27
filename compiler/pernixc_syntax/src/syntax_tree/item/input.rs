@@ -262,7 +262,7 @@ impl Input for LifetimeBound {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operand.assert(&output.operand)?;
-        self.parameters.assert(&output.parameters)?;
+        self.parameters.assert(&output.arguments)?;
 
         Ok(())
     }

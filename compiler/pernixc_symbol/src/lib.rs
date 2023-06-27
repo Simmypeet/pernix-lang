@@ -116,6 +116,67 @@ pub struct Substitution {
 }
 
 impl Substitution {
+    /// Applies the substitution mappings to the given type.
+    pub fn apply(&self, ty: &mut ty::Type) {
+        match ty {
+            ty::Type::Struct(struct_type) => {
+                for type_argument in struct_type
+                    .substitution
+                    .type_arguments_by_parameter
+                    .values_mut()
+                {
+                    self.apply(type_argument)
+                }
+
+                for lifetime_argument in struct_type
+                    .substitution
+                    .lifetime_arguments_by_parameter
+                    .values_mut()
+                {
+                    let LifetimeArgument::Parameter(lifetime_parameter) = lifetime_argument else {
+                        continue;
+                    };
+
+                    if let Some(sub) = self.lifetime_arguments_by_parameter.get(lifetime_parameter)
+                    {
+                        *lifetime_argument = sub.clone();
+                    }
+                }
+            }
+            ty::Type::Primitive(..) => {}
+            ty::Type::Reference(reference_type) => self.apply(&mut reference_type.operand),
+            ty::Type::Parameter(type_parameter) => {
+                if let Some(sub) = self.type_arguments_by_parameter.get(type_parameter) {
+                    *ty = sub.clone();
+                }
+            }
+            ty::Type::TraitType(trait_type) => {
+                for type_argument in trait_type
+                    .substitution
+                    .type_arguments_by_parameter
+                    .values_mut()
+                {
+                    self.apply(type_argument)
+                }
+
+                for lifetime_argument in trait_type
+                    .substitution
+                    .lifetime_arguments_by_parameter
+                    .values_mut()
+                {
+                    let LifetimeArgument::Parameter(lifetime_parameter) = lifetime_argument else {
+                        continue;
+                    };
+
+                    if let Some(sub) = self.lifetime_arguments_by_parameter.get(lifetime_parameter)
+                    {
+                        *lifetime_argument = sub.clone();
+                    }
+                }
+            }
+        }
+    }
+
     /// Checks if the type parameter substitution is empty.
     #[must_use]
     pub fn type_parameter_is_empty(&self) -> bool { self.type_arguments_by_parameter.is_empty() }
@@ -204,7 +265,7 @@ pub struct ImplementsFunction {
     /// Contains the data of function signature.
     #[deref]
     #[deref_mut]
-    pub function_signature: FunctionSignature,
+    pub function_signature: FunctionSignature<Self>,
 
     /// The ID of the implements that contains the function.
     pub parent_implements_id: arena::ID<Trait>,
@@ -292,7 +353,7 @@ pub struct TraitFunction {
     /// Contains the data of function signature.
     #[deref]
     #[deref_mut]
-    pub function_signature: FunctionSignature,
+    pub function_signature: FunctionSignature<Self>,
 
     /// The ID of the module that contains the function.
     pub parent_trait_id: arena::ID<Trait>,
@@ -505,26 +566,36 @@ pub struct GenericParameters {
 }
 
 /// Represents a bound on the trait type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum TraitTypeBound {
     Type(ty::Type),
-    LifetimeArguments(Vec<LifetimeArgument>),
+    LifetimeArguments(HashSet<LifetimeArgument>),
+}
+
+/// Represents an active trait constraint.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TraitConstraint {
+    /// The ID of the trait.
+    pub trait_id: arena::ID<Trait>,
+
+    /// List of generic arguments supplied to the trait.
+    pub subsitution: Substitution,
 }
 
 /// Contains all the constraint defined on the where clause of a genericable.
 #[derive(Debug, Clone, Default)]
 pub struct WhereClause {
     /// Maps the lifetime parameter to its lifetime bounds.
-    pub lifetime_argument_vecs_by_lifetime_parameter:
-        HashMap<arena::ID<LifetimeParameter>, Vec<LifetimeArgument>>,
+    pub lifetime_argument_sets_by_lifetime_parameter:
+        HashMap<arena::ID<LifetimeParameter>, HashSet<LifetimeArgument>>,
 
     /// Maps the associated type to its type bound.
     pub trait_type_bounds_by_trait_type: HashMap<ty::TraitType, TraitTypeBound>,
 
     /// Maps the type parameter to its lifetime bounds.
-    pub lifetime_argument_vecs_by_type_parameter:
-        HashMap<arena::ID<TypeParameter>, Vec<LifetimeArgument>>,
+    pub lifetime_argument_sets_by_type_parameter:
+        HashMap<arena::ID<TypeParameter>, HashSet<LifetimeArgument>>,
 }
 
 /// Contains all the information related to the generics.
@@ -756,12 +827,12 @@ impl From<ParameterParentID> for ID {
 
 /// Contains the data of parameter symbol.
 #[derive(Debug, Clone)]
-pub struct Parameter {
+pub struct Parameter<T> {
     /// The name of the parameter
     pub name: String,
 
     /// The id to the parent symbol of the parameter
-    pub parameter_parent_id: ParameterParentID,
+    pub parameter_parent_id: arena::ID<T>,
 
     /// The order in which the parameter was declared.
     pub declaration_order: usize,
@@ -776,7 +847,11 @@ pub struct Parameter {
     pub is_mutable: bool,
 }
 
-impl Symbol for arena::Symbol<Parameter> {
+impl<T> Symbol for arena::Symbol<Parameter<T>>
+where
+    arena::ID<T>: Into<ID>,
+    arena::ID<Parameter<T>>: Into<ID>,
+{
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parameter_parent_id.into()) }
@@ -784,15 +859,15 @@ impl Symbol for arena::Symbol<Parameter> {
 
 /// Contains the data of the function signature symbol.
 #[derive(Debug, Clone)]
-pub struct FunctionSignature {
+pub struct FunctionSignature<T> {
     /// The name of the overload set.
     pub name: String,
 
     /// Maps the name of the parameter to its corresponding ID.
-    pub parameter_ids_by_name: HashMap<String, arena::ID<Parameter>>,
+    pub parameter_ids_by_name: HashMap<String, arena::ID<Parameter<T>>>,
 
     /// List of the parameters in the order in which they were declared.
-    pub parameter_order: Vec<arena::ID<Parameter>>,
+    pub parameter_order: Vec<arena::ID<Parameter<T>>>,
 
     /// The return type of the overload.
     pub return_type: ty::Type,
@@ -820,7 +895,7 @@ pub struct Function {
     /// Contains the data of function signature.
     #[deref]
     #[deref_mut]
-    pub function_signature: FunctionSignature,
+    pub function_signature: FunctionSignature<Self>,
 
     /// The ID of the module that contains the function.
     pub parent_module_id: arena::ID<Module>,
@@ -1063,34 +1138,6 @@ impl TryFrom<ID> for GlobalID {
     }
 }
 
-/// Is an enumeration of Self of the symbols that are defined by global symbols and local to its
-/// parent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
-pub enum LocalID {
-    Field(arena::ID<Field>),
-    Parameter(arena::ID<Parameter>),
-    LifetimeParameter(arena::ID<LifetimeParameter>),
-    TypeParameter(arena::ID<TypeParameter>),
-    TraitType(arena::ID<TraitType>),
-    TraitFunction(arena::ID<TraitFunction>),
-    Implements(arena::ID<Implements>),
-}
-
-impl From<LocalID> for ID {
-    fn from(value: LocalID) -> Self {
-        match value {
-            LocalID::Field(id) => Self::Field(id),
-            LocalID::Parameter(id) => Self::Parameter(id),
-            LocalID::LifetimeParameter(id) => Self::LifetimeParameter(id),
-            LocalID::TypeParameter(id) => Self::TypeParameter(id),
-            LocalID::TraitType(id) => Self::TraitType(id),
-            LocalID::TraitFunction(id) => Self::TraitFunction(id),
-            LocalID::Implements(id) => Self::Implements(id),
-        }
-    }
-}
-
 /// Is an enumeration of all kinds of symbol IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
@@ -1102,7 +1149,9 @@ pub enum ID {
     Function(arena::ID<Function>),
     Type(arena::ID<Type>),
     Field(arena::ID<Field>),
-    Parameter(arena::ID<Parameter>),
+    FunctionParameter(arena::ID<Parameter<Function>>),
+    TraitFunctionParameter(arena::ID<Parameter<TraitFunction>>),
+    ImplementsFunctionParameter(arena::ID<Parameter<ImplementsFunction>>),
     Trait(arena::ID<Trait>),
     TraitType(arena::ID<TraitType>),
     TypeParameter(arena::ID<TypeParameter>),

@@ -5,8 +5,8 @@ use pernixc_source::Span;
 use pernixc_system::arena;
 
 use crate::{
-    Field, GlobalID, LifetimeParameter, Module, Parameter, ScopedID, Struct, TraitMemberID,
-    TypeParameter, ID,
+    Field, Function, GlobalID, ImplementsFunction, LifetimeParameter, Module, Parameter, ScopedID,
+    Struct, TraitFunction, TraitMemberID, TypeParameter, ID,
 };
 
 /// No target was found with the given name.
@@ -61,6 +61,13 @@ pub struct SymbolRedefinition<T> {
 
     /// Span to the syntax node that is redefining the symbol.
     pub redefinition_span: Span,
+}
+
+/// No lifetime with the given name was found.
+#[derive(Debug, Clone)]
+pub struct LifetimeNotFound {
+    /// The span of the unknown lifetime name.
+    pub unknown_lifetime_span: Span,
 }
 
 /// The struct filed is more accessible than the struct itself.
@@ -150,6 +157,39 @@ pub struct TypeParameterShadowing {
     pub shadowed_type_parameter_id: arena::ID<TypeParameter>,
 }
 
+/// Found lifetime arguments after type arguments.
+#[derive(Debug, Clone)]
+pub struct LifetimeArgumentMustBeSuppliedPriorToTypeArgument {
+    /// The span of the type argument.
+    pub lifetime_argument_span: Span,
+}
+
+/// The number of supplied lifetime arguments does not match the number of expected lifetime
+#[derive(Debug, Clone)]
+pub struct LifetimeArgumentMismatch {
+    /// The number of supplied lifetime arguments.
+    pub supplied: usize,
+
+    /// The number of expected lifetime arguments.
+    pub expected: usize,
+
+    /// The span to the generic arguments that contain the lifetime arguments.
+    pub generic_arguments_span: Span,
+}
+
+/// The number of supplied type arguments does not match the number of expected type arguments.
+#[derive(Debug, Clone)]
+pub struct TypeArgumentMismatch {
+    /// The number of supplied type arguments.
+    pub supplied: usize,
+
+    /// The number of expected type arguments.
+    pub expected: usize,
+
+    /// The span to the generic arguments that contain the type arguments.
+    pub generic_arguments_span: Span,
+}
+
 /// Is an eumeration of all errors occuring during the symbol resolution/analysis.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
@@ -161,10 +201,17 @@ pub enum Error {
     SymbolRedefinition(SymbolRedefinition<GlobalID>),
     LifetimeParameterRedefinition(SymbolRedefinition<arena::ID<LifetimeParameter>>),
     TypeParameterRedefinition(SymbolRedefinition<arena::ID<TypeParameter>>),
+    LifetimeArgumentMustBeSuppliedPriorToTypeArgument(
+        LifetimeArgumentMustBeSuppliedPriorToTypeArgument,
+    ),
     LifetimeParameterMustBeDeclaredPriotToTypeParameter(
         LifetimeParameterMustBeDeclaredPriotToTypeParameter,
     ),
-    ParameterRedefinition(SymbolRedefinition<arena::ID<Parameter>>),
+    FunctionParameterRedefinition(SymbolRedefinition<arena::ID<Parameter<Function>>>),
+    TraitFunctionParameterRedefinition(SymbolRedefinition<arena::ID<Parameter<TraitFunction>>>),
+    ImplementsFunctionParameterRedefinition(
+        SymbolRedefinition<arena::ID<Parameter<ImplementsFunction>>>,
+    ),
     FieldRedefinition(SymbolRedefinition<arena::ID<Field>>),
     FieldMoreAccessibleThanStruct(FieldMoreAccessibleThanStruct),
     TraitMemberRedefinition(SymbolRedefinition<TraitMemberID>),
@@ -176,4 +223,7 @@ pub enum Error {
     TraitExpected(TraitExpected),
     LifetimeParameterShadowing(LifetimeParameterShadowing),
     TypeParameterShadowing(TypeParameterShadowing),
+    LifetimeNotFound(LifetimeNotFound),
+    LifetimeArgumentMismatch(LifetimeArgumentMismatch),
+    TypeArgumentMismatch(TypeArgumentMismatch),
 }

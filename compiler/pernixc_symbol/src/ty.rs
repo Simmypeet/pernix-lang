@@ -72,8 +72,8 @@ pub struct TraitType {
 #[allow(missing_docs)]
 pub enum Type {
     Struct(Struct),
-    PrimitiveType(PrimitiveType),
-    ReferenceType(ReferenceType),
-    TypeParameter(arena::ID<crate::TypeParameter>),
+    Primitive(PrimitiveType),
+    Reference(ReferenceType),
+    Parameter(arena::ID<crate::TypeParameter>),
     TraitType(TraitType),
 }

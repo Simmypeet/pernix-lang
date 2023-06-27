@@ -93,7 +93,10 @@ pub(in crate::table) fn table_with_module_strategy() -> impl Strategy<Value = Ta
 
     let module = leaf.prop_recursive(4, 16, 4, |inner| {
         proptest::collection::hash_map(
-            crate::input::name(),
+            crate::input::name().prop_map(|mut name| {
+                name = name.to_ascii_lowercase();
+                name
+            }),
             (Accessibility::arbitrary(), inner).prop_map(|(accessibility, tree)| Submodule {
                 accessibility,
                 tree,
@@ -103,7 +106,14 @@ pub(in crate::table) fn table_with_module_strategy() -> impl Strategy<Value = Ta
         .prop_map(|submodules_by_name| ModuleTree { submodules_by_name })
     });
 
-    let targets = proptest::collection::hash_map(crate::input::name(), module, 1..=4);
+    let targets = proptest::collection::hash_map(
+        crate::input::name().prop_map(|mut name| {
+            name = name.to_ascii_lowercase();
+            name
+        }),
+        module,
+        1..=4,
+    );
     targets.prop_map(|targets| {
         let mut table = Table::new();
         for (name, module_tree) in targets {

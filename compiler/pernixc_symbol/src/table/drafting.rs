@@ -346,8 +346,8 @@ impl Table {
             name: type_syntax_tree.signature.identifier.span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&type_syntax_tree.access_modifier),
             parent_module_id,
-            alias: ty::Type::PrimitiveType(PrimitiveType::Void), // to be filled later
-            generic_parameters: GenericParameters::default(),    // to be filled later
+            alias: ty::Type::Primitive(PrimitiveType::Void), // to be filled later
+            generic_parameters: GenericParameters::default(), // to be filled later
             syntax_tree: Some(type_syntax_tree.clone()),
         });
 
@@ -385,7 +385,7 @@ impl Table {
                     .to_string(),
                 parameter_ids_by_name: HashMap::new(), // to be filled later
                 parameter_order: Vec::new(),           // to be filled later
-                return_type: ty::Type::PrimitiveType(PrimitiveType::Void), // to be filled later
+                return_type: ty::Type::Primitive(PrimitiveType::Void), // to be filled later
                 syntax_tree: Some(function_signature_syntax_tree_without_parameters.clone()),
                 generics: Generics::default(), // to be filled later
             },
@@ -424,20 +424,20 @@ impl Table {
                     .parameter_ids_by_name,
                 &parameter.identifier,
             ) {
-                handler.recieve(Error::ParameterRedefinition(error));
+                handler.recieve(Error::TraitFunctionParameterRedefinition(error));
                 continue;
             }
 
             let parameter_name = parameter.identifier.span.str().to_string();
 
-            let parameter_id = self.parameters.push(Parameter {
+            let parameter_id = self.trait_function_parameters.push(Parameter {
                 name: parameter_name.clone(),
-                parameter_parent_id: trait_function_id.into(),
+                parameter_parent_id: trait_function_id,
                 declaration_order: trait_function_symbol
                     .function_signature
                     .parameter_order
                     .len(),
-                ty: ty::Type::PrimitiveType(PrimitiveType::Void),
+                ty: ty::Type::Primitive(PrimitiveType::Void),
                 is_mutable: parameter.mutable_keyword.is_some(),
                 syntax_tree: Some(Arc::new(parameter)),
             });
@@ -568,7 +568,7 @@ impl Table {
                     .to_string(),
                 parameter_ids_by_name: HashMap::new(), // to be filled later
                 parameter_order: Vec::new(),           // to be filled later
-                return_type: ty::Type::PrimitiveType(PrimitiveType::Void),
+                return_type: ty::Type::Primitive(PrimitiveType::Void),
                 syntax_tree: Some(function_signature_syntax_tree.clone()),
                 generics: Generics::default(), // to be filled later
             },
@@ -599,17 +599,17 @@ impl Table {
             if let Err(error) =
                 Self::redefinition_check(&function.parameter_ids_by_name, &parameter.identifier)
             {
-                handler.recieve(Error::ParameterRedefinition(error));
+                handler.recieve(Error::FunctionParameterRedefinition(error));
                 continue;
             }
 
             let parameter_name = parameter.identifier.span.str().to_string();
 
-            let parameter_id = self.parameters.push(Parameter {
+            let parameter_id = self.function_parameters.push(Parameter {
                 name: parameter_name.clone(),
-                parameter_parent_id: function_id.into(),
+                parameter_parent_id: function_id,
                 declaration_order: function.parameter_order.len(),
-                ty: ty::Type::PrimitiveType(PrimitiveType::Void), // to be replaced
+                ty: ty::Type::Primitive(PrimitiveType::Void), // to be replaced
                 is_mutable: parameter.mutable_keyword.is_some(),
                 syntax_tree: Some(Arc::new(parameter)),
             });
@@ -673,7 +673,7 @@ impl Table {
                         parent_struct_id: struct_id,
                         syntax_tree: Some(Arc::new(field)),
                         declaration_order: struct_symbol.field_order.len(),
-                        ty: ty::Type::PrimitiveType(PrimitiveType::Void), // will be replaced later
+                        ty: ty::Type::Primitive(PrimitiveType::Void), // will be replaced later
                     });
 
                     // add the field to the struct

@@ -71,19 +71,19 @@ impl Table {
                     name: "copy".to_string(),
                     parameter_ids_by_name: HashMap::new(), // to be filled later
                     parameter_order: Vec::new(),           // to be filled later
-                    return_type: Type::TypeParameter(type_parameter_id),
+                    return_type: Type::Parameter(type_parameter_id),
                     generics: Generics::default(),
                     syntax_tree: None,
                 },
                 parent_trait_id: trait_id,
             });
 
-            let parameter_id = self.parameters.push(crate::Parameter {
+            let parameter_id = self.trait_function_parameters.push(crate::Parameter {
                 name: "this".to_string(),
-                parameter_parent_id: trait_function_id.into(),
+                parameter_parent_id: trait_function_id,
                 declaration_order: 0,
-                ty: Type::ReferenceType(crate::ty::ReferenceType {
-                    operand: Box::new(Type::TypeParameter(type_parameter_id)),
+                ty: Type::Reference(crate::ty::ReferenceType {
+                    operand: Box::new(Type::Parameter(type_parameter_id)),
                     qualifier: None,
                     lifetime_argument: None,
                 }),
@@ -150,19 +150,19 @@ impl Table {
                     name: "drop".to_string(),
                     parameter_ids_by_name: HashMap::new(), // to be filled later
                     parameter_order: Vec::new(),           // to be filled later
-                    return_type: Type::PrimitiveType(PrimitiveType::Void),
+                    return_type: Type::Primitive(PrimitiveType::Void),
                     generics: Generics::default(),
                     syntax_tree: None,
                 },
                 parent_trait_id: trait_id,
             });
 
-            let parameter_id = self.parameters.push(crate::Parameter {
+            let parameter_id = self.trait_function_parameters.push(crate::Parameter {
                 name: "this".to_string(),
-                parameter_parent_id: trait_function_id.into(),
+                parameter_parent_id: trait_function_id,
                 declaration_order: 0,
-                ty: Type::ReferenceType(crate::ty::ReferenceType {
-                    operand: Box::new(Type::TypeParameter(type_parameter_id)),
+                ty: Type::Reference(crate::ty::ReferenceType {
+                    operand: Box::new(Type::Parameter(type_parameter_id)),
                     qualifier: Some(ReferenceQualifier::Restrict),
                     lifetime_argument: None,
                 }),

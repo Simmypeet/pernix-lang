@@ -133,6 +133,20 @@ impl<T> Arena<T> {
     /// Returns a mutable reference to the item in the arena with the given ID.
     #[must_use]
     pub fn get_mut(&mut self, id: ID<T>) -> Option<&mut Symbol<T>> { self.items.get_mut(id.index) }
+
+    /// Returns a reference to the item in the arena with the given ID.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the ID is invalid.
+    pub fn get_ok_or(&self, id: ID<T>) -> Result<&Symbol<T>, Error> { self.get(id).ok_or(Error) }
+
+    /// Returns a mutable reference to the item in the arena with the given ID.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the ID is invalid.
+    pub fn get_mut_ok_or(&mut self, id: ID<T>) -> Result<&mut Symbol<T>, Error> {
+        self.get_mut(id).ok_or(Error)
+    }
 }
 
 impl<T> std::ops::Index<ID<T>> for Arena<T> {

@@ -6,7 +6,7 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::Table;
+use super::{Access, Table};
 use crate::{
     ty::{self, ReferenceQualifier},
     Enum, EnumVariant, Field, Function, GenericParameters, GenericableID, GlobalID,
@@ -156,7 +156,7 @@ impl Table {
                 .parameter_order
                 .iter()
                 .copied()
-                .map(|x| &self.parameters[x])
+                .map(|x| &self.trait_function_parameters[x])
             {
                 if !is_first {
                     write!(file, ", ")?;
@@ -222,7 +222,7 @@ impl Table {
                 .parameter_order
                 .iter()
                 .copied()
-                .map(|x| &self.parameters[x])
+                .map(|x| &self.function_parameters[x])
             {
                 if !is_first {
                     write!(file, ", ")?;
@@ -473,13 +473,11 @@ impl Table {
     fn write_ty_type(&self, file: &mut std::fs::File, ty: &ty::Type) -> Result<(), std::io::Error> {
         match ty {
             ty::Type::Struct(struct_ty) => self.write_ty_struct(file, struct_ty),
-            ty::Type::PrimitiveType(primitive_type) => {
+            ty::Type::Primitive(primitive_type) => {
                 Self::write_ty_primitive_type(file, *primitive_type)
             }
-            ty::Type::ReferenceType(reference_ty) => {
-                self.write_ty_reference_type(file, reference_ty)
-            }
-            ty::Type::TypeParameter(type_parameter_id) => {
+            ty::Type::Reference(reference_ty) => self.write_ty_reference_type(file, reference_ty),
+            ty::Type::Parameter(type_parameter_id) => {
                 self.write_type_parameter(file, *type_parameter_id)
             }
             ty::Type::TraitType(trait_type_ty) => self.write_ty_trait_type(file, trait_type_ty),
@@ -495,11 +493,11 @@ impl Table {
         use std::io::Write;
 
         if where_clause
-            .lifetime_argument_vecs_by_lifetime_parameter
+            .lifetime_argument_sets_by_lifetime_parameter
             .is_empty()
             && where_clause.trait_type_bounds_by_trait_type.is_empty()
             && where_clause
-                .lifetime_argument_vecs_by_type_parameter
+                .lifetime_argument_sets_by_type_parameter
                 .is_empty()
         {
             return Ok(());
@@ -510,7 +508,7 @@ impl Table {
 
         {
             for (lifetime_parameter, lifetime_arguments) in
-                &where_clause.lifetime_argument_vecs_by_lifetime_parameter
+                &where_clause.lifetime_argument_sets_by_lifetime_parameter
             {
                 if !is_first {
                     write!(file, ", ")?;
@@ -585,7 +583,7 @@ impl Table {
 
         {
             for (lifetime_parameter, bounds) in
-                &where_clause.lifetime_argument_vecs_by_lifetime_parameter
+                &where_clause.lifetime_argument_sets_by_lifetime_parameter
             {
                 if !is_first {
                     write!(file, ", ")?;
@@ -917,13 +915,13 @@ impl<'a> Input for Type<'a> {
 
                 Ok(())
             }
-            (ty::Type::PrimitiveType(input), ty::Type::PrimitiveType(output)) => {
+            (ty::Type::Primitive(input), ty::Type::Primitive(output)) => {
                 prop_assert_eq!(input, output);
                 Ok(())
             }
             (
-                ty::Type::ReferenceType(input_reference_type),
-                ty::Type::ReferenceType(output_reference_type),
+                ty::Type::Reference(input_reference_type),
+                ty::Type::Reference(output_reference_type),
             ) => {
                 prop_assert_eq!(
                     &input_reference_type.qualifier,
@@ -980,8 +978,8 @@ impl<'a> Input for Type<'a> {
                 Ok(())
             }
             (
-                ty::Type::TypeParameter(input_type_parameter),
-                ty::Type::TypeParameter(output_type_parameter),
+                ty::Type::Parameter(input_type_parameter),
+                ty::Type::Parameter(output_type_parameter),
             ) => SymbolRef {
                 table: self.table,
                 symbol_id: *input_type_parameter,
@@ -1003,82 +1001,13 @@ struct SymbolRef<'a, T> {
     symbol_id: arena::ID<T>,
 }
 
-impl<'a> Deref for SymbolRef<'a, crate::Type> {
-    type Target = crate::Type;
+impl<'a, T> Deref for SymbolRef<'a, T>
+where
+    Table: Access<T>,
+{
+    type Target = arena::Symbol<T>;
 
-    fn deref(&self) -> &Self::Target { &self.table.types[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, Trait> {
-    type Target = Trait;
-
-    fn deref(&self) -> &Self::Target { &self.table.traits[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, TraitFunction> {
-    type Target = TraitFunction;
-
-    fn deref(&self) -> &Self::Target { &self.table.trait_functions[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, TraitType> {
-    type Target = TraitType;
-
-    fn deref(&self) -> &Self::Target { &self.table.trait_types[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, Module> {
-    type Target = Module;
-
-    fn deref(&self) -> &Self::Target { &self.table.modules[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, Enum> {
-    type Target = Enum;
-
-    fn deref(&self) -> &Self::Target { &self.table.enums[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, EnumVariant> {
-    type Target = EnumVariant;
-
-    fn deref(&self) -> &Self::Target { &self.table.enum_variants[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, Struct> {
-    type Target = Struct;
-
-    fn deref(&self) -> &Self::Target { &self.table.structs[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, Field> {
-    type Target = Field;
-
-    fn deref(&self) -> &Self::Target { &self.table.fields[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, LifetimeParameter> {
-    type Target = LifetimeParameter;
-
-    fn deref(&self) -> &Self::Target { &self.table.lifetime_parameters[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, TypeParameter> {
-    type Target = TypeParameter;
-
-    fn deref(&self) -> &Self::Target { &self.table.type_parameters[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, Function> {
-    type Target = Function;
-
-    fn deref(&self) -> &Self::Target { &self.table.functions[self.symbol_id] }
-}
-
-impl<'a> Deref for SymbolRef<'a, Parameter> {
-    type Target = Parameter;
-
-    fn deref(&self) -> &Self::Target { &self.table.parameters[self.symbol_id] }
+    fn deref(&self) -> &Self::Target { self.table.get(self.symbol_id).unwrap() }
 }
 
 impl Input for Table {
@@ -1278,8 +1207,11 @@ impl<'a> Input for SymbolRef<'a, TraitType> {
     }
 }
 
-impl<'a> Input for SymbolRef<'a, Parameter> {
-    type Output = SymbolRef<'a, Parameter>;
+impl<'a, T> Input for SymbolRef<'a, Parameter<T>>
+where
+    Table: Access<Parameter<T>>,
+{
+    type Output = SymbolRef<'a, Parameter<T>>;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(&self.name, &output.name);

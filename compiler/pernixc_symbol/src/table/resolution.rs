@@ -2,13 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use pernixc_lexical::token::Identifier;
 use pernixc_source::SourceElement;
-use pernixc_syntax::syntax_tree::QualifiedIdentifier;
+use pernixc_syntax::syntax_tree::{self, QualifiedIdentifier};
 use pernixc_system::{arena, diagnostic::Handler};
 
-use super::{drafting::ImplementsSyntaxTreeWithModuleID, Error, FatalSemanticError, Table};
+use super::{drafting::ImplementsSyntaxTreeWithModuleID, Error, Table};
 use crate::{
-    error::{self, ResolutionAmbiguity, TargetNotFound},
-    Generics, GlobalID, Implements, Scoped, ScopedID, Substitution, Trait, ID,
+    error::{self, LifetimeNotFound, ResolutionAmbiguity, TargetNotFound},
+    GenericableID, Generics, GlobalID, Implements, LifetimeArgument, LifetimeParameter, Scoped,
+    ScopedID, Substitution, Trait, ID,
 };
 
 impl Table {
@@ -48,7 +49,7 @@ impl Table {
                     span: identifier.span.clone(),
                     candidates: candidates.into_iter().collect(),
                 }));
-                Err(super::Error::FatalSementic(FatalSemanticError))
+                Err(super::Error::FatalSemantic)
             }
         }
     }
@@ -83,7 +84,7 @@ impl Table {
                         .try_into()
                         .expect("It should have been some kind of `Scoped` by now"),
                 }));
-                return Err(Error::FatalSementic(FatalSemanticError));
+                return Err(Error::FatalSemantic);
             }
         }
     }
@@ -127,7 +128,7 @@ impl Table {
                         span: qualified_identifier.first.identifier.span.clone(),
                         found: found_symbol_id,
                     }));
-                    Err(Error::FatalSementic(FatalSemanticError))
+                    Err(Error::FatalSemantic)
                 }
             }
 
@@ -136,7 +137,7 @@ impl Table {
                 handler.recieve(error::Error::InvalidTraitPath(error::InvalidTraitPath {
                     span: qualified_identifier.span()?,
                 }));
-                Err(Error::FatalSementic(FatalSemanticError))
+                Err(Error::FatalSemantic)
             }
 
             // normal case
@@ -168,7 +169,7 @@ impl Table {
                             handler.recieve(error::Error::TargetNotFound(TargetNotFound {
                                 unknown_target_span: generic_identifier.identifier.span.clone(),
                             }));
-                            return Err(Error::FatalSementic(FatalSemanticError));
+                            return Err(Error::FatalSemantic);
                         }
                     } else {
                         let resolved_symbol_id =
@@ -181,7 +182,7 @@ impl Table {
                                 span: generic_identifier.span()?,
                                 found: resolved_symbol_id,
                             }));
-                            return Err(Error::FatalSementic(FatalSemanticError));
+                            return Err(Error::FatalSemantic);
                         }
                     }
                 };
@@ -208,7 +209,7 @@ impl Table {
                                 searched_scoped_id: current_module_id.into(),
                                 span: generic_identifier.span()?,
                             }));
-                            return Err(Error::FatalSementic(FatalSemanticError));
+                            return Err(Error::FatalSemantic);
                         };
 
                         match (is_last, id) {
@@ -228,7 +229,7 @@ impl Table {
                                         found,
                                     })
                                 });
-                                return Err(Error::FatalSementic(FatalSemanticError));
+                                return Err(Error::FatalSemantic);
                             }
                         }
                     } else {
@@ -239,6 +240,52 @@ impl Table {
                 Ok(trait_id)
             }
         }
+    }
+
+    pub(super) fn resolve_lifetime_argument(
+        &self,
+        current_id: ID,
+        lifetime_argument: &syntax_tree::LifetimeArgument,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<LifetimeArgument, Error> {
+        match &lifetime_argument.identifier {
+            syntax_tree::LifetimeArgumentIdentifier::Identifier(lifetime_parameter) => {
+                Ok(LifetimeArgument::Parameter(
+                    self.resolve_lifetime_parameter(current_id, lifetime_parameter, handler)?,
+                ))
+            }
+            syntax_tree::LifetimeArgumentIdentifier::Static(_) => Ok(LifetimeArgument::Static),
+        }
+    }
+
+    pub(super) fn resolve_lifetime_parameter(
+        &self,
+        current_id: ID,
+        lifetime_parameter: &Identifier,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<arena::ID<LifetimeParameter>, Error> {
+        let scope_walker = self.scope_walker(current_id)?;
+
+        for id in scope_walker {
+            let Ok(genericable_id) = GenericableID::try_from(id) else {
+                continue;
+            };
+
+            let genericable = self.get_genericable(genericable_id)?;
+            if let Some(lifetime_parameter_id) = genericable
+                .generic_parameters()
+                .lifetime_parameter_ids_by_name
+                .get(lifetime_parameter.span.str())
+                .copied()
+            {
+                return Ok(lifetime_parameter_id);
+            }
+        }
+
+        handler.recieve(error::Error::LifetimeNotFound(LifetimeNotFound {
+            unknown_lifetime_span: lifetime_parameter.span.clone(),
+        }));
+        Err(Error::FatalSemantic)
     }
 
     /// Attaches implements blocks to their corresponding trait.
@@ -258,7 +305,7 @@ impl Table {
             ) {
                 Ok(trait_id) => trait_id,
                 Err(err) => {
-                    assert!(err.as_fatal_sementic().is_some());
+                    assert!(err.is_fatal_semantic());
                     continue;
                 }
             };
@@ -284,7 +331,7 @@ impl Table {
                     handler,
                 );
 
-                self.implements[implements_id].generics.generic_parameters = generic_parameters;
+                self.implements[implements_id].generics.parameters = generic_parameters;
             }
 
             self.traits[trait_id].implements.push(implements_id);

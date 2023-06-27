@@ -259,7 +259,7 @@ impl Table {
                 name,
                 parameter_ids_by_name: HashMap::new(), // to be filled later
                 parameter_order: Vec::new(),           // to be filled later
-                return_type: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+                return_type: ty::Type::Primitive(ty::PrimitiveType::Void),
                 syntax_tree: None,
                 generics: Generics::default(), // to be filled later
             },
@@ -277,11 +277,11 @@ impl Table {
         self.functions[function_id].generics.parameters = generic_parameters;
 
         for (index, parameter) in drafting.parameters.into_iter().enumerate() {
-            let parameter_id = self.parameters.push(crate::Parameter {
+            let parameter_id = self.function_parameters.push(crate::Parameter {
                 name: parameter.0.clone(),
-                parameter_parent_id: function_id.into(),
+                parameter_parent_id: function_id,
                 declaration_order: index,
-                ty: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+                ty: ty::Type::Primitive(ty::PrimitiveType::Void),
                 syntax_tree: None,
                 is_mutable: parameter.1,
             });
@@ -328,7 +328,7 @@ impl Table {
                 parent_struct_id: struct_id,
                 syntax_tree: None,
                 declaration_order: index,
-                ty: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+                ty: ty::Type::Primitive(ty::PrimitiveType::Void),
             });
 
             let struct_symbol = &mut self.structs[struct_id];
@@ -352,7 +352,7 @@ impl Table {
             name,
             accessibility: drafting.accessibility,
             parent_module_id,
-            alias: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+            alias: ty::Type::Primitive(ty::PrimitiveType::Void),
             generic_parameters: crate::GenericParameters::default(), // to be filled later
             syntax_tree: None,
         });
@@ -419,7 +419,7 @@ impl Table {
                             name: name.clone(),
                             parameter_ids_by_name: HashMap::new(), // to be filled later
                             parameter_order: Vec::new(),           // to be filled later
-                            return_type: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+                            return_type: ty::Type::Primitive(ty::PrimitiveType::Void),
                             syntax_tree: None,
                             generics: Generics::default(), // to be fiiled later
                         },
@@ -438,13 +438,13 @@ impl Table {
                     for (index, (name, is_mutable)) in
                         trait_function.parameters.into_iter().enumerate()
                     {
-                        let parameter_id = self.parameters.push(crate::Parameter {
+                        let parameter_id = self.trait_function_parameters.push(crate::Parameter {
                             name: name.clone(),
                             is_mutable,
                             syntax_tree: None,
-                            parameter_parent_id: trait_function_id.into(),
+                            parameter_parent_id: trait_function_id,
                             declaration_order: index,
-                            ty: ty::Type::PrimitiveType(ty::PrimitiveType::Void),
+                            ty: ty::Type::Primitive(ty::PrimitiveType::Void),
                         });
 
                         let function_signature =

@@ -22,9 +22,10 @@ mod input;
 
 mod core;
 mod drafting;
+mod finalizing;
+mod generics;
 mod module;
-// mod resolution;
-// mod finalizing;
+mod resolution;
 
 /// Represents a symbol table of the compiler.
 #[derive(Debug, Clone)]
@@ -36,7 +37,9 @@ pub struct Table {
     functions: Arena<Function>,
     types: Arena<Type>,
     fields: Arena<Field>,
-    parameters: Arena<Parameter>,
+    function_parameters: Arena<Parameter<Function>>,
+    trait_function_parameters: Arena<Parameter<TraitFunction>>,
+    implements_function_parameters: Arena<Parameter<ImplementsFunction>>,
     traits: Arena<Trait>,
     trait_types: Arena<TraitType>,
     type_parameters: Arena<TypeParameter>,
@@ -48,6 +51,63 @@ pub struct Table {
 
     target_root_module_ids_by_name: HashMap<String, arena::ID<Module>>,
 }
+
+/// Represents a trait implemented by [`Table`] to access the symbols in it.
+pub trait Access<T> {
+    /// Gets a reference to the symbol from the given ID.
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    fn get(&self, id: arena::ID<T>) -> Result<&arena::Symbol<T>, arena::Error>;
+
+    /// Gets a mutable reference to the symbol from the given ID.
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    fn get_mut(&mut self, id: arena::ID<T>) -> Result<&mut arena::Symbol<T>, arena::Error>;
+}
+
+macro_rules! impl_access {
+    ($symbol_ty:path, $container_name:ident) => {
+        impl Access<$symbol_ty> for Table {
+            fn get(
+                &self,
+                id: arena::ID<$symbol_ty>,
+            ) -> Result<&arena::Symbol<$symbol_ty>, arena::Error> {
+                self.$container_name.get(id).ok_or(arena::Error)
+            }
+
+            fn get_mut(
+                &mut self,
+                id: arena::ID<$symbol_ty>,
+            ) -> Result<&mut arena::Symbol<$symbol_ty>, arena::Error> {
+                self.$container_name.get_mut(id).ok_or(arena::Error)
+            }
+        }
+    };
+}
+
+impl_access!(Module, modules);
+impl_access!(Struct, structs);
+impl_access!(Enum, enums);
+impl_access!(EnumVariant, enum_variants);
+impl_access!(Function, functions);
+impl_access!(Type, types);
+impl_access!(Field, fields);
+impl_access!(Parameter<Function>, function_parameters);
+impl_access!(Parameter<TraitFunction>, trait_function_parameters);
+impl_access!(
+    Parameter<ImplementsFunction>,
+    implements_function_parameters
+);
+impl_access!(Trait, traits);
+impl_access!(TraitType, trait_types);
+impl_access!(TypeParameter, type_parameters);
+impl_access!(LifetimeParameter, lifetime_parameters);
+impl_access!(TraitFunction, trait_functions);
+impl_access!(Implements, implements);
+impl_access!(ImplementsType, implements_types);
+impl_access!(ImplementsFunction, implements_functions);
 
 impl Table {
     /// Gets a reference to the [`Global`] symbol from the given ID.
@@ -130,7 +190,21 @@ impl Table {
             ID::Function(s) => self.functions.get(s).map(|x| x as _).ok_or(arena::Error),
             ID::Type(s) => self.types.get(s).map(|x| x as _).ok_or(arena::Error),
             ID::Field(s) => self.fields.get(s).map(|x| x as _).ok_or(arena::Error),
-            ID::Parameter(s) => self.parameters.get(s).map(|x| x as _).ok_or(arena::Error),
+            ID::FunctionParameter(s) => self
+                .function_parameters
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            ID::TraitFunctionParameter(s) => self
+                .trait_function_parameters
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
+            ID::ImplementsFunctionParameter(s) => self
+                .implements_function_parameters
+                .get(s)
+                .map(|x| x as _)
+                .ok_or(arena::Error),
             ID::Trait(s) => self.traits.get(s).map(|x| x as _).ok_or(arena::Error),
             ID::TraitType(s) => self.trait_types.get(s).map(|x| x as _).ok_or(arena::Error),
             ID::TypeParameter(s) => self
@@ -222,21 +296,14 @@ pub enum BuildError {
     CoreTargetName(CoreTargetNameError),
 }
 
-/// Encounters a fatal semantic error while working with [`Table`].
-///
-/// The [`crate::error::Error`]s are reported to the [`Handler`] passed to the function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
-#[error("Encounters a fatal semantic error ")]
-pub struct FatalSemanticError;
-
 /// Is an error returned by various methods in the [`Table`].
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error, From, EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum Error {
-    #[error("{0}")]
-    FatalSementic(FatalSemanticError),
+    #[error("Encounters a fatal semantic error.")]
+    FatalSemantic,
 
     #[error("{0}")]
     InvalidID(arena::Error),
@@ -495,7 +562,9 @@ impl Table {
             functions: Arena::new(),
             types: Arena::new(),
             fields: Arena::new(),
-            parameters: Arena::new(),
+            function_parameters: Arena::new(),
+            trait_function_parameters: Arena::new(),
+            implements_function_parameters: Arena::new(),
             traits: Arena::new(),
             trait_types: Arena::new(),
             type_parameters: Arena::new(),

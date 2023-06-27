@@ -193,7 +193,10 @@ impl Arbitrary for File {
             (
                 proptest::collection::vec(Using::arbitrary(), 0..=4),
                 proptest::collection::hash_map(
-                    Identifier::arbitrary(),
+                    Identifier::arbitrary().prop_map(|mut identifier| {
+                        identifier.string = identifier.string.to_lowercase();
+                        identifier
+                    }),
                     (AccessModifier::arbitrary(), inner),
                     0..=4,
                 )
