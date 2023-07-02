@@ -4,8 +4,9 @@ use pernixc_system::arena;
 
 use super::Table;
 use crate::{
+    error::LifetimeArgumentMustBeSuppliedPriorToTypeArgument,
     ty::{PrimitiveType, ReferenceQualifier, Type},
-    Accessibility, Generics, Module, Trait, TraitFunction, TypeParameter,
+    Accessibility, Generics, LifetimeArgument, Module, Trait, TraitFunction, TypeParameter,
 };
 
 impl Table {
@@ -78,6 +79,24 @@ impl Table {
                 parent_trait_id: trait_id,
             });
 
+            let lifetime_parameter = self.lifetime_parameters.push(crate::LifetimeParameter {
+                name: "a".to_string(),
+                parent_genericable_id: trait_function_id.into(),
+            });
+
+            self.trait_functions[trait_function_id]
+                .function_signature
+                .generics
+                .parameters
+                .lifetime_parameter_order
+                .push(lifetime_parameter);
+            self.trait_functions[trait_function_id]
+                .function_signature
+                .generics
+                .parameters
+                .lifetime_parameter_ids_by_name
+                .insert("a".to_string(), lifetime_parameter);
+
             let parameter_id = self.trait_function_parameters.push(crate::Parameter {
                 name: "this".to_string(),
                 parameter_parent_id: trait_function_id,
@@ -85,7 +104,7 @@ impl Table {
                 ty: Type::Reference(crate::ty::ReferenceType {
                     operand: Box::new(Type::Parameter(type_parameter_id)),
                     qualifier: None,
-                    lifetime_argument: None,
+                    lifetime_argument: LifetimeArgument::Parameter(lifetime_parameter),
                 }),
                 is_mutable: false,
                 syntax_tree: None,
@@ -157,6 +176,24 @@ impl Table {
                 parent_trait_id: trait_id,
             });
 
+            let lifetime_parameter = self.lifetime_parameters.push(crate::LifetimeParameter {
+                name: "a".to_string(),
+                parent_genericable_id: trait_function_id.into(),
+            });
+
+            self.trait_functions[trait_function_id]
+                .function_signature
+                .generics
+                .parameters
+                .lifetime_parameter_order
+                .push(lifetime_parameter);
+            self.trait_functions[trait_function_id]
+                .function_signature
+                .generics
+                .parameters
+                .lifetime_parameter_ids_by_name
+                .insert("a".to_string(), lifetime_parameter);
+
             let parameter_id = self.trait_function_parameters.push(crate::Parameter {
                 name: "this".to_string(),
                 parameter_parent_id: trait_function_id,
@@ -164,7 +201,7 @@ impl Table {
                 ty: Type::Reference(crate::ty::ReferenceType {
                     operand: Box::new(Type::Parameter(type_parameter_id)),
                     qualifier: Some(ReferenceQualifier::Restrict),
-                    lifetime_argument: None,
+                    lifetime_argument: LifetimeArgument::Parameter(lifetime_parameter),
                 }),
                 is_mutable: false,
                 syntax_tree: None,

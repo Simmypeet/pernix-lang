@@ -14,7 +14,7 @@ use crate::{
     error, Accessibility, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global,
     GlobalID, Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, Parameter,
     Scoped, ScopedID, Struct, Substitution, Symbol, Trait, TraitFunction, TraitType, Type,
-    TypeParameter, ID,
+    TypeParameter, WhereClause, ID,
 };
 
 #[cfg(test)]
@@ -550,6 +550,70 @@ impl Table {
         let mut vec = self.id_to_parent_scopes_vec(id)?;
         vec.reverse();
         Ok(vec)
+    }
+
+    /// Gets the active [`WhereClause`] started from the given ID.
+    ///
+    /// # Errors
+    /// If the ID is invalid, returns an error.
+    pub fn get_active_where_clause(&self, id: ID) -> Result<WhereClause, arena::Error> {
+        let scope_walker = self.scope_walker(id)?;
+        let mut result_where_clause = WhereClause::default();
+
+        for id in scope_walker {
+            let Ok(genericable_id) = GenericableID::try_from(id) else {
+                continue;
+            };
+
+            let Some(where_clause) = self
+                .get_genericable(genericable_id)?
+                .where_clause()
+            else {
+                continue;
+            };
+
+            for (lifetime_parameter, lifetime_argument_set) in
+                &where_clause.lifetime_argument_sets_by_lifetime_parameter
+            {
+                let result_lifetime_argument_set = result_where_clause
+                    .lifetime_argument_sets_by_lifetime_parameter
+                    .entry(*lifetime_parameter)
+                    .or_default();
+
+                result_lifetime_argument_set.extend(lifetime_argument_set)
+            }
+
+            for (trait_type, lifetime_argument_set) in
+                &where_clause.lifetime_argument_sets_by_trait_type
+            {
+                let result_lifetime_argument_set = result_where_clause
+                    .lifetime_argument_sets_by_trait_type
+                    .entry(trait_type.clone())
+                    .or_default();
+
+                result_lifetime_argument_set.extend(lifetime_argument_set)
+            }
+
+            for (trait_type, ty) in &where_clause.types_by_trait_type {
+                assert!(result_where_clause
+                    .types_by_trait_type
+                    .insert(trait_type.clone(), ty.clone())
+                    .is_none())
+            }
+
+            for (type_parameter, lifetime_argument_set) in
+                &where_clause.lifetime_argument_sets_by_type_parameter
+            {
+                let result_lifetime_argument_set = result_where_clause
+                    .lifetime_argument_sets_by_type_parameter
+                    .entry(*type_parameter)
+                    .or_default();
+
+                result_lifetime_argument_set.extend(lifetime_argument_set)
+            }
+        }
+
+        Ok(result_where_clause)
     }
 
     /// Creates a new empty table.

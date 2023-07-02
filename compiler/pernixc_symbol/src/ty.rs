@@ -44,7 +44,7 @@ pub struct ReferenceType {
     pub qualifier: Option<ReferenceQualifier>,
 
     /// The optional lifetime of the reference.
-    pub lifetime_argument: Option<LifetimeArgument>,
+    pub lifetime_argument: LifetimeArgument,
 }
 
 /// Represents a type from the struct.
@@ -63,7 +63,7 @@ pub struct TraitType {
     /// The ID of the associated type.
     pub trait_type_id: arena::ID<crate::TraitType>,
 
-    /// The generic parameter substitution.
+    /// The generic parameter substitution for the associated type.
     pub substitution: Substitution,
 }
 

@@ -11,7 +11,7 @@ use crate::{
     ty::{self, ReferenceQualifier},
     Enum, EnumVariant, Field, Function, GenericParameters, GenericableID, GlobalID,
     LifetimeArgument, LifetimeParameter, Module, ModuleChildID, Parameter, Struct, Substitution,
-    Trait, TraitFunction, TraitMemberID, TraitType, TraitTypeBound, TypeParameter, WhereClause,
+    Trait, TraitFunction, TraitMemberID, TraitType, TypeParameter, WhereClause,
 };
 
 impl Table {
@@ -449,12 +449,10 @@ impl Table {
 
         write!(file, "&")?;
 
-        if let Some(lifetime_argument) = reference_ty.lifetime_argument {
-            match lifetime_argument {
-                LifetimeArgument::Static => write!(file, "'static ")?,
-                LifetimeArgument::Parameter(lt) => {
-                    write!(file, "'{} ", self.lifetime_parameters[lt].name)?;
-                }
+        match reference_ty.lifetime_argument {
+            LifetimeArgument::Static => write!(file, "'static ")?,
+            LifetimeArgument::Parameter(lt) => {
+                write!(file, "'{} ", self.lifetime_parameters[lt].name)?;
             }
         }
 
@@ -495,7 +493,8 @@ impl Table {
         if where_clause
             .lifetime_argument_sets_by_lifetime_parameter
             .is_empty()
-            && where_clause.trait_type_bounds_by_trait_type.is_empty()
+            && where_clause.lifetime_argument_sets_by_trait_type.is_empty()
+            && where_clause.types_by_trait_type.is_empty()
             && where_clause
                 .lifetime_argument_sets_by_type_parameter
                 .is_empty()
@@ -545,7 +544,9 @@ impl Table {
         }
 
         {
-            for (trait_type, trait_type_bounds) in &where_clause.trait_type_bounds_by_trait_type {
+            for (trait_type, lifetime_argument_bounds) in
+                &where_clause.lifetime_argument_sets_by_trait_type
+            {
                 if !is_first {
                     write!(file, ", ")?;
                 }
@@ -554,28 +555,39 @@ impl Table {
 
                 write!(file, ": ")?;
 
-                match trait_type_bounds {
-                    TraitTypeBound::Type(ty) => self.write_ty_type(file, ty)?,
-                    TraitTypeBound::LifetimeArguments(lifetime_arguments) => {
-                        let mut is_first_lifetime_argument = true;
-                        for lifetime_argument in lifetime_arguments {
-                            if !is_first_lifetime_argument {
-                                write!(file, " + ")?;
-                            }
+                let mut first_trait_type_bound = true;
+                for lifetime_argument in lifetime_argument_bounds {
+                    if !first_trait_type_bound {
+                        write!(file, " + ")?;
+                    }
 
-                            match lifetime_argument {
-                                LifetimeArgument::Parameter(lt) => {
-                                    write!(file, "'{}", self.lifetime_parameters[*lt].name)?;
-                                }
-                                LifetimeArgument::Static => {
-                                    write!(file, "'static")?;
-                                }
-                            }
-
-                            is_first_lifetime_argument = false;
+                    match lifetime_argument {
+                        LifetimeArgument::Parameter(lt) => {
+                            write!(file, "'{}", self.lifetime_parameters[*lt].name)?;
+                        }
+                        LifetimeArgument::Static => {
+                            write!(file, "'static")?;
                         }
                     }
+
+                    first_trait_type_bound = false;
                 }
+
+                is_first = false;
+            }
+        }
+
+        {
+            for (trait_type, type_bound) in &where_clause.types_by_trait_type {
+                if !is_first {
+                    write!(file, ", ")?;
+                }
+
+                self.write_ty_trait_type(file, trait_type)?;
+
+                write!(file, ": ")?;
+
+                self.write_ty_type(file, type_bound)?;
 
                 is_first = false;
             }
@@ -946,28 +958,18 @@ impl<'a> Input for Type<'a> {
                     &input_reference_type.lifetime_argument,
                     &output_reference_type.lifetime_argument,
                 ) {
-                    (None, None) => {}
-                    (Some(input_lifetime_argument), Some(output_lifetime_argument)) => {
-                        match (input_lifetime_argument, output_lifetime_argument) {
-                            (LifetimeArgument::Static, LifetimeArgument::Static) => {}
-                            (
-                                LifetimeArgument::Parameter(input_lifetime_parameter),
-                                LifetimeArgument::Parameter(output_lifetime_parameter),
-                            ) => SymbolRef {
-                                table: self.table,
-                                symbol_id: *input_lifetime_parameter,
-                            }
-                            .assert(&SymbolRef {
-                                table: output.table,
-                                symbol_id: *output_lifetime_parameter,
-                            })?,
-                            (input, output) => {
-                                return Err(TestCaseError::fail(format!(
-                                    "expected {input:#?}, got {output:#?}",
-                                )))
-                            }
-                        }
+                    (LifetimeArgument::Static, LifetimeArgument::Static) => {}
+                    (
+                        LifetimeArgument::Parameter(input_lifetime_parameter),
+                        LifetimeArgument::Parameter(output_lifetime_parameter),
+                    ) => SymbolRef {
+                        table: self.table,
+                        symbol_id: *input_lifetime_parameter,
                     }
+                    .assert(&SymbolRef {
+                        table: output.table,
+                        symbol_id: *output_lifetime_parameter,
+                    })?,
                     (input, output) => {
                         return Err(TestCaseError::fail(format!(
                             "expected {input:#?}, got {output:#?}",

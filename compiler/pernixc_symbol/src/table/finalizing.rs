@@ -1,7 +1,6 @@
 use pernixc_source::SourceElement;
 use pernixc_syntax::syntax_tree::{self, item, QualifiedIdentifier};
 use pernixc_system::{arena, diagnostic::Handler};
-use proptest::sample::Subsequence;
 use table::Error;
 
 use super::{
@@ -15,7 +14,7 @@ use crate::{
 
 impl States {
     fn mark_as_constructing(&mut self, id: ID) -> Result<(), CyclicDependency> {
-        let mut symbol_state = self.symbol_states_by_id.get_mut(&id).expect("invalid ID");
+        let symbol_state = self.symbol_states_by_id.get_mut(&id).expect("invalid ID");
 
         match symbol_state {
             // mark the symbol as constructing
@@ -87,6 +86,21 @@ impl Table {
                 })
                 .unwrap();
         }
+    }
+
+    pub(super) fn collect_where_clause(&self, current_id: ID) -> Result<WhereClause, Error> {
+        let mut where_clause = WhereClause::default();
+
+        for id in self.scope_walker(current_id)? {
+            let Ok(genericable_id) = GenericableID::try_from(id) else {
+                continue;
+            };
+
+            let genericable = self.get_genericable(genericable_id)?;
+            if let Some(current_where_clause) = genericable.where_clause() {}
+        }
+
+        Ok(where_clause)
     }
 
     fn finalize_symbol(
@@ -166,6 +180,7 @@ impl Table {
         genericable_id: GenericableID,
         generic_arguments: &syntax_tree::GenericArguments,
         explicit_lifetime_required: bool,
+        check_where_clause: bool,
         states: &mut States,
         handler: &impl Handler<error::Error>,
     ) -> Result<Substitution, Error> {
@@ -217,6 +232,7 @@ impl Table {
         current_id: ID,
         qualified_identifier: &QualifiedIdentifier,
         explicit_lifetime_required: bool,
+        check_where_clause: bool,
         states: &mut States,
         handler: &impl Handler<Error>,
     ) -> Result<(GlobalID, Substitution), Error> {

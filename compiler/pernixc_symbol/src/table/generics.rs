@@ -4,7 +4,11 @@ use derive_more::From;
 use itertools::Itertools;
 use pernixc_system::arena;
 
-use crate::{ty::Type, TypeParameter};
+use super::Table;
+use crate::{
+    ty::{self, Type},
+    LifetimeArgument, TypeParameter, WhereClause,
+};
 
 /// Used to determine the specialize relationship between two generic parameters.
 pub(super) enum Specialization {
@@ -139,5 +143,135 @@ impl Specialization {
         }
 
         Ok(generic_parameter_mappings)
+    }
+}
+
+impl Table {
+    pub(super) fn outlives(
+        &self,
+        active_where_clause: &WhereClause,
+        ty: &ty::Type,
+        lifetime_argument: LifetimeArgument,
+    ) -> Result<bool, arena::Error> {
+        match ty {
+            Type::Struct(struct_ty) => {
+                let struct_symbol = self.structs.get_ok_or(struct_ty.struct_id)?;
+
+                for field_symbol in struct_symbol.field_order.iter().map(|x| &self.fields[*x]) {
+                    let mut field_ty = field_symbol.ty.clone();
+                    struct_ty.substitution.apply_type(&mut field_ty);
+
+                    if !self.outlives(active_where_clause, &field_ty, lifetime_argument)? {
+                        return Ok(false);
+                    }
+                }
+
+                Ok(true)
+            }
+            Type::Primitive(..) => Ok(true),
+            Type::Reference(reference_ty) => {
+                if reference_ty.lifetime_argument == lifetime_argument {
+                    return self.outlives(
+                        active_where_clause,
+                        &reference_ty.operand,
+                        lifetime_argument,
+                    );
+                }
+
+                match (reference_ty.lifetime_argument, lifetime_argument) {
+                    (LifetimeArgument::Static, _) => self.outlives(
+                        active_where_clause,
+                        &reference_ty.operand,
+                        lifetime_argument,
+                    ),
+                    (
+                        LifetimeArgument::Parameter(reference_ty_lifetime_parameter),
+                        lifetime_argument,
+                    ) => {
+                        let Some(lifetime_argument_bound_set) = active_where_clause
+                            .lifetime_argument_sets_by_lifetime_parameter
+                            .get(&reference_ty_lifetime_parameter)
+                        else {
+                            return Ok(false);
+                        };
+
+                        if !lifetime_argument_bound_set.contains(&lifetime_argument) {
+                            Ok(false)
+                        } else {
+                            self.outlives(
+                                active_where_clause,
+                                &reference_ty.operand,
+                                lifetime_argument,
+                            )
+                        }
+                    }
+                }
+            }
+            Type::Parameter(type_parameter) => {
+                let Some(lifetime_argument_bound_set) = active_where_clause
+                    .lifetime_argument_sets_by_type_parameter
+                    .get(type_parameter)
+                else {
+                    return Ok(false);
+                };
+
+                if lifetime_argument_bound_set.contains(&lifetime_argument) {
+                    return Ok(true);
+                }
+
+                for lifetime_argument_bound in lifetime_argument_bound_set {
+                    let LifetimeArgument::Parameter(lifetime_parameter_bound) =
+                        lifetime_argument_bound else {
+                        continue;
+                    };
+
+                    let Some(inner_lifetime_argument_bound_set) = active_where_clause
+                        .lifetime_argument_sets_by_lifetime_parameter
+                        .get(lifetime_parameter_bound)
+                    else {
+                        return Ok(false);
+                    };
+
+                    if inner_lifetime_argument_bound_set.contains(&lifetime_argument) {
+                        return Ok(true);
+                    }
+                }
+
+                return Ok(false);
+            }
+
+            Type::TraitType(trait_type) => {
+                let Some(lifetime_argument_bound_set) = active_where_clause
+                    .lifetime_argument_sets_by_trait_type
+                    .get(trait_type)
+                else {
+                    return Ok(false);
+                };
+
+                if lifetime_argument_bound_set.contains(&lifetime_argument) {
+                    return Ok(true);
+                }
+
+                for lifetime_argument_bound in lifetime_argument_bound_set {
+                    let LifetimeArgument::Parameter(lifetime_parameter_bound) =
+                        lifetime_argument_bound else {
+                        continue;
+                    };
+
+                    let Some(inner_lifetime_argument_bound_set) = active_where_clause
+                        .lifetime_argument_sets_by_lifetime_parameter
+                        .get(lifetime_parameter_bound)
+                    else {
+                        return Ok(false);
+                    };
+
+                    if inner_lifetime_argument_bound_set.contains(&lifetime_argument) {
+                        return Ok(true);
+                    }
+                }
+
+                return Ok(false);
+            }
+        }
     }
 }

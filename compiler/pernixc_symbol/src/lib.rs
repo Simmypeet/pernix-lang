@@ -117,7 +117,7 @@ pub struct Substitution {
 
 impl Substitution {
     /// Applies the substitution mappings to the given type.
-    pub fn apply(&self, ty: &mut ty::Type) {
+    pub fn apply_type(&self, ty: &mut ty::Type) {
         match ty {
             ty::Type::Struct(struct_type) => {
                 for type_argument in struct_type
@@ -125,7 +125,7 @@ impl Substitution {
                     .type_arguments_by_parameter
                     .values_mut()
                 {
-                    self.apply(type_argument)
+                    self.apply_type(type_argument);
                 }
 
                 for lifetime_argument in struct_type
@@ -139,12 +139,12 @@ impl Substitution {
 
                     if let Some(sub) = self.lifetime_arguments_by_parameter.get(lifetime_parameter)
                     {
-                        *lifetime_argument = sub.clone();
+                        *lifetime_argument = *sub;
                     }
                 }
             }
             ty::Type::Primitive(..) => {}
-            ty::Type::Reference(reference_type) => self.apply(&mut reference_type.operand),
+            ty::Type::Reference(reference_type) => self.apply_type(&mut reference_type.operand),
             ty::Type::Parameter(type_parameter) => {
                 if let Some(sub) = self.type_arguments_by_parameter.get(type_parameter) {
                     *ty = sub.clone();
@@ -156,7 +156,7 @@ impl Substitution {
                     .type_arguments_by_parameter
                     .values_mut()
                 {
-                    self.apply(type_argument)
+                    self.apply_type(type_argument);
                 }
 
                 for lifetime_argument in trait_type
@@ -170,7 +170,7 @@ impl Substitution {
 
                     if let Some(sub) = self.lifetime_arguments_by_parameter.get(lifetime_parameter)
                     {
-                        *lifetime_argument = sub.clone();
+                        *lifetime_argument = *sub;
                     }
                 }
             }
@@ -565,24 +565,6 @@ pub struct GenericParameters {
     pub lifetime_parameter_ids_by_name: HashMap<String, arena::ID<LifetimeParameter>>,
 }
 
-/// Represents a bound on the trait type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(missing_docs)]
-pub enum TraitTypeBound {
-    Type(ty::Type),
-    LifetimeArguments(HashSet<LifetimeArgument>),
-}
-
-/// Represents an active trait constraint.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TraitConstraint {
-    /// The ID of the trait.
-    pub trait_id: arena::ID<Trait>,
-
-    /// List of generic arguments supplied to the trait.
-    pub subsitution: Substitution,
-}
-
 /// Contains all the constraint defined on the where clause of a genericable.
 #[derive(Debug, Clone, Default)]
 pub struct WhereClause {
@@ -590,8 +572,11 @@ pub struct WhereClause {
     pub lifetime_argument_sets_by_lifetime_parameter:
         HashMap<arena::ID<LifetimeParameter>, HashSet<LifetimeArgument>>,
 
-    /// Maps the associated type to its type bound.
-    pub trait_type_bounds_by_trait_type: HashMap<ty::TraitType, TraitTypeBound>,
+    /// Maps the associated trait type to its lietime argument bounds.
+    pub lifetime_argument_sets_by_trait_type: HashMap<ty::TraitType, HashSet<LifetimeArgument>>,
+
+    /// Maps the associated trait type to its type bound.
+    pub types_by_trait_type: HashMap<ty::TraitType, ty::Type>,
 
     /// Maps the type parameter to its lifetime bounds.
     pub lifetime_argument_sets_by_type_parameter:
