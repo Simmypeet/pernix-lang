@@ -192,7 +192,7 @@ impl Table {
         for generic_argument in generic_arguments.argument_list.elements() {
             match generic_argument {
                 syntax_tree::GenericArgument::TypeSpecifier(type_specifier) => {
-                    type_arguments.push(type_specifier)
+                    type_arguments.push(type_specifier);
                 }
                 syntax_tree::GenericArgument::Lifetime(lifetime_argument) => {
                     if !type_arguments.is_empty() {
@@ -206,22 +206,9 @@ impl Table {
                         return Err(Error::FatalSemantic);
                     }
 
-                    lifetime_arguments.push(lifetime_argument)
+                    lifetime_arguments.push(lifetime_argument);
                 }
             }
-        }
-
-        match (explicit_lifetime_required, lifetime_arguments.len()) {
-            (false, 0) => {}
-
-            // lifetime argument lenth mismatches
-            (_, len)
-                if len
-                    != self
-                        .get_genericable(genericable_id)?
-                        .generic_parameters()
-                        .lifetime_parameter_order
-                        .len() => {}
         }
 
         Ok(substitution)

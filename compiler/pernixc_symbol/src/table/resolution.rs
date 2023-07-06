@@ -8,7 +8,7 @@ use pernixc_system::{arena, diagnostic::Handler};
 use super::{drafting::ImplementsSyntaxTreeWithModuleID, Error, Table};
 use crate::{
     error::{self, LifetimeNotFound, ResolutionAmbiguity, TargetNotFound},
-    GenericableID, Generics, GlobalID, Implements, LifetimeArgument, LifetimeParameter, Scoped,
+    ty, GenericableID, Generics, GlobalID, Implements, LifetimeArgument, LifetimeParameter, Scoped,
     ScopedID, Substitution, Trait, ID,
 };
 

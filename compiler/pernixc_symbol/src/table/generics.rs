@@ -2,12 +2,13 @@ use std::collections::HashMap;
 
 use derive_more::From;
 use itertools::Itertools;
-use pernixc_system::arena;
+use pernixc_system::{arena, diagnostic::Handler};
 
 use super::Table;
 use crate::{
+    error,
     ty::{self, Type},
-    LifetimeArgument, TypeParameter, WhereClause,
+    GenericableID, Implements, LifetimeArgument, Substitution, Trait, TypeParameter, WhereClause,
 };
 
 /// Used to determine the specialize relationship between two generic parameters.
@@ -147,6 +148,7 @@ impl Specialization {
 }
 
 impl Table {
+    #[allow(clippy::too_many_lines)]
     pub(super) fn outlives(
         &self,
         active_where_clause: &WhereClause,
@@ -195,14 +197,14 @@ impl Table {
                             return Ok(false);
                         };
 
-                        if !lifetime_argument_bound_set.contains(&lifetime_argument) {
-                            Ok(false)
-                        } else {
+                        if lifetime_argument_bound_set.contains(&lifetime_argument) {
                             self.outlives(
                                 active_where_clause,
                                 &reference_ty.operand,
                                 lifetime_argument,
                             )
+                        } else {
+                            Ok(false)
                         }
                     }
                 }
@@ -237,7 +239,7 @@ impl Table {
                     }
                 }
 
-                return Ok(false);
+                Ok(false)
             }
 
             Type::TraitType(trait_type) => {
@@ -270,8 +272,66 @@ impl Table {
                     }
                 }
 
-                return Ok(false);
+                Ok(false)
             }
+        }
+    }
+}
+
+pub(super) enum TraitResolution {
+    Resolved(arena::ID<Implements>),
+    ConstraintSatisfied,
+}
+
+impl ty::Type {
+    fn contains_type_parameter(&self) -> bool {
+        match self {
+            Self::Struct(struct_ty) => struct_ty
+                .substitution
+                .type_arguments_by_parameter
+                .values()
+                .any(Self::contains_type_parameter),
+            Self::Primitive(_) => false,
+            Self::Reference(reference_ty) => reference_ty.operand.contains_type_parameter(),
+            Self::Parameter(_) => true,
+            Self::TraitType(trait_ty) => trait_ty
+                .substitution
+                .type_arguments_by_parameter
+                .values()
+                .any(Self::contains_type_parameter),
+        }
+    }
+}
+
+impl Table {
+    fn where_clause_satisfied(
+        &self,
+        genericable_id: GenericableID,
+        substitution: &Substitution,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<(), Error> {
+        todo!()
+    }
+
+    fn resolve_trait(
+        &self,
+        trait_id: arena::ID<Trait>,
+        substitution: &Substitution,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<TraitResolution, Error> {
+        // check if the where clause satisfied
+        self.where_clause_satisfied(trait_id.into(), substitution, handler)?;
+
+        // if in the substitution there is a type parameter, then the trait is not resolved.
+        let requires_concrete_resolution = !substitution
+            .type_arguments_by_parameter
+            .values()
+            .any(ty::Type::contains_type_parameter);
+
+        if requires_concrete_resolution {
+            todo!()
+        } else {
+            Ok(TraitResolution::ConstraintSatisfied)
         }
     }
 }

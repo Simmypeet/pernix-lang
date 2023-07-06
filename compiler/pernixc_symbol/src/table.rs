@@ -580,7 +580,7 @@ impl Table {
                     .entry(*lifetime_parameter)
                     .or_default();
 
-                result_lifetime_argument_set.extend(lifetime_argument_set)
+                result_lifetime_argument_set.extend(lifetime_argument_set);
             }
 
             for (trait_type, lifetime_argument_set) in
@@ -591,14 +591,14 @@ impl Table {
                     .entry(trait_type.clone())
                     .or_default();
 
-                result_lifetime_argument_set.extend(lifetime_argument_set)
+                result_lifetime_argument_set.extend(lifetime_argument_set);
             }
 
             for (trait_type, ty) in &where_clause.types_by_trait_type {
                 assert!(result_where_clause
                     .types_by_trait_type
                     .insert(trait_type.clone(), ty.clone())
-                    .is_none())
+                    .is_none());
             }
 
             for (type_parameter, lifetime_argument_set) in
@@ -609,7 +609,7 @@ impl Table {
                     .entry(*type_parameter)
                     .or_default();
 
-                result_lifetime_argument_set.extend(lifetime_argument_set)
+                result_lifetime_argument_set.extend(lifetime_argument_set);
             }
         }
 
