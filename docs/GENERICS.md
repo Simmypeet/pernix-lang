@@ -10,6 +10,12 @@ Pernix's generics are based on the **trait** system (like Rust or similar to typ
 in Haskell). Pernix contains various components that are used to implement a powerful generics
 system.
 
+The compiler generates various version of a symbol based on the generics arguments passed to it. The
+passed arguments' precise value must be known at compile-time such as a constant value or a type.
+Therefore, these operations and abstractions are considered zero-cost abstractions since they are
+computed at compile-time. Currently, the only accept generic parameters are type parameteres, in the
+future, the support for compile-time constant value will be added.
+
 ### Trait and Implements
 
 A `trait` is a declaration containing a set of members (behaviors or properties) that the user must
@@ -132,6 +138,31 @@ The generics system plays a huge role in the type system of Pernix. The type sys
 support/rules specifically for generic type parameters.
 
 **Opaque Type** refers to a type whose its precise type is not yet known at the time of its usage.
-This refers to a generic type parameter or a type that has atleast **one** generic type parameter in
-its type arguments.
+This refers to a generic type parameter or a type that has atleast **one** generics parameter used
+in its generic arguments.
 
+Unifying is the way to determine if a particular pair of types are compatible with one another. The
+process of unification involves in performing a substitution on type parameters (variables) found in
+its type to the compared type. If the substitution is successful, then the two types are compatible
+with one another.
+
+``` rust
+struct Foo<T, U> {
+    // ..
+}
+
+bar<T>(a: Foo<T, int32>): void {
+    // ..
+}
+
+main(): void {
+    let first: Foo<float32, int32> = firstFunction();
+    let second: Foo<float32, float32> = secondFunction();
+
+    /**
+     * The type parameter `T` in `bar` function got subsituted into `float32`
+     */
+    bar(first);
+    bar:<float32>(first);
+}
+```
