@@ -500,12 +500,23 @@ impl Token {
 
         let mut value_iter_end = iter.clone();
 
-        // Tokenizes the suffix
+        // Lexes the suffix
         let suffix_span = if let Some((_, character)) = iter.peek() {
             if Self::is_first_identifier_character(character) {
                 iter.next();
                 Self::walk_iter(iter, Self::is_identifier_character);
-                Some(Self::create_span(value_iter_end.peek().unwrap().0, iter))
+
+                let span = Self::create_span(value_iter_end.peek().unwrap().0, iter);
+
+                // the span must not be a keyword
+                if KeywordKind::from_str(span.str()).is_err() {
+                    Some(span)
+                } else {
+                    // resets the iterator
+                    *iter = value_iter_end.clone();
+
+                    None
+                }
             } else {
                 None
             }
@@ -521,7 +532,7 @@ impl Token {
         .into()
     }
 
-    /// Tokenizes the source code from the given iterator.
+    /// Lexes the source code from the given iterator.
     ///
     /// The tokenization starts at the current location of the iterator. The function moves the
     /// iterator at least once and forwards it until it makes a token. After the token is made, the
@@ -531,14 +542,14 @@ impl Token {
     /// - [`Error::EndOfSourceCodeIteratorArgument`] - The iterator argument is at the end of the
     ///   source code.
     /// - [`Error::FatalLexicalError`] - A fatal lexical error occurred.
-    pub fn tokenize(
+    pub fn lex(
         iter: &mut pernixc_source::Iterator,
         handler: &impl Handler<error::Error>,
     ) -> Result<Self, Error> {
         // Gets the first character
         let (start, character) = iter.next().ok_or(Error::EndOfSourceCodeIteratorArgument)?;
 
-        // Found whitespaces
+        // Found white spaces
         if character.is_whitespace() {
             Ok(Self::handle_whitespace(iter, start))
         }

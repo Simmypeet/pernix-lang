@@ -9,7 +9,7 @@ fn tokenize(source: &str) -> Result<Token, proptest::test_runner::TestCaseError>
     let mut iterator = source_file.iter();
 
     let error_storage: Storage<Error> = Storage::new();
-    let token = Token::tokenize(&mut iterator, &error_storage)?;
+    let token = Token::lex(&mut iterator, &error_storage)?;
 
     // no errors
     prop_assert!(error_storage.as_vec().is_empty());

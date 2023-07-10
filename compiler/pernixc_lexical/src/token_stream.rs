@@ -77,7 +77,7 @@ impl TokenStream {
 
         loop {
             // Tokenizes the next token
-            match Token::tokenize(&mut source_file_iterator, handler) {
+            match Token::lex(&mut source_file_iterator, handler) {
                 Ok(token) => tokens.push(token),
                 Err(token::Error::EndOfSourceCodeIteratorArgument) => {
                     break;
