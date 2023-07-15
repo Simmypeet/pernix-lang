@@ -4,7 +4,6 @@ use pernixc_system::arena;
 
 use super::Table;
 use crate::{
-    error::LifetimeArgumentMustBeSuppliedPriorToTypeArgument,
     ty::{PrimitiveType, ReferenceQualifier, Type},
     Accessibility, Generics, LifetimeArgument, Module, Trait, TraitFunction, TypeParameter,
 };
