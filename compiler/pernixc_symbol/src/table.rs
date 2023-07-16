@@ -665,8 +665,14 @@ impl Table {
         table.populate_usings_in_workspace(&targets, handler);
 
         // drafts the symbols
-        let (_states, _implements_syntax_tree_with_module_ids) =
+        let (mut states, implements_syntax_tree_with_module_ids) =
             table.draft_symbols(targets, handler);
+
+        table.attach_implements(implements_syntax_tree_with_module_ids, handler);
+
+        while let Some(drafted_symbol) = states.next_drafted_symbol() {
+            table.finalize_symbol(drafted_symbol, &mut states, handler);
+        }
 
         Ok(table)
     }

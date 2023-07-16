@@ -88,7 +88,7 @@ pub struct TraitType {
     /// The generics of the associated type.
     pub generic_parameters: GenericParameters,
 
-    /// The ID of the trait that contais the associated type.
+    /// The ID of the trait that contains the associated type.
     pub parent_trait_id: arena::ID<Trait>,
 
     /// The syntax tree of the associated type.
@@ -116,67 +116,6 @@ pub struct Substitution {
 }
 
 impl Substitution {
-    /// Applies the substitution mappings to the given type.
-    pub fn apply_type(&self, ty: &mut ty::Type) {
-        match ty {
-            ty::Type::Struct(struct_type) => {
-                for type_argument in struct_type
-                    .substitution
-                    .type_arguments_by_parameter
-                    .values_mut()
-                {
-                    self.apply_type(type_argument);
-                }
-
-                for lifetime_argument in struct_type
-                    .substitution
-                    .lifetime_arguments_by_parameter
-                    .values_mut()
-                {
-                    let LifetimeArgument::Parameter(lifetime_parameter) = lifetime_argument else {
-                        continue;
-                    };
-
-                    if let Some(sub) = self.lifetime_arguments_by_parameter.get(lifetime_parameter)
-                    {
-                        *lifetime_argument = *sub;
-                    }
-                }
-            }
-            ty::Type::Primitive(..) => {}
-            ty::Type::Reference(reference_type) => self.apply_type(&mut reference_type.operand),
-            ty::Type::Parameter(type_parameter) => {
-                if let Some(sub) = self.type_arguments_by_parameter.get(type_parameter) {
-                    *ty = sub.clone();
-                }
-            }
-            ty::Type::TraitType(trait_type) => {
-                for type_argument in trait_type
-                    .substitution
-                    .type_arguments_by_parameter
-                    .values_mut()
-                {
-                    self.apply_type(type_argument);
-                }
-
-                for lifetime_argument in trait_type
-                    .substitution
-                    .lifetime_arguments_by_parameter
-                    .values_mut()
-                {
-                    let LifetimeArgument::Parameter(lifetime_parameter) = lifetime_argument else {
-                        continue;
-                    };
-
-                    if let Some(sub) = self.lifetime_arguments_by_parameter.get(lifetime_parameter)
-                    {
-                        *lifetime_argument = *sub;
-                    }
-                }
-            }
-        }
-    }
-
     /// Checks if the type parameter substitution is empty.
     #[must_use]
     pub fn type_parameter_is_empty(&self) -> bool { self.type_arguments_by_parameter.is_empty() }

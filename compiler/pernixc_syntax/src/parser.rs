@@ -211,7 +211,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 return Ok((None, punc));
             }
-            None => handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+            None => handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                 expected: delimiter,
                 found: None,
             })),
@@ -286,7 +286,7 @@ impl<'a> Parser<'a> {
                     break delimiter_token;
                 }
                 found => {
-                    handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+                    handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                         expected: delimiter,
                         found,
                     }));
@@ -365,7 +365,7 @@ impl<'a> Parser<'a> {
                     delimited_tree
                 }
                 found => {
-                    handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+                    handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                         expected,
                         found: Some(match found {
                             TokenTree::Token(token) => token.clone(),
@@ -379,7 +379,7 @@ impl<'a> Parser<'a> {
                 }
             }
         } else {
-            handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+            handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                 expected,
                 found: None,
             }));
@@ -431,7 +431,7 @@ impl<'a> Parser<'a> {
                 Delimiter::Bracket => ']',
             };
 
-            handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+            handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                 expected,
                 found: self.current_frame.peek(),
             }));
@@ -487,7 +487,7 @@ impl<'a> Parser<'a> {
         match self.next_significant_token() {
             Some(Token::Identifier(ident)) => Ok(ident),
             found => {
-                handler.recieve(SyntacticError::IdentifierExpected(IdentifierExpected {
+                handler.receive(SyntacticError::IdentifierExpected(IdentifierExpected {
                     found,
                 }));
                 Err(Error)
@@ -509,7 +509,7 @@ impl<'a> Parser<'a> {
                 Ok(keyword_token)
             }
             found => {
-                handler.recieve(SyntacticError::KeywordExpected(KeywordExpected {
+                handler.receive(SyntacticError::KeywordExpected(KeywordExpected {
                     expected,
                     found,
                 }));
@@ -539,7 +539,7 @@ impl<'a> Parser<'a> {
                 Ok(punctuation_token)
             }
             found => {
-                handler.recieve(SyntacticError::PunctuationExpected(PunctuationExpected {
+                handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                     expected,
                     found,
                 }));

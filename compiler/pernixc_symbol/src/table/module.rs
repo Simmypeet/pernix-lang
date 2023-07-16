@@ -99,7 +99,7 @@ impl Table {
                     .module_child_ids_by_name
                     .get(path.span.str())
                     .copied() else {
-                    handler.recieve(error::Error::ModuleNotFound(
+                    handler.receive(error::Error::ModuleNotFound(
                         ModuleNotFound {
                             in_module_id: module_id,
                             unknown_module_span: path.span.clone(),
@@ -114,7 +114,7 @@ impl Table {
                 let Some(module_id) = self.target_root_module_ids_by_name
                     .get(path.span.str())
                     .copied() else {
-                    handler.recieve(error::Error::TargetNotFound(
+                    handler.receive(error::Error::TargetNotFound(
                         TargetNotFound {
                             unknown_target_span: path.span.clone()
                         }
@@ -149,7 +149,7 @@ impl Table {
 
             // check if using own module
             if using_module_id == module_id {
-                handler.recieve(error::Error::UsingOwnModule(UsingOwnModule {
+                handler.receive(error::Error::UsingOwnModule(UsingOwnModule {
                     module_id,
                     using_span: using_span.clone(),
                 }));
@@ -161,7 +161,7 @@ impl Table {
             if let Some(previous_using_span) =
                 using_spans_by_module_id.insert(using_module_id, using_span.clone())
             {
-                handler.recieve(error::Error::UsingDuplication(error::UsingDuplication {
+                handler.receive(error::Error::UsingDuplication(error::UsingDuplication {
                     previous_using_span,
                     duplicate_using_span: using_span,
                 }));

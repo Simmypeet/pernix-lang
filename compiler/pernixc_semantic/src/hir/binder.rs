@@ -171,8 +171,8 @@ impl<'a, T> pernixc_system::error_handler::ErrorHandler<crate::symbol::error::Er
 where
     T: pernixc_system::error_handler::ErrorHandler<crate::symbol::error::Error>,
 {
-    fn recieve(&self, error: crate::symbol::error::Error) {
-        self.handler.recieve(error);
+    fn receive(&self, error: crate::symbol::error::Error) {
+        self.handler.receive(error);
         *self.suboptimal.write().unwrap() = true;
     }
 }
@@ -182,8 +182,8 @@ impl<'a, T> pernixc_system::error_handler::ErrorHandler<super::error::Error>
 where
     T: pernixc_system::error_handler::ErrorHandler<super::error::Error>,
 {
-    fn recieve(&self, error: super::error::Error) {
-        self.handler.recieve(error);
+    fn receive(&self, error: super::error::Error) {
+        self.handler.receive(error);
         *self.suboptimal.write().unwrap() = true;
     }
 }
@@ -418,7 +418,7 @@ impl Binder {
                 }
 
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::TypeMismatch(TypeMismatch {
+                    .receive(Error::TypeMismatch(TypeMismatch {
                         expression_span: span.clone(),
                         expected: InferableType::Type(expect),
                         found: InferableType::Type(found),
@@ -432,7 +432,7 @@ impl Binder {
                 }
 
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::TypeMismatch(TypeMismatch {
+                    .receive(Error::TypeMismatch(TypeMismatch {
                         expression_span: span.clone(),
                         expected: InferableType::Constraint(expect),
                         found: InferableType::Type(found),
@@ -447,7 +447,7 @@ impl Binder {
         };
 
         self.create_error_handler_adapter(handler)
-            .recieve(Self::handle_unification_error(span.clone(), err, swapped));
+            .receive(Self::handle_unification_error(span.clone(), err, swapped));
 
         Err(BindingError(span))
     }
@@ -902,7 +902,7 @@ impl Binder {
 
         if overload_candidates.is_empty() {
             self.create_error_handler_adapter(handler)
-                .recieve(Error::NoAccessibleOverload(NoAccessibleOverload {
+                .receive(Error::NoAccessibleOverload(NoAccessibleOverload {
                     overload_set_id,
                     symbol_span: syntax_tree.qualified_identifier().span(),
                 }));
@@ -927,7 +927,7 @@ impl Binder {
         match overload_candidates.len() {
             // no overload matches
             0 => {
-                self.create_error_handler_adapter(handler).recieve(
+                self.create_error_handler_adapter(handler).receive(
                     Error::NoOverloadWithMatchingArgumentTypes(
                         NoOverloadWithMatchingArgumentTypes {
                             overload_set_id,
@@ -993,7 +993,7 @@ impl Binder {
                     }
                     BindingTarget::ForAddress { .. } => {
                         self.create_error_handler_adapter(handler)
-                            .recieve(Error::LValueExpected(crate::hir::error::LValueExpected {
+                            .receive(Error::LValueExpected(crate::hir::error::LValueExpected {
                                 expression_span: syntax_tree.span(),
                             }));
                         Err(BindingError(syntax_tree.span()))
@@ -1013,7 +1013,7 @@ impl Binder {
             _ => {
                 // since placeholders can match multiple types, it might produce multiple candidates
                 if !has_placeholders {
-                    self.create_error_handler_adapter(handler).recieve(
+                    self.create_error_handler_adapter(handler).receive(
                         Error::AmbiguousFunctionCall(AmbiguousFunctionCall {
                             candidate_overloads: overload_candidates,
                             function_call_span: syntax_tree.span(),
@@ -1061,7 +1061,7 @@ impl Binder {
         let symbol = symbol.map_err(|_| BindingError(syntax_tree.span()))?;
 
         let GlobalID::OverloadSet(overload_set_id) = symbol else {
-            self.create_error_handler_adapter(handler).recieve(
+            self.create_error_handler_adapter(handler).receive(
                 Error::SymbolNotCallable(SymbolNotCallable {
                     found_id: symbol,
                     symbol_span: syntax_tree.span()
@@ -1079,7 +1079,7 @@ impl Binder {
             overload.parameter_order().len() == arguments.len()
         });
         if overload_candidates.is_empty() {
-            self.create_error_handler_adapter(handler).recieve(
+            self.create_error_handler_adapter(handler).receive(
                 Error::NoOverloadWithMatchingNumberOfArguments(
                     NoOverloadWithMatchingNumberOfArguments {
                         overload_set_id,
@@ -1200,7 +1200,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Register(register_id))),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(crate::hir::error::LValueExpected {
+                    .receive(Error::LValueExpected(crate::hir::error::LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -1278,7 +1278,7 @@ impl Binder {
                             };
 
                             if !variable_is_mutable {
-                                self.create_error_handler_adapter(handler).recieve(
+                                self.create_error_handler_adapter(handler).receive(
                                     Error::MutableLValueExpected(MutableLValueExpected {
                                         expression_span: syntax_tree.span(),
                                     }),
@@ -1313,7 +1313,7 @@ impl Binder {
 
         // only enum literal can be used as a value
         let GlobalID::EnumVariant(enum_variant_id) = symbol else {
-            self.create_error_handler_adapter(handler).recieve(Error::ValueExpected(ValueExpected {
+            self.create_error_handler_adapter(handler).receive(Error::ValueExpected(ValueExpected {
                 expression_span: syntax_tree.span(),
                 found_symbol: symbol
             }));
@@ -1330,7 +1330,7 @@ impl Binder {
             ))),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
 
@@ -1382,7 +1382,7 @@ impl Binder {
 
         // expect struct id
         let Some(struct_id) = struct_id else {
-            self.create_error_handler_adapter(handler).recieve(Error::StructExpected(StructExpected {
+            self.create_error_handler_adapter(handler).receive(Error::StructExpected(StructExpected {
                 found_id,
                 symbol_span: syntax_tree.qualified_identifier().span()
             }));
@@ -1425,7 +1425,7 @@ impl Binder {
             let Some(field_id) = struct_sym
                 .field_ids_by_name()
                 .get(initialization.identifier().span.str()).copied() else {
-                self.create_error_handler_adapter(handler).recieve(Error::UnknownField(UnknownField {
+                self.create_error_handler_adapter(handler).receive(Error::UnknownField(UnknownField {
                     struct_id,
                     field_name_span: initialization.identifier().span.clone(),
                 }));
@@ -1446,7 +1446,7 @@ impl Binder {
                 .unwrap()
             {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::FieldInaccessible(FieldInaccessible {
+                    .receive(Error::FieldInaccessible(FieldInaccessible {
                         field_id,
                         struct_id,
                         field_span: initialization.identifier().span.clone(),
@@ -1456,7 +1456,7 @@ impl Binder {
 
             let redefined = if let Some((span, _)) = initializations.get(&field_id) {
                 // field initialization duplication
-                self.create_error_handler_adapter(handler).recieve(
+                self.create_error_handler_adapter(handler).receive(
                     Error::DuplicateFieldInitialization(DuplicateFieldInitialization {
                         duplicate_initialization_span: initialization.span(),
                         previous_initialization_span: span.clone(),
@@ -1505,7 +1505,7 @@ impl Binder {
 
         if !uninitialized_fields.is_empty() {
             self.create_error_handler_adapter(handler)
-                .recieve(Error::UninitializedFields(UninitializedFields {
+                .receive(Error::UninitializedFields(UninitializedFields {
                     struct_literal_span: syntax_tree.span(),
                     struct_id,
                     uninitialized_fields,
@@ -1528,7 +1528,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Register(register_id))),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
 
@@ -1584,7 +1584,7 @@ impl Binder {
 
         // expect the type to be a struct
         let InferableType::Type(Type::TypedID(TypedID::Struct(struct_id))) = ty else {
-            self.create_error_handler_adapter(handler).recieve(Error::NoFieldOnType(NoFieldOnType {
+            self.create_error_handler_adapter(handler).receive(Error::NoFieldOnType(NoFieldOnType {
                 operand_span: syntax_tree.operand().span(),
                 operand_type: ty
             }));
@@ -1598,7 +1598,7 @@ impl Binder {
         let Some(field_id) = struct_sym.field_ids_by_name().get(
             syntax_tree.identifier().span.str()
         ).copied() else {
-            self.create_error_handler_adapter(handler).recieve(Error::UnknownField(UnknownField {
+            self.create_error_handler_adapter(handler).receive(Error::UnknownField(UnknownField {
                 struct_id,
                 field_name_span: syntax_tree.identifier().span.clone()
             }));
@@ -1618,7 +1618,7 @@ impl Binder {
             .unwrap()
         {
             self.create_error_handler_adapter(handler)
-                .recieve(Error::FieldInaccessible(FieldInaccessible {
+                .receive(Error::FieldInaccessible(FieldInaccessible {
                     field_id,
                     struct_id,
                     field_span: syntax_tree.identifier().span.clone(),
@@ -1698,7 +1698,7 @@ impl Binder {
                 "f32" => PrimitiveType::Float32,
                 "f64" => PrimitiveType::Float64,
                 _ => {
-                    self.create_error_handler_adapter(handler).recieve(
+                    self.create_error_handler_adapter(handler).receive(
                         Error::InvalidNumericLiteralSuffix(InvalidNumericLiteralSuffix {
                             suffix_span: suffix.clone(),
                         }),
@@ -1726,7 +1726,7 @@ impl Binder {
                 .contains('.');
 
             if primitive_type_is_integral && has_dot {
-                self.create_error_handler_adapter(handler).recieve(
+                self.create_error_handler_adapter(handler).receive(
                     Error::FloatingPointLiteralHasIntegralSuffix(
                         FloatingPointLiteralHasIntegralSuffix {
                             floating_point_span: syntax_tree.numeric_literal_token().span.clone(),
@@ -1768,7 +1768,7 @@ impl Binder {
             }
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -1804,7 +1804,7 @@ impl Binder {
             ))),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -2273,7 +2273,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(value)),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -2360,7 +2360,7 @@ impl Binder {
                 }
 
                 if !missing_value_basic_blocks.is_empty() {
-                    self.create_error_handler_adapter(handler).recieve(
+                    self.create_error_handler_adapter(handler).receive(
                         Error::NotAllFlowPathExpressValue(NotAllFlowPathExpressValue {
                             block_span: syntax_tree.span(),
                             missing_value_basic_blocks,
@@ -2424,7 +2424,7 @@ impl Binder {
 
                 if scope_id.is_none() {
                     self.create_error_handler_adapter(handler)
-                        .recieve(Error::ExpressOutsideBlock(ExpressOutsideBlock {
+                        .receive(Error::ExpressOutsideBlock(ExpressOutsideBlock {
                             express_span: syntax_tree.span(),
                         }));
                 }
@@ -2449,7 +2449,7 @@ impl Binder {
                 };
 
                 if scope_id.is_none() {
-                    self.create_error_handler_adapter(handler).recieve(
+                    self.create_error_handler_adapter(handler).receive(
                         Error::NoBlockWithGivenLabelFound(NoBlockWithGivenLabelFound {
                             label_span: label.identifier().span.clone(),
                         }),
@@ -2633,7 +2633,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Unreachable(value))),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -2691,7 +2691,7 @@ impl Binder {
             {
                 // expect a return value
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::ReturnValueExpected(ReturnValueExpected {
+                    .receive(Error::ReturnValueExpected(ReturnValueExpected {
                         return_span: syntax_tree.span(),
                     }));
             }
@@ -2723,7 +2723,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Unreachable(value))),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -2952,7 +2952,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(value)),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
 
@@ -3066,7 +3066,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(value)),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -3100,7 +3100,7 @@ impl Binder {
                 };
 
                 if scope_id.is_none() {
-                    self.create_error_handler_adapter(handler).recieve(
+                    self.create_error_handler_adapter(handler).receive(
                         Error::LoopControlExressionOutsideLoop(
                             super::error::LoopControlExressionOutsideLoop {
                                 loop_control_span: syntax_tree_span,
@@ -3131,7 +3131,7 @@ impl Binder {
                 };
 
                 if scope_id.is_none() {
-                    self.create_error_handler_adapter(handler).recieve(
+                    self.create_error_handler_adapter(handler).receive(
                         Error::NoBlockWithGivenLabelFound(NoBlockWithGivenLabelFound {
                             label_span: label.identifier().span.clone(),
                         }),
@@ -3207,7 +3207,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Unreachable(value))),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -3392,7 +3392,7 @@ impl Binder {
             BindingTarget::ForValue => Ok(BindingResult::Value(Value::Unreachable(value))),
             BindingTarget::ForAddress { .. } => {
                 self.create_error_handler_adapter(handler)
-                    .recieve(Error::LValueExpected(LValueExpected {
+                    .receive(Error::LValueExpected(LValueExpected {
                         expression_span: syntax_tree.span(),
                     }));
                 Err(BindingError(syntax_tree.span()))
@@ -3486,7 +3486,7 @@ impl Binder {
                 BindingTarget::ForValue => Ok(BindingResult::Value(Value::Register(register_id))),
                 BindingTarget::ForAddress { .. } => {
                     self.create_error_handler_adapter(handler)
-                        .recieve(Error::LValueExpected(LValueExpected {
+                        .receive(Error::LValueExpected(LValueExpected {
                             expression_span: syntax_tree.span(),
                         }));
                     Err(BindingError(syntax_tree.span()))
@@ -3497,7 +3497,7 @@ impl Binder {
             }
         } else {
             self.create_error_handler_adapter(handler)
-                .recieve(Error::NoCastAvailable(super::error::NoCastAvailable {
+                .receive(Error::NoCastAvailable(super::error::NoCastAvailable {
                     cast_span: syntax_tree.span(),
                     expression_type: value_type,
                     cast_type: InferableType::Type(target_type),

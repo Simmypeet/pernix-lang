@@ -371,7 +371,7 @@ impl Target {
             for module in &modules {
                 if !defined_submodules.insert(module.identifier.span.str()) {
                     submodules.push(None);
-                    handler.recieve(Error::ModuleRedefinition(ModuleRedefinition {
+                    handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
                         redifinition_submodule: module.clone(),
                     }));
                     continue;
@@ -390,7 +390,7 @@ impl Target {
                     // check if the submodule path is the same as the root file path
                     if submodule_path == *source_file.full_path() {
                         submodules.push(None);
-                        handler.recieve(Error::RootSubmoduleConflict(RootSubmoduleConflict {
+                        handler.receive(Error::RootSubmoduleConflict(RootSubmoduleConflict {
                             root: source_file.clone(),
                             submodule: module.clone(),
                         }));
@@ -412,7 +412,7 @@ impl Target {
                     Ok(submodule_source_file) => submodule_source_file,
                     Err(io_error) => {
                         submodules.push(None);
-                        handler.recieve(Error::SourceFileLoadFail(SourceFileLoadFail {
+                        handler.receive(Error::SourceFileLoadFail(SourceFileLoadFail {
                             io_error,
                             path: submodule_path,
                             submodule: module.clone(),

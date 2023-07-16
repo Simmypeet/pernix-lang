@@ -30,7 +30,7 @@ pub enum ReferenceQualifier {
     /// The reference is mutable.
     Mutable,
 
-    /// The reference is resitricted (requires unique access)
+    /// The reference is restricted (requires unique access)
     Restrict,
 }
 
@@ -61,9 +61,11 @@ pub struct Struct {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TraitType {
     /// The ID of the associated type.
+    ///
+    /// `trait_type_id` already implies the parent trait.
     pub trait_type_id: arena::ID<crate::TraitType>,
 
-    /// The generic parameter substitution for the associated type.
+    /// The generic parameter substitution for the trait type.
     pub substitution: Substitution,
 }
 

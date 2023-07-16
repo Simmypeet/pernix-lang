@@ -177,7 +177,7 @@ impl TokenStream {
             }
         }
 
-        handler.recieve(error::Error::UndelimitedDelimiter(UndelimitedDelimiter {
+        handler.receive(error::Error::UndelimitedDelimiter(UndelimitedDelimiter {
             opening_span: open.span,
             delimiter,
         }));

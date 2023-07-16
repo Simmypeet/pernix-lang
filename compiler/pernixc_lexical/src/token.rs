@@ -455,7 +455,7 @@ impl Token {
                 }
                 .into())
             } else {
-                handler.recieve(
+                handler.receive(
                     UnterminatedDelimitedComment {
                         span: Span::new(iter.source_file().clone(), start, start + 2).unwrap(),
                     }

@@ -1015,7 +1015,7 @@ impl<'a> Parser<'a> {
                 Ok(AccessModifier::Internal(k))
             }
             found => {
-                handler.recieve(Error::AccessModifierExpected(AccessModifierExpected {
+                handler.receive(Error::AccessModifierExpected(AccessModifierExpected {
                     found,
                 }));
                 Err(ParserError)
@@ -1049,7 +1049,7 @@ impl<'a> Parser<'a> {
         )?;
 
         let Some(generic_parameter_list) = generic_parameter_list else {
-            handler.recieve(
+            handler.receive(
                 Error::GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty {
                     span: left_angle_bracket.span.join(&right_angle_bracket.span).expect("Span should be joint successfully"),
                 }
@@ -1342,7 +1342,7 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.recieve(Error::ImplementsMemberExpected(
+                handler.receive(Error::ImplementsMemberExpected(
                     crate::error::ImplementsMemberExpected { found },
                 ));
                 Err(ParserError)
@@ -1439,7 +1439,7 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.recieve(Error::TraitMemberExpected(
+                handler.receive(Error::TraitMemberExpected(
                     crate::error::TraitMemberExpected { found },
                 ));
                 Err(ParserError)
@@ -1660,7 +1660,7 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.recieve(Error::ItemExpected(ItemExpected { found }));
+                handler.receive(Error::ItemExpected(ItemExpected { found }));
                 Err(ParserError)
             }
         }
@@ -1687,7 +1687,7 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.recieve(Error::ItemExpected(ItemExpected { found }));
+                handler.receive(Error::ItemExpected(ItemExpected { found }));
                 Err(ParserError)
             }
         }

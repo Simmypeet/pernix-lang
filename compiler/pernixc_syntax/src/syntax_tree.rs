@@ -672,7 +672,7 @@ impl<'a> Parser<'a> {
 
             // error: lifetime argument identifier expected
             found => {
-                handler.recieve(Error::IdentifierExpected(IdentifierExpected { found }));
+                handler.receive(Error::IdentifierExpected(IdentifierExpected { found }));
 
                 Err(ParserError)
             }
@@ -797,7 +797,7 @@ impl<'a> Parser<'a> {
                 // eat the current token / make progress
                 self.forward();
 
-                handler.recieve(Error::TypeSpecifierExpected(TypeSpecifierExpected {
+                handler.receive(Error::TypeSpecifierExpected(TypeSpecifierExpected {
                     found,
                 }));
 
@@ -858,7 +858,7 @@ impl<'a> Parser<'a> {
 
         // cannot be empty
         let Some(argument_list) = argument_list else {
-            handler.recieve(Error::GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty {
+            handler.receive(Error::GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty {
                 span: left_angle.span.join(&right_angle.span).unwrap(),
             }));
             return Err(ParserError);

@@ -1003,7 +1003,7 @@ impl<'a> Parser<'a> {
             found => {
                 // forward/make progress
                 self.forward();
-                handler.recieve(Error::ExpressionExpected(ExpressionExpected { found }));
+                handler.receive(Error::ExpressionExpected(ExpressionExpected { found }));
                 return Err(ParserError);
             }
         })
@@ -1490,7 +1490,7 @@ impl<'a> Parser<'a> {
             found => {
                 // forward/make progress
                 self.forward();
-                handler.recieve(Error::ExpressionExpected(ExpressionExpected { found }));
+                handler.receive(Error::ExpressionExpected(ExpressionExpected { found }));
                 return Err(ParserError);
             }
         };

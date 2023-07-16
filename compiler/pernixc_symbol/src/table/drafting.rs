@@ -11,12 +11,14 @@ use pernixc_system::{arena, diagnostic::Handler};
 
 use super::Table;
 use crate::{
-    error::{Error, LifetimeParameterShadowing, SymbolRedefinition, TypeParameterShadowing},
+    error::{
+        CyclicDependency, Error, LifetimeParameterShadowing, SymbolRedefinition,
+        TypeParameterShadowing,
+    },
     ty::{self, PrimitiveType},
     Accessibility, Enum, EnumVariant, Field, Function, FunctionSignature,
     FunctionSignatureSyntaxTree, GenericParameters, GenericableID, Generics, LifetimeParameter,
-    Module, ModuleChildID, Parameter, Struct, Trait, TraitFunction, TraitType, Type, TypeParameter,
-    ID,
+    Module, Parameter, Struct, Trait, TraitFunction, TraitType, Type, TypeParameter, ID,
 };
 
 #[cfg(test)]
@@ -30,8 +32,83 @@ pub(super) enum SymbolState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct States {
-    pub(super) symbol_states_by_id: HashMap<ID, SymbolState>,
-    pub(super) current_constructing_order: usize,
+    symbol_states_by_id: HashMap<ID, SymbolState>,
+    current_constructing_order: usize,
+}
+
+impl States {
+    pub(super) fn add_drafted_symbol(&mut self, id: ID) {
+        assert!(self
+            .symbol_states_by_id
+            .insert(id, SymbolState::Drafted)
+            .is_none());
+    }
+
+    pub(super) fn next_drafted_symbol(&self) -> Option<ID> {
+        self.symbol_states_by_id
+            .iter()
+            .find_map(|(id, state)| match state {
+                SymbolState::Drafted => Some(*id),
+                SymbolState::Constructing { .. } => None,
+            })
+    }
+
+    pub(super) fn remove_constructing_symbol(&mut self, id: ID) {
+        assert!(self.symbol_states_by_id.remove(&id).is_some());
+    }
+
+    pub(super) fn mark_as_constructing(&mut self, id: ID) -> Result<(), CyclicDependency> {
+        let symbol_state = self.symbol_states_by_id.get_mut(&id).expect("invalid ID");
+
+        match symbol_state {
+            // mark the symbol as constructing
+            SymbolState::Drafted => {
+                *symbol_state = SymbolState::Constructing {
+                    constructing_order: self.current_constructing_order,
+                };
+
+                self.current_constructing_order += 1;
+                Ok(())
+            }
+            SymbolState::Constructing { constructing_order } => {
+                let constructing_order = *constructing_order;
+                // found cyclic dependency
+
+                // any symbols that are marked as constructing after the `constructing_order` are
+                // considered as participating in the cyclic dependency
+
+                let cyclic_symbols = self
+                    .symbol_states_by_id
+                    .iter()
+                    .filter_map(|(k, v)| match v {
+                        SymbolState::Drafted => None,
+                        SymbolState::Constructing {
+                            constructing_order: comparing_constructing_order,
+                        } => {
+                            if *comparing_constructing_order >= constructing_order {
+                                Some(*k)
+                            } else {
+                                None
+                            }
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                // remove all symbols that are participating in the cyclic dependency
+                for symbol in &cyclic_symbols {
+                    assert!(self.symbol_states_by_id.remove(symbol).is_some());
+                }
+
+                if cyclic_symbols.is_empty() {
+                    Ok(())
+                } else {
+                    Err(CyclicDependency {
+                        participants: cyclic_symbols,
+                    })
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -66,7 +143,6 @@ impl Table {
                 handler,
             );
         }
-
         (
             States {
                 symbol_states_by_id,
@@ -133,7 +209,7 @@ impl Table {
                 if let Err(error) =
                     Self::redefinition_check(&module.module_child_ids_by_name, identifier)
                 {
-                    handler.recieve(Error::SymbolRedefinition(error));
+                    handler.receive(Error::SymbolRedefinition(error));
                     continue;
                 }
 
@@ -159,24 +235,9 @@ impl Table {
                 "redefinition should be handled already"
             );
 
-            match module_child_id {
-                ModuleChildID::Struct(i) => assert!(symbol_states_by_id
-                    .insert(i.into(), SymbolState::Drafted)
-                    .is_none()),
-                ModuleChildID::Function(i) => assert!(symbol_states_by_id
-                    .insert(i.into(), SymbolState::Drafted)
-                    .is_none()),
-                ModuleChildID::Type(i) => assert!(symbol_states_by_id
-                    .insert(i.into(), SymbolState::Drafted)
-                    .is_none()),
-                ModuleChildID::Trait(i) => assert!(symbol_states_by_id
-                    .insert(i.into(), SymbolState::Drafted)
-                    .is_none()),
-                ModuleChildID::Enum(..) => (),
-                ModuleChildID::Module(..) => {
-                    unreachable!()
-                }
-            };
+            assert!(symbol_states_by_id
+                .insert(module_child_id.into(), SymbolState::Drafted)
+                .is_none());
         }
     }
 
@@ -251,7 +312,7 @@ impl Table {
                 item::GenericParameter::Lifetime(lt) => {
                     // lifetime must be declared prior to type parameters
                     if !generic_parameters.type_parameter_ids_by_name.is_empty() {
-                        handler.recieve(
+                        handler.receive(
                             Error::LifetimeParameterMustBeDeclaredPriotToTypeParameter(
                                 crate::error::LifetimeParameterMustBeDeclaredPriotToTypeParameter {
                                     lifetime_parameter_span: lt.span().unwrap(),
@@ -265,7 +326,7 @@ impl Table {
                         &generic_parameters.lifetime_parameter_ids_by_name,
                         &lt.identifier,
                     ) {
-                        handler.recieve(Error::LifetimeParameterRedefinition(error));
+                        handler.receive(Error::LifetimeParameterRedefinition(error));
                         continue;
                     }
 
@@ -276,7 +337,7 @@ impl Table {
                             .unwrap(),
                         &lt.identifier,
                     ) {
-                        handler.recieve(error);
+                        handler.receive(error);
                         continue;
                     }
 
@@ -300,7 +361,7 @@ impl Table {
                         &generic_parameters.type_parameter_ids_by_name,
                         &ty.identifier,
                     ) {
-                        handler.recieve(Error::TypeParameterRedefinition(error));
+                        handler.receive(Error::TypeParameterRedefinition(error));
                         continue;
                     }
 
@@ -311,7 +372,7 @@ impl Table {
                             .unwrap(),
                         &ty.identifier,
                     ) {
-                        handler.recieve(error);
+                        handler.receive(error);
                         continue;
                     }
 
@@ -424,7 +485,7 @@ impl Table {
                     .parameter_ids_by_name,
                 &parameter.identifier,
             ) {
-                handler.recieve(Error::TraitFunctionParameterRedefinition(error));
+                handler.receive(Error::TraitFunctionParameterRedefinition(error));
                 continue;
             }
 
@@ -526,7 +587,7 @@ impl Table {
             if let Err(error) =
                 Self::redefinition_check(&trait_symbol.trait_member_ids_by_name, identifier)
             {
-                handler.recieve(Error::TraitMemberRedefinition(error));
+                handler.receive(Error::TraitMemberRedefinition(error));
                 continue;
             }
 
@@ -599,7 +660,7 @@ impl Table {
             if let Err(error) =
                 Self::redefinition_check(&function.parameter_ids_by_name, &parameter.identifier)
             {
-                handler.recieve(Error::FunctionParameterRedefinition(error));
+                handler.receive(Error::FunctionParameterRedefinition(error));
                 continue;
             }
 
@@ -658,7 +719,7 @@ impl Table {
                         &struct_symbol.field_ids_by_name,
                         &field.identifier,
                     ) {
-                        handler.recieve(Error::FieldRedefinition(err));
+                        handler.receive(Error::FieldRedefinition(err));
                         continue;
                     }
 
@@ -682,7 +743,7 @@ impl Table {
 
                     // accessibility check
                     if struct_symbol.accessibility.rank() < field_accessibility.rank() {
-                        handler.recieve(Error::FieldMoreAccessibleThanStruct(
+                        handler.receive(Error::FieldMoreAccessibleThanStruct(
                             crate::error::FieldMoreAccessibleThanStruct {
                                 field_id,
                                 struct_id,
@@ -735,7 +796,7 @@ impl Table {
 
             if let Err(error) = Self::redefinition_check(&enum_symbol.variant_ids_by_name, &variant)
             {
-                handler.recieve(Error::SymbolRedefinition(error));
+                handler.receive(Error::SymbolRedefinition(error));
                 continue;
             };
 

@@ -11,8 +11,8 @@ use derive_more::{Deref, DerefMut};
 
 /// Represents a trait responsible for handling compilation diagnostics in the compiler.
 pub trait Handler<T>: Send + Sync {
-    /// Recieves an error and handles it.
-    fn recieve(&self, error: T);
+    /// Receives an error and handles it.
+    fn receive(&self, error: T);
 }
 
 /// Is a struct that implements [`Handler`] trait by storing all errors in a vector.
@@ -48,7 +48,7 @@ impl<T: Send + Sync, U> Handler<U> for Storage<T>
 where
     U: Into<T>,
 {
-    fn recieve(&self, error: U) { self.errors.write().unwrap().push(error.into()); }
+    fn receive(&self, error: U) { self.errors.write().unwrap().push(error.into()); }
 }
 
 /// Is a struct that implements [`Handler`] trait by doing nothing with the errors.
@@ -56,7 +56,7 @@ where
 pub struct Dummy;
 
 impl<T> Handler<T> for Dummy {
-    fn recieve(&self, _error: T) {}
+    fn receive(&self, _error: T) {}
 }
 
 /// Is a struct that implements [`Handler`] trait by counting the number of diagnostics received.
@@ -75,5 +75,5 @@ impl Counter {
 }
 
 impl<T> Handler<T> for Counter {
-    fn recieve(&self, _error: T) { *self.counter.write().unwrap() += 1; }
+    fn receive(&self, _error: T) { *self.counter.write().unwrap() += 1; }
 }

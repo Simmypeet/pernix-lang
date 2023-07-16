@@ -156,7 +156,7 @@ impl Table {
         }
 
         for recursive_type in table.check_recusive_type() {
-            handler.recieve(Error::RecursiveType(RecursiveType {
+            handler.receive(Error::RecursiveType(RecursiveType {
                 struct_ids: recursive_type.into_iter().collect(),
             }));
         }
@@ -288,7 +288,7 @@ impl Table {
             {
                 id.into()
             } else {
-                handler.recieve(
+                handler.receive(
                     SymbolNotFound {
                         span: qualified_identifier.identifiers().first().span.clone(),
                         in_scope_id: None,
@@ -318,7 +318,7 @@ impl Table {
                     if let Some(id) = self.get_global(in_scope_id).unwrap().parent_scoped_id() {
                         id.into()
                     } else {
-                        handler.recieve(
+                        handler.receive(
                             SymbolNotFound {
                                 span: qualified_identifier.identifiers().first().span.clone(),
                                 in_scope_id: None,
@@ -339,7 +339,7 @@ impl Table {
                     result,
                     self.get_global(current_id).unwrap().accessibility(),
                 )? {
-                    handler.recieve(
+                    handler.receive(
                         SymbolNotAccessible {
                             span: identifier.1.span.clone(),
                             global_id: result,
@@ -350,7 +350,7 @@ impl Table {
 
                 current_id = result;
             } else {
-                handler.recieve(
+                handler.receive(
                     SymbolNotFound {
                         span: identifier.1.span.clone(),
                         in_scope_id: Some(current_id),
@@ -412,7 +412,7 @@ impl Table {
                     GlobalID::Module(..)
                     | GlobalID::OverloadSet(..)
                     | GlobalID::EnumVariant(..) => {
-                        handler.recieve(
+                        handler.receive(
                             TypeExpected {
                                 span: qualified_identifier.span(),
                                 found: symbol_id,
@@ -558,7 +558,7 @@ impl Table {
                         };
 
                         if is_redefinition {
-                            handler.recieve(
+                            handler.receive(
                                 SymbolRedifinition {
                                     available_global_id,
                                     span: identifier.span.clone(),
@@ -720,7 +720,7 @@ impl Table {
             .get(&name)
             .copied()
         {
-            handler.recieve(
+            handler.receive(
                 ParameterRedefinition {
                     span: syntax_tree.identifier().span.clone(),
                     available_parameter_id,
@@ -828,7 +828,7 @@ impl Table {
                 if let Some(available_global_id) = module_sym.child_ids_by_name.get(&name).copied()
                 {
                     // symbol redefinition
-                    handler.recieve(
+                    handler.receive(
                         SymbolRedifinition {
                             available_global_id,
                             span: syntax_tree.identifier().span.clone(),
@@ -845,7 +845,7 @@ impl Table {
                     struct_sym.type_alias_ids_by_name.get(&name).copied()
                 {
                     // symbol redefinition
-                    handler.recieve(
+                    handler.receive(
                         SymbolRedifinition {
                             available_global_id: available_global_id.into(),
                             span: syntax_tree.identifier().span.clone(),
@@ -858,7 +858,7 @@ impl Table {
 
                 // accessibility check
                 if accessibility < struct_sym.accessibility {
-                    handler.recieve(
+                    handler.receive(
                         StructMemberMoreAccessibleThanStruct {
                             span: syntax_tree.identifier().span.clone(),
                             member_accessibility: accessibility,
@@ -894,7 +894,7 @@ impl Table {
             .copied()
         {
             // field redefinition
-            handler.recieve(
+            handler.receive(
                 FieldRedefinition {
                     span: syntax_tree.identifier().span.clone(),
                     available_field_id,
@@ -911,7 +911,7 @@ impl Table {
         {
             let struct_symbol = &self.get_struct(parent_struct_id).unwrap();
             if struct_symbol.accessibility.rank() < accessibility.rank() {
-                handler.recieve(
+                handler.receive(
                     StructMemberMoreAccessibleThanStruct {
                         span: syntax_tree.identifier().span.clone(),
                         member_accessibility: accessibility,
@@ -998,7 +998,7 @@ impl Table {
             .get(&name)
             .copied()
         {
-            handler.recieve(
+            handler.receive(
                 EnumVariantRedefinition {
                     span: syntax_tree.span,
                     available_enum_variant_id,
@@ -1105,7 +1105,7 @@ impl Table {
                 };
 
                 if redefined {
-                    handler.recieve(
+                    handler.receive(
                         OverloadRedefinition {
                             span: overload_j.syntax_tree.identifier.span(),
                             available_overload_id: overload_set.overloads[i],
@@ -1293,7 +1293,7 @@ impl Table {
                     symbol_states_by_id.remove(id);
                 }
 
-                handler.recieve(CircularDependency { symbol_ids }.into());
+                handler.receive(CircularDependency { symbol_ids }.into());
                 false
             }
             None => true,
@@ -1355,7 +1355,7 @@ impl Table {
                     GlobalID::Module(..)
                     | GlobalID::OverloadSet(..)
                     | GlobalID::EnumVariant(..) => {
-                        handler.recieve(
+                        handler.receive(
                             TypeExpected {
                                 span: qualified_identifier.span(),
                                 found: symbol_id,
@@ -1394,7 +1394,7 @@ impl Table {
         let ty_accessibility = self.get_overall_accessibility(ty);
 
         if accessibility_constraint.rank() > ty_accessibility.rank() {
-            handler.recieve(
+            handler.receive(
                 PrivateSymbolLeak {
                     span: type_specifier.span(),
                     accessibility: ty_accessibility,
@@ -1505,7 +1505,7 @@ impl Table {
             {
                 id.into()
             } else {
-                handler.recieve(
+                handler.receive(
                     SymbolNotFound {
                         span: qualified_identifier.identifiers().first().span.clone(),
                         in_scope_id: None,
@@ -1537,7 +1537,7 @@ impl Table {
                     if let Some(id) = self.get_global(in_scope_id).unwrap().parent_scoped_id() {
                         id.into()
                     } else {
-                        handler.recieve(
+                        handler.receive(
                             SymbolNotFound {
                                 span: qualified_identifier.identifiers().first().span.clone(),
                                 in_scope_id: None,
@@ -1569,7 +1569,7 @@ impl Table {
                     )
                     .unwrap()
                 {
-                    handler.recieve(
+                    handler.receive(
                         SymbolNotAccessible {
                             span: identifier.1.span.clone(),
                             global_id: result,
@@ -1580,7 +1580,7 @@ impl Table {
 
                 current_id = result;
             } else {
-                handler.recieve(
+                handler.receive(
                     SymbolNotFound {
                         span: identifier.1.span.clone(),
                         in_scope_id: Some(current_id),
