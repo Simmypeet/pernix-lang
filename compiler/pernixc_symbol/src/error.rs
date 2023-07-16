@@ -48,7 +48,7 @@ pub struct UsingOwnModule {
 
 /// A lifetime parameter was found to be declared after a type parameter.
 #[derive(Debug, Clone)]
-pub struct LifetimeParameterMustBeDeclaredPriotToTypeParameter {
+pub struct LifetimeParameterMustBeDeclaredPriorToTypeParameter {
     /// The span of the lifetime parameter.
     pub lifetime_parameter_span: Span,
 }
@@ -190,7 +190,14 @@ pub struct TypeArgumentMismatch {
     pub generic_arguments_span: Span,
 }
 
-/// Is an eumeration of all errors occuring during the symbol resolution/analysis.
+/// Lifetime arguments must be supplied to the type in this context.
+#[derive(Debug, Clone)]
+pub struct LifetimeArgumentRequired {
+    /// The span of the type with missing lifetime arguments.
+    pub span: Span,
+}
+
+/// Is an enumeration of all errors occurring during the symbol resolution/analysis.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum Error {
@@ -204,8 +211,8 @@ pub enum Error {
     LifetimeArgumentMustBeSuppliedPriorToTypeArgument(
         LifetimeArgumentMustBeSuppliedPriorToTypeArgument,
     ),
-    LifetimeParameterMustBeDeclaredPriotToTypeParameter(
-        LifetimeParameterMustBeDeclaredPriotToTypeParameter,
+    LifetimeParameterMustBeDeclaredPriorToTypeParameter(
+        LifetimeParameterMustBeDeclaredPriorToTypeParameter,
     ),
     FunctionParameterRedefinition(SymbolRedefinition<arena::ID<Parameter<Function>>>),
     TraitFunctionParameterRedefinition(SymbolRedefinition<arena::ID<Parameter<TraitFunction>>>),
@@ -226,4 +233,5 @@ pub enum Error {
     LifetimeNotFound(LifetimeNotFound),
     LifetimeArgumentMismatch(LifetimeArgumentMismatch),
     TypeArgumentMismatch(TypeArgumentMismatch),
+    LifetimeArgumentRequired(LifetimeArgumentRequired),
 }

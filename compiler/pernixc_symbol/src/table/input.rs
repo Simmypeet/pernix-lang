@@ -449,10 +449,12 @@ impl Table {
 
         write!(file, "&")?;
 
-        match reference_ty.lifetime_argument {
-            LifetimeArgument::Static => write!(file, "'static ")?,
-            LifetimeArgument::Parameter(lt) => {
-                write!(file, "'{} ", self.lifetime_parameters[lt].name)?;
+        if let Some(lifetime_argument) = reference_ty.lifetime_argument {
+            match lifetime_argument {
+                LifetimeArgument::Static => write!(file, "'static ")?,
+                LifetimeArgument::Parameter(lt) => {
+                    write!(file, "'{} ", self.lifetime_parameters[lt].name)?;
+                }
             }
         }
 
@@ -479,6 +481,9 @@ impl Table {
                 self.write_type_parameter(file, *type_parameter_id)
             }
             ty::Type::TraitType(trait_type_ty) => self.write_ty_trait_type(file, trait_type_ty),
+            ty::Type::Enum(enum_id) => {
+                self.write_ty_global_id(file, (*enum_id).into(), &Substitution::default())
+            }
         }
     }
 
@@ -944,8 +949,8 @@ impl<'a> Input for Type<'a> {
                     &output_reference_type.qualifier,
                 ) {
                     (None, None) => (),
-                    (Some(input_reference_qualififer), Some(output_reference_qualififer)) => {
-                        prop_assert_eq!(input_reference_qualififer, output_reference_qualififer);
+                    (Some(input_reference_qualifier), Some(output_reference_qualifier)) => {
+                        prop_assert_eq!(input_reference_qualifier, output_reference_qualifier);
                     }
                     (input, output) => {
                         return Err(TestCaseError::fail(format!(
@@ -958,18 +963,28 @@ impl<'a> Input for Type<'a> {
                     &input_reference_type.lifetime_argument,
                     &output_reference_type.lifetime_argument,
                 ) {
-                    (LifetimeArgument::Static, LifetimeArgument::Static) => {}
-                    (
-                        LifetimeArgument::Parameter(input_lifetime_parameter),
-                        LifetimeArgument::Parameter(output_lifetime_parameter),
-                    ) => SymbolRef {
-                        table: self.table,
-                        symbol_id: *input_lifetime_parameter,
+                    (Some(input_lifetime_argument), Some(output_lifetime_argument)) => {
+                        match (input_lifetime_argument, output_lifetime_argument) {
+                            (LifetimeArgument::Static, LifetimeArgument::Static) => {}
+                            (
+                                LifetimeArgument::Parameter(input_lifetime_parameter),
+                                LifetimeArgument::Parameter(output_lifetime_parameter),
+                            ) => SymbolRef {
+                                table: self.table,
+                                symbol_id: *input_lifetime_parameter,
+                            }
+                            .assert(&SymbolRef {
+                                table: output.table,
+                                symbol_id: *output_lifetime_parameter,
+                            })?,
+                            (input, output) => {
+                                return Err(TestCaseError::fail(format!(
+                                    "expected {input:#?}, got {output:#?}",
+                                )))
+                            }
+                        }
                     }
-                    .assert(&SymbolRef {
-                        table: output.table,
-                        symbol_id: *output_lifetime_parameter,
-                    })?,
+                    (None, None) => (),
                     (input, output) => {
                         return Err(TestCaseError::fail(format!(
                             "expected {input:#?}, got {output:#?}",

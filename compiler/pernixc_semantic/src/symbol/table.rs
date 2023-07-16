@@ -4,7 +4,6 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
-
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token::Identifier as IdentifierToken;

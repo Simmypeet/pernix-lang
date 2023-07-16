@@ -15,7 +15,7 @@ use proptest::{
 
 /// Represents an input generated for testing purposes.
 pub trait Input {
-    /// The output type of the input that wlll be validated against.
+    /// The output type of the input that wll be validated against.
     type Output;
 
     /// Verifies that the given [`Self::Output`] complies with this input.

@@ -103,7 +103,7 @@ impl Table {
                 ty: Type::Reference(crate::ty::ReferenceType {
                     operand: Box::new(Type::Parameter(type_parameter_id)),
                     qualifier: None,
-                    lifetime_argument: LifetimeArgument::Parameter(lifetime_parameter),
+                    lifetime_argument: Some(LifetimeArgument::Parameter(lifetime_parameter)),
                 }),
                 is_mutable: false,
                 syntax_tree: None,
@@ -200,7 +200,7 @@ impl Table {
                 ty: Type::Reference(crate::ty::ReferenceType {
                     operand: Box::new(Type::Parameter(type_parameter_id)),
                     qualifier: Some(ReferenceQualifier::Restrict),
-                    lifetime_argument: LifetimeArgument::Parameter(lifetime_parameter),
+                    lifetime_argument: Some(LifetimeArgument::Parameter(lifetime_parameter)),
                 }),
                 is_mutable: false,
                 syntax_tree: None,

@@ -313,8 +313,8 @@ impl Table {
                     // lifetime must be declared prior to type parameters
                     if !generic_parameters.type_parameter_ids_by_name.is_empty() {
                         handler.receive(
-                            Error::LifetimeParameterMustBeDeclaredPriotToTypeParameter(
-                                crate::error::LifetimeParameterMustBeDeclaredPriotToTypeParameter {
+                            Error::LifetimeParameterMustBeDeclaredPriorToTypeParameter(
+                                crate::error::LifetimeParameterMustBeDeclaredPriorToTypeParameter {
                                     lifetime_parameter_span: lt.span().unwrap(),
                                 },
                             ),

@@ -4,7 +4,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_system::arena;
 
-use crate::{LifetimeArgument, Substitution};
+use crate::{Enum, LifetimeArgument, Substitution};
 
 /// Enumeration of all possible primitive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -44,7 +44,7 @@ pub struct ReferenceType {
     pub qualifier: Option<ReferenceQualifier>,
 
     /// The optional lifetime of the reference.
-    pub lifetime_argument: LifetimeArgument,
+    pub lifetime_argument: Option<LifetimeArgument>,
 }
 
 /// Represents a type from the struct.
@@ -73,6 +73,7 @@ pub struct TraitType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Type {
+    Enum(arena::ID<Enum>),
     Struct(Struct),
     Primitive(PrimitiveType),
     Reference(ReferenceType),

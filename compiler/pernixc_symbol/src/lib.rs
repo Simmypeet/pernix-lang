@@ -511,7 +511,7 @@ pub struct WhereClause {
     pub lifetime_argument_sets_by_lifetime_parameter:
         HashMap<arena::ID<LifetimeParameter>, HashSet<LifetimeArgument>>,
 
-    /// Maps the associated trait type to its lietime argument bounds.
+    /// Maps the associated trait type to its lifetime argument bounds.
     pub lifetime_argument_sets_by_trait_type: HashMap<ty::TraitType, HashSet<LifetimeArgument>>,
 
     /// Maps the associated trait type to its type bound.
