@@ -410,18 +410,18 @@ impl Table {
     /// If the ID is invalid, returns an error.
     pub fn symbol_accessible(
         &self,
-        referree_global_id: GlobalID,
+        referred_global_id: GlobalID,
         referrer_id: ID,
     ) -> Result<bool, arena::Error> {
-        match self.get_accessibility(referree_global_id)? {
+        match self.get_accessibility(referred_global_id)? {
             // Private symbol is only accessible from the same module or its children.
             Accessibility::Private => {
-                let referree_global_module_id =
-                    self.get_current_target_root_module_id(referree_global_id.into())?;
+                let referred_global_module_id =
+                    self.get_current_target_root_module_id(referred_global_id.into())?;
                 let referrer_module_id = self.get_current_target_root_module_id(referrer_id)?;
 
                 // if same module, it is accessible.
-                if referrer_module_id == referree_global_module_id {
+                if referrer_module_id == referred_global_module_id {
                     return Ok(true);
                 }
 
@@ -433,7 +433,7 @@ impl Table {
                     .parent_symbol()
                 {
                     match parent_id {
-                        ID::Module(module_id) if module_id == referree_global_module_id => {
+                        ID::Module(module_id) if module_id == referred_global_module_id => {
                             return Ok(true);
                         }
                         _ => {
@@ -447,7 +447,7 @@ impl Table {
 
             // Both symbols are in the same module.
             Accessibility::Internal => Ok(self
-                .get_current_target_root_module_id(referree_global_id.into())?
+                .get_current_target_root_module_id(referred_global_id.into())?
                 == self.get_current_target_root_module_id(referrer_id)?),
 
             // Public symbols are always accessible.

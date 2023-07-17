@@ -37,6 +37,10 @@ pub(super) struct States {
 }
 
 impl States {
+    pub(super) fn get_current_state(&mut self, id: ID) -> Option<SymbolState> {
+        self.symbol_states_by_id.get(&id).copied()
+    }
+
     pub(super) fn add_drafted_symbol(&mut self, id: ID) {
         assert!(self
             .symbol_states_by_id

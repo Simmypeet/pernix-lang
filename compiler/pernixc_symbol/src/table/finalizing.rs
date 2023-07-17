@@ -5,7 +5,7 @@ use pernixc_system::{arena, diagnostic::Handler};
 
 use super::{drafting::States, Table};
 use crate::{
-    error::{self, LifetimeArgumentRequired},
+    error::{self, LifetimeArgumentRequired, TargetNotFound},
     table,
     ty::{self, PrimitiveType, ReferenceType},
     GenericParameters, GlobalID, Struct, Substitution, TypeParameter, ID,
@@ -18,6 +18,11 @@ impl Table {
         states: &mut States,
         handler: &impl Handler<error::Error>,
     ) {
+        assert!(
+            states.get_current_state(id).is_some(),
+            "symbol is not drafted or being constructed"
+        );
+
         match id {
             ID::Module(..) | ID::Enum(..) | ID::EnumVariant(_) => {
                 // currently, there is nothing to finalize for this symbol
@@ -51,6 +56,17 @@ impl Table {
         todo!()
     }
 
+    pub(super) fn finalize_symbol_if_is_drafted(
+        &mut self,
+        id: ID,
+        states: &mut States,
+        handler: &impl Handler<error::Error>,
+    ) {
+        if states.get_current_state(id).is_some() {
+            self.finalize_symbol(id, states, handler);
+        }
+    }
+
     pub(super) fn resolve_symbol_with_finalization(
         &mut self,
         referring_site: ID,
@@ -60,6 +76,32 @@ impl Table {
         states: &mut States,
         handler: &impl Handler<error::Error>,
     ) -> Result<(GlobalID, Substitution), table::Error> {
+        let first_global_id = if qualified_identifier.leading_scope_separator.is_some() {
+            // search from the root
+            if let Some(id) = self
+                .target_root_module_ids_by_name
+                .get(qualified_identifier.first.identifier.span.str())
+                .copied()
+            {
+                id.into()
+            } else {
+                handler.receive(error::Error::TargetNotFound(TargetNotFound {
+                    unknown_target_span: qualified_identifier.first.identifier.span.clone(),
+                }));
+                return Err(table::Error::FatalSemantic);
+            }
+        } else {
+            // perform a local search down the module tree
+            self.resolve_root(
+                &qualified_identifier.first.identifier,
+                referring_site,
+                handler,
+            )?
+        };
+
+        // make sure the symbol is finalized
+        self.finalize_symbol_if_is_drafted(first_global_id.into(), states, handler);
+
         todo!()
     }
 
@@ -188,13 +230,15 @@ impl Table {
             return;
         };
 
+        states.remove_constructing_symbol(struct_id.into());
+
         let struct_symbol = &self.structs[struct_id];
 
         // span out the fields
         for field_id in struct_symbol.field_order.iter().copied() {
             states.add_drafted_symbol(field_id.into());
-        }
 
-        states.remove_constructing_symbol(struct_id.into());
+            todo!("finalize the field symbol here");
+        }
     }
 }

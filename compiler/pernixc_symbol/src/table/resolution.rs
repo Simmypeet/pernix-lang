@@ -17,17 +17,17 @@ impl Table {
     pub(super) fn first_resolution(
         &self,
         identifier: &Identifier,
-        referrer: ID,
+        referring_site: ID,
         handler: &impl Handler<error::Error>,
     ) -> Result<Option<GlobalID>, table::Error> {
-        let parent_module = self.get_current_module_id(referrer)?;
+        let parent_module = self.get_current_module_id(referring_site)?;
 
         let search_locations = self.modules[parent_module]
             .usings
             .iter()
             .copied()
             .map(ScopedID::from)
-            .chain(std::iter::once(self.get_current_scoped_id(referrer)?));
+            .chain(std::iter::once(self.get_current_scoped_id(referring_site)?));
 
         let mut candidates = HashSet::new();
         for location in search_locations {
@@ -35,7 +35,7 @@ impl Table {
                 .get_scoped(location)?
                 .get_child_id_by_name(identifier.span.str())
             {
-                if self.symbol_accessible(id, referrer).unwrap() {
+                if self.symbol_accessible(id, referring_site).unwrap() {
                     candidates.insert(id);
                 }
             }
@@ -58,7 +58,7 @@ impl Table {
     pub(super) fn second_resolution(
         &self,
         identifier: &Identifier,
-        mut referrer: ID,
+        mut referring_site: ID,
         handler: &impl Handler<error::Error>,
     ) -> Result<GlobalID, table::Error> {
         // NOTE: Accessibility is not checked here because the symbol searching is done within the
@@ -66,7 +66,7 @@ impl Table {
 
         loop {
             // try to find the symbol in the current scope
-            if let Ok(scoped_id) = referrer.try_into() {
+            if let Ok(scoped_id) = referring_site.try_into() {
                 if let Some(id) = self
                     .get_scoped(scoped_id)?
                     .get_child_id_by_name(identifier.span.str())
@@ -75,12 +75,12 @@ impl Table {
                 }
             }
 
-            if let Some(parent_id) = self.get_symbol(referrer)?.parent_symbol() {
-                referrer = parent_id;
+            if let Some(parent_id) = self.get_symbol(referring_site)?.parent_symbol() {
+                referring_site = parent_id;
             } else {
                 handler.receive(error::Error::SymbolNotFound(error::SymbolNotFound {
                     span: identifier.span.clone(),
-                    searched_scoped_id: referrer
+                    searched_scoped_id: referring_site
                         .try_into()
                         .expect("It should have been some kind of `Scoped` by now"),
                 }));
@@ -92,14 +92,14 @@ impl Table {
     pub(super) fn resolve_root(
         &self,
         identifier: &Identifier,
-        referrer: ID,
+        referring_site: ID,
         handler: &impl Handler<error::Error>,
     ) -> Result<GlobalID, table::Error> {
         let found_symbol_id =
-            if let Some(id) = self.first_resolution(identifier, referrer, handler)? {
+            if let Some(id) = self.first_resolution(identifier, referring_site, handler)? {
                 id
             } else {
-                self.second_resolution(identifier, referrer, handler)?
+                self.second_resolution(identifier, referring_site, handler)?
             };
 
         Ok(found_symbol_id)
@@ -144,7 +144,6 @@ impl Table {
             _ => {
                 let mut generic_identifiers = qualified_identifier.generic_identifiers().peekable();
 
-                // resolve the root 💀
                 let mut current_module_id = {
                     // first generic identifier
                     let generic_identifier = generic_identifiers
