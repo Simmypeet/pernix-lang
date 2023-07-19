@@ -858,9 +858,11 @@ impl<'a> Parser<'a> {
 
         // cannot be empty
         let Some(argument_list) = argument_list else {
-            handler.receive(Error::GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty {
-                span: left_angle.span.join(&right_angle.span).unwrap(),
-            }));
+            handler.receive(Error::GenericArgumentParameterListCannotBeEmpty(
+                GenericArgumentParameterListCannotBeEmpty {
+                    span: left_angle.span.join(&right_angle.span).unwrap(),
+                },
+            ));
             return Err(ParserError);
         };
 

@@ -565,10 +565,7 @@ impl Table {
                 continue;
             };
 
-            let Some(where_clause) = self
-                .get_genericable(genericable_id)?
-                .where_clause()
-            else {
+            let Some(where_clause) = self.get_genericable(genericable_id)?.where_clause() else {
                 continue;
             };
 
@@ -583,33 +580,23 @@ impl Table {
                 result_lifetime_argument_set.extend(lifetime_argument_set);
             }
 
-            for (trait_type, lifetime_argument_set) in
-                &where_clause.lifetime_argument_sets_by_trait_type
-            {
+            for (ty, lifetime_argument_set) in &where_clause.lifetime_argument_sets_by_type {
                 let result_lifetime_argument_set = result_where_clause
-                    .lifetime_argument_sets_by_trait_type
-                    .entry(trait_type.clone())
+                    .lifetime_argument_sets_by_type
+                    .entry(ty.clone())
                     .or_default();
 
                 result_lifetime_argument_set.extend(lifetime_argument_set);
             }
 
-            for (trait_type, ty) in &where_clause.types_by_trait_type {
-                assert!(result_where_clause
-                    .types_by_trait_type
-                    .insert(trait_type.clone(), ty.clone())
-                    .is_none());
-            }
-
-            for (type_parameter, lifetime_argument_set) in
-                &where_clause.lifetime_argument_sets_by_type_parameter
-            {
-                let result_lifetime_argument_set = result_where_clause
-                    .lifetime_argument_sets_by_type_parameter
-                    .entry(*type_parameter)
-                    .or_default();
-
-                result_lifetime_argument_set.extend(lifetime_argument_set);
+            for (trait_type, lifetime_argument_set) in &where_clause.types_by_trait_type {
+                assert!(
+                    result_where_clause
+                        .types_by_trait_type
+                        .insert(trait_type.clone(), lifetime_argument_set.clone())
+                        .is_none(),
+                    "should not have duplicated trait types in the where clause!"
+                );
             }
         }
 
@@ -671,7 +658,7 @@ impl Table {
         table.attach_implements(implements_syntax_tree_with_module_ids, handler);
 
         while let Some(drafted_symbol) = states.next_drafted_symbol() {
-            table.finalize_symbol(drafted_symbol, &mut states, handler);
+            let _ = table.finalize_symbol(drafted_symbol, &mut states, handler);
         }
 
         Ok(table)

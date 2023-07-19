@@ -107,7 +107,7 @@ impl Table {
         )?;
 
         self.write_generic_parameters(file, &trait_symbol.generics.parameters)?;
-        self.write_where_caluse(file, &trait_symbol.generics.where_clause)?;
+        self.write_where_clause(file, &trait_symbol.generics.where_clause)?;
 
         write!(file, " {{")?;
 
@@ -175,7 +175,7 @@ impl Table {
         write!(file, "): ")?;
 
         self.write_ty_type(file, &trait_function_symbol.return_type)?;
-        self.write_where_caluse(file, &trait_function_symbol.generics.where_clause)?;
+        self.write_where_clause(file, &trait_function_symbol.generics.where_clause)?;
 
         writeln!(file, ";")
     }
@@ -241,7 +241,7 @@ impl Table {
         write!(file, "): ")?;
 
         self.write_ty_type(file, &function_symbol.return_type)?;
-        self.write_where_caluse(file, &function_symbol.generics.where_clause)?;
+        self.write_where_clause(file, &function_symbol.generics.where_clause)?;
 
         writeln!(file, "{{}}")?;
 
@@ -317,23 +317,23 @@ impl Table {
 
     fn write_ty_primitive_type(
         file: &mut std::fs::File,
-        primitive_type: ty::PrimitiveType,
+        primitive_type: ty::Primitive,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
 
         match primitive_type {
-            ty::PrimitiveType::Float32 => write!(file, "float32"),
-            ty::PrimitiveType::Float64 => write!(file, "float64"),
-            ty::PrimitiveType::Int8 => write!(file, "int8"),
-            ty::PrimitiveType::Int16 => write!(file, "int16"),
-            ty::PrimitiveType::Int32 => write!(file, "int32"),
-            ty::PrimitiveType::Int64 => write!(file, "int64"),
-            ty::PrimitiveType::Uint8 => write!(file, "uint8"),
-            ty::PrimitiveType::Uint16 => write!(file, "uint16"),
-            ty::PrimitiveType::Uint32 => write!(file, "uint32"),
-            ty::PrimitiveType::Uint64 => write!(file, "uint64"),
-            ty::PrimitiveType::Bool => write!(file, "bool"),
-            ty::PrimitiveType::Void => write!(file, "void"),
+            ty::Primitive::Float32 => write!(file, "float32"),
+            ty::Primitive::Float64 => write!(file, "float64"),
+            ty::Primitive::Int8 => write!(file, "int8"),
+            ty::Primitive::Int16 => write!(file, "int16"),
+            ty::Primitive::Int32 => write!(file, "int32"),
+            ty::Primitive::Int64 => write!(file, "int64"),
+            ty::Primitive::Uint8 => write!(file, "uint8"),
+            ty::Primitive::Uint16 => write!(file, "uint16"),
+            ty::Primitive::Uint32 => write!(file, "uint32"),
+            ty::Primitive::Uint64 => write!(file, "uint64"),
+            ty::Primitive::Bool => write!(file, "bool"),
+            ty::Primitive::Void => write!(file, "void"),
         }
     }
 
@@ -421,11 +421,70 @@ impl Table {
         file: &mut std::fs::File,
         trait_type_ty: &ty::TraitType,
     ) -> Result<(), std::io::Error> {
+        use std::io::Write;
+
         self.write_ty_global_id(
             file,
-            trait_type_ty.trait_type_id.into(),
-            &trait_type_ty.substitution,
-        )
+            self.trait_types[trait_type_ty.trait_type_id]
+                .parent_trait_id
+                .into(),
+            &trait_type_ty.trait_substitution,
+        )?;
+
+        let trait_type = &self.trait_types[trait_type_ty.trait_type_id];
+
+        write!(file, "::{}", trait_type.name)?;
+
+        if !trait_type
+            .generic_parameters
+            .lifetime_parameter_order
+            .is_empty()
+            || !trait_type
+                .generic_parameters
+                .type_parameter_order
+                .is_empty()
+        {
+            write!(file, "<")?;
+
+            let mut is_first = true;
+
+            for lifetime_parameter_id in &trait_type.generic_parameters.lifetime_parameter_order {
+                if !is_first {
+                    write!(file, ", ")?;
+                }
+
+                match trait_type_ty
+                    .trait_type_substitution
+                    .lifetime_arguments_by_parameter[lifetime_parameter_id]
+                {
+                    LifetimeArgument::Static => write!(file, "'static")?,
+                    LifetimeArgument::Parameter(lt) => {
+                        write!(file, "'{}", self.lifetime_parameters[lt].name)?;
+                    }
+                }
+
+                is_first = false;
+            }
+
+            for type_parameter_id in &trait_type.generic_parameters.type_parameter_order {
+                if !is_first {
+                    write!(file, ", ")?;
+                }
+
+                self.write_ty_type(
+                    file,
+                    &trait_type_ty
+                        .trait_type_substitution
+                        .type_arguments_by_parameter[type_parameter_id],
+                )?;
+
+                is_first = false;
+            }
+
+            write!(file, ">")?;
+        }
+
+        Ok(())
     }
 
     fn write_type_parameter(
@@ -443,7 +502,7 @@ impl Table {
     fn write_ty_reference_type(
         &self,
         file: &mut std::fs::File,
-        reference_ty: &ty::ReferenceType,
+        reference_ty: &ty::Reference,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
 
@@ -488,7 +547,7 @@ impl Table {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn write_where_caluse(
+    fn write_where_clause(
         &self,
         file: &mut std::fs::File,
         where_clause: &WhereClause,
@@ -498,17 +557,30 @@ impl Table {
         if where_clause
             .lifetime_argument_sets_by_lifetime_parameter
             .is_empty()
-            && where_clause.lifetime_argument_sets_by_trait_type.is_empty()
             && where_clause.types_by_trait_type.is_empty()
-            && where_clause
-                .lifetime_argument_sets_by_type_parameter
-                .is_empty()
+            && where_clause.lifetime_argument_sets_by_type.is_empty()
         {
             return Ok(());
         }
         write!(file, " where: ")?;
 
         let mut is_first = true;
+
+        {
+            for trait_bound in &where_clause.trait_bounds {
+                if !is_first {
+                    write!(file, ", ")?;
+                }
+
+                self.write_ty_global_id(
+                    file,
+                    trait_bound.trait_id.into(),
+                    &trait_bound.substitution,
+                )?;
+
+                is_first = false;
+            }
+        }
 
         {
             for (lifetime_parameter, lifetime_arguments) in
@@ -549,19 +621,17 @@ impl Table {
         }
 
         {
-            for (trait_type, lifetime_argument_bounds) in
-                &where_clause.lifetime_argument_sets_by_trait_type
-            {
+            for (ty, lifetime_arguments) in &where_clause.lifetime_argument_sets_by_type {
                 if !is_first {
                     write!(file, ", ")?;
                 }
 
-                self.write_ty_trait_type(file, trait_type)?;
+                self.write_ty_type(file, ty)?;
 
                 write!(file, ": ")?;
 
                 let mut first_trait_type_bound = true;
-                for lifetime_argument in lifetime_argument_bounds {
+                for lifetime_argument in lifetime_arguments {
                     if !first_trait_type_bound {
                         write!(file, " + ")?;
                     }
@@ -583,7 +653,7 @@ impl Table {
         }
 
         {
-            for (trait_type, type_bound) in &where_clause.types_by_trait_type {
+            for (trait_type, ty) in &where_clause.types_by_trait_type {
                 if !is_first {
                     write!(file, ", ")?;
                 }
@@ -592,7 +662,7 @@ impl Table {
 
                 write!(file, ": ")?;
 
-                self.write_ty_type(file, type_bound)?;
+                self.write_ty_type(file, ty)?;
 
                 is_first = false;
             }
@@ -652,7 +722,7 @@ impl Table {
         )?;
 
         self.write_generic_parameters(file, &struct_symbol.generics.parameters)?;
-        self.write_where_caluse(file, &struct_symbol.generics.where_clause)?;
+        self.write_where_clause(file, &struct_symbol.generics.where_clause)?;
 
         write!(file, " {{")?;
 
@@ -909,8 +979,15 @@ impl<'a> Input for Type<'a> {
                 assert_substitution(
                     self.table,
                     output.table,
-                    &input_trait.substitution,
-                    &output_trait.substitution,
+                    &input_trait.trait_substitution,
+                    &output_trait.trait_substitution,
+                )?;
+
+                assert_substitution(
+                    self.table,
+                    output.table,
+                    &input_trait.trait_type_substitution,
+                    &output_trait.trait_type_substitution,
                 )?;
 
                 Ok(())

@@ -5,8 +5,8 @@ use pernixc_source::Span;
 use pernixc_system::arena;
 
 use crate::{
-    Field, Function, GlobalID, ImplementsFunction, LifetimeParameter, Module, Parameter, ScopedID,
-    Struct, TraitFunction, TraitMemberID, TypeParameter, ID,
+    Field, Function, GlobalID, ImplementsFunction, LifetimeParameter, Module, Parameter, Struct,
+    TraitFunction, TraitMemberID, TypeParameter, ID,
 };
 
 /// No target was found with the given name.
@@ -101,7 +101,7 @@ pub struct ResolutionAmbiguity {
 #[derive(Debug, Clone)]
 pub struct SymbolNotFound {
     /// In which scope the symbol was searched.
-    pub searched_scoped_id: ScopedID,
+    pub searched_global_id: GlobalID,
 
     /// The span of the symbol reference.
     pub span: Span,
@@ -132,9 +132,6 @@ pub struct ModuleExpected {
 pub struct TraitExpected {
     /// The span of the symbol reference.
     pub span: Span,
-
-    /// The symbol that was found instead.
-    pub found: GlobalID,
 }
 
 /// Lifetime parameter shadowing is not allowed.
@@ -197,10 +194,45 @@ pub struct LifetimeArgumentRequired {
     pub span: Span,
 }
 
+/// There is no member on the compound type.
+#[derive(Debug, Clone)]
+pub struct NoMemberOnCompoundType {
+    /// The span of the compound type.
+    pub span: Span,
+}
+
+/// Trait resolution is not allowed in this context.
+#[derive(Debug, Clone)]
+pub struct TraitResolutionNotAllowed {
+    /// The span where the trait resolution was found.
+    pub span: Span,
+}
+
+/// The given symbol can't be used as a type.
+#[derive(Debug, Clone)]
+pub struct TypeExpected {
+    /// The span of the symbol reference.
+    pub span: Span,
+}
+
+/// The symbol is not accessible from the given referring site.
+#[derive(Debug, Clone)]
+pub struct SymbolIsNotAccessible {
+    /// The span of the symbol reference.
+    pub span: Span,
+
+    /// Where the symbol is being referred from.
+    pub referring_site: ID,
+
+    /// The symbol that is not accessible.
+    pub referred: GlobalID,
+}
+
 /// Is an enumeration of all errors occurring during the symbol resolution/analysis.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum Error {
+    TypeExpected(TypeExpected),
     TargetNotFound(TargetNotFound),
     ModuleNotFound(ModuleNotFound),
     UsingDuplication(UsingDuplication),
@@ -234,4 +266,7 @@ pub enum Error {
     LifetimeArgumentMismatch(LifetimeArgumentMismatch),
     TypeArgumentMismatch(TypeArgumentMismatch),
     LifetimeArgumentRequired(LifetimeArgumentRequired),
+    NoMemberOnCompoundType(NoMemberOnCompoundType),
+    TraitResolutionNotAllowed(TraitResolutionNotAllowed),
+    SymbolIsNotAccessible(SymbolIsNotAccessible),
 }

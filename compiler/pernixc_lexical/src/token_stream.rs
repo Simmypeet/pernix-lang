@@ -164,11 +164,7 @@ impl TokenStream {
                     })
                 }
                 (token, _) => {
-                    let Some(token_tree) = Self::handle_popped_token(
-                        tokens,
-                        token,
-                        handler
-                    ) else {
+                    let Some(token_tree) = Self::handle_popped_token(tokens, token, handler) else {
                         break;
                     };
 

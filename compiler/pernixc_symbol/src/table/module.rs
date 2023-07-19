@@ -98,27 +98,26 @@ impl Table {
                 let Some(new_module_id) = self.modules[module_id]
                     .module_child_ids_by_name
                     .get(path.span.str())
-                    .copied() else {
-                    handler.receive(error::Error::ModuleNotFound(
-                        ModuleNotFound {
-                            in_module_id: module_id,
-                            unknown_module_span: path.span.clone(),
-                        }
-                    ));
+                    .copied()
+                else {
+                    handler.receive(error::Error::ModuleNotFound(ModuleNotFound {
+                        in_module_id: module_id,
+                        unknown_module_span: path.span.clone(),
+                    }));
                     return Err(Error::FatalSemantic);
                 };
 
                 current_module_id = Some(new_module_id.into_module().unwrap());
             } else {
                 // search from the root
-                let Some(module_id) = self.target_root_module_ids_by_name
+                let Some(module_id) = self
+                    .target_root_module_ids_by_name
                     .get(path.span.str())
-                    .copied() else {
-                    handler.receive(error::Error::TargetNotFound(
-                        TargetNotFound {
-                            unknown_target_span: path.span.clone()
-                        }
-                    ));
+                    .copied()
+                else {
+                    handler.receive(error::Error::TargetNotFound(TargetNotFound {
+                        unknown_target_span: path.span.clone(),
+                    }));
                     return Err(Error::FatalSemantic);
                 };
 
@@ -139,9 +138,9 @@ impl Table {
 
         for using in usings {
             // resolve module_path
-            let Ok(using_module_id) = self.get_module_id_from_module_path(
-                &using.module_path,
-                handler) else {
+            let Ok(using_module_id) =
+                self.get_module_id_from_module_path(&using.module_path, handler)
+            else {
                 continue;
             };
 

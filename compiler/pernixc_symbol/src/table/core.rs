@@ -4,7 +4,7 @@ use pernixc_system::arena;
 
 use super::Table;
 use crate::{
-    ty::{PrimitiveType, ReferenceQualifier, Type},
+    ty::{Primitive, ReferenceQualifier, Type},
     Accessibility, Generics, LifetimeArgument, Module, Trait, TraitFunction, TypeParameter,
 };
 
@@ -100,7 +100,7 @@ impl Table {
                 name: "this".to_string(),
                 parameter_parent_id: trait_function_id,
                 declaration_order: 0,
-                ty: Type::Reference(crate::ty::ReferenceType {
+                ty: Type::Reference(crate::ty::Reference {
                     operand: Box::new(Type::Parameter(type_parameter_id)),
                     qualifier: None,
                     lifetime_argument: Some(LifetimeArgument::Parameter(lifetime_parameter)),
@@ -168,7 +168,7 @@ impl Table {
                     name: "drop".to_string(),
                     parameter_ids_by_name: HashMap::new(), // to be filled later
                     parameter_order: Vec::new(),           // to be filled later
-                    return_type: Type::Primitive(PrimitiveType::Void),
+                    return_type: Type::Primitive(Primitive::Void),
                     generics: Generics::default(),
                     syntax_tree: None,
                 },
@@ -197,7 +197,7 @@ impl Table {
                 name: "this".to_string(),
                 parameter_parent_id: trait_function_id,
                 declaration_order: 0,
-                ty: Type::Reference(crate::ty::ReferenceType {
+                ty: Type::Reference(crate::ty::Reference {
                     operand: Box::new(Type::Parameter(type_parameter_id)),
                     qualifier: Some(ReferenceQualifier::Restrict),
                     lifetime_argument: Some(LifetimeArgument::Parameter(lifetime_parameter)),

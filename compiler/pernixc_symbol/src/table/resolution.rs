@@ -80,7 +80,7 @@ impl Table {
             } else {
                 handler.receive(error::Error::SymbolNotFound(error::SymbolNotFound {
                     span: identifier.span.clone(),
-                    searched_scoped_id: referring_site
+                    searched_global_id: referring_site
                         .try_into()
                         .expect("It should have been some kind of `Scoped` by now"),
                 }));
@@ -126,7 +126,6 @@ impl Table {
                 } else {
                     handler.receive(error::Error::TraitExpected(error::TraitExpected {
                         span: qualified_identifier.first.identifier.span.clone(),
-                        found: found_symbol_id,
                     }));
                     Err(table::Error::FatalSemantic)
                 }
@@ -205,7 +204,7 @@ impl Table {
                             .get_child_id_by_name(generic_identifier.identifier.span.str())
                         else {
                             handler.receive(error::Error::SymbolNotFound(error::SymbolNotFound {
-                                searched_scoped_id: current_module_id.into(),
+                                searched_global_id: current_module_id.into(),
                                 span: generic_identifier.span()?,
                             }));
                             return Err(table::Error::FatalSemantic);
@@ -220,7 +219,6 @@ impl Table {
                                 handler.receive(if is_last {
                                     error::Error::TraitExpected(error::TraitExpected {
                                         span: generic_identifier.span()?,
-                                        found,
                                     })
                                 } else {
                                     error::Error::ModuleExpected(error::ModuleExpected {
@@ -243,14 +241,14 @@ impl Table {
 
     pub(super) fn resolve_lifetime_argument(
         &self,
-        current_id: ID,
+        referring_site: ID,
         lifetime_argument: &syntax_tree::LifetimeArgument,
         handler: &impl Handler<error::Error>,
     ) -> Result<LifetimeArgument, table::Error> {
         match &lifetime_argument.identifier {
             syntax_tree::LifetimeArgumentIdentifier::Identifier(lifetime_parameter) => {
                 Ok(LifetimeArgument::Parameter(
-                    self.resolve_lifetime_parameter(current_id, lifetime_parameter, handler)?,
+                    self.resolve_lifetime_parameter(referring_site, lifetime_parameter, handler)?,
                 ))
             }
             syntax_tree::LifetimeArgumentIdentifier::Static(_) => Ok(LifetimeArgument::Static),
@@ -259,11 +257,11 @@ impl Table {
 
     pub(super) fn resolve_lifetime_parameter(
         &self,
-        current_id: ID,
+        referring_site: ID,
         lifetime_parameter: &Identifier,
         handler: &impl Handler<error::Error>,
     ) -> Result<arena::ID<LifetimeParameter>, table::Error> {
-        let scope_walker = self.scope_walker(current_id)?;
+        let scope_walker = self.scope_walker(referring_site)?;
 
         for id in scope_walker {
             let Ok(genericable_id) = GenericableID::try_from(id) else {
@@ -313,7 +311,7 @@ impl Table {
                 generics: Generics::default(),
                 trait_id,
                 substitution: Substitution::default(), // will be filled later
-                implements_types_by_associated_type: HashMap::new(), // will be filled later
+                implements_types_by_trait_type: HashMap::new(), // will be filled later
                 implements_functions_by_trait_function: HashMap::new(), // will be filled later
             });
 

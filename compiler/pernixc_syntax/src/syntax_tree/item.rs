@@ -16,6 +16,7 @@ use super::{
 use crate::{
     error::{
         AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty, ItemExpected,
+        PunctuationExpected,
     },
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
@@ -168,20 +169,20 @@ impl SourceElement for TypeBoundConstraint {
 /// Syntax Synopsis:
 /// ``` text
 /// TypeBound:
-///     QualifiedIdentifier ':' TypeBoundConstraint ('+' TypeBoundConstraint)*
+///     TypeSpecifier ':' TypeBoundConstraint ('+' TypeBoundConstraint)*
 ///     ;
 /// ```
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct TypeBound {
-    pub qualified_identifier: QualifiedIdentifier,
+    pub type_specifier: TypeSpecifier,
     pub colon: Punctuation,
     pub type_bound_constraints: BoundList<TypeBoundConstraint>,
 }
 
 impl SourceElement for TypeBound {
     fn span(&self) -> Result<Span, SpanError> {
-        self.qualified_identifier
+        self.type_specifier
             .span()?
             .join(&self.type_bound_constraints.span()?)
     }
@@ -1049,10 +1050,13 @@ impl<'a> Parser<'a> {
         )?;
 
         let Some(generic_parameter_list) = generic_parameter_list else {
-            handler.receive(
-                Error::GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty {
-                    span: left_angle_bracket.span.join(&right_angle_bracket.span).expect("Span should be joint successfully"),
-                }
+            handler.receive(Error::GenericArgumentParameterListCannotBeEmpty(
+                GenericArgumentParameterListCannotBeEmpty {
+                    span: left_angle_bracket
+                        .span
+                        .join(&right_angle_bracket.span)
+                        .expect("Span should be joint successfully"),
+                },
             ));
             return Err(ParserError);
         };
@@ -1136,7 +1140,7 @@ impl<'a> Parser<'a> {
                 }))
             }
             _ => {
-                let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+                let type_specifier = self.parse_type_specifier(handler)?;
 
                 match self.stop_at_significant() {
                     Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
@@ -1157,15 +1161,27 @@ impl<'a> Parser<'a> {
                         };
 
                         Ok(Constraint::TypeBound(TypeBound {
-                            qualified_identifier,
+                            type_specifier,
                             colon,
                             type_bound_constraints,
                         }))
                     }
 
-                    _ => Ok(Constraint::TraitBound(TraitBound {
-                        qualified_identifier,
-                    })),
+                    found => match type_specifier {
+                        TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
+                            Ok(Constraint::TraitBound(TraitBound {
+                                qualified_identifier,
+                            }))
+                        }
+                        TypeSpecifier::Reference(..) | TypeSpecifier::Primitive(..) => {
+                            handler.receive(Error::PunctuationExpected(PunctuationExpected {
+                                expected: ':',
+                                found,
+                            }));
+
+                            Err(ParserError)
+                        }
+                    },
                 }
             }
         }

@@ -259,7 +259,7 @@ impl Table {
                 name,
                 parameter_ids_by_name: HashMap::new(), // to be filled later
                 parameter_order: Vec::new(),           // to be filled later
-                return_type: ty::Type::Primitive(ty::PrimitiveType::Void),
+                return_type: ty::Type::Primitive(ty::Primitive::Void),
                 syntax_tree: None,
                 generics: Generics::default(), // to be filled later
             },
@@ -281,7 +281,7 @@ impl Table {
                 name: parameter.0.clone(),
                 parameter_parent_id: function_id,
                 declaration_order: index,
-                ty: ty::Type::Primitive(ty::PrimitiveType::Void),
+                ty: ty::Type::Primitive(ty::Primitive::Void),
                 syntax_tree: None,
                 is_mutable: parameter.1,
             });
@@ -328,7 +328,7 @@ impl Table {
                 parent_struct_id: struct_id,
                 syntax_tree: None,
                 declaration_order: index,
-                ty: ty::Type::Primitive(ty::PrimitiveType::Void),
+                ty: ty::Type::Primitive(ty::Primitive::Void),
             });
 
             let struct_symbol = &mut self.structs[struct_id];
@@ -352,7 +352,7 @@ impl Table {
             name,
             accessibility: drafting.accessibility,
             parent_module_id,
-            alias: ty::Type::Primitive(ty::PrimitiveType::Void),
+            alias: ty::Type::Primitive(ty::Primitive::Void),
             generic_parameters: crate::GenericParameters::default(), // to be filled later
             syntax_tree: None,
         });
@@ -419,7 +419,7 @@ impl Table {
                             name: name.clone(),
                             parameter_ids_by_name: HashMap::new(), // to be filled later
                             parameter_order: Vec::new(),           // to be filled later
-                            return_type: ty::Type::Primitive(ty::PrimitiveType::Void),
+                            return_type: ty::Type::Primitive(ty::Primitive::Void),
                             syntax_tree: None,
                             generics: Generics::default(), // to be fiiled later
                         },
@@ -444,7 +444,7 @@ impl Table {
                             syntax_tree: None,
                             parameter_parent_id: trait_function_id,
                             declaration_order: index,
-                            ty: ty::Type::Primitive(ty::PrimitiveType::Void),
+                            ty: ty::Type::Primitive(ty::Primitive::Void),
                         });
 
                         let function_signature =

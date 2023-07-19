@@ -131,10 +131,21 @@ impl Substitution {
     pub fn is_empty(&self) -> bool {
         self.type_parameter_is_empty() && self.lifetime_parameter_is_empty()
     }
+
+    /// Checks if all the type parameters are substituted with concrete types.
+    #[must_use]
+    pub fn is_concrete_substitution(&self) -> bool {
+        for type_argument in self.type_arguments_by_parameter.values() {
+            if !type_argument.is_concrete_type() {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 /// Represents a trait bound constraint.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TraitBound {
     /// The ID of the trait that is bound.
     pub trait_id: arena::ID<Trait>,
@@ -156,8 +167,7 @@ pub struct Implements {
     pub substitution: Substitution,
 
     /// Maps associated type to their type implementation.
-    pub implements_types_by_associated_type:
-        HashMap<arena::ID<TraitType>, arena::ID<ImplementsType>>,
+    pub implements_types_by_trait_type: HashMap<arena::ID<TraitType>, arena::ID<ImplementsType>>,
 
     /// Maps function to their function implementation.
     pub implements_functions_by_trait_function:
@@ -511,15 +521,14 @@ pub struct WhereClause {
     pub lifetime_argument_sets_by_lifetime_parameter:
         HashMap<arena::ID<LifetimeParameter>, HashSet<LifetimeArgument>>,
 
-    /// Maps the associated trait type to its lifetime argument bounds.
-    pub lifetime_argument_sets_by_trait_type: HashMap<ty::TraitType, HashSet<LifetimeArgument>>,
+    /// Maps the type parameter to its lifetime bounds.
+    pub lifetime_argument_sets_by_type: HashMap<ty::Type, HashSet<LifetimeArgument>>,
 
-    /// Maps the associated trait type to its type bound.
+    /// Maps the trait type to its type bound.
     pub types_by_trait_type: HashMap<ty::TraitType, ty::Type>,
 
-    /// Maps the type parameter to its lifetime bounds.
-    pub lifetime_argument_sets_by_type_parameter:
-        HashMap<arena::ID<TypeParameter>, HashSet<LifetimeArgument>>,
+    /// Lists of active traits in the where clause.
+    pub trait_bounds: HashSet<TraitBound>,
 }
 
 /// Contains all the information related to the generics.

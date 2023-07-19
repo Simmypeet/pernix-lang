@@ -340,8 +340,8 @@ impl Display for TypeBoundConstraint {
 /// Represents an input for the [`super::TypeBound`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeBound {
-    /// The qualified identifier of the type bound.
-    pub qualified_identifier: QualifiedIdentifier,
+    /// The type_specififer of the type bound.
+    pub type_specifier: TypeSpecifier,
 
     /// The type bound constraints.
     pub type_bound_constraints: BoundList<TypeBoundConstraint>,
@@ -351,8 +351,7 @@ impl Input for TypeBound {
     type Output = super::TypeBound;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.qualified_identifier
-            .assert(&output.qualified_identifier)?;
+        self.type_specifier.assert(&output.type_specifier)?;
         self.type_bound_constraints
             .assert(&output.type_bound_constraints)
     }
@@ -364,14 +363,11 @@ impl Arbitrary for TypeBound {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
-            QualifiedIdentifier::arbitrary_with(QualifiedIdentifierArbitraryParameters {
-                use_turbofish: false,
-                inner_type_specifier_strategy: None,
-            }),
+            TypeSpecifier::arbitrary(),
             BoundList::arbitrary_with(TypeBoundConstraint::arbitrary()),
         )
-            .prop_map(|(qualified_identifier, type_bound_constraints)| Self {
-                qualified_identifier,
+            .prop_map(|(type_specifier, type_bound_constraints)| Self {
+                type_specifier,
                 type_bound_constraints,
             })
             .boxed()
@@ -383,7 +379,7 @@ impl Display for TypeBound {
         write!(
             f,
             "{}: {}",
-            self.qualified_identifier, self.type_bound_constraints
+            self.type_specifier, self.type_bound_constraints
         )
     }
 }
