@@ -1,6 +1,7 @@
 use enum_as_inner::EnumAsInner;
+use itertools::cloned;
 use pernixc_lexical::token::Identifier;
-use pernixc_source::SourceElement;
+use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self,
     item::{self, TypeBoundConstraint},
@@ -71,6 +72,7 @@ struct TraitTypeResolution {
 enum Resolution {
     Primitive(Primitive),
     Reference(Reference),
+    TypeParameter(arena::ID<TypeParameter>),
     Module(arena::ID<Module>),
     Struct(GenericsResolution<Struct>),
     Enum(arena::ID<Enum>),
@@ -111,7 +113,7 @@ impl Resolution {
                 trait_function_resolution.trait_function_id.into()
             }
             Self::TraitType(trait_type_resolution) => trait_type_resolution.trait_type_id.into(),
-            Self::ImplementsFunction(..) => todo!(),
+            Self::ImplementsFunction(..) | Self::TypeParameter(..) => todo!(),
         };
 
         let Ok(scoped_id) = ScopedID::try_from(global_id) else {
@@ -167,10 +169,11 @@ impl Resolution {
                 });
             }
             GlobalID::Type(id) => {
-                *self = table.alias_type(
+                *self = table.alias_type_as_resolution(
                     &table.types[id].alias,
                     substitution,
                     resolution_config.check_where_clause,
+                    &generic_identifier.span()?,
                     handler,
                 )?;
             }
@@ -235,12 +238,13 @@ impl Resolution {
                         handler,
                     )?;
 
-                    *self = table.alias_type(
+                    *self = table.alias_type_as_resolution(
                         &table.implements_types[table.implements[active_implements]
                             .implements_types_by_trait_type[&trait_type_id]]
                             .alias,
                         substitution,
                         resolution_config.check_where_clause,
+                        &generic_identifier.span()?,
                         handler,
                     )?;
                 } else {
@@ -298,7 +302,22 @@ impl Table {
         referring_site: ID,
         identifier: &Identifier,
     ) -> Option<arena::ID<TypeParameter>> {
-        todo!("Performs type parameter resolution down the scope tree");
+        for id in self.scope_walker(referring_site).unwrap() {
+            let Ok(genericable_id) = GenericableID::try_from(id) else {
+                continue;
+            };
+
+            let genericable = self.get_genericable(genericable_id).unwrap();
+            if let Some(ty_parameter) = genericable
+                .generic_parameters()
+                .type_parameter_ids_by_name
+                .get(identifier.span.str())
+            {
+                return Some(*ty_parameter);
+            }
+        }
+
+        None
     }
 
     fn finalize_symbol_if_is_drafted(
@@ -323,6 +342,7 @@ impl Table {
         todo!()
     }
 
+    // checks if the generic arguments match the generic parameter of the symbol or not
     fn check_generic_arguments(
         &self,
         global_id: GlobalID,
@@ -337,7 +357,6 @@ impl Table {
     fn check_where_clause(
         &self,
         global_id: GenericableID,
-        generic_arguments: Option<&Substitution>,
         substitution: &Substitution,
         handler: &impl Handler<error::Error>,
     ) -> bool {
@@ -345,14 +364,163 @@ impl Table {
     }
 
     #[allow(clippy::needless_pass_by_value)]
-    fn alias_type(
+    fn alias_type_as_resolution(
         &self,
         alias: &ty::Type,
         substitution: Substitution,
         allow_trait_resolution: bool,
+        span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> Result<Resolution, table::Error> {
-        todo!("")
+        Ok(
+            match self.alias_type(alias, &substitution, allow_trait_resolution, span, handler)? {
+                ty::Type::Enum(enum_id) => Resolution::Enum(enum_id),
+                ty::Type::Struct(struct_ty) => Resolution::Struct(GenericsResolution {
+                    symbol: struct_ty.struct_id,
+                    substitution: struct_ty.substitution,
+                }),
+                ty::Type::Primitive(primtive) => Resolution::Primitive(primtive),
+                ty::Type::Reference(reference) => Resolution::Reference(reference),
+                ty::Type::Parameter(ty_parameter) => Resolution::TypeParameter(ty_parameter),
+                ty::Type::TraitType(trait_ty) => Resolution::TraitType(TraitTypeResolution {
+                    trait_resolution: TraitResolution {
+                        trait_id: self.trait_types[trait_ty.trait_type_id].parent_trait_id,
+                        substitution: trait_ty.trait_substitution,
+                    },
+                    trait_type_id: trait_ty.trait_type_id,
+                    substitution: trait_ty.trait_type_substitution,
+                }),
+            },
+        )
+    }
+
+    fn apply_substitution_on_arguments(
+        &self,
+        substitution_operand: &mut Substitution,
+        other: &Substitution,
+        allow_trait_resolution: bool,
+        span: &Span,
+        handler: &impl Handler<error::Error>,
+    ) {
+        for argument in substitution_operand
+            .lifetime_arguments_by_parameter
+            .values_mut()
+        {
+            if let LifetimeArgument::Parameter(id) = argument {
+                if let Some(substitution) = other.lifetime_arguments_by_parameter.get(id) {
+                    *argument = *substitution;
+                }
+            }
+        }
+
+        for argument in substitution_operand
+            .type_arguments_by_parameter
+            .values_mut()
+        {
+            let _ = self.substitute_type(argument, other, allow_trait_resolution, span, handler);
+        }
+    }
+
+    fn substitute_type(
+        &self,
+        ty: &mut ty::Type,
+        substitution: &Substitution,
+        allow_trait_resolution: bool,
+        span: &Span,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<(), table::Error> {
+        match ty {
+            ty::Type::Struct(struct_ty) => {
+                self.apply_substitution_on_arguments(
+                    &mut struct_ty.substitution,
+                    substitution,
+                    allow_trait_resolution,
+                    span,
+                    handler,
+                );
+                Ok(())
+            }
+            ty::Type::Reference(reference_ty) => self.substitute_type(
+                &mut reference_ty.operand,
+                substitution,
+                allow_trait_resolution,
+                span,
+                handler,
+            ),
+            ty::Type::Parameter(type_parameter) => {
+                if let Some(substitution) =
+                    substitution.type_arguments_by_parameter.get(type_parameter)
+                {
+                    *ty = substitution.clone();
+                }
+
+                Ok(())
+            }
+            ty::Type::TraitType(trait_type) => {
+                self.apply_substitution_on_arguments(
+                    &mut trait_type.trait_substitution,
+                    substitution,
+                    allow_trait_resolution,
+                    span,
+                    handler,
+                );
+
+                if trait_type.trait_substitution.is_concrete_substitution() {
+                    if !allow_trait_resolution {
+                        handler.receive(error::Error::TraitResolutionNotAllowed(
+                            TraitResolutionNotAllowed { span: span.clone() },
+                        ));
+                        return Err(table::Error::FatalSemantic);
+                    }
+
+                    let active_implements = self.resolve_trait_implements(
+                        self.trait_types[trait_type.trait_type_id].parent_trait_id,
+                        &trait_type.trait_substitution,
+                        handler,
+                    )?;
+
+                    *ty = self.alias_type(
+                        &self.implements_types[self.implements[active_implements]
+                            .implements_types_by_trait_type[&trait_type.trait_type_id]]
+                            .alias,
+                        substitution,
+                        allow_trait_resolution,
+                        span,
+                        handler,
+                    )?;
+                } else {
+                    self.apply_substitution_on_arguments(
+                        &mut trait_type.trait_type_substitution,
+                        substitution,
+                        allow_trait_resolution,
+                        span,
+                        handler,
+                    );
+                }
+
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn alias_type(
+        &self,
+        alias: &ty::Type,
+        substitution: &Substitution,
+        allow_trait_resolution: bool,
+        span: &Span,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<ty::Type, table::Error> {
+        let mut cloned_ty = alias.clone();
+        self.substitute_type(
+            &mut cloned_ty,
+            substitution,
+            allow_trait_resolution,
+            span,
+            handler,
+        )?;
+        Ok(cloned_ty)
     }
 
     fn get_current_trait_or_implements_id(
@@ -454,10 +622,11 @@ impl Table {
                 symbol: id,
                 substitution,
             }),
-            GlobalID::Type(id) => self.alias_type(
+            GlobalID::Type(id) => self.alias_type_as_resolution(
                 &self.types[id].alias,
                 substitution,
                 resolution_config.check_where_clause,
+                &qualified_identifier.span()?,
                 handler,
             )?,
             GlobalID::Trait(id) => Resolution::Trait(TraitResolution {
@@ -520,12 +689,13 @@ impl Table {
                 };
 
                 if let Some(active_implements) = active_implements {
-                    self.alias_type(
+                    self.alias_type_as_resolution(
                         &self.implements_types[self.implements[active_implements]
                             .implements_types_by_trait_type[&trait_type_id]]
                             .alias,
                         substitution,
                         resolution_config.check_where_clause,
+                        &qualified_identifier.first.span()?,
                         handler,
                     )?
                 } else {
@@ -603,6 +773,7 @@ impl Table {
                 trait_substitution: trait_type.trait_resolution.substitution,
                 trait_type_substitution: trait_type.substitution,
             }),
+            Resolution::TypeParameter(type_parameter) => ty::Type::Parameter(type_parameter),
 
             Resolution::Module(..)
             | Resolution::EnumVariant(..)
@@ -688,8 +859,7 @@ impl Table {
     fn handle_where_clause_trait_bound(
         &mut self,
         trait_bound: &syntax_tree::item::TraitBound,
-        parent_id: ID,
-        extra_generic_parameters: &GenericParameters,
+        genericable_id: GenericableID,
         where_clause: &mut WhereClause,
         states: &mut States,
         handler: &impl Handler<error::Error>,
@@ -698,7 +868,7 @@ impl Table {
         let Ok(resolution) = self.resolve_symbol_with_finalization(
             &trait_bound.qualified_identifier,
             &ResolutionConfig {
-                referring_site: parent_id,
+                referring_site: genericable_id.into(),
                 explicit_lifetime_required: true,
                 check_where_clause: false,
             },
@@ -730,8 +900,7 @@ impl Table {
     fn handle_where_clause_type_bound(
         &mut self,
         type_bound: &syntax_tree::item::TypeBound,
-        parent_id: ID,
-        extra_generic_parameters: &GenericParameters,
+        genericable_id: GenericableID,
         where_clause: &mut WhereClause,
         parent_where_clause: &WhereClause,
         states: &mut States,
@@ -740,7 +909,7 @@ impl Table {
         let Ok(ty) = self.resolve_type_with_finalization(
             &type_bound.type_specifier,
             &ResolutionConfig {
-                referring_site: parent_id,
+                referring_site: genericable_id.into(),
                 explicit_lifetime_required: true,
                 check_where_clause: false,
             },
@@ -753,16 +922,18 @@ impl Table {
         for type_constraint in type_bound.type_bound_constraints.elements() {
             match type_constraint {
                 TypeBoundConstraint::TypeSpecifier(type_bound_specifier) => {
-                    let type_bound = self.resolve_type_with_finalization(
+                    let Ok(type_bound) = self.resolve_type_with_finalization(
                         type_bound_specifier,
                         &ResolutionConfig {
-                            referring_site: parent_id,
+                            referring_site: genericable_id.into(),
                             explicit_lifetime_required: true,
                             check_where_clause: false,
                         },
                         states,
                         handler,
-                    );
+                    ) else {
+                        continue;
+                    };
 
                     // The type must not be fully resolved
                     let ty::Type::TraitType(trait_type) = &ty else {
@@ -776,11 +947,17 @@ impl Table {
                     {
                         todo!("Report some errors");
                     }
+
+                    where_clause
+                        .types_by_trait_type
+                        .insert(trait_type.clone(), type_bound);
                 }
                 TypeBoundConstraint::LifetimeArgument(lt_syntax_tree) => {
-                    let Ok(lifetime_argument) =
-                        self.resolve_lifetime_argument(parent_id, lt_syntax_tree, handler)
-                    else {
+                    let Ok(lifetime_argument) = self.resolve_lifetime_argument(
+                        genericable_id.into(),
+                        lt_syntax_tree,
+                        handler,
+                    ) else {
                         continue;
                     };
 
@@ -841,22 +1018,17 @@ impl Table {
         handler: &impl Handler<error::Error>,
     ) -> Result<WhereClause, table::Error> {
         let mut where_clause = WhereClause::default();
-        let parent_id = self
-            .get_genericable(genericable_id)?
-            .parent_symbol()
-            .expect("Genericable should have a parent symbol");
-        let parent_active_where_clause = self.get_active_where_clause(parent_id)?;
-        let extra_generic_parameters = self
-            .get_genericable(genericable_id)?
-            .generic_parameters()
-            .clone();
+        let parent_active_where_clause = self.get_active_where_clause(
+            self.get_genericable(genericable_id)?
+                .parent_symbol()
+                .expect("Genericable should have a parent symbol"),
+        )?;
 
         for constraint in where_clause_syntax_tree.constraint_list.elements() {
             match constraint {
                 item::Constraint::TraitBound(trait_bound) => self.handle_where_clause_trait_bound(
                     trait_bound,
-                    parent_id,
-                    &extra_generic_parameters,
+                    genericable_id,
                     &mut where_clause,
                     states,
                     handler,
@@ -868,7 +1040,16 @@ impl Table {
                         &mut where_clause,
                         handler,
                     ),
-                item::Constraint::TypeBound(type_bound) => {}
+                item::Constraint::TypeBound(type_bound) => {
+                    self.handle_where_clause_type_bound(
+                        type_bound,
+                        genericable_id,
+                        &mut where_clause,
+                        &parent_active_where_clause,
+                        states,
+                        handler,
+                    );
+                }
             }
         }
 
