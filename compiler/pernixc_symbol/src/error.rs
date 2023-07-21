@@ -163,7 +163,7 @@ pub struct LifetimeArgumentMustBeSuppliedPriorToTypeArgument {
 
 /// The number of supplied lifetime arguments does not match the number of expected lifetime
 #[derive(Debug, Clone)]
-pub struct LifetimeArgumentMismatch {
+pub struct LifetimeArgumentCountMismatch {
     /// The number of supplied lifetime arguments.
     pub supplied: usize,
 
@@ -176,7 +176,7 @@ pub struct LifetimeArgumentMismatch {
 
 /// The number of supplied type arguments does not match the number of expected type arguments.
 #[derive(Debug, Clone)]
-pub struct TypeArgumentMismatch {
+pub struct TypeArgumentCountMismatch {
     /// The number of supplied type arguments.
     pub supplied: usize,
 
@@ -189,7 +189,7 @@ pub struct TypeArgumentMismatch {
 
 /// Lifetime arguments must be supplied to the type in this context.
 #[derive(Debug, Clone)]
-pub struct LifetimeArgumentRequired {
+pub struct LifetimeArgumentsRequired {
     /// The span of the type with missing lifetime arguments.
     pub span: Span,
 }
@@ -228,6 +228,20 @@ pub struct SymbolIsNotAccessible {
     pub referred: GlobalID,
 }
 
+/// The symbol does not require any generic arguments but some were supplied.
+#[derive(Debug, Clone)]
+pub struct NoGenericArgumentsRequired {
+    /// The span of the generic arguments.
+    pub span: Span,
+}
+
+/// The more private symbol is being exposed in a more public scope.
+#[derive(Debug, Clone)]
+pub struct PrivateSymbolLeakage {
+    /// The span of the symbol reference.
+    pub span: Span,
+}
+
 /// Is an enumeration of all errors occurring during the symbol resolution/analysis.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
@@ -263,10 +277,12 @@ pub enum Error {
     LifetimeParameterShadowing(LifetimeParameterShadowing),
     TypeParameterShadowing(TypeParameterShadowing),
     LifetimeNotFound(LifetimeNotFound),
-    LifetimeArgumentMismatch(LifetimeArgumentMismatch),
-    TypeArgumentMismatch(TypeArgumentMismatch),
-    LifetimeArgumentRequired(LifetimeArgumentRequired),
+    LifetimeArgumentCountMismatch(LifetimeArgumentCountMismatch),
+    TypeArgumentCountMismatch(TypeArgumentCountMismatch),
+    LifetimeArgumentsRequired(LifetimeArgumentsRequired),
     NoMemberOnCompoundType(NoMemberOnCompoundType),
     TraitResolutionNotAllowed(TraitResolutionNotAllowed),
     SymbolIsNotAccessible(SymbolIsNotAccessible),
+    NoGenericArgumentsRequired(NoGenericArgumentsRequired),
+    PrivateSymbolLeakage(PrivateSymbolLeakage),
 }
