@@ -6,19 +6,20 @@ members = [
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_symbol",
-    # "compiler/pernixc_codegen",
-    # "compiler/pernixc_driver",
-    # "compiler/pernixc"
+
+    "inputs/pernix_input",
+    "inputs/pernix_lexical_input",
+    "inputs/pernix_syntax_input"
 ]
 
 [workspace.dependencies]
-enum-as-inner = "0.5.1"
+enum-as-inner = "0.6.0"
 thiserror = "1.0.40"
 getset = "0.1.2"
 proptest = "1.1.0"
 lazy_static = "1.4.0"
-strum = "0.24.1"
-strum_macros = "0.24"
+strum = "0.25.0"
+strum_macros = "0.25"
 derive_more = "0.99.17"
 colored = "2.0.0"
 paste = "1.0.12"
@@ -32,4 +33,3 @@ version = "0.1.0"
 authors = ["Simmypeet"]
 description = "The Pernix Programming Language Compiler"
 edition = "2021"
-

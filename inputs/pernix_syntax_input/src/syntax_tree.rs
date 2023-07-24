@@ -1,12 +1,11 @@
 //! Contains the definition of various inputs that correspond to the definitions in defined
-//! [`crate::syntax_tree`] module.
+//! [`pernixc_syntax::syntax_tree`] module.
 
 use std::fmt::{Debug, Display, Write};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::token::{self, input::Identifier, KeywordKind};
-use pernixc_system::input::Input;
+use pernix_input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_assert_eq, prop_oneof,
@@ -14,12 +13,17 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-/// Represents an input for the [`super::LifetimeArgumentIdentifier`].
+pub mod expression;
+pub mod item;
+pub mod statement;
+pub mod target;
+
+/// Represents an input for the [`pernixc_syntax::syntax_tree::LifetimeArgumentIdentifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum LifetimeArgumentIdentifier {
     Static,
-    Identifier(token::input::Identifier),
+    Identifier(pernix_lexical_input::token::Identifier),
 }
 
 impl Arbitrary for LifetimeArgumentIdentifier {
@@ -29,7 +33,7 @@ impl Arbitrary for LifetimeArgumentIdentifier {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self::Static),
-            token::input::Identifier::arbitrary().prop_map(Self::Identifier)
+            pernix_lexical_input::token::Identifier::arbitrary().prop_map(Self::Identifier)
         ]
         .boxed()
     }
@@ -45,12 +49,17 @@ impl Display for LifetimeArgumentIdentifier {
 }
 
 impl Input for LifetimeArgumentIdentifier {
-    type Output = super::LifetimeArgumentIdentifier;
+    type Output = pernixc_syntax::syntax_tree::LifetimeArgumentIdentifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Static, super::LifetimeArgumentIdentifier::Static(..)) => Ok(()),
-            (Self::Identifier(i), super::LifetimeArgumentIdentifier::Identifier(o)) => i.assert(o),
+            (Self::Static, pernixc_syntax::syntax_tree::LifetimeArgumentIdentifier::Static(..)) => {
+                Ok(())
+            }
+            (
+                Self::Identifier(i),
+                pernixc_syntax::syntax_tree::LifetimeArgumentIdentifier::Identifier(o),
+            ) => i.assert(o),
             (i, o) => Err(TestCaseError::fail(
                 format!("Expected {i:?} but got {o:?}",),
             )),
@@ -58,7 +67,7 @@ impl Input for LifetimeArgumentIdentifier {
     }
 }
 
-/// Represents an input for the [`super::LifetimeArgument`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::LifetimeArgument`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeArgument {
     /// The identifier of the lifetime argument.
@@ -79,11 +88,11 @@ impl Arbitrary for LifetimeArgument {
 }
 
 impl Input for LifetimeArgument {
-    type Output = super::LifetimeArgument;
+    type Output = pernixc_syntax::syntax_tree::LifetimeArgument;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.lifetime_argument_identifier
-            .assert(&output.identifier)?;
+            .assert(output.identifier())?;
         Ok(())
     }
 }
@@ -95,7 +104,7 @@ impl Display for LifetimeArgument {
     }
 }
 
-/// Represents an input for the [`super::ReferenceQualifier`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::ReferenceQualifier`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum ReferenceQualifier {
@@ -113,12 +122,14 @@ impl Arbitrary for ReferenceQualifier {
 }
 
 impl Input for ReferenceQualifier {
-    type Output = super::ReferenceQualifier;
+    type Output = pernixc_syntax::syntax_tree::ReferenceQualifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Mutable, super::ReferenceQualifier::Mutable(..))
-            | (Self::Restrict, super::ReferenceQualifier::Restrict(..)) => Ok(()),
+            (Self::Mutable, pernixc_syntax::syntax_tree::ReferenceQualifier::Mutable(..))
+            | (Self::Restrict, pernixc_syntax::syntax_tree::ReferenceQualifier::Restrict(..)) => {
+                Ok(())
+            }
 
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
@@ -136,7 +147,7 @@ impl Display for ReferenceQualifier {
     }
 }
 
-/// Represents an input for the [`super::ReferenceTypeSpecifier`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::ReferenceTypeSpecifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReferenceTypeSpecifier {
     /// The lifetime argument of the reference type.
@@ -169,12 +180,12 @@ impl Arbitrary for ReferenceTypeSpecifier {
 }
 
 impl Input for ReferenceTypeSpecifier {
-    type Output = super::ReferenceTypeSpecifier;
+    type Output = pernixc_syntax::syntax_tree::ReferenceTypeSpecifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.lifetime_argument.assert(&output.lifetime_argument)?;
-        self.qualifier.assert(&output.qualifier)?;
-        self.operand_type.assert(&output.operand_type)
+        self.lifetime_argument.assert(output.lifetime_argument())?;
+        self.qualifier.assert(output.qualifier())?;
+        self.operand_type.assert(output.operand_type())
     }
 }
 
@@ -196,7 +207,7 @@ impl Display for ReferenceTypeSpecifier {
     }
 }
 
-/// Represents an input for the [`super::PrimitiveTypeSpecifier`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum PrimitiveTypeSpecifier {
@@ -238,22 +249,24 @@ impl Arbitrary for PrimitiveTypeSpecifier {
 }
 
 impl Input for PrimitiveTypeSpecifier {
-    type Output = super::PrimitiveTypeSpecifier;
+    type Output = pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Void, super::PrimitiveTypeSpecifier::Void(..))
-            | (Self::Bool, super::PrimitiveTypeSpecifier::Bool(..))
-            | (Self::Float32, super::PrimitiveTypeSpecifier::Float32(..))
-            | (Self::Float64, super::PrimitiveTypeSpecifier::Float64(..))
-            | (Self::Int8, super::PrimitiveTypeSpecifier::Int8(..))
-            | (Self::Int16, super::PrimitiveTypeSpecifier::Int16(..))
-            | (Self::Int32, super::PrimitiveTypeSpecifier::Int32(..))
-            | (Self::Int64, super::PrimitiveTypeSpecifier::Int64(..))
-            | (Self::Uint8, super::PrimitiveTypeSpecifier::Uint8(..))
-            | (Self::Uint16, super::PrimitiveTypeSpecifier::Uint16(..))
-            | (Self::Uint32, super::PrimitiveTypeSpecifier::Uint32(..))
-            | (Self::Uint64, super::PrimitiveTypeSpecifier::Uint64(..)) => Ok(()),
+            (Self::Void, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Void(..))
+            | (Self::Bool, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Bool(..))
+            | (Self::Float32, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Float32(..))
+            | (Self::Float64, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Float64(..))
+            | (Self::Int8, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Int8(..))
+            | (Self::Int16, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Int16(..))
+            | (Self::Int32, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Int32(..))
+            | (Self::Int64, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Int64(..))
+            | (Self::Uint8, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Uint8(..))
+            | (Self::Uint16, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Uint16(..))
+            | (Self::Uint32, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Uint32(..))
+            | (Self::Uint64, pernixc_syntax::syntax_tree::PrimitiveTypeSpecifier::Uint64(..)) => {
+                Ok(())
+            }
 
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
@@ -281,7 +294,7 @@ impl Display for PrimitiveTypeSpecifier {
     }
 }
 
-/// Represents an input for the [`super::TypeAnnotation`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::TypeAnnotation`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeAnnotation {
     /// The type specifier
@@ -289,10 +302,10 @@ pub struct TypeAnnotation {
 }
 
 impl Input for TypeAnnotation {
-    type Output = super::TypeAnnotation;
+    type Output = pernixc_syntax::syntax_tree::TypeAnnotation;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.type_specifier.assert(&output.type_specifier)
+        self.type_specifier.assert(output.type_specifier())
     }
 }
 
@@ -313,7 +326,7 @@ impl Arbitrary for TypeAnnotation {
     }
 }
 
-/// Represents an input for the [`super::TypeSpecifier`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::TypeSpecifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum TypeSpecifier {
@@ -323,15 +336,20 @@ pub enum TypeSpecifier {
 }
 
 impl Input for TypeSpecifier {
-    type Output = super::TypeSpecifier;
+    type Output = pernixc_syntax::syntax_tree::TypeSpecifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Primitive(i), super::TypeSpecifier::Primitive(o)) => i.assert(o),
-            (Self::Reference(i), super::TypeSpecifier::Reference(o)) => i.assert(o),
-            (Self::QualifiedIdentifier(i), super::TypeSpecifier::QualifiedIdentifier(o)) => {
+            (Self::Primitive(i), pernixc_syntax::syntax_tree::TypeSpecifier::Primitive(o)) => {
                 i.assert(o)
             }
+            (Self::Reference(i), pernixc_syntax::syntax_tree::TypeSpecifier::Reference(o)) => {
+                i.assert(o)
+            }
+            (
+                Self::QualifiedIdentifier(i),
+                pernixc_syntax::syntax_tree::TypeSpecifier::QualifiedIdentifier(o),
+            ) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -419,7 +437,7 @@ impl<const CHAR: char> Arbitrary for ConstantPunctuation<CHAR> {
 }
 
 impl<const CHAR: char> Input for ConstantPunctuation<CHAR> {
-    type Output = token::Punctuation;
+    type Output = pernixc_lexical::token::Punctuation;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(CHAR, output.punctuation);
@@ -431,7 +449,7 @@ impl<const CHAR: char> Display for ConstantPunctuation<CHAR> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_char(CHAR) }
 }
 
-/// Represents an input for the [`super::QualifiedIdentifier`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::QualifiedIdentifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectedList<T, U> {
     /// The first element in the connected list.
@@ -448,19 +466,20 @@ impl<T: Input, U: Input + Debug> Input for ConnectedList<T, U>
 where
     U::Output: Debug,
 {
-    type Output = super::ConnectedList<T::Output, U::Output>;
+    type Output = pernixc_syntax::syntax_tree::ConnectedList<T::Output, U::Output>;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.first.assert(&output.first)?;
+        self.first.assert(output.first())?;
 
-        prop_assert_eq!(self.rest.len(), output.rest.len());
+        prop_assert_eq!(self.rest.len(), output.rest().len());
 
-        for (input, output) in self.rest.iter().zip(output.rest.iter()) {
+        for (input, output) in self.rest.iter().zip(output.rest().iter()) {
             input.0.assert(&output.0)?;
             input.1.assert(&output.1)?;
         }
 
-        self.trailing_separator.assert(&output.trailing_separator)?;
+        self.trailing_separator
+            .assert(output.trailing_separator())?;
 
         Ok(())
     }
@@ -504,7 +523,7 @@ impl<T: Debug, U: Debug> ConnectedList<T, U> {
     }
 }
 
-/// Represents an input for the [`super::QualifiedIdentifier`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::QualifiedIdentifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum GenericArgument {
@@ -529,12 +548,17 @@ impl GenericArgument {
 }
 
 impl Input for GenericArgument {
-    type Output = super::GenericArgument;
+    type Output = pernixc_syntax::syntax_tree::GenericArgument;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Lifetime(i), super::GenericArgument::Lifetime(o)) => i.assert(o),
-            (Self::TypeSpecifier(i), super::GenericArgument::TypeSpecifier(o)) => i.assert(o),
+            (Self::Lifetime(i), pernixc_syntax::syntax_tree::GenericArgument::Lifetime(o)) => {
+                i.assert(o)
+            }
+            (
+                Self::TypeSpecifier(i),
+                pernixc_syntax::syntax_tree::GenericArgument::TypeSpecifier(o),
+            ) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -557,7 +581,7 @@ enum InnerStrategy {
     QualifiedIdentifier(BoxedStrategy<QualifiedIdentifier>),
 }
 
-/// Represents an input for the [`super::GenericArguments`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::GenericArguments`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericArguments {
     /// Whether the turbofish syntax is used.
@@ -568,12 +592,12 @@ pub struct GenericArguments {
 }
 
 impl Input for GenericArguments {
-    type Output = super::GenericArguments;
+    type Output = pernixc_syntax::syntax_tree::GenericArguments;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.turbofish, output.colon.is_some());
+        prop_assert_eq!(self.turbofish, output.colon().is_some());
 
-        self.argument_list.assert(&output.argument_list)?;
+        self.argument_list.assert(output.argument_list())?;
 
         Ok(())
     }
@@ -607,11 +631,11 @@ impl Display for GenericArguments {
     }
 }
 
-/// Represents an input for the [`super::GenericIdentifier`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::GenericIdentifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericIdentifier {
     /// The identifier.
-    pub identifier: Identifier,
+    pub identifier: pernix_lexical_input::token::Identifier,
 
     /// The optional generic arguments suffix.
     pub generic_arguments: Option<GenericArguments>,
@@ -620,7 +644,7 @@ pub struct GenericIdentifier {
 impl GenericIdentifier {
     fn arbitrary_with(turbofish: bool, inner_strategy: InnerStrategy) -> BoxedStrategy<Self> {
         (
-            Identifier::arbitrary(),
+            pernix_lexical_input::token::Identifier::arbitrary(),
             proptest::option::of(GenericArguments::arbitrary_with(turbofish, inner_strategy)),
         )
             .prop_map(|(identifier, generic_arguments)| Self {
@@ -632,11 +656,11 @@ impl GenericIdentifier {
 }
 
 impl Input for GenericIdentifier {
-    type Output = super::GenericIdentifier;
+    type Output = pernixc_syntax::syntax_tree::GenericIdentifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.identifier.assert(&output.identifier)?;
-        self.generic_arguments.assert(&output.generic_arguments)
+        self.identifier.assert(output.identifier())?;
+        self.generic_arguments.assert(output.generic_arguments())
     }
 }
 
@@ -652,7 +676,7 @@ impl Display for GenericIdentifier {
     }
 }
 
-/// Represents an input for the [`super::QualifiedIdentifier`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::QualifiedIdentifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct QualifiedIdentifier {
     /// Whether the qualified identifier starts with a scope separator.
@@ -694,16 +718,18 @@ impl Arbitrary for QualifiedIdentifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let leaf = (proptest::bool::ANY, Identifier::arbitrary()).prop_map(
-            |(leading_separator, identifier)| Self {
+        let leaf = (
+            proptest::bool::ANY,
+            pernix_lexical_input::token::Identifier::arbitrary(),
+        )
+            .prop_map(|(leading_separator, identifier)| Self {
                 leading_scope_separator: leading_separator,
                 first: GenericIdentifier {
                     identifier,
                     generic_arguments: None,
                 },
                 rest: Vec::new(),
-            },
-        );
+            });
 
         leaf.prop_recursive(8, 64, 8, move |inner| {
             let generic_identifier_strategy = GenericIdentifier::arbitrary_with(
@@ -730,19 +756,19 @@ impl Arbitrary for QualifiedIdentifier {
 }
 
 impl Input for QualifiedIdentifier {
-    type Output = super::QualifiedIdentifier;
+    type Output = pernixc_syntax::syntax_tree::QualifiedIdentifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(
             self.leading_scope_separator,
-            output.leading_scope_separator.is_some()
+            output.leading_scope_separator().is_some()
         );
 
-        self.first.assert(&output.first)?;
+        self.first.assert(output.first())?;
 
-        prop_assert_eq!(self.rest.len(), output.rest.len());
+        prop_assert_eq!(self.rest.len(), output.rest().len());
 
-        for (input, (_, output)) in self.rest.iter().zip(output.rest.iter()) {
+        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
             input.assert(output)?;
         }
 
@@ -766,7 +792,7 @@ impl Display for QualifiedIdentifier {
     }
 }
 
-/// Represents an input for the [`super::AccessModifier`]
+/// Represents an input for the [`pernixc_syntax::syntax_tree::AccessModifier`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum AccessModifier {
@@ -776,18 +802,18 @@ pub enum AccessModifier {
 }
 
 impl Input for AccessModifier {
-    type Output = super::AccessModifier;
+    type Output = pernixc_syntax::syntax_tree::AccessModifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Public, super::AccessModifier::Public(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::Public);
+            (Self::Public, pernixc_syntax::syntax_tree::AccessModifier::Public(k)) => {
+                prop_assert_eq!(k.keyword, pernixc_lexical::token::KeywordKind::Public);
             }
-            (Self::Private, super::AccessModifier::Private(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::Private);
+            (Self::Private, pernixc_syntax::syntax_tree::AccessModifier::Private(k)) => {
+                prop_assert_eq!(k.keyword, pernixc_lexical::token::KeywordKind::Private);
             }
-            (Self::Internal, super::AccessModifier::Internal(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::Internal);
+            (Self::Internal, pernixc_syntax::syntax_tree::AccessModifier::Internal(k)) => {
+                prop_assert_eq!(k.keyword, pernixc_lexical::token::KeywordKind::Internal);
             }
             _ => {
                 return Err(TestCaseError::fail(format!(

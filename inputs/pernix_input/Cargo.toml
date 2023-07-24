@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_print"
+name = "pernix_input"
 version = { workspace = true }
 description = { workspace = true }
 authors = { workspace = true }
@@ -8,5 +8,5 @@ edition = { workspace = true }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pernixc_source = { path = "../pernixc_source" }
-colored = { workspace = true }
+proptest = { workspace = true }
+

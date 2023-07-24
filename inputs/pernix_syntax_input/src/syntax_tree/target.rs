@@ -1,11 +1,10 @@
 //! Contains the definition of various inputs that correspond to the definitions in defined
-//! [`crate::syntax_tree::target`] module.
+//! [`pernixc_syntax::syntax_tree::target`] module.
 
-use std::{fmt::Display, path::Path};
+use std::{fmt::Display, path::Path, str::FromStr};
 
 use derive_more::From;
-use pernixc_lexical::token::input::Identifier;
-use pernixc_system::input::Input;
+use pernix_input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_assert_eq,
@@ -13,26 +12,26 @@ use proptest::{
     test_runner::TestCaseResult,
 };
 
-use crate::syntax_tree::{input::AccessModifier, item::input::Item};
+use super::{item::Item, AccessModifier};
 
-/// Represents an input for the [`super::ModulePath`]
+/// Represents an input for the [`pernixc_syntax::syntax_tree::target::ModulePath`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModulePath {
     /// The first identifier in the module path
-    pub first: Identifier,
+    pub first: pernix_lexical_input::token::Identifier,
 
     /// The rest of the identifiers in the module path
-    pub rest: Vec<Identifier>,
+    pub rest: Vec<pernix_lexical_input::token::Identifier>,
 }
 
 impl Input for ModulePath {
-    type Output = super::ModulePath;
+    type Output = pernixc_syntax::syntax_tree::target::ModulePath;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.first.assert(&output.first)?;
-        prop_assert_eq!(self.rest.len(), output.rest.len());
+        self.first.assert(output.first())?;
+        prop_assert_eq!(self.rest.len(), output.rest().len());
 
-        for (input, (_, output)) in self.rest.iter().zip(output.rest.iter()) {
+        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
             input.assert(output)?;
         }
 
@@ -46,8 +45,8 @@ impl Arbitrary for ModulePath {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
-            Identifier::arbitrary(),
-            proptest::collection::vec(Identifier::arbitrary(), 0..=7),
+            pernix_lexical_input::token::Identifier::arbitrary(),
+            proptest::collection::vec(pernix_lexical_input::token::Identifier::arbitrary(), 0..=7),
         )
             .prop_map(|(first, rest)| Self { first, rest })
             .boxed()
@@ -66,7 +65,7 @@ impl Display for ModulePath {
     }
 }
 
-/// Represents an input for the [`super::Using`]
+/// Represents an input for the [`pernixc_syntax::syntax_tree::target::Using`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Using {
     /// The module path
@@ -74,7 +73,7 @@ pub struct Using {
 }
 
 impl Input for Using {
-    type Output = super::Using;
+    type Output = pernixc_syntax::syntax_tree::target::Using;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.module_path.assert(&output.module_path)
@@ -98,22 +97,22 @@ impl Display for Using {
     }
 }
 
-/// Represents an input for the [`super::Module`]
+/// Represents an input for the [`pernixc_syntax::syntax_tree::target::Module`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Module {
     /// The access modifier of the module.
     pub access_modifier: AccessModifier,
 
     /// The name of the submodule.
-    pub identifier: Identifier,
+    pub identifier: pernix_lexical_input::token::Identifier,
 }
 
 impl Input for Module {
-    type Output = super::Module;
+    type Output = pernixc_syntax::syntax_tree::target::Module;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.access_modifier.assert(&output.access_modifier)?;
-        self.identifier.assert(&output.identifier)
+        self.access_modifier.assert(output.access_modifier())?;
+        self.identifier.assert(output.identifier())
     }
 }
 
@@ -128,7 +127,10 @@ impl Arbitrary for Module {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (AccessModifier::arbitrary(), Identifier::arbitrary())
+        (
+            AccessModifier::arbitrary(),
+            pernix_lexical_input::token::Identifier::arbitrary(),
+        )
             .prop_map(|(access_modifier, identifier)| Self {
                 access_modifier,
                 identifier,
@@ -137,7 +139,7 @@ impl Arbitrary for Module {
     }
 }
 
-/// Represents an input for the [`super::Submodule`]
+/// Represents an input for the [`pernixc_syntax::syntax_tree::target::Submodule`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Submodule {
     /// The module declaration part of the submodule.
@@ -148,7 +150,7 @@ pub struct Submodule {
 }
 
 impl Input for Submodule {
-    type Output = super::Submodule;
+    type Output = pernixc_syntax::syntax_tree::target::Submodule;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.module.assert(&output.module)?;
@@ -156,7 +158,7 @@ impl Input for Submodule {
     }
 }
 
-/// Represents an input for the [`super::File`]
+/// Represents an input for the [`pernixc_syntax::syntax_tree::target::File`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct File {
     usings: Vec<Using>,
@@ -165,7 +167,7 @@ pub struct File {
 }
 
 impl Input for File {
-    type Output = super::File;
+    type Output = pernixc_syntax::syntax_tree::target::File;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.usings.assert(&output.usings)?;
@@ -193,16 +195,18 @@ impl Arbitrary for File {
             (
                 proptest::collection::vec(Using::arbitrary(), 0..=4),
                 proptest::collection::hash_map(
-                    Identifier::arbitrary().prop_map(|mut identifier| {
-                        identifier.string = identifier.string.to_lowercase();
-                        identifier
-                    }),
+                    pernix_lexical_input::token::Identifier::arbitrary().prop_filter_map(
+                        "allows only a valid module name",
+                        |mut identifier| {
+                            identifier.string = identifier.string.to_lowercase();
+                            pernixc_lexical::token::KeywordKind::from_str(&identifier.string)
+                                .map(|_| None)
+                                .unwrap_or(Some(identifier))
+                        },
+                    ),
                     (AccessModifier::arbitrary(), inner),
                     0..=4,
-                )
-                .prop_filter("filter out submodule named `main`", |modules| {
-                    modules.keys().all(|module| module.string != "main")
-                }),
+                ),
                 proptest::collection::vec(Item::arbitrary(), 0..=4),
             )
                 .prop_map(|(usings, submodules, items)| Self {

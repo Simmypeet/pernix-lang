@@ -9,7 +9,8 @@ use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::TokenStream,
 };
-use pernixc_source::{SourceElement, SourceFile, Span, SpanError};
+use pernixc_print::LogSeverity;
+use pernixc_source::{SourceElement, SourceFile, Span};
 use pernixc_system::diagnostic::Dummy;
 
 use super::AccessModifier;
@@ -19,8 +20,6 @@ use crate::{
     syntax_tree::{item::Item, ScopeSeparator},
 };
 
-pub mod input;
-
 /// Represents a moulde path in used in `module` declarations and `using` statements.
 ///
 /// Syntax Synopsis:
@@ -29,11 +28,13 @@ pub mod input;
 ///     Identifier ('::' Identifier)*
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct ModulePath {
-    pub first: Identifier,
-    pub rest: Vec<(ScopeSeparator, Identifier)>,
+    #[get = "pub"]
+    first: Identifier,
+    #[get = "pub"]
+    rest: Vec<(ScopeSeparator, Identifier)>,
 }
 
 impl ModulePath {
@@ -67,17 +68,21 @@ pub struct Using {
 ///     AccessModifier 'module' Identifier ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Module {
-    pub access_modifier: AccessModifier,
-    pub module_keyword: Keyword,
-    pub identifier: Identifier,
-    pub semicolon: Punctuation,
+    #[get = "pub"]
+    access_modifier: AccessModifier,
+    #[get = "pub"]
+    module_keyword: Keyword,
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    semicolon: Punctuation,
 }
 
 impl SourceElement for Using {
-    fn span(&self) -> Result<Span, SpanError> { self.using_keyword.span.join(&self.semicolon.span) }
+    fn span(&self) -> Span { self.using_keyword.span.join(&self.semicolon.span).unwrap() }
 }
 
 /// Contains all the syntax trees defined within a single file.
@@ -121,6 +126,7 @@ pub struct Submodule {
 pub struct Target {
     #[deref]
     #[deref_mut]
+    #[get = "pub"]
     root_file: File,
 
     /// The name of the target.
@@ -320,6 +326,17 @@ pub enum Error {
     ModuleRedefinition(ModuleRedefinition),
 }
 
+impl Error {
+    /// Prints the error message to the console.
+    pub fn print(&self) {
+        match self {
+            Self::RootSubmoduleConflict(error) => error.print(),
+            Self::SourceFileLoadFail(error) => error.print(),
+            Self::ModuleRedefinition(error) => error.print(),
+        }
+    }
+}
+
 /// The submodule of the root source file ends up pointing to the root source file itself.
 #[derive(Debug, Clone)]
 pub struct RootSubmoduleConflict {
@@ -328,6 +345,21 @@ pub struct RootSubmoduleConflict {
 
     /// The submodule that points to the root source file.
     pub submodule: Module,
+}
+
+impl RootSubmoduleConflict {
+    /// Prints the error message to the console.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "the submodule's source file ended up having the same path as the parent module \
+             itself.",
+        );
+
+        pernixc_print::print_source_code(&self.submodule.identifier.span, None);
+
+        println!();
+    }
 }
 
 /// Failed to load a source file for the submodule.
@@ -343,11 +375,45 @@ pub struct SourceFileLoadFail {
     pub path: PathBuf,
 }
 
+impl SourceFileLoadFail {
+    /// Prints the error message to the console.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "failed to load the submodule's source file from the path `{}`.",
+                self.path.display()
+            ),
+        );
+
+        pernixc_print::print_source_code(&self.submodule.identifier.span, None);
+
+        println!();
+    }
+}
+
 /// A module with the given name already exists.
 #[derive(Debug, Clone)]
 pub struct ModuleRedefinition {
     /// The submodule that is redefined.
     pub redifinition_submodule: Module,
+}
+
+impl ModuleRedefinition {
+    /// Prints the error message to the console.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "the module `{}` was already defined.",
+                self.redifinition_submodule.identifier.span.str()
+            ),
+        );
+
+        pernixc_print::print_source_code(&self.redifinition_submodule.identifier.span, None);
+
+        println!();
+    }
 }
 
 impl Target {
@@ -457,6 +523,3 @@ impl Target {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

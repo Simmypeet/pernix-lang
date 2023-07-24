@@ -1,9 +1,17 @@
+use pernix_input::Input;
 use pernixc_lexical::token_stream::TokenStream;
 use pernixc_source::SourceFile;
-use pernixc_system::{diagnostic::Storage, input::Input};
+use pernixc_syntax::{
+    error,
+    parser::{self, Parser},
+};
+use pernixc_system::diagnostic::Storage;
 use proptest::{prelude::Arbitrary, proptest, test_runner::TestCaseError};
 
-use crate::{error::Error, parser::Parser};
+mod expression;
+mod item;
+mod statement;
+mod target;
 
 /// Parses the given source code and returns the result of the given function.
 ///
@@ -14,9 +22,9 @@ use crate::{error::Error, parser::Parser};
 /// # Errors
 /// - Returns [`TestCaseError::Reject`] if found any lexical errors.
 /// - Returns [`TestCaseError::Fail`] if found any syntax errors.
-pub fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
+fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
 where
-    for<'a> F: FnOnce(&mut Parser<'a>, &Storage<crate::error::Error>) -> super::ParserResult<T>,
+    for<'a> F: FnOnce(&mut Parser<'a>, &Storage<error::Error>) -> parser::Result<T>,
 {
     let source_file = SourceFile::temp(source)?;
 
@@ -33,7 +41,7 @@ where
 
     let mut parser = Parser::new(&token_stream);
 
-    let storage: Storage<Error> = Storage::new();
+    let storage: Storage<error::Error> = Storage::new();
     let output = f(&mut parser, &storage);
 
     if !storage.as_vec().is_empty() {
@@ -51,16 +59,13 @@ where
 proptest! {
     #[test]
     fn qualified_identifier_test(
-        qualified_identifier_input in super::input::QualifiedIdentifier::arbitrary(),
+        qualified_identifier_input
+            in pernix_syntax_input::syntax_tree::QualifiedIdentifier::arbitrary(),
     ) {
         let source = qualified_identifier_input.to_string();
         let qualified_identifier = parse(
             &source,
-            |parser, handler|
-                parser.parse_qualified_identifier(
-                    true,
-                    handler
-                )
+            |parser, handler| parser.parse_qualified_identifier(true, handler)
         )?;
 
         qualified_identifier_input.assert(&qualified_identifier)?;
@@ -69,10 +74,14 @@ proptest! {
     #[test]
     #[allow(clippy::redundant_closure_for_method_calls)]
     fn type_specifier_test(
-        type_specifier_input in super::input::TypeSpecifier::arbitrary(),
+        type_specifier_input
+            in pernix_syntax_input::syntax_tree::TypeSpecifier::arbitrary(),
     ) {
         let source = type_specifier_input.to_string();
-        let type_specifier = parse(&source, |parser, handler| parser.parse_type_specifier(handler))?;
+        let type_specifier = parse(
+            &source,
+            |parser, handler| parser.parse_type_specifier(handler)
+        )?;
 
         type_specifier_input.assert(&type_specifier)?;
     }

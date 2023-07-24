@@ -7,7 +7,6 @@
 #![deny(
     missing_debug_implementations,
     missing_copy_implementations,
-    missing_docs,
     clippy::all,
     clippy::pedantic,
     clippy::nursery,

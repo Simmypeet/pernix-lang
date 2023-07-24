@@ -1,10 +1,10 @@
 //! Contains the definition of various inputs that correspond to the definitions in defined
-//! [`crate::syntax_tree::statement`] module.
+//! [`pernixc_syntax::syntax_tree::statement`] module.
 
 use std::fmt::Display;
 
-use pernixc_lexical::token::input::Identifier;
-use pernixc_system::input::Input;
+use pernix_input::Input;
+use pernix_lexical_input::token::Identifier;
 use proptest::{
     prelude::Arbitrary,
     prop_assert_eq, prop_oneof,
@@ -12,12 +12,12 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use crate::syntax_tree::{
-    expression::input::{Expression, Functional, Imperative, Terminator},
-    input::TypeAnnotation,
+use super::{
+    expression::{Expression, Functional, Imperative, Terminator},
+    TypeAnnotation,
 };
 
-/// Represents an input for the [`super::Statement`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::statement::Statement`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Statement {
@@ -26,12 +26,18 @@ pub enum Statement {
 }
 
 impl Input for Statement {
-    type Output = super::Statement;
+    type Output = pernixc_syntax::syntax_tree::statement::Statement;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::VariableDeclaration(i), super::Statement::VariableDeclaration(o)) => i.assert(o),
-            (Self::Expressive(i), super::Statement::Expressive(o)) => i.assert(o),
+            (
+                Self::VariableDeclaration(i),
+                pernixc_syntax::syntax_tree::statement::Statement::VariableDeclaration(o),
+            ) => i.assert(o),
+            (
+                Self::Expressive(i),
+                pernixc_syntax::syntax_tree::statement::Statement::Expressive(o),
+            ) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}",
             ))),
@@ -74,14 +80,14 @@ impl Display for Statement {
     }
 }
 
-/// Represents an input for the [`super::VariableDeclaration`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::statement::VariableDeclaration`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableDeclaration {
     /// Whether the variable is mutable.
     pub mutable: bool,
 
     /// The identifier of the variable.
-    pub identifier: Identifier,
+    pub identifier: pernix_lexical_input::token::Identifier,
 
     /// The type specifier of the variable.
     pub type_annotation: Option<TypeAnnotation>,
@@ -91,13 +97,13 @@ pub struct VariableDeclaration {
 }
 
 impl Input for VariableDeclaration {
-    type Output = super::VariableDeclaration;
+    type Output = pernixc_syntax::syntax_tree::statement::VariableDeclaration;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.mutable, output.mutable_keyword.is_some());
-        self.identifier.assert(&output.identifier)?;
-        self.type_annotation.assert(&output.type_annotation)?;
-        self.expression.assert(&output.expression)
+        prop_assert_eq!(self.mutable, output.mutable_keyword().is_some());
+        self.identifier.assert(output.identifier())?;
+        self.type_annotation.assert(output.type_annotation())?;
+        self.expression.assert(output.expression())
     }
 }
 
@@ -141,7 +147,7 @@ impl Display for VariableDeclaration {
     }
 }
 
-/// Represents an input for the [`super::Expressive`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::statement::Expressive`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Expressive {
@@ -150,12 +156,17 @@ pub enum Expressive {
 }
 
 impl Input for Expressive {
-    type Output = super::Expressive;
+    type Output = pernixc_syntax::syntax_tree::statement::Expressive;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Imperative(i), super::Expressive::Imperative(o)) => i.assert(o),
-            (Self::Semi(i), super::Expressive::Semi(o)) => i.assert(o),
+            (
+                Self::Imperative(i),
+                pernixc_syntax::syntax_tree::statement::Expressive::Imperative(o),
+            ) => i.assert(o),
+            (Self::Semi(i), pernixc_syntax::syntax_tree::statement::Expressive::Semi(o)) => {
+                i.assert(o)
+            }
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}",
             ))),
@@ -172,7 +183,7 @@ impl Display for Expressive {
     }
 }
 
-/// Represents an input for the [`super::SemiExpression`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::statement::SemiExpression`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum SemiExpression {
@@ -181,12 +192,18 @@ pub enum SemiExpression {
 }
 
 impl Input for SemiExpression {
-    type Output = super::SemiExpression;
+    type Output = pernixc_syntax::syntax_tree::statement::SemiExpression;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Functional(i), super::SemiExpression::Functional(o)) => i.assert(o),
-            (Self::Terminator(i), super::SemiExpression::Terminator(o)) => i.assert(o),
+            (
+                Self::Functional(i),
+                pernixc_syntax::syntax_tree::statement::SemiExpression::Functional(o),
+            ) => i.assert(o),
+            (
+                Self::Terminator(i),
+                pernixc_syntax::syntax_tree::statement::SemiExpression::Terminator(o),
+            ) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}",
             ))),
@@ -203,7 +220,7 @@ impl Display for SemiExpression {
     }
 }
 
-/// Represents an input for the [`super::Semi`].
+/// Represents an input for the [`pernixc_syntax::syntax_tree::statement::Semi`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Semi {
     /// The expression of the semi-statement.
@@ -211,10 +228,10 @@ pub struct Semi {
 }
 
 impl Input for Semi {
-    type Output = super::Semi;
+    type Output = pernixc_syntax::syntax_tree::statement::Semi;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.expression.assert(&output.expression)
+        self.expression.assert(output.expression())
     }
 }
 

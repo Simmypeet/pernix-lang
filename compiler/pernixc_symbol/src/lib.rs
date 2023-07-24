@@ -17,7 +17,6 @@ use std::{
     convert::Into,
     fmt::Debug,
     hash::Hash,
-    ops::SubAssign,
     sync::Arc,
 };
 
@@ -93,7 +92,7 @@ pub struct TraitType {
     pub parent_trait_id: arena::ID<Trait>,
 
     /// The syntax tree of the associated type.
-    pub syntax_tree: Option<Arc<syntax_tree::item::TraitType>>,
+    pub syntax_tree: Option<syntax_tree::item::TraitType>,
 }
 
 impl Symbol for arena::Symbol<TraitType> {
@@ -269,7 +268,7 @@ pub struct Trait {
     pub implements: Vec<arena::ID<Implements>>,
 
     /// The syntax tree of the trait.
-    pub syntax_tree: Option<Arc<syntax_tree::item::TraitSignature>>,
+    pub syntax_tree: Option<syntax_tree::item::TraitSignature>,
 
     /// The accessibility of the trait.
     pub accessibility: Accessibility,
@@ -615,7 +614,7 @@ pub struct Field {
     pub parent_struct_id: arena::ID<Struct>,
 
     /// The syntax tree that was used to create the field.
-    pub syntax_tree: Option<Arc<StructFieldSyntaxTree>>,
+    pub syntax_tree: Option<StructFieldSyntaxTree>,
 
     /// The order in which the field was declared.
     pub declaration_order: usize,
@@ -643,7 +642,7 @@ pub struct Struct {
     pub parent_module_id: arena::ID<Module>,
 
     /// The syntax tree that was used to create the struct.
-    pub syntax_tree: Option<Arc<StructSignatureSyntaxTree>>,
+    pub syntax_tree: Option<StructSignatureSyntaxTree>,
 
     /// Maps the name of the field to its corresponding ID.
     pub field_ids_by_name: HashMap<String, arena::ID<Field>>,
@@ -678,7 +677,7 @@ pub struct EnumVariant {
     pub declaration_order: usize,
 
     /// The syntax tree that was used to create the enum variant.
-    pub syntax_tree: Option<Arc<Identifier>>,
+    pub syntax_tree: Option<Identifier>,
 }
 
 impl Symbol for arena::Symbol<EnumVariant> {
@@ -704,7 +703,7 @@ pub struct Enum {
     pub parent_module_id: arena::ID<Module>,
 
     /// The syntax tree that was used to create the enum.
-    pub syntax_tree: Option<Arc<EnumSignatureSyntaxTree>>,
+    pub syntax_tree: Option<EnumSignatureSyntaxTree>,
 
     /// Maps the name of the enum variant to the ID of the enum variant.
     pub variant_ids_by_name: HashMap<String, arena::ID<EnumVariant>>,
@@ -775,7 +774,7 @@ pub struct Parameter<T> {
     pub ty: ty::Type,
 
     /// The syntax tree of the parameter.
-    pub syntax_tree: Option<Arc<syntax_tree::item::Parameter>>,
+    pub syntax_tree: Option<syntax_tree::item::Parameter>,
 
     /// Whether the parameter is mutable.
     pub is_mutable: bool,
@@ -807,7 +806,7 @@ pub struct FunctionSignature<T> {
     pub return_type: ty::Type,
 
     /// The syntax tree of the function signature.
-    pub syntax_tree: Option<Arc<FunctionSignatureSyntaxTree>>,
+    pub syntax_tree: Option<FunctionSignatureSyntaxTree>,
 
     /// The generics of the overload.
     pub generics: Generics,
@@ -835,7 +834,7 @@ pub struct Function {
     pub parent_module_id: arena::ID<Module>,
 
     /// The syntax tree of the function body.
-    pub syntax_tree: Option<Arc<syntax_tree::item::FunctionBody>>,
+    pub syntax_tree: Option<syntax_tree::item::FunctionBody>,
 
     /// The accessibility of the function.
     pub accessibility: Accessibility,

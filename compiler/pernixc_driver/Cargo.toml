@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_syntax"
+name = "pernixc_driver"
 version = { workspace = true }
 description = { workspace = true }
 authors = { workspace = true }
@@ -8,23 +8,18 @@ edition = { workspace = true }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+clap = { version = "4.3.19", features = ["derive"] }
 pernixc_system = { path = "../pernixc_system" }
-pernixc_print = { path = "../pernixc_print" }
-pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_source = { path = "../pernixc_source" }
+pernixc_syntax = { path = "../pernixc_syntax" }
+pernixc_lexical = { path = "../pernixc_lexical" }
+pernixc_print = { path = "../pernixc_print" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 getset = { workspace = true }
-lazy_static = { workspace = true }
 derive_more = { workspace = true }
+paste = { workspace = true }
+by_address = { workspace = true }
 tempfile = { workspace = true }
-
-[dev-dependencies]
-pernix_lexical_input = { path = "../../inputs/pernix_lexical_input" }
-pernix_syntax_input = { path = "../../inputs/pernix_syntax_input" }
-pernix_input = { path = "../../inputs/pernix_input" }
 proptest = { workspace = true }
-
-[[test]]
-name = "pernixc_syntax_test"
-path = "test/pernixc_syntax_test.rs"
+itertools = { workspace = true }

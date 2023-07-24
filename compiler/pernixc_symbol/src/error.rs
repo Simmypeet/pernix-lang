@@ -1,12 +1,13 @@
 //! Contains the definition of all semantic errors that can occur during the symbol
 //! resolution/analysis.
 
+use pernixc_print::LogSeverity;
 use pernixc_source::Span;
 use pernixc_system::arena;
 
 use crate::{
-    Field, Function, GlobalID, ImplementsFunction, LifetimeParameter, Module, Parameter, Struct,
-    TraitFunction, TraitMemberID, TypeParameter, ID,
+    ty, Field, Function, GlobalID, ImplementsFunction, LifetimeArgument, LifetimeParameter, Module,
+    Parameter, Struct, TraitBound, TraitFunction, TraitMemberID, TypeParameter, ID,
 };
 
 /// No target was found with the given name.
@@ -14,6 +15,20 @@ use crate::{
 pub struct TargetNotFound {
     /// The span of the unknown target name.
     pub unknown_target_span: Span,
+}
+
+impl TargetNotFound {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            format!(
+                "the target name `{}` didn't exist",
+                self.unknown_target_span.str()
+            )
+            .as_str(),
+        );
+    }
 }
 
 /// No module was found with the given name in the given module.
@@ -194,19 +209,19 @@ pub struct LifetimeArgumentsRequired {
     pub span: Span,
 }
 
-/// There is no member on the compound type.
+/// There is no member on this type.
 #[derive(Debug, Clone)]
-pub struct NoMemberOnCompoundType {
-    /// The span of the compound type.
+pub struct NoMemberOnThisType {
+    /// The span of the member name, trying to access.
     pub span: Span,
+
+    /// The type that does not have the member.
+    pub ty: ty::Type,
 }
 
 /// Trait resolution is not allowed in this context.
-#[derive(Debug, Clone)]
-pub struct TraitResolutionNotAllowed {
-    /// The span where the trait resolution was found.
-    pub span: Span,
-}
+#[derive(Debug, Clone, Copy)]
+pub struct TraitResolutionNotAllowed;
 
 /// The given symbol can't be used as a type.
 #[derive(Debug, Clone)]
@@ -240,6 +255,23 @@ pub struct NoGenericArgumentsRequired {
 pub struct PrivateSymbolLeakage {
     /// The span of the symbol reference.
     pub span: Span,
+}
+
+/// The supplied lifetime argument does not outlive the required lifetime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LifetimeDoesNotOutlive {
+    /// The supplied lifetime that does not outlive the required lifetime.
+    pub passed_lifetime_parameter: arena::ID<LifetimeParameter>,
+
+    /// The lifetime that the supplied argument must outlive.
+    pub required_lifetime_argument: LifetimeArgument,
+}
+
+/// The required trait bound is not satisfied.
+#[derive(Debug, Clone)]
+pub struct TraitBoundNotSatisfied {
+    /// The required trait bound that is not satisfied.
+    pub required_trait_bound: TraitBound,
 }
 
 /// Is an enumeration of all errors occurring during the symbol resolution/analysis.
@@ -280,9 +312,11 @@ pub enum Error {
     LifetimeArgumentCountMismatch(LifetimeArgumentCountMismatch),
     TypeArgumentCountMismatch(TypeArgumentCountMismatch),
     LifetimeArgumentsRequired(LifetimeArgumentsRequired),
-    NoMemberOnCompoundType(NoMemberOnCompoundType),
+    NoMemberOnThisType(NoMemberOnThisType),
     TraitResolutionNotAllowed(TraitResolutionNotAllowed),
     SymbolIsNotAccessible(SymbolIsNotAccessible),
     NoGenericArgumentsRequired(NoGenericArgumentsRequired),
     PrivateSymbolLeakage(PrivateSymbolLeakage),
+    LifetimeDoesNotOutlive(LifetimeDoesNotOutlive),
+    TraitBoundNotSatisfied(TraitBoundNotSatisfied),
 }

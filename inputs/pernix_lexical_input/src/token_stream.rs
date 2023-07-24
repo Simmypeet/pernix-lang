@@ -3,7 +3,7 @@
 
 use std::fmt::{Debug, Display, Write};
 
-use pernixc_system::input::Input;
+use pernix_input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_assert_eq, prop_oneof,
@@ -11,14 +11,10 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use crate::token::input::{
-    Comment, Identifier, Keyword, NumericLiteral, Punctuation, Token, WhiteSpaces,
-};
-
-/// Represents an input for the [`super::Delimiter`].
+/// Represents an input for the [`pernixc_lexical::token_stream::Delimiter`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Delimiter {
-    delimiter: super::Delimiter,
+    delimiter: pernixc_lexical::token_stream::Delimiter,
 }
 
 impl Arbitrary for Delimiter {
@@ -28,13 +24,13 @@ impl Arbitrary for Delimiter {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self {
-                delimiter: super::Delimiter::Parenthesis
+                delimiter: pernixc_lexical::token_stream::Delimiter::Parenthesis
             }),
             Just(Self {
-                delimiter: super::Delimiter::Brace
+                delimiter: pernixc_lexical::token_stream::Delimiter::Brace
             }),
             Just(Self {
-                delimiter: super::Delimiter::Bracket
+                delimiter: pernixc_lexical::token_stream::Delimiter::Bracket
             }),
         ]
         .boxed()
@@ -71,31 +67,31 @@ impl Arbitrary for Delimited {
 impl Display for Delimited {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.delimiter.delimiter {
-            super::Delimiter::Parenthesis => f.write_char('(')?,
-            super::Delimiter::Brace => f.write_char('{')?,
-            super::Delimiter::Bracket => f.write_char('[')?,
+            pernixc_lexical::token_stream::Delimiter::Parenthesis => f.write_char('(')?,
+            pernixc_lexical::token_stream::Delimiter::Brace => f.write_char('{')?,
+            pernixc_lexical::token_stream::Delimiter::Bracket => f.write_char('[')?,
         }
 
         Display::fmt(&self.token_stream, f)?;
 
         match self.delimiter.delimiter {
-            super::Delimiter::Parenthesis => f.write_char(')'),
-            super::Delimiter::Brace => f.write_char('}'),
-            super::Delimiter::Bracket => f.write_char(']'),
+            pernixc_lexical::token_stream::Delimiter::Parenthesis => f.write_char(')'),
+            pernixc_lexical::token_stream::Delimiter::Brace => f.write_char('}'),
+            pernixc_lexical::token_stream::Delimiter::Bracket => f.write_char(']'),
         }
     }
 }
 
 impl Input for Delimited {
-    type Output = super::Delimited;
+    type Output = pernixc_lexical::token_stream::Delimited;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.delimiter.delimiter, output.delimiter);
 
         let (open_char, close_char) = match self.delimiter.delimiter {
-            super::Delimiter::Parenthesis => ('(', ')'),
-            super::Delimiter::Brace => ('{', '}'),
-            super::Delimiter::Bracket => ('[', ']'),
+            pernixc_lexical::token_stream::Delimiter::Parenthesis => ('(', ')'),
+            pernixc_lexical::token_stream::Delimiter::Brace => ('{', '}'),
+            pernixc_lexical::token_stream::Delimiter::Bracket => ('[', ']'),
         };
 
         prop_assert_eq!(output.open.punctuation, open_char);
@@ -111,7 +107,7 @@ impl Input for Delimited {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum TokenTree {
-    Token(Token),
+    Token(crate::token::Token),
     Delimited(Delimited),
 }
 
@@ -121,7 +117,7 @@ impl Arbitrary for TokenTree {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Token::arbitrary().prop_map(Self::Token),
+            crate::token::Token::arbitrary().prop_map(Self::Token),
             Delimited::arbitrary_with(args).prop_map(Self::Delimited)
         ]
         .boxed()
@@ -138,12 +134,14 @@ impl Display for TokenTree {
 }
 
 impl Input for TokenTree {
-    type Output = super::TokenTree;
+    type Output = pernixc_lexical::token_stream::TokenTree;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Token(i), super::TokenTree::Token(o)) => i.assert(o)?,
-            (Self::Delimited(i), super::TokenTree::Delimited(o)) => i.assert(o)?,
+            (Self::Token(i), pernixc_lexical::token_stream::TokenTree::Token(o)) => i.assert(o)?,
+            (Self::Delimited(i), pernixc_lexical::token_stream::TokenTree::Delimited(o)) => {
+                i.assert(o)?
+            }
             _ => return Err(TestCaseError::fail("token tree variant mismatch")),
         }
 
@@ -154,11 +152,11 @@ impl Input for TokenTree {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 enum InsignificantToken {
-    Comment(Comment),
-    WhiteSpaces(WhiteSpaces),
+    Comment(crate::token::Comment),
+    WhiteSpaces(crate::token::WhiteSpaces),
 }
 
-impl From<InsignificantToken> for Token {
+impl From<InsignificantToken> for crate::token::Token {
     fn from(val: InsignificantToken) -> Self {
         match val {
             InsignificantToken::Comment(c) => Self::Comment(c),
@@ -173,8 +171,8 @@ impl Arbitrary for InsignificantToken {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Comment::arbitrary().prop_map(Self::Comment),
-            WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
+            crate::token::Comment::arbitrary().prop_map(Self::Comment),
+            crate::token::WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
         ]
         .boxed()
     }
@@ -191,13 +189,13 @@ impl Display for InsignificantToken {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum SignificantToken {
-    Identifier(Identifier),
-    Keyword(Keyword),
-    NumericLiteral(NumericLiteral),
-    Punctuation(Punctuation),
+    Identifier(crate::token::Identifier),
+    Keyword(crate::token::Keyword),
+    NumericLiteral(crate::token::NumericLiteral),
+    Punctuation(crate::token::Punctuation),
 }
 
-impl From<SignificantToken> for Token {
+impl From<SignificantToken> for crate::token::Token {
     fn from(val: SignificantToken) -> Self {
         match val {
             SignificantToken::Identifier(i) => Self::Identifier(i),
@@ -214,10 +212,10 @@ impl Arbitrary for SignificantToken {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Identifier::arbitrary().prop_map(Self::Identifier),
-            Keyword::arbitrary().prop_map(Self::Keyword),
-            NumericLiteral::arbitrary().prop_map(Self::NumericLiteral),
-            Punctuation::arbitrary().prop_filter_map(
+            crate::token::Identifier::arbitrary().prop_map(Self::Identifier),
+            crate::token::Keyword::arbitrary().prop_map(Self::Keyword),
+            crate::token::NumericLiteral::arbitrary().prop_map(Self::NumericLiteral),
+            crate::token::Punctuation::arbitrary().prop_filter_map(
                 "filters out the punctuation that might collide with the delimiters",
                 |p| {
                     if matches!(p.punctuation, '(' | ')' | '{' | '}' | '[' | ']') {
@@ -310,7 +308,7 @@ impl Display for TokenStream {
 }
 
 impl Input for TokenStream {
-    type Output = super::TokenStream;
+    type Output = pernixc_lexical::token_stream::TokenStream;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.token_trees.len(), output.len());

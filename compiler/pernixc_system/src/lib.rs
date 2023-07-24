@@ -14,4 +14,3 @@
 
 pub mod arena;
 pub mod diagnostic;
-pub mod input;

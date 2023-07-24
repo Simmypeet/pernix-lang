@@ -1,15 +1,15 @@
-use pernixc_system::input::Input;
+use pernix_input::Input;
 use proptest::{prelude::Arbitrary, proptest};
 
 proptest! {
     #[test]
     #[allow(clippy::redundant_closure_for_method_calls)]
     fn statement_test(
-        statement_input in super::input::Statement::arbitrary()
+        statement_input in pernix_syntax_input::syntax_tree::statement::Statement::arbitrary()
     ) {
         let source = statement_input.to_string();
 
-        let statement = crate::syntax_tree::tests::parse(
+        let statement = super::parse(
             &source,
             |parser, handler| parser.parse_statement(handler)
         )?;

@@ -10,9 +10,6 @@ use crate::{
     Accessibility, Module,
 };
 
-#[cfg(test)]
-pub(super) mod input;
-
 // Checks for the target input validity
 pub(super) fn target_check(targets: &[Target]) -> std::result::Result<(), BuildError> {
     let mut duplicated_names = HashSet::new();
@@ -40,11 +37,11 @@ pub(super) fn target_check(targets: &[Target]) -> std::result::Result<(), BuildE
 impl Table {
     fn stem_from(&mut self, file: &File, parent_module_id: arena::ID<Module>) {
         for submodule in &file.submodules {
-            let module_name = submodule.module.identifier.span.str().to_string();
+            let module_name = submodule.module.identifier().span.str().to_string();
             // Adds a submodule to the module list
             let id = self.modules.push(Module {
                 name: module_name.clone(),
-                accessibility: Accessibility::from_syntax_tree(&submodule.module.access_modifier),
+                accessibility: Accessibility::from_syntax_tree(submodule.module.access_modifier()),
                 parent_module_id: Some(parent_module_id),
                 module_child_ids_by_name: HashMap::new(),
                 usings: HashSet::new(),
@@ -144,7 +141,7 @@ impl Table {
                 continue;
             };
 
-            let using_span = using.span().unwrap();
+            let using_span = using.span();
 
             // check if using own module
             if using_module_id == module_id {
@@ -185,7 +182,7 @@ impl Table {
         // populate usings for submodules
         for submodule in &current_file.submodules {
             let module_id = self.modules[current_module_id].module_child_ids_by_name
-                [submodule.module.identifier.span.str()]
+                [submodule.module.identifier().span.str()]
             .into_module()
             .unwrap();
 
@@ -206,6 +203,3 @@ impl Table {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

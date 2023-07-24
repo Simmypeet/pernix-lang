@@ -1,15 +1,16 @@
+use pernix_input::Input;
 use pernixc_source::SourceFile;
-use pernixc_system::{diagnostic::Storage, input::Input};
+use pernixc_system::diagnostic::Storage;
 use proptest::{arbitrary::Arbitrary, prop_assert, proptest};
 
-use crate::{error::Error, token::Token};
-
-fn tokenize(source: &str) -> Result<Token, proptest::test_runner::TestCaseError> {
+fn tokenize(
+    source: &str,
+) -> Result<pernixc_lexical::token::Token, proptest::test_runner::TestCaseError> {
     let source_file = SourceFile::temp(source)?;
     let mut iterator = source_file.iter();
 
-    let error_storage: Storage<Error> = Storage::new();
-    let token = Token::lex(&mut iterator, &error_storage)?;
+    let error_storage: Storage<pernixc_lexical::error::Error> = Storage::new();
+    let token = pernixc_lexical::token::Token::lex(&mut iterator, &error_storage)?;
 
     // no errors
     prop_assert!(error_storage.as_vec().is_empty());
@@ -20,7 +21,7 @@ fn tokenize(source: &str) -> Result<Token, proptest::test_runner::TestCaseError>
 proptest! {
     #[test]
     fn token_test(
-        input in super::input::Token::arbitrary()
+        input in pernix_lexical_input::token::Token::arbitrary()
     ) {
         let source = input.to_string();
         let token = tokenize(&source)?;

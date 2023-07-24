@@ -2,22 +2,23 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::Delimiter,
 };
-use pernixc_source::{SourceElement, Span, SpanError};
+use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use crate::{
     error::{
-        Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected, TypeSpecifierExpected,
+        self, Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected,
+        PunctuationExpected, TypeSpecifierExpected,
     },
-    parser::{Error as ParserError, Parser, Result as ParserResult},
+    parser::{self, Error as ParserError, Parser, Result as ParserResult, TokenProvider},
 };
 
 pub mod expression;
-pub mod input;
 pub mod item;
 pub mod statement;
 pub mod target;
@@ -27,32 +28,155 @@ pub mod target;
 /// This struct is useful for representing syntax tree nodes that are separated by a separator.
 /// For example, a comma separated list of expressions such as `1, 2, 3` can be represented by a
 /// [`ConnectedList`] with the separator being a comma token and the elements being the expressions.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct ConnectedList<Element, Separator> {
     /// The first element of the list.
-    pub first: Element,
+    #[get = "pub"]
+    first: Element,
 
     /// The rest of the elements of the list.
     ///
     /// Each element of the list is a tuple containing the separator and the element. The separator
     /// is the token/syntax tree node that separates the current element from the prior one.
-    pub rest: Vec<(Separator, Element)>,
+    #[get = "pub"]
+    rest: Vec<(Separator, Element)>,
 
     /// The trailing separator of the list.
-    pub trailing_separator: Option<Separator>,
+    #[get = "pub"]
+    trailing_separator: Option<Separator>,
 }
 
+impl<'a> Parser<'a> {
+    /// Parses a list of items that are separated by a particular separator.
+    ///
+    /// This function is useful for parsing patterns of elements that are separated by a single
+    /// character, such as comma-separated lists of expressions; where the list is enclosed in
+    /// parentheses, brackets, or braces.
+    pub(crate) fn parse_enclosed_list_manual<T>(
+        &mut self,
+        delimiter: char,
+        separator: char,
+        mut parse_item: impl FnMut(&mut Self) -> parser::Result<T>,
+        handler: &impl Handler<error::Error>,
+    ) -> parser::Result<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
+        let mut first = None;
+        let mut rest = Vec::new();
+        let mut trailing_separator = None;
+
+        // check for empty list
+        match self.stop_at_significant() {
+            Some(Token::Punctuation(punc)) if punc.punctuation == delimiter => {
+                self.next_token();
+                return Ok((None, punc));
+            }
+            None => handler.receive(error::Error::PunctuationExpected(PunctuationExpected {
+                expected: delimiter,
+                found: self.get_actual_found_token(None),
+            })),
+            _ => (),
+        }
+
+        if let Ok(value) = parse_item(self) {
+            first = Some(value);
+        } else {
+            let token = self.stop_at(|token| match token {
+                Token::Punctuation(punc) => {
+                    punc.punctuation == delimiter || punc.punctuation == separator
+                }
+                _ => false,
+            });
+
+            // if found delimiter, return empty list
+            if let Some(Token::Punctuation(token)) = token {
+                if token.punctuation == delimiter {
+                    self.next_token();
+                    return Ok((None, token));
+                }
+            }
+        }
+
+        let delimiter = loop {
+            match self.stop_at_significant() {
+                Some(Token::Punctuation(separator_token))
+                    if separator_token.punctuation == separator =>
+                {
+                    // eat the separator
+                    self.next_token();
+
+                    match self.stop_at_significant() {
+                        Some(Token::Punctuation(delimiter_token))
+                            if delimiter_token.punctuation == delimiter =>
+                        {
+                            // eat the delimiter
+                            self.next_token();
+
+                            trailing_separator = Some(separator_token);
+                            break delimiter_token;
+                        }
+                        _ => (),
+                    }
+
+                    parse_item(self).map_or_else(
+                        |_| {
+                            self.stop_at(|token| {
+                                matches!(
+                                    token,
+                                    Token::Punctuation(punc) if punc.punctuation == delimiter ||
+                                        punc.punctuation == separator
+                                )
+                            });
+                        },
+                        |value| {
+                            if first.is_none() {
+                                first = Some(value);
+                            } else {
+                                rest.push((separator_token.clone(), value));
+                            }
+                        },
+                    );
+                }
+                Some(Token::Punctuation(delimiter_token))
+                    if delimiter_token.punctuation == delimiter =>
+                {
+                    // eat the delimiter
+                    self.next_token();
+
+                    break delimiter_token;
+                }
+                found => {
+                    handler.receive(error::Error::PunctuationExpected(PunctuationExpected {
+                        expected: delimiter,
+                        found,
+                    }));
+                    return Err(parser::Error);
+                }
+            }
+        };
+
+        Ok((
+            first.map(|first| ConnectedList {
+                first,
+                rest,
+                trailing_separator,
+            }),
+            delimiter,
+        ))
+    }
+}
 /// Is the result of [`Parser::parse_enclosed_frame()`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct EnclosedList<T> {
     /// The open delimiter of the list.
-    pub open: Punctuation,
+    #[get = "pub"]
+    open: Punctuation,
 
     /// The list of elements.
-    pub list: Option<ConnectedList<T, Punctuation>>,
+    #[get = "pub"]
+    list: Option<ConnectedList<T, Punctuation>>,
 
     /// The close delimiter of the list.
-    pub close: Punctuation,
+    #[get = "pub"]
+    close: Punctuation,
 }
 
 impl<'a> Parser<'a> {
@@ -144,7 +268,7 @@ impl<'a> Parser<'a> {
 impl<Element: SourceElement, Separator: SourceElement> SourceElement
     for ConnectedList<Element, Separator>
 {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         let end = self.trailing_separator.as_ref().map_or_else(
             || {
                 self.rest
@@ -152,9 +276,9 @@ impl<Element: SourceElement, Separator: SourceElement> SourceElement
                     .map_or_else(|| self.first.span(), |(_, element)| element.span())
             },
             pernixc_source::SourceElement::span,
-        )?;
+        );
 
-        self.first.span()?.join(&end)
+        self.first.span().join(&end).unwrap()
     }
 }
 
@@ -197,9 +321,9 @@ pub enum AccessModifier {
 }
 
 impl SourceElement for AccessModifier {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
-            Self::Public(k) | Self::Private(k) | Self::Internal(k) => Ok(k.span.clone()),
+            Self::Public(k) | Self::Private(k) | Self::Internal(k) => k.span.clone(),
         }
     }
 }
@@ -208,15 +332,18 @@ impl SourceElement for AccessModifier {
 ///
 /// This syntax tree is used to represent the scope separator `::` in the qualified identifier
 /// syntax
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct ScopeSeparator {
-    pub first: Punctuation,
-    pub second: Punctuation,
+    #[get = "pub"]
+    first: Punctuation,
+
+    #[get = "pub"]
+    second: Punctuation,
 }
 
 impl SourceElement for ScopeSeparator {
-    fn span(&self) -> Result<Span, SpanError> { self.first.span.join(&self.second.span) }
+    fn span(&self) -> Span { self.first.span.join(&self.second.span).unwrap() }
 }
 
 /// Represents a syntax tree node of a lifetime argument identifier.
@@ -236,10 +363,10 @@ pub enum LifetimeArgumentIdentifier {
 }
 
 impl SourceElement for LifetimeArgumentIdentifier {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
-            Self::Identifier(ident) => Ok(ident.span.clone()),
-            Self::Static(keyword) => Ok(keyword.span.clone()),
+            Self::Identifier(ident) => ident.span.clone(),
+            Self::Static(keyword) => keyword.span.clone(),
         }
     }
 }
@@ -252,17 +379,18 @@ impl SourceElement for LifetimeArgumentIdentifier {
 ///     '/'' LifetimeArgumentIdentifier
 ///     ;
 /// ``
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct LifetimeArgument {
-    pub apostrophe: Punctuation,
-    pub identifier: LifetimeArgumentIdentifier,
+    #[get = "pub"]
+    apostrophe: Punctuation,
+
+    #[get = "pub"]
+    identifier: LifetimeArgumentIdentifier,
 }
 
 impl SourceElement for LifetimeArgument {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.apostrophe.span.join(&self.identifier.span()?)
-    }
+    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span()).unwrap() }
 }
 
 /// Represents a syntax tree node of a generic argument.
@@ -282,7 +410,7 @@ pub enum GenericArgument {
 }
 
 impl SourceElement for GenericArgument {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::TypeSpecifier(type_specifier) => type_specifier.span(),
             Self::Lifetime(lifetime_argument) => lifetime_argument.span(),
@@ -308,23 +436,27 @@ pub type GenericArgumentList = ConnectedList<GenericArgument, Punctuation>;
 ///     ':'? '<' GenericArgumentList '>'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct GenericArguments {
-    pub colon: Option<Punctuation>,
-    pub left_angle: Punctuation,
-    pub argument_list: GenericArgumentList,
-    pub right_angle: Punctuation,
+    #[get = "pub"]
+    colon: Option<Punctuation>,
+    #[get = "pub"]
+    left_angle: Punctuation,
+    #[get = "pub"]
+    argument_list: GenericArgumentList,
+    #[get = "pub"]
+    right_angle: Punctuation,
 }
 
 impl SourceElement for GenericArguments {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         let start = self.colon.as_ref().map_or_else(
             || self.left_angle.span(),
             pernixc_source::SourceElement::span,
-        )?;
+        );
 
-        start.join(&self.right_angle.span)
+        start.join(&self.right_angle.span).unwrap()
     }
 }
 
@@ -336,18 +468,25 @@ impl SourceElement for GenericArguments {
 ///     Identifier GenericArguments?
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct GenericIdentifier {
-    pub identifier: Identifier,
-    pub generic_arguments: Option<GenericArguments>,
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    generic_arguments: Option<GenericArguments>,
 }
 
 impl SourceElement for GenericIdentifier {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         self.generic_arguments.as_ref().map_or_else(
             || self.identifier.span(),
-            |generic_arguments| self.identifier.span.join(&generic_arguments.span()?),
+            |generic_arguments| {
+                self.identifier
+                    .span
+                    .join(&generic_arguments.span())
+                    .unwrap()
+            },
         )
     }
 }
@@ -360,12 +499,15 @@ impl SourceElement for GenericIdentifier {
 ///     '::'? GenericIdentifier ('::' GenericIdentifier)*
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct QualifiedIdentifier {
-    pub leading_scope_separator: Option<ScopeSeparator>,
-    pub first: GenericIdentifier,
-    pub rest: Vec<(ScopeSeparator, GenericIdentifier)>,
+    #[get = "pub"]
+    leading_scope_separator: Option<ScopeSeparator>,
+    #[get = "pub"]
+    first: GenericIdentifier,
+    #[get = "pub"]
+    rest: Vec<(ScopeSeparator, GenericIdentifier)>,
 }
 
 impl QualifiedIdentifier {
@@ -376,18 +518,18 @@ impl QualifiedIdentifier {
 }
 
 impl SourceElement for QualifiedIdentifier {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         let start = self
             .leading_scope_separator
             .as_ref()
-            .map_or_else(|| self.first.span(), pernixc_source::SourceElement::span)?;
+            .map_or_else(|| self.first.span(), pernixc_source::SourceElement::span);
 
         let end = self
             .rest
             .last()
-            .map_or_else(|| self.first.span(), |(_, ident)| ident.span())?;
+            .map_or_else(|| self.first.span(), |(_, ident)| ident.span());
 
-        start.join(&end)
+        start.join(&end).unwrap()
     }
 }
 
@@ -428,7 +570,7 @@ pub enum PrimitiveTypeSpecifier {
 }
 
 impl SourceElement for PrimitiveTypeSpecifier {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Bool(token)
             | Self::Void(token)
@@ -441,7 +583,7 @@ impl SourceElement for PrimitiveTypeSpecifier {
             | Self::Uint8(token)
             | Self::Uint16(token)
             | Self::Uint32(token)
-            | Self::Uint64(token) => Ok(token.span.clone()),
+            | Self::Uint64(token) => token.span.clone(),
         }
     }
 }
@@ -463,9 +605,9 @@ pub enum ReferenceQualifier {
 }
 
 impl SourceElement for ReferenceQualifier {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
-            Self::Mutable(token) | Self::Restrict(token) => Ok(token.span.clone()),
+            Self::Mutable(token) | Self::Restrict(token) => token.span.clone(),
         }
     }
 }
@@ -478,19 +620,21 @@ impl SourceElement for ReferenceQualifier {
 ///     '&' LifetimeArgument? ReferenceQualifier? TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct ReferenceTypeSpecifier {
-    pub ampersand: Punctuation,
-    pub lifetime_argument: Option<LifetimeArgument>,
-    pub qualifier: Option<ReferenceQualifier>,
-    pub operand_type: Box<TypeSpecifier>,
+    #[get = "pub"]
+    ampersand: Punctuation,
+    #[get = "pub"]
+    lifetime_argument: Option<LifetimeArgument>,
+    #[get = "pub"]
+    qualifier: Option<ReferenceQualifier>,
+    #[get = "pub"]
+    operand_type: Box<TypeSpecifier>,
 }
 
 impl SourceElement for ReferenceTypeSpecifier {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.ampersand.span.join(&self.operand_type.span()?)
-    }
+    fn span(&self) -> Span { self.ampersand.span.join(&self.operand_type.span()).unwrap() }
 }
 
 /// Represents a syntax tree node of type specifier.
@@ -514,7 +658,7 @@ pub enum TypeSpecifier {
 }
 
 impl SourceElement for TypeSpecifier {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Primitive(primitive) => primitive.span(),
             Self::QualifiedIdentifier(qualified) => qualified.span(),
@@ -531,15 +675,17 @@ impl SourceElement for TypeSpecifier {
 ///     '\'' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Label {
-    pub apostrophe: Punctuation,
-    pub identifier: Identifier,
+    #[get = "pub"]
+    apostrophe: Punctuation,
+    #[get = "pub"]
+    identifier: Identifier,
 }
 
 impl SourceElement for Label {
-    fn span(&self) -> Result<Span, SpanError> { self.apostrophe.span.join(&self.identifier.span) }
+    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span).unwrap() }
 }
 
 /// Represents a type annotation used to annotate the type of a symbol.
@@ -550,15 +696,17 @@ impl SourceElement for Label {
 ///     ':' TypeSpecifier
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct TypeAnnotation {
-    pub colon: Punctuation,
-    pub type_specifier: TypeSpecifier,
+    #[get = "pub"]
+    colon: Punctuation,
+    #[get = "pub"]
+    type_specifier: TypeSpecifier,
 }
 
 impl SourceElement for TypeAnnotation {
-    fn span(&self) -> Result<Span, SpanError> { self.colon.span.join(&self.type_specifier.span()?) }
+    fn span(&self) -> Span { self.colon.span.join(&self.type_specifier.span()).unwrap() }
 }
 
 impl<'a> Parser<'a> {
@@ -798,7 +946,15 @@ impl<'a> Parser<'a> {
                 self.forward();
 
                 handler.receive(Error::TypeSpecifierExpected(TypeSpecifierExpected {
-                    found,
+                    found: match found {
+                        None => match self.token_provider {
+                            TokenProvider::TokenStream(..) => None,
+                            TokenProvider::Delimited(delimited) => {
+                                Some(Token::Punctuation(delimited.close.clone()))
+                            }
+                        },
+                        found => found,
+                    },
                 }));
 
                 Err(ParserError)
@@ -890,6 +1046,3 @@ impl<'a> Parser<'a> {
         })
     }
 }
-
-#[cfg(test)]
-mod tests;

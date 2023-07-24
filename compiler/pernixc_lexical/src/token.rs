@@ -6,15 +6,13 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
-use pernixc_source::{ByteIndex, SourceElement, SourceFile, Span, SpanError};
+use pernixc_source::{ByteIndex, SourceElement, SourceFile, Span};
 use pernixc_system::diagnostic::Handler;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
 
 use crate::error::{self, UnterminatedDelimitedComment};
-
-pub mod input;
 
 /// Is an enumeration representing keywords in the Pernix programming language.
 ///
@@ -226,7 +224,7 @@ impl Token {
 }
 
 impl SourceElement for Token {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::WhiteSpaces(token) => token.span(),
             Self::Identifier(token) => token.span(),
@@ -246,7 +244,7 @@ pub struct WhiteSpaces {
 }
 
 impl SourceElement for WhiteSpaces {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters that are valid in an identifier.
@@ -257,7 +255,7 @@ pub struct Identifier {
 }
 
 impl SourceElement for Identifier {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters that are reserved for a keyword.
@@ -271,7 +269,7 @@ pub struct Keyword {
 }
 
 impl SourceElement for Keyword {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a single ASCII punctuation character.
@@ -285,7 +283,7 @@ pub struct Punctuation {
 }
 
 impl SourceElement for Punctuation {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a hardcoded numeric literal value in the source code.
@@ -302,7 +300,7 @@ pub struct NumericLiteral {
 }
 
 impl SourceElement for NumericLiteral {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Is an enumeration representing the two kinds of comments in the Pernix programming language.
@@ -326,7 +324,7 @@ pub struct Comment {
 }
 
 impl SourceElement for Comment {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.span.clone()) }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Is an error that can occur when invoking the [Token::tokenize()](Token::tokenize()) method.
@@ -577,6 +575,3 @@ impl Token {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

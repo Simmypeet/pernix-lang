@@ -96,20 +96,20 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.8.1"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
 name = "enum-as-inner"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9720bba047d567ffc8a3cba48bf19126600e249ab7f128e9233e6376976a116"
+checksum = "5ffccbb6966c05b32ef8fbac435df276c4ae4d3dc55a8cd0eb9745e6c12f546a"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.18",
 ]
 
 [[package]]
@@ -229,9 +229,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.146"
+version = "0.2.147"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f92be4933c13fd498862a9e02a3055f8a8d9c039ce33db97306fd5a6caa7f29b"
+checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
 name = "libm"
@@ -262,6 +262,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f746c4065a8fa3fe23974dd82f15431cc8d40779821001404d10d2e79ca7d79"
 
 [[package]]
+name = "pernix_input"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
+name = "pernix_lexical_input"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "lazy_static",
+ "pernix_input",
+ "pernixc_lexical",
+ "pernixc_source",
+ "pernixc_system",
+ "proptest",
+ "strum",
+]
+
+[[package]]
+name = "pernix_syntax_input"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "enum-as-inner",
+ "lazy_static",
+ "pernix_input",
+ "pernix_lexical_input",
+ "pernixc_lexical",
+ "pernixc_source",
+ "pernixc_syntax",
+ "pernixc_system",
+ "proptest",
+ "strum",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "pernixc_lexical"
 version = "0.1.0"
 dependencies = [
@@ -269,6 +309,8 @@ dependencies = [
  "enum-as-inner",
  "getset",
  "lazy_static",
+ "pernix_input",
+ "pernix_lexical_input",
  "pernixc_print",
  "pernixc_source",
  "pernixc_system",
@@ -328,6 +370,9 @@ dependencies = [
  "enum-as-inner",
  "getset",
  "lazy_static",
+ "pernix_input",
+ "pernix_lexical_input",
+ "pernix_syntax_input",
  "pernixc_lexical",
  "pernixc_print",
  "pernixc_source",
@@ -525,21 +570,21 @@ checksum = "bebd363326d05ec3e2f532ab7660680f3b02130d780c299bca73469d521bc0ed"
 
 [[package]]
 name = "strum"
-version = "0.24.1"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f"
+checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
 
 [[package]]
 name = "strum_macros"
-version = "0.24.3"
+version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e385be0d24f186b4ce2f9982191e7101bb737312ad61c1f2f984f34bcf85d59"
+checksum = "6069ca09d878a33f883cc06aaa9718ede171841d3832450354410b718b097232"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
  "rustversion",
- "syn 1.0.109",
+ "syn 2.0.18",
 ]
 
 [[package]]

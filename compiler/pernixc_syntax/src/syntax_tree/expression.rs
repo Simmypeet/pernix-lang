@@ -4,13 +4,14 @@ use std::cmp::Ordering;
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_lexical::{
     token::{
         Identifier, Keyword, KeywordKind, NumericLiteral as NumericLiteralToken, Punctuation, Token,
     },
     token_stream::Delimiter,
 };
-use pernixc_source::{SourceElement, Span, SpanError};
+use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
@@ -20,8 +21,6 @@ use crate::{
     error::{Error, ExpressionExpected},
     parser::{Error as ParserError, Parser, Result as ParserResult},
 };
-
-pub mod input;
 
 /// Is an enumeration of all kinds of expressions.
 ///
@@ -41,7 +40,7 @@ pub enum Expression {
 }
 
 impl SourceElement for Expression {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Functional(functional) => functional.span(),
             Self::Terminator(terminator) => terminator.span(),
@@ -69,7 +68,7 @@ pub enum Terminator {
 }
 
 impl SourceElement for Terminator {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Return(return_) => return_.span(),
             Self::Continue(continue_) => continue_.span(),
@@ -115,10 +114,10 @@ pub enum Functional {
 }
 
 impl SourceElement for Functional {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::NumericLiteral(numeric_literal) => {
-                Ok(numeric_literal.numeric_literal_token.span.clone())
+                numeric_literal.numeric_literal_token.span.clone()
             }
             Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
             Self::Binary(binary_expression) => binary_expression.span(),
@@ -142,14 +141,15 @@ impl SourceElement for Functional {
 ///     NumericLiteralToken
 ///     ;
 /// ````
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct NumericLiteral {
-    pub numeric_literal_token: NumericLiteralToken,
+    #[get = "pub"]
+    numeric_literal_token: NumericLiteralToken,
 }
 
 impl SourceElement for NumericLiteral {
-    fn span(&self) -> Result<Span, SpanError> { Ok(self.numeric_literal_token.span.clone()) }
+    fn span(&self) -> Span { self.numeric_literal_token.span.clone() }
 }
 
 /// Represents a cast expression syntax tree.
@@ -160,18 +160,23 @@ impl SourceElement for NumericLiteral {
 ///     Functional 'as' '(' TypeSpecifier ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Cast {
-    pub operand: Box<Functional>,
-    pub as_keyword: Keyword,
-    pub left_paren: Punctuation,
-    pub type_specifier: TypeSpecifier,
-    pub right_paren: Punctuation,
+    #[get = "pub"]
+    operand: Box<Functional>,
+    #[get = "pub"]
+    as_keyword: Keyword,
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    type_specifier: TypeSpecifier,
+    #[get = "pub"]
+    right_paren: Punctuation,
 }
 
 impl SourceElement for Cast {
-    fn span(&self) -> Result<Span, SpanError> { self.operand.span()?.join(&self.right_paren.span) }
+    fn span(&self) -> Span { self.operand.span().join(&self.right_paren.span).unwrap() }
 }
 
 /// Represents a boolean literal syntax tree.
@@ -191,9 +196,9 @@ pub enum BooleanLiteral {
 }
 
 impl SourceElement for BooleanLiteral {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
-            Self::True(keyword) | Self::False(keyword) => Ok(keyword.span.clone()),
+            Self::True(keyword) | Self::False(keyword) => keyword.span.clone(),
         }
     }
 }
@@ -206,17 +211,23 @@ impl SourceElement for BooleanLiteral {
 ///     Functional BinaryOperator Functional
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Binary {
-    pub left_operand: Box<Functional>,
-    pub operator: BinaryOperator,
-    pub right_operand: Box<Functional>,
+    #[get = "pub"]
+    left_operand: Box<Functional>,
+    #[get = "pub"]
+    operator: BinaryOperator,
+    #[get = "pub"]
+    right_operand: Box<Functional>,
 }
 
 impl SourceElement for Binary {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.left_operand.span()?.join(&self.right_operand.span()?)
+    fn span(&self) -> Span {
+        self.left_operand
+            .span()
+            .join(&self.right_operand.span())
+            .unwrap()
     }
 }
 
@@ -311,7 +322,7 @@ impl BinaryOperator {
 }
 
 impl SourceElement for BinaryOperator {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Add(token)
             | Self::Subtract(token)
@@ -320,7 +331,7 @@ impl SourceElement for BinaryOperator {
             | Self::Modulo(token)
             | Self::Assign(token)
             | Self::LessThan(token)
-            | Self::GreaterThan(token) => Ok(token.span.clone()),
+            | Self::GreaterThan(token) => token.span.clone(),
             Self::CompoundAdd(token, token1)
             | Self::CompoundSubtract(token, token1)
             | Self::CompoundMultiply(token, token1)
@@ -329,8 +340,8 @@ impl SourceElement for BinaryOperator {
             | Self::Equal(token, token1)
             | Self::NotEqual(token, token1)
             | Self::LessThanOrEqual(token, token1)
-            | Self::GreaterThanOrEqual(token, token1) => token.span()?.join(&token1.span),
-            Self::LogicalAnd(token) | Self::LogicalOr(token) => Ok(token.span.clone()),
+            | Self::GreaterThanOrEqual(token, token1) => token.span().join(&token1.span).unwrap(),
+            Self::LogicalAnd(token) | Self::LogicalOr(token) => token.span.clone(),
         }
     }
 }
@@ -356,12 +367,12 @@ pub enum PrefixOperator {
 }
 
 impl SourceElement for PrefixOperator {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::LogicalNot(token)
             | Self::Negate(token)
             | Self::ReferenceOf(token)
-            | Self::Dereference(token) => Ok(token.span.clone()),
+            | Self::Dereference(token) => token.span.clone(),
         }
     }
 }
@@ -374,15 +385,18 @@ impl SourceElement for PrefixOperator {
 ///     PrefixOperator Functional
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Prefix {
-    pub operator: PrefixOperator,
-    pub operand: Box<Functional>,
+    #[get = "pub"]
+    operator: PrefixOperator,
+
+    #[get = "pub"]
+    operand: Box<Functional>,
 }
 
 impl SourceElement for Prefix {
-    fn span(&self) -> Result<Span, SpanError> { self.operator.span()?.join(&self.operand.span()?) }
+    fn span(&self) -> Span { self.operator.span().join(&self.operand.span()).unwrap() }
 }
 
 /// Represents a postfix operator syntax tree.
@@ -393,14 +407,15 @@ impl SourceElement for Prefix {
 ///     QualifiedIdentifier
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Named {
-    pub qualified_identifier: QualifiedIdentifier,
+    #[get = "pub"]
+    qualified_identifier: QualifiedIdentifier,
 }
 
 impl SourceElement for Named {
-    fn span(&self) -> Result<Span, SpanError> { self.qualified_identifier.span() }
+    fn span(&self) -> Span { self.qualified_identifier.span() }
 }
 
 /// Represents a list of expressions separated by commas.
@@ -421,20 +436,25 @@ pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 ///     QualifiedIdentifier '(' ArgumentList? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct FunctionCall {
-    pub qualified_identifier: QualifiedIdentifier,
-    pub left_paren: Punctuation,
-    pub arguments: Option<ArgumentList>,
-    pub right_paren: Punctuation,
+    #[get = "pub"]
+    qualified_identifier: QualifiedIdentifier,
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    arguments: Option<ArgumentList>,
+    #[get = "pub"]
+    right_paren: Punctuation,
 }
 
 impl SourceElement for FunctionCall {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         self.qualified_identifier
-            .span()?
+            .span()
             .join(&self.right_paren.span)
+            .unwrap()
     }
 }
 
@@ -446,18 +466,19 @@ impl SourceElement for FunctionCall {
 ///     '(' Expression ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Parenthesized {
-    pub left_paren: Punctuation,
-    pub expression: Box<Expression>,
-    pub right_paren: Punctuation,
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    expression: Box<Expression>,
+    #[get = "pub"]
+    right_paren: Punctuation,
 }
 
 impl SourceElement for Parenthesized {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.left_paren.span()?.join(&self.right_paren.span)
-    }
+    fn span(&self) -> Span { self.left_paren.span().join(&self.right_paren.span).unwrap() }
 }
 
 /// Represents a field initializer syntax tree.
@@ -468,17 +489,23 @@ impl SourceElement for Parenthesized {
 ///     Identifier ':' Expression
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct FieldInitializer {
-    pub identifier: Identifier,
-    pub colon: Punctuation,
-    pub expression: Box<Expression>,
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    colon: Punctuation,
+    #[get = "pub"]
+    expression: Box<Expression>,
 }
 
 impl SourceElement for FieldInitializer {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.identifier.span()?.join(&self.expression.span()?)
+    fn span(&self) -> Span {
+        self.identifier
+            .span()
+            .join(&self.expression.span())
+            .unwrap()
     }
 }
 
@@ -500,20 +527,25 @@ pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 ///     QualifiedIdentifier '{' FieldInitializerList? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct StructLiteral {
-    pub qualified_identifier: QualifiedIdentifier,
-    pub left_brace: Punctuation,
-    pub field_initializers: Option<FieldInitializerList>,
-    pub right_brace: Punctuation,
+    #[get = "pub"]
+    qualified_identifier: QualifiedIdentifier,
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    field_initializers: Option<FieldInitializerList>,
+    #[get = "pub"]
+    right_brace: Punctuation,
 }
 
 impl SourceElement for StructLiteral {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         self.qualified_identifier
-            .span()?
+            .span()
             .join(&self.right_brace.span)
+            .unwrap()
     }
 }
 
@@ -525,16 +557,19 @@ impl SourceElement for StructLiteral {
 ///     Functional '.' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct MemberAccess {
-    pub operand: Box<Functional>,
-    pub dot: Punctuation,
-    pub identifier: Identifier,
+    #[get = "pub"]
+    operand: Box<Functional>,
+    #[get = "pub"]
+    dot: Punctuation,
+    #[get = "pub"]
+    identifier: Identifier,
 }
 
 impl SourceElement for MemberAccess {
-    fn span(&self) -> Result<Span, SpanError> { self.operand.span()?.join(&self.identifier.span) }
+    fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
 }
 
 /// Represents an arrow syntax tree.
@@ -545,15 +580,17 @@ impl SourceElement for MemberAccess {
 ///     '->'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Arrow {
-    pub hyphen: Punctuation,
-    pub right_angle: Punctuation,
+    #[get = "pub"]
+    hyphen: Punctuation,
+    #[get = "pub"]
+    right_angle: Punctuation,
 }
 
 impl SourceElement for Arrow {
-    fn span(&self) -> Result<Span, SpanError> { self.hyphen.span.join(&self.right_angle.span) }
+    fn span(&self) -> Span { self.hyphen.span.join(&self.right_angle.span).unwrap() }
 }
 
 /// Represents an arrow operator syntax tree.
@@ -564,16 +601,19 @@ impl SourceElement for Arrow {
 ///     Functional Arrow Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct ArrowOperator {
-    pub operand: Box<Functional>,
-    pub arrow: Arrow,
-    pub identifier: Identifier,
+    #[get = "pub"]
+    operand: Box<Functional>,
+    #[get = "pub"]
+    arrow: Arrow,
+    #[get = "pub"]
+    identifier: Identifier,
 }
 
 impl SourceElement for ArrowOperator {
-    fn span(&self) -> Result<Span, SpanError> { self.operand.span()?.join(&self.identifier.span) }
+    fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
 }
 
 /// Is an enumeration of all kinds of imperative expressions.
@@ -597,7 +637,7 @@ pub enum Imperative {
 }
 
 impl SourceElement for Imperative {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Block(block) => block.span(),
             Self::IfElse(if_else) => if_else.span(),
@@ -614,15 +654,17 @@ impl SourceElement for Imperative {
 ///     Label ':'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct LabelSpecifier {
-    pub label: Label,
-    pub colon: Punctuation,
+    #[get = "pub"]
+    label: Label,
+    #[get = "pub"]
+    colon: Punctuation,
 }
 
 impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Result<Span, SpanError> { self.label.span()?.join(&self.colon.span) }
+    fn span(&self) -> Span { self.label.span().join(&self.colon.span).unwrap() }
 }
 
 /// Represents a block syntax tree.
@@ -633,18 +675,19 @@ impl SourceElement for LabelSpecifier {
 ///     '{' Statement* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct BlockWithoutLabel {
-    pub left_brace: Punctuation,
-    pub statements: Vec<Statement>,
-    pub right_brace: Punctuation,
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    statements: Vec<Statement>,
+    #[get = "pub"]
+    right_brace: Punctuation,
 }
 
 impl SourceElement for BlockWithoutLabel {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.left_brace.span()?.join(&self.right_brace.span)
-    }
+    fn span(&self) -> Span { self.left_brace.span().join(&self.right_brace.span).unwrap() }
 }
 
 /// Represents a block syntax tree with an optional label specifier.
@@ -655,21 +698,24 @@ impl SourceElement for BlockWithoutLabel {
 ///     LabelSpecifier? '{' Statement* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Block {
-    pub label_specifier: Option<LabelSpecifier>,
-    pub block_without_label: BlockWithoutLabel,
+    #[get = "pub"]
+    label_specifier: Option<LabelSpecifier>,
+    #[get = "pub"]
+    block_without_label: BlockWithoutLabel,
 }
 
 impl SourceElement for Block {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         self.label_specifier.as_ref().map_or_else(
             || self.block_without_label.span(),
             |label_specifier| {
                 label_specifier
-                    .span()?
-                    .join(&self.block_without_label.span()?)
+                    .span()
+                    .join(&self.block_without_label.span())
+                    .unwrap()
             },
         )
     }
@@ -692,7 +738,7 @@ pub enum BlockOrIfElse {
 }
 
 impl SourceElement for BlockOrIfElse {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Block(block) => block.span(),
             Self::IfElse(if_else) => if_else.span(),
@@ -708,16 +754,21 @@ impl SourceElement for BlockOrIfElse {
 ///     'else' BlockOrIfElse
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Else {
-    pub else_keyword: Keyword,
-    pub expression: Box<BlockOrIfElse>,
+    #[get = "pub"]
+    else_keyword: Keyword,
+    #[get = "pub"]
+    expression: Box<BlockOrIfElse>,
 }
 
 impl SourceElement for Else {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.else_keyword.span()?.join(&self.expression.span()?)
+    fn span(&self) -> Span {
+        self.else_keyword
+            .span()
+            .join(&self.expression.span())
+            .unwrap()
     }
 }
 
@@ -729,26 +780,34 @@ impl SourceElement for Else {
 ///     'if' '(' Expression ')' Block Else?
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct IfElse {
-    pub if_keyword: Keyword,
-    pub left_paren: Punctuation,
-    pub condition: Box<Expression>,
-    pub right_paren: Punctuation,
-    pub then_expression: Block,
-    pub else_expression: Option<Else>,
+    #[get = "pub"]
+    if_keyword: Keyword,
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    condition: Box<Expression>,
+    #[get = "pub"]
+    right_paren: Punctuation,
+    #[get = "pub"]
+    then_expression: Block,
+    #[get = "pub"]
+    else_expression: Option<Else>,
 }
 
 impl SourceElement for IfElse {
-    fn span(&self) -> Result<Span, SpanError> {
-        let start = self.if_keyword.span()?;
-        let end = match &self.else_expression {
-            Some(else_expression) => else_expression.span()?,
-            None => self.then_expression.span()?,
-        };
+    fn span(&self) -> Span {
+        let start = self.if_keyword.span();
+        let end = self
+            .else_expression
+            .as_ref()
+            .map_or(self.then_expression.span(), |else_expression| {
+                else_expression.span()
+            });
 
-        start.join(&end)
+        start.join(&end).unwrap()
     }
 }
 
@@ -760,23 +819,26 @@ impl SourceElement for IfElse {
 ///     LabelSpecifier? 'loop' BlockWithoutLabel
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Loop {
-    pub label_specifier: Option<LabelSpecifier>,
-    pub loop_keyword: Keyword,
-    pub block_without_label: BlockWithoutLabel,
+    #[get = "pub"]
+    label_specifier: Option<LabelSpecifier>,
+    #[get = "pub"]
+    loop_keyword: Keyword,
+    #[get = "pub"]
+    block_without_label: BlockWithoutLabel,
 }
 
 impl SourceElement for Loop {
-    fn span(&self) -> Result<Span, SpanError> {
-        let start = match &self.label_specifier {
-            Some(label_specifier) => label_specifier.span()?,
-            None => self.loop_keyword.span.clone(),
-        };
-        let end = self.block_without_label.span()?;
+    fn span(&self) -> Span {
+        let start = self.label_specifier.as_ref().map_or_else(
+            || self.loop_keyword.span.clone(),
+            pernixc_source::SourceElement::span,
+        );
+        let end = self.block_without_label.span();
 
-        start.join(&end)
+        start.join(&end).unwrap()
     }
 }
 
@@ -788,22 +850,24 @@ impl SourceElement for Loop {
 ///     'continue' Label?
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Continue {
-    pub continue_keyword: Keyword,
-    pub label: Option<Label>,
+    #[get = "pub"]
+    continue_keyword: Keyword,
+    #[get = "pub"]
+    label: Option<Label>,
 }
 
 impl SourceElement for Continue {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         let start = self.continue_keyword.span.clone();
-        let end = match &self.label {
-            Some(label) => label.span()?,
-            None => self.continue_keyword.span.clone(),
-        };
+        let end = self.label.as_ref().map_or_else(
+            || self.continue_keyword.span.clone(),
+            pernixc_source::SourceElement::span,
+        );
 
-        start.join(&end)
+        start.join(&end).unwrap()
     }
 }
 
@@ -815,26 +879,32 @@ impl SourceElement for Continue {
 ///     'express' Label? Functional?
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Express {
-    pub express_keyword: Keyword,
-    pub label: Option<Label>,
-    pub expression: Option<Functional>,
+    #[get = "pub"]
+    express_keyword: Keyword,
+    #[get = "pub"]
+    label: Option<Label>,
+    #[get = "pub"]
+    expression: Option<Functional>,
 }
 
 impl SourceElement for Express {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         let start = self.express_keyword.span.clone();
-        let end = match self.label {
-            Some(ref label) => label.span()?,
-            None => match self.expression {
-                Some(ref expression) => expression.span()?,
-                None => self.express_keyword.span.clone(),
+        let end = self.label.as_ref().map_or_else(
+            || {
+                self.expression
+                    .as_ref()
+                    .map_or(self.express_keyword.span.clone(), |expression| {
+                        expression.span()
+                    })
             },
-        };
+            pernixc_source::SourceElement::span,
+        );
 
-        start.join(&end)
+        start.join(&end).unwrap()
     }
 }
 
@@ -846,26 +916,31 @@ impl SourceElement for Express {
 ///     'break' Label? Functional?
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Break {
-    pub break_keyword: Keyword,
-    pub label: Option<Label>,
-    pub expression: Option<Functional>,
+    #[get = "pub"]
+    break_keyword: Keyword,
+    #[get = "pub"]
+    label: Option<Label>,
+    #[get = "pub"]
+    expression: Option<Functional>,
 }
 
 impl SourceElement for Break {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         let start = self.break_keyword.span.clone();
-        let end = match self.label {
-            Some(ref label) => label.span()?,
-            None => match self.expression {
-                Some(ref expression) => expression.span()?,
-                None => self.break_keyword.span.clone(),
+        let end = self.label.as_ref().map_or_else(
+            || {
+                self.expression.as_ref().map_or_else(
+                    || self.break_keyword.span.clone(),
+                    pernixc_source::SourceElement::span,
+                )
             },
-        };
+            pernixc_source::SourceElement::span,
+        );
 
-        start.join(&end)
+        start.join(&end).unwrap()
     }
 }
 
@@ -877,22 +952,24 @@ impl SourceElement for Break {
 ///     'return' Functional?
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Return {
-    pub return_keyword: Keyword,
-    pub expression: Option<Functional>,
+    #[get = "pub"]
+    return_keyword: Keyword,
+    #[get = "pub"]
+    expression: Option<Functional>,
 }
 
 impl SourceElement for Return {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         let start = self.return_keyword.span.clone();
-        let end = match self.expression {
-            Some(ref expression) => expression.span()?,
-            None => self.return_keyword.span.clone(),
-        };
+        let end = self.expression.as_ref().map_or_else(
+            || self.return_keyword.span.clone(),
+            pernixc_source::SourceElement::span,
+        );
 
-        start.join(&end)
+        start.join(&end).unwrap()
     }
 }
 
@@ -1003,7 +1080,9 @@ impl<'a> Parser<'a> {
             found => {
                 // forward/make progress
                 self.forward();
-                handler.receive(Error::ExpressionExpected(ExpressionExpected { found }));
+                handler.receive(Error::ExpressionExpected(ExpressionExpected {
+                    found: self.get_actual_found_token(found),
+                }));
                 return Err(ParserError);
             }
         })
@@ -1490,7 +1569,9 @@ impl<'a> Parser<'a> {
             found => {
                 // forward/make progress
                 self.forward();
-                handler.receive(Error::ExpressionExpected(ExpressionExpected { found }));
+                handler.receive(Error::ExpressionExpected(ExpressionExpected {
+                    found: self.get_actual_found_token(found),
+                }));
                 return Err(ParserError);
             }
         };
@@ -1547,6 +1628,3 @@ impl<'a> Parser<'a> {
         Ok(expression)
     }
 }
-
-#[cfg(test)]
-mod tests;

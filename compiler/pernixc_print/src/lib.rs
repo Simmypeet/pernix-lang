@@ -49,7 +49,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
     let is_multiline = start_line != end_line;
 
     // when printing the source code, show the line before the span and the line after the span
-    let largest_line_number_digits = get_digit(end_line);
+    let largest_line_number_digits = get_digit(end_line + 1);
 
     // prints the source location
     for _ in 0..largest_line_number_digits {
@@ -73,6 +73,32 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
             print!(" ");
         }
         println!("{}", "|".bright_cyan().bold());
+    }
+
+    // prints previous line
+    if let Some(line) = span.source_file().get_line(start_line.saturating_sub(1)) {
+        // prints the line number
+        print!(
+            "{}{}{} ",
+            (start_line - 1).to_string().bright_cyan().bold(),
+            format_args!(
+                "{:width$}",
+                "",
+                width = largest_line_number_digits - get_digit(start_line - 1) + 1
+            ),
+            "|".bright_cyan().bold(),
+        );
+
+        for char in line.chars() {
+            // if the char is tab, print 4 spaces
+            if char == '\t' {
+                print!("    ");
+            } else if char != '\n' {
+                print!("{char}");
+            }
+        }
+
+        println!();
     }
 
     for line_number in start_line..=end_line {
@@ -159,6 +185,32 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
             // prints the message
             println!("{}: {message}", "help".bold());
         }
+    }
+
+    // prints the post line
+    if let Some(line) = span.source_file().get_line(end_line.saturating_add(1)) {
+        // prints the line number
+        print!(
+            "{}{}{} ",
+            (end_line + 1).to_string().bright_cyan().bold(),
+            format_args!(
+                "{:width$}",
+                "",
+                width = largest_line_number_digits - get_digit(end_line + 1) + 1
+            ),
+            "|".bright_cyan().bold(),
+        );
+
+        for char in line.chars() {
+            // if the char is tab, print 4 spaces
+            if char == '\t' {
+                print!("    ");
+            } else if char != '\n' {
+                print!("{char}");
+            }
+        }
+
+        println!();
     }
 
     // prints the empty pipe

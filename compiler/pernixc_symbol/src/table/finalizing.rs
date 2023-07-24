@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token::Identifier;
 use pernixc_source::{SourceElement, Span};
@@ -12,15 +14,16 @@ use super::{drafting::States, Table};
 use crate::{
     error::{
         self, LifetimeArgumentCountMismatch, LifetimeArgumentMustBeSuppliedPriorToTypeArgument,
-        LifetimeArgumentsRequired, NoGenericArgumentsRequired, NoMemberOnCompoundType,
-        PrivateSymbolLeakage, SymbolIsNotAccessible, SymbolNotFound, TargetNotFound, TraitExpected,
-        TraitResolutionNotAllowed, TypeArgumentCountMismatch, TypeExpected,
+        LifetimeArgumentsRequired, LifetimeDoesNotOutlive, NoGenericArgumentsRequired,
+        NoMemberOnCompoundType, PrivateSymbolLeakage, SymbolIsNotAccessible, SymbolNotFound,
+        TargetNotFound, TraitBoundNotSatisfied, TraitExpected, TraitResolutionNotAllowed,
+        TypeArgumentCountMismatch, TypeExpected,
     },
     table,
     ty::{self, Primitive, Reference},
     Accessibility, Enum, EnumVariant, Field, Function, GenericParameters, GenericableID, GlobalID,
-    Implements, ImplementsFunction, LifetimeArgument, Module, ScopedID, Struct, Substitution,
-    Trait, TraitFunction, TypeParameter, WhereClause, ID,
+    Implements, ImplementsFunction, LifetimeArgument, Module, Parameter, ScopedID, Struct,
+    Substitution, Trait, TraitFunction, TypeParameter, WhereClause, ID,
 };
 
 /// Specifies the configuration of the resolution.
@@ -28,45 +31,6 @@ use crate::{
 enum TraitOrImplementsID {
     Trait(arena::ID<Trait>),
     Implements(arena::ID<Implements>),
-}
-
-/// Specifies the configuration of the resolution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct ResolutionConfig {
-    /// Specifies where the resolution is occurring.
-    referring_site: ID,
-
-    /// Specifies whether if the resolution is occurring in the definition part or not.
-    check_where_clause: bool,
-
-    /// Specifies whether if the explicit lifetime is required or not.
-    explicit_lifetime_required: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct GenericsResolution<Symbol> {
-    symbol: arena::ID<Symbol>,
-    substitution: Substitution,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct TraitResolution {
-    trait_id: arena::ID<Trait>,
-    substitution: Substitution,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct TraitFunctionResolution {
-    trait_resolution: TraitResolution,
-    trait_function_id: arena::ID<TraitFunction>,
-    substitution: Substitution,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct TraitTypeResolution {
-    trait_resolution: TraitResolution,
-    trait_type_id: arena::ID<crate::TraitType>,
-    substitution: Substitution,
 }
 
 #[derive(Debug, Clone, EnumAsInner)]
@@ -95,7 +59,7 @@ impl Resolution {
         states: &mut States,
         handler: &impl Handler<error::Error>,
     ) -> Result<(), table::Error> {
-        let global_id: GlobalID = match self {
+        let (global_id, parent_substitution) = match self {
             Self::Primitive(..) | Self::Reference(..) => {
                 handler.receive(error::Error::NoMemberOnCompoundType(
                     NoMemberOnCompoundType {
@@ -104,17 +68,28 @@ impl Resolution {
                 ));
                 return Err(table::Error::FatalSemantic);
             }
-            Self::Module(id) => (*id).into(),
-            Self::Struct(struct_resolution) => struct_resolution.symbol.into(),
-            Self::Enum(id) => (*id).into(),
-            Self::EnumVariant(id) => (*id).into(),
-            Self::Function(function_resolution) => function_resolution.symbol.into(),
-            Self::Trait(trait_resolution) => trait_resolution.trait_id.into(),
-            Self::TraitFunction(trait_function_resolution) => {
-                trait_function_resolution.trait_function_id.into()
+            Self::Module(id) => ((*id).into(), Substitution::default()),
+            Self::Struct(struct_resolution) => {
+                (struct_resolution.symbol.into(), Substitution::default())
             }
-            Self::TraitType(trait_type_resolution) => trait_type_resolution.trait_type_id.into(),
-            Self::ImplementsFunction(..) | Self::TypeParameter(..) => todo!(),
+            Self::Enum(id) => ((*id).into(), Substitution::default()),
+            Self::EnumVariant(id) => ((*id).into(), Substitution::default()),
+            Self::Function(function_resolution) => {
+                (function_resolution.symbol.into(), Substitution::default())
+            }
+            Self::Trait(trait_resolution) => (
+                trait_resolution.trait_id.into(),
+                trait_resolution.substitution.clone(),
+            ),
+            Self::TraitFunction(trait_function_resolution) => (
+                trait_function_resolution.trait_function_id.into(),
+                Substitution::default(),
+            ),
+            Self::TraitType(trait_type_resolution) => (
+                trait_type_resolution.trait_type_id.into(),
+                Substitution::default(),
+            ),
+            Self::ImplementsFunction(..) | Self::TypeParameter(..) => todo!("Report error message"),
         };
 
         let Ok(scoped_id) = ScopedID::try_from(global_id) else {
@@ -141,6 +116,7 @@ impl Resolution {
         let substitution = table.check_generic_arguments(
             global_id,
             &generic_identifier.span()?,
+            &parent_substitution,
             generic_identifier.generic_arguments.as_ref(),
             resolution_config,
             states,
@@ -175,7 +151,6 @@ impl Resolution {
                     &table.types[id].alias,
                     substitution,
                     resolution_config.check_where_clause,
-                    &generic_identifier.span()?,
                     handler,
                 )?;
             }
@@ -193,9 +168,7 @@ impl Resolution {
                 if trait_resolution.substitution.is_concrete_substitution() {
                     if !resolution_config.check_where_clause {
                         handler.receive(error::Error::TraitResolutionNotAllowed(
-                            TraitResolutionNotAllowed {
-                                span: generic_identifier.span()?,
-                            },
+                            TraitResolutionNotAllowed,
                         ));
                         return Err(table::Error::FatalSemantic);
                     }
@@ -227,9 +200,7 @@ impl Resolution {
                 if trait_resolution.substitution.is_concrete_substitution() {
                     if !resolution_config.check_where_clause {
                         handler.receive(error::Error::TraitResolutionNotAllowed(
-                            TraitResolutionNotAllowed {
-                                span: generic_identifier.span()?,
-                            },
+                            TraitResolutionNotAllowed,
                         ));
                         return Err(table::Error::FatalSemantic);
                     }
@@ -246,7 +217,6 @@ impl Resolution {
                             .alias,
                         substitution,
                         resolution_config.check_where_clause,
-                        &generic_identifier.span()?,
                         handler,
                     )?;
                 } else {
@@ -278,16 +248,19 @@ impl Table {
         match id {
             ID::Module(..)
             | ID::Enum(..)
-            | ID::EnumVariant(_)
-            | ID::TypeParameter(_)
-            | ID::LifetimeParameter(_) => {
+            | ID::EnumVariant(..)
+            | ID::TypeParameter(..)
+            | ID::LifetimeParameter(..) => {
                 // currently, there is nothing to finalize for this symbol
+                Ok(())
             }
-            ID::Struct(struct_id) => self.finalize_struct(struct_id, states, handler)?,
-            ID::Function(_) => todo!(),
+            ID::Struct(struct_id) => self.finalize_struct(struct_id, states, handler),
+            ID::Function(function_id) => self.finalize_function(function_id, states, handler),
             ID::Type(_) => todo!(),
-            ID::Field(field_id) => self.finalize_field(field_id, states, handler)?,
-            ID::FunctionParameter(_) => todo!(),
+            ID::Field(field_id) => self.finalize_field(field_id, states, handler),
+            ID::FunctionParameter(function_parameter_id) => {
+                self.finalize_function_parameter(function_parameter_id, states, handler)
+            }
             ID::TraitFunctionParameter(_) => todo!(),
             ID::ImplementsFunctionParameter(_) => todo!(),
             ID::Trait(_) => todo!(),
@@ -297,8 +270,6 @@ impl Table {
             ID::ImplementsFunction(_) => todo!(),
             ID::ImplementsType(_) => todo!(),
         }
-
-        Ok(())
     }
 
     fn resolve_type_parameter(
@@ -346,12 +317,47 @@ impl Table {
         todo!()
     }
 
+    fn combine_substitution(lhs: &Substitution, rhs: &Substitution) -> Substitution {
+        let mut substitution = Substitution::default();
+
+        for (lifetime_parameter, lifetime_argument) in &lhs.lifetime_arguments_by_parameter {
+            assert!(substitution
+                .lifetime_arguments_by_parameter
+                .insert(*lifetime_parameter, *lifetime_argument)
+                .is_none());
+        }
+
+        for (lifetime_parameter, lifetime_argument) in &rhs.lifetime_arguments_by_parameter {
+            assert!(substitution
+                .lifetime_arguments_by_parameter
+                .insert(*lifetime_parameter, *lifetime_argument)
+                .is_none());
+        }
+
+        for (type_parameter, ty) in &lhs.type_arguments_by_parameter {
+            assert!(substitution
+                .type_arguments_by_parameter
+                .insert(*type_parameter, ty.clone())
+                .is_none());
+        }
+
+        for (type_parameter, ty) in &rhs.type_arguments_by_parameter {
+            assert!(substitution
+                .type_arguments_by_parameter
+                .insert(*type_parameter, ty.clone())
+                .is_none());
+        }
+
+        substitution
+    }
+
     // checks if the generic arguments match the generic parameter of the symbol or not
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn check_generic_arguments(
         &mut self,
         global_id: GlobalID,
         identifier_span: &Span,
+        parent_substitution: &Substitution,
         generic_arguments: Option<&syntax_tree::GenericArguments>,
         resolution_config: &ResolutionConfig,
         states: &mut States,
@@ -515,20 +521,195 @@ impl Table {
         }
 
         if resolution_config.check_where_clause {
-            self.check_where_clause(genericable_id, &substitution, handler)?;
+            self.check_substitution_constraints(
+                genericable_id,
+                &Self::combine_substitution(&substitution, parent_substitution),
+                &self.get_active_where_clause(resolution_config.referring_site)?,
+                handler,
+            );
         }
 
         Ok(substitution)
     }
 
-    // returns false if found any error, true otherwise
-    fn check_where_clause(
+    fn substitute_where_clause(
         &self,
-        global_id: GenericableID,
+        where_clause: &WhereClause,
         substitution: &Substitution,
         handler: &impl Handler<error::Error>,
-    ) -> Result<(), table::Error> {
-        todo!()
+    ) -> Result<WhereClause, table::Error> {
+        let mut result_where_clause = WhereClause::default();
+
+        for (lifetime_parameter, lifetime_argument_set) in
+            &where_clause.lifetime_argument_sets_by_lifetime_parameter
+        {
+            let lifetime_parameter_to_insert = match substitution
+                .lifetime_arguments_by_parameter
+                .get(lifetime_parameter)
+            {
+                Some(LifetimeArgument::Parameter(parameter)) => *parameter,
+                Some(LifetimeArgument::Static) => continue,
+                None => *lifetime_parameter,
+            };
+
+            let result_lifetime_argument_set = result_where_clause
+                .lifetime_argument_sets_by_lifetime_parameter
+                .entry(lifetime_parameter_to_insert)
+                .or_insert_with(HashSet::new);
+
+            for lifetime_argument in lifetime_argument_set {
+                match lifetime_argument {
+                    LifetimeArgument::Static => {
+                        result_lifetime_argument_set.insert(LifetimeArgument::Static);
+                    }
+                    LifetimeArgument::Parameter(parameter) => {
+                        result_lifetime_argument_set.insert(
+                            substitution
+                                .lifetime_arguments_by_parameter
+                                .get(parameter)
+                                .copied()
+                                .unwrap_or(LifetimeArgument::Parameter(*parameter)),
+                        );
+                    }
+                }
+            }
+        }
+
+        for (ty, lifetime_argument_set) in &where_clause.lifetime_argument_sets_by_type {
+            let aliased = self.alias_type(ty, substitution, true, handler)?;
+            let result_lifetime_argument_set = result_where_clause
+                .lifetime_argument_sets_by_type
+                .entry(aliased)
+                .or_insert_with(HashSet::default);
+
+            for lifetime_argument in lifetime_argument_set {
+                match lifetime_argument {
+                    LifetimeArgument::Static => {
+                        result_lifetime_argument_set.insert(LifetimeArgument::Static);
+                    }
+                    LifetimeArgument::Parameter(parameter) => {
+                        result_lifetime_argument_set.insert(
+                            substitution
+                                .lifetime_arguments_by_parameter
+                                .get(parameter)
+                                .copied()
+                                .unwrap_or(LifetimeArgument::Parameter(*parameter)),
+                        );
+                    }
+                }
+            }
+        }
+
+        for trait_bound in &where_clause.trait_bounds {
+            let mut new_substitution = trait_bound.substitution.clone();
+            self.apply_substitution_on_arguments(
+                &mut new_substitution,
+                substitution,
+                true,
+                handler,
+            );
+        }
+
+        for (trait_type, ty) in &where_clause.types_by_trait_type {
+            let aliased_ty_bound = self.alias_type(ty, substitution, true, handler)?;
+            let aliased_trait_ty = self.alias_type(
+                &ty::Type::TraitType(trait_type.clone()),
+                substitution,
+                true,
+                handler,
+            )?;
+
+            match aliased_trait_ty {
+                ty::Type::TraitType(trait_ty) => {
+                    result_where_clause
+                        .types_by_trait_type
+                        .insert(trait_ty, aliased_ty_bound);
+                }
+                ty => {
+                    if ty != aliased_ty_bound {
+                        todo!("report error");
+                    }
+                }
+            }
+        }
+
+        Ok(result_where_clause)
+    }
+
+    #[must_use]
+    fn check_substitution_constraints(
+        &self,
+        genericable_id: GenericableID,
+        substitution: &Substitution,
+        active_where_clause: &WhereClause,
+        handler: &impl Handler<error::Error>,
+    ) -> bool {
+        let Some(genericable_where_clause) =
+            self.get_genericable(genericable_id).unwrap().where_clause()
+        else {
+            return false;
+        };
+
+        let Ok(genericable_where_clause) =
+            self.substitute_where_clause(genericable_where_clause, substitution, handler)
+        else {
+            return false;
+        };
+
+        let mut found_error = false;
+
+        // perform lifetime bound checking
+        for (required_lifetime_parameter, required_lifetime_argument_set) in
+            genericable_where_clause.lifetime_argument_sets_by_lifetime_parameter
+        {
+            let Some(active_lifetime_argument_set) = active_where_clause
+                .lifetime_argument_sets_by_lifetime_parameter
+                .get(&required_lifetime_parameter)
+            else {
+                found_error = !required_lifetime_argument_set.is_empty();
+                for bound_lifetime_argument in required_lifetime_argument_set {
+                    handler.receive(error::Error::LifetimeDoesNotOutlive(
+                        LifetimeDoesNotOutlive {
+                            passed_lifetime_parameter: required_lifetime_parameter,
+                            required_lifetime_argument: bound_lifetime_argument,
+                        },
+                    ));
+                }
+                continue;
+            };
+
+            for bound_lifetime_argument in required_lifetime_argument_set {
+                if !active_lifetime_argument_set.contains(&bound_lifetime_argument) {
+                    found_error = true;
+                    handler.receive(error::Error::LifetimeDoesNotOutlive(
+                        LifetimeDoesNotOutlive {
+                            passed_lifetime_parameter: required_lifetime_parameter,
+                            required_lifetime_argument: bound_lifetime_argument,
+                        },
+                    ));
+                }
+            }
+        }
+
+        // perform trait bound checking
+        for required_trait_bound in genericable_where_clause.trait_bounds {
+            if !active_where_clause
+                .trait_bounds
+                .contains(&required_trait_bound)
+            {
+                found_error = true;
+                handler.receive(error::Error::TraitBoundNotSatisfied(
+                    TraitBoundNotSatisfied {
+                        required_trait_bound,
+                    },
+                ));
+            }
+        }
+
+        // perform trait type bound checking
+        for (required_trait_type, required_ty) in genericable_where_clause.types_by_trait_type {}
+
+        !found_error
     }
 
     #[allow(clippy::needless_pass_by_value)]
@@ -537,11 +718,10 @@ impl Table {
         alias: &ty::Type,
         substitution: Substitution,
         allow_trait_resolution: bool,
-        span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> Result<Resolution, table::Error> {
         Ok(
-            match self.alias_type(alias, &substitution, allow_trait_resolution, span, handler)? {
+            match self.alias_type(alias, &substitution, allow_trait_resolution, handler)? {
                 ty::Type::Enum(enum_id) => Resolution::Enum(enum_id),
                 ty::Type::Struct(struct_ty) => Resolution::Struct(GenericsResolution {
                     symbol: struct_ty.struct_id,
@@ -567,7 +747,6 @@ impl Table {
         substitution_operand: &mut Substitution,
         other: &Substitution,
         allow_trait_resolution: bool,
-        span: &Span,
         handler: &impl Handler<error::Error>,
     ) {
         for argument in substitution_operand
@@ -585,7 +764,7 @@ impl Table {
             .type_arguments_by_parameter
             .values_mut()
         {
-            let _ = self.substitute_type(argument, other, allow_trait_resolution, span, handler);
+            let _ = self.substitute_type(argument, other, allow_trait_resolution, handler);
         }
     }
 
@@ -594,7 +773,6 @@ impl Table {
         ty: &mut ty::Type,
         substitution: &Substitution,
         allow_trait_resolution: bool,
-        span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> Result<(), table::Error> {
         match ty {
@@ -603,7 +781,6 @@ impl Table {
                     &mut struct_ty.substitution,
                     substitution,
                     allow_trait_resolution,
-                    span,
                     handler,
                 );
                 Ok(())
@@ -612,7 +789,6 @@ impl Table {
                 &mut reference_ty.operand,
                 substitution,
                 allow_trait_resolution,
-                span,
                 handler,
             ),
             ty::Type::Parameter(type_parameter) => {
@@ -629,14 +805,13 @@ impl Table {
                     &mut trait_type.trait_substitution,
                     substitution,
                     allow_trait_resolution,
-                    span,
                     handler,
                 );
 
                 if trait_type.trait_substitution.is_concrete_substitution() {
                     if !allow_trait_resolution {
                         handler.receive(error::Error::TraitResolutionNotAllowed(
-                            TraitResolutionNotAllowed { span: span.clone() },
+                            TraitResolutionNotAllowed,
                         ));
                         return Err(table::Error::FatalSemantic);
                     }
@@ -653,7 +828,6 @@ impl Table {
                             .alias,
                         substitution,
                         allow_trait_resolution,
-                        span,
                         handler,
                     )?;
                 } else {
@@ -661,7 +835,6 @@ impl Table {
                         &mut trait_type.trait_type_substitution,
                         substitution,
                         allow_trait_resolution,
-                        span,
                         handler,
                     );
                 }
@@ -677,7 +850,6 @@ impl Table {
         alias: &ty::Type,
         substitution: &Substitution,
         allow_trait_resolution: bool,
-        span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> Result<ty::Type, table::Error> {
         let mut cloned_ty = alias.clone();
@@ -685,7 +857,6 @@ impl Table {
             &mut cloned_ty,
             substitution,
             allow_trait_resolution,
-            span,
             handler,
         )?;
         Ok(cloned_ty)
@@ -774,6 +945,7 @@ impl Table {
         let substitution = self.check_generic_arguments(
             global_id,
             &qualified_identifier.first.identifier.span()?,
+            &Substitution::default(),
             qualified_identifier.first.generic_arguments.as_ref(),
             resolution_config,
             states,
@@ -796,7 +968,6 @@ impl Table {
                 &self.types[id].alias,
                 substitution,
                 resolution_config.check_where_clause,
-                &qualified_identifier.span()?,
                 handler,
             )?,
             GlobalID::Trait(id) => Resolution::Trait(TraitResolution {
@@ -865,7 +1036,6 @@ impl Table {
                             .alias,
                         substitution,
                         resolution_config.check_where_clause,
-                        &qualified_identifier.first.span()?,
                         handler,
                     )?
                 } else {
@@ -1179,7 +1349,6 @@ impl Table {
         }
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     fn construct_where_clause(
         &mut self,
         where_clause_syntax_tree: &item::WhereClause,
@@ -1222,13 +1391,12 @@ impl Table {
             }
         }
 
+        todo!("assert the correctness of the where clause");
+
         Ok(where_clause)
     }
 
-    pub(super) fn get_least_accessibility(
-        &self,
-        ty: &ty::Type,
-    ) -> Result<Accessibility, table::Error> {
+    fn get_least_accessibility(&self, ty: &ty::Type) -> Result<Accessibility, table::Error> {
         match ty {
             ty::Type::Enum(enum_id) => Ok(self.enums[*enum_id].accessibility),
             ty::Type::Struct(struct_ty) => {
@@ -1277,7 +1445,24 @@ impl Table {
         }
     }
 
-    pub(super) fn finalize_field(
+    fn check_ty_accessibility_leakage(
+        &mut self,
+        ty: &ty::Type,
+        span: &Span,
+        parent_accessibility: Accessibility,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<(), table::Error> {
+        let ty_least_accessibility = self.get_least_accessibility(ty)?;
+        if ty_least_accessibility < parent_accessibility {
+            handler.receive(error::Error::PrivateSymbolLeakage(PrivateSymbolLeakage {
+                span: span.clone(),
+            }));
+        }
+
+        Ok(())
+    }
+
+    fn finalize_field(
         &mut self,
         field_id: arena::ID<Field>,
         states: &mut States,
@@ -1312,27 +1497,151 @@ impl Table {
             states.remove_constructing_symbol(field_id.into());
             return Err(table::Error::FatalSemantic);
         };
-        let ty_least_accessibility = self.get_least_accessibility(&ty)?;
 
-        if ty_least_accessibility < self.fields[field_id].accessibility {
-            handler.receive(error::Error::PrivateSymbolLeakage(PrivateSymbolLeakage {
-                span: self.fields[field_id]
-                    .syntax_tree
-                    .as_ref()
-                    .unwrap()
-                    .type_annotation
-                    .span()?,
-            }));
-        }
+        self.check_ty_accessibility_leakage(
+            &ty,
+            &self.fields[field_id]
+                .syntax_tree
+                .clone()
+                .unwrap()
+                .type_annotation
+                .type_specifier
+                .span()?,
+            self.fields[field_id].accessibility,
+            handler,
+        )?;
 
         // assign the resolved type
         self.fields[field_id].ty = ty;
 
         states.remove_constructing_symbol(field_id.into());
+
         Ok(())
     }
 
-    pub(super) fn finalize_struct(
+    fn finalize_function_parameter(
+        &mut self,
+        function_parameter_id: arena::ID<Parameter<Function>>,
+        states: &mut States,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<(), table::Error> {
+        assert!(
+            states
+                .get_current_state(function_parameter_id.into())
+                .is_some(),
+            "symbol is not drafted or being constructed"
+        );
+
+        if let Err(err) = states.mark_as_constructing(function_parameter_id.into()) {
+            handler.receive(error::Error::CyclicDependency(err));
+            return Err(table::Error::FatalSemantic);
+        };
+
+        let function_accessibility = self.functions
+            [self.function_parameters[function_parameter_id].parameter_parent_id]
+            .accessibility;
+
+        let function_parameter_syntax_tree = self.function_parameters[function_parameter_id]
+            .syntax_tree
+            .clone()
+            .unwrap();
+        let ty = self.resolve_type_with_finalization(
+            &function_parameter_syntax_tree
+                .type_annotation
+                .type_specifier,
+            &ResolutionConfig {
+                referring_site: function_parameter_id.into(),
+                check_where_clause: true,
+                explicit_lifetime_required: false,
+            },
+            states,
+            handler,
+        )?;
+
+        self.check_ty_accessibility_leakage(
+            &ty,
+            &function_parameter_syntax_tree
+                .type_annotation
+                .type_specifier
+                .span()?,
+            function_accessibility,
+            handler,
+        )?;
+
+        states.remove_constructing_symbol(function_parameter_id.into());
+
+        Ok(())
+    }
+
+    fn finalize_function(
+        &mut self,
+        function_id: arena::ID<Function>,
+        states: &mut States,
+        handler: &impl Handler<error::Error>,
+    ) -> Result<(), table::Error> {
+        assert!(
+            states.get_current_state(function_id.into()).is_some(),
+            "symbol is not drafted or being constructed"
+        );
+
+        if let Err(err) = states.mark_as_constructing(function_id.into()) {
+            handler.receive(error::Error::CyclicDependency(err));
+            return Err(table::Error::FatalSemantic);
+        };
+
+        // span out the parameter construction
+        for parameteer in self.functions[function_id].parameter_order.iter().copied() {
+            states.add_drafted_symbol(parameteer.into());
+        }
+
+        if let Some(where_clause) = self.functions[function_id]
+            .function_signature
+            .syntax_tree
+            .as_ref()
+            .map(|x| x.where_clause.as_ref().cloned())
+            .expect("syntax tree should exist")
+        {
+            let where_clause =
+                self.construct_where_clause(&where_clause, function_id.into(), states, handler)?;
+            self.functions[function_id].generics.where_clause = where_clause;
+        }
+
+        if let Some(return_type_specifier) = &self.functions[function_id]
+            .function_signature
+            .syntax_tree
+            .clone()
+            .unwrap()
+            .return_type
+        {
+            let return_ty = self.resolve_type_with_finalization(
+                &return_type_specifier.type_annotation.type_specifier,
+                &ResolutionConfig {
+                    referring_site: function_id.into(),
+                    check_where_clause: true,
+                    explicit_lifetime_required: true,
+                },
+                states,
+                handler,
+            )?;
+
+            let ty_least_accessibility = self.get_least_accessibility(&return_ty)?;
+            if ty_least_accessibility < self.functions[function_id].accessibility {
+                handler.receive(error::Error::PrivateSymbolLeakage(PrivateSymbolLeakage {
+                    span: return_type_specifier.type_annotation.span()?,
+                }));
+            }
+        }
+
+        states.remove_constructing_symbol(function_id.into());
+
+        for parameter in self.functions[function_id].parameter_order.clone() {
+            let _ = self.finalize_function_parameter(parameter, states, handler);
+        }
+
+        Ok(())
+    }
+
+    fn finalize_struct(
         &mut self,
         struct_id: arena::ID<Struct>,
         states: &mut States,
@@ -1352,8 +1661,6 @@ impl Table {
             states.add_drafted_symbol(field_id.into());
         }
 
-        states.remove_constructing_symbol(struct_id.into());
-
         if let Some(where_clause) = self.structs[struct_id]
             .syntax_tree
             .as_ref()
@@ -1365,8 +1672,10 @@ impl Table {
             self.structs[struct_id].generics.where_clause = where_clause;
         }
 
+        states.remove_constructing_symbol(struct_id.into());
+
         for field_id in self.structs[struct_id].field_order.clone() {
-            self.finalize_field(field_id, states, handler)?;
+            let _ = self.finalize_field(field_id, states, handler);
         }
 
         Ok(())

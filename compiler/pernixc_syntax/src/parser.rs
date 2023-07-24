@@ -9,9 +9,8 @@ use pernixc_lexical::{
 use pernixc_system::diagnostic::Handler;
 use thiserror::Error;
 
-use crate::{
-    error::{Error as SyntacticError, IdentifierExpected, KeywordExpected, PunctuationExpected},
-    syntax_tree::ConnectedList,
+use crate::error::{
+    Error as SyntacticError, IdentifierExpected, KeywordExpected, PunctuationExpected,
 };
 
 /// Is an enumeration of all the possible [`Token`] stream providers.
@@ -56,6 +55,18 @@ pub struct Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl<'a> Frame<'a> {
+    pub(crate) fn get_actual_found_token(&self, found: Option<Token>) -> Option<Token> {
+        match found {
+            None => match self.token_provider {
+                TokenProvider::TokenStream(..) => None,
+                TokenProvider::Delimited(delimited) => {
+                    Some(Token::Punctuation(delimited.close.clone()))
+                }
+            },
+            found => found,
+        }
+    }
+
     /// Checks if the current [`Frame`] doesn't have any more significant [`TokenTree`]s to
     /// parse.
     #[must_use]
@@ -188,124 +199,6 @@ impl<'a> Frame<'a> {
     }
 }
 
-impl<'a> Parser<'a> {
-    /// Parses a list of items that are separated by a particular separator.
-    ///
-    /// This function is useful for parsing patterns of elements that are separated by a single
-    /// character, such as comma-separated lists of expressions; where the list is enclosed in
-    /// parentheses, brackets, or braces.
-    pub(crate) fn parse_enclosed_list_manual<T>(
-        &mut self,
-        delimiter: char,
-        separator: char,
-        mut parse_item: impl FnMut(&mut Self) -> Result<T>,
-        handler: &impl Handler<SyntacticError>,
-    ) -> Result<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
-        let mut first = None;
-        let mut rest = Vec::new();
-        let mut trailing_separator = None;
-
-        // check for empty list
-        match self.stop_at_significant() {
-            Some(Token::Punctuation(punc)) if punc.punctuation == delimiter => {
-                self.next_token();
-                return Ok((None, punc));
-            }
-            None => handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
-                expected: delimiter,
-                found: None,
-            })),
-            _ => (),
-        }
-
-        if let Ok(value) = parse_item(self) {
-            first = Some(value);
-        } else {
-            let token = self.stop_at(|token| match token {
-                Token::Punctuation(punc) => {
-                    punc.punctuation == delimiter || punc.punctuation == separator
-                }
-                _ => false,
-            });
-
-            // if found delimiter, return empty list
-            if let Some(Token::Punctuation(token)) = token {
-                if token.punctuation == delimiter {
-                    self.next_token();
-                    return Ok((None, token));
-                }
-            }
-        }
-
-        let delimiter = loop {
-            match self.stop_at_significant() {
-                Some(Token::Punctuation(separator_token))
-                    if separator_token.punctuation == separator =>
-                {
-                    // eat the separator
-                    self.next_token();
-
-                    match self.stop_at_significant() {
-                        Some(Token::Punctuation(delimiter_token))
-                            if delimiter_token.punctuation == delimiter =>
-                        {
-                            // eat the delimiter
-                            self.next_token();
-
-                            trailing_separator = Some(separator_token);
-                            break delimiter_token;
-                        }
-                        _ => (),
-                    }
-
-                    parse_item(self).map_or_else(
-                        |_| {
-                            self.stop_at(|token| {
-                                matches!(
-                                    token,
-                                    Token::Punctuation(punc) if punc.punctuation == delimiter ||
-                                        punc.punctuation == separator
-                                )
-                            });
-                        },
-                        |value| {
-                            if first.is_none() {
-                                first = Some(value);
-                            } else {
-                                rest.push((separator_token.clone(), value));
-                            }
-                        },
-                    );
-                }
-                Some(Token::Punctuation(delimiter_token))
-                    if delimiter_token.punctuation == delimiter =>
-                {
-                    // eat the delimiter
-                    self.next_token();
-
-                    break delimiter_token;
-                }
-                found => {
-                    handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
-                        expected: delimiter,
-                        found,
-                    }));
-                    return Err(Error);
-                }
-            }
-        };
-
-        Ok((
-            first.map(|first| ConnectedList {
-                first,
-                rest,
-                trailing_separator,
-            }),
-            delimiter,
-        ))
-    }
-}
-
 /// The parser of the compiler.
 #[derive(Debug, Clone, Deref, DerefMut)]
 pub struct Parser<'a> {
@@ -381,7 +274,7 @@ impl<'a> Parser<'a> {
         } else {
             handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                 expected,
-                found: None,
+                found: self.get_actual_found_token(None),
             }));
 
             return Err(Error);
@@ -433,7 +326,7 @@ impl<'a> Parser<'a> {
 
             handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                 expected,
-                found: self.current_frame.peek(),
+                found: self.get_actual_found_token(self.peek()),
             }));
         }
 
@@ -488,7 +381,7 @@ impl<'a> Parser<'a> {
             Some(Token::Identifier(ident)) => Ok(ident),
             found => {
                 handler.receive(SyntacticError::IdentifierExpected(IdentifierExpected {
-                    found,
+                    found: self.get_actual_found_token(found),
                 }));
                 Err(Error)
             }
@@ -511,7 +404,7 @@ impl<'a> Parser<'a> {
             found => {
                 handler.receive(SyntacticError::KeywordExpected(KeywordExpected {
                     expected,
-                    found,
+                    found: self.get_actual_found_token(found),
                 }));
                 Err(Error)
             }
@@ -541,7 +434,7 @@ impl<'a> Parser<'a> {
             found => {
                 handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                     expected,
-                    found,
+                    found: self.get_actual_found_token(found),
                 }));
                 Err(Error)
             }

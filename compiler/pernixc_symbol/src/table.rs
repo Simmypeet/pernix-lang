@@ -17,15 +17,12 @@ use crate::{
     TypeParameter, WhereClause, ID,
 };
 
-#[cfg(test)]
-mod input;
-
 mod core;
 mod drafting;
-mod finalizing;
+// mod finalizing;
 mod generics;
 mod module;
-mod resolution;
+pub mod resolution;
 
 /// Represents a symbol table of the compiler.
 #[derive(Debug, Clone)]
@@ -307,11 +304,6 @@ pub enum Error {
 
     #[error("{0}")]
     InvalidID(arena::Error),
-
-    #[error(
-        "The syntax tree is malformed, which prevents the retrieving the span of the syntax tree."
-    )]
-    InvalidSyntaxTree(pernixc_source::SpanError),
 }
 
 /// Represents the result of a symbol resolution from the [`Table`].
@@ -657,10 +649,6 @@ impl Table {
 
         table.attach_implements(implements_syntax_tree_with_module_ids, handler);
 
-        while let Some(drafted_symbol) = states.next_drafted_symbol() {
-            let _ = table.finalize_symbol(drafted_symbol, &mut states, handler);
-        }
-
         Ok(table)
     }
 }
@@ -695,6 +683,3 @@ impl<'a> Iterator for ScopeWalker<'a> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

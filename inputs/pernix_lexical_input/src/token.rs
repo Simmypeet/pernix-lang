@@ -8,8 +8,9 @@ use std::{
 
 use derive_more::{Deref, DerefMut};
 use lazy_static::lazy_static;
+use pernix_input::Input;
+use pernixc_lexical::token::{CommentKind, KeywordKind};
 use pernixc_source::{SourceFile, Span};
-use pernixc_system::input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_assert, prop_assert_eq, prop_oneof,
@@ -18,10 +19,7 @@ use proptest::{
 };
 use strum::IntoEnumIterator;
 
-use super::KeywordKind;
-use crate::token::CommentKind;
-
-/// Represents an input for the [`super::Identifier`].
+/// Represents an input for the [`pernixc_lexical::token::Identifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier {
     /// The valid identifier string.
@@ -53,7 +51,7 @@ impl Arbitrary for Identifier {
 }
 
 impl Input for Identifier {
-    type Output = super::Identifier;
+    type Output = pernixc_lexical::token::Identifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.string.as_str(), output.span.str());
@@ -61,7 +59,7 @@ impl Input for Identifier {
     }
 }
 
-/// Represents a valid keyword input for the [`super::Keyword`].
+/// Represents a valid keyword input for the [`pernixc_lexical::token::Keyword`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Keyword {
     /// The kind of keyword.
@@ -89,10 +87,10 @@ impl Arbitrary for Keyword {
     }
 }
 
-impl Keyword {
-    /// Verifies that the given [`super::Keyword`] complies with this input.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn assert(&self, output: &super::Keyword) -> TestCaseResult {
+impl Input for Keyword {
+    type Output = pernixc_lexical::token::Keyword;
+
+    fn assert(&self, output: &pernixc_lexical::token::Keyword) -> TestCaseResult {
         prop_assert_eq!(self.keyword, output.keyword);
         Ok(())
     }
@@ -148,9 +146,9 @@ impl Arbitrary for NumericLiteral {
 }
 
 impl NumericLiteral {
-    /// Verifies that the given [`super::NumericLiteral`] complies with this input.
+    /// Verifies that the given [`pernixc_lexical::token::NumericLiteral`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
-    pub fn assert(&self, output: &super::NumericLiteral) -> TestCaseResult {
+    pub fn assert(&self, output: &pernixc_lexical::token::NumericLiteral) -> TestCaseResult {
         prop_assert_eq!(output.value_span.str(), self.value.as_str());
         prop_assert_eq!(
             output.suffix_span.as_ref().map(Span::str),
@@ -249,9 +247,9 @@ impl Display for Comment {
 }
 
 impl Comment {
-    /// Verifies that the given [`super::Comment`] complies with this input.
+    /// Verifies that the given [`pernixc_lexical::token::Comment`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
-    pub fn assert(&self, output: &super::Comment) -> TestCaseResult {
+    pub fn assert(&self, output: &pernixc_lexical::token::Comment) -> TestCaseResult {
         match self {
             Self::Line(i) => {
                 prop_assert_eq!(output.kind, CommentKind::Line);
@@ -304,9 +302,9 @@ impl Display for Punctuation {
 }
 
 impl Punctuation {
-    /// Verifies that the given [`super::Punctuation`] complies with this input.
+    /// Verifies that the given [`pernixc_lexical::token::Punctuation`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
-    pub fn assert(&self, output: &super::Punctuation) -> TestCaseResult {
+    pub fn assert(&self, output: &pernixc_lexical::token::Punctuation) -> TestCaseResult {
         prop_assert_eq!(output.punctuation, self.punctuation);
         Ok(())
     }
@@ -362,9 +360,9 @@ impl Display for WhiteSpaces {
 }
 
 impl WhiteSpaces {
-    /// Verifies that the given [`super::WhiteSpaces`] complies with this input.
+    /// Verifies that the given [`pernixc_lexical::token::WhiteSpaces`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
-    pub fn assert(self, output: &super::WhiteSpaces) -> TestCaseResult {
+    pub fn assert(self, output: &pernixc_lexical::token::WhiteSpaces) -> TestCaseResult {
         match self {
             Self::Spaces(i) => {
                 prop_assert_eq!(output.span.str().len(), i as usize);
@@ -426,28 +424,28 @@ impl Display for Token {
 }
 
 impl Input for Token {
-    type Output = super::Token;
+    type Output = pernixc_lexical::token::Token;
 
     /// Verifies that the given [`super::Token`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Identifier(i), super::Token::Identifier(o)) => {
+            (Self::Identifier(i), pernixc_lexical::token::Token::Identifier(o)) => {
                 i.assert(o)?;
             }
-            (Self::Keyword(i), super::Token::Keyword(o)) => {
+            (Self::Keyword(i), pernixc_lexical::token::Token::Keyword(o)) => {
                 i.assert(o)?;
             }
-            (Self::NumericLiteral(i), super::Token::NumericLiteral(o)) => {
+            (Self::NumericLiteral(i), pernixc_lexical::token::Token::NumericLiteral(o)) => {
                 i.assert(o)?;
             }
-            (Self::Comment(i), super::Token::Comment(o)) => {
+            (Self::Comment(i), pernixc_lexical::token::Token::Comment(o)) => {
                 i.assert(o)?;
             }
-            (Self::WhiteSpaces(i), super::Token::WhiteSpaces(o)) => {
+            (Self::WhiteSpaces(i), pernixc_lexical::token::Token::WhiteSpaces(o)) => {
                 i.assert(o)?;
             }
-            (Self::Punctuation(i), super::Token::Punctuation(o)) => {
+            (Self::Punctuation(i), pernixc_lexical::token::Token::Punctuation(o)) => {
                 i.assert(o)?;
             }
             _ => {

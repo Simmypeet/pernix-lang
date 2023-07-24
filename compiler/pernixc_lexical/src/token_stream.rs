@@ -12,8 +12,6 @@ use crate::{
     token::{self, Punctuation, Token},
 };
 
-pub mod input;
-
 /// Is an enumeration of the different types of delimiters in the [`Delimited`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -191,6 +189,3 @@ impl Index<usize> for TokenStream {
 
     fn index(&self, index: usize) -> &Self::Output { &self.token_trees[index] }
 }
-
-#[cfg(test)]
-mod tests;

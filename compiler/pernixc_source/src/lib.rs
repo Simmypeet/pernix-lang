@@ -343,14 +343,11 @@ impl Span {
 /// Represents an element that is located within a source file.
 pub trait SourceElement {
     /// Gets the span location of the element.
-    ///
-    /// # Errors
-    /// Returns [`Err`] if the element's span cannot be properly determined.
-    fn span(&self) -> Result<Span, SpanError>;
+    fn span(&self) -> Span;
 }
 
 impl<T: SourceElement> SourceElement for Box<T> {
-    fn span(&self) -> Result<Span, SpanError> { self.as_ref().span() }
+    fn span(&self) -> Span { self.as_ref().span() }
 }
 
 /// Is an iterator iterating over the characters in a source file that can be peeked at.

@@ -2,8 +2,9 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
-use pernixc_source::{SourceElement, Span, SpanError};
+use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
@@ -14,8 +15,6 @@ use crate::{
     error::Error,
     parser::{Parser, Result as ParserResult},
 };
-
-pub mod input;
 
 /// Represents a statement syntax tree node
 ///
@@ -33,7 +32,7 @@ pub enum Statement {
 }
 
 impl SourceElement for Statement {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::VariableDeclaration(declaration) => declaration.span(),
             Self::Expressive(expression) => expression.span(),
@@ -46,25 +45,30 @@ impl SourceElement for Statement {
 /// Syntax Synopsis:
 /// ``` text
 /// VariableDeclaration:
-///     VariableTypeBindingSpecifier Identifier '=' Expression ';'
+///     'let' 'mutable'? Identifier TypeAnnotation? '=' Expression ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct VariableDeclaration {
-    pub let_keyword: Keyword,
-    pub mutable_keyword: Option<Keyword>,
-    pub identifier: Identifier,
-    pub type_annotation: Option<TypeAnnotation>,
-    pub equals: Punctuation,
-    pub expression: Expression,
-    pub semicolon: Punctuation,
+    #[get = "pub"]
+    let_keyword: Keyword,
+    #[get = "pub"]
+    mutable_keyword: Option<Keyword>,
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    type_annotation: Option<TypeAnnotation>,
+    #[get = "pub"]
+    equals: Punctuation,
+    #[get = "pub"]
+    expression: Expression,
+    #[get = "pub"]
+    semicolon: Punctuation,
 }
 
 impl SourceElement for VariableDeclaration {
-    fn span(&self) -> Result<Span, SpanError> {
-        self.let_keyword.span()?.join(&self.semicolon.span)
-    }
+    fn span(&self) -> Span { self.let_keyword.span().join(&self.semicolon.span).unwrap() }
 }
 
 /// Represents an expressive statement syntax tree node
@@ -87,7 +91,7 @@ pub enum Expressive {
 }
 
 impl SourceElement for Expressive {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Semi(expression) => expression.span(),
             Self::Imperative(expression) => expression.span(),
@@ -112,7 +116,7 @@ pub enum SemiExpression {
 }
 
 impl SourceElement for SemiExpression {
-    fn span(&self) -> Result<Span, SpanError> {
+    fn span(&self) -> Span {
         match self {
             Self::Functional(expression) => expression.span(),
             Self::Terminator(expression) => expression.span(),
@@ -130,15 +134,17 @@ impl SourceElement for SemiExpression {
 ///     Functional ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Semi {
-    pub expression: SemiExpression,
-    pub semicolon: Punctuation,
+    #[get = "pub"]
+    expression: SemiExpression,
+    #[get = "pub"]
+    semicolon: Punctuation,
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Result<Span, SpanError> { self.expression.span()?.join(&self.semicolon.span) }
+    fn span(&self) -> Span { self.expression.span().join(&self.semicolon.span).unwrap() }
 }
 
 impl<'a> Parser<'a> {
@@ -204,6 +210,3 @@ impl<'a> Parser<'a> {
         })
     }
 }
-
-#[cfg(test)]
-mod tests;
