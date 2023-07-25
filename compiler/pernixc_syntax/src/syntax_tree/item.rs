@@ -116,6 +116,18 @@ pub struct GenericParameters {
     right_angle_bracket: Punctuation,
 }
 
+impl GenericParameters {
+    /// Dissolves the [`GenericParameters`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Punctuation, GenericParameterList, Punctuation) {
+        (
+            self.left_angle_bracket,
+            self.parameter_list,
+            self.right_angle_bracket,
+        )
+    }
+}
+
 impl SourceElement for GenericParameters {
     fn span(&self) -> Span {
         self.left_angle_bracket
@@ -431,7 +443,7 @@ impl SourceElement for Trait {
 #[allow(missing_docs)]
 pub struct TraitFunction {
     #[get = "pub"]
-    function_signature: FunctionSignature,
+    signature: FunctionSignature,
     #[get = "pub"]
     semicolon: Punctuation,
 }
@@ -439,18 +451,11 @@ pub struct TraitFunction {
 impl TraitFunction {
     /// Dissolves the [`TraitFunction`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (FunctionSignature, Punctuation) {
-        (self.function_signature, self.semicolon)
-    }
+    pub fn dissolve(self) -> (FunctionSignature, Punctuation) { (self.signature, self.semicolon) }
 }
 
 impl SourceElement for TraitFunction {
-    fn span(&self) -> Span {
-        self.function_signature
-            .span()
-            .join(&self.semicolon.span)
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
 }
 
 /// Represents a syntax tree node for a trait type member.
@@ -465,18 +470,13 @@ impl SourceElement for TraitFunction {
 #[allow(missing_docs)]
 pub struct TraitType {
     #[get = "pub"]
-    type_signature: TypeSignature,
+    signature: TypeSignature,
     #[get = "pub"]
     semicolon: Punctuation,
 }
 
 impl SourceElement for TraitType {
-    fn span(&self) -> Span {
-        self.type_signature
-            .span()
-            .join(&self.semicolon.span)
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
 }
 
 /// Represents a syntax tree node for a trait member.
@@ -1076,6 +1076,12 @@ pub struct Implements {
     body: ImplementsBody,
 }
 
+impl Implements {
+    /// Dissolves the [`Implements`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (ImplementsSignature, ImplementsBody) { (self.signature, self.body) }
+}
+
 impl SourceElement for Implements {
     fn span(&self) -> Span { self.signature.span().join(&self.body.span()).unwrap() }
 }
@@ -1653,7 +1659,7 @@ impl<'a> Parser<'a> {
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Ok(TraitMember::Function(TraitFunction {
-                    function_signature,
+                    signature: function_signature,
                     semicolon,
                 }))
             }
@@ -1663,7 +1669,7 @@ impl<'a> Parser<'a> {
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Ok(TraitMember::Type(TraitType {
-                    type_signature,
+                    signature: type_signature,
                     semicolon,
                 }))
             }

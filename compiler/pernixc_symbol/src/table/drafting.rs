@@ -345,6 +345,7 @@ impl Table {
                     // add lifetime parameter
                     let lifetime_parameter_id = self.lifetime_parameters.push(LifetimeParameter {
                         name: lt.identifier().span.str().to_string(),
+                        syntax_tree: Some(lt.clone()),
                         parent_genericable_id,
                     });
 
@@ -380,6 +381,7 @@ impl Table {
 
                     let type_parameter_id = self.type_parameters.push(TypeParameter {
                         name: ty.identifier().span.str().to_string(),
+                        syntax_tree: Some(ty.clone()),
                         parent_genericable_id,
                     });
 
@@ -540,7 +542,7 @@ impl Table {
     ) -> arena::ID<TraitType> {
         let trait_type_id = self.trait_types.push(TraitType {
             name: trait_type_syntax_tree
-                .type_signature()
+                .signature()
                 .identifier()
                 .span
                 .str()
@@ -551,7 +553,7 @@ impl Table {
         });
 
         if let Some(generic_parameters) = trait_type_syntax_tree
-            .type_signature()
+            .signature()
             .generic_parameters()
             .as_ref()
         {
@@ -596,8 +598,8 @@ impl Table {
         for trait_member in body_syntax_tree.dissolve().1 {
             let trait_symbol = &mut self.traits[trait_id];
             let identifier = match &trait_member {
-                item::TraitMember::Function(f) => f.function_signature().identifier(),
-                item::TraitMember::Type(t) => t.type_signature().identifier(),
+                item::TraitMember::Function(f) => f.signature().identifier(),
+                item::TraitMember::Type(t) => t.signature().identifier(),
             };
             let trait_member_name = identifier.span.str().to_string();
 

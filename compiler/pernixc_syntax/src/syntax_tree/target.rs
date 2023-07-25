@@ -357,8 +357,6 @@ impl RootSubmoduleConflict {
         );
 
         pernixc_print::print_source_code(&self.submodule.identifier.span, None);
-
-        println!();
     }
 }
 
@@ -387,8 +385,6 @@ impl SourceFileLoadFail {
         );
 
         pernixc_print::print_source_code(&self.submodule.identifier.span, None);
-
-        println!();
     }
 }
 
@@ -411,8 +407,6 @@ impl ModuleRedefinition {
         );
 
         pernixc_print::print_source_code(&self.redifinition_submodule.identifier.span, None);
-
-        println!();
     }
 }
 

@@ -45,6 +45,7 @@ impl Table {
             let type_parameter_id = self.type_parameters.push(TypeParameter {
                 name: "T".to_string(),
                 parent_genericable_id: trait_id.into(),
+                syntax_tree: None,
             });
 
             let trait_sym = &mut self.traits[trait_id];
@@ -81,6 +82,7 @@ impl Table {
             let lifetime_parameter = self.lifetime_parameters.push(crate::LifetimeParameter {
                 name: "a".to_string(),
                 parent_genericable_id: trait_function_id.into(),
+                syntax_tree: None,
             });
 
             self.trait_functions[trait_function_id]
@@ -142,6 +144,7 @@ impl Table {
             let type_parameter_id = self.type_parameters.push(TypeParameter {
                 name: "T".to_string(),
                 parent_genericable_id: trait_id.into(),
+                syntax_tree: None,
             });
 
             let trait_sym = &mut self.traits[trait_id];
@@ -178,6 +181,7 @@ impl Table {
             let lifetime_parameter = self.lifetime_parameters.push(crate::LifetimeParameter {
                 name: "a".to_string(),
                 parent_genericable_id: trait_function_id.into(),
+                syntax_tree: None,
             });
 
             self.trait_functions[trait_function_id]

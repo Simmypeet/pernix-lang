@@ -138,13 +138,13 @@ impl<T> Arena<T> {
     ///
     /// # Errors
     /// Returns an [`Error`] if the ID is invalid.
-    pub fn get_ok_or(&self, id: ID<T>) -> Result<&Symbol<T>, Error> { self.get(id).ok_or(Error) }
+    pub fn get_as_ok(&self, id: ID<T>) -> Result<&Symbol<T>, Error> { self.get(id).ok_or(Error) }
 
     /// Returns a mutable reference to the item in the arena with the given ID.
     ///
     /// # Errors
     /// Returns an [`Error`] if the ID is invalid.
-    pub fn get_mut_ok_or(&mut self, id: ID<T>) -> Result<&mut Symbol<T>, Error> {
+    pub fn get_mut_as_ok(&mut self, id: ID<T>) -> Result<&mut Symbol<T>, Error> {
         self.get_mut(id).ok_or(Error)
     }
 }

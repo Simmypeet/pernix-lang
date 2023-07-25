@@ -1,3 +1,5 @@
+//! Contains the symbol resolution logic.
+
 use std::collections::{HashMap, HashSet};
 
 use enum_as_inner::EnumAsInner;
@@ -12,8 +14,8 @@ use crate::{
     error::{self, LifetimeNotFound, ResolutionAmbiguity, TargetNotFound},
     table,
     ty::{self, Primitive, Reference},
-    Enum, EnumVariant, GenericableID, Global, GlobalID, Implements, LifetimeArgument,
-    LifetimeParameter, Module, Scoped, ScopedID, Substitution, TypeParameter, ID,
+    Enum, EnumVariant, GenericableID, GlobalID, Implements, LifetimeArgument, LifetimeParameter,
+    Module, Scoped, ScopedID, Substitution, TypeParameter, ID,
 };
 
 impl Table {
@@ -317,21 +319,20 @@ impl Table {
                 }
             };
 
+            let (signature_syntax_tree, body_syntax_tree) =
+                implements_syntax_tree_with_module_id.implements.dissolve();
+
             let implements_id = self.implements.push(Implements {
                 generics: crate::Generics::default(),
                 trait_id,
+                syntax_tree: None,
                 substitution: Substitution::default(), // will be filled later
                 implements_types_by_trait_type: HashMap::new(), // will be filled later
                 implements_functions_by_trait_function: HashMap::new(), // will be filled later
             });
 
             // assigns generic parameters
-            if let Some(generic_parameters) = implements_syntax_tree_with_module_id
-                .implements
-                .signature()
-                .generic_parameters()
-                .as_ref()
-            {
+            if let Some(generic_parameters) = signature_syntax_tree.generic_parameters().as_ref() {
                 let generic_parameters = self.create_generic_parameters(
                     implements_id.into(),
                     generic_parameters,
@@ -340,6 +341,7 @@ impl Table {
 
                 self.implements[implements_id].generics.parameters = generic_parameters;
             }
+            self.implements[implements_id].syntax_tree = Some(signature_syntax_tree);
 
             self.traits[trait_id].implements.push(implements_id);
         }
@@ -422,7 +424,10 @@ pub enum Resolution {
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Root<'a> {
     NewResolution(ID),
-    PreviousResolution(&'a Resolution),
+    PreviousResolution {
+        resolution: &'a Resolution,
+        original_referring_site: ID,
+    },
 }
 
 pub(super) enum Kind {
@@ -459,7 +464,10 @@ impl Table {
                     self.resolve_root_relative(identifier, referring_site, handler)
                 }
             }
-            Root::PreviousResolution(resolution) => {
+            Root::PreviousResolution {
+                resolution,
+                original_referring_site,
+            } => {
                 let resolution_kind = match resolution {
                     Resolution::Primitive(primitive) => Kind::Type(ty::Type::Primitive(*primitive)),
                     Resolution::Reference(refernce) => {
@@ -493,7 +501,7 @@ impl Table {
 
                 let global_id = match resolution_kind {
                     Kind::GlobalID(global_id) => global_id,
-                    Kind::Type(_) => todo!(),
+                    Kind::Type(ty) => todo!(),
                     Kind::ImplementsFunction(_) => todo!(),
                 };
 

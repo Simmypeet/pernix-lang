@@ -3,9 +3,11 @@
 
 use pernixc_print::LogSeverity;
 use pernixc_source::Span;
+use pernixc_syntax::syntax_tree::item::StructField;
 use pernixc_system::arena;
 
 use crate::{
+    table::{self, Table},
     ty, Field, Function, GlobalID, ImplementsFunction, LifetimeArgument, LifetimeParameter, Module,
     Parameter, Struct, TraitBound, TraitFunction, TraitMemberID, TypeParameter, ID,
 };
@@ -41,6 +43,30 @@ pub struct ModuleNotFound {
     pub unknown_module_span: Span,
 }
 
+impl ModuleNotFound {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Errors
+    /// - If the module with the given ID does not exist in the table.
+    pub fn print(&self, table: &Table) -> Result<(), table::Error> {
+        let in_module = table.modules().get_as_ok(self.in_module_id)?;
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            format!(
+                "the module `{}` didn't exist in the module `{}`",
+                self.unknown_module_span.str(),
+                in_module.name
+            )
+            .as_str(),
+        );
+
+        pernixc_print::print_source_code(&self.unknown_module_span, None);
+
+        Ok(())
+    }
+}
+
 /// A using statement was found duplicatig a previous using statement.
 #[derive(Debug, Clone)]
 pub struct UsingDuplication {
@@ -49,6 +75,22 @@ pub struct UsingDuplication {
 
     /// The span of the duplicate using statement.
     pub duplicate_using_span: Span,
+}
+
+impl UsingDuplication {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        pernixc_print::print(LogSeverity::Error, "the `{}` using was already defined");
+
+        pernixc_print::print_source_code(
+            &self.previous_using_span,
+            Some("was previously defined here"),
+        );
+        pernixc_print::print_source_code(
+            &self.duplicate_using_span,
+            Some("duplication found here"),
+        );
+    }
 }
 
 /// A using statement was found using a module that is the same as the module that it is in.
@@ -61,11 +103,35 @@ pub struct UsingOwnModule {
     pub using_span: Span,
 }
 
+impl UsingOwnModule {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "`using` statement can't use the same module that it is in",
+        );
+
+        pernixc_print::print_source_code(&self.using_span, None);
+    }
+}
+
 /// A lifetime parameter was found to be declared after a type parameter.
 #[derive(Debug, Clone)]
 pub struct LifetimeParameterMustBeDeclaredPriorToTypeParameter {
     /// The span of the lifetime parameter.
     pub lifetime_parameter_span: Span,
+}
+
+impl LifetimeParameterMustBeDeclaredPriorToTypeParameter {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "lifetime parameters must be declared prior to type parameters",
+        );
+
+        pernixc_print::print_source_code(&self.lifetime_parameter_span, None);
+    }
 }
 
 /// Symbol redefinition error.
@@ -85,6 +151,22 @@ pub struct LifetimeNotFound {
     pub unknown_lifetime_span: Span,
 }
 
+impl LifetimeNotFound {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            format!(
+                "the lifetime `{}` didn't exist",
+                self.unknown_lifetime_span.str()
+            )
+            .as_str(),
+        );
+
+        pernixc_print::print_source_code(&self.unknown_lifetime_span, None);
+    }
+}
+
 /// The struct filed is more accessible than the struct itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldMoreAccessibleThanStruct {
@@ -93,6 +175,39 @@ pub struct FieldMoreAccessibleThanStruct {
 
     /// The id of the struct.
     pub struct_id: arena::ID<Struct>,
+}
+
+/// The symbol is already defined in the current scope.
+impl FieldMoreAccessibleThanStruct {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Errors
+    /// If the `Self::field_id` or `Self::struct_id` are not in the passed table.
+    pub fn print(&self, table: &Table) -> Result<(), table::Error> {
+        let field_sym = table.fields().get_as_ok(self.field_id)?;
+        let struct_sym = table.structs().get_as_ok(self.struct_id)?;
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "the field `{}` was more accessible than the struct `{}`",
+                field_sym.name, struct_sym.name,
+            ),
+        );
+
+        if let Some(field_identifier) = field_sym.syntax_tree.as_ref().map(StructField::identifier)
+        {
+            pernixc_print::print_source_code(
+                &field_identifier.span,
+                Some(&format!(
+                    "the field had accessibility of `{}` while struct had `{}`",
+                    field_sym.accessibility, struct_sym.accessibility,
+                )),
+            );
+        }
+
+        Ok(())
+    }
 }
 
 /// There is a cyclic dependency between the symbols.

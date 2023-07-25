@@ -46,7 +46,6 @@ impl IdentifierExpected {
         if let Some(token) = self.found.as_ref() {
             pernixc_print::print_source_code(token.span(), Some("identifier expected here"));
         }
-        println!();
     }
 }
 
@@ -74,7 +73,6 @@ impl TypeSpecifierExpected {
                 Some("type specifier syntax expected here"),
             );
         }
-        println!();
     }
 }
 
@@ -99,7 +97,6 @@ impl ExpressionExpected {
         if let Some(token) = self.found.as_ref() {
             pernixc_print::print_source_code(token.span(), Some("expression syntax expected here"));
         }
-        println!();
     }
 }
 
@@ -124,7 +121,6 @@ impl StructMemberExpected {
         if let Some(token) = self.found.as_ref() {
             pernixc_print::print_source_code(token.span(), Some("member syntax expected here"));
         }
-        println!();
     }
 }
 
@@ -149,7 +145,6 @@ impl ItemExpected {
         if let Some(token) = self.found.as_ref() {
             pernixc_print::print_source_code(token.span(), Some("item syntax expected here"));
         }
-        println!();
     }
 }
 
@@ -177,7 +172,6 @@ impl AccessModifierExpected {
                 Some("access modifier syntax expected here"),
             );
         }
-        println!();
     }
 }
 
@@ -212,7 +206,6 @@ impl PunctuationExpected {
                 ),
             );
         }
-        println!();
     }
 }
 
@@ -244,7 +237,6 @@ impl KeywordExpected {
                 Some(format!("keyword of `{}` expected here", self.expected.as_str()).as_str()),
             );
         }
-        println!();
     }
 }
 
@@ -266,7 +258,6 @@ impl GenericArgumentParameterListCannotBeEmpty {
             &self.span,
             Some("generic argument/parameter list cannot be empty"),
         );
-        println!();
     }
 }
 
@@ -294,7 +285,6 @@ impl TraitMemberExpected {
                 Some("trait member syntax expected here"),
             );
         }
-        println!();
     }
 }
 
@@ -322,7 +312,6 @@ impl ImplementsMemberExpected {
                 Some("implements member syntax expected here"),
             );
         }
-        println!();
     }
 }
 

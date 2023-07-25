@@ -21,7 +21,6 @@ impl UnterminatedDelimitedComment {
     pub fn print(&self) {
         pernixc_print::print(LogSeverity::Error, "found an unclosed `/*` comment");
         pernixc_print::print_source_code(&self.span, Some("this `/*` comment is unclosed"));
-        println!();
     }
 }
 
@@ -43,7 +42,6 @@ impl UndelimitedDelimiter {
             &self.opening_span,
             Some("this delimiter is not closed by its corresponding closing pair"),
         );
-        println!();
     }
 }
 

@@ -55,7 +55,6 @@ impl TypeExpected {
             .as_str(),
         );
         pernixc_print::print_source_code(&self.span, None);
-        println!();
 
         Ok(())
     }
@@ -100,7 +99,6 @@ impl SymbolNotFound {
         }
 
         pernixc_print::print_source_code(&self.span, None);
-        println!();
 
         Ok(())
     }
@@ -137,7 +135,6 @@ impl SymbolNotAccessible {
         );
 
         pernixc_print::print_source_code(&self.span, None);
-        println!();
 
         Ok(())
     }
@@ -168,7 +165,6 @@ impl PrivateSymbolLeak {
         );
 
         pernixc_print::print_source_code(&self.span, None);
-        println!();
     }
 }
 
@@ -193,7 +189,6 @@ impl ParameterRedefinition {
         );
 
         pernixc_print::print_source_code(&self.span, None);
-        println!();
     }
 }
 
@@ -235,7 +230,6 @@ impl OverloadRedefinition {
                 .span,
             Some("previous definition here"),
         );
-        println!();
 
         Ok(())
     }
@@ -267,7 +261,6 @@ impl StructMemberMoreAccessibleThanStruct {
         );
 
         pernixc_print::print_source_code(&self.span, None);
-        println!();
     }
 }
 
@@ -292,7 +285,6 @@ impl FieldRedefinition {
         );
 
         pernixc_print::print_source_code(&self.span, None);
-        println!();
     }
 }
 
@@ -317,7 +309,6 @@ impl EnumVariantRedefinition {
         );
 
         pernixc_print::print_source_code(&self.span, None);
-        println!();
     }
 }
 
@@ -358,7 +349,6 @@ impl SymbolRedifinition {
         }
 
         pernixc_print::print_source_code(&self.span, Some("redefinition"));
-        println!();
 
         Ok(())
     }
@@ -379,7 +369,6 @@ impl CircularDependency {
             LogSeverity::Error,
             "found circular dependency between these symbols.",
         );
-        println!();
     }
 }
 
@@ -409,7 +398,6 @@ impl RecursiveType {
             );
         }
 
-        println!();
         Ok(())
     }
 }

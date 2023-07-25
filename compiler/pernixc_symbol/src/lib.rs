@@ -23,6 +23,7 @@ use std::{
 use derive_more::{Deref, DerefMut, Display, From};
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::token::Identifier;
+use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self,
     item::{
@@ -99,6 +100,12 @@ impl Symbol for arena::Symbol<TraitType> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_trait_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.signature().identifier().span.clone())
+    }
 }
 
 impl Global for arena::Symbol<TraitType> {
@@ -166,6 +173,9 @@ pub struct Implements {
     /// Contains the generic parameters substitution of the trait.
     pub substitution: Substitution,
 
+    /// The syntax tree that was used to create this symbol.
+    pub syntax_tree: Option<syntax_tree::item::ImplementsSignature>,
+
     /// Maps associated type to their type implementation.
     pub implements_types_by_trait_type: HashMap<arena::ID<TraitType>, arena::ID<ImplementsType>>,
 
@@ -178,6 +188,12 @@ impl Symbol for arena::Symbol<Implements> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { None }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.qualified_identifier().span())
+    }
 }
 
 /// Represents an implements-member type.
@@ -194,12 +210,21 @@ pub struct ImplementsType {
 
     /// The ID of the implements that contains this symbol.
     pub parent_implements_id: arena::ID<Implements>,
+
+    /// The syntax tree that was used to create this symbol.
+    pub syntax_tree: Option<syntax_tree::item::ImplementsType>,
 }
 
 impl Symbol for arena::Symbol<ImplementsType> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_implements_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.signature().identifier().span.clone())
+    }
 }
 
 impl Genericable for arena::Symbol<ImplementsType> {
@@ -227,6 +252,13 @@ impl Symbol for arena::Symbol<ImplementsFunction> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_implements_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.function_signature
+            .syntax_tree
+            .as_ref()
+            .map(|x| x.identifier.span.clone())
+    }
 }
 
 impl Genericable for arena::Symbol<ImplementsFunction> {
@@ -281,6 +313,12 @@ impl Symbol for arena::Symbol<Trait> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.identifier().span.clone())
+    }
 }
 
 impl Global for arena::Symbol<Trait> {
@@ -312,6 +350,13 @@ impl Symbol for arena::Symbol<TraitFunction> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_trait_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.function_signature
+            .syntax_tree
+            .as_ref()
+            .map(|x| x.identifier.span.clone())
+    }
 }
 
 impl Global for arena::Symbol<TraitFunction> {
@@ -459,35 +504,53 @@ pub enum GenericParameterID {
 }
 
 /// Represents a lifetime parameter symbol.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone)]
 pub struct LifetimeParameter {
     /// The name of the lifetime parameter.
     pub name: String,
 
     /// The ID of the parent genericable.
     pub parent_genericable_id: GenericableID,
+
+    /// The syntax tree that was used to create this symbol.
+    pub syntax_tree: Option<syntax_tree::item::LifetimeParameter>,
 }
 
 impl Symbol for arena::Symbol<LifetimeParameter> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_genericable_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.identifier().span.clone())
+    }
 }
 
 /// Represents a type parameter symbol.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone)]
 pub struct TypeParameter {
     /// The name of the type parameter.
     pub name: String,
 
     /// The ID of the parent genericable.
     pub parent_genericable_id: GenericableID,
+
+    /// The syntax tree that was used to create this symbol.
+    pub syntax_tree: Option<syntax_tree::item::TypeParameter>,
 }
 
 impl Symbol for arena::Symbol<TypeParameter> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_genericable_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.identifier().span.clone())
+    }
 }
 
 /// Is an enumeration of either a lifetime parameter or a static lifetime.
@@ -548,6 +611,9 @@ pub trait Symbol {
 
     /// The ID of the symbol in the higher level.
     fn parent_symbol(&self) -> Option<ID>;
+
+    /// Gets the identifier token representing the name of this symbol.
+    fn symbol_span(&self) -> Option<Span>;
 }
 
 /// A trait representing the symbol that can be referred in the global scope and has a clear
@@ -586,6 +652,8 @@ impl Symbol for arena::Symbol<Module> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { self.parent_module_id.map(ID::Module) }
+
+    fn symbol_span(&self) -> Option<Span> { None }
 }
 
 impl Global for arena::Symbol<Module> {
@@ -627,6 +695,12 @@ impl Symbol for arena::Symbol<Field> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_struct_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.identifier().span.clone())
+    }
 }
 
 /// Contains the data of the struct symbol.
@@ -658,6 +732,12 @@ impl Symbol for arena::Symbol<Struct> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.identifier().span.clone())
+    }
 }
 
 impl Global for arena::Symbol<Struct> {
@@ -684,6 +764,8 @@ impl Symbol for arena::Symbol<EnumVariant> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_enum_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> { self.syntax_tree.as_ref().map(|x| x.span.clone()) }
 }
 
 impl Global for arena::Symbol<EnumVariant> {
@@ -716,6 +798,12 @@ impl Symbol for arena::Symbol<Enum> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.identifier().span.clone())
+    }
 }
 
 impl Scoped for arena::Symbol<Enum> {
@@ -788,6 +876,12 @@ where
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parameter_parent_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.identifier().span.clone())
+    }
 }
 
 /// Contains the data of the function signature symbol.
@@ -816,6 +910,13 @@ impl Symbol for arena::Symbol<Function> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
+
+    fn symbol_span(&self) -> Option<Span> {
+        self.function_signature
+            .syntax_tree
+            .as_ref()
+            .map(|x| x.identifier.span.clone())
+    }
 }
 
 impl Global for arena::Symbol<Function> {
@@ -870,6 +971,10 @@ pub struct Type {
     pub syntax_tree: Option<Arc<TypeSyntaxTree>>,
 }
 
+impl Global for arena::Symbol<Type> {
+    fn name(&self) -> &str { &self.name }
+}
+
 impl Genericable for arena::Symbol<Type> {
     fn generic_parameters(&self) -> &GenericParameters { &self.generic_parameters }
 
@@ -880,10 +985,12 @@ impl Symbol for arena::Symbol<Type> {
     fn id(&self) -> ID { self.id().into() }
 
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
-}
 
-impl Global for arena::Symbol<Type> {
-    fn name(&self) -> &str { &self.name }
+    fn symbol_span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|x| x.signature().identifier().span.clone())
+    }
 }
 
 /// Is an enumeration of ID of the symbols that can be used as a type.

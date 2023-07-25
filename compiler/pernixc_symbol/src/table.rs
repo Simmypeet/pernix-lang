@@ -4,6 +4,7 @@ use std::{collections::HashMap, hash::Hash};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_system::{
     arena::{self, Arena},
@@ -25,27 +26,82 @@ mod module;
 pub mod resolution;
 
 /// Represents a symbol table of the compiler.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct Table {
+    /// Contains all the module symbols in the table
+    #[get = "pub"]
     modules: Arena<Module>,
+
+    /// Contains all the struct symbols in the table
+    #[get = "pub"]
     structs: Arena<Struct>,
+
+    /// Contains all the enum symbols in the table
+    #[get = "pub"]
     enums: Arena<Enum>,
+
+    /// Contains all the enum variant symbols in the table
+    #[get = "pub"]
     enum_variants: Arena<EnumVariant>,
+
+    /// Contains all the function symbols in the table
+    #[get = "pub"]
     functions: Arena<Function>,
+
+    /// Contains all the type symbols in the table
+    #[get = "pub"]
     types: Arena<Type>,
+
+    /// Contains all the field symbols in the table
+    #[get = "pub"]
     fields: Arena<Field>,
+
+    /// Contains all the function parameter symbols in the table
+    #[get = "pub"]
     function_parameters: Arena<Parameter<Function>>,
+
+    /// Contains all the trait function parameter symbols in the table
+    #[get = "pub"]
     trait_function_parameters: Arena<Parameter<TraitFunction>>,
+
+    /// Contains all the implements function parameter symbols in the table
+    #[get = "pub"]
     implements_function_parameters: Arena<Parameter<ImplementsFunction>>,
+
+    /// Contains all the trait symbols in the table
+    #[get = "pub"]
     traits: Arena<Trait>,
+
+    /// Contains all the trait type symbols in the table.
+    #[get = "pub"]
     trait_types: Arena<TraitType>,
+
+    /// Contains all the type parameter symbols in the table.
+    #[get = "pub"]
     type_parameters: Arena<TypeParameter>,
+
+    /// Contains all the lifetime parameter symbols in the table.
+    #[get = "pub"]
     lifetime_parameters: Arena<LifetimeParameter>,
+
+    /// Contains all the trait function symbols in the table.
+    #[get = "pub"]
     trait_functions: Arena<TraitFunction>,
+
+    /// Contains all the implements symbols in the table.
+    #[get = "pub"]
     implements: Arena<Implements>,
+
+    /// Contains all the implements type symbols in the table.
+    #[get = "pub"]
     implements_types: Arena<ImplementsType>,
+
+    /// Contains all the implements function symbols in the table.
+    #[get = "pub"]
     implements_functions: Arena<ImplementsFunction>,
 
+    /// Maps the target root module name to its [`arena::ID<Module>`].
+    #[get = "pub"]
     target_root_module_ids_by_name: HashMap<String, arena::ID<Module>>,
 }
 

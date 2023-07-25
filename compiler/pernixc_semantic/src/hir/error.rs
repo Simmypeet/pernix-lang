@@ -97,8 +97,6 @@ impl InvalidNumericLiteralSuffix {
         );
 
         pernixc_print::print_source_code(&self.suffix_span, None);
-
-        println!();
     }
 }
 
@@ -119,7 +117,6 @@ impl FloatingPointLiteralHasIntegralSuffix {
         );
 
         pernixc_print::print_source_code(&self.floating_point_span, None);
-        println!();
     }
 }
 
@@ -158,7 +155,6 @@ impl SymbolNotCallable {
         );
 
         pernixc_print::print_source_code(&self.symbol_span, None);
-        println!();
 
         Ok(())
     }
@@ -188,7 +184,6 @@ impl NoAccessibleOverload {
         );
 
         pernixc_print::print_source_code(&self.symbol_span, None);
-        println!();
 
         Ok(())
     }
@@ -222,7 +217,6 @@ impl NoOverloadWithMatchingNumberOfArguments {
         );
 
         pernixc_print::print_source_code(&self.symbol_span, None);
-        println!();
 
         Ok(())
     }
@@ -256,7 +250,6 @@ impl NoOverloadWithMatchingArgumentTypes {
         );
 
         pernixc_print::print_source_code(&self.symbol_span, None);
-        println!();
 
         Ok(())
     }
@@ -290,7 +283,6 @@ impl AmbiguousFunctionCall {
         );
 
         pernixc_print::print_source_code(&self.function_call_span, None);
-        println!();
 
         Ok(())
     }
@@ -359,7 +351,6 @@ impl TypeMismatch {
         );
 
         pernixc_print::print_source_code(&self.expression_span, None);
-        println!();
 
         Ok(())
     }
@@ -389,7 +380,6 @@ impl ValueExpected {
         );
 
         pernixc_print::print_source_code(&self.expression_span, None);
-        println!();
     }
 }
 
@@ -421,7 +411,6 @@ impl UninitializedFields {
         );
 
         pernixc_print::print_source_code(&self.struct_literal_span, None);
-        println!();
 
         Ok(())
     }
@@ -463,7 +452,6 @@ impl DuplicateFieldInitialization {
 
         pernixc_print::print_source_code(&self.duplicate_initialization_span, None);
         pernixc_print::print_source_code(&self.previous_initialization_span, None);
-        println!();
 
         Ok(())
     }
@@ -504,7 +492,6 @@ impl FieldInaccessible {
         );
 
         pernixc_print::print_source_code(&self.field_span, None);
-        println!();
 
         Ok(())
     }
@@ -535,7 +522,6 @@ impl StructExpected {
         );
 
         pernixc_print::print_source_code(&self.symbol_span, None);
-        println!();
 
         Ok(())
     }
@@ -566,7 +552,6 @@ impl UnknownField {
         );
 
         pernixc_print::print_source_code(&self.field_name_span, None);
-        println!();
 
         Ok(())
     }
@@ -596,7 +581,6 @@ impl NoFieldOnType {
         );
 
         pernixc_print::print_source_code(&self.operand_span, None);
-        println!();
 
         Ok(())
     }
@@ -616,7 +600,6 @@ impl LValueExpected {
         pernixc_print::print(LogSeverity::Error, "expected an lvalue, but got an rvalue");
 
         pernixc_print::print_source_code(&self.expression_span, None);
-        println!();
     }
 }
 
@@ -637,7 +620,6 @@ impl MutableLValueExpected {
         );
 
         pernixc_print::print_source_code(&self.expression_span, None);
-        println!();
     }
 }
 
@@ -655,7 +637,6 @@ impl NoBlockWithGivenLabelFound {
         pernixc_print::print(LogSeverity::Error, "no block with the given label found");
 
         pernixc_print::print_source_code(&self.label_span, None);
-        println!();
     }
 }
 
@@ -676,7 +657,6 @@ impl ExpressOutsideBlock {
         );
 
         pernixc_print::print_source_code(&self.express_span, None);
-        println!();
     }
 }
 
@@ -697,7 +677,6 @@ impl LoopControlExressionOutsideLoop {
         );
 
         pernixc_print::print_source_code(&self.loop_control_span, None);
-        println!();
     }
 }
 
@@ -722,7 +701,6 @@ impl NotAllFlowPathExpressValue {
         );
 
         pernixc_print::print_source_code(&self.block_span, None);
-        println!();
     }
 }
 
@@ -743,7 +721,6 @@ impl ReturnValueExpected {
         );
 
         pernixc_print::print_source_code(&self.return_span, None);
-        println!();
     }
 }
 
@@ -779,7 +756,6 @@ impl NoCastAvailable {
         );
 
         pernixc_print::print_source_code(&self.cast_span, None);
-        println!();
 
         Ok(())
     }
