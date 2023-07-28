@@ -120,7 +120,7 @@ impl ToString for KeywordKind {
 /// Is an error that is returned when a string cannot be parsed into a [`Keyword`] in [`FromStr`]
 /// trait implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Error)]
-#[error("Invalid string representation of keyword.")]
+#[error("invalid string representation of keyword.")]
 pub struct KeywordParseError;
 
 impl FromStr for KeywordKind {
@@ -331,10 +331,10 @@ impl SourceElement for Comment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner, thiserror::Error, From)]
 #[allow(missing_docs)]
 pub enum Error {
-    #[error("Encountered a fatal lexical error that causes the process to stop.")]
+    #[error("encountered a fatal lexical error that causes the process to stop.")]
     FatalLexicalError,
 
-    #[error("The iterator argument is at the end of the source code.")]
+    #[error("the iterator argument is at the end of the source code.")]
     EndOfSourceCodeIteratorArgument,
 }
 

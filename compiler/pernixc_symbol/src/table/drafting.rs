@@ -287,7 +287,7 @@ impl Table {
                 {
                     break Err(Error::LifetimeParameterShadowing(
                         LifetimeParameterShadowing {
-                            span: identifier.span.clone(),
+                            lifetime_parameter_declaration_span: identifier.span.clone(),
                             shadowed_lifetime_parameter_id,
                         },
                     ));

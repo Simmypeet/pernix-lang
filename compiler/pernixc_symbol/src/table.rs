@@ -14,13 +14,14 @@ use pernixc_system::{
 use crate::{
     error, Accessibility, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global,
     GlobalID, Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, Parameter,
-    Scoped, ScopedID, Struct, Substitution, Symbol, Trait, TraitFunction, TraitType, Type,
-    TypeParameter, WhereClause, ID,
+    Scoped, ScopedID, Struct, Symbol, Trait, TraitFunction, TraitType, Type, TypeParameter,
+    WhereClause, ID,
 };
 
 mod core;
 mod drafting;
 // mod finalizing;
+mod finalizing;
 mod generics;
 mod module;
 pub mod resolution;
@@ -327,7 +328,7 @@ impl Table {
 
 /// Is an error that occurs when a target name duplication is detected while building a [`Table`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
-#[error("Target name duplication detected!")]
+#[error("target name duplication detected")]
 pub struct TargetDuplicationError {
     /// The duplicated target name
     pub duplication_target_names: Vec<String>,
@@ -335,7 +336,7 @@ pub struct TargetDuplicationError {
 
 /// Is an error when found a target named `@core`, which is reserved for the core module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
-#[error("Found a target named `@core`, which is reserved for the core module.")]
+#[error("found a target named `@core`, which is reserved for the core module.")]
 pub struct CoreTargetNameError;
 
 /// Is an error returned by [`Table::build`].
@@ -349,27 +350,22 @@ pub enum BuildError {
     CoreTargetName(CoreTargetNameError),
 }
 
+/// Is an error occurred when encountering a fatal semantic error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[error("encountered a fatal semantic error")]
+pub struct FatalSemantic;
+
 /// Is an error returned by various methods in the [`Table`].
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error, From, EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum Error {
-    #[error("Encounters a fatal semantic error.")]
-    FatalSemantic,
+    #[error("{0}")]
+    FatalSemantic(FatalSemantic),
 
     #[error("{0}")]
     InvalidID(arena::Error),
-}
-
-/// Represents the result of a symbol resolution from the [`Table`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Resolution {
-    /// The found symbol.
-    pub symbol: GlobalID,
-
-    /// Contains generics substitutions made during the resolution.
-    pub substitution: Substitution,
 }
 
 impl Table {
@@ -459,14 +455,14 @@ impl Table {
     pub fn symbol_accessible(
         &self,
         referred_global_id: GlobalID,
-        referrer_id: ID,
+        referring_site: ID,
     ) -> Result<bool, arena::Error> {
         match self.get_accessibility(referred_global_id)? {
             // Private symbol is only accessible from the same module or its children.
             Accessibility::Private => {
                 let referred_global_module_id =
                     self.get_current_target_root_module_id(referred_global_id.into())?;
-                let referrer_module_id = self.get_current_target_root_module_id(referrer_id)?;
+                let referrer_module_id = self.get_current_target_root_module_id(referring_site)?;
 
                 // if same module, it is accessible.
                 if referrer_module_id == referred_global_module_id {
@@ -496,12 +492,12 @@ impl Table {
             // Both symbols are in the same module.
             Accessibility::Internal => Ok(self
                 .get_current_target_root_module_id(referred_global_id.into())?
-                == self.get_current_target_root_module_id(referrer_id)?),
+                == self.get_current_target_root_module_id(referring_site)?),
 
             // Public symbols are always accessible.
             Accessibility::Public => {
                 // PEDANTIC: check if the referrer also a valid id.
-                self.get_symbol(referrer_id)?;
+                self.get_symbol(referring_site)?;
 
                 Ok(true)
             }
@@ -617,38 +613,42 @@ impl Table {
                 continue;
             };
 
-            for (lifetime_parameter, lifetime_argument_set) in
-                &where_clause.lifetime_argument_sets_by_lifetime_parameter
-            {
-                let result_lifetime_argument_set = result_where_clause
-                    .lifetime_argument_sets_by_lifetime_parameter
-                    .entry(*lifetime_parameter)
-                    .or_default();
-
-                result_lifetime_argument_set.extend(lifetime_argument_set);
-            }
-
-            for (ty, lifetime_argument_set) in &where_clause.lifetime_argument_sets_by_type {
-                let result_lifetime_argument_set = result_where_clause
-                    .lifetime_argument_sets_by_type
-                    .entry(ty.clone())
-                    .or_default();
-
-                result_lifetime_argument_set.extend(lifetime_argument_set);
-            }
-
-            for (trait_type, lifetime_argument_set) in &where_clause.types_by_trait_type {
-                assert!(
-                    result_where_clause
-                        .types_by_trait_type
-                        .insert(trait_type.clone(), lifetime_argument_set.clone())
-                        .is_none(),
-                    "should not have duplicated trait types in the where clause!"
-                );
-            }
+            Self::merge_where_caluse(&mut result_where_clause, where_clause);
         }
 
         Ok(result_where_clause)
+    }
+
+    fn merge_where_caluse(merge_where_clause: &mut WhereClause, where_clause: &WhereClause) {
+        for (lifetime_parameter, lifetime_argument_set) in
+            &where_clause.lifetime_argument_sets_by_lifetime_parameter
+        {
+            let result_lifetime_argument_set = merge_where_clause
+                .lifetime_argument_sets_by_lifetime_parameter
+                .entry(*lifetime_parameter)
+                .or_default();
+
+            result_lifetime_argument_set.extend(lifetime_argument_set);
+        }
+
+        for (ty, lifetime_argument_set) in &where_clause.lifetime_argument_sets_by_type {
+            let result_lifetime_argument_set = merge_where_clause
+                .lifetime_argument_sets_by_type
+                .entry(ty.clone())
+                .or_default();
+
+            result_lifetime_argument_set.extend(lifetime_argument_set);
+        }
+
+        for (trait_type, lifetime_argument_set) in &where_clause.types_by_trait_type {
+            assert!(
+                merge_where_clause
+                    .types_by_trait_type
+                    .insert(trait_type.clone(), lifetime_argument_set.clone())
+                    .is_none(),
+                "should not have duplicated trait types in the where clause!"
+            );
+        }
     }
 
     /// Creates a new empty table.

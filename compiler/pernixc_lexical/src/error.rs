@@ -48,7 +48,7 @@ impl UndelimitedDelimiter {
 /// Is an enumeration containing all kinds of lexical errors that can occur while tokenizing the
 /// source code.
 #[derive(Debug, Clone, EnumAsInner, Error, From)]
-#[error("Encountered an lexical error while tokenizing the source code.")]
+#[error("encountered an lexical error while tokenizing the source code.")]
 #[allow(missing_docs)]
 pub enum Error {
     UnterminatedDelimitedComment(UnterminatedDelimitedComment),

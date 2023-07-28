@@ -14,6 +14,7 @@ pernixc_source = { path = "../pernixc_source" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_print = { path = "../pernixc_print" }
+pernixc_symbol = { path = "../pernixc_symbol" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 getset = { workspace = true }

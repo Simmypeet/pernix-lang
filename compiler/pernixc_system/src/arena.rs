@@ -80,7 +80,7 @@ pub struct Arena<T> {
 /// Represents an error that occurs when trying to access a symbol in the [`Arena`] with an invalid
 /// ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, thiserror::Error)]
-#[error("Cannot access the symbol with the given ID.")]
+#[error("couldn't access the symbol with the given ID.")]
 pub struct Error;
 
 impl<T> Arena<T> {

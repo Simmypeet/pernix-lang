@@ -18,6 +18,7 @@ pub use clap::Parser;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_source::SourceFile;
+use pernixc_symbol::table::Table;
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_system::diagnostic::Storage;
 
@@ -92,6 +93,23 @@ pub fn run(argument: &Argument) {
                     TargetParseError::Syntactic(error) => error.print(),
                     TargetParseError::Target(error) => error.print(),
                 }
+                println!();
+            }
+            std::process::exit(1);
+        }
+    }
+
+    let symbol_errors: Storage<pernixc_symbol::error::Error> = Storage::new();
+    let table = Table::build(vec![target], &symbol_errors).unwrap();
+
+    {
+        let error_vec = symbol_errors.into_vec();
+        if !error_vec.is_empty() {
+            for error in &error_vec {
+                error
+                    .print(&table)
+                    .expect("should be able to print successfully");
+                println!();
             }
             std::process::exit(1);
         }

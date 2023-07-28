@@ -317,7 +317,7 @@ impl ImplementsMemberExpected {
 
 /// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
 #[derive(Debug, Clone, EnumAsInner, Error, From)]
-#[error("Encountered a syntactic error while parsing the source code.")]
+#[error("encountered a syntactic error while parsing the source code.")]
 #[allow(missing_docs)]
 pub enum Error {
     IdentifierExpected(IdentifierExpected),

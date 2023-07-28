@@ -48,7 +48,7 @@ pub struct Hir {
 #[derive(Debug, EnumAsInner, From, Error)]
 #[allow(missing_docs)]
 pub enum BindError {
-    #[error("Invalid `overload_id` given")]
+    #[error("invalid `overload_id` given")]
     InvalidIDError(InvalidIDError),
 
     #[error(
@@ -146,8 +146,8 @@ impl Hir {
     /// - [`BindError::InvalidIDError`]: If the given overload ID is invalid.
     /// - [`BindError::Suboptimal`]: If the program has a semantic error but still able to be
     ///   recovered hence producing a suboptimal program.
-    /// - [`BindError::FatalSemanticError`]: If the program has a semantic error that completely
-    ///   halts the binding process.
+    /// - [`BindError::FatalSemantic(FatalSemantic)Error`]: If the program has a semantic error that
+    ///   completely halts the binding process.
     pub fn bind(
         table: &Arc<Table>,
         overload_id: OverloadID,

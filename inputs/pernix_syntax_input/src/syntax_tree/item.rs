@@ -958,7 +958,7 @@ impl Input for TraitFunction {
     type Output = pernixc_syntax::syntax_tree::item::TraitFunction;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.function_signature.assert(output.function_signature())
+        self.function_signature.assert(output.signature())
     }
 }
 
@@ -990,7 +990,7 @@ impl Input for TraitType {
     type Output = pernixc_syntax::syntax_tree::item::TraitType;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.type_signature.assert(output.type_signature())
+        self.type_signature.assert(output.signature())
     }
 }
 
