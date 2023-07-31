@@ -1,10 +1,7 @@
 use pernix_input::Input;
 use pernixc_lexical::token_stream::TokenStream;
 use pernixc_source::SourceFile;
-use pernixc_syntax::{
-    error,
-    parser::{self, Parser},
-};
+use pernixc_syntax::{error, parser::Parser};
 use pernixc_system::diagnostic::Storage;
 use proptest::{prelude::Arbitrary, proptest, test_runner::TestCaseError};
 
@@ -24,7 +21,7 @@ mod target;
 /// - Returns [`TestCaseError::Fail`] if found any syntax errors.
 fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
 where
-    for<'a> F: FnOnce(&mut Parser<'a>, &Storage<error::Error>) -> parser::Result<T>,
+    for<'a> F: FnOnce(&mut Parser<'a>, &Storage<error::Error>) -> Option<T>,
 {
     let source_file = SourceFile::temp(source)?;
 
@@ -51,9 +48,12 @@ where
         )));
     }
 
-    let output = output?;
-
-    Ok(output)
+    match output {
+        Some(output) => Ok(output),
+        None => Err(TestCaseError::fail(format!(
+            "failed to parse the source code: {source}",
+        ))),
+    }
 }
 
 proptest! {

@@ -1,0 +1,7 @@
+using tests;
+
+implements tests::Test {}
+
+implements ::tests::Test {}
+
+implements Test {}

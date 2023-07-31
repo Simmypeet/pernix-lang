@@ -1,6 +1,6 @@
 //! Contains the resolution logic for the symbol table.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
@@ -11,7 +11,7 @@ use pernixc_syntax::syntax_tree::{
 };
 use pernixc_system::{arena, diagnostic::Handler};
 
-use super::{drafting::ImplementsSyntaxTreeWithModuleID, FatalSemantic, Table};
+use super::Table;
 use crate::{
     error::{
         self, LifetimeArgumentCountMismatch, LifetimeArgumentMustBeSuppliedPriorToTypeArgument,
@@ -128,25 +128,29 @@ pub(super) enum Kind {
 
 impl Table {
     /// Resolves the symbol from the current scope and using modules.
+    #[allow(clippy::option_option)]
     fn first_resolution(
         &self,
         identifier: &Identifier,
         referring_site: ID,
         handler: &impl Handler<error::Error>,
-    ) -> Result<Option<GlobalID>, table::Error> {
-        let parent_module = self.get_current_module_id(referring_site)?;
+    ) -> Option<Option<GlobalID>> {
+        let parent_module = self.get_current_module_id(referring_site).unwrap();
 
         let search_locations = self.modules[parent_module]
             .usings
             .iter()
             .copied()
             .map(ScopedID::from)
-            .chain(std::iter::once(self.get_current_scoped_id(referring_site)?));
+            .chain(std::iter::once(
+                self.get_current_scoped_id(referring_site).unwrap(),
+            ));
 
         let mut candidates = HashSet::new();
         for location in search_locations {
             if let Some(id) = self
-                .get_scoped(location)?
+                .get_scoped(location)
+                .unwrap()
                 .get_child_id_by_name(identifier.span.str())
             {
                 if self.symbol_accessible(id, referring_site).unwrap() {
@@ -156,14 +160,14 @@ impl Table {
         }
 
         match candidates.len() {
-            1 => Ok(Some(candidates.into_iter().next().unwrap())),
-            0 => Ok(None),
+            1 => Some(Some(candidates.into_iter().next().unwrap())),
+            0 => Some(None),
             _ => {
                 handler.receive(error::Error::ResolutionAmbiguity(ResolutionAmbiguity {
                     span: identifier.span.clone(),
                     candidates: candidates.into_iter().collect(),
                 }));
-                Err(super::Error::FatalSemantic(FatalSemantic))
+                None
             }
         }
     }
@@ -174,7 +178,7 @@ impl Table {
         identifier: &Identifier,
         mut referring_site: ID,
         handler: &impl Handler<error::Error>,
-    ) -> Result<GlobalID, table::Error> {
+    ) -> Option<GlobalID> {
         // NOTE: Accessibility is not checked here because the symbol searching is done within the
         // same module ancestor tree.
 
@@ -182,23 +186,30 @@ impl Table {
             // try to find the symbol in the current scope
             if let Ok(scoped_id) = referring_site.try_into() {
                 if let Some(id) = self
-                    .get_scoped(scoped_id)?
+                    .get_scoped(scoped_id)
+                    .unwrap()
                     .get_child_id_by_name(identifier.span.str())
                 {
-                    return Ok(id);
+                    return Some(id);
                 }
             }
 
-            if let Some(parent_id) = self.get_symbol(referring_site)?.parent_symbol() {
+            if let Some(parent_id) = self.get_symbol(referring_site).unwrap().parent_symbol() {
                 referring_site = parent_id;
             } else {
-                handler.receive(error::Error::SymbolNotFound(error::SymbolNotFound {
-                    symbol_reference_span: identifier.span.clone(),
-                    searched_global_id: referring_site
-                        .try_into()
-                        .expect("It should have been some kind of `Scoped` by now"),
+                // try to search the symbol in the root scope
+                if let Some(id) = self
+                    .target_root_module_ids_by_name
+                    .get(identifier.span.str())
+                    .copied()
+                {
+                    return Some(id.into());
+                }
+
+                handler.receive(error::Error::TargetNotFound(TargetNotFound {
+                    unknown_target_span: identifier.span.clone(),
                 }));
-                return Err(table::Error::FatalSemantic(FatalSemantic));
+                return None;
             }
         }
     }
@@ -208,7 +219,7 @@ impl Table {
         identifier: &Identifier,
         referring_site: ID,
         handler: &impl Handler<error::Error>,
-    ) -> Result<GlobalID, table::Error> {
+    ) -> Option<GlobalID> {
         let found_symbol_id =
             if let Some(id) = self.first_resolution(identifier, referring_site, handler)? {
                 id
@@ -216,7 +227,7 @@ impl Table {
                 self.second_resolution(identifier, referring_site, handler)?
             };
 
-        Ok(found_symbol_id)
+        Some(found_symbol_id)
     }
 
     pub(super) fn resolve_lifetime_argument(
@@ -235,20 +246,27 @@ impl Table {
         }
     }
 
-    pub(super) fn resolve_lifetime_parameter(
+    /// Resolves the lifetime parameter.
+    ///
+    /// # Errors
+    /// - [`table::error::Error::InvalidID`]: if the `referring_site` is invalid.
+    /// - [`table::error::Error::FatalSemantic`]: for any encountered semantic errors.
+    pub fn resolve_lifetime_parameter(
         &self,
         referring_site: ID,
         lifetime_parameter: &Identifier,
         handler: &impl Handler<error::Error>,
     ) -> Result<arena::ID<LifetimeParameter>, table::Error> {
-        let scope_walker = self.scope_walker(referring_site)?;
+        let scope_walker = self
+            .scope_walker(referring_site)
+            .ok_or(table::Error::InvalidID)?;
 
         for id in scope_walker {
             let Ok(genericable_id) = GenericableID::try_from(id) else {
                 continue;
             };
 
-            let genericable = self.get_genericable(genericable_id)?;
+            let genericable = self.get_genericable(genericable_id).unwrap();
             if let Some(lifetime_parameter_id) = genericable
                 .generic_parameters()
                 .lifetime_parameter_ids_by_name
@@ -262,7 +280,7 @@ impl Table {
         handler.receive(error::Error::LifetimeNotFound(LifetimeNotFound {
             unknown_lifetime_span: lifetime_parameter.span.clone(),
         }));
-        Err(table::Error::FatalSemantic(FatalSemantic))
+        Err(table::Error::FatalSemantic)
     }
 
     fn substitute_where_clause(
@@ -271,7 +289,7 @@ impl Table {
         substitution: &Substitution,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<WhereClause, FatalSemantic> {
+    ) -> Option<WhereClause> {
         let mut result_where_clause = WhereClause::default();
 
         for (lifetime_parameter, lifetime_argument_set) in
@@ -337,13 +355,15 @@ impl Table {
 
         for trait_bound in &where_clause.trait_bounds {
             let mut new_substitution = trait_bound.substitution.clone();
-            self.apply_substitution_on_arguments(
+            if !self.apply_substitution_on_arguments(
                 &mut new_substitution,
                 substitution,
                 true,
                 generic_identifier_span,
                 handler,
-            )?;
+            ) {
+                return None;
+            }
         }
 
         for (trait_type, ty) in &where_clause.types_by_trait_type {
@@ -371,15 +391,16 @@ impl Table {
                                 generics_identifier_span: generic_identifier_span.clone(),
                             },
                         ));
-                        return Err(FatalSemantic);
+                        return None;
                     }
                 }
             }
         }
 
-        Ok(result_where_clause)
+        Some(result_where_clause)
     }
 
+    #[must_use]
     fn apply_substitution_on_arguments(
         &self,
         substitution_operand: &mut Substitution,
@@ -387,7 +408,7 @@ impl Table {
         allow_trait_resolution: bool,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<(), FatalSemantic> {
+    ) -> bool {
         for argument in substitution_operand
             .lifetime_arguments_by_parameter
             .values_mut()
@@ -403,16 +424,18 @@ impl Table {
             .type_arguments_by_parameter
             .values_mut()
         {
-            self.substitute_type(
+            if !self.substitute_type(
                 argument,
                 other,
                 allow_trait_resolution,
                 generic_identifier_span,
                 handler,
-            )?;
+            ) {
+                return false;
+            }
         }
 
-        Ok(())
+        true
     }
 
     fn resolve_trait_implements(
@@ -421,10 +444,11 @@ impl Table {
         substitution: &Substitution,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<arena::ID<Implements>, FatalSemantic> {
+    ) -> Option<arena::ID<Implements>> {
         todo!()
     }
 
+    #[must_use]
     fn substitute_type(
         &self,
         ty: &mut ty::Type,
@@ -432,17 +456,19 @@ impl Table {
         allow_trait_resolution: bool,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<(), FatalSemantic> {
+    ) -> bool {
         match ty {
             ty::Type::Struct(struct_ty) => {
-                self.apply_substitution_on_arguments(
+                if !self.apply_substitution_on_arguments(
                     &mut struct_ty.substitution,
                     substitution,
                     allow_trait_resolution,
                     generic_identifier_span,
                     handler,
-                )?;
-                Ok(())
+                ) {
+                    return false;
+                }
+                true
             }
             ty::Type::Reference(reference_ty) => self.substitute_type(
                 &mut reference_ty.operand,
@@ -458,16 +484,18 @@ impl Table {
                     *ty = substitution.clone();
                 }
 
-                Ok(())
+                true
             }
             ty::Type::TraitType(trait_type) => {
-                self.apply_substitution_on_arguments(
+                if !self.apply_substitution_on_arguments(
                     &mut trait_type.trait_substitution,
                     substitution,
                     allow_trait_resolution,
                     generic_identifier_span,
                     handler,
-                )?;
+                ) {
+                    return false;
+                }
 
                 if trait_type.trait_substitution.is_concrete_substitution() {
                     if !allow_trait_resolution {
@@ -476,17 +504,19 @@ impl Table {
                                 trait_resolution_span: generic_identifier_span.clone(),
                             },
                         ));
-                        return Err(FatalSemantic);
+                        return false;
                     }
 
-                    let active_implements = self.resolve_trait_implements(
+                    let Some(active_implements) = self.resolve_trait_implements(
                         self.trait_types[trait_type.trait_type_id].parent_trait_id,
                         &trait_type.trait_substitution,
                         generic_identifier_span,
                         handler,
-                    )?;
+                    ) else {
+                        return false;
+                    };
 
-                    *ty = self.alias_type(
+                    let Some(new_ty) = self.alias_type(
                         &self.implements_types[self.implements[active_implements]
                             .implements_types_by_trait_type[&trait_type.trait_type_id]]
                             .alias,
@@ -494,20 +524,24 @@ impl Table {
                         allow_trait_resolution,
                         generic_identifier_span,
                         handler,
-                    )?;
-                } else {
-                    self.apply_substitution_on_arguments(
-                        &mut trait_type.trait_type_substitution,
-                        substitution,
-                        allow_trait_resolution,
-                        generic_identifier_span,
-                        handler,
-                    )?;
+                    ) else {
+                        return false;
+                    };
+
+                    *ty = new_ty;
+                } else if !self.apply_substitution_on_arguments(
+                    &mut trait_type.trait_type_substitution,
+                    substitution,
+                    allow_trait_resolution,
+                    generic_identifier_span,
+                    handler,
+                ) {
+                    return false;
                 }
 
-                Ok(())
+                true
             }
-            _ => Ok(()),
+            _ => true,
         }
     }
 
@@ -518,18 +552,21 @@ impl Table {
         allow_trait_resolution: bool,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<ty::Type, FatalSemantic> {
+    ) -> Option<ty::Type> {
         let mut cloned_ty = alias.clone();
-        self.substitute_type(
+        if !self.substitute_type(
             &mut cloned_ty,
             substitution,
             allow_trait_resolution,
             generic_identifier_span,
             handler,
-        )?;
-        Ok(cloned_ty)
+        ) {
+            return None;
+        }
+        Some(cloned_ty)
     }
 
+    #[must_use]
     fn substitution_outlives(
         required_lifetime_argument: LifetimeArgument,
         substitution: &Substitution,
@@ -537,7 +574,7 @@ impl Table {
         ty: &ty::Type,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<(), FatalSemantic> {
+    ) -> bool {
         for lifetime_argument in substitution.lifetime_arguments_by_parameter.values() {
             let LifetimeArgument::Parameter(lifetime_parameter) = lifetime_argument else {
                 continue;
@@ -548,7 +585,7 @@ impl Table {
                 .get(lifetime_parameter)
             {
                 if lifetime_argument_set.contains(lifetime_argument) {
-                    return Ok(());
+                    return true;
                 }
             }
 
@@ -559,10 +596,10 @@ impl Table {
                     generics_identifier_span: generic_identifier_span.clone(),
                 },
             ));
-            return Err(FatalSemantic);
+            return false;
         }
 
-        Ok(())
+        true
     }
 
     fn ty_outlives(
@@ -571,17 +608,17 @@ impl Table {
         active_where_clause: &WhereClause,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<(), FatalSemantic> {
+    ) -> bool {
         if let Some(lifetime_argument_set) =
             active_where_clause.lifetime_argument_sets_by_type.get(ty)
         {
             if lifetime_argument_set.contains(&required_lifetime_argument) {
-                return Ok(());
+                return true;
             }
         }
 
         match ty {
-            ty::Type::Primitive(_) | ty::Type::Enum(_) => Ok(()),
+            ty::Type::Primitive(_) | ty::Type::Enum(_) => true,
 
             ty::Type::Struct(struct_ty) => Self::substitution_outlives(
                 required_lifetime_argument,
@@ -627,7 +664,7 @@ impl Table {
                         generics_identifier_span: generic_identifier_span.clone(),
                     },
                 ));
-                Err(FatalSemantic)
+                false
             }
             ty::Type::TraitType(_) | ty::Type::Parameter(_) => {
                 handler.receive(error::Error::TypeDoesNotOutliveLifetimeArgument(
@@ -637,12 +674,13 @@ impl Table {
                         generics_identifier_span: generic_identifier_span.clone(),
                     },
                 ));
-                Err(FatalSemantic)
+                false
             }
         }
     }
 
     #[allow(clippy::too_many_lines)]
+    #[must_use]
     pub(super) fn check_where_clause(
         &self,
         genericable_id: GenericableID,
@@ -650,19 +688,21 @@ impl Table {
         generic_identifier_span: &Span,
         active_where_clause: &WhereClause,
         handler: &impl Handler<error::Error>,
-    ) -> Result<(), FatalSemantic> {
+    ) -> bool {
         let Some(genericable_where_clause) =
             self.get_genericable(genericable_id).unwrap().where_clause()
         else {
-            return Ok(());
+            return true;
         };
 
-        let genericable_where_clause = self.substitute_where_clause(
+        let Some(genericable_where_clause) = self.substitute_where_clause(
             genericable_where_clause,
             substitution,
             generic_identifier_span,
             handler,
-        )?;
+        ) else {
+            return false;
+        };
 
         let mut found_error = false;
 
@@ -703,6 +743,10 @@ impl Table {
 
         // perform trait bound checking
         for required_trait_bound in genericable_where_clause.trait_bounds {
+            if required_trait_bound.substitution.is_concrete_substitution() {
+                continue;
+            }
+
             if !active_where_clause
                 .trait_bounds
                 .contains(&required_trait_bound)
@@ -747,25 +791,19 @@ impl Table {
         // performs type lifetime bound checking
         for (ty, lifetime_argument_set) in genericable_where_clause.lifetime_argument_sets_by_type {
             for lifetime_argument in lifetime_argument_set {
-                if Self::ty_outlives(
+                if !Self::ty_outlives(
                     lifetime_argument,
                     &ty,
                     active_where_clause,
                     generic_identifier_span,
                     handler,
-                )
-                .is_err()
-                {
+                ) {
                     found_error = true;
                 }
             }
         }
 
-        if found_error {
-            Err(FatalSemantic)
-        } else {
-            Ok(())
-        }
+        !found_error
     }
 
     fn combine_substitution(lhs: &Substitution, rhs: &Substitution) -> Substitution {
@@ -809,8 +847,8 @@ impl Table {
         allow_trait_resolution: bool,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<Resolution, FatalSemantic> {
-        Ok(
+    ) -> Option<Resolution> {
+        Some(
             match self.alias_type(
                 alias,
                 substitution,
@@ -889,7 +927,7 @@ impl Table {
         active_where_clause: &WhereClause,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
-    ) -> Result<TraitOrActiveImplements, FatalSemantic> {
+    ) -> Option<TraitOrActiveImplements> {
         let trait_resolution = used_root.latest_resolution.as_ref().map_or_else(
             || {
                 let trait_or_implements = self
@@ -930,10 +968,10 @@ impl Table {
                         trait_resolution_span: generic_identifier_span.clone(),
                     },
                 ));
-                return Err(FatalSemantic);
+                return None;
             }
 
-            Ok(TraitOrActiveImplements::ActiveImplements(
+            Some(TraitOrActiveImplements::ActiveImplements(
                 self.resolve_trait_implements(
                     trait_resolution.symbol,
                     &trait_resolution.substitution,
@@ -956,10 +994,10 @@ impl Table {
                         generics_identifier_span: generic_identifier_span.clone(),
                     },
                 ));
-                return Err(FatalSemantic);
+                return None;
             }
 
-            Ok(TraitOrActiveImplements::Trait(trait_resolution.clone()))
+            Some(TraitOrActiveImplements::Trait(trait_resolution.clone()))
         }
     }
 
@@ -970,7 +1008,7 @@ impl Table {
         found_global_id: GlobalID,
         info: &Info,
         handler: &impl Handler<error::Error>,
-    ) -> Result<Substitution, FatalSemantic> {
+    ) -> Option<Substitution> {
         let mut substitution = Substitution::default();
 
         let Ok(genericable_id) = GenericableID::try_from(found_global_id) else {
@@ -980,10 +1018,10 @@ impl Table {
                         span: generic_arguments.span(),
                     },
                 ));
-                return Err(FatalSemantic);
+                return None;
             }
 
-            return Ok(substitution);
+            return Some(substitution);
         };
 
         let mut type_argument_syntax_trees = Vec::new();
@@ -1008,7 +1046,7 @@ impl Table {
                                 },
                             ),
                         );
-                        return Err(FatalSemantic);
+                        return None;
                     }
 
                     lifetime_argument_syntax_trees.push(lifetime_argument);
@@ -1033,7 +1071,7 @@ impl Table {
                     },
                 ));
 
-                return Err(FatalSemantic);
+                return None;
             }
 
             // either supplied or not at all
@@ -1054,13 +1092,15 @@ impl Table {
                     .copied()
                     .zip(lifetime_argument_syntax_trees.iter().copied())
                 {
-                    let lifetime_argument = self
-                        .resolve_lifetime_argument(
-                            info.referring_site,
-                            lifetime_argument_syntax_tree,
-                            handler,
-                        )
-                        .map_err(|x| x.into_fatal_semantic().unwrap())?;
+                    let lifetime_argument = match self.resolve_lifetime_argument(
+                        info.referring_site,
+                        lifetime_argument_syntax_tree,
+                        handler,
+                    ) {
+                        Ok(x) => x,
+                        Err(table::Error::FatalSemantic) => return None,
+                        Err(table::Error::InvalidID) => unreachable!(),
+                    };
 
                     assert!(substitution
                         .lifetime_arguments_by_parameter
@@ -1082,7 +1122,7 @@ impl Table {
                     },
                 ));
 
-                return Err(FatalSemantic);
+                return None;
             }
         }
 
@@ -1105,9 +1145,11 @@ impl Table {
                 .into_iter()
                 .zip(type_argument_syntax_trees.iter().copied())
             {
-                let ty = self
-                    .resolve_type(info, type_specifier, handler)
-                    .map_err(|x| x.into_fatal_semantic().unwrap())?;
+                let ty = match self.resolve_type(info, type_specifier, handler) {
+                    Ok(x) => x,
+                    Err(table::Error::FatalSemantic) => return None,
+                    Err(table::Error::InvalidID) => unreachable!(),
+                };
 
                 assert!(substitution
                     .type_arguments_by_parameter
@@ -1130,10 +1172,10 @@ impl Table {
                         .map_or_else(|| generic_identifier.span(), SourceElement::span),
                 },
             ));
-            return Err(FatalSemantic);
+            return None;
         }
 
-        Ok(substitution)
+        Some(substitution)
     }
 
     /// second pass resolution involves in checking the where clause and resolving the generic
@@ -1146,7 +1188,7 @@ impl Table {
         resolved_substitution: Substitution,
         check_where_clause: bool,
         handler: &impl Handler<error::Error>,
-    ) -> Result<Resolution, FatalSemantic> {
+    ) -> Option<Resolution> {
         let parent_substitution =
             used_root
                 .latest_resolution
@@ -1176,7 +1218,7 @@ impl Table {
                     Self::combine_substitution(&resolved_substitution, parent_substitution)
                 });
 
-                self.check_where_clause(
+                if !self.check_where_clause(
                     genericable_id,
                     substitution
                         .as_ref()
@@ -1184,13 +1226,15 @@ impl Table {
                     generic_identifier_span,
                     &active_where_clause,
                     handler,
-                )?;
+                ) {
+                    return None;
+                }
             }
         } else {
             assert!(resolved_substitution.is_empty());
         }
 
-        Ok(match found_global_id {
+        Some(match found_global_id {
             GlobalID::Module(id) => Resolution::Module(id),
             GlobalID::Struct(id) => Resolution::Struct(Generics {
                 symbol: id,
@@ -1278,13 +1322,14 @@ impl Table {
     }
 
     // first pass resolution only involves in searching for the global id living in the root
+    #[allow(clippy::too_many_lines)]
     pub(super) fn resolve_single_first_pass(
         &self,
         identifier: &Identifier,
         root: &Root,
         search_from_target: bool,
         handler: &impl Handler<error::Error>,
-    ) -> Result<GlobalID, table::Error> {
+    ) -> Option<GlobalID> {
         let global_id = match &root.latest_resolution {
             None => {
                 if search_from_target {
@@ -1296,9 +1341,9 @@ impl Table {
                                 handler.receive(error::Error::TargetNotFound(TargetNotFound {
                                     unknown_target_span: identifier.span.clone(),
                                 }));
-                                Err(table::Error::FatalSemantic(FatalSemantic))
+                                None
                             },
-                            |id| Ok(id.into()),
+                            |id| Some(id.into()),
                         )?
                 } else {
                     // perform a local search down the module tree
@@ -1344,8 +1389,7 @@ impl Table {
                             symbol_reference_span: identifier.span.clone(),
                             ty,
                         }));
-
-                        return Err(table::Error::FatalSemantic(FatalSemantic));
+                        return None;
                     }
                     Kind::ImplementsFunction(implements_function_id) => {
                         handler.receive(error::Error::NoMemberOnThisImplementsFunction(
@@ -1354,7 +1398,7 @@ impl Table {
                                 implements_function_id,
                             },
                         ));
-                        return Err(table::Error::FatalSemantic(FatalSemantic));
+                        return None;
                     }
                 };
 
@@ -1363,37 +1407,39 @@ impl Table {
                         searched_global_id: global_id,
                         symbol_reference_span: identifier.span.clone(),
                     }));
-
-                    return Err(table::Error::FatalSemantic(FatalSemantic));
+                    return None;
                 };
 
                 let Some(global_id) = self
-                    .get_scoped(scoped_id)?
+                    .get_scoped(scoped_id)
+                    .unwrap()
                     .get_child_id_by_name(identifier.span.str())
                 else {
                     handler.receive(error::Error::SymbolNotFound(SymbolNotFound {
                         searched_global_id: global_id,
                         symbol_reference_span: identifier.span.clone(),
                     }));
-
-                    return Err(table::Error::FatalSemantic(FatalSemantic));
+                    return None;
                 };
 
                 global_id
             }
         };
 
-        if !self.symbol_accessible(global_id, root.referring_site)? {
+        if !self
+            .symbol_accessible(global_id, root.referring_site)
+            .unwrap()
+        {
             handler.receive(error::Error::SymbolIsNotAccessible(SymbolIsNotAccessible {
                 span: identifier.span.clone(),
                 referring_site: root.referring_site,
                 referred: global_id,
             }));
 
-            return Err(table::Error::FatalSemantic(FatalSemantic));
+            return None;
         }
 
-        Ok(global_id)
+        Some(global_id)
     }
 
     pub(super) fn resolve_type_parameter(
@@ -1424,7 +1470,7 @@ impl Table {
         info: &Info,
         qualified_identifier: &QualifiedIdentifier,
         handler: &impl Handler<error::Error>,
-    ) -> Result<ty::Type, table::Error> {
+    ) -> Option<ty::Type> {
         // If the qualified identifier is a simple identifier, then try to resolve it as a
         // type parameter.
         if qualified_identifier.leading_scope_separator().is_none()
@@ -1435,13 +1481,17 @@ impl Table {
                 info.referring_site,
                 qualified_identifier.first().identifier(),
             ) {
-                return Ok(ty::Type::Parameter(ty));
+                return Some(ty::Type::Parameter(ty));
             }
         }
 
-        let resolution = self.resolve(info, qualified_identifier, handler)?;
+        let resolution = match self.resolve(info, qualified_identifier, handler) {
+            Ok(x) => x,
+            Err(table::Error::FatalSemantic) => return None,
+            Err(table::Error::InvalidID) => unreachable!(),
+        };
 
-        Ok(match resolution {
+        Some(match resolution {
             Resolution::Primitive(primitive) => ty::Type::Primitive(primitive),
             Resolution::Reference(reference) => ty::Type::Reference(reference),
             Resolution::Struct(struct_resolution) => ty::Type::Struct(ty::Struct {
@@ -1465,7 +1515,7 @@ impl Table {
                 handler.receive(error::Error::TypeExpected(TypeExpected {
                     non_type_symbol_span: qualified_identifier.span(),
                 }));
-                return Err(table::Error::FatalSemantic(FatalSemantic));
+                return None;
             }
         })
     }
@@ -1498,9 +1548,9 @@ impl Table {
                     syntax_tree::PrimitiveTypeSpecifier::Uint64(_) => Primitive::Uint64,
                 }))
             }
-            TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
-                self.resolve_qualified_identifier_type(info, qualified_identifier, handler)
-            }
+            TypeSpecifier::QualifiedIdentifier(qualified_identifier) => self
+                .resolve_qualified_identifier_type(info, qualified_identifier, handler)
+                .ok_or(table::Error::FatalSemantic),
             TypeSpecifier::Reference(reference_type) => Ok(ty::Type::Reference(Reference {
                 operand: Box::new(self.resolve_type(
                     info,
@@ -1524,7 +1574,7 @@ impl Table {
                                     span: reference_type.span(),
                                 },
                             ));
-                            return Err(table::Error::FatalSemantic(FatalSemantic));
+                            return Err(table::Error::FatalSemantic);
                         }
 
                         None
@@ -1545,6 +1595,10 @@ impl Table {
         qualified_identifier: &QualifiedIdentifier,
         handler: &impl Handler<error::Error>,
     ) -> Result<Resolution, table::Error> {
+        if self.get_symbol(info.referring_site).is_none() {
+            return Err(table::Error::InvalidID);
+        }
+
         let mut current_root = Root {
             referring_site: info.referring_site,
             latest_resolution: None,
@@ -1553,24 +1607,30 @@ impl Table {
         for generics_identifier in std::iter::once(qualified_identifier.first())
             .chain(qualified_identifier.rest().iter().map(|x| &x.1))
         {
-            let global_id = self.resolve_single_first_pass(
-                generics_identifier.identifier(),
-                &current_root,
-                qualified_identifier.leading_scope_separator().is_some(),
-                handler,
-            )?;
+            let global_id = self
+                .resolve_single_first_pass(
+                    generics_identifier.identifier(),
+                    &current_root,
+                    qualified_identifier.leading_scope_separator().is_some(),
+                    handler,
+                )
+                .ok_or(table::Error::FatalSemantic)?;
 
-            let substitution =
-                self.resolve_substitution(generics_identifier, global_id, info, handler)?;
+            let substitution = self
+                .resolve_substitution(generics_identifier, global_id, info, handler)
+                .ok_or(table::Error::FatalSemantic)?;
 
-            current_root.latest_resolution = Some(self.resolve_single_second_pass(
-                &generics_identifier.span(),
-                &current_root,
-                global_id,
-                substitution,
-                info.check_where_clause,
-                handler,
-            )?);
+            current_root.latest_resolution = Some(
+                self.resolve_single_second_pass(
+                    &generics_identifier.span(),
+                    &current_root,
+                    global_id,
+                    substitution,
+                    info.check_where_clause,
+                    handler,
+                )
+                .ok_or(table::Error::FatalSemantic)?,
+            );
         }
 
         Ok(current_root.latest_resolution.unwrap())
@@ -1578,68 +1638,13 @@ impl Table {
 }
 
 impl Table {
-    /// Attaches implements blocks to their corresponding trait.
-    pub(super) fn attach_implements(
-        &mut self,
-        implements_syntax_tree_with_module_ids: Vec<ImplementsSyntaxTreeWithModuleID>,
-        handler: &impl Handler<error::Error>,
-    ) {
-        for implements_syntax_tree_with_module_id in implements_syntax_tree_with_module_ids {
-            let trait_id = match self.resolve_trait_path(
-                implements_syntax_tree_with_module_id
-                    .implements
-                    .signature()
-                    .qualified_identifier(),
-                implements_syntax_tree_with_module_id.module_id.into(),
-                handler,
-            ) {
-                Ok(trait_id) => trait_id,
-                Err(err) => {
-                    assert!(err.is_fatal_semantic());
-                    continue;
-                }
-            };
-
-            let implements_id = self.implements.push(Implements {
-                generics: crate::Generics::default(),
-                trait_id,
-                syntax_tree: None,
-                name: self.traits[trait_id].name.clone(),
-                substitution: Substitution::default(), // will be filled later
-                implements_types_by_trait_type: HashMap::new(), // will be filled later
-                implements_functions_by_trait_function: HashMap::new(), // will be filled later
-            });
-
-            // assigns generic parameters
-            if let Some(generic_parameters) = implements_syntax_tree_with_module_id
-                .implements
-                .signature()
-                .generic_parameters()
-                .as_ref()
-            {
-                let generic_parameters = self.create_generic_parameters(
-                    implements_id.into(),
-                    generic_parameters,
-                    handler,
-                );
-
-                self.implements[implements_id].generics.parameters = generic_parameters;
-            }
-            self.implements[implements_id].syntax_tree =
-                Some(implements_syntax_tree_with_module_id.implements);
-            self.traits[trait_id].implements.push(implements_id);
-
-            // TODO: Add more implements members
-        }
-    }
-
     #[allow(clippy::too_many_lines)]
-    fn resolve_trait_path(
+    pub(super) fn resolve_trait_path(
         &self,
         qualified_identifier: &QualifiedIdentifier,
         referrer: ID,
         handler: &impl Handler<error::Error>,
-    ) -> Result<arena::ID<crate::Trait>, table::Error> {
+    ) -> Option<arena::ID<crate::Trait>> {
         match (
             qualified_identifier.leading_scope_separator().is_some(),
             qualified_identifier.rest().is_empty(),
@@ -1653,7 +1658,7 @@ impl Table {
                 )?;
 
                 if let GlobalID::Trait(id) = found_symbol_id {
-                    Ok(id)
+                    Some(id)
                 } else {
                     handler.receive(error::Error::TraitExpected(error::TraitExpected {
                         symbol_reference_span: qualified_identifier
@@ -1662,7 +1667,7 @@ impl Table {
                             .span
                             .clone(),
                     }));
-                    Err(table::Error::FatalSemantic(FatalSemantic))
+                    None
                 }
             }
 
@@ -1671,7 +1676,7 @@ impl Table {
                 handler.receive(error::Error::InvalidTraitPath(error::InvalidTraitPath {
                     span: qualified_identifier.span(),
                 }));
-                Err(table::Error::FatalSemantic(FatalSemantic))
+                None
             }
 
             // normal case
@@ -1702,7 +1707,7 @@ impl Table {
                             handler.receive(error::Error::TargetNotFound(TargetNotFound {
                                 unknown_target_span: generic_identifier.identifier().span.clone(),
                             }));
-                            return Err(table::Error::FatalSemantic(FatalSemantic));
+                            return None;
                         }
                     } else {
                         let resolved_symbol_id = self.resolve_root_relative(
@@ -1718,7 +1723,7 @@ impl Table {
                                 symbol_reference_span: generic_identifier.span(),
                                 found: resolved_symbol_id,
                             }));
-                            return Err(table::Error::FatalSemantic(FatalSemantic));
+                            return None;
                         }
                     }
                 };
@@ -1745,7 +1750,7 @@ impl Table {
                                 searched_global_id: current_module_id.into(),
                                 symbol_reference_span: generic_identifier.span(),
                             }));
-                            return Err(table::Error::FatalSemantic(FatalSemantic));
+                            return None;
                         };
 
                         match (is_last, id) {
@@ -1764,7 +1769,7 @@ impl Table {
                                         found,
                                     })
                                 });
-                                return Err(table::Error::FatalSemantic(FatalSemantic));
+                                return None;
                             }
                         }
                     } else {
@@ -1772,7 +1777,7 @@ impl Table {
                     }
                 };
 
-                Ok(trait_id)
+                Some(trait_id)
             }
         }
     }

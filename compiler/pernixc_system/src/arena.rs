@@ -1,31 +1,21 @@
-//! A container for storing items of type `T` with unique identifiers.
-//!
-//! This module provides an implementation of an [`Arena`], which is a container for storing items
-//! of type `T` with unique identifiers. The [`Arena`]s implemented as a vector of [`Symbol<T>`]
-//! structs, where each [`Symbol<T>`] struct contains a value of type `T`, and a unique identifier.
-//! The unique identifier is represented by an [`ID<T>`] struct, which contains an index into the
-//! vector and a marker for the type `T`.
+//! Contains the definition of the [`Arena`] type.
+
+use std::collections::HashMap;
 
 use derive_more::{Deref, DerefMut};
 use getset::CopyGetters;
 
 /// A unique identifier for a symbol in the arena.
-///
-/// The [`ID`] is only unique within the [`Arena`] it belongs to. Two [`Arena`]s can have two
-/// different symbols with the same ID.
-///
-/// This a newtype wrapper around an index into the [`Arena`]'s internal vector. The extra type
-/// parameter required by this struct is used to prevent indexing into the wrong [`Arena`] type.
 #[derive(Debug)]
 pub struct ID<T> {
-    index: usize,
+    id: usize,
     _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> Clone for ID<T> {
     fn clone(&self) -> Self {
         Self {
-            index: self.index,
+            id: self.id,
             _marker: std::marker::PhantomData,
         }
     }
@@ -34,23 +24,23 @@ impl<T> Clone for ID<T> {
 impl<T> Copy for ID<T> {}
 
 impl<T> PartialEq for ID<T> {
-    fn eq(&self, other: &Self) -> bool { self.index == other.index }
+    fn eq(&self, other: &Self) -> bool { self.id == other.id }
 }
 
 impl<T> Eq for ID<T> {}
 
 impl<T> PartialOrd for ID<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.index.partial_cmp(&other.index)
+        self.id.partial_cmp(&other.id)
     }
 }
 
 impl<T> Ord for ID<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.index.cmp(&other.index) }
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.id.cmp(&other.id) }
 }
 
 impl<T> std::hash::Hash for ID<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.index.hash(state) }
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.id.hash(state) }
 }
 
 /// A symbol in the arena, consisting of an [`ID`] and a value of type `T`.
@@ -67,41 +57,40 @@ pub struct Symbol<T> {
 
 /// Represents a collection of symbols of type `T`
 ///
-/// The [`Arena`] internally stores the symbols in a vector. This enforces more type safety than
-/// just using a `Vec<T>` as each [`Arena`] type has its own [`ID`] type.
-///
-/// The [`Arena`] doesn't allow removing items from it as this would invalidate all the IDs that
-/// have been handed out.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+/// Each new symbol added to the arena is assigned with a unique [`ID`].
+#[derive(Debug, Clone, Default)]
 pub struct Arena<T> {
-    items: Vec<Symbol<T>>,
+    items: HashMap<ID<T>, Symbol<T>>,
+    current_id: usize,
 }
-
-/// Represents an error that occurs when trying to access a symbol in the [`Arena`] with an invalid
-/// ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, thiserror::Error)]
-#[error("couldn't access the symbol with the given ID.")]
-pub struct Error;
 
 impl<T> Arena<T> {
     /// Creates a new, empty arena.
     #[must_use]
-    pub fn new() -> Self { Self { items: Vec::new() } }
+    pub fn new() -> Self {
+        Self {
+            items: HashMap::new(),
+            current_id: 0,
+        }
+    }
 
     /// Adds a symbol to the arena and returns its ID.
     pub fn push(&mut self, item: T) -> ID<T> {
-        let index = self.items.len();
-        self.items.push(Symbol {
-            id: ID {
-                index,
-                _marker: std::marker::PhantomData,
-            },
-            symbol: item,
-        });
-        ID {
-            index,
+        let new_id = ID {
+            id: self.current_id,
             _marker: std::marker::PhantomData,
-        }
+        };
+        self.current_id += 1;
+
+        assert!(self
+            .items
+            .insert(new_id, Symbol {
+                id: new_id,
+                symbol: item,
+            })
+            .is_none());
+
+        new_id
     }
 
     /// Returns the number of items in the arena.
@@ -112,74 +101,61 @@ impl<T> Arena<T> {
     #[must_use]
     pub fn is_empty(&self) -> bool { self.items.is_empty() }
 
-    /// Returns an iterator over the [`ID`]s of the symbols in the arena.
-    pub fn ids(&self) -> impl Iterator<Item = ID<T>> {
-        (0..self.items.len()).map(|index| ID {
-            index,
-            _marker: std::marker::PhantomData,
-        })
-    }
-
     /// Returns an iterator over the symbols in the arena.
-    pub fn iter(&self) -> std::slice::Iter<'_, Symbol<T>> { self.items.iter() }
+    #[must_use]
+    pub fn values(&self) -> std::collections::hash_map::Values<'_, ID<T>, Symbol<T>> {
+        self.items.values()
+    }
 
     /// Returns a mutable iterator over the symbols in the arena.
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Symbol<T>> { self.items.iter_mut() }
-
-    /// Returns a reference to the item in the arena with the given ID.
     #[must_use]
-    pub fn get(&self, id: ID<T>) -> Option<&Symbol<T>> { self.items.get(id.index) }
-
-    /// Returns a mutable reference to the item in the arena with the given ID.
-    #[must_use]
-    pub fn get_mut(&mut self, id: ID<T>) -> Option<&mut Symbol<T>> { self.items.get_mut(id.index) }
-
-    /// Returns a reference to the item in the arena with the given ID.
-    ///
-    /// # Errors
-    /// Returns an [`Error`] if the ID is invalid.
-    pub fn get_as_ok(&self, id: ID<T>) -> Result<&Symbol<T>, Error> { self.get(id).ok_or(Error) }
-
-    /// Returns a mutable reference to the item in the arena with the given ID.
-    ///
-    /// # Errors
-    /// Returns an [`Error`] if the ID is invalid.
-    pub fn get_mut_as_ok(&mut self, id: ID<T>) -> Result<&mut Symbol<T>, Error> {
-        self.get_mut(id).ok_or(Error)
+    pub fn values_mut(&mut self) -> std::collections::hash_map::ValuesMut<'_, ID<T>, Symbol<T>> {
+        self.items.values_mut()
     }
+
+    /// Removes a symbol from the arena and returns it.
+    pub fn remove(&mut self, id: ID<T>) -> Option<Symbol<T>> { self.items.remove(&id) }
+
+    /// Returns a reference to the item in the arena with the given ID.
+    #[must_use]
+    pub fn get(&self, id: ID<T>) -> Option<&Symbol<T>> { self.items.get(&id) }
+
+    /// Returns a mutable reference to the item in the arena with the given ID.
+    #[must_use]
+    pub fn get_mut(&mut self, id: ID<T>) -> Option<&mut Symbol<T>> { self.items.get_mut(&id) }
 }
 
 impl<T> std::ops::Index<ID<T>> for Arena<T> {
     type Output = Symbol<T>;
 
     /// Returns a reference to the item in the arena with the given ID.
-    fn index(&self, id: ID<T>) -> &Self::Output { &self.items[id.index] }
+    fn index(&self, id: ID<T>) -> &Self::Output { &self.items[&id] }
 }
 
 impl<T> std::ops::IndexMut<ID<T>> for Arena<T> {
     /// Returns a mutable reference to the item in the arena with the given ID.
-    fn index_mut(&mut self, id: ID<T>) -> &mut Self::Output { &mut self.items[id.index] }
+    fn index_mut(&mut self, id: ID<T>) -> &mut Self::Output { self.items.get_mut(&id).unwrap() }
 }
 
 impl<T> IntoIterator for Arena<T> {
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-    type Item = Symbol<T>;
+    type IntoIter = std::collections::hash_map::IntoIter<ID<T>, Symbol<T>>;
+    type Item = (ID<T>, Symbol<T>);
 
     /// Returns an iterator over the items in the arena.
     fn into_iter(self) -> Self::IntoIter { self.items.into_iter() }
 }
 
 impl<'a, T> IntoIterator for &'a Arena<T> {
-    type IntoIter = std::slice::Iter<'a, Symbol<T>>;
-    type Item = &'a Symbol<T>;
+    type IntoIter = std::collections::hash_map::Iter<'a, ID<T>, Symbol<T>>;
+    type Item = (&'a ID<T>, &'a Symbol<T>);
 
     /// Returns an iterator over the items in the arena.
     fn into_iter(self) -> Self::IntoIter { self.items.iter() }
 }
 
 impl<'a, T> IntoIterator for &'a mut Arena<T> {
-    type IntoIter = std::slice::IterMut<'a, Symbol<T>>;
-    type Item = &'a mut Symbol<T>;
+    type IntoIter = std::collections::hash_map::IterMut<'a, ID<T>, Symbol<T>>;
+    type Item = (&'a ID<T>, &'a mut Symbol<T>);
 
     /// Returns a mutable iterator over the items in the arena.
     fn into_iter(self) -> Self::IntoIter { self.items.iter_mut() }

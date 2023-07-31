@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     error::{Error, ExpressionExpected},
-    parser::{Error as ParserError, Parser, Result as ParserResult},
+    parser::Parser,
 };
 
 /// Is an enumeration of all kinds of expressions.
@@ -974,10 +974,7 @@ impl SourceElement for Return {
 }
 
 impl<'a> Parser<'a> {
-    fn parse_binary_expression(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<Functional> {
+    fn parse_binary_expression(&mut self, handler: &impl Handler<Error>) -> Option<Functional> {
         let mut first_functional = self.parse_primary_expression(handler)?;
         let mut expressions = Vec::new();
 
@@ -1045,15 +1042,15 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(first_functional)
+        Some(first_functional)
     }
 
     fn parse_loop_and_block(
         &mut self,
         label_specifier: Option<LabelSpecifier>,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Imperative> {
-        Ok(match self.stop_at_significant() {
+    ) -> Option<Imperative> {
+        Some(match self.stop_at_significant() {
             Some(Token::Punctuation(p)) if p.punctuation == '{' => {
                 let block_without_label = self.parse_block_without_label(handler)?;
 
@@ -1083,14 +1080,14 @@ impl<'a> Parser<'a> {
                 handler.receive(Error::ExpressionExpected(ExpressionExpected {
                     found: self.get_actual_found_token(found),
                 }));
-                return Err(ParserError);
+                return None;
             }
         })
     }
 
     /// Parses an [`Expression`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_expression(&mut self, handler: &impl Handler<Error>) -> ParserResult<Expression> {
+    pub fn parse_expression(&mut self, handler: &impl Handler<Error>) -> Option<Expression> {
         match self.stop_at_significant() {
             // parse return expression
             Some(Token::Keyword(return_keyword))
@@ -1101,7 +1098,7 @@ impl<'a> Parser<'a> {
 
                 let expression = self.try_parse_functional();
 
-                Ok(Expression::Terminator(Terminator::Return(Return {
+                Some(Expression::Terminator(Terminator::Return(Return {
                     return_keyword,
                     expression,
                 })))
@@ -1116,7 +1113,7 @@ impl<'a> Parser<'a> {
 
                 let label = self.try_parse_label(handler)?;
 
-                Ok(Expression::Terminator(Terminator::Continue(Continue {
+                Some(Expression::Terminator(Terminator::Continue(Continue {
                     continue_keyword,
                     label,
                 })))
@@ -1130,7 +1127,7 @@ impl<'a> Parser<'a> {
                 let label = self.try_parse_label(handler)?;
                 let expression = self.try_parse_functional();
 
-                Ok(Expression::Terminator(Terminator::Break(Break {
+                Some(Expression::Terminator(Terminator::Break(Break {
                     break_keyword,
                     label,
                     expression,
@@ -1147,7 +1144,7 @@ impl<'a> Parser<'a> {
                 let label = self.try_parse_label(handler)?;
                 let expression = self.try_parse_functional();
 
-                Ok(Expression::Terminator(Terminator::Express(Express {
+                Some(Expression::Terminator(Terminator::Express(Express {
                     express_keyword,
                     label,
                     expression,
@@ -1167,7 +1164,7 @@ impl<'a> Parser<'a> {
                 let identifier = self.parse_identifier(handler)?;
                 let colon = self.parse_punctuation(':', true, handler)?;
 
-                Ok(Expression::Imperative(self.parse_loop_and_block(
+                Some(Expression::Imperative(self.parse_loop_and_block(
                     Some(LabelSpecifier {
                         label: Label {
                             apostrophe,
@@ -1184,7 +1181,7 @@ impl<'a> Parser<'a> {
                 if matches!(&token, Token::Punctuation(p) if p.punctuation == '{')
                     || matches!(&token, Token::Keyword(loop_keyword) if loop_keyword.keyword == KeywordKind::Loop) =>
             {
-                Ok(Expression::Imperative(
+                Some(Expression::Imperative(
                     self.parse_loop_and_block(None, handler)?,
                 ))
             }
@@ -1195,73 +1192,70 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_label(&mut self, handler: &impl Handler<Error>) -> ParserResult<Label> {
+    fn parse_label(&mut self, handler: &impl Handler<Error>) -> Option<Label> {
         let apostrophe = self.parse_punctuation('\'', true, handler)?;
         let identifier = self.parse_identifier(handler)?;
 
-        Ok(Label {
+        Some(Label {
             apostrophe,
             identifier,
         })
     }
 
-    fn parse_label_specifier(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<LabelSpecifier> {
+    fn parse_label_specifier(&mut self, handler: &impl Handler<Error>) -> Option<LabelSpecifier> {
         let label = self.parse_label(handler)?;
         let colon = self.parse_punctuation(':', true, handler)?;
 
-        Ok(LabelSpecifier { label, colon })
+        Some(LabelSpecifier { label, colon })
     }
 
     fn try_parse_binary_operator(&mut self) -> Option<BinaryOperator> {
-        let first_level = self
-            .try_parse(|parser| match parser.next_significant_token() {
-                Some(Token::Punctuation(p)) => match p.punctuation {
-                    '+' => Ok(BinaryOperator::Add(p)),
-                    '-' => Ok(BinaryOperator::Subtract(p)),
-                    '*' => Ok(BinaryOperator::Multiply(p)),
-                    '/' => Ok(BinaryOperator::Divide(p)),
-                    '%' => Ok(BinaryOperator::Modulo(p)),
-                    '=' => Ok(BinaryOperator::Assign(p)),
-                    '!' => {
-                        let equal = parser.parse_punctuation('=', false, &Dummy)?;
-                        Ok(BinaryOperator::NotEqual(p, equal))
-                    }
-                    '>' => Ok(BinaryOperator::GreaterThan(p)),
-                    '<' => Ok(BinaryOperator::LessThan(p)),
-                    _ => Err(ParserError),
-                },
-                Some(Token::Keyword(k)) => match k.keyword {
-                    KeywordKind::And => Ok(BinaryOperator::LogicalAnd(k)),
-                    KeywordKind::Or => Ok(BinaryOperator::LogicalOr(k)),
-                    _ => Err(ParserError),
-                },
-                _ => Err(ParserError),
-            })
-            .ok()?;
+        let first_level = self.try_parse(|parser| match parser.next_significant_token() {
+            Some(Token::Punctuation(p)) => match p.punctuation {
+                '+' => Some(BinaryOperator::Add(p)),
+                '-' => Some(BinaryOperator::Subtract(p)),
+                '*' => Some(BinaryOperator::Multiply(p)),
+                '/' => Some(BinaryOperator::Divide(p)),
+                '%' => Some(BinaryOperator::Modulo(p)),
+                '=' => Some(BinaryOperator::Assign(p)),
+                '!' => {
+                    let equal = parser.parse_punctuation('=', false, &Dummy)?;
+                    Some(BinaryOperator::NotEqual(p, equal))
+                }
+                '>' => Some(BinaryOperator::GreaterThan(p)),
+                '<' => Some(BinaryOperator::LessThan(p)),
+                _ => None,
+            },
+            Some(Token::Keyword(k)) => match k.keyword {
+                KeywordKind::And => Some(BinaryOperator::LogicalAnd(k)),
+                KeywordKind::Or => Some(BinaryOperator::LogicalOr(k)),
+                _ => None,
+            },
+            _ => None,
+        })?;
 
         Some(
             self.try_parse(|parser| match (first_level.clone(), parser.next_token()) {
                 (first_level, Some(Token::Punctuation(n))) => match (first_level, n.punctuation) {
-                    (BinaryOperator::Add(p), '=') => Ok(BinaryOperator::CompoundAdd(p, n)),
+                    (BinaryOperator::Add(p), '=') => Some(BinaryOperator::CompoundAdd(p, n)),
                     (BinaryOperator::Subtract(p), '=') => {
-                        Ok(BinaryOperator::CompoundSubtract(p, n))
+                        Some(BinaryOperator::CompoundSubtract(p, n))
                     }
                     (BinaryOperator::Multiply(p), '=') => {
-                        Ok(BinaryOperator::CompoundMultiply(p, n))
+                        Some(BinaryOperator::CompoundMultiply(p, n))
                     }
-                    (BinaryOperator::Divide(p), '=') => Ok(BinaryOperator::CompoundDivide(p, n)),
-                    (BinaryOperator::Modulo(p), '=') => Ok(BinaryOperator::CompoundModulo(p, n)),
-                    (BinaryOperator::Assign(p), '=') => Ok(BinaryOperator::Equal(p, n)),
+                    (BinaryOperator::Divide(p), '=') => Some(BinaryOperator::CompoundDivide(p, n)),
+                    (BinaryOperator::Modulo(p), '=') => Some(BinaryOperator::CompoundModulo(p, n)),
+                    (BinaryOperator::Assign(p), '=') => Some(BinaryOperator::Equal(p, n)),
                     (BinaryOperator::GreaterThan(p), '=') => {
-                        Ok(BinaryOperator::GreaterThanOrEqual(p, n))
+                        Some(BinaryOperator::GreaterThanOrEqual(p, n))
                     }
-                    (BinaryOperator::LessThan(p), '=') => Ok(BinaryOperator::LessThanOrEqual(p, n)),
-                    _ => Err(ParserError),
+                    (BinaryOperator::LessThan(p), '=') => {
+                        Some(BinaryOperator::LessThanOrEqual(p, n))
+                    }
+                    _ => None,
                 },
-                _ => Err(ParserError),
+                _ => None,
             })
             .unwrap_or(first_level),
         )
@@ -1270,25 +1264,24 @@ impl<'a> Parser<'a> {
     fn try_parse_prefix_operator(&mut self) -> Option<PrefixOperator> {
         self.try_parse(|parser| match parser.next_significant_token() {
             Some(Token::Punctuation(p)) if p.punctuation == '!' => {
-                Ok(PrefixOperator::LogicalNot(p))
+                Some(PrefixOperator::LogicalNot(p))
             }
-            Some(Token::Punctuation(p)) if p.punctuation == '-' => Ok(PrefixOperator::Negate(p)),
+            Some(Token::Punctuation(p)) if p.punctuation == '-' => Some(PrefixOperator::Negate(p)),
             Some(Token::Punctuation(p)) if p.punctuation == '&' => {
-                Ok(PrefixOperator::ReferenceOf(p))
+                Some(PrefixOperator::ReferenceOf(p))
             }
             Some(Token::Punctuation(p)) if p.punctuation == '*' => {
-                Ok(PrefixOperator::Dereference(p))
+                Some(PrefixOperator::Dereference(p))
             }
-            _ => Err(ParserError),
+            _ => None,
         })
-        .ok()
     }
 
     fn handle_struct_literal(
         &mut self,
         qualified_identifier: QualifiedIdentifier,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Functional> {
+    ) -> Option<Functional> {
         let EnclosedList {
             open: left_brace,
             list: field_initializers,
@@ -1302,7 +1295,7 @@ impl<'a> Parser<'a> {
                 let expression = Box::new(this.parse_expression(handler)?);
 
                 // field initializer
-                Ok(FieldInitializer {
+                Some(FieldInitializer {
                     identifier,
                     colon,
                     expression,
@@ -1311,7 +1304,7 @@ impl<'a> Parser<'a> {
             handler,
         )?;
 
-        Ok(Functional::StructLiteral(StructLiteral {
+        Some(Functional::StructLiteral(StructLiteral {
             qualified_identifier,
             left_brace,
             field_initializers,
@@ -1323,7 +1316,7 @@ impl<'a> Parser<'a> {
         &mut self,
         qualified_identifier: QualifiedIdentifier,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Functional> {
+    ) -> Option<Functional> {
         let EnclosedList {
             open: left_paren,
             list: arguments,
@@ -1331,11 +1324,11 @@ impl<'a> Parser<'a> {
         } = self.parse_enclosed_tree(
             Delimiter::Parenthesis,
             ',',
-            |this, handler| Ok(Box::new(this.parse_expression(handler)?)),
+            |this, handler| Some(Box::new(this.parse_expression(handler)?)),
             handler,
         )?;
 
-        Ok(Functional::FunctionCall(FunctionCall {
+        Some(Functional::FunctionCall(FunctionCall {
             qualified_identifier,
             left_paren,
             arguments,
@@ -1343,10 +1336,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_identifier_expression(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<Functional> {
+    fn parse_identifier_expression(&mut self, handler: &impl Handler<Error>) -> Option<Functional> {
         let qualified_identifier = self.parse_qualified_identifier(true, handler)?;
 
         match self.stop_at_significant() {
@@ -1358,7 +1348,7 @@ impl<'a> Parser<'a> {
                 self.handle_struct_literal(qualified_identifier, handler)
             }
 
-            _ => Ok(Functional::Named(Named {
+            _ => Some(Functional::Named(Named {
                 qualified_identifier,
             })),
         }
@@ -1367,12 +1357,12 @@ impl<'a> Parser<'a> {
     fn parse_parenthesized_expression(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Functional> {
+    ) -> Option<Functional> {
         let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
         let expression = Box::new(self.parse_expression(handler)?);
         let right_paren = self.step_out(handler)?;
 
-        Ok(Functional::Parenthesized(Parenthesized {
+        Some(Functional::Parenthesized(Parenthesized {
             left_paren,
             expression,
             right_paren,
@@ -1382,7 +1372,7 @@ impl<'a> Parser<'a> {
     fn parse_block_without_label(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<BlockWithoutLabel> {
+    ) -> Option<BlockWithoutLabel> {
         fn skip_to_next_statement(this: &mut Parser) {
             this.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
 
@@ -1402,7 +1392,7 @@ impl<'a> Parser<'a> {
 
         while !self.is_exhausted() {
             // parse the statement
-            let Ok(statement) = self.parse_statement(handler) else {
+            let Some(statement) = self.parse_statement(handler) else {
                 skip_to_next_statement(self);
                 continue;
             };
@@ -1412,14 +1402,14 @@ impl<'a> Parser<'a> {
 
         self.step_out(handler)?;
 
-        Ok(BlockWithoutLabel {
+        Some(BlockWithoutLabel {
             left_brace,
             statements,
             right_brace,
         })
     }
 
-    fn parse_block(&mut self, handler: &impl Handler<Error>) -> ParserResult<Block> {
+    fn parse_block(&mut self, handler: &impl Handler<Error>) -> Option<Block> {
         // parse optional label specifier
         let label_specifier = if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '\'')
         {
@@ -1431,13 +1421,13 @@ impl<'a> Parser<'a> {
         // parse the block
         let block_without_label = self.parse_block_without_label(handler)?;
 
-        Ok(Block {
+        Some(Block {
             label_specifier,
             block_without_label,
         })
     }
 
-    fn parse_else(&mut self, handler: &impl Handler<Error>) -> ParserResult<Else> {
+    fn parse_else(&mut self, handler: &impl Handler<Error>) -> Option<Else> {
         let else_keyword = self.parse_keyword(KeywordKind::Else, handler)?;
         let expression = Box::new(
             if matches!(self.stop_at_significant(), Some(Token::Keyword(k)) if k.keyword == KeywordKind::If)
@@ -1448,13 +1438,13 @@ impl<'a> Parser<'a> {
             },
         );
 
-        Ok(Else {
+        Some(Else {
             else_keyword,
             expression,
         })
     }
 
-    fn parse_if_else(&mut self, handler: &impl Handler<Error>) -> ParserResult<IfElse> {
+    fn parse_if_else(&mut self, handler: &impl Handler<Error>) -> Option<IfElse> {
         let if_keyword = self.parse_keyword(KeywordKind::If, handler)?;
         let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
         let condition = Box::new(self.parse_expression(handler)?);
@@ -1469,7 +1459,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Ok(IfElse {
+        Some(IfElse {
             if_keyword,
             left_paren,
             condition,
@@ -1481,12 +1471,12 @@ impl<'a> Parser<'a> {
 
     fn try_parse_functional(&mut self) -> Option<Functional> {
         self.try_parse(|parser| parser.parse_binary_expression(&Dummy))
-            .ok()
     }
 
-    fn try_parse_label(&mut self, handler: &impl Handler<Error>) -> ParserResult<Option<Label>> {
+    #[allow(clippy::option_option)]
+    fn try_parse_label(&mut self, handler: &impl Handler<Error>) -> Option<Option<Label>> {
         // parse optional label
-        Ok(
+        Some(
             if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '\'')
             {
                 Some(self.parse_label(handler)?)
@@ -1496,12 +1486,12 @@ impl<'a> Parser<'a> {
         )
     }
 
-    fn try_parse_arrow(&mut self) -> ParserResult<Arrow> {
+    fn try_parse_arrow(&mut self) -> Option<Arrow> {
         self.try_parse(|parser| {
             let hyphen = parser.parse_punctuation('-', true, &Dummy)?;
             let right_angle = parser.parse_punctuation('>', false, &Dummy)?;
 
-            Ok(Arrow {
+            Some(Arrow {
                 hyphen,
                 right_angle,
             })
@@ -1513,10 +1503,10 @@ impl<'a> Parser<'a> {
     pub fn parse_primary_expression(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Functional> {
+    ) -> Option<Functional> {
         // early return for prefix expression
         if let Some(prefix_operator) = self.try_parse_prefix_operator() {
-            return Ok(Functional::Prefix(Prefix {
+            return Some(Functional::Prefix(Prefix {
                 operator: prefix_operator,
                 operand: Box::new(self.parse_primary_expression(handler)?),
             }));
@@ -1572,7 +1562,7 @@ impl<'a> Parser<'a> {
                 handler.receive(Error::ExpressionExpected(ExpressionExpected {
                     found: self.get_actual_found_token(found),
                 }));
-                return Err(ParserError);
+                return None;
             }
         };
 
@@ -1609,7 +1599,7 @@ impl<'a> Parser<'a> {
                     });
                 }
                 _ => {
-                    let Ok(arrow) = self.try_parse_arrow() else {
+                    let Some(arrow) = self.try_parse_arrow() else {
                         break;
                     };
 
@@ -1625,6 +1615,6 @@ impl<'a> Parser<'a> {
             };
         }
 
-        Ok(expression)
+        Some(expression)
     }
 }

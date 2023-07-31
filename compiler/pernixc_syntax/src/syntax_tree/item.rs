@@ -19,7 +19,7 @@ use crate::{
         AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty, ItemExpected,
         PunctuationExpected,
     },
-    parser::{Error as ParserError, Parser, Result as ParserResult},
+    parser::Parser,
 };
 
 /// Represents a syntax tree node for a lifetime parameter.
@@ -1055,6 +1055,22 @@ pub struct ImplementsBody {
     right_brace: Punctuation,
 }
 
+impl ImplementsBody {
+    /// Creates a new [`ImplementsBody`] with the given members.
+    #[must_use]
+    pub fn new(
+        left_brace: Punctuation,
+        members: Vec<ImplementsMember>,
+        right_brace: Punctuation,
+    ) -> Self {
+        Self {
+            left_brace,
+            members,
+            right_brace,
+        }
+    }
+}
+
 impl SourceElement for ImplementsBody {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
@@ -1223,22 +1239,22 @@ impl<'a> Parser<'a> {
     pub fn parse_access_modifier(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<AccessModifier> {
+    ) -> Option<AccessModifier> {
         match self.next_significant_token() {
             Some(Token::Keyword(k)) if k.keyword == KeywordKind::Public => {
-                Ok(AccessModifier::Public(k))
+                Some(AccessModifier::Public(k))
             }
             Some(Token::Keyword(k)) if k.keyword == KeywordKind::Private => {
-                Ok(AccessModifier::Private(k))
+                Some(AccessModifier::Private(k))
             }
             Some(Token::Keyword(k)) if k.keyword == KeywordKind::Internal => {
-                Ok(AccessModifier::Internal(k))
+                Some(AccessModifier::Internal(k))
             }
             found => {
                 handler.receive(Error::AccessModifierExpected(AccessModifierExpected {
                     found: self.get_actual_found_token(found),
                 }));
-                Err(ParserError)
+                None
             }
         }
     }
@@ -1246,7 +1262,7 @@ impl<'a> Parser<'a> {
     fn parse_generic_parameters(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<GenericParameters> {
+    ) -> Option<GenericParameters> {
         let left_angle_bracket = self.parse_punctuation('<', true, handler)?;
         let (generic_parameter_list, right_angle_bracket) = self.parse_enclosed_list_manual(
             '>',
@@ -1256,12 +1272,12 @@ impl<'a> Parser<'a> {
                     // eat apostrophe
                     parser.forward();
 
-                    Ok(GenericParameter::Lifetime(LifetimeParameter {
+                    Some(GenericParameter::Lifetime(LifetimeParameter {
                         apostrophe,
                         identifier: parser.parse_identifier(handler)?,
                     }))
                 }
-                _ => Ok(GenericParameter::Type(TypeParameter {
+                _ => Some(GenericParameter::Type(TypeParameter {
                     identifier: parser.parse_identifier(handler)?,
                 })),
             },
@@ -1277,10 +1293,10 @@ impl<'a> Parser<'a> {
                         .expect("Span should be joint successfully"),
                 },
             ));
-            return Err(ParserError);
+            return None;
         };
 
-        Ok(GenericParameters {
+        Some(GenericParameters {
             left_angle_bracket,
             parameter_list: generic_parameter_list,
             right_angle_bracket,
@@ -1290,7 +1306,7 @@ impl<'a> Parser<'a> {
     fn parse_type_bound_constraint(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<TypeBoundConstraint> {
+    ) -> Option<TypeBoundConstraint> {
         match self.stop_at_significant() {
             Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat apostrophe
@@ -1299,13 +1315,13 @@ impl<'a> Parser<'a> {
                 let lifetime_argument_identifier =
                     self.parse_lifetime_argument_identifier(handler)?;
 
-                Ok(TypeBoundConstraint::LifetimeArgument(LifetimeArgument {
+                Some(TypeBoundConstraint::LifetimeArgument(LifetimeArgument {
                     apostrophe,
                     identifier: lifetime_argument_identifier,
                 }))
             }
 
-            _ => Ok(TypeBoundConstraint::TypeSpecifier(
+            _ => Some(TypeBoundConstraint::TypeSpecifier(
                 self.parse_type_specifier(handler)?,
             )),
         }
@@ -1314,17 +1330,17 @@ impl<'a> Parser<'a> {
     fn parse_lifetime_argument(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<LifetimeArgument> {
+    ) -> Option<LifetimeArgument> {
         let apostrophe = self.parse_punctuation('\'', true, handler)?;
         let identifier = self.parse_lifetime_argument_identifier(handler)?;
 
-        Ok(LifetimeArgument {
+        Some(LifetimeArgument {
             apostrophe,
             identifier,
         })
     }
 
-    fn parse_cosntraint(&mut self, handler: &impl Handler<Error>) -> ParserResult<Constraint> {
+    fn parse_cosntraint(&mut self, handler: &impl Handler<Error>) -> Option<Constraint> {
         match self.stop_at_significant() {
             // parses lifetime argument / bound
             Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
@@ -1343,7 +1359,7 @@ impl<'a> Parser<'a> {
                     let first = self.parse_lifetime_argument(handler)?;
                     let mut rest = Vec::new();
 
-                    while let Ok(plus) =
+                    while let Some(plus) =
                         self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
                     {
                         rest.push((plus, self.parse_lifetime_argument(handler)?));
@@ -1352,7 +1368,7 @@ impl<'a> Parser<'a> {
                     BoundList { first, rest }
                 };
 
-                Ok(Constraint::LifetimeBound(LifetimeBound {
+                Some(Constraint::LifetimeBound(LifetimeBound {
                     operand: lhs_lifetime_parameter,
                     colon,
                     arguments: lifetime_bounds,
@@ -1370,7 +1386,7 @@ impl<'a> Parser<'a> {
                             let first = self.parse_type_bound_constraint(handler)?;
                             let mut rest = Vec::new();
 
-                            while let Ok(plus) =
+                            while let Some(plus) =
                                 self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
                             {
                                 rest.push((plus, self.parse_type_bound_constraint(handler)?));
@@ -1379,7 +1395,7 @@ impl<'a> Parser<'a> {
                             BoundList { first, rest }
                         };
 
-                        Ok(Constraint::TypeBound(TypeBound {
+                        Some(Constraint::TypeBound(TypeBound {
                             type_specifier,
                             colon,
                             type_bound_constraints,
@@ -1388,7 +1404,7 @@ impl<'a> Parser<'a> {
 
                     found => match type_specifier {
                         TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
-                            Ok(Constraint::TraitBound(TraitBound {
+                            Some(Constraint::TraitBound(TraitBound {
                                 qualified_identifier,
                             }))
                         }
@@ -1398,7 +1414,7 @@ impl<'a> Parser<'a> {
                                 found: self.get_actual_found_token(found),
                             }));
 
-                            Err(ParserError)
+                            None
                         }
                     },
                 }
@@ -1406,7 +1422,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_where_clause(&mut self, handler: &impl Handler<Error>) -> ParserResult<WhereClause> {
+    fn parse_where_clause(&mut self, handler: &impl Handler<Error>) -> Option<WhereClause> {
         let where_keyword = self.parse_keyword(KeywordKind::Where, handler)?;
         let colon = self.parse_punctuation(':', true, handler)?;
 
@@ -1414,7 +1430,8 @@ impl<'a> Parser<'a> {
         let mut rest = Vec::new();
         let mut trailing_separator = None;
 
-        while let Ok(comma) = self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy)) {
+        while let Some(comma) = self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy))
+        {
             if matches!(self.stop_at_significant(), Some(Token::Punctuation(p))
                 if p.punctuation == '{' || p.punctuation == ';')
             {
@@ -1426,7 +1443,7 @@ impl<'a> Parser<'a> {
             rest.push((comma, constraint));
         }
 
-        Ok(WhereClause {
+        Some(WhereClause {
             where_keyword,
             colon,
             constraint_list: ConnectedList {
@@ -1437,26 +1454,27 @@ impl<'a> Parser<'a> {
         })
     }
 
+    #[allow(clippy::option_option)]
     fn try_parse_where_clause(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Option<WhereClause>> {
+    ) -> Option<Option<WhereClause>> {
         match self.stop_at_significant() {
             Some(Token::Keyword(where_keyword)) if where_keyword.keyword == KeywordKind::Where => {
                 self.parse_where_clause(handler).map(Some)
             }
-            _ => Ok(None),
+            _ => Some(None),
         }
     }
 
-    fn parse_function_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<FunctionBody> {
+    fn parse_function_body(&mut self, handler: &impl Handler<Error>) -> Option<FunctionBody> {
         let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
         let mut statements = Vec::new();
 
         while !self.is_exhausted() {
             // parse statements
-            if let Ok(statement) = self.parse_statement(handler) {
+            if let Some(statement) = self.parse_statement(handler) {
                 statements.push(statement);
                 continue;
             }
@@ -1473,7 +1491,7 @@ impl<'a> Parser<'a> {
 
         let right_brace = self.step_out(handler)?;
 
-        Ok(FunctionBody {
+        Some(FunctionBody {
             left_brace,
             statements,
             right_brace,
@@ -1483,7 +1501,7 @@ impl<'a> Parser<'a> {
     fn parse_function_signature(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<FunctionSignature> {
+    ) -> Option<FunctionSignature> {
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
 
@@ -1503,7 +1521,7 @@ impl<'a> Parser<'a> {
                 let identifier = parser.parse_identifier(handler)?;
                 let type_annotation = parser.parse_type_annotation(handler)?;
 
-                Ok(Parameter {
+                Some(Parameter {
                     mutable_keyword,
                     identifier,
                     type_annotation,
@@ -1527,7 +1545,7 @@ impl<'a> Parser<'a> {
 
         let where_clause = self.try_parse_where_clause(handler)?;
 
-        Ok(FunctionSignature {
+        Some(FunctionSignature {
             identifier,
             generic_parameters,
             parameters,
@@ -1536,28 +1554,29 @@ impl<'a> Parser<'a> {
         })
     }
 
+    #[allow(clippy::option_option)]
     fn try_parse_generic_parameters(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<Option<GenericParameters>> {
+    ) -> Option<Option<GenericParameters>> {
         if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '<')
         {
-            Ok(Some(self.parse_generic_parameters(handler)?))
+            Some(Some(self.parse_generic_parameters(handler)?))
         } else {
-            Ok(None)
+            Some(None)
         }
     }
 
     fn parse_implements_member(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<ImplementsMember> {
+    ) -> Option<ImplementsMember> {
         match self.stop_at_significant() {
             Some(Token::Identifier(..)) => {
                 let function_signature = self.parse_function_signature(handler)?;
                 let function_body = self.parse_function_body(handler)?;
 
-                Ok(ImplementsMember::Function(ImplementsFunction {
+                Some(ImplementsMember::Function(ImplementsFunction {
                     signature: function_signature,
                     body: function_body,
                 }))
@@ -1568,7 +1587,7 @@ impl<'a> Parser<'a> {
                 let type_definition = self.parse_type_definition(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                Ok(ImplementsMember::Type(ImplementsType {
+                Some(ImplementsMember::Type(ImplementsType {
                     signature: type_signature,
                     definition: type_definition,
                     semicolon,
@@ -1582,21 +1601,18 @@ impl<'a> Parser<'a> {
                         found: self.get_actual_found_token(found),
                     },
                 ));
-                Err(ParserError)
+                None
             }
         }
     }
 
-    fn parse_implements_body(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<ImplementsBody> {
+    fn parse_implements_body(&mut self, handler: &impl Handler<Error>) -> Option<ImplementsBody> {
         let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
         let mut implements_members = Vec::new();
 
         while !self.is_exhausted() {
-            if let Ok(member) = self.parse_implements_member(handler) {
+            if let Some(member) = self.parse_implements_member(handler) {
                 implements_members.push(member);
                 continue;
             }
@@ -1610,21 +1626,21 @@ impl<'a> Parser<'a> {
             .step_out(handler)
             .expect("All the tokens should be consumed");
 
-        Ok(ImplementsBody {
+        Some(ImplementsBody {
             left_brace,
             members: implements_members,
             right_brace,
         })
     }
 
-    fn parse_implements(&mut self, handler: &impl Handler<Error>) -> ParserResult<Implements> {
+    fn parse_implements(&mut self, handler: &impl Handler<Error>) -> Option<Implements> {
         let implements_keyword = self.parse_keyword(KeywordKind::Implements, handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
         let implements_body = self.parse_implements_body(handler)?;
 
-        Ok(Implements {
+        Some(Implements {
             signature: ImplementsSignature {
                 implements_keyword,
                 generic_parameters,
@@ -1635,16 +1651,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_trait_signature(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<TraitSignature> {
+    fn parse_trait_signature(&mut self, handler: &impl Handler<Error>) -> Option<TraitSignature> {
         let trait_keyword = self.parse_keyword(KeywordKind::Trait, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
 
-        Ok(TraitSignature {
+        Some(TraitSignature {
             trait_keyword,
             identifier,
             generic_parameters,
@@ -1652,13 +1665,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_trait_member(&mut self, handler: &impl Handler<Error>) -> ParserResult<TraitMember> {
+    fn parse_trait_member(&mut self, handler: &impl Handler<Error>) -> Option<TraitMember> {
         match self.stop_at_significant() {
             Some(Token::Identifier(..)) => {
                 let function_signature = self.parse_function_signature(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                Ok(TraitMember::Function(TraitFunction {
+                Some(TraitMember::Function(TraitFunction {
                     signature: function_signature,
                     semicolon,
                 }))
@@ -1668,7 +1681,7 @@ impl<'a> Parser<'a> {
                 let type_signature = self.parse_type_signature(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                Ok(TraitMember::Type(TraitType {
+                Some(TraitMember::Type(TraitType {
                     signature: type_signature,
                     semicolon,
                 }))
@@ -1681,18 +1694,18 @@ impl<'a> Parser<'a> {
                         found: self.get_actual_found_token(found),
                     },
                 ));
-                Err(ParserError)
+                None
             }
         }
     }
 
-    fn parse_trait_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<TraitBody> {
+    fn parse_trait_body(&mut self, handler: &impl Handler<Error>) -> Option<TraitBody> {
         let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
         let mut trait_members = Vec::new();
 
         while !self.is_exhausted() {
-            if let Ok(trait_member) = self.parse_trait_member(handler) {
+            if let Some(trait_member) = self.parse_trait_member(handler) {
                 trait_members.push(trait_member);
                 continue;
             }
@@ -1706,54 +1719,48 @@ impl<'a> Parser<'a> {
 
         let right_brace = self.step_out(handler)?;
 
-        Ok(TraitBody {
+        Some(TraitBody {
             left_brace,
             members: trait_members,
             right_brace,
         })
     }
 
-    fn parse_type_signature(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<TypeSignature> {
+    fn parse_type_signature(&mut self, handler: &impl Handler<Error>) -> Option<TypeSignature> {
         let type_keyword = self.parse_keyword(KeywordKind::Type, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
 
-        Ok(TypeSignature {
+        Some(TypeSignature {
             type_keyword,
             identifier,
             generic_parameters,
         })
     }
 
-    fn parse_type_definition(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<TypeDefinition> {
+    fn parse_type_definition(&mut self, handler: &impl Handler<Error>) -> Option<TypeDefinition> {
         let equals = self.parse_punctuation('=', true, handler)?;
         let type_specifier = self.parse_type_specifier(handler)?;
 
-        Ok(TypeDefinition {
+        Some(TypeDefinition {
             equals,
             type_specifier,
         })
     }
 
-    fn parse_struct_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<StructBody> {
+    fn parse_struct_body(&mut self, handler: &impl Handler<Error>) -> Option<StructBody> {
         let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
         let mut struct_members = Vec::new();
 
         while !self.is_exhausted() {
-            let result: Result<StructMember, ParserError> = (|| {
+            let result: Option<StructMember> = (|| {
                 let access_modifier = self.parse_access_modifier(handler)?;
                 let identifier = self.parse_identifier(handler)?;
                 let type_annotation = self.parse_type_annotation(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                Ok(StructMember::Field(StructField {
+                Some(StructMember::Field(StructField {
                     access_modifier,
                     identifier,
                     type_annotation,
@@ -1762,7 +1769,7 @@ impl<'a> Parser<'a> {
             })();
 
             // pushes a result
-            if let Ok(struct_member) = result {
+            if let Some(struct_member) = result {
                 struct_members.push(struct_member);
                 continue;
             }
@@ -1780,23 +1787,20 @@ impl<'a> Parser<'a> {
 
         let right_brace = self.step_out(handler)?;
 
-        Ok(StructBody {
+        Some(StructBody {
             left_brace,
             members: struct_members,
             right_brace,
         })
     }
 
-    fn parse_struct_signature(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<StructSignature> {
+    fn parse_struct_signature(&mut self, handler: &impl Handler<Error>) -> Option<StructSignature> {
         let struct_keyword = self.parse_keyword(KeywordKind::Struct, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
 
-        Ok(StructSignature {
+        Some(StructSignature {
             struct_keyword,
             identifier,
             generic_parameters,
@@ -1804,34 +1808,28 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum_signature(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<EnumSignature> {
+    fn parse_enum_signature(&mut self, handler: &impl Handler<Error>) -> Option<EnumSignature> {
         let enum_keyword = self.parse_keyword(KeywordKind::Enum, handler)?;
         let identifier = self.parse_identifier(handler)?;
 
-        Ok(EnumSignature {
+        Some(EnumSignature {
             enum_keyword,
             identifier,
         })
     }
 
-    fn parse_enum_body(&mut self, handler: &impl Handler<Error>) -> ParserResult<EnumBody> {
+    fn parse_enum_body(&mut self, handler: &impl Handler<Error>) -> Option<EnumBody> {
         let body =
             self.parse_enclosed_tree(Delimiter::Brace, ',', Parser::parse_identifier, handler)?;
 
-        Ok(EnumBody {
+        Some(EnumBody {
             left_brace: body.open,
             variant_list: body.list,
             right_brace: body.close,
         })
     }
 
-    fn parse_item_with_access_modifier(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<Item> {
+    fn parse_item_with_access_modifier(&mut self, handler: &impl Handler<Error>) -> Option<Item> {
         let access_modifier = self.parse_access_modifier(handler)?;
 
         match self.stop_at_significant() {
@@ -1840,7 +1838,7 @@ impl<'a> Parser<'a> {
                 let function_signature = self.parse_function_signature(handler)?;
                 let function_body = self.parse_function_body(handler)?;
 
-                Ok(Item::Function(Function {
+                Some(Item::Function(Function {
                     access_modifier,
                     signature: function_signature,
                     body: function_body,
@@ -1852,7 +1850,7 @@ impl<'a> Parser<'a> {
                 let trait_signature = self.parse_trait_signature(handler)?;
                 let trait_body = self.parse_trait_body(handler)?;
 
-                Ok(Item::Trait(Trait {
+                Some(Item::Trait(Trait {
                     access_modifier,
                     signature: trait_signature,
                     body: trait_body,
@@ -1864,7 +1862,7 @@ impl<'a> Parser<'a> {
                 let struct_signature = self.parse_struct_signature(handler)?;
                 let struct_body = self.parse_struct_body(handler)?;
 
-                Ok(Item::Struct(Struct {
+                Some(Item::Struct(Struct {
                     access_modifier,
                     signature: struct_signature,
                     body: struct_body,
@@ -1877,7 +1875,7 @@ impl<'a> Parser<'a> {
                 let type_definition = self.parse_type_definition(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                Ok(Item::Type(Type {
+                Some(Item::Type(Type {
                     access_modifier,
                     signature: type_signature,
                     definition: type_definition,
@@ -1890,7 +1888,7 @@ impl<'a> Parser<'a> {
                 let enum_signature = self.parse_enum_signature(handler)?;
                 let enum_body = self.parse_enum_body(handler)?;
 
-                Ok(Item::Enum(Enum {
+                Some(Item::Enum(Enum {
                     access_modifier,
                     signature: enum_signature,
                     body: enum_body,
@@ -1902,14 +1900,14 @@ impl<'a> Parser<'a> {
                 handler.receive(Error::ItemExpected(ItemExpected {
                     found: self.get_actual_found_token(found),
                 }));
-                Err(ParserError)
+                None
             }
         }
     }
 
     /// Parses an [`Item`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_item(&mut self, handler: &impl Handler<Error>) -> ParserResult<Item> {
+    pub fn parse_item(&mut self, handler: &impl Handler<Error>) -> Option<Item> {
         match self.stop_at_significant() {
             // parses an item with an access modifier
             Some(Token::Keyword(access_modifier))
@@ -1931,7 +1929,7 @@ impl<'a> Parser<'a> {
                 handler.receive(Error::ItemExpected(ItemExpected {
                     found: self.get_actual_found_token(found),
                 }));
-                Err(ParserError)
+                None
             }
         }
     }

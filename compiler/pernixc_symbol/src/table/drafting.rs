@@ -27,13 +27,23 @@ pub(super) enum SymbolState {
     Constructing { constructing_order: usize },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(super) struct States {
     symbol_states_by_id: HashMap<ID, SymbolState>,
     current_constructing_order: usize,
+    implements_syntax_tree_with_module_id_vecs_by_trait_id:
+        HashMap<arena::ID<Trait>, Vec<ImplementsSyntaxTreeWithModuleID>>,
 }
 
 impl States {
+    pub(super) fn remvoe_implements_syntax_tree_with_module_ids_by_trait_id(
+        &mut self,
+        trait_id: arena::ID<Trait>,
+    ) -> Option<Vec<ImplementsSyntaxTreeWithModuleID>> {
+        self.implements_syntax_tree_with_module_id_vecs_by_trait_id
+            .remove(&trait_id)
+    }
+
     pub(super) fn get_current_state(&mut self, id: ID) -> Option<SymbolState> {
         self.symbol_states_by_id.get(&id).copied()
     }
@@ -126,7 +136,7 @@ impl Table {
         &mut self,
         targets: Vec<Target>,
         handler: &impl Handler<Error>,
-    ) -> (States, Vec<ImplementsSyntaxTreeWithModuleID>) {
+    ) -> States {
         let mut symbol_states_by_id = HashMap::new();
         let mut implements_syntax_tree_with_module_ids = Vec::new();
 
@@ -144,13 +154,33 @@ impl Table {
                 handler,
             );
         }
-        (
-            States {
-                symbol_states_by_id,
-                current_constructing_order: 0,
-            },
-            implements_syntax_tree_with_module_ids,
-        )
+
+        let mut states = States {
+            symbol_states_by_id,
+            current_constructing_order: 0,
+            implements_syntax_tree_with_module_id_vecs_by_trait_id: HashMap::new(),
+        };
+
+        for implements_syntax_tree_with_module_id in implements_syntax_tree_with_module_ids {
+            let Some(trait_id) = self.resolve_trait_path(
+                implements_syntax_tree_with_module_id
+                    .implements
+                    .signature()
+                    .qualified_identifier(),
+                implements_syntax_tree_with_module_id.module_id.into(),
+                handler,
+            ) else {
+                continue;
+            };
+
+            states
+                .implements_syntax_tree_with_module_id_vecs_by_trait_id
+                .entry(trait_id)
+                .or_default()
+                .push(implements_syntax_tree_with_module_id);
+        }
+
+        states
     }
 
     fn draft_symbols_in_file(

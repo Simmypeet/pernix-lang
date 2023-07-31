@@ -2,12 +2,12 @@
 //! resolution/analysis.
 
 use pernixc_print::LogSeverity;
-use pernixc_source::Span;
+use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::item::StructField;
 use pernixc_system::arena;
 
 use crate::{
-    table::Table, ty, Field, Function, GlobalID, ImplementsFunction, LifetimeArgument,
+    table::Table, ty, Field, Function, GlobalID, Implements, ImplementsFunction, LifetimeArgument,
     LifetimeParameter, Module, Parameter, Struct, Symbol, TraitBound, TraitFunction, TraitMemberID,
     TypeParameter, ID,
 };
@@ -46,10 +46,13 @@ pub struct ModuleNotFound {
 impl ModuleNotFound {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// - If the module with the given ID does not exist in the table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
-        let in_module = table.modules().get_as_ok(self.in_module_id)?;
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let Some(in_module) = table.modules().get(self.in_module_id) else {
+            return false;
+        };
 
         pernixc_print::print(
             LogSeverity::Error,
@@ -63,7 +66,7 @@ impl ModuleNotFound {
 
         pernixc_print::print_source_code(&self.unknown_module_span, None);
 
-        Ok(())
+        true
     }
 }
 
@@ -150,10 +153,14 @@ pub struct SymbolRedefinition<T> {
 impl<T: Into<ID> + Clone> SymbolRedefinition<T> {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// If the `Self::previous_definition_id` is not in the passed table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
-        let previous_definition = table.get_symbol(self.previous_definition_id.clone().into())?;
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    pub fn print(&self, table: &Table) -> bool {
+        let Some(previous_definition) =
+            table.get_symbol(self.previous_definition_id.clone().into())
+        else {
+            return false;
+        };
 
         pernixc_print::print(
             LogSeverity::Error,
@@ -172,7 +179,7 @@ impl<T: Into<ID> + Clone> SymbolRedefinition<T> {
             );
         }
 
-        Ok(())
+        true
     }
 }
 
@@ -209,15 +216,18 @@ pub struct FieldMoreAccessibleThanStruct {
     pub struct_id: arena::ID<Struct>,
 }
 
-/// The symbol is already defined in the current scope.
 impl FieldMoreAccessibleThanStruct {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// If the `Self::field_id` or `Self::struct_id` are not in the passed table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
-        let field_sym = table.fields().get_as_ok(self.field_id)?;
-        let struct_sym = table.structs().get_as_ok(self.struct_id)?;
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    pub fn print(&self, table: &Table) -> bool {
+        let (Some(field_sym), Some(struct_sym)) = (
+            table.fields().get(self.field_id),
+            table.structs().get(self.struct_id),
+        ) else {
+            return false;
+        };
 
         pernixc_print::print(
             LogSeverity::Error,
@@ -238,7 +248,7 @@ impl FieldMoreAccessibleThanStruct {
             );
         }
 
-        Ok(())
+        true
     }
 }
 
@@ -252,15 +262,16 @@ pub struct CyclicDependency {
 impl CyclicDependency {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// If any of the participants are not in the passed table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
-        let iter: Result<Vec<_>, arena::Error> = self
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let iter: Option<Vec<_>> = self
             .participants
             .iter()
             .map(|x| table.get_symbol(*x))
             .collect();
-        let iter = iter?;
+        let Some(iter) = iter else { return false };
 
         pernixc_print::print(LogSeverity::Error, "cyclic dependency found");
 
@@ -270,7 +281,7 @@ impl CyclicDependency {
             }
         }
 
-        Ok(())
+        true
     }
 }
 
@@ -287,19 +298,22 @@ pub struct ResolutionAmbiguity {
 impl ResolutionAmbiguity {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// If any of the candidates are not in the passed table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
         pernixc_print::print(LogSeverity::Error, "resolution ambiguity found");
 
         pernixc_print::print_source_code(&self.span, None);
 
-        let iter: Result<Vec<_>, arena::Error> = self
+        let iter: Option<Vec<_>> = self
             .candidates
             .iter()
             .map(|x| table.get_global(*x))
             .collect();
-        let iter = iter?;
+        let Some(iter) = iter else {
+            return false;
+        };
 
         for candidate in iter {
             if let Some(candidate_span) = candidate.symbol_span() {
@@ -307,7 +321,7 @@ impl ResolutionAmbiguity {
             }
         }
 
-        Ok(())
+        true
     }
 }
 
@@ -324,10 +338,13 @@ pub struct SymbolNotFound {
 impl SymbolNotFound {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// If the `Self::searched_global_id` is not in the passed table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
-        let global_name = table.get_qualified_name(self.searched_global_id)?;
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let Some(global_name) = table.get_qualified_name(self.searched_global_id) else {
+            return false;
+        };
 
         pernixc_print::print(
             LogSeverity::Error,
@@ -340,7 +357,7 @@ impl SymbolNotFound {
 
         pernixc_print::print_source_code(&self.symbol_reference_span, None);
 
-        Ok(())
+        true
     }
 }
 
@@ -429,12 +446,16 @@ pub struct LifetimeParameterShadowing {
 impl LifetimeParameterShadowing {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// If the `Self::shadowed_lifetime_parameter_id` is not in the passed table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
-        let previous_lifetime_parameter = table
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let Some(previous_lifetime_parameter) = table
             .lifetime_parameters()
-            .get_as_ok(self.shadowed_lifetime_parameter_id)?;
+            .get(self.shadowed_lifetime_parameter_id)
+        else {
+            return false;
+        };
 
         pernixc_print::print(
             LogSeverity::Error,
@@ -453,7 +474,7 @@ impl LifetimeParameterShadowing {
             );
         }
 
-        Ok(())
+        true
     }
 }
 
@@ -470,12 +491,15 @@ pub struct TypeParameterShadowing {
 impl TypeParameterShadowing {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// If the `Self::shadowed_type_parameter_id` is not in the passed table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
-        let previous_type_parameter = table
-            .type_parameters()
-            .get_as_ok(self.shadowed_type_parameter_id)?;
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let Some(previous_type_parameter) =
+            table.type_parameters().get(self.shadowed_type_parameter_id)
+        else {
+            return false;
+        };
 
         pernixc_print::print(
             LogSeverity::Error,
@@ -494,7 +518,7 @@ impl TypeParameterShadowing {
             );
         }
 
-        Ok(())
+        true
     }
 }
 
@@ -706,6 +730,104 @@ pub struct TypeDoesNotOutliveLifetimeArgument {
     pub generics_identifier_span: Span,
 }
 
+/// There was already an implements with the same/similar specialization.
+#[derive(Debug, Clone)]
+pub struct AmbiguousImplements {
+    /// The existing implements.
+    pub existing_implements: arena::ID<Implements>,
+
+    /// The span to the new implements.
+    pub new_implements_span: Span,
+}
+
+/// The trait type bound with this type has already been specified in another scope.
+#[derive(Debug, Clone)]
+pub struct TraitTypeBoundHasAlreadyBeenSpecified {
+    /// The span to the trait type bound.
+    pub trait_type_bound_span: Span,
+}
+
+impl TraitTypeBoundHasAlreadyBeenSpecified {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "the trait type bound with this type has already been specified in another scope",
+        );
+
+        pernixc_print::print_source_code(&self.trait_type_bound_span, None);
+    }
+}
+
+impl AmbiguousImplements {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Returns
+    /// Returns `true` if the error was printed, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let Some(existing_implements) = table.implements().get(self.existing_implements) else {
+            return false;
+        };
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            "ambiguous implements, there was already an implements with the same/similar \
+             specialization",
+        );
+
+        pernixc_print::print_source_code(&self.new_implements_span, None);
+
+        if let Some(existing_implements_signature) = existing_implements.syntax_tree.as_ref() {
+            pernixc_print::print_source_code(
+                &existing_implements_signature.span(),
+                Some("existing implements"),
+            );
+        }
+
+        true
+    }
+}
+
+/// The type parameters weren't all used.
+#[derive(Debug, Clone)]
+pub struct UnusedTypeParameters {
+    /// List of type parameters that aren't used.
+    pub unused_type_parameters: Vec<arena::ID<TypeParameter>>,
+
+    /// The span to the generic parameters that contain the type parameters.
+    pub generic_parameters_span: Span,
+}
+
+impl UnusedTypeParameters {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let names: Option<Vec<String>> = self
+            .unused_type_parameters
+            .iter()
+            .map(|id| table.type_parameters().get(*id).map(|ty| ty.name.clone()))
+            .collect();
+        let Some(names) = names else {
+            return false;
+        };
+
+        let names = names.join(", ");
+
+        pernixc_print::print(
+            LogSeverity::Warning,
+            &format!("unused type parameters: {names}"),
+        );
+
+        pernixc_print::print_source_code(&self.generic_parameters_span, None);
+
+        true
+    }
+}
+
 /// Is an enumeration of all errors occurring during the symbol resolution/analysis.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
@@ -718,6 +840,7 @@ pub enum Error {
     SymbolRedefinition(SymbolRedefinition<GlobalID>),
     LifetimeParameterRedefinition(SymbolRedefinition<arena::ID<LifetimeParameter>>),
     TypeParameterRedefinition(SymbolRedefinition<arena::ID<TypeParameter>>),
+    AmbiguousImplements(AmbiguousImplements),
     LifetimeArgumentMustBeSuppliedPriorToTypeArgument(
         LifetimeArgumentMustBeSuppliedPriorToTypeArgument,
     ),
@@ -754,42 +877,45 @@ pub enum Error {
     TraitTypeBoundNotSatisfied(TraitTypeBoundNotSatisfied),
     NoMemberOnThisImplementsFunction(NoMemberOnThisImplementsFunction),
     TypeDoesNotOutliveLifetimeArgument(TypeDoesNotOutliveLifetimeArgument),
+    TraitTypeBoundHasAlreadyBeenSpecified(TraitTypeBoundHasAlreadyBeenSpecified),
+    UnusedTypeParameters(UnusedTypeParameters),
 }
 
 impl Error {
     /// Prints the error message to the stdout.
     ///
-    /// # Errors
-    /// If this error instance did not come from the given table.
-    pub fn print(&self, table: &Table) -> Result<(), arena::Error> {
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
         match self {
             Self::TypeExpected(err) => {
                 err.print();
-                Ok(())
+                true
             }
             Self::TargetNotFound(err) => {
                 err.print();
-                Ok(())
+                true
             }
             Self::ModuleNotFound(err) => err.print(table),
             Self::UsingDuplication(err) => {
                 err.print();
-                Ok(())
+                true
             }
             Self::UsingOwnModule(err) => {
                 err.print();
-                Ok(())
+                true
             }
             Self::SymbolRedefinition(err) => err.print(table),
             Self::LifetimeParameterRedefinition(err) => err.print(table),
             Self::TypeParameterRedefinition(err) => err.print(table),
             Self::LifetimeArgumentMustBeSuppliedPriorToTypeArgument(err) => {
                 err.print();
-                Ok(())
+                true
             }
             Self::LifetimeParameterMustBeDeclaredPriorToTypeParameter(err) => {
                 err.print();
-                Ok(())
+                true
             }
             Self::FunctionParameterRedefinition(err) => err.print(table),
             Self::TraitFunctionParameterRedefinition(err) => err.print(table),
@@ -801,14 +927,20 @@ impl Error {
             Self::ResolutionAmbiguity(err) => err.print(table),
             Self::ModuleExpected(err) => {
                 err.print();
-                Ok(())
+                true
             }
             Self::InvalidTraitPath(err) => {
                 err.print();
-                Ok(())
+                true
+            }
+            Self::UnusedTypeParameters(err) => err.print(table),
+            Self::SymbolNotFound(err) => err.print(table),
+            Self::AmbiguousImplements(err) => err.print(table),
+            Self::TraitTypeBoundHasAlreadyBeenSpecified(err) => {
+                err.print();
+                true
             }
             Self::NoMemberOnThisImplementsFunction(_)
-            | Self::SymbolNotFound(_)
             | Self::TraitExpected(_)
             | Self::LifetimeParameterShadowing(_)
             | Self::TypeParameterShadowing(_)
@@ -824,7 +956,7 @@ impl Error {
             | Self::LifetimeDoesNotOutlive(_)
             | Self::TypeDoesNotOutliveLifetimeArgument(_)
             | Self::TraitTypeBoundNotSatisfied(_)
-            | Self::TraitBoundNotSatisfied(_) => Ok(()),
+            | Self::TraitBoundNotSatisfied(_) => true,
         }
     }
 }

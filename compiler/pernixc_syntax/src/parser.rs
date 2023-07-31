@@ -7,7 +7,6 @@ use pernixc_lexical::{
     token_stream::{Delimited, Delimiter, TokenStream, TokenTree},
 };
 use pernixc_system::diagnostic::Handler;
-use thiserror::Error;
 
 use crate::error::{
     Error as SyntacticError, IdentifierExpected, KeywordExpected, PunctuationExpected,
@@ -42,17 +41,6 @@ pub struct Frame<'a> {
 
     current_index: usize,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
-#[error(
-    "Is an error that occurs when encountering a fatal syntax error that stops the creation of \
-     the syntax tree completely."
-)]
-#[allow(missing_docs)]
-pub struct Error;
-
-/// Is a specialized [`Result`] type for the parser.
-pub type Result<T> = std::result::Result<T, Error>;
 
 impl<'a> Frame<'a> {
     pub(crate) fn get_actual_found_token(&self, found: Option<Token>) -> Option<Token> {
@@ -235,7 +223,7 @@ impl<'a> Parser<'a> {
         &mut self,
         delimiter: Delimiter,
         handler: &impl Handler<SyntacticError>,
-    ) -> Result<Punctuation> {
+    ) -> Option<Punctuation> {
         self.current_frame.stop_at_significant();
         let raw_token_tree = self
             .current_frame
@@ -268,7 +256,7 @@ impl<'a> Parser<'a> {
                         }),
                     }));
 
-                    return Err(Error);
+                    return None;
                 }
             }
         } else {
@@ -277,7 +265,7 @@ impl<'a> Parser<'a> {
                 found: self.get_actual_found_token(None),
             }));
 
-            return Err(Error);
+            return None;
         };
 
         // creates a new frame
@@ -290,7 +278,7 @@ impl<'a> Parser<'a> {
         self.stack
             .push(std::mem::replace(&mut self.current_frame, new_frame));
 
-        Ok(delimited_stream.open.clone())
+        Some(delimited_stream.open.clone())
     }
 
     /// Steps out from the current frame, replacing it with the frame on top of the stack.
@@ -300,14 +288,14 @@ impl<'a> Parser<'a> {
     ///
     /// # Returns
     /// The close punctuation token of the delimited token tree.
-    pub fn step_out(&mut self, handler: &impl Handler<SyntacticError>) -> Result<Punctuation> {
+    pub fn step_out(&mut self, handler: &impl Handler<SyntacticError>) -> Option<Punctuation> {
         if let Some(threshold) = self.trying_stack.last().copied() {
             assert!(self.stack.len() > threshold);
         }
 
         // pops the current frame off the stack
         let Some(new_frame) = self.stack.pop() else {
-            return Err(Error);
+            return None;
         };
 
         // the current frame must be at the end
@@ -341,31 +329,28 @@ impl<'a> Parser<'a> {
         // replaces the current frame with the popped one
         self.current_frame = new_frame;
 
-        Ok(close_punctuation)
+        Some(close_punctuation)
     }
 
     /// Performs a rollback if the parsing fails.
     #[allow(clippy::missing_errors_doc)]
-    pub fn try_parse<T>(&mut self, parser: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+    pub fn try_parse<T>(&mut self, parser: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
         let current_frame_copy = self.current_frame.clone();
         self.trying_stack.push(self.stack.len());
 
-        match parser(self) {
-            Ok(value) => {
-                self.trying_stack.pop();
-                Ok(value)
-            }
-            Err(err) => {
-                let stack_len = self.trying_stack.pop().unwrap();
+        if let Some(value) = parser(self) {
+            self.trying_stack.pop();
+            Some(value)
+        } else {
+            let stack_len = self.trying_stack.pop().unwrap();
 
-                // the stack must be the same as before the call
-                self.stack.truncate(stack_len);
+            // the stack must be the same as before the call
+            self.stack.truncate(stack_len);
 
-                // restore the current Frame
-                self.current_frame = current_frame_copy;
+            // restore the current Frame
+            self.current_frame = current_frame_copy;
 
-                Err(err)
-            }
+            None
         }
     }
 
@@ -376,14 +361,14 @@ impl<'a> Parser<'a> {
     pub fn parse_identifier(
         &mut self,
         handler: &impl Handler<SyntacticError>,
-    ) -> Result<Identifier> {
+    ) -> Option<Identifier> {
         match self.next_significant_token() {
-            Some(Token::Identifier(ident)) => Ok(ident),
+            Some(Token::Identifier(ident)) => Some(ident),
             found => {
                 handler.receive(SyntacticError::IdentifierExpected(IdentifierExpected {
                     found: self.get_actual_found_token(found),
                 }));
-                Err(Error)
+                None
             }
         }
     }
@@ -396,17 +381,17 @@ impl<'a> Parser<'a> {
         &mut self,
         expected: KeywordKind,
         handler: &impl Handler<SyntacticError>,
-    ) -> Result<Keyword> {
+    ) -> Option<Keyword> {
         match self.next_significant_token() {
             Some(Token::Keyword(keyword_token)) if keyword_token.keyword == expected => {
-                Ok(keyword_token)
+                Some(keyword_token)
             }
             found => {
                 handler.receive(SyntacticError::KeywordExpected(KeywordExpected {
                     expected,
                     found: self.get_actual_found_token(found),
                 }));
-                Err(Error)
+                None
             }
         }
     }
@@ -420,7 +405,7 @@ impl<'a> Parser<'a> {
         expected: char,
         skip_insignificant: bool,
         handler: &impl Handler<SyntacticError>,
-    ) -> Result<Punctuation> {
+    ) -> Option<Punctuation> {
         match if skip_insignificant {
             self.next_significant_token()
         } else {
@@ -429,14 +414,14 @@ impl<'a> Parser<'a> {
             Some(Token::Punctuation(punctuation_token))
                 if punctuation_token.punctuation == expected =>
             {
-                Ok(punctuation_token)
+                Some(punctuation_token)
             }
             found => {
                 handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
                     expected,
                     found: self.get_actual_found_token(found),
                 }));
-                Err(Error)
+                None
             }
         }
     }

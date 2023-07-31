@@ -4,7 +4,7 @@ use pernixc_source::SourceElement;
 use pernixc_syntax::syntax_tree::target::{File, ModulePath, Target, Using};
 use pernixc_system::{arena, diagnostic::Handler};
 
-use super::{BuildError, CoreTargetNameError, Error, FatalSemantic, Table, TargetDuplicationError};
+use super::{BuildError, CoreTargetNameError, Table, TargetDuplicationError};
 use crate::{
     error::{self, ModuleNotFound, TargetNotFound, UsingOwnModule},
     Accessibility, Module,
@@ -86,7 +86,7 @@ impl Table {
         &self,
         module_path: &ModulePath,
         handler: &impl Handler<error::Error>,
-    ) -> Result<arena::ID<Module>, Error> {
+    ) -> Option<arena::ID<Module>> {
         let mut current_module_id = None;
 
         for path in module_path.paths() {
@@ -101,7 +101,7 @@ impl Table {
                         in_module_id: module_id,
                         unknown_module_span: path.span.clone(),
                     }));
-                    return Err(Error::FatalSemantic(FatalSemantic));
+                    return None;
                 };
 
                 current_module_id = Some(new_module_id.into_module().unwrap());
@@ -115,14 +115,14 @@ impl Table {
                     handler.receive(error::Error::TargetNotFound(TargetNotFound {
                         unknown_target_span: path.span.clone(),
                     }));
-                    return Err(Error::FatalSemantic(FatalSemantic));
+                    return None;
                 };
 
                 current_module_id = Some(module_id);
             }
         }
 
-        Ok(current_module_id.unwrap())
+        Some(current_module_id.unwrap())
     }
 
     fn populate_usings_in_module(
@@ -135,7 +135,7 @@ impl Table {
 
         for using in usings {
             // resolve module_path
-            let Ok(using_module_id) =
+            let Some(using_module_id) =
                 self.get_module_id_from_module_path(&using.module_path, handler)
             else {
                 continue;

@@ -101,14 +101,13 @@ pub fn run(argument: &Argument) {
 
     let symbol_errors: Storage<pernixc_symbol::error::Error> = Storage::new();
     let table = Table::build(vec![target], &symbol_errors).unwrap();
+    dbg!(&symbol_errors);
 
     {
         let error_vec = symbol_errors.into_vec();
         if !error_vec.is_empty() {
             for error in &error_vec {
-                error
-                    .print(&table)
-                    .expect("should be able to print successfully");
+                assert!(error.print(&table));
                 println!();
             }
             std::process::exit(1);

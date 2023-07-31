@@ -1,3 +1,7 @@
-private struct Test<T, 'a> {
-    public test: int32;
-}
+public module inner;
+
+public trait Test {} 
+
+implements Test {}
+
+public struct Test {}

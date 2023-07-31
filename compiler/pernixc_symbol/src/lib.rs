@@ -170,6 +170,9 @@ pub struct Implements {
     /// The trait that is implemented.
     pub trait_id: arena::ID<Trait>,
 
+    /// The module where the implements is defined in.
+    pub parent_module_id: arena::ID<Module>,
+
     /// The name of the trait that is implemented.
     pub name: String,
 
@@ -177,7 +180,7 @@ pub struct Implements {
     pub substitution: Substitution,
 
     /// The syntax tree that was used to create this symbol.
-    pub syntax_tree: Option<syntax_tree::item::Implements>,
+    pub syntax_tree: Option<syntax_tree::item::ImplementsSignature>,
 
     /// Maps associated type to their type implementation.
     pub implements_types_by_trait_type: HashMap<arena::ID<TraitType>, arena::ID<ImplementsType>>,
@@ -190,7 +193,7 @@ pub struct Implements {
 impl Symbol for arena::Symbol<Implements> {
     fn id(&self) -> ID { self.id().into() }
 
-    fn parent_symbol(&self) -> Option<ID> { None }
+    fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
 
     // implements doesn't have name
     fn name(&self) -> &str { &self.name }
@@ -198,7 +201,7 @@ impl Symbol for arena::Symbol<Implements> {
     fn symbol_span(&self) -> Option<Span> {
         self.syntax_tree
             .as_ref()
-            .map(|x| x.signature().qualified_identifier().span())
+            .map(|x| x.qualified_identifier().span())
     }
 }
 

@@ -26,7 +26,6 @@ use std::{
 
 use getset::{CopyGetters, Getters};
 use tempfile::TempDir;
-use thiserror::Error;
 
 /// Represents an source file input for the compiler.
 #[derive(Getters)]
@@ -266,11 +265,6 @@ pub struct Location {
     pub column: usize,
 }
 
-/// Is an error that occurs related to [`Span`] operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
-#[error("Is an error that occurs related to `Span` operations.")]
-pub struct SpanError;
-
 impl Span {
     /// Creates a span from the given start and end byte indices in the source file.
     ///
@@ -323,16 +317,13 @@ impl Span {
     pub fn end_location(&self) -> Option<Location> { self.source_file.get_location(self.end) }
 
     /// Joins the starting position of this span with the end position of the given span.
-    ///
-    /// # Errors
-    /// Returns [`Err`] if the spans are not in the same source file or if the end of this span is
-    /// after the start of the given span.
-    pub fn join(&self, end: &Self) -> Result<Self, SpanError> {
+    #[must_use]
+    pub fn join(&self, end: &Self) -> Option<Self> {
         if !Arc::ptr_eq(&self.source_file, &end.source_file) || self.start > end.end {
-            return Err(SpanError);
+            return None;
         }
 
-        Ok(Self {
+        Some(Self {
             start: self.start,
             end: end.end,
             source_file: self.source_file.clone(),

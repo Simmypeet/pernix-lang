@@ -15,7 +15,7 @@ use crate::{
         self, Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected,
         PunctuationExpected, TypeSpecifierExpected,
     },
-    parser::{self, Error as ParserError, Parser, Result as ParserResult, TokenProvider},
+    parser::{Parser, TokenProvider},
 };
 
 pub mod expression;
@@ -56,9 +56,9 @@ impl<'a> Parser<'a> {
         &mut self,
         delimiter: char,
         separator: char,
-        mut parse_item: impl FnMut(&mut Self) -> parser::Result<T>,
+        mut parse_item: impl FnMut(&mut Self) -> Option<T>,
         handler: &impl Handler<error::Error>,
-    ) -> parser::Result<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
+    ) -> Option<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
         let mut first = None;
         let mut rest = Vec::new();
         let mut trailing_separator = None;
@@ -67,7 +67,7 @@ impl<'a> Parser<'a> {
         match self.stop_at_significant() {
             Some(Token::Punctuation(punc)) if punc.punctuation == delimiter => {
                 self.next_token();
-                return Ok((None, punc));
+                return Some((None, punc));
             }
             None => handler.receive(error::Error::PunctuationExpected(PunctuationExpected {
                 expected: delimiter,
@@ -76,7 +76,7 @@ impl<'a> Parser<'a> {
             _ => (),
         }
 
-        if let Ok(value) = parse_item(self) {
+        if let Some(value) = parse_item(self) {
             first = Some(value);
         } else {
             let token = self.stop_at(|token| match token {
@@ -90,7 +90,7 @@ impl<'a> Parser<'a> {
             if let Some(Token::Punctuation(token)) = token {
                 if token.punctuation == delimiter {
                     self.next_token();
-                    return Ok((None, token));
+                    return Some((None, token));
                 }
             }
         }
@@ -117,7 +117,7 @@ impl<'a> Parser<'a> {
                     }
 
                     parse_item(self).map_or_else(
-                        |_| {
+                        || {
                             self.stop_at(|token| {
                                 matches!(
                                     token,
@@ -148,12 +148,12 @@ impl<'a> Parser<'a> {
                         expected: delimiter,
                         found,
                     }));
-                    return Err(parser::Error);
+                    return None;
                 }
             }
         };
 
-        Ok((
+        Some((
             first.map(|first| ConnectedList {
                 first,
                 rest,
@@ -192,9 +192,9 @@ impl<'a> Parser<'a> {
         &mut self,
         delimiter: Delimiter,
         separator: char,
-        mut f: impl FnMut(&mut Self, &H) -> ParserResult<T>,
+        mut f: impl FnMut(&mut Self, &H) -> Option<T>,
         handler: &H,
-    ) -> ParserResult<EnclosedList<T>> {
+    ) -> Option<EnclosedList<T>> {
         fn skip_to_next_separator(this: &mut Parser, separator: char) {
             // skip to next separator
             if this
@@ -220,7 +220,7 @@ impl<'a> Parser<'a> {
         let mut trailing_separator: Option<Punctuation> = None;
 
         while !self.is_exhausted() {
-            let Ok(element) = f(self, handler) else {
+            let Some(element) = f(self, handler) else {
                 skip_to_next_separator(self, separator);
                 continue;
             };
@@ -239,7 +239,7 @@ impl<'a> Parser<'a> {
 
             // expect separator if not exhausted
             if !self.is_exhausted() {
-                let Ok(separator) = self.parse_punctuation(separator, true, handler) else {
+                let Some(separator) = self.parse_punctuation(separator, true, handler) else {
                     skip_to_next_separator(self, separator);
                     continue;
                 };
@@ -253,7 +253,7 @@ impl<'a> Parser<'a> {
             .step_out(handler)
             .expect("must be able to step out, the list is exhausted");
 
-        Ok(EnclosedList {
+        Some(EnclosedList {
             open,
             list: first.map(|first| ConnectedList {
                 first,
@@ -715,11 +715,11 @@ impl<'a> Parser<'a> {
     pub fn parse_scope_separator(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<ScopeSeparator> {
+    ) -> Option<ScopeSeparator> {
         let first = self.parse_punctuation(':', true, handler)?;
         let second = self.parse_punctuation(':', false, handler)?;
 
-        Ok(ScopeSeparator { first, second })
+        Some(ScopeSeparator { first, second })
     }
 
     /// Parses a [`GenericIdentifier`]
@@ -728,7 +728,7 @@ impl<'a> Parser<'a> {
         &mut self,
         use_turbo_fish: bool,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<GenericIdentifier> {
+    ) -> Option<GenericIdentifier> {
         let identifier = self.parse_identifier(handler)?;
 
         self.stop_at_significant();
@@ -753,7 +753,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Ok(GenericIdentifier {
+        Some(GenericIdentifier {
             identifier,
             generic_arguments,
         })
@@ -765,7 +765,7 @@ impl<'a> Parser<'a> {
         &mut self,
         use_turbo_fish: bool,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<QualifiedIdentifier> {
+    ) -> Option<QualifiedIdentifier> {
         // stop at significant tokens
         self.stop_at_significant();
 
@@ -788,13 +788,13 @@ impl<'a> Parser<'a> {
         let mut rest = Vec::new();
 
         // parses the identifier chain
-        while let Ok(token) = self.try_parse(|frame| frame.parse_scope_separator(&Dummy)) {
+        while let Some(token) = self.try_parse(|frame| frame.parse_scope_separator(&Dummy)) {
             let another_identifier = self.parse_generic_identifier(use_turbo_fish, handler)?;
 
             rest.push((token, another_identifier));
         }
 
-        Ok(QualifiedIdentifier {
+        Some(QualifiedIdentifier {
             leading_scope_separator,
             first,
             rest,
@@ -804,25 +804,25 @@ impl<'a> Parser<'a> {
     fn parse_lifetime_argument_identifier(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<LifetimeArgumentIdentifier> {
+    ) -> Option<LifetimeArgumentIdentifier> {
         match self.next_significant_token() {
             // static
             Some(Token::Keyword(static_keyword))
                 if static_keyword.keyword == KeywordKind::Static =>
             {
-                Ok(LifetimeArgumentIdentifier::Static(static_keyword))
+                Some(LifetimeArgumentIdentifier::Static(static_keyword))
             }
 
             // identifier
             Some(Token::Identifier(identifier)) => {
-                Ok(LifetimeArgumentIdentifier::Identifier(identifier))
+                Some(LifetimeArgumentIdentifier::Identifier(identifier))
             }
 
             // error: lifetime argument identifier expected
             found => {
                 handler.receive(Error::IdentifierExpected(IdentifierExpected { found }));
 
-                Err(ParserError)
+                None
             }
         }
     }
@@ -830,7 +830,7 @@ impl<'a> Parser<'a> {
     fn parse_reference_type_specifier(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<ReferenceTypeSpecifier> {
+    ) -> Option<ReferenceTypeSpecifier> {
         let ampersand = self.parse_punctuation('&', true, handler)?;
         let lifetime_argument = match self.stop_at_significant() {
             Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
@@ -863,7 +863,7 @@ impl<'a> Parser<'a> {
         };
         let operand_type = Box::new(self.parse_type_specifier(handler)?);
 
-        Ok(ReferenceTypeSpecifier {
+        Some(ReferenceTypeSpecifier {
             ampersand,
             lifetime_argument,
             qualifier: reference_qualifier,
@@ -873,10 +873,7 @@ impl<'a> Parser<'a> {
 
     /// Parses a [`TypeSpecifier`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_type_specifier(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> ParserResult<TypeSpecifier> {
+    pub fn parse_type_specifier(&mut self, handler: &impl Handler<Error>) -> Option<TypeSpecifier> {
         match self.stop_at_significant() {
             // parse qualified identifier
             Some(Token::Punctuation(first_colon))
@@ -886,13 +883,13 @@ impl<'a> Parser<'a> {
                         |x| matches!(x, Token::Punctuation(p) if p.punctuation == ':'),
                     ) =>
             {
-                Ok(TypeSpecifier::QualifiedIdentifier(
+                Some(TypeSpecifier::QualifiedIdentifier(
                     self.parse_qualified_identifier(false, handler)?,
                 ))
             }
 
             // parse qualified identifier
-            Some(Token::Identifier(..)) => Ok(TypeSpecifier::QualifiedIdentifier(
+            Some(Token::Identifier(..)) => Some(TypeSpecifier::QualifiedIdentifier(
                 self.parse_qualified_identifier(false, handler)?,
             )),
 
@@ -938,7 +935,7 @@ impl<'a> Parser<'a> {
                     _ => unreachable!(),
                 };
 
-                Ok(TypeSpecifier::Primitive(primitive_type))
+                Some(TypeSpecifier::Primitive(primitive_type))
             }
 
             found => {
@@ -957,7 +954,7 @@ impl<'a> Parser<'a> {
                     },
                 }));
 
-                Err(ParserError)
+                None
             }
         }
     }
@@ -967,7 +964,7 @@ impl<'a> Parser<'a> {
     pub fn parse_generic_argument(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<GenericArgument> {
+    ) -> Option<GenericArgument> {
         match self.stop_at_significant() {
             // parse lifetime argument
             Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
@@ -977,14 +974,14 @@ impl<'a> Parser<'a> {
                 let lifetime_argument_identifier =
                     self.parse_lifetime_argument_identifier(handler)?;
 
-                Ok(GenericArgument::Lifetime(LifetimeArgument {
+                Some(GenericArgument::Lifetime(LifetimeArgument {
                     apostrophe,
                     identifier: lifetime_argument_identifier,
                 }))
             }
 
             // parse type argument
-            _ => Ok(GenericArgument::TypeSpecifier(Box::new(
+            _ => Some(GenericArgument::TypeSpecifier(Box::new(
                 self.parse_type_specifier(handler)?,
             ))),
         }
@@ -996,7 +993,7 @@ impl<'a> Parser<'a> {
         &mut self,
         use_turbo_fish: bool,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<GenericArguments> {
+    ) -> Option<GenericArguments> {
         let colon = if use_turbo_fish {
             Some(self.parse_punctuation(':', true, handler)?)
         } else {
@@ -1019,10 +1016,10 @@ impl<'a> Parser<'a> {
                     span: left_angle.span.join(&right_angle.span).unwrap(),
                 },
             ));
-            return Err(ParserError);
+            return None;
         };
 
-        Ok(GenericArguments {
+        Some(GenericArguments {
             colon,
             left_angle,
             argument_list,
@@ -1035,12 +1032,12 @@ impl<'a> Parser<'a> {
     pub fn parse_type_annotation(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<TypeAnnotation> {
+    ) -> Option<TypeAnnotation> {
         let colon = self.parse_punctuation(':', true, handler)?;
 
         let type_specifier = self.parse_type_specifier(handler)?;
 
-        Ok(TypeAnnotation {
+        Some(TypeAnnotation {
             colon,
             type_specifier,
         })

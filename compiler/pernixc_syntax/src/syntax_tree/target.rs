@@ -16,7 +16,7 @@ use pernixc_system::diagnostic::Dummy;
 use super::AccessModifier;
 use crate::{
     error::Error as SyntaxError,
-    parser::{Error as ParserError, Parser, Result as ParserResult},
+    parser::Parser,
     syntax_tree::{item::Item, ScopeSeparator},
 };
 
@@ -140,16 +140,17 @@ impl<'a> Parser<'a> {
     pub fn parse_module_path(
         &mut self,
         handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> ParserResult<ModulePath> {
+    ) -> Option<ModulePath> {
         let first_identifier = self.parse_identifier(handler)?;
         let mut rest = Vec::new();
 
-        while let Ok(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy)) {
+        while let Some(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy))
+        {
             let identifier = self.parse_identifier(handler)?;
             rest.push((scope_separator, identifier));
         }
 
-        Ok(ModulePath {
+        Some(ModulePath {
             first: first_identifier,
             rest,
         })
@@ -160,12 +161,12 @@ impl<'a> Parser<'a> {
     pub fn parse_using(
         &mut self,
         handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> ParserResult<Using> {
+    ) -> Option<Using> {
         let using_keyword = self.parse_keyword(KeywordKind::Using, handler)?;
         let module_path = self.parse_module_path(handler)?;
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
-        Ok(Using {
+        Some(Using {
             using_keyword,
             module_path,
             semicolon,
@@ -177,13 +178,13 @@ impl<'a> Parser<'a> {
     pub fn parse_module(
         &mut self,
         handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> ParserResult<Module> {
+    ) -> Option<Module> {
         let access_modifier = self.parse_access_modifier(handler)?;
         let module_keyword = self.parse_keyword(KeywordKind::Module, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
-        Ok(Module {
+        Some(Module {
             access_modifier,
             module_keyword,
             identifier,
@@ -207,10 +208,11 @@ impl<'a> Parser<'a> {
                 _ => break,
             };
 
-            let using: Result<Using, ParserError> = (|| {
+            #[allow(clippy::collection_is_never_read)]
+            let using: Option<Using> = (|| {
                 let module_path = self.parse_module_path(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
-                Ok(Using {
+                Some(Using {
                     using_keyword,
                     module_path,
                     semicolon,
@@ -219,7 +221,7 @@ impl<'a> Parser<'a> {
 
             // try to stop after the semicolon or brace pair
             using.map_or_else(
-                |_| {
+                || {
                     self.stop_at(|token| {
                         matches!(token, Token::Punctuation(p) if p.punctuation == ';' ||  p.punctuation == '{')
                     });
@@ -243,23 +245,24 @@ impl<'a> Parser<'a> {
                 let access_modifier = parser.parse_access_modifier(&Dummy)?;
                 let module_keyword = parser.parse_keyword(KeywordKind::Module, &Dummy)?;
 
-                Ok((access_modifier, module_keyword))
+                Some((access_modifier, module_keyword))
             });
 
-            let Ok((access_modifier, module_keyword)) = result else {
+            let Some((access_modifier, module_keyword)) = result else {
                 break;
             };
 
-            let result: Result<(Identifier, Punctuation), ParserError> = (|| {
+            #[allow(clippy::collection_is_never_read)]
+            let result: Option<(Identifier, Punctuation)> = (|| {
                 let identifier = self.parse_identifier(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                Ok((identifier, semicolon))
+                Some((identifier, semicolon))
             })();
 
             // try to stop after the semicolon or brace pair
             result.map_or_else(
-                |_| {
+                || {
                     self.stop_at(|token| {
                         matches!(token, Token::Punctuation(p) if p.punctuation == ';' ||  p.punctuation == '{')
                     });
@@ -286,7 +289,7 @@ impl<'a> Parser<'a> {
         let items = {
             let mut items = Vec::new();
             while !self.is_exhausted() {
-                self.parse_item(handler).map_or_else(|_| {
+                self.parse_item(handler).map_or_else(|| {
                     self.stop_at(|token| {
                         matches!(token, Token::Punctuation(p) if p.punctuation == ';' ||  p.punctuation == '{')
                     });

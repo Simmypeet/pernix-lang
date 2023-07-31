@@ -11,10 +11,7 @@ use super::{
     expression::{Expression, Functional, Imperative, Terminator},
     TypeAnnotation,
 };
-use crate::{
-    error::Error,
-    parser::{Parser, Result as ParserResult},
-};
+use crate::{error::Error, parser::Parser};
 
 /// Represents a statement syntax tree node
 ///
@@ -150,7 +147,7 @@ impl SourceElement for Semi {
 impl<'a> Parser<'a> {
     /// Parses a [`Statement`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_statement(&mut self, handler: &impl Handler<Error>) -> ParserResult<Statement> {
+    pub fn parse_statement(&mut self, handler: &impl Handler<Error>) -> Option<Statement> {
         if matches!(self.stop_at_significant(), Some(Token::Keyword(k)) if k.keyword == KeywordKind::Let)
         {
             self.parse_variable_declaration(handler)
@@ -158,14 +155,14 @@ impl<'a> Parser<'a> {
         } else {
             let semi_expression = match self.parse_expression(handler)? {
                 Expression::Imperative(imperative) => {
-                    return Ok(Statement::Expressive(Expressive::Imperative(imperative)));
+                    return Some(Statement::Expressive(Expressive::Imperative(imperative)));
                 }
                 Expression::Functional(functional) => SemiExpression::Functional(functional),
                 Expression::Terminator(terminator) => SemiExpression::Terminator(terminator),
             };
 
             let semicolon = self.parse_punctuation(';', true, handler)?;
-            Ok(Statement::Expressive(Expressive::Semi(Semi {
+            Some(Statement::Expressive(Expressive::Semi(Semi {
                 expression: semi_expression,
                 semicolon,
             })))
@@ -177,13 +174,12 @@ impl<'a> Parser<'a> {
     pub fn parse_variable_declaration(
         &mut self,
         handler: &impl Handler<Error>,
-    ) -> ParserResult<VariableDeclaration> {
+    ) -> Option<VariableDeclaration> {
         let let_keyword = self.parse_keyword(KeywordKind::Let, handler)?;
 
         // parse optional mutable binding
-        let mutable_keyword = self
-            .try_parse(|parser| parser.parse_keyword(KeywordKind::Mutable, &Dummy))
-            .ok();
+        let mutable_keyword =
+            self.try_parse(|parser| parser.parse_keyword(KeywordKind::Mutable, &Dummy));
 
         let identifier = self.parse_identifier(handler)?;
 
@@ -199,7 +195,7 @@ impl<'a> Parser<'a> {
         let expression = self.parse_expression(handler)?;
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
-        Ok(VariableDeclaration {
+        Some(VariableDeclaration {
             let_keyword,
             mutable_keyword,
             identifier,
