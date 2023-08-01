@@ -984,6 +984,12 @@ pub struct ImplementsFunction {
     body: FunctionBody,
 }
 
+impl ImplementsFunction {
+    /// Dissolves the [`ImplementsFunction`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (FunctionSignature, FunctionBody) { (self.signature, self.body) }
+}
+
 impl SourceElement for ImplementsFunction {
     fn span(&self) -> Span { self.signature.span().join(&self.body.span()).unwrap() }
 }

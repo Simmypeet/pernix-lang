@@ -3,7 +3,6 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use itertools::CombinationsWithReplacement;
 use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, item::TypeBoundConstraint, GenericArgument, GenericIdentifier, PrimitiveTypeSpecifier,
@@ -20,13 +19,14 @@ use crate::{
     error::{
         self, AmbiguousImplements, LifetimeArgumentCountMismatch,
         LifetimeArgumentMustBeSuppliedPriorToTypeArgument, LifetimeArgumentsRequired,
-        NoGenericArgumentsRequired, TraitExpected, TraitResolutionNotAllowed,
-        TraitTypeBoundHasAlreadyBeenSpecified, TypeArgumentCountMismatch, TypeExpected,
+        NoGenericArgumentsRequired, SymbolRedefinition, TraitExpected, TraitMemberKind,
+        TraitMemberKindMismatch, TraitResolutionNotAllowed, TraitTypeBoundHasAlreadyBeenSpecified,
+        TypeArgumentCountMismatch, TypeExpected, UnknownTraitMemberInImplements,
     },
     table,
     ty::{self, Primitive, Reference},
-    GenericableID, Generics, GlobalID, Implements, Module, Substitution, Trait, TraitFunction,
-    TraitMemberID, TraitType, TypeParameter, WhereClause, ID,
+    GenericableID, Generics, GlobalID, Implements, ImplementsMemberID, Module, Substitution, Trait,
+    TraitFunction, TraitMemberID, TraitType, TypeParameter, WhereClause, ID,
 };
 
 impl Table {
@@ -854,10 +854,10 @@ impl Table {
             .collect::<Vec<_>>()
         {
             match trait_member_id {
-                TraitMemberID::TraitFunction(trait_function_id) => {
+                TraitMemberID::Function(trait_function_id) => {
                     self.finalize_trait_function(trait_function_id, states, handler);
                 }
-                TraitMemberID::TraitType(trait_type_id) => {
+                TraitMemberID::Type(trait_type_id) => {
                     self.finalize_trait_type(trait_type_id, states, handler);
                 }
             }
@@ -1082,7 +1082,69 @@ impl Table {
             todo!("report error")
         }
 
-        for implements_member in implements_body_syntax_tree.members() {}
+        let mut trait_members = self.traits[parent_trait_id]
+            .trait_member_ids_by_name
+            .clone();
+        let mut constructed_implements_members: HashMap<&str, ImplementsMemberID> = HashMap::new();
+
+        for implements_member_syntax_tree in implements_body_syntax_tree.members() {
+            let identifier = match implements_member_syntax_tree {
+                syntax_tree::item::ImplementsMember::Type(ty) => ty.signature().identifier(),
+                syntax_tree::item::ImplementsMember::Function(func) => {
+                    func.signature().identifier()
+                }
+            };
+
+            // check for redefinition
+            if let Some(implements_member_id) = constructed_implements_members
+                .get(identifier.span.str())
+                .copied()
+            {
+                handler.receive(error::Error::ImplementsMemberRedefinition(
+                    SymbolRedefinition {
+                        previous_definition_id: implements_member_id,
+                        redefinition_span: identifier.span.clone(),
+                    },
+                ));
+                continue;
+            }
+
+            let Some(trait_member_id) = trait_members.remove(identifier.span.str()) else {
+                handler.receive(error::Error::UnknownTraitMemberInImplements(
+                    UnknownTraitMemberInImplements {
+                        unknown_member_span: identifier.span.clone(),
+                        trait_id: parent_trait_id,
+                    },
+                ));
+                continue;
+            };
+
+            match (trait_member_id, implements_member_syntax_tree) {
+                (
+                    TraitMemberID::Function(function_id),
+                    syntax_tree::item::ImplementsMember::Function(function_syntax_tree),
+                ) => {} // TODO: finalize the function signature
+
+                /* TODO: finalize the type signature */
+                (TraitMemberID::Type(_), syntax_tree::item::ImplementsMember::Type(_)) => {}
+
+                (trait_member_id, implements_member_syntax_tree) => handler.receive(
+                    error::Error::TraitMemberKindMismatch(TraitMemberKindMismatch {
+                        expected_kind: match trait_member_id {
+                            TraitMemberID::Function(_) => TraitMemberKind::Function,
+                            TraitMemberID::Type(_) => TraitMemberKind::Type,
+                        },
+                        actual_kind: match implements_member_syntax_tree {
+                            syntax_tree::item::ImplementsMember::Function(_) => {
+                                TraitMemberKind::Function
+                            }
+                            syntax_tree::item::ImplementsMember::Type(_) => TraitMemberKind::Type,
+                        },
+                        span: identifier.span.clone(),
+                    }),
+                ),
+            }
+        }
 
         Some(implements_id)
     }

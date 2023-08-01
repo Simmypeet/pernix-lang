@@ -283,19 +283,36 @@ impl Genericable for arena::Symbol<ImplementsFunction> {
     fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
 }
 
+/// Is an enumeration of symbol IDs that can be used as an implements member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[allow(missing_docs)]
+pub enum ImplementsMemberID {
+    Function(arena::ID<ImplementsFunction>),
+    Type(arena::ID<ImplementsType>),
+}
+
+impl From<ImplementsMemberID> for ID {
+    fn from(id: ImplementsMemberID) -> Self {
+        match id {
+            ImplementsMemberID::Function(id) => id.into(),
+            ImplementsMemberID::Type(id) => id.into(),
+        }
+    }
+}
+
 /// Is an enumeration of symbol IDs that can be used as a trait member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum TraitMemberID {
-    TraitFunction(arena::ID<TraitFunction>),
-    TraitType(arena::ID<TraitType>),
+    Function(arena::ID<TraitFunction>),
+    Type(arena::ID<TraitType>),
 }
 
 impl From<TraitMemberID> for ID {
     fn from(id: TraitMemberID) -> Self {
         match id {
-            TraitMemberID::TraitFunction(id) => id.into(),
-            TraitMemberID::TraitType(id) => id.into(),
+            TraitMemberID::Function(id) => id.into(),
+            TraitMemberID::Type(id) => id.into(),
         }
     }
 }
@@ -303,8 +320,8 @@ impl From<TraitMemberID> for ID {
 impl From<TraitMemberID> for GlobalID {
     fn from(id: TraitMemberID) -> Self {
         match id {
-            TraitMemberID::TraitFunction(id) => id.into(),
-            TraitMemberID::TraitType(id) => id.into(),
+            TraitMemberID::Function(id) => id.into(),
+            TraitMemberID::Type(id) => id.into(),
         }
     }
 }

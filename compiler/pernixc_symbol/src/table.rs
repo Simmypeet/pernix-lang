@@ -12,10 +12,10 @@ use pernixc_system::{
 };
 
 use crate::{
-    error, Accessibility, Enum, EnumVariant, Field, Function, Genericable, GenericableID, Global,
-    GlobalID, Implements, ImplementsFunction, ImplementsType, LifetimeParameter, Module, Parameter,
-    Scoped, ScopedID, Struct, Symbol, Trait, TraitFunction, TraitType, Type, TypeParameter,
-    WhereClause, ID,
+    error, ty, Accessibility, Enum, EnumVariant, Field, Function, GenericParameters, Genericable,
+    GenericableID, Global, GlobalID, Implements, ImplementsFunction, ImplementsType,
+    LifetimeArgument, LifetimeParameter, Module, Parameter, Scoped, ScopedID, Struct, Substitution,
+    Symbol, Trait, TraitBound, TraitFunction, TraitType, Type, TypeParameter, WhereClause, ID,
 };
 
 mod core;
@@ -347,8 +347,8 @@ impl Table {
             // Private symbol is only accessible from the same module or its children.
             Accessibility::Private => {
                 let referred_global_module_id =
-                    self.get_parent_target_root_module_id(referred_global_id.into())?;
-                let referrer_module_id = self.get_parent_target_root_module_id(referring_site)?;
+                    self.get_closet_module_id(referred_global_id.into())?;
+                let referrer_module_id = self.get_closet_module_id(referring_site)?;
 
                 // if same module, it is accessible.
                 if referrer_module_id == referred_global_module_id {
@@ -406,7 +406,7 @@ impl Table {
 
     /// Gets the module ID that contains the given symbol ID (including itself).
     #[must_use]
-    pub fn get_current_module_id(&self, mut id: ID) -> Option<arena::ID<Module>> {
+    pub fn get_closet_module_id(&self, mut id: ID) -> Option<arena::ID<Module>> {
         loop {
             // If the ID is a module ID, return it.
             if let ID::Module(module_id) = id {
@@ -476,6 +476,31 @@ impl Table {
                 continue;
             };
 
+            match genericable_id {
+                GenericableID::Implements(implements_id) => {
+                    if self.implements[implements_id]
+                        .substitution
+                        .is_concrete_substitution()
+                    {
+                        continue;
+                    }
+
+                    result_where_clause.trait_bounds.insert(TraitBound {
+                        trait_id: self.implements[implements_id].trait_id,
+                        substitution: self.implements[implements_id].substitution.clone(),
+                    });
+                }
+                GenericableID::Trait(trait_id) => {
+                    result_where_clause.trait_bounds.insert(TraitBound {
+                        trait_id,
+                        substitution: Self::create_identical_substitution(
+                            &self.traits[trait_id].generics.parameters,
+                        ),
+                    });
+                }
+                _ => {}
+            }
+
             let Some(where_clause) = self.get_genericable(genericable_id)?.where_clause() else {
                 continue;
             };
@@ -484,6 +509,33 @@ impl Table {
         }
 
         Some(result_where_clause)
+    }
+
+    fn create_identical_substitution(generic_parameters: &GenericParameters) -> Substitution {
+        let mut substitution = Substitution::default();
+
+        for lifetime_parameter in generic_parameters
+            .lifetime_parameter_ids_by_name
+            .values()
+            .copied()
+        {
+            substitution.lifetime_arguments_by_parameter.insert(
+                lifetime_parameter,
+                LifetimeArgument::Parameter(lifetime_parameter),
+            );
+        }
+
+        for type_parameter in generic_parameters
+            .type_parameter_ids_by_name
+            .values()
+            .copied()
+        {
+            substitution
+                .type_arguments_by_parameter
+                .insert(type_parameter, ty::Type::Parameter(type_parameter));
+        }
+
+        substitution
     }
 
     fn merge_where_caluse(merge_where_clause: &mut WhereClause, where_clause: &WhereClause) {
@@ -568,10 +620,11 @@ impl Table {
 
         // drafts the symbols
         let mut states = table.draft_symbols(targets, handler);
+        dbg!(states);
 
-        while let Some(id) = states.next_drafted_symbol() {
-            table.finalize_symbol(id, &mut states, handler);
-        }
+        // while let Some(id) = states.next_drafted_symbol() {
+        //     table.finalize_symbol(id, &mut states, handler);
+        // }
 
         Ok(table)
     }

@@ -7,9 +7,9 @@ use pernixc_syntax::syntax_tree::item::StructField;
 use pernixc_system::arena;
 
 use crate::{
-    table::Table, ty, Field, Function, GlobalID, Implements, ImplementsFunction, LifetimeArgument,
-    LifetimeParameter, Module, Parameter, Struct, Symbol, TraitBound, TraitFunction, TraitMemberID,
-    TypeParameter, ID,
+    table::Table, ty, Field, Function, GlobalID, Implements, ImplementsFunction,
+    ImplementsMemberID, LifetimeArgument, LifetimeParameter, Module, Parameter, Struct, Symbol,
+    Trait, TraitBound, TraitFunction, TraitMemberID, TypeParameter, ID,
 };
 
 /// No target was found with the given name.
@@ -280,6 +280,42 @@ impl CyclicDependency {
                 pernixc_print::print_source_code(&symbol_span, None);
             }
         }
+
+        true
+    }
+}
+
+/// The trait didn't have a member with the given name.
+#[derive(Debug, Clone)]
+pub struct UnknownTraitMemberInImplements {
+    /// The span of the unknown member name.
+    pub unknown_member_span: Span,
+
+    /// The id of the trait.
+    pub trait_id: arena::ID<Trait>,
+}
+
+impl UnknownTraitMemberInImplements {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let Some(trait_name) = table.get_qualified_name(self.trait_id.into()) else {
+            return false;
+        };
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "the trait `{}` didn't have a member named `{}`",
+                trait_name,
+                self.unknown_member_span.str(),
+            ),
+        );
+
+        pernixc_print::print_source_code(&self.unknown_member_span, None);
 
         true
     }
@@ -649,15 +685,42 @@ impl TypeExpected {
 
 /// The symbol is not accessible from the given referring site.
 #[derive(Debug, Clone)]
-pub struct SymbolIsNotAccessible {
+pub struct SymbolWasNotAccessible {
     /// The span of the symbol reference.
     pub span: Span,
 
     /// Where the symbol is being referred from.
-    pub referring_site: ID,
+    pub referring_module_site: arena::ID<Module>,
 
     /// The symbol that is not accessible.
     pub referred: GlobalID,
+}
+
+impl SymbolWasNotAccessible {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Returns
+    /// Returns `true` if the error was printed, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let (Some(referring_module_name), Some(referred_name)) = (
+            table.get_qualified_name(self.referring_module_site.into()),
+            table.get_qualified_name(self.referred),
+        ) else {
+            return false;
+        };
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "the symbol `{referred_name}` was not accessible from `{referring_module_name}`",
+            ),
+        );
+
+        pernixc_print::print_source_code(&self.span, None);
+
+        true
+    }
 }
 
 /// The symbol does not require any generic arguments but some were supplied.
@@ -789,6 +852,53 @@ impl AmbiguousImplements {
     }
 }
 
+/// Is an enumeration representing all kinds of trait members.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum TraitMemberKind {
+    Function,
+    Type,
+}
+
+/// Expected a member of a different kind.
+#[derive(Debug, Clone)]
+pub struct TraitMemberKindMismatch {
+    /// The expected kind of the trait member.
+    pub expected_kind: TraitMemberKind,
+
+    /// The actual kind of the trait member.
+    pub actual_kind: TraitMemberKind,
+
+    /// The span of the trait member.
+    pub span: Span,
+}
+
+impl TraitMemberKindMismatch {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        let expected_kind = match self.expected_kind {
+            TraitMemberKind::Function => "function",
+            TraitMemberKind::Type => "type",
+        };
+
+        let actual_kind = match self.actual_kind {
+            TraitMemberKind::Function => "function",
+            TraitMemberKind::Type => "type",
+        };
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            format!(
+                "expected a member of kind `{expected_kind}`, found a member of kind \
+                 `{actual_kind}`",
+            )
+            .as_str(),
+        );
+
+        pernixc_print::print_source_code(&self.span, None);
+    }
+}
+
 /// The type parameters weren't all used.
 #[derive(Debug, Clone)]
 pub struct UnusedTypeParameters {
@@ -852,6 +962,7 @@ pub enum Error {
     ImplementsFunctionParameterRedefinition(
         SymbolRedefinition<arena::ID<Parameter<ImplementsFunction>>>,
     ),
+    ImplementsMemberRedefinition(SymbolRedefinition<ImplementsMemberID>),
     FieldRedefinition(SymbolRedefinition<arena::ID<Field>>),
     FieldMoreAccessibleThanStruct(FieldMoreAccessibleThanStruct),
     TraitMemberRedefinition(SymbolRedefinition<TraitMemberID>),
@@ -869,11 +980,13 @@ pub enum Error {
     LifetimeArgumentsRequired(LifetimeArgumentsRequired),
     NoMemberOnThisType(NoMemberOnThisType),
     TraitResolutionNotAllowed(TraitResolutionNotAllowed),
-    SymbolIsNotAccessible(SymbolIsNotAccessible),
+    SymbolWasNotAccessible(SymbolWasNotAccessible),
     NoGenericArgumentsRequired(NoGenericArgumentsRequired),
     PrivateSymbolLeakage(PrivateSymbolLeakage),
     LifetimeDoesNotOutlive(LifetimeDoesNotOutlive),
+    TraitMemberKindMismatch(TraitMemberKindMismatch),
     TraitBoundNotSatisfied(TraitBoundNotSatisfied),
+    UnknownTraitMemberInImplements(UnknownTraitMemberInImplements),
     TraitTypeBoundNotSatisfied(TraitTypeBoundNotSatisfied),
     NoMemberOnThisImplementsFunction(NoMemberOnThisImplementsFunction),
     TypeDoesNotOutliveLifetimeArgument(TypeDoesNotOutliveLifetimeArgument),
@@ -891,6 +1004,10 @@ impl Error {
         match self {
             Self::TypeExpected(err) => {
                 err.print();
+                true
+            }
+            Self::ImplementsMemberRedefinition(err) => {
+                err.print(table);
                 true
             }
             Self::TargetNotFound(err) => {
@@ -936,7 +1053,13 @@ impl Error {
             Self::UnusedTypeParameters(err) => err.print(table),
             Self::SymbolNotFound(err) => err.print(table),
             Self::AmbiguousImplements(err) => err.print(table),
+            Self::UnknownTraitMemberInImplements(err) => err.print(table),
+            Self::SymbolWasNotAccessible(err) => err.print(table),
             Self::TraitTypeBoundHasAlreadyBeenSpecified(err) => {
+                err.print();
+                true
+            }
+            Self::TraitMemberKindMismatch(err) => {
                 err.print();
                 true
             }
@@ -950,7 +1073,6 @@ impl Error {
             | Self::LifetimeArgumentsRequired(_)
             | Self::NoMemberOnThisType(_)
             | Self::TraitResolutionNotAllowed(_)
-            | Self::SymbolIsNotAccessible(_)
             | Self::NoGenericArgumentsRequired(_)
             | Self::PrivateSymbolLeakage(_)
             | Self::LifetimeDoesNotOutlive(_)

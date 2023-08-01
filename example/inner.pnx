@@ -1,7 +1,1 @@
-using tests;
-
-implements tests::Test {}
-
-implements ::tests::Test {}
-
-implements Test {}
+private trait Test {}

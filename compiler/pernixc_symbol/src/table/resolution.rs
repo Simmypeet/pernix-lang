@@ -15,17 +15,17 @@ use super::Table;
 use crate::{
     error::{
         self, LifetimeArgumentCountMismatch, LifetimeArgumentMustBeSuppliedPriorToTypeArgument,
-        LifetimeArgumentsRequired, LifetimeDoesNotOutlive, LifetimeNotFound,
+        LifetimeArgumentsRequired, LifetimeDoesNotOutlive, LifetimeNotFound, ModuleExpected,
         NoGenericArgumentsRequired, NoMemberOnThisImplementsFunction, NoMemberOnThisType,
-        ResolutionAmbiguity, SymbolIsNotAccessible, SymbolNotFound, TargetNotFound,
-        TraitBoundNotSatisfied, TraitResolutionNotAllowed, TraitTypeBoundNotSatisfied,
-        TypeArgumentCountMismatch, TypeDoesNotOutliveLifetimeArgument, TypeExpected,
+        ResolutionAmbiguity, SymbolNotFound, SymbolWasNotAccessible, TargetNotFound,
+        TraitBoundNotSatisfied, TraitExpected, TraitResolutionNotAllowed,
+        TraitTypeBoundNotSatisfied, TypeArgumentCountMismatch, TypeDoesNotOutliveLifetimeArgument,
+        TypeExpected,
     },
     table,
     ty::{self, Primitive, Reference},
-    Enum, EnumVariant, GenericParameters, GenericableID, GlobalID, Implements, LifetimeArgument,
-    LifetimeParameter, Module, Scoped, ScopedID, Substitution, TraitBound, TypeParameter,
-    WhereClause, ID,
+    Enum, EnumVariant, GenericableID, GlobalID, Implements, LifetimeArgument, LifetimeParameter,
+    Module, ScopedID, Substitution, TraitBound, TypeParameter, WhereClause, ID,
 };
 
 /// Contains the neccessary information and configuration for the resolution process.
@@ -135,7 +135,7 @@ impl Table {
         referring_site: ID,
         handler: &impl Handler<error::Error>,
     ) -> Option<Option<GlobalID>> {
-        let parent_module = self.get_current_module_id(referring_site).unwrap();
+        let parent_module = self.get_closet_module_id(referring_site).unwrap();
 
         let search_locations = self.modules[parent_module]
             .usings
@@ -892,33 +892,6 @@ impl Table {
         None
     }
 
-    fn create_identical_substitution(generic_parameters: &GenericParameters) -> Substitution {
-        let mut substitution = Substitution::default();
-
-        for lifetime_parameter in generic_parameters
-            .lifetime_parameter_ids_by_name
-            .values()
-            .copied()
-        {
-            substitution.lifetime_arguments_by_parameter.insert(
-                lifetime_parameter,
-                LifetimeArgument::Parameter(lifetime_parameter),
-            );
-        }
-
-        for type_parameter in generic_parameters
-            .type_parameter_ids_by_name
-            .values()
-            .copied()
-        {
-            substitution
-                .type_arguments_by_parameter
-                .insert(type_parameter, ty::Type::Parameter(type_parameter));
-        }
-
-        substitution
-    }
-
     fn get_active_implements(
         &self,
         used_root: &Root,
@@ -1430,11 +1403,13 @@ impl Table {
             .symbol_accessible(global_id, root.referring_site)
             .unwrap()
         {
-            handler.receive(error::Error::SymbolIsNotAccessible(SymbolIsNotAccessible {
-                span: identifier.span.clone(),
-                referring_site: root.referring_site,
-                referred: global_id,
-            }));
+            handler.receive(error::Error::SymbolWasNotAccessible(
+                SymbolWasNotAccessible {
+                    span: identifier.span.clone(),
+                    referring_module_site: self.get_closet_module_id(root.referring_site).unwrap(),
+                    referred: global_id,
+                },
+            ));
 
             return None;
         }
@@ -1642,143 +1617,59 @@ impl Table {
     pub(super) fn resolve_trait_path(
         &self,
         qualified_identifier: &QualifiedIdentifier,
-        referrer: ID,
+        referring_site: ID,
         handler: &impl Handler<error::Error>,
     ) -> Option<arena::ID<crate::Trait>> {
-        match (
-            qualified_identifier.leading_scope_separator().is_some(),
-            qualified_identifier.rest().is_empty(),
-        ) {
-            // single identifier part with no leading scope separator
-            (false, true) => {
-                let found_symbol_id = self.resolve_root_relative(
-                    qualified_identifier.first().identifier(),
-                    referrer,
-                    handler,
-                )?;
+        let mut current_root = Root {
+            referring_site,
+            latest_resolution: None,
+        };
 
-                if let GlobalID::Trait(id) = found_symbol_id {
-                    Some(id)
-                } else {
-                    handler.receive(error::Error::TraitExpected(error::TraitExpected {
-                        symbol_reference_span: qualified_identifier
-                            .first()
-                            .identifier()
-                            .span
-                            .clone(),
+        let mut iter = std::iter::once(qualified_identifier.first())
+            .chain(qualified_identifier.rest().iter().map(|x| &x.1))
+            .peekable();
+
+        while let Some(generics_identifier) = iter.next() {
+            let is_last = iter.peek().is_none();
+
+            let Some(global_id) = self.resolve_single_first_pass(
+                generics_identifier.identifier(),
+                &current_root,
+                is_last,
+                handler,
+            ) else {
+                return None;
+            };
+
+            if !is_last {
+                let GlobalID::Module(module_id) = global_id else {
+                    handler.receive(error::Error::ModuleExpected(ModuleExpected {
+                        symbol_reference_span: generics_identifier.span(),
+                        found: global_id,
                     }));
-                    None
+                    return None;
+                };
+
+                if generics_identifier.generic_arguments().is_some() {
+                    handler.receive(error::Error::NoGenericArgumentsRequired(
+                        NoGenericArgumentsRequired {
+                            span: generics_identifier.span(),
+                        },
+                    ));
+                    return None;
                 }
-            }
 
-            // it's impossible to have a trait at the root scope
-            (true, true) => {
-                handler.receive(error::Error::InvalidTraitPath(error::InvalidTraitPath {
-                    span: qualified_identifier.span(),
+                current_root.latest_resolution = Some(Resolution::Module(module_id));
+            } else if let GlobalID::Trait(trait_id) = global_id {
+                return Some(trait_id);
+            } else {
+                handler.receive(error::Error::TraitExpected(TraitExpected {
+                    symbol_reference_span: generics_identifier.span(),
                 }));
-                None
-            }
-
-            // normal case
-            _ => {
-                let mut generic_identifiers = qualified_identifier.generic_identifiers().peekable();
-
-                let mut current_module_id = {
-                    // first generic identifier
-                    let generic_identifier = generic_identifiers
-                        .next()
-                        .expect("qualified identifier must at least have one identifier");
-
-                    // check if the path is invalid
-                    if generic_identifier.generic_arguments().is_some() {
-                        handler.receive(error::Error::InvalidTraitPath(error::InvalidTraitPath {
-                            span: generic_identifier.span(),
-                        }));
-                    }
-
-                    if qualified_identifier.leading_scope_separator().is_some() {
-                        if let Some(id) = self
-                            .target_root_module_ids_by_name
-                            .get(generic_identifier.identifier().span.str())
-                            .copied()
-                        {
-                            id
-                        } else {
-                            handler.receive(error::Error::TargetNotFound(TargetNotFound {
-                                unknown_target_span: generic_identifier.identifier().span.clone(),
-                            }));
-                            return None;
-                        }
-                    } else {
-                        let resolved_symbol_id = self.resolve_root_relative(
-                            generic_identifier.identifier(),
-                            referrer,
-                            handler,
-                        )?;
-
-                        if let GlobalID::Module(id) = resolved_symbol_id {
-                            id
-                        } else {
-                            handler.receive(error::Error::ModuleExpected(error::ModuleExpected {
-                                symbol_reference_span: generic_identifier.span(),
-                                found: resolved_symbol_id,
-                            }));
-                            return None;
-                        }
-                    }
-                };
-
-                let trait_id = loop {
-                    if let Some(generic_identifier) = generic_identifiers.next() {
-                        let is_last = generic_identifiers.peek().is_none();
-
-                        // expect only module if the current generic identifier lookup is not the
-                        // last one
-                        if !is_last && generic_identifier.generic_arguments().is_some() {
-                            handler.receive(error::Error::InvalidTraitPath(
-                                error::InvalidTraitPath {
-                                    span: generic_identifier.span(),
-                                },
-                            ));
-                        }
-
-                        // expect a symbol
-                        let Some(id) = self.modules[current_module_id]
-                            .get_child_id_by_name(generic_identifier.identifier().span.str())
-                        else {
-                            handler.receive(error::Error::SymbolNotFound(error::SymbolNotFound {
-                                searched_global_id: current_module_id.into(),
-                                symbol_reference_span: generic_identifier.span(),
-                            }));
-                            return None;
-                        };
-
-                        match (is_last, id) {
-                            (true, GlobalID::Trait(trait_id)) => break trait_id,
-                            (false, GlobalID::Module(module_id)) => {
-                                current_module_id = module_id;
-                            }
-                            (is_last, found) => {
-                                handler.receive(if is_last {
-                                    error::Error::TraitExpected(error::TraitExpected {
-                                        symbol_reference_span: generic_identifier.span(),
-                                    })
-                                } else {
-                                    error::Error::ModuleExpected(error::ModuleExpected {
-                                        symbol_reference_span: generic_identifier.span(),
-                                        found,
-                                    })
-                                });
-                                return None;
-                            }
-                        }
-                    } else {
-                        unreachable!()
-                    }
-                };
-
-                Some(trait_id)
+                return None;
             }
         }
+
+        unreachable!()
     }
 }

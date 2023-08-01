@@ -1,7 +1,3 @@
 public module inner;
 
-public trait Test {} 
-
-implements Test {}
-
-public struct Test {}
+implements inner::Test {}
