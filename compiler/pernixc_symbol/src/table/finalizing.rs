@@ -1,12 +1,9 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-};
+use std::collections::{HashMap, HashSet};
 
 use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
-    self, item::TypeBoundConstraint, GenericArgument, GenericIdentifier, PrimitiveTypeSpecifier,
-    QualifiedIdentifier, TypeSpecifier,
+    self, item::TypeBoundConstraint, ConnectedList, GenericArgument, GenericIdentifier,
+    PrimitiveTypeSpecifier, QualifiedIdentifier, TypeSpecifier,
 };
 use pernixc_system::{arena, diagnostic::Handler};
 
@@ -23,10 +20,15 @@ use crate::{
         TraitMemberKindMismatch, TraitResolutionNotAllowed, TraitTypeBoundHasAlreadyBeenSpecified,
         TypeArgumentCountMismatch, TypeExpected, UnknownTraitMemberInImplements,
     },
-    table,
+    table::{
+        self,
+        resolution::{GenericConfiguration, ImplementsComparison},
+    },
     ty::{self, Primitive, Reference},
-    GenericableID, Generics, GlobalID, Implements, ImplementsMemberID, Module, Substitution, Trait,
-    TraitFunction, TraitMemberID, TraitType, TypeParameter, WhereClause, ID,
+    Accessibility, FunctionSignatureSyntaxTree, GenericParameters, GenericableID, Generics,
+    GlobalID, Implements, ImplementsFunction, ImplementsMemberID, ImplementsType, Module,
+    Parameter, Substitution, Symbol, Trait, TraitFunction, TraitMemberID, TraitType, TypeParameter,
+    WhereClause, ID,
 };
 
 impl Table {
@@ -68,7 +70,7 @@ impl Table {
                 &current_root,
                 global_id,
                 substitution,
-                info.check_where_clause,
+                info.generic_configuration,
                 handler,
             )?);
         }
@@ -388,7 +390,7 @@ impl Table {
             &resolution::Info {
                 referring_site: genericable_id.into(),
                 explicit_lifetime_required: true,
-                check_where_clause: false,
+                generic_configuration: GenericConfiguration::TraitResolutionNotAllowed,
             },
             trait_bound.qualified_identifier(),
             states,
@@ -437,7 +439,7 @@ impl Table {
             &resolution::Info {
                 referring_site: genericable_id.into(),
                 explicit_lifetime_required: true,
-                check_where_clause: false,
+                generic_configuration: GenericConfiguration::TraitResolutionNotAllowed,
             },
             type_bound.type_specifier(),
             states,
@@ -453,7 +455,7 @@ impl Table {
                         &resolution::Info {
                             referring_site: genericable_id.into(),
                             explicit_lifetime_required: true,
-                            check_where_clause: false,
+                            generic_configuration: GenericConfiguration::TraitResolutionNotAllowed,
                         },
                         type_bound_specifier,
                         states,
@@ -724,11 +726,11 @@ impl Table {
 
         match id {
             ID::Module(_) => todo!(),
-            ID::Struct(_) => todo!(),
+            ID::Struct(id) => self.finalize_struct(id, states, handler),
             ID::Enum(_) => todo!(),
             ID::EnumVariant(_) => todo!(),
             ID::Function(_) => todo!(),
-            ID::Type(_) => todo!(),
+            ID::Type(id) => self.finalize_type(id, states, handler),
             ID::Field(_) => todo!(),
             ID::FunctionParameter(_) => todo!(),
             ID::TraitFunctionParameter(_) => todo!(),
@@ -755,12 +757,160 @@ impl Table {
         }
     }
 
+    fn finalize_struct(
+        &mut self,
+        struct_id: arena::ID<crate::Struct>,
+        states: &mut States,
+        handler: &impl Handler<error::Error>,
+    ) {
+        assert!(
+            states.get_current_state(struct_id.into()).is_some(),
+            "symbol is not drafted or being constructed"
+        );
+
+        if let Err(err) = states.mark_as_constructing(struct_id.into()) {
+            handler.receive(error::Error::CyclicDependency(err));
+            return;
+        }
+
+        for field_id in self.structs[struct_id].field_order.iter().copied() {
+            states.add_drafted_symbol(field_id.into());
+        }
+
+        if let Some(where_clause) = self.structs[struct_id]
+            .syntax_tree
+            .as_ref()
+            .map(|x| x.where_clause().as_ref().cloned())
+            .expect("syntax tree should exist")
+        {
+            if let Some(where_clause) =
+                self.construct_where_clause(&where_clause, struct_id.into(), states, handler)
+            {
+                self.structs[struct_id].generics.where_clause = where_clause;
+            }
+        }
+
+        states.remove_constructing_symbol(struct_id.into());
+
+        for field_id in self.structs[struct_id].field_order.clone() {
+            self.finalize_field(field_id, states, handler);
+        }
+    }
+
+    fn finalize_field(
+        &mut self,
+        field_id: arena::ID<crate::Field>,
+        states: &mut States,
+        handler: &impl Handler<error::Error>,
+    ) {
+        assert!(
+            states.get_current_state(field_id.into()).is_some(),
+            "symbol is not drafted or being constructed"
+        );
+
+        if let Err(err) = states.mark_as_constructing(field_id.into()) {
+            handler.receive(error::Error::CyclicDependency(err));
+            return;
+        }
+
+        let ty = self
+            .resolve_type_with_finalization(
+                &resolution::Info {
+                    referring_site: field_id.into(),
+                    generic_configuration: GenericConfiguration::Default,
+                    explicit_lifetime_required: true,
+                },
+                &self.fields[field_id]
+                    .syntax_tree
+                    .as_ref()
+                    .unwrap()
+                    .type_annotation()
+                    .type_specifier()
+                    .clone(),
+                states,
+                handler,
+            )
+            .unwrap_or(ty::Type::Primitive(Primitive::Void));
+        let ty_accessibility = self.get_overall_ty_accessibility(&ty);
+
+        if ty_accessibility.rank() < self.fields[field_id].accessibility.rank() {
+            handler.receive(error::Error::PrivateSymbolLeakage(
+                error::PrivateSymbolLeakage {
+                    span: self.fields[field_id]
+                        .syntax_tree
+                        .as_ref()
+                        .unwrap()
+                        .type_annotation()
+                        .type_specifier()
+                        .span(),
+                },
+            ));
+        }
+
+        self.fields[field_id].ty = ty;
+
+        states.remove_constructing_symbol(field_id.into());
+    }
+
+    fn finalize_type(
+        &mut self,
+        type_id: arena::ID<crate::Type>,
+        states: &mut States,
+        handler: &impl Handler<error::Error>,
+    ) {
+        assert!(
+            states.get_current_state(type_id.into()).is_some(),
+            "symbol is not drafted or being constructed"
+        );
+
+        if let Err(err) = states.mark_as_constructing(type_id.into()) {
+            handler.receive(error::Error::CyclicDependency(err));
+            return;
+        }
+
+        let type_specifier = self.types[type_id]
+            .syntax_tree
+            .as_ref()
+            .unwrap()
+            .definition()
+            .type_specifier()
+            .clone();
+
+        let type_alias = self
+            .resolve_type_with_finalization(
+                &resolution::Info {
+                    referring_site: type_id.into(),
+                    generic_configuration: GenericConfiguration::TraitResolutionIgnored,
+                    explicit_lifetime_required: true,
+                },
+                &type_specifier,
+                states,
+                handler,
+            )
+            .unwrap_or(ty::Type::Primitive(Primitive::Void));
+
+        let ty_accessibility = self.get_overall_ty_accessibility(&type_alias);
+
+        if ty_accessibility.rank() < self.get_accessibility(type_id.into()).unwrap().rank() {
+            handler.receive(error::Error::PrivateSymbolLeakage(
+                error::PrivateSymbolLeakage {
+                    span: type_specifier.span(),
+                },
+            ));
+        }
+
+        self.types[type_id].alias = type_alias;
+
+        states.remove_constructing_symbol(type_id.into());
+    }
+
     fn finalize_trait_function(
         &mut self,
         trait_function_id: arena::ID<TraitFunction>,
         states: &mut States,
         handler: &impl Handler<error::Error>,
     ) {
+        todo!()
     }
 
     fn finalize_trait_type(
@@ -769,6 +919,104 @@ impl Table {
         states: &mut States,
         handler: &impl Handler<error::Error>,
     ) {
+        assert!(
+            states.get_current_state(trait_type_id.into()).is_some(),
+            "symbol is not drafted or being constructed"
+        );
+
+        if let Err(err) = states.mark_as_constructing(trait_type_id.into()) {
+            handler.receive(error::Error::CyclicDependency(err));
+            return;
+        }
+
+        // loop through all implements
+        for implements_id in self.traits[self.trait_types[trait_type_id].parent_trait_id]
+            .implements
+            .clone()
+        {
+            let implements = &self.implements[implements_id];
+            let implements_type_id = implements.implements_types_by_trait_type[&trait_type_id];
+
+            let type_specifier = self.implements_types[implements_type_id]
+                .syntax_tree
+                .as_ref()
+                .unwrap()
+                .definition()
+                .type_specifier()
+                .clone();
+
+            let Some(type_alias) = self.resolve_type_with_finalization(
+                &resolution::Info {
+                    referring_site: implements_type_id.into(),
+                    generic_configuration: GenericConfiguration::TraitResolutionIgnored,
+                    explicit_lifetime_required: true,
+                },
+                &type_specifier,
+                states,
+                handler,
+            ) else {
+                self.remove_implements(implements_id);
+                continue;
+            };
+
+            let ty_accessibility = self.get_overall_ty_accessibility(&type_alias);
+
+            if ty_accessibility.rank()
+                < self.get_accessibility(trait_type_id.into()).unwrap().rank()
+            {
+                handler.receive(error::Error::PrivateSymbolLeakage(
+                    error::PrivateSymbolLeakage {
+                        span: type_specifier.span(),
+                    },
+                ));
+            }
+
+            self.implements_types[implements_type_id].alias = type_alias;
+        }
+
+        states.remove_constructing_symbol(trait_type_id.into());
+    }
+
+    fn get_overall_ty_accessibility(&self, ty: &ty::Type) -> Accessibility {
+        match ty {
+            ty::Type::Enum(enum_id) => self.enums[*enum_id].accessibility,
+            ty::Type::Struct(struct_ty) => {
+                std::iter::once(self.structs[struct_ty.struct_id].accessibility)
+                    .chain(
+                        struct_ty
+                            .substitution
+                            .type_arguments_by_parameter
+                            .values()
+                            .map(|ty| self.get_overall_ty_accessibility(ty)),
+                    )
+                    .min_by(|lhs, rhs| lhs.rank().cmp(&rhs.rank()))
+                    .unwrap()
+            }
+            ty::Type::TraitType(trait_ty) => std::iter::once(
+                self.get_accessibility(trait_ty.trait_type_id.into())
+                    .unwrap(),
+            )
+            .chain(
+                trait_ty
+                    .trait_substitution
+                    .type_arguments_by_parameter
+                    .values()
+                    .map(|ty| self.get_overall_ty_accessibility(ty)),
+            )
+            .chain(
+                trait_ty
+                    .trait_type_substitution
+                    .type_arguments_by_parameter
+                    .values()
+                    .map(|ty| self.get_overall_ty_accessibility(ty)),
+            )
+            .min_by(|lhs, rhs| lhs.rank().cmp(&rhs.rank()))
+            .unwrap(),
+            ty::Type::Parameter(_) | ty::Type::Primitive(_) => Accessibility::Public,
+            ty::Type::Reference(reference_ty) => {
+                self.get_overall_ty_accessibility(&reference_ty.operand)
+            }
+        }
     }
 
     fn finalize_trait(
@@ -810,7 +1058,7 @@ impl Table {
 
         let implements_syntax_tree_with_module_ids = states
             .remvoe_implements_syntax_tree_with_module_ids_by_trait_id(trait_id)
-            .expect("should've exists");
+            .unwrap_or_default();
 
         for implements_syntax_tree_with_module_id in implements_syntax_tree_with_module_ids {
             let signature_span = implements_syntax_tree_with_module_id
@@ -829,7 +1077,7 @@ impl Table {
             };
 
             for existing_implements in self.traits[trait_id].implements.iter().copied() {
-                if compare_implements(
+                if resolution::compare_implements(
                     &self.implements[existing_implements].substitution,
                     &self.implements[new_implements].substitution,
                 ) == ImplementsComparison::Ambiguous
@@ -841,6 +1089,11 @@ impl Table {
                     self.remove_implements(new_implements);
                     break;
                 }
+            }
+
+            // new implements has been successfully added
+            if self.implements.get(new_implements).is_some() {
+                self.traits[trait_id].implements.insert(new_implements);
             }
         }
 
@@ -895,6 +1148,28 @@ impl Table {
             .values()
             .copied()
         {
+            // remove type parameters
+            for ty_parameter in self.implements_types[implements_ty]
+                .generic_parameters
+                .type_parameter_order
+                .iter()
+                .copied()
+            {
+                assert!(self.type_parameters.remove(ty_parameter).is_some());
+            }
+            // remove lifetime parameters
+            for lifetime_parameter in self.implements_types[implements_ty]
+                .generic_parameters
+                .lifetime_parameter_order
+                .iter()
+                .copied()
+            {
+                assert!(self
+                    .lifetime_parameters
+                    .remove(lifetime_parameter)
+                    .is_some());
+            }
+
             assert!(self.implements_types.remove(implements_ty).is_some());
         }
         // remove implements Function
@@ -903,6 +1178,30 @@ impl Table {
             .values()
             .copied()
         {
+            // remove type parameters
+            for ty_parameter in self.implements_functions[implements_function]
+                .generics
+                .parameters
+                .type_parameter_order
+                .iter()
+                .copied()
+            {
+                assert!(self.type_parameters.remove(ty_parameter).is_some());
+            }
+            // remove lifetime parameters
+            for lifetime_parameter in self.implements_functions[implements_function]
+                .generics
+                .parameters
+                .lifetime_parameter_order
+                .iter()
+                .copied()
+            {
+                assert!(self
+                    .lifetime_parameters
+                    .remove(lifetime_parameter)
+                    .is_some());
+            }
+
             // remove function parameters
             for function_parameter in self.implements_functions[implements_function]
                 .function_signature
@@ -925,12 +1224,7 @@ impl Table {
         // remove the implements from the trait
         {
             let parent_trait = &mut self.traits[self.implements[implements_id].trait_id];
-            let remove_position = parent_trait
-                .implements
-                .iter()
-                .position(|x| *x == implements_id)
-                .unwrap();
-            parent_trait.implements.remove(remove_position);
+            parent_trait.implements.remove(&implements_id);
         }
 
         assert!(self.implements.remove(implements_id).is_some());
@@ -950,7 +1244,7 @@ impl Table {
             ty::Type::Reference(reference_ty) => {
                 Self::type_parameter_exists(ty_parameter, &reference_ty.operand)
             }
-            ty::Type::Parameter(ty) => *ty != ty_parameter,
+            ty::Type::Parameter(ty) => *ty == ty_parameter,
         }
     }
 
@@ -1011,7 +1305,7 @@ impl Table {
             parent_trait_id.into(),
             &resolution::Info {
                 referring_site: implements_id.into(),
-                check_where_clause: true,
+                generic_configuration: resolution::GenericConfiguration::Default,
                 explicit_lifetime_required: true,
             },
             states,
@@ -1062,7 +1356,23 @@ impl Table {
                 }
             }
 
-            if !type_parameters.is_empty() {}
+            if !type_parameters.is_empty() {
+                handler.receive(error::Error::UnusedTypeParameters(
+                    error::UnusedTypeParameters {
+                        unused_type_parameter_spans: type_parameters
+                            .iter()
+                            .map(|x| self.type_parameters[*x].symbol_span().unwrap())
+                            .collect(),
+                        generic_parameters_span: implements_signature_syntax_tree
+                            .generic_parameters()
+                            .as_ref()
+                            .unwrap()
+                            .span(),
+                    },
+                ));
+                self.remove_implements(implements_id);
+                return None;
+            }
         }
 
         let implements_target_root_module_id = self
@@ -1085,13 +1395,16 @@ impl Table {
         let mut trait_members = self.traits[parent_trait_id]
             .trait_member_ids_by_name
             .clone();
-        let mut constructed_implements_members: HashMap<&str, ImplementsMemberID> = HashMap::new();
+        let mut constructed_implements_members: HashMap<String, ImplementsMemberID> =
+            HashMap::new();
 
-        for implements_member_syntax_tree in implements_body_syntax_tree.members() {
-            let identifier = match implements_member_syntax_tree {
-                syntax_tree::item::ImplementsMember::Type(ty) => ty.signature().identifier(),
+        for implements_member_syntax_tree in implements_body_syntax_tree.dissolve().1 {
+            let identifier = match &implements_member_syntax_tree {
+                syntax_tree::item::ImplementsMember::Type(ty) => {
+                    ty.signature().identifier().clone()
+                }
                 syntax_tree::item::ImplementsMember::Function(func) => {
-                    func.signature().identifier()
+                    func.signature().identifier().clone()
                 }
             };
 
@@ -1119,34 +1432,208 @@ impl Table {
                 continue;
             };
 
-            match (trait_member_id, implements_member_syntax_tree) {
-                (
-                    TraitMemberID::Function(function_id),
-                    syntax_tree::item::ImplementsMember::Function(function_syntax_tree),
-                ) => {} // TODO: finalize the function signature
+            let implements_member_id: ImplementsMemberID =
+                match (trait_member_id, implements_member_syntax_tree) {
+                    (
+                        TraitMemberID::Function(function_id),
+                        syntax_tree::item::ImplementsMember::Function(function_syntax_tree),
+                    ) => {
+                        let implements_function_id = self.draft_implements_function(
+                            function_syntax_tree,
+                            function_id,
+                            implements_id,
+                            handler,
+                        );
+                        assert!(self.implements[implements_id]
+                            .implements_functions_by_trait_function
+                            .insert(function_id, implements_function_id)
+                            .is_none());
+                        implements_function_id.into()
+                    }
 
-                /* TODO: finalize the type signature */
-                (TraitMemberID::Type(_), syntax_tree::item::ImplementsMember::Type(_)) => {}
+                    /* TODO: finalize the type signature */
+                    (
+                        TraitMemberID::Type(type_id),
+                        syntax_tree::item::ImplementsMember::Type(type_syntax_tree),
+                    ) => {
+                        let implements_type_id = self.draft_implements_type(
+                            type_syntax_tree,
+                            type_id,
+                            implements_id,
+                            handler,
+                        );
+                        assert!(self.implements[implements_id]
+                            .implements_types_by_trait_type
+                            .insert(type_id, implements_type_id)
+                            .is_none());
+                        implements_type_id.into()
+                    }
 
-                (trait_member_id, implements_member_syntax_tree) => handler.receive(
-                    error::Error::TraitMemberKindMismatch(TraitMemberKindMismatch {
-                        expected_kind: match trait_member_id {
-                            TraitMemberID::Function(_) => TraitMemberKind::Function,
-                            TraitMemberID::Type(_) => TraitMemberKind::Type,
-                        },
-                        actual_kind: match implements_member_syntax_tree {
-                            syntax_tree::item::ImplementsMember::Function(_) => {
-                                TraitMemberKind::Function
-                            }
-                            syntax_tree::item::ImplementsMember::Type(_) => TraitMemberKind::Type,
-                        },
-                        span: identifier.span.clone(),
-                    }),
-                ),
-            }
+                    (trait_member_id, implements_member_syntax_tree) => {
+                        handler.receive(error::Error::TraitMemberKindMismatch(
+                            TraitMemberKindMismatch {
+                                expected_kind: match trait_member_id {
+                                    TraitMemberID::Function(_) => TraitMemberKind::Function,
+                                    TraitMemberID::Type(_) => TraitMemberKind::Type,
+                                },
+                                actual_kind: match implements_member_syntax_tree {
+                                    syntax_tree::item::ImplementsMember::Function(_) => {
+                                        TraitMemberKind::Function
+                                    }
+                                    syntax_tree::item::ImplementsMember::Type(_) => {
+                                        TraitMemberKind::Type
+                                    }
+                                },
+                                span: identifier.span.clone(),
+                            },
+                        ));
+                        continue;
+                    }
+                };
+
+            constructed_implements_members
+                .insert(identifier.span.str().to_string(), implements_member_id);
+            trait_members.remove(identifier.span.str());
         }
 
+        if !trait_members.is_empty() {
+            handler.receive(error::Error::NotAllTraitMembersWereImplemented(
+                error::NotAllTraitMembersWereImplemented {
+                    unimplemented_members: trait_members.into_values().collect(),
+                    trait_id: parent_trait_id,
+                    implements_span: implements_signature_syntax_tree
+                        .qualified_identifier()
+                        .span(),
+                },
+            ));
+
+            self.remove_implements(implements_id);
+            return None;
+        }
+
+        self.implements[implements_id].syntax_tree = Some(implements_signature_syntax_tree);
+
         Some(implements_id)
+    }
+
+    fn draft_implements_type(
+        &mut self,
+        implements_type_syntax_tree: syntax_tree::item::ImplementsType,
+        trait_type_id: arena::ID<TraitType>,
+        parent_implements_id: arena::ID<Implements>,
+        handler: &impl Handler<error::Error>,
+    ) -> arena::ID<ImplementsType> {
+        let implements_type_id = self.implements_types.push(ImplementsType {
+            generic_parameters: GenericParameters::default(),
+            trait_type_id,
+            alias: ty::Type::Primitive(Primitive::Void),
+            name: self.trait_types[trait_type_id].name.clone(),
+            parent_implements_id,
+            syntax_tree: None, // to be filled later
+        });
+
+        if let Some(generic_parameters) = implements_type_syntax_tree
+            .signature()
+            .generic_parameters()
+            .as_ref()
+        {
+            self.implements_types[implements_type_id].generic_parameters = self
+                .create_generic_parameters(implements_type_id.into(), generic_parameters, handler);
+        }
+
+        self.implements_types[implements_type_id].syntax_tree = Some(implements_type_syntax_tree);
+
+        implements_type_id
+    }
+
+    fn draft_implements_function(
+        &mut self,
+        implements_function_syntax_tree: syntax_tree::item::ImplementsFunction,
+        trait_function_id: arena::ID<TraitFunction>,
+        parent_implements_id: arena::ID<Implements>,
+        handler: &impl Handler<error::Error>,
+    ) -> arena::ID<ImplementsFunction> {
+        // function signature syntax tree (without parameters)
+        let (signature_syntax_tree, body_syntax_tree) = implements_function_syntax_tree.dissolve();
+
+        let (signature_syntax_tree, parameters) = {
+            let (identifier, generic_parameters, parameter_list, return_type, where_clause) =
+                signature_syntax_tree.dissolve();
+
+            (
+                FunctionSignatureSyntaxTree {
+                    identifier,
+                    generic_parameters,
+                    return_type,
+                    where_clause,
+                },
+                parameter_list,
+            )
+        };
+
+        let implements_function_id = self.implements_functions.push(ImplementsFunction {
+            function_signature: crate::FunctionSignature {
+                name: signature_syntax_tree.identifier.span.str().to_string(),
+                parameter_ids_by_name: HashMap::new(), // to be filled later
+                parameter_order: Vec::new(),           // to be filled later
+                return_type: ty::Type::Primitive(Primitive::Void), // to be filled later
+                syntax_tree: None,                     // to be filled later
+                generics: Generics::default(),         // to be filled later
+            },
+            syntax_tree: Some(body_syntax_tree),
+            parent_implements_id,
+            trait_function_id,
+        });
+
+        // create function generics
+        if let Some(generic_parameters) = signature_syntax_tree.generic_parameters.as_ref() {
+            self.implements_functions[implements_function_id]
+                .generics
+                .parameters = self.create_generic_parameters(
+                implements_function_id.into(),
+                generic_parameters,
+                handler,
+            );
+        }
+        self.implements_functions[implements_function_id]
+            .function_signature
+            .syntax_tree = Some(signature_syntax_tree);
+
+        for parameter in parameters
+            .dissolve()
+            .1
+            .into_iter()
+            .flat_map(ConnectedList::into_elements)
+        {
+            let function = &mut self.implements_functions[implements_function_id];
+
+            // redefinition check
+            if let Err(error) = Self::redefinition_check(
+                &function.function_signature.parameter_ids_by_name,
+                parameter.identifier(),
+            ) {
+                handler.receive(error::Error::ImplementsFunctionParameterRedefinition(error));
+                continue;
+            }
+
+            let parameter_name = parameter.identifier().span.str().to_string();
+
+            let parameter_id = self.implements_function_parameters.push(Parameter {
+                name: parameter_name.clone(),
+                parameter_parent_id: implements_function_id,
+                declaration_order: function.parameter_order.len(),
+                ty: ty::Type::Primitive(Primitive::Void), // to be replaced
+                is_mutable: parameter.mutable_keyword().is_some(),
+                syntax_tree: Some(parameter),
+            });
+
+            function
+                .parameter_ids_by_name
+                .insert(parameter_name, parameter_id);
+            function.parameter_order.push(parameter_id);
+        }
+
+        implements_function_id
     }
 
     fn is_ty_from_target_root_module(
@@ -1208,132 +1695,4 @@ impl Table {
             }
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum ImplementsComparison {
-    Incompatible,
-    MoreSpecialized,
-    LessSpecialized,
-    Ambiguous,
-}
-
-// use lhs as base
-fn compare_implements(
-    lhs_implements_substitution: &Substitution,
-    rhs_implements_substitution: &Substitution,
-) -> ImplementsComparison {
-    assert_eq!(
-        lhs_implements_substitution
-            .type_arguments_by_parameter
-            .len(),
-        rhs_implements_substitution
-            .type_arguments_by_parameter
-            .len()
-    );
-
-    let lhs_to_rhs = get_mappings(lhs_implements_substitution, rhs_implements_substitution);
-    let rhs_to_lhs = get_mappings(rhs_implements_substitution, lhs_implements_substitution);
-
-    match (lhs_to_rhs, rhs_to_lhs) {
-        (None, None) => ImplementsComparison::Incompatible,
-        (None, Some(rhs_to_lhs)) => {
-            assert!(!rhs_to_lhs.is_empty());
-            ImplementsComparison::MoreSpecialized
-        }
-        (Some(lhs_to_rhs), None) => {
-            assert!(!lhs_to_rhs.is_empty());
-            ImplementsComparison::LessSpecialized
-        }
-        (Some(lhs_to_rhs), Some(rhs_to_lhs)) => match lhs_to_rhs.len().cmp(&rhs_to_lhs.len()) {
-            Ordering::Less => ImplementsComparison::MoreSpecialized,
-            Ordering::Equal => ImplementsComparison::Ambiguous,
-            Ordering::Greater => ImplementsComparison::LessSpecialized,
-        },
-    }
-}
-
-// get mappings from lhs -> rhs
-fn get_mappings(
-    lhs_implements_substitution: &Substitution,
-    rhs_implements_substitution: &Substitution,
-) -> Option<HashMap<ty::Type, ty::Type>> {
-    let mut mappings = HashMap::new();
-
-    for ty_parameter_key in lhs_implements_substitution
-        .type_arguments_by_parameter
-        .keys()
-    {
-        let lhs_ty = lhs_implements_substitution
-            .type_arguments_by_parameter
-            .get(ty_parameter_key)
-            .unwrap();
-        let rhs_ty = rhs_implements_substitution
-            .type_arguments_by_parameter
-            .get(ty_parameter_key)
-            .unwrap();
-
-        mappings = get_mappings_on_type(lhs_ty, rhs_ty, mappings)?;
-    }
-
-    Some(mappings)
-}
-
-// maps from lhs_type -> rhs_type
-fn get_mappings_on_type(
-    lhs_type: &ty::Type,
-    rhs_ty: &ty::Type,
-    mut previous_mappings: HashMap<ty::Type, ty::Type>,
-) -> Option<HashMap<ty::Type, ty::Type>> {
-    match (lhs_type, rhs_ty) {
-        (ty::Type::Parameter(lhs_ty_parameter), rhs_ty) => {
-            if let Some(previous_ty) =
-                previous_mappings.insert(ty::Type::Parameter(*lhs_ty_parameter), rhs_ty.clone())
-            {
-                if previous_ty != *rhs_ty {
-                    return None;
-                }
-            }
-        }
-        (ty::Type::TraitType(lhs_ty_parameter), rhs_ty) => {
-            if let Some(previous_ty) = previous_mappings.insert(
-                ty::Type::TraitType(lhs_ty_parameter.clone()),
-                rhs_ty.clone(),
-            ) {
-                if previous_ty != *rhs_ty {
-                    return None;
-                }
-            }
-        }
-        (ty::Type::Struct(lhs_ty_struct), ty::Type::Struct(rhs_ty_struct)) => {
-            if lhs_ty_struct.struct_id != rhs_ty_struct.struct_id {
-                return None;
-            }
-
-            assert_eq!(
-                lhs_ty_struct.substitution.type_arguments_by_parameter.len(),
-                rhs_ty_struct.substitution.type_arguments_by_parameter.len()
-            );
-
-            for ty_parameter_key in lhs_ty_struct
-                .substitution
-                .type_arguments_by_parameter
-                .keys()
-            {
-                let lhs_ty =
-                    &lhs_ty_struct.substitution.type_arguments_by_parameter[ty_parameter_key];
-                let rhs_ty =
-                    &rhs_ty_struct.substitution.type_arguments_by_parameter[ty_parameter_key];
-
-                previous_mappings = get_mappings_on_type(lhs_ty, rhs_ty, previous_mappings)?;
-            }
-        }
-        (lhs_ty, rhs_ty) => {
-            if lhs_ty != rhs_ty {
-                return None;
-            }
-        }
-    }
-
-    Some(previous_mappings)
 }

@@ -1,6 +1,9 @@
 //! Contains the resolution logic for the symbol table.
 
-use std::collections::HashSet;
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap, HashSet},
+};
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
@@ -9,7 +12,10 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, GenericArgument, GenericIdentifier, QualifiedIdentifier, TypeSpecifier,
 };
-use pernixc_system::{arena, diagnostic::Handler};
+use pernixc_system::{
+    arena,
+    diagnostic::{Dummy, Handler},
+};
 
 use super::Table;
 use crate::{
@@ -24,9 +30,23 @@ use crate::{
     },
     table,
     ty::{self, Primitive, Reference},
-    Enum, EnumVariant, GenericableID, GlobalID, Implements, LifetimeArgument, LifetimeParameter,
-    Module, ScopedID, Substitution, TraitBound, TypeParameter, WhereClause, ID,
+    Enum, EnumVariant, GenericableID, GlobalID, LifetimeArgument, LifetimeParameter, Module,
+    ScopedID, Substitution, TraitBound, TypeParameter, WhereClause, ID,
 };
+
+/// Describing how the resolution should deal with the generics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum GenericConfiguration {
+    /// Where clauses are checked and trait resolutions are allowed.
+    #[default]
+    Default,
+
+    /// Where clauses will be ignored and trait resolutions cause an error.
+    TraitResolutionNotAllowed,
+
+    /// Where clauses and trait resolutions will be ignored.
+    TraitResolutionIgnored,
+}
 
 /// Contains the neccessary information and configuration for the resolution process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -34,8 +54,8 @@ pub struct Info {
     /// Specifies where the resolution is occurring.
     pub referring_site: ID,
 
-    /// Specifies whether the where clause should be checked or not.
-    pub check_where_clause: bool,
+    /// Describes how the resolution should deal with the generics.
+    pub generic_configuration: GenericConfiguration,
 
     /// Specifies whether if the lifetimes should be explicitly specified or not.
     pub explicit_lifetime_required: bool,
@@ -51,11 +71,17 @@ enum TraitOrImplementsID {
 #[derive(Debug, Clone)]
 enum TraitOrActiveImplements {
     Trait(Trait),
-    ActiveImplements(arena::ID<Implements>),
+    ActiveImplements(Implements),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct Implements {
+    implements_id: arena::ID<crate::Implements>,
+    deduced_substitution: Substitution,
 }
 
 /// Represents a resolution result of a symbol with additional generic arguments.
-#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct Generics<Symbol> {
     /// The resolved symbol [`ID`].
     #[get_copy = "pub"]
@@ -94,7 +120,17 @@ pub type Struct = Generics<crate::Struct>;
 pub type Function = Generics<crate::Function>;
 
 /// Represents a resolution to the implements function symbol.
-pub type ImplementsFunction = Generics<crate::ImplementsFunction>;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImplementsFunction {
+    /// The resolved implements function [`ID`].
+    pub implements_function_id: arena::ID<crate::ImplementsFunction>,
+
+    /// The deduced substitution for the resolved implements.
+    pub deduced_substitution: Substitution,
+
+    /// The substitution for the resolved function implements.
+    pub implements_function_substitution: Substitution,
+}
 
 /// Represents a result of a symbol resolution process.
 #[derive(Debug, Clone, EnumAsInner)]
@@ -143,7 +179,7 @@ impl Table {
             .copied()
             .map(ScopedID::from)
             .chain(std::iter::once(
-                self.get_current_scoped_id(referring_site).unwrap(),
+                self.get_closet_scoped_id(referring_site).unwrap(),
             ));
 
         let mut candidates = HashSet::new();
@@ -206,8 +242,9 @@ impl Table {
                     return Some(id.into());
                 }
 
-                handler.receive(error::Error::TargetNotFound(TargetNotFound {
-                    unknown_target_span: identifier.span.clone(),
+                handler.receive(error::Error::SymbolNotFound(SymbolNotFound {
+                    searched_global_id: None,
+                    symbol_reference_span: identifier.span.clone(),
                 }));
                 return None;
             }
@@ -283,10 +320,12 @@ impl Table {
         Err(table::Error::FatalSemantic)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn substitute_where_clause(
         &self,
         where_clause: &WhereClause,
         substitution: &Substitution,
+        active_where_clause: &WhereClause,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> Option<WhereClause> {
@@ -328,8 +367,14 @@ impl Table {
         }
 
         for (ty, lifetime_argument_set) in &where_clause.lifetime_argument_sets_by_type {
-            let aliased =
-                self.alias_type(ty, substitution, true, generic_identifier_span, handler)?;
+            let aliased = self.alias_type(
+                ty,
+                substitution,
+                GenericConfiguration::Default,
+                active_where_clause,
+                generic_identifier_span,
+                handler,
+            )?;
             let result_lifetime_argument_set = result_where_clause
                 .lifetime_argument_sets_by_type
                 .entry(aliased)
@@ -358,21 +403,34 @@ impl Table {
             if !self.apply_substitution_on_arguments(
                 &mut new_substitution,
                 substitution,
-                true,
+                GenericConfiguration::Default,
+                active_where_clause,
                 generic_identifier_span,
                 handler,
             ) {
                 return None;
             }
+
+            result_where_clause.trait_bounds.insert(TraitBound {
+                trait_id: trait_bound.trait_id,
+                substitution: new_substitution,
+            });
         }
 
         for (trait_type, ty) in &where_clause.types_by_trait_type {
-            let aliased_ty_bound =
-                self.alias_type(ty, substitution, true, generic_identifier_span, handler)?;
+            let aliased_ty_bound = self.alias_type(
+                ty,
+                substitution,
+                GenericConfiguration::Default,
+                active_where_clause,
+                generic_identifier_span,
+                handler,
+            )?;
             let aliased_trait_ty = self.alias_type(
                 &ty::Type::TraitType(trait_type.clone()),
                 substitution,
-                true,
+                GenericConfiguration::Default,
+                active_where_clause,
                 generic_identifier_span,
                 handler,
             )?;
@@ -405,7 +463,8 @@ impl Table {
         &self,
         substitution_operand: &mut Substitution,
         other: &Substitution,
-        allow_trait_resolution: bool,
+        generic_configuration: GenericConfiguration,
+        active_where_clause: &WhereClause,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> bool {
@@ -427,7 +486,8 @@ impl Table {
             if !self.substitute_type(
                 argument,
                 other,
-                allow_trait_resolution,
+                generic_configuration,
+                active_where_clause,
                 generic_identifier_span,
                 handler,
             ) {
@@ -438,22 +498,208 @@ impl Table {
         true
     }
 
+    fn deduce(
+        implements_ty: &ty::Type,
+        trait_ty: &ty::Type,
+        (mut previous_substitution, mut trait_type_substitution): (
+            BTreeMap<arena::ID<TypeParameter>, ty::Type>,
+            HashMap<ty::TraitType, ty::Type>,
+        ),
+    ) -> Option<(
+        BTreeMap<arena::ID<TypeParameter>, ty::Type>,
+        HashMap<ty::TraitType, ty::Type>,
+    )> {
+        match (implements_ty, trait_ty) {
+            (ty::Type::Parameter(implements_ty), trait_ty) => {
+                if let Some(previous_ty) =
+                    previous_substitution.insert(*implements_ty, trait_ty.clone())
+                {
+                    if previous_ty != *trait_ty {
+                        return None;
+                    }
+                }
+
+                Some((previous_substitution, trait_type_substitution))
+            }
+            (ty::Type::TraitType(implements_ty), trait_ty) => {
+                if let Some(previous_ty) =
+                    trait_type_substitution.insert(implements_ty.clone(), trait_ty.clone())
+                {
+                    if previous_ty != *trait_ty {
+                        return None;
+                    }
+                }
+
+                Some((previous_substitution, trait_type_substitution))
+            }
+            (ty::Type::Reference(implements_ty), ty::Type::Reference(trait_ty)) => Self::deduce(
+                &implements_ty.operand,
+                &trait_ty.operand,
+                (previous_substitution, trait_type_substitution),
+            ),
+            (ty::Type::Struct(implements_ty), ty::Type::Struct(trait_ty)) => {
+                if implements_ty.struct_id != trait_ty.struct_id {
+                    return None;
+                }
+
+                let mut result = (previous_substitution, trait_type_substitution);
+
+                for (implements_ty, trait_ty) in implements_ty
+                    .substitution
+                    .type_arguments_by_parameter
+                    .values()
+                    .zip(trait_ty.substitution.type_arguments_by_parameter.values())
+                {
+                    let Some(new_result) = Self::deduce(implements_ty, trait_ty, result) else {
+                        return None;
+                    };
+                    result = new_result;
+                }
+
+                Some(result)
+            }
+            (implements_ty, trait_ty) => {
+                if implements_ty != trait_ty {
+                    return None;
+                }
+
+                Some((previous_substitution, trait_type_substitution))
+            }
+        }
+    }
+
+    fn get_deduced_substitution(
+        &self,
+        generic_identifier_span: &Span,
+        implement_substitution: &Substitution,
+        trait_substitution: &Substitution,
+        active_where_clause: &WhereClause,
+    ) -> Option<Substitution> {
+        let mut type_substitution = BTreeMap::new();
+        let mut trait_type_substitution = HashMap::new();
+
+        for (implements_ty, trait_ty) in implement_substitution
+            .type_arguments_by_parameter
+            .values()
+            .zip(trait_substitution.type_arguments_by_parameter.values())
+        {
+            if let Some((previous, trait_type)) = Self::deduce(
+                implements_ty,
+                trait_ty,
+                (type_substitution, trait_type_substitution),
+            ) {
+                type_substitution = previous;
+                trait_type_substitution = trait_type;
+            } else {
+                return None;
+            }
+        }
+
+        let deduced_substitution = Substitution {
+            type_arguments_by_parameter: type_substitution,
+            lifetime_arguments_by_parameter: implement_substitution
+                .lifetime_arguments_by_parameter
+                .clone(),
+        };
+
+        for (trait_ty, required_ty) in trait_type_substitution {
+            let trait_ty = ty::Type::TraitType(trait_ty);
+            let Some(aliased_ty) = self.alias_type(
+                &trait_ty,
+                &deduced_substitution,
+                GenericConfiguration::Default,
+                active_where_clause,
+                generic_identifier_span,
+                &Dummy,
+            ) else {
+                return None;
+            };
+
+            if aliased_ty != required_ty {
+                return None;
+            }
+        }
+
+        Some(deduced_substitution)
+    }
+
     fn resolve_trait_implements(
         &self,
         trait_id: arena::ID<crate::Trait>,
         substitution: &Substitution,
         generic_identifier_span: &Span,
+        active_where_clause: &WhereClause,
         handler: &impl Handler<error::Error>,
-    ) -> Option<arena::ID<Implements>> {
-        todo!()
+    ) -> Option<Implements> {
+        let mut implements_ids_by_deduced_substitution = HashMap::new();
+
+        for implements_id in self.traits[trait_id].implements.iter().copied() {
+            let Some(deduced_substitution) = self.get_deduced_substitution(
+                generic_identifier_span,
+                &self.implements[implements_id].substitution,
+                substitution,
+                active_where_clause,
+            ) else {
+                continue;
+            };
+
+            if !self.check_where_clause(
+                implements_id.into(),
+                &deduced_substitution,
+                generic_identifier_span,
+                active_where_clause,
+                &Dummy,
+            ) {
+                continue;
+            }
+
+            assert!(implements_ids_by_deduced_substitution
+                .insert(implements_id, deduced_substitution)
+                .is_none());
+        }
+
+        let implements = implements_ids_by_deduced_substitution
+            .keys()
+            .copied()
+            .reduce(|lhs, rhs| {
+                match compare_implements(
+                    &self.implements[lhs].substitution,
+                    &self.implements[rhs].substitution,
+                ) {
+                    ImplementsComparison::MoreSpecialized => lhs,
+                    ImplementsComparison::LessSpecialized => rhs,
+                    ImplementsComparison::Incompatible | ImplementsComparison::Ambiguous => {
+                        unreachable!()
+                    }
+                }
+            });
+
+        implements.map_or_else(
+            || {
+                handler.receive(error::Error::NoImplementsFound(error::NoImplementsFound {
+                    span: generic_identifier_span.clone(),
+                }));
+                None
+            },
+            |implements| {
+                Some(Implements {
+                    implements_id: implements,
+                    deduced_substitution: implements_ids_by_deduced_substitution
+                        .remove(&implements)
+                        .unwrap(),
+                })
+            },
+        )
     }
 
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     fn substitute_type(
         &self,
         ty: &mut ty::Type,
         substitution: &Substitution,
-        allow_trait_resolution: bool,
+        generic_configuration: GenericConfiguration,
+        active_where_clause: &WhereClause,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> bool {
@@ -462,7 +708,8 @@ impl Table {
                 if !self.apply_substitution_on_arguments(
                     &mut struct_ty.substitution,
                     substitution,
-                    allow_trait_resolution,
+                    generic_configuration,
+                    active_where_clause,
                     generic_identifier_span,
                     handler,
                 ) {
@@ -470,13 +717,26 @@ impl Table {
                 }
                 true
             }
-            ty::Type::Reference(reference_ty) => self.substitute_type(
-                &mut reference_ty.operand,
-                substitution,
-                allow_trait_resolution,
-                generic_identifier_span,
-                handler,
-            ),
+            ty::Type::Reference(reference_ty) => {
+                if let Some(LifetimeArgument::Parameter(lt)) = reference_ty.lifetime_argument {
+                    if let Some(substitution) = substitution
+                        .lifetime_arguments_by_parameter
+                        .get(&lt)
+                        .copied()
+                    {
+                        reference_ty.lifetime_argument = Some(substitution);
+                    }
+                }
+
+                self.substitute_type(
+                    &mut reference_ty.operand,
+                    substitution,
+                    generic_configuration,
+                    active_where_clause,
+                    generic_identifier_span,
+                    handler,
+                )
+            }
             ty::Type::Parameter(type_parameter) => {
                 if let Some(substitution) =
                     substitution.type_arguments_by_parameter.get(type_parameter)
@@ -490,15 +750,49 @@ impl Table {
                 if !self.apply_substitution_on_arguments(
                     &mut trait_type.trait_substitution,
                     substitution,
-                    allow_trait_resolution,
+                    generic_configuration,
+                    active_where_clause,
                     generic_identifier_span,
                     handler,
                 ) {
                     return false;
                 }
 
-                if trait_type.trait_substitution.is_concrete_substitution() {
-                    if !allow_trait_resolution {
+                match (
+                    trait_type.trait_substitution.is_concrete_substitution(),
+                    generic_configuration,
+                ) {
+                    (true, GenericConfiguration::Default) => {
+                        let Some(active_implements) = self.resolve_trait_implements(
+                            self.trait_types[trait_type.trait_type_id].parent_trait_id,
+                            &trait_type.trait_substitution,
+                            generic_identifier_span,
+                            active_where_clause,
+                            handler,
+                        ) else {
+                            return false;
+                        };
+
+                        let Some(new_ty) = self.alias_type(
+                            &self.implements_types[self.implements
+                                [active_implements.implements_id]
+                                .implements_types_by_trait_type[&trait_type.trait_type_id]]
+                                .alias,
+                            &Self::combine_substitution(
+                                &active_implements.deduced_substitution,
+                                substitution,
+                            ),
+                            generic_configuration,
+                            active_where_clause,
+                            generic_identifier_span,
+                            handler,
+                        ) else {
+                            return false;
+                        };
+
+                        *ty = new_ty;
+                    }
+                    (true, GenericConfiguration::TraitResolutionNotAllowed) => {
                         handler.receive(error::Error::TraitResolutionNotAllowed(
                             TraitResolutionNotAllowed {
                                 trait_resolution_span: generic_identifier_span.clone(),
@@ -506,38 +800,19 @@ impl Table {
                         ));
                         return false;
                     }
-
-                    let Some(active_implements) = self.resolve_trait_implements(
-                        self.trait_types[trait_type.trait_type_id].parent_trait_id,
-                        &trait_type.trait_substitution,
-                        generic_identifier_span,
-                        handler,
-                    ) else {
-                        return false;
-                    };
-
-                    let Some(new_ty) = self.alias_type(
-                        &self.implements_types[self.implements[active_implements]
-                            .implements_types_by_trait_type[&trait_type.trait_type_id]]
-                            .alias,
-                        substitution,
-                        allow_trait_resolution,
-                        generic_identifier_span,
-                        handler,
-                    ) else {
-                        return false;
-                    };
-
-                    *ty = new_ty;
-                } else if !self.apply_substitution_on_arguments(
-                    &mut trait_type.trait_type_substitution,
-                    substitution,
-                    allow_trait_resolution,
-                    generic_identifier_span,
-                    handler,
-                ) {
-                    return false;
-                }
+                    (false, _) | (_, GenericConfiguration::TraitResolutionIgnored) => {
+                        if !self.apply_substitution_on_arguments(
+                            &mut trait_type.trait_type_substitution,
+                            substitution,
+                            generic_configuration,
+                            active_where_clause,
+                            generic_identifier_span,
+                            handler,
+                        ) {
+                            return false;
+                        }
+                    }
+                };
 
                 true
             }
@@ -549,7 +824,8 @@ impl Table {
         &self,
         alias: &ty::Type,
         substitution: &Substitution,
-        allow_trait_resolution: bool,
+        generic_configuration: GenericConfiguration,
+        active_where_clause: &WhereClause,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> Option<ty::Type> {
@@ -557,7 +833,8 @@ impl Table {
         if !self.substitute_type(
             &mut cloned_ty,
             substitution,
-            allow_trait_resolution,
+            generic_configuration,
+            active_where_clause,
             generic_identifier_span,
             handler,
         ) {
@@ -698,6 +975,7 @@ impl Table {
         let Some(genericable_where_clause) = self.substitute_where_clause(
             genericable_where_clause,
             substitution,
+            active_where_clause,
             generic_identifier_span,
             handler,
         ) else {
@@ -752,6 +1030,7 @@ impl Table {
                 .contains(&required_trait_bound)
             {
                 found_error = true;
+
                 handler.receive(error::Error::TraitBoundNotSatisfied(
                     TraitBoundNotSatisfied {
                         required_trait_bound,
@@ -844,7 +1123,8 @@ impl Table {
         &self,
         alias: &ty::Type,
         substitution: &Substitution,
-        allow_trait_resolution: bool,
+        generic_configuration: GenericConfiguration,
+        active_where_clause: &WhereClause,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
     ) -> Option<Resolution> {
@@ -852,7 +1132,8 @@ impl Table {
             match self.alias_type(
                 alias,
                 substitution,
-                allow_trait_resolution,
+                generic_configuration,
+                active_where_clause,
                 generic_identifier_span,
                 handler,
             )? {
@@ -896,7 +1177,7 @@ impl Table {
         &self,
         used_root: &Root,
         parent_trait_id: arena::ID<crate::Trait>,
-        check_where_clause: bool,
+        generic_configuration: GenericConfiguration,
         active_where_clause: &WhereClause,
         generic_identifier_span: &Span,
         handler: &impl Handler<error::Error>,
@@ -934,43 +1215,48 @@ impl Table {
             |trait_resolution| trait_resolution,
         );
 
-        if trait_resolution.substitution.is_concrete_substitution() {
-            if !check_where_clause {
+        match (
+            trait_resolution.substitution.is_concrete_substitution(),
+            generic_configuration,
+        ) {
+            (true, GenericConfiguration::Default) => Some(
+                TraitOrActiveImplements::ActiveImplements(self.resolve_trait_implements(
+                    trait_resolution.symbol,
+                    &trait_resolution.substitution,
+                    generic_identifier_span,
+                    active_where_clause,
+                    handler,
+                )?),
+            ),
+            (true, GenericConfiguration::TraitResolutionNotAllowed) => {
                 handler.receive(error::Error::TraitResolutionNotAllowed(
                     TraitResolutionNotAllowed {
                         trait_resolution_span: generic_identifier_span.clone(),
                     },
                 ));
-                return None;
+                None
             }
+            (false, _) | (_, GenericConfiguration::TraitResolutionIgnored) => {
+                let required_trait_bound = TraitBound {
+                    trait_id: trait_resolution.symbol,
+                    substitution: trait_resolution.substitution.clone(),
+                };
+                if !active_where_clause
+                    .trait_bounds
+                    .contains(&required_trait_bound)
+                    && generic_configuration == GenericConfiguration::Default
+                {
+                    handler.receive(error::Error::TraitBoundNotSatisfied(
+                        TraitBoundNotSatisfied {
+                            required_trait_bound,
+                            generics_identifier_span: generic_identifier_span.clone(),
+                        },
+                    ));
+                    return None;
+                }
 
-            Some(TraitOrActiveImplements::ActiveImplements(
-                self.resolve_trait_implements(
-                    trait_resolution.symbol,
-                    &trait_resolution.substitution,
-                    generic_identifier_span,
-                    handler,
-                )?,
-            ))
-        } else {
-            let required_trait_bound = TraitBound {
-                trait_id: trait_resolution.symbol,
-                substitution: trait_resolution.substitution.clone(),
-            };
-            if !active_where_clause
-                .trait_bounds
-                .contains(&required_trait_bound)
-            {
-                handler.receive(error::Error::TraitBoundNotSatisfied(
-                    TraitBoundNotSatisfied {
-                        required_trait_bound,
-                        generics_identifier_span: generic_identifier_span.clone(),
-                    },
-                ));
-                return None;
+                Some(TraitOrActiveImplements::Trait(trait_resolution.clone()))
             }
-
-            Some(TraitOrActiveImplements::Trait(trait_resolution.clone()))
         }
     }
 
@@ -1159,7 +1445,7 @@ impl Table {
         used_root: &Root,
         found_global_id: GlobalID,
         resolved_substitution: Substitution,
-        check_where_clause: bool,
+        generic_configuration: GenericConfiguration,
         handler: &impl Handler<error::Error>,
     ) -> Option<Resolution> {
         let parent_substitution =
@@ -1182,11 +1468,11 @@ impl Table {
                 });
 
         let active_where_clause = self
-            .get_active_where_clause(found_global_id.into())
+            .get_active_where_clause(used_root.referring_site)
             .unwrap();
 
         if let Ok(genericable_id) = GenericableID::try_from(found_global_id) {
-            if check_where_clause {
+            if generic_configuration == GenericConfiguration::Default {
                 let substitution = parent_substitution.map(|parent_substitution| {
                     Self::combine_substitution(&resolved_substitution, parent_substitution)
                 });
@@ -1222,7 +1508,8 @@ impl Table {
             GlobalID::Type(id) => self.alias_type_as_resolution(
                 &self.types[id].alias,
                 &resolved_substitution,
-                check_where_clause,
+                generic_configuration,
+                &active_where_clause,
                 generic_identifier_span,
                 handler,
             )?,
@@ -1234,7 +1521,7 @@ impl Table {
                 let trait_resolution_or_active_implements = self.get_active_implements(
                     used_root,
                     self.trait_functions[id].parent_trait_id,
-                    check_where_clause,
+                    generic_configuration,
                     &active_where_clause,
                     generic_identifier_span,
                     handler,
@@ -1242,10 +1529,12 @@ impl Table {
 
                 match trait_resolution_or_active_implements {
                     TraitOrActiveImplements::ActiveImplements(active_implements) => {
-                        Resolution::ImplementsFunction(Generics {
-                            symbol: self.implements[active_implements]
+                        Resolution::ImplementsFunction(ImplementsFunction {
+                            implements_function_id: self.implements
+                                [active_implements.implements_id]
                                 .implements_functions_by_trait_function[&id],
-                            substitution: resolved_substitution,
+                            deduced_substitution: active_implements.deduced_substitution,
+                            implements_function_substitution: resolved_substitution,
                         })
                     }
                     TraitOrActiveImplements::Trait(trait_resolution) => {
@@ -1263,7 +1552,7 @@ impl Table {
                 let trait_resolution_or_active_implements = self.get_active_implements(
                     used_root,
                     self.trait_types[id].parent_trait_id,
-                    check_where_clause,
+                    generic_configuration,
                     &active_where_clause,
                     generic_identifier_span,
                     handler,
@@ -1272,11 +1561,13 @@ impl Table {
                 match trait_resolution_or_active_implements {
                     TraitOrActiveImplements::ActiveImplements(active_implements) => self
                         .alias_type_as_resolution(
-                            &self.implements_types[self.implements[active_implements]
+                            &self.implements_types[self.implements
+                                [active_implements.implements_id]
                                 .implements_types_by_trait_type[&id]]
                                 .alias,
-                            &resolved_substitution,
-                            check_where_clause,
+                            &active_implements.deduced_substitution,
+                            generic_configuration,
+                            &active_where_clause,
                             generic_identifier_span,
                             handler,
                         )?,
@@ -1351,7 +1642,9 @@ impl Table {
                         Kind::GlobalID(trait_type_resolution.member_resolution.symbol.into())
                     }
                     Resolution::ImplementsFunction(implemenst_function_resolution) => {
-                        Kind::ImplementsFunction(implemenst_function_resolution.symbol)
+                        Kind::ImplementsFunction(
+                            implemenst_function_resolution.implements_function_id,
+                        )
                     }
                 };
 
@@ -1377,7 +1670,7 @@ impl Table {
 
                 let Ok(scoped_id) = ScopedID::try_from(global_id) else {
                     handler.receive(error::Error::SymbolNotFound(SymbolNotFound {
-                        searched_global_id: global_id,
+                        searched_global_id: Some(global_id),
                         symbol_reference_span: identifier.span.clone(),
                     }));
                     return None;
@@ -1389,7 +1682,7 @@ impl Table {
                     .get_child_id_by_name(identifier.span.str())
                 else {
                     handler.receive(error::Error::SymbolNotFound(SymbolNotFound {
-                        searched_global_id: global_id,
+                        searched_global_id: Some(global_id),
                         symbol_reference_span: identifier.span.clone(),
                     }));
                     return None;
@@ -1601,7 +1894,7 @@ impl Table {
                     &current_root,
                     global_id,
                     substitution,
-                    info.check_where_clause,
+                    info.generic_configuration,
                     handler,
                 )
                 .ok_or(table::Error::FatalSemantic)?,
@@ -1629,13 +1922,13 @@ impl Table {
             .chain(qualified_identifier.rest().iter().map(|x| &x.1))
             .peekable();
 
-        while let Some(generics_identifier) = iter.next() {
+        while let Some(generic_identifier) = iter.next() {
             let is_last = iter.peek().is_none();
 
             let Some(global_id) = self.resolve_single_first_pass(
-                generics_identifier.identifier(),
+                generic_identifier.identifier(),
                 &current_root,
-                is_last,
+                qualified_identifier.leading_scope_separator().is_some(),
                 handler,
             ) else {
                 return None;
@@ -1644,16 +1937,16 @@ impl Table {
             if !is_last {
                 let GlobalID::Module(module_id) = global_id else {
                     handler.receive(error::Error::ModuleExpected(ModuleExpected {
-                        symbol_reference_span: generics_identifier.span(),
+                        symbol_reference_span: generic_identifier.span(),
                         found: global_id,
                     }));
                     return None;
                 };
 
-                if generics_identifier.generic_arguments().is_some() {
+                if generic_identifier.generic_arguments().is_some() {
                     handler.receive(error::Error::NoGenericArgumentsRequired(
                         NoGenericArgumentsRequired {
-                            span: generics_identifier.span(),
+                            span: generic_identifier.span(),
                         },
                     ));
                     return None;
@@ -1664,7 +1957,7 @@ impl Table {
                 return Some(trait_id);
             } else {
                 handler.receive(error::Error::TraitExpected(TraitExpected {
-                    symbol_reference_span: generics_identifier.span(),
+                    symbol_reference_span: generic_identifier.span(),
                 }));
                 return None;
             }
@@ -1672,4 +1965,133 @@ impl Table {
 
         unreachable!()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum ImplementsComparison {
+    Incompatible,
+    MoreSpecialized,
+    LessSpecialized,
+    Ambiguous,
+}
+
+// use lhs as base
+pub(super) fn compare_implements(
+    lhs_implements_substitution: &Substitution,
+    rhs_implements_substitution: &Substitution,
+) -> ImplementsComparison {
+    assert_eq!(
+        lhs_implements_substitution
+            .type_arguments_by_parameter
+            .len(),
+        rhs_implements_substitution
+            .type_arguments_by_parameter
+            .len()
+    );
+
+    let lhs_to_rhs = get_mappings(lhs_implements_substitution, rhs_implements_substitution);
+    let rhs_to_lhs = get_mappings(rhs_implements_substitution, lhs_implements_substitution);
+
+    match (lhs_to_rhs, rhs_to_lhs) {
+        (None, None) => ImplementsComparison::Incompatible,
+        (None, Some(rhs_to_lhs)) => {
+            assert!(!rhs_to_lhs.is_empty());
+            ImplementsComparison::MoreSpecialized
+        }
+        (Some(lhs_to_rhs), None) => {
+            assert!(!lhs_to_rhs.is_empty());
+            ImplementsComparison::LessSpecialized
+        }
+        (Some(lhs_to_rhs), Some(rhs_to_lhs)) => match lhs_to_rhs.len().cmp(&rhs_to_lhs.len()) {
+            Ordering::Less => ImplementsComparison::MoreSpecialized,
+            Ordering::Equal => ImplementsComparison::Ambiguous,
+            Ordering::Greater => ImplementsComparison::LessSpecialized,
+        },
+    }
+}
+
+// get mappings from lhs -> rhs
+pub(super) fn get_mappings(
+    lhs_implements_substitution: &Substitution,
+    rhs_implements_substitution: &Substitution,
+) -> Option<HashMap<ty::Type, ty::Type>> {
+    let mut mappings = HashMap::new();
+
+    for ty_parameter_key in lhs_implements_substitution
+        .type_arguments_by_parameter
+        .keys()
+    {
+        let lhs_ty = lhs_implements_substitution
+            .type_arguments_by_parameter
+            .get(ty_parameter_key)
+            .unwrap();
+        let rhs_ty = rhs_implements_substitution
+            .type_arguments_by_parameter
+            .get(ty_parameter_key)
+            .unwrap();
+
+        mappings = get_mappings_on_type(lhs_ty, rhs_ty, mappings)?;
+    }
+
+    Some(mappings)
+}
+
+// maps from lhs_type -> rhs_type
+pub(super) fn get_mappings_on_type(
+    lhs_type: &ty::Type,
+    rhs_ty: &ty::Type,
+    mut previous_mappings: HashMap<ty::Type, ty::Type>,
+) -> Option<HashMap<ty::Type, ty::Type>> {
+    match (lhs_type, rhs_ty) {
+        (ty::Type::Parameter(lhs_ty_parameter), rhs_ty) => {
+            if let Some(previous_ty) =
+                previous_mappings.insert(ty::Type::Parameter(*lhs_ty_parameter), rhs_ty.clone())
+            {
+                if previous_ty != *rhs_ty {
+                    return None;
+                }
+            }
+        }
+        (ty::Type::TraitType(lhs_ty_parameter), rhs_ty) => {
+            if let Some(previous_ty) = previous_mappings.insert(
+                ty::Type::TraitType(lhs_ty_parameter.clone()),
+                rhs_ty.clone(),
+            ) {
+                if previous_ty != *rhs_ty {
+                    return None;
+                }
+            }
+        }
+        (ty::Type::Reference(lhs_ty_reference), ty::Type::Reference(rhs_ty_reference)) => {}
+        (ty::Type::Struct(lhs_ty_struct), ty::Type::Struct(rhs_ty_struct)) => {
+            if lhs_ty_struct.struct_id != rhs_ty_struct.struct_id {
+                return None;
+            }
+
+            assert_eq!(
+                lhs_ty_struct.substitution.type_arguments_by_parameter.len(),
+                rhs_ty_struct.substitution.type_arguments_by_parameter.len()
+            );
+
+            for ty_parameter_key in lhs_ty_struct
+                .substitution
+                .type_arguments_by_parameter
+                .keys()
+            {
+                let lhs_ty =
+                    &lhs_ty_struct.substitution.type_arguments_by_parameter[ty_parameter_key];
+                let rhs_ty =
+                    &rhs_ty_struct.substitution.type_arguments_by_parameter[ty_parameter_key];
+
+                previous_mappings = get_mappings_on_type(lhs_ty, rhs_ty, previous_mappings)?;
+            }
+        }
+        (lhs_ty, rhs_ty) => {
+            if lhs_ty != rhs_ty {
+                return None;
+            }
+        }
+    }
+
+    Some(previous_mappings)
 }

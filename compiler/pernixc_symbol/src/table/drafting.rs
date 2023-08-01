@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use pernixc_lexical::token::Identifier;
 use pernixc_source::SourceElement;
@@ -610,7 +613,7 @@ impl Table {
             name: signature_syntax_tree.identifier().span.str().to_string(),
             parent_module_id,
             generics: Generics::default(), // to be filled later
-            implements: Vec::new(),        // to be filled later
+            implements: HashSet::new(),    // to be filled later
             accessibility: Accessibility::from_syntax_tree(&accessibility_syntax_tree),
             syntax_tree: None,
             trait_member_ids_by_name: HashMap::new(), // to be filled later
@@ -816,7 +819,7 @@ impl Table {
         struct_id
     }
 
-    fn redefinition_check<T: Clone + Into<U>, U>(
+    pub(super) fn redefinition_check<T: Clone + Into<U>, U>(
         map: &HashMap<String, T>,
         name: &Identifier,
     ) -> Result<(), SymbolRedefinition<U>> {

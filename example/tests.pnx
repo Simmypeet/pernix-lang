@@ -1,3 +1,41 @@
+using tests::inner;
+
 public module inner;
 
-implements inner::Test {}
+public trait TestTrait<T> 
+where:
+    T: 'static
+{
+    type Identity;
+}
+
+implements<T> TestTrait<T>
+where:
+    T: 'static
+{
+    type Identity = T;
+}
+
+public trait AnotherTrait<T, U> 
+{
+    type Inner;
+}
+
+implements<T> AnotherTrait<T, TestTrait<T>::Identity>
+where:
+    T: 'static,
+    TestTrait<T>,
+    TestTrait<T>::Identity: 'static
+{
+    type Inner = float64;
+}
+
+implements<T> AnotherTrait<T, int32> 
+{
+    type Inner = float32;
+}
+
+public struct MyStruct
+{
+    public dummy: AnotherTrait<int32, int32>::Inner;
+}

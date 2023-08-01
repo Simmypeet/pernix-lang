@@ -68,7 +68,7 @@ impl Accessibility {
         }
     }
 
-    /// Returns the rank of the accessibility. The higher the rank, the more accessible the symbol
+    /// Returns the rank of the accessibility. The higher the number, the more accessible the symbol
     /// is.
     #[must_use]
     pub fn rank(&self) -> u8 {
@@ -209,10 +209,10 @@ impl Symbol for arena::Symbol<Implements> {
 #[derive(Debug, Clone)]
 pub struct ImplementsType {
     /// The generic parameters of the type.
-    pub generics: Generics,
+    pub generic_parameters: GenericParameters,
 
     /// The ID of the associated type that is implemented.
-    pub associated_type_id: arena::ID<TraitType>,
+    pub trait_type_id: arena::ID<TraitType>,
 
     /// The type that implements the associated type.
     pub alias: ty::Type,
@@ -242,9 +242,9 @@ impl Symbol for arena::Symbol<ImplementsType> {
 }
 
 impl Genericable for arena::Symbol<ImplementsType> {
-    fn generic_parameters(&self) -> &GenericParameters { &self.generics.parameters }
+    fn generic_parameters(&self) -> &GenericParameters { &self.generic_parameters }
 
-    fn where_clause(&self) -> Option<&WhereClause> { Some(&self.generics.where_clause) }
+    fn where_clause(&self) -> Option<&WhereClause> { None }
 }
 
 /// Represents an implements-member function.
@@ -255,8 +255,11 @@ pub struct ImplementsFunction {
     #[deref_mut]
     pub function_signature: FunctionSignature<Self>,
 
+    /// The syntax tree that was used to create this symbol.
+    pub syntax_tree: Option<syntax_tree::item::FunctionBody>,
+
     /// The ID of the implements that contains the function.
-    pub parent_implements_id: arena::ID<Trait>,
+    pub parent_implements_id: arena::ID<Implements>,
 
     /// The ID of the trait function that is implemented.
     pub trait_function_id: arena::ID<TraitFunction>,
@@ -339,7 +342,7 @@ pub struct Trait {
     pub generics: Generics,
 
     /// The list of implements of the trait.
-    pub implements: Vec<arena::ID<Implements>>,
+    pub implements: HashSet<arena::ID<Implements>>,
 
     /// The syntax tree of the trait.
     pub syntax_tree: Option<syntax_tree::item::TraitSignature>,

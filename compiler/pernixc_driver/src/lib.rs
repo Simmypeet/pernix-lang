@@ -101,7 +101,6 @@ pub fn run(argument: &Argument) {
 
     let symbol_errors: Storage<pernixc_symbol::error::Error> = Storage::new();
     let table = Table::build(vec![target], &symbol_errors).unwrap();
-    dbg!(&symbol_errors);
 
     {
         let error_vec = symbol_errors.into_vec();

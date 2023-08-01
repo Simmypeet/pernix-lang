@@ -1062,18 +1062,10 @@ pub struct ImplementsBody {
 }
 
 impl ImplementsBody {
-    /// Creates a new [`ImplementsBody`] with the given members.
+    /// Dissolves the [`ImplementsBody`] into a tuple of its fields.
     #[must_use]
-    pub fn new(
-        left_brace: Punctuation,
-        members: Vec<ImplementsMember>,
-        right_brace: Punctuation,
-    ) -> Self {
-        Self {
-            left_brace,
-            members,
-            right_brace,
-        }
+    pub fn dissolve(self) -> (Punctuation, Vec<ImplementsMember>, Punctuation) {
+        (self.left_brace, self.members, self.right_brace)
     }
 }
 

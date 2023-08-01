@@ -13,7 +13,7 @@ public function main(): int32
         }
         express 2u32;
     }
-    
+
     'test: {
         if (true) {
             return 3; 

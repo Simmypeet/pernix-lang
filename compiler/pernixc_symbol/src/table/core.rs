@@ -35,7 +35,7 @@ impl Table {
                 name: "@Copy".to_string(),
                 parent_module_id: core_module_id,
                 generics: Generics::default(),
-                implements: Vec::new(),
+                implements: HashSet::new(),
                 trait_member_ids_by_name: HashMap::new(), // to be filled later
                 accessibility: Accessibility::Public,
                 syntax_tree: None,
@@ -134,7 +134,7 @@ impl Table {
                 name: "@Drop".to_string(),
                 parent_module_id: core_module_id,
                 generics: Generics::default(),
-                implements: Vec::new(),
+                implements: HashSet::new(),
                 trait_member_ids_by_name: HashMap::new(), // to be filled later
                 accessibility: Accessibility::Public,
                 syntax_tree: None,

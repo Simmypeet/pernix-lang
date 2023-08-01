@@ -30,6 +30,8 @@ impl TargetNotFound {
             )
             .as_str(),
         );
+
+        pernixc_print::print_source_code(&self.unknown_target_span, None);
     }
 }
 
@@ -70,6 +72,54 @@ impl ModuleNotFound {
     }
 }
 
+/// Not all trait members were implemented.
+#[derive(Debug, Clone)]
+pub struct NotAllTraitMembersWereImplemented {
+    /// THe trait members that weren't implemented
+    pub unimplemented_members: Vec<TraitMemberID>,
+
+    /// The trait id that was being implemented.
+    pub trait_id: arena::ID<Trait>,
+
+    /// The span of the implements.
+    pub implements_span: Span,
+}
+
+impl NotAllTraitMembersWereImplemented {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Returns
+    /// - `true` if the error was printed successfully, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let unimplemented_member_strings: Option<Vec<&str>> = self
+            .unimplemented_members
+            .iter()
+            .copied()
+            .map(|x| table.get_symbol(x.into()).map(Symbol::name))
+            .collect();
+
+        let (Some(unimplemented_member_strings), Some(trait_name)) = (
+            unimplemented_member_strings,
+            table.get_qualified_name(self.trait_id.into()),
+        ) else {
+            return false;
+        };
+        let unimplemented_member_string = unimplemented_member_strings.join(", ");
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "not all trait members were implemented for trait `{trait_name}`. The following \
+                 members weren't implemented: {unimplemented_member_string}",
+            ),
+        );
+
+        pernixc_print::print_source_code(&self.implements_span, None);
+
+        true
+    }
+}
 /// A using statement was found duplicatig a previous using statement.
 #[derive(Debug, Clone)]
 pub struct UsingDuplication {
@@ -365,7 +415,7 @@ impl ResolutionAmbiguity {
 #[derive(Debug, Clone)]
 pub struct SymbolNotFound {
     /// In which scope the symbol was searched.
-    pub searched_global_id: GlobalID,
+    pub searched_global_id: Option<GlobalID>,
 
     /// The span of the symbol reference.
     pub symbol_reference_span: Span,
@@ -378,18 +428,28 @@ impl SymbolNotFound {
     /// - `true` if the error was printed successfully, `false` otherwise.
     #[must_use]
     pub fn print(&self, table: &Table) -> bool {
-        let Some(global_name) = table.get_qualified_name(self.searched_global_id) else {
-            return false;
-        };
+        if let Some(searched_global_id) = self.searched_global_id {
+            let Some(global_name) = table.get_qualified_name(searched_global_id) else {
+                return false;
+            };
 
-        pernixc_print::print(
-            LogSeverity::Error,
-            &format!(
-                "the symbol `{}` was not found in the scope `{}`",
-                self.symbol_reference_span.str(),
-                global_name
-            ),
-        );
+            pernixc_print::print(
+                LogSeverity::Error,
+                &format!(
+                    "the symbol `{}` was not found in the scope `{}`",
+                    self.symbol_reference_span.str(),
+                    global_name
+                ),
+            );
+        } else {
+            pernixc_print::print(
+                LogSeverity::Error,
+                &format!(
+                    "the symbol `{}` was not found in the current scope",
+                    self.symbol_reference_span.str(),
+                ),
+            );
+        }
 
         pernixc_print::print_source_code(&self.symbol_reference_span, None);
 
@@ -723,6 +783,25 @@ impl SymbolWasNotAccessible {
     }
 }
 
+/// Couldn't find a trait implements with the given generic arguments.
+#[derive(Debug, Clone)]
+pub struct NoImplementsFound {
+    /// The span of the generic arguments.
+    pub span: Span,
+}
+
+impl NoImplementsFound {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        pernixc_print::print(LogSeverity::Error, "no implements found");
+
+        pernixc_print::print_source_code(
+            &self.span,
+            Some("couldn't find a trait implements with the given generic arguments"),
+        );
+    }
+}
+
 /// The symbol does not require any generic arguments but some were supplied.
 #[derive(Debug, Clone)]
 pub struct NoGenericArgumentsRequired {
@@ -903,38 +982,29 @@ impl TraitMemberKindMismatch {
 #[derive(Debug, Clone)]
 pub struct UnusedTypeParameters {
     /// List of type parameters that aren't used.
-    pub unused_type_parameters: Vec<arena::ID<TypeParameter>>,
+    pub unused_type_parameter_spans: Vec<Span>,
 
-    /// The span to the generic parameters that contain the type parameters.
+    /// The span of the generic parameters.
     pub generic_parameters_span: Span,
 }
 
 impl UnusedTypeParameters {
     /// Prints the error message to the stdout.
-    ///
-    /// # Returns
-    /// - `true` if the error was printed successfully, `false` otherwise.
-    #[must_use]
-    pub fn print(&self, table: &Table) -> bool {
-        let names: Option<Vec<String>> = self
-            .unused_type_parameters
+    pub fn print(&self) {
+        let names: Vec<&str> = self
+            .unused_type_parameter_spans
             .iter()
-            .map(|id| table.type_parameters().get(*id).map(|ty| ty.name.clone()))
+            .map(pernixc_source::Span::str)
             .collect();
-        let Some(names) = names else {
-            return false;
-        };
 
         let names = names.join(", ");
 
         pernixc_print::print(
-            LogSeverity::Warning,
+            LogSeverity::Error,
             &format!("unused type parameters: {names}"),
         );
 
         pernixc_print::print_source_code(&self.generic_parameters_span, None);
-
-        true
     }
 }
 
@@ -991,6 +1061,8 @@ pub enum Error {
     NoMemberOnThisImplementsFunction(NoMemberOnThisImplementsFunction),
     TypeDoesNotOutliveLifetimeArgument(TypeDoesNotOutliveLifetimeArgument),
     TraitTypeBoundHasAlreadyBeenSpecified(TraitTypeBoundHasAlreadyBeenSpecified),
+    NotAllTraitMembersWereImplemented(NotAllTraitMembersWereImplemented),
+    NoImplementsFound(NoImplementsFound),
     UnusedTypeParameters(UnusedTypeParameters),
 }
 
@@ -1010,7 +1082,12 @@ impl Error {
                 err.print(table);
                 true
             }
+            Self::NotAllTraitMembersWereImplemented(err) => err.print(table),
             Self::TargetNotFound(err) => {
+                err.print();
+                true
+            }
+            Self::NoImplementsFound(err) => {
                 err.print();
                 true
             }
@@ -1050,7 +1127,10 @@ impl Error {
                 err.print();
                 true
             }
-            Self::UnusedTypeParameters(err) => err.print(table),
+            Self::UnusedTypeParameters(err) => {
+                err.print();
+                true
+            }
             Self::SymbolNotFound(err) => err.print(table),
             Self::AmbiguousImplements(err) => err.print(table),
             Self::UnknownTraitMemberInImplements(err) => err.print(table),

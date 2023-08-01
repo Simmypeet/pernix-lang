@@ -423,7 +423,7 @@ impl Table {
 
     /// Gets the scoped ID that contains the given symbol ID (including itself).
     #[must_use]
-    pub fn get_current_scoped_id(&self, mut id: ID) -> Option<ScopedID> {
+    pub fn get_closet_scoped_id(&self, mut id: ID) -> Option<ScopedID> {
         loop {
             if let Ok(scoped_id) = id.try_into() {
                 return Some(scoped_id);
@@ -477,12 +477,12 @@ impl Table {
             };
 
             match genericable_id {
-                GenericableID::Implements(implements_id) => {
+                GenericableID::Implements(implements_id) => 'exit: {
                     if self.implements[implements_id]
                         .substitution
                         .is_concrete_substitution()
                     {
-                        continue;
+                        break 'exit;
                     }
 
                     result_where_clause.trait_bounds.insert(TraitBound {
@@ -559,6 +559,10 @@ impl Table {
             result_lifetime_argument_set.extend(lifetime_argument_set);
         }
 
+        merge_where_clause
+            .trait_bounds
+            .extend(where_clause.trait_bounds.iter().cloned());
+
         for (trait_type, lifetime_argument_set) in &where_clause.types_by_trait_type {
             assert!(
                 merge_where_clause
@@ -620,11 +624,10 @@ impl Table {
 
         // drafts the symbols
         let mut states = table.draft_symbols(targets, handler);
-        dbg!(states);
 
-        // while let Some(id) = states.next_drafted_symbol() {
-        //     table.finalize_symbol(id, &mut states, handler);
-        // }
+        while let Some(id) = states.next_drafted_symbol() {
+            table.finalize_symbol(id, &mut states, handler);
+        }
 
         Ok(table)
     }
