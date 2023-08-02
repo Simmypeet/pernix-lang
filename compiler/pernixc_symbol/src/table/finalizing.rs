@@ -418,7 +418,7 @@ impl Table {
         }
 
         if !where_clause.trait_bounds.insert(crate::TraitBound {
-            trait_id: trait_resolution.symbol,
+            trait_id: trait_resolution.trait_id,
             substitution: trait_resolution.substitution,
         }) {
             // TODO: report some warnings
@@ -906,9 +906,9 @@ impl Table {
 
     fn finalize_trait_function(
         &mut self,
-        trait_function_id: arena::ID<TraitFunction>,
-        states: &mut States,
-        handler: &impl Handler<error::Error>,
+        _trait_function_id: arena::ID<TraitFunction>,
+        _states: &mut States,
+        _handler: &impl Handler<error::Error>,
     ) {
         todo!()
     }
@@ -948,7 +948,7 @@ impl Table {
             let Some(type_alias) = self.resolve_type_with_finalization(
                 &resolution::Info {
                     referring_site: implements_type_id.into(),
-                    generic_configuration: GenericConfiguration::TraitResolutionIgnored,
+                    generic_configuration: GenericConfiguration::Default,
                     explicit_lifetime_required: true,
                 },
                 &type_specifier,

@@ -836,7 +836,7 @@ pub struct TraitBoundNotSatisfied {
     pub required_trait_bound: TraitBound,
 
     /// The span to the generics identifier that causes the trait bound check to occur.
-    pub generics_identifier_span: Span,
+    pub generic_identifier_span: Span,
 }
 
 /// The required trait type bound is not satisfied.

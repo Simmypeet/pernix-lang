@@ -1,41 +1,24 @@
-using tests::inner;
+public struct Pair<T, U> {}
 
-public module inner;
-
-public trait TestTrait<T> 
-where:
-    T: 'static
-{
-    type Identity;
+public trait SomeTrait<T> {
+    type Inner<U>;
 }
 
-implements<T> TestTrait<T>
-where:
-    T: 'static
-{
-    type Identity = T;
+implements<T> SomeTrait<T> {
+    type Inner<U> = Pair<T, U>;
 }
 
-public trait AnotherTrait<T, U> 
-{
-    type Inner;
+public struct SomeStruct {
+    public dummy: SomeTrait<int32>::Inner<int64>;
 }
 
-implements<T> AnotherTrait<T, TestTrait<T>::Identity>
-where:
-    T: 'static,
-    TestTrait<T>,
-    TestTrait<T>::Identity: 'static
-{
-    type Inner = float64;
-}
+/*
 
-implements<T> AnotherTrait<T, int32> 
-{
-    type Inner = float32;
-}
+# Todo
 
-public struct MyStruct
-{
-    public dummy: AnotherTrait<int32, int32>::Inner;
-}
+- Implement a logic that check if all lifetime parameters are used in the `implements` substitution.
+
+- Implements a logic that properly deduces lifetime parameters in `implements`.
+
+- Check if the generic parameters and where clause of the `implements` member match the `trait`.
+ */

@@ -477,18 +477,16 @@ impl Table {
             };
 
             match genericable_id {
-                GenericableID::Implements(implements_id) => 'exit: {
-                    if self.implements[implements_id]
+                GenericableID::Implements(implements_id) => {
+                    if !self.implements[implements_id]
                         .substitution
                         .is_concrete_substitution()
                     {
-                        break 'exit;
+                        result_where_clause.trait_bounds.insert(TraitBound {
+                            trait_id: self.implements[implements_id].trait_id,
+                            substitution: self.implements[implements_id].substitution.clone(),
+                        });
                     }
-
-                    result_where_clause.trait_bounds.insert(TraitBound {
-                        trait_id: self.implements[implements_id].trait_id,
-                        substitution: self.implements[implements_id].substitution.clone(),
-                    });
                 }
                 GenericableID::Trait(trait_id) => {
                     result_where_clause.trait_bounds.insert(TraitBound {
