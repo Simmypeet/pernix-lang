@@ -1069,7 +1069,12 @@ impl Table {
 
                 handler.receive(error::Error::TraitBoundNotSatisfied(
                     TraitBoundNotSatisfied {
-                        required_trait_bound,
+                        required_trait_bound_string: self
+                            .get_qualified_name_with_substitution(
+                                required_trait_bound.trait_id.into(),
+                                &required_trait_bound.substitution,
+                            )
+                            .unwrap(),
                         generic_identifier_span: generic_identifier_span.clone(),
                     },
                 ));
@@ -1531,7 +1536,12 @@ impl Table {
                         {
                             handler.receive(error::Error::TraitBoundNotSatisfied(
                                 TraitBoundNotSatisfied {
-                                    required_trait_bound,
+                                    required_trait_bound_string: self
+                                        .get_qualified_name_with_substitution(
+                                            required_trait_bound.trait_id.into(),
+                                            &required_trait_bound.substitution,
+                                        )
+                                        .unwrap(),
                                     generic_identifier_span: generic_identifier_span.clone(),
                                 },
                             ));

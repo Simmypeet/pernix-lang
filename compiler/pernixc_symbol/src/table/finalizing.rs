@@ -26,9 +26,9 @@ use crate::{
     },
     ty::{self, Primitive, Reference},
     Accessibility, FunctionSignatureSyntaxTree, GenericParameters, GenericableID, Generics,
-    GlobalID, Implements, ImplementsFunction, ImplementsMemberID, ImplementsType, Module,
-    Parameter, Substitution, Symbol, Trait, TraitFunction, TraitMemberID, TraitType, TypeParameter,
-    WhereClause, ID,
+    GlobalID, Implements, ImplementsFunction, ImplementsMemberID, ImplementsType, LifetimeArgument,
+    LifetimeParameter, Module, Parameter, Substitution, Symbol, Trait, TraitFunction,
+    TraitMemberID, TraitType, TypeParameter, WhereClause, ID,
 };
 
 impl Table {
@@ -1230,6 +1230,62 @@ impl Table {
         assert!(self.implements.remove(implements_id).is_some());
     }
 
+    fn lifetime_parameter_exists_in_substitution(
+        lt_parameter: arena::ID<LifetimeParameter>,
+        substitution: &Substitution,
+    ) -> bool {
+        if substitution
+            .lifetime_arguments_by_parameter
+            .values()
+            .any(|lt| {
+                let LifetimeArgument::Parameter(lt_parameter_to_copmare) = lt else {
+                    return false;
+                };
+
+                lt_parameter == *lt_parameter_to_copmare
+            })
+        {
+            return true;
+        }
+
+        if substitution
+            .type_arguments_by_parameter
+            .values()
+            .any(|ty| Self::lifetime_parameter_exists_in_ty(lt_parameter, ty))
+        {
+            return true;
+        }
+
+        false
+    }
+
+    fn lifetime_parameter_exists_in_ty(
+        lt_parameter: arena::ID<LifetimeParameter>,
+        ty: &ty::Type,
+    ) -> bool {
+        match ty {
+            ty::Type::Primitive(_)
+            | ty::Type::Enum(_)
+            | ty::Type::Parameter(_)
+            | ty::Type::TraitType(_) => false,
+            ty::Type::Struct(struct_ty) => Self::lifetime_parameter_exists_in_substitution(
+                lt_parameter,
+                &struct_ty.substitution,
+            ),
+            ty::Type::Reference(reference_ty) => {
+                if matches!(
+                    reference_ty.lifetime_argument,
+                    Some(LifetimeArgument::Parameter(lt_parameter_to_copmare))
+                        if lt_parameter_to_copmare == lt_parameter
+                ) {
+                    return true;
+                }
+
+                Self::lifetime_parameter_exists_in_ty(lt_parameter, &reference_ty.operand)
+            }
+        }
+    }
+
     fn type_parameter_exists(ty_parameter: arena::ID<TypeParameter>, ty: &ty::Type) -> bool {
         match ty {
             ty::Type::Enum(_) | ty::Type::Primitive(_) | ty::Type::TraitType(_) => false,
@@ -1363,11 +1419,45 @@ impl Table {
                             .iter()
                             .map(|x| self.type_parameters[*x].symbol_span().unwrap())
                             .collect(),
-                        generic_parameters_span: implements_signature_syntax_tree
-                            .generic_parameters()
-                            .as_ref()
-                            .unwrap()
-                            .span(),
+                    },
+                ));
+                self.remove_implements(implements_id);
+                return None;
+            }
+        }
+
+        // check if all lifetime parameters are used
+        {
+            let mut unused_lifetime_parameters = self.implements[implements_id]
+                .generics
+                .parameters
+                .lifetime_parameter_order
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>();
+
+            for lifetime_parameter in self.implements[implements_id]
+                .generics
+                .parameters
+                .lifetime_parameter_order
+                .iter()
+                .copied()
+            {
+                if Self::lifetime_parameter_exists_in_substitution(
+                    lifetime_parameter,
+                    &self.implements[implements_id].substitution,
+                ) {
+                    unused_lifetime_parameters.remove(&lifetime_parameter);
+                }
+            }
+
+            if !unused_lifetime_parameters.is_empty() {
+                handler.receive(error::Error::UnusedLifetimeParameters(
+                    error::UnusedLifetimeParameters {
+                        unused_lifetime_parameters: unused_lifetime_parameters
+                            .iter()
+                            .map(|x| self.lifetime_parameters[*x].symbol_span().unwrap())
+                            .collect(),
                     },
                 ));
                 self.remove_implements(implements_id);

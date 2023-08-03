@@ -285,6 +285,185 @@ pub enum Error {
 }
 
 impl Table {
+    #[must_use]
+    fn get_type_string(&self, ty: &ty::Type) -> Option<String> {
+        match ty {
+            ty::Type::Enum(id) => self.get_qualified_name((*id).into()),
+            ty::Type::Struct(struct_ty) => self.get_qualified_name_with_substitution(
+                struct_ty.struct_id.into(),
+                &struct_ty.substitution,
+            ),
+            ty::Type::Primitive(ty) => Some(
+                match ty {
+                    ty::Primitive::Float32 => "float32",
+                    ty::Primitive::Float64 => "float64",
+                    ty::Primitive::Int8 => "int8",
+                    ty::Primitive::Int16 => "int16",
+                    ty::Primitive::Int32 => "int32",
+                    ty::Primitive::Int64 => "int64",
+                    ty::Primitive::Uint8 => "uint8",
+                    ty::Primitive::Uint16 => "uint16",
+                    ty::Primitive::Uint32 => "uint32",
+                    ty::Primitive::Uint64 => "uint64",
+                    ty::Primitive::Bool => "bool",
+                    ty::Primitive::Void => "void",
+                }
+                .to_string(),
+            ),
+            ty::Type::Reference(reference_ty) => {
+                let mut string = self.get_type_string(&reference_ty.operand)?;
+
+                if let Some(qualifier) = reference_ty.qualifier {
+                    let qualififer_string = match qualifier {
+                        ty::ReferenceQualifier::Mutable => "mutable ",
+                        ty::ReferenceQualifier::Restrict => "restrict ",
+                    };
+                    string.insert_str(0, qualififer_string);
+                }
+
+                if let Some(lifetime_argument) = reference_ty.lifetime_argument {
+                    match lifetime_argument {
+                        LifetimeArgument::Static => string.insert_str(0, "'static "),
+                        LifetimeArgument::Parameter(lifetime_parameter) => string.insert_str(
+                            0,
+                            &format!(
+                                "'{} ",
+                                self.lifetime_parameters.get(lifetime_parameter)?.name()
+                            ),
+                        ),
+                    };
+                }
+
+                string.insert(0, '&');
+
+                Some(string)
+            }
+            ty::Type::Parameter(parameter) => {
+                Some(self.type_parameters.get(*parameter)?.name().to_string())
+            }
+            ty::Type::TraitType(trait_ty) => {
+                let trait_path = self.get_qualified_name_with_substitution(
+                    self.trait_types
+                        .get(trait_ty.trait_type_id)?
+                        .parent_trait_id
+                        .into(),
+                    &trait_ty.trait_substitution,
+                )?;
+
+                let type_part = self.get_qualified_part_string(
+                    trait_ty.trait_type_id.into(),
+                    &trait_ty.trait_type_substitution,
+                )?;
+
+                Some(format!("{trait_path}::{type_part}"))
+            }
+        }
+    }
+
+    #[must_use]
+    fn get_qualified_part_string(
+        &self,
+        global_id: GlobalID,
+        substitution: &Substitution,
+    ) -> Option<String> {
+        let mut string = self.get_global(global_id)?.name().to_string();
+
+        let Ok(genericable_id) = GenericableID::try_from(global_id) else {
+            return Some(string);
+        };
+
+        let genericable = self.get_genericable(genericable_id)?;
+
+        let lifetime_appeared = genericable
+            .generic_parameters()
+            .lifetime_parameter_order
+            .iter()
+            .copied()
+            .any(|x| {
+                substitution
+                    .lifetime_arguments_by_parameter
+                    .contains_key(&x)
+            });
+        let has_type_parameter = !genericable
+            .generic_parameters()
+            .type_parameter_order
+            .is_empty();
+
+        if lifetime_appeared || has_type_parameter {
+            string.push('<');
+            let mut first = true;
+
+            if lifetime_appeared {
+                for lifetime_parameter in &genericable.generic_parameters().lifetime_parameter_order
+                {
+                    if !first {
+                        string.push_str(", ");
+                    }
+
+                    first = false;
+
+                    let lifetime_argument = substitution
+                        .lifetime_arguments_by_parameter
+                        .get(lifetime_parameter)?;
+
+                    string.push('\'');
+                    string.push_str(match lifetime_argument {
+                        LifetimeArgument::Static => "static",
+                        LifetimeArgument::Parameter(parameter) => {
+                            self.lifetime_parameters.get(*parameter)?.name()
+                        }
+                    });
+                }
+            }
+
+            if has_type_parameter {
+                for type_parameter in &genericable.generic_parameters().type_parameter_order {
+                    if !first {
+                        string.push_str(", ");
+                    }
+
+                    first = false;
+
+                    let type_argument = substitution
+                        .type_arguments_by_parameter
+                        .get(type_parameter)?;
+
+                    string.push_str(&self.get_type_string(type_argument)?);
+                }
+            }
+
+            string.push('>');
+        }
+
+        Some(string)
+    }
+
+    /// Returns the qualified name of the given global ID with the given substitution applied.
+    #[must_use]
+    pub fn get_qualified_name_with_substitution(
+        &self,
+        mut global_id: GlobalID,
+        substitution: &Substitution,
+    ) -> Option<String> {
+        let mut current_name = self.get_qualified_part_string(global_id, substitution)?;
+
+        while let Some(parent_symbol_id) = self.get_global(global_id)?.parent_symbol() {
+            let parent_global_symbol_id: GlobalID = parent_symbol_id
+                .try_into()
+                .expect("Parent symbol ID returned by `Global` must belong to `GlobalID`");
+
+            current_name.insert_str(0, "::");
+            current_name.insert_str(
+                0,
+                &self.get_qualified_part_string(parent_global_symbol_id, substitution)?,
+            );
+
+            global_id = parent_global_symbol_id;
+        }
+
+        Some(current_name)
+    }
+
     /// Finds a symbol by the given path.
     ///
     /// The search starts from the root of the table.

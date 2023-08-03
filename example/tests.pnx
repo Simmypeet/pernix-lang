@@ -1,24 +1,31 @@
-public struct Pair<T, U> {}
+public trait FirstTrait<T> {}
 
-public trait SomeTrait<T> {
-    type Inner<U>;
+implements<T> FirstTrait<T> {}
+
+public struct SomeStruct<T>
+where:
+    FirstTrait<T>
+{}
+
+public trait SecondTrait<T> 
+where:
+    FirstTrait<T>
+{
+    type Inner;
 }
 
-implements<T> SomeTrait<T> {
-    type Inner<U> = Pair<T, U>;
+implements<T> SecondTrait<T>
+where:
+    FirstTrait<T>
+{
+    type Inner = SomeStruct<T>;
 }
 
-public struct SomeStruct {
-    public dummy: SomeTrait<int32>::Inner<int64>;
-}
 
 /*
-
 # Todo
-
-- Implement a logic that check if all lifetime parameters are used in the `implements` substitution.
 
 - Implements a logic that properly deduces lifetime parameters in `implements`.
 
 - Check if the generic parameters and where clause of the `implements` member match the `trait`.
- */
+*/

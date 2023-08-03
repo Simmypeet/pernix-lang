@@ -833,10 +833,30 @@ pub struct LifetimeDoesNotOutlive {
 #[derive(Debug, Clone)]
 pub struct TraitBoundNotSatisfied {
     /// The required trait bound that is not satisfied.
-    pub required_trait_bound: TraitBound,
+    pub required_trait_bound_string: String,
 
     /// The span to the generics identifier that causes the trait bound check to occur.
     pub generic_identifier_span: Span,
+}
+
+impl TraitBoundNotSatisfied {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Returns
+    /// Returns `true` if the error was printed, `false` otherwise.
+    pub fn print(&self, table: &Table) -> bool {
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "the required trait bound `{}` is not satisfied",
+                self.required_trait_bound_string
+            ),
+        );
+
+        pernixc_print::print_source_code(&self.generic_identifier_span, None);
+
+        true
+    }
 }
 
 /// The required trait type bound is not satisfied.
@@ -880,6 +900,51 @@ pub struct AmbiguousImplements {
 
     /// The span to the new implements.
     pub new_implements_span: Span,
+}
+
+/// Type lifetime parameters weren't all used
+#[derive(Debug, Clone)]
+pub struct UnusedLifetimeParameters {
+    /// The spans to the unused lifetime parameters.
+    pub unused_lifetime_parameters: Vec<Span>,
+}
+
+impl UnusedLifetimeParameters {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) -> bool {
+        let names: Vec<&str> = self
+            .unused_lifetime_parameters
+            .iter()
+            .map(pernixc_source::Span::str)
+            .collect();
+
+        let names = names.join(", ");
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!("unused lifetime parameters: {names}"),
+        );
+
+        let Some(Some(type_parameters_span)) = self
+            .unused_lifetime_parameters
+            .iter()
+            .cloned()
+            .map(Some)
+            .reduce(|lhs, rhs| {
+                if let (Some(lhs), Some(rhs)) = (lhs, rhs) {
+                    lhs.join(&rhs)
+                } else {
+                    None
+                }
+            })
+        else {
+            return false;
+        };
+
+        pernixc_print::print_source_code(&type_parameters_span, None);
+
+        true
+    }
 }
 
 /// The trait type bound with this type has already been specified in another scope.
@@ -981,16 +1046,13 @@ impl TraitMemberKindMismatch {
 /// The type parameters weren't all used.
 #[derive(Debug, Clone)]
 pub struct UnusedTypeParameters {
-    /// List of type parameters that aren't used.
+    /// The spans to the unused type parameters.
     pub unused_type_parameter_spans: Vec<Span>,
-
-    /// The span of the generic parameters.
-    pub generic_parameters_span: Span,
 }
 
 impl UnusedTypeParameters {
     /// Prints the error message to the stdout.
-    pub fn print(&self) {
+    pub fn print(&self) -> bool {
         let names: Vec<&str> = self
             .unused_type_parameter_spans
             .iter()
@@ -1004,7 +1066,25 @@ impl UnusedTypeParameters {
             &format!("unused type parameters: {names}"),
         );
 
-        pernixc_print::print_source_code(&self.generic_parameters_span, None);
+        let Some(Some(type_parameters_span)) = self
+            .unused_type_parameter_spans
+            .iter()
+            .cloned()
+            .map(Some)
+            .reduce(|lhs, rhs| {
+                if let (Some(lhs), Some(rhs)) = (lhs, rhs) {
+                    lhs.join(&rhs)
+                } else {
+                    None
+                }
+            })
+        else {
+            return false;
+        };
+
+        pernixc_print::print_source_code(&type_parameters_span, None);
+
+        true
     }
 }
 
@@ -1032,6 +1112,7 @@ pub enum Error {
     ImplementsFunctionParameterRedefinition(
         SymbolRedefinition<arena::ID<Parameter<ImplementsFunction>>>,
     ),
+    UnusedLifetimeParameters(UnusedLifetimeParameters),
     ImplementsMemberRedefinition(SymbolRedefinition<ImplementsMemberID>),
     FieldRedefinition(SymbolRedefinition<arena::ID<Field>>),
     FieldMoreAccessibleThanStruct(FieldMoreAccessibleThanStruct),
@@ -1111,6 +1192,7 @@ impl Error {
                 err.print();
                 true
             }
+            Self::UnusedLifetimeParameters(err) => err.print(),
             Self::FunctionParameterRedefinition(err) => err.print(table),
             Self::TraitFunctionParameterRedefinition(err) => err.print(table),
             Self::ImplementsFunctionParameterRedefinition(err) => err.print(table),
@@ -1143,6 +1225,7 @@ impl Error {
                 err.print();
                 true
             }
+            Self::TraitBoundNotSatisfied(err) => err.print(table),
             Self::NoMemberOnThisImplementsFunction(_)
             | Self::TraitExpected(_)
             | Self::LifetimeParameterShadowing(_)
@@ -1157,8 +1240,7 @@ impl Error {
             | Self::PrivateSymbolLeakage(_)
             | Self::LifetimeDoesNotOutlive(_)
             | Self::TypeDoesNotOutliveLifetimeArgument(_)
-            | Self::TraitTypeBoundNotSatisfied(_)
-            | Self::TraitBoundNotSatisfied(_) => true,
+            | Self::TraitTypeBoundNotSatisfied(_) => true,
         }
     }
 }
