@@ -7,9 +7,9 @@ use pernixc_syntax::syntax_tree::item::StructField;
 use pernixc_system::arena;
 
 use crate::{
-    table::Table, ty, Field, Function, GlobalID, Implements, ImplementsFunction,
+    table::Table, ty, Field, Function, Genericable, GlobalID, Implements, ImplementsFunction,
     ImplementsMemberID, LifetimeArgument, LifetimeParameter, Module, Parameter, Struct, Symbol,
-    Trait, TraitBound, TraitFunction, TraitMemberID, TypeParameter, ID,
+    Trait, TraitFunction, TraitMemberID, TypeParameter, ID,
 };
 
 /// No target was found with the given name.
@@ -707,6 +707,18 @@ pub struct LifetimeArgumentsRequired {
     pub span: Span,
 }
 
+impl LifetimeArgumentsRequired {
+    /// Prints the error message to the stdout.
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "lifetime arguments must be supplied to the type in this context",
+        );
+
+        pernixc_print::print_source_code(&self.span, None);
+    }
+}
+
 /// There is no member on this type.
 #[derive(Debug, Clone)]
 pub struct NoMemberOnThisType {
@@ -820,13 +832,13 @@ pub struct PrivateSymbolLeakage {
 #[derive(Debug, Clone)]
 pub struct LifetimeDoesNotOutlive {
     /// The supplied lifetime that does not outlive the required lifetime.
-    pub passed_lifetime_parameter: arena::ID<LifetimeParameter>,
+    pub passed_lifetime_parameter: Option<arena::ID<LifetimeParameter>>,
 
     /// The lifetime that the supplied argument must outlive.
     pub required_lifetime_argument: LifetimeArgument,
 
-    /// Location where the lifetime argument is supplied.
-    pub type_span: Span,
+    /// Location where the lifetime bound check occurs.
+    pub bound_check_span: Span,
 }
 
 /// The required trait bound is not satisfied.
@@ -841,10 +853,7 @@ pub struct TraitBoundNotSatisfied {
 
 impl TraitBoundNotSatisfied {
     /// Prints the error message to the stdout.
-    ///
-    /// # Returns
-    /// Returns `true` if the error was printed, `false` otherwise.
-    pub fn print(&self, table: &Table) -> bool {
+    pub fn print(&self) {
         pernixc_print::print(
             LogSeverity::Error,
             &format!(
@@ -854,8 +863,6 @@ impl TraitBoundNotSatisfied {
         );
 
         pernixc_print::print_source_code(&self.generic_identifier_span, None);
-
-        true
     }
 }
 
@@ -991,6 +998,110 @@ impl AmbiguousImplements {
                 Some("existing implements"),
             );
         }
+
+        true
+    }
+}
+
+/// The implements member didn't have matching type parameters.
+#[derive(Debug, Clone)]
+pub struct ImplementsTypeParameterCountMismatch {
+    /// Actual type parameter count.
+    pub implements_member_type_parameter_count: usize,
+
+    /// Which trait member is this implements member implementing.
+    pub trait_member_id: TraitMemberID,
+
+    /// The span to the implements's type parameters.
+    pub implements_member_span: Span,
+}
+
+impl ImplementsTypeParameterCountMismatch {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Returns
+    /// Returns `true` if the error was printed, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let Some((trait_member_name, type_parameter_count)) = (match self.trait_member_id {
+            TraitMemberID::Function(id) => table.trait_functions().get(id).map(|x| {
+                (
+                    x.name(),
+                    x.generic_parameters().type_parameter_ids_by_name.len(),
+                )
+            }),
+            TraitMemberID::Type(id) => table.trait_types().get(id).map(|x| {
+                (
+                    x.name(),
+                    x.generic_parameters().type_parameter_ids_by_name.len(),
+                )
+            }),
+        }) else {
+            return false;
+        };
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "trait member `{trait_member_name}` had {type_parameter_count} type parameters, \
+                 but the implements member had {} type parameters",
+                self.implements_member_type_parameter_count,
+            ),
+        );
+
+        pernixc_print::print_source_code(&self.implements_member_span, None);
+
+        true
+    }
+}
+
+/// The implements member didn't have matching lifetime parameters.
+#[derive(Debug, Clone)]
+pub struct ImplementsLifetimeParameterCountMismatch {
+    /// Actual type parameter count.
+    pub implements_member_lifetime_parameter_count: usize,
+
+    /// Which trait member is this implements member implementing.
+    pub trait_member_id: TraitMemberID,
+
+    /// The span to the implements's type parameters.
+    pub implements_member_span: Span,
+}
+
+impl ImplementsLifetimeParameterCountMismatch {
+    /// Prints the error message to the stdout.
+    ///
+    /// # Returns
+    /// Returns `true` if the error was printed, `false` otherwise.
+    #[must_use]
+    pub fn print(&self, table: &Table) -> bool {
+        let Some((trait_member_name, lifetime_parameter_count)) = (match self.trait_member_id {
+            TraitMemberID::Function(id) => table.trait_functions().get(id).map(|x| {
+                (
+                    x.name(),
+                    x.generic_parameters().lifetime_parameter_ids_by_name.len(),
+                )
+            }),
+            TraitMemberID::Type(id) => table.trait_types().get(id).map(|x| {
+                (
+                    x.name(),
+                    x.generic_parameters().lifetime_parameter_ids_by_name.len(),
+                )
+            }),
+        }) else {
+            return false;
+        };
+
+        pernixc_print::print(
+            LogSeverity::Error,
+            &format!(
+                "trait member `{trait_member_name}` had {lifetime_parameter_count} type \
+                 parameters, but the implements member had {} type parameters",
+                self.implements_member_lifetime_parameter_count,
+            ),
+        );
+
+        pernixc_print::print_source_code(&self.implements_member_span, None);
 
         true
     }
@@ -1145,6 +1256,8 @@ pub enum Error {
     NotAllTraitMembersWereImplemented(NotAllTraitMembersWereImplemented),
     NoImplementsFound(NoImplementsFound),
     UnusedTypeParameters(UnusedTypeParameters),
+    ImplementsTypeParameterCountMismatch(ImplementsTypeParameterCountMismatch),
+    ImplementsLifetimeParameterCountMismatch(ImplementsLifetimeParameterCountMismatch),
 }
 
 impl Error {
@@ -1225,7 +1338,16 @@ impl Error {
                 err.print();
                 true
             }
-            Self::TraitBoundNotSatisfied(err) => err.print(table),
+            Self::TraitBoundNotSatisfied(err) => {
+                err.print();
+                true
+            }
+            Self::ImplementsTypeParameterCountMismatch(err) => err.print(table),
+            Self::ImplementsLifetimeParameterCountMismatch(err) => err.print(table),
+            Self::LifetimeArgumentsRequired(err) => {
+                err.print();
+                true
+            }
             Self::NoMemberOnThisImplementsFunction(_)
             | Self::TraitExpected(_)
             | Self::LifetimeParameterShadowing(_)
@@ -1233,7 +1355,6 @@ impl Error {
             | Self::LifetimeNotFound(_)
             | Self::LifetimeArgumentCountMismatch(_)
             | Self::TypeArgumentCountMismatch(_)
-            | Self::LifetimeArgumentsRequired(_)
             | Self::NoMemberOnThisType(_)
             | Self::TraitResolutionNotAllowed(_)
             | Self::NoGenericArgumentsRequired(_)

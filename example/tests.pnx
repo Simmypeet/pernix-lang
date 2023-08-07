@@ -1,31 +1,8 @@
-public trait FirstTrait<T> {}
-
-implements<T> FirstTrait<T> {}
-
-public struct SomeStruct<T>
+public struct First<'a, T>
 where:
-    FirstTrait<T>
+    T: 'a {}
+
+public MyFunction<'b, 'a>(someParameter: First<&'a int32>)
+where:
+    'b: 'a 
 {}
-
-public trait SecondTrait<T> 
-where:
-    FirstTrait<T>
-{
-    type Inner;
-}
-
-implements<T> SecondTrait<T>
-where:
-    FirstTrait<T>
-{
-    type Inner = SomeStruct<T>;
-}
-
-
-/*
-# Todo
-
-- Implements a logic that properly deduces lifetime parameters in `implements`.
-
-- Check if the generic parameters and where clause of the `implements` member match the `trait`.
-*/

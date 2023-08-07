@@ -34,9 +34,6 @@ use pernixc_syntax::syntax_tree::{
 };
 use pernixc_system::arena;
 
-#[cfg(test)]
-mod input;
-
 pub mod error;
 pub mod table;
 pub mod ty;
@@ -148,6 +145,88 @@ impl Substitution {
             }
         }
         true
+    }
+
+    /// Combines two substitutions into a new substitution
+    ///
+    /// ``` norun
+    /// inner(outer(x)) = combine(outer, inner)(x)
+    /// ```
+    #[must_use]
+    pub fn coombine(outer: &Self, inner: &Self) -> Self {
+        let mut new_substitution = Self::default();
+
+        for lt_parameter in inner
+            .lifetime_arguments_by_parameter
+            .keys()
+            .chain(outer.lifetime_arguments_by_parameter.keys())
+        {
+            new_substitution.lifetime_arguments_by_parameter.insert(
+                *lt_parameter,
+                inner
+                    .lifetime_arguments_by_parameter
+                    .get(lt_parameter)
+                    .map_or_else(
+                        || {
+                            outer
+                                .lifetime_arguments_by_parameter
+                                .get(lt_parameter)
+                                .copied()
+                                .expect("should exist")
+                        },
+                        |x| {
+                            let LifetimeArgument::Parameter(parameter) = x else {
+                                return *x;
+                            };
+
+                            outer
+                                .lifetime_arguments_by_parameter
+                                .get(parameter)
+                                .map_or_else(
+                                    || LifetimeArgument::Parameter(*parameter),
+                                    std::clone::Clone::clone,
+                                )
+                        },
+                    ),
+            );
+        }
+
+        for ty_parameter in inner
+            .type_arguments_by_parameter
+            .keys()
+            .chain(outer.type_arguments_by_parameter.keys())
+        {
+            new_substitution.type_arguments_by_parameter.insert(
+                *ty_parameter,
+                inner
+                    .type_arguments_by_parameter
+                    .get(ty_parameter)
+                    .map_or_else(
+                        || {
+                            outer
+                                .type_arguments_by_parameter
+                                .get(ty_parameter)
+                                .cloned()
+                                .expect("should exist")
+                        },
+                        |x| {
+                            let ty::Type::Parameter(parameter) = x else {
+                                return x.clone();
+                            };
+
+                            outer
+                                .type_arguments_by_parameter
+                                .get(parameter)
+                                .map_or_else(
+                                    || ty::Type::Parameter(*parameter),
+                                    std::clone::Clone::clone,
+                                )
+                        },
+                    ),
+            );
+        }
+
+        new_substitution
     }
 }
 
@@ -321,6 +400,15 @@ impl From<TraitMemberID> for ID {
 }
 
 impl From<TraitMemberID> for GlobalID {
+    fn from(id: TraitMemberID) -> Self {
+        match id {
+            TraitMemberID::Function(id) => id.into(),
+            TraitMemberID::Type(id) => id.into(),
+        }
+    }
+}
+
+impl From<TraitMemberID> for GenericableID {
     fn from(id: TraitMemberID) -> Self {
         match id {
             TraitMemberID::Function(id) => id.into(),
@@ -965,7 +1053,7 @@ impl Symbol for arena::Symbol<Function> {
     fn parent_symbol(&self) -> Option<ID> { Some(self.parent_module_id.into()) }
 
     fn symbol_span(&self) -> Option<Span> {
-        self.function_signature
+        self.signature
             .syntax_tree
             .as_ref()
             .map(|x| x.identifier.span.clone())
@@ -982,7 +1070,7 @@ pub struct Function {
     /// Contains the data of function signature.
     #[deref]
     #[deref_mut]
-    pub function_signature: FunctionSignature<Self>,
+    pub signature: FunctionSignature<Self>,
 
     /// The ID of the module that contains the function.
     pub parent_module_id: arena::ID<Module>,

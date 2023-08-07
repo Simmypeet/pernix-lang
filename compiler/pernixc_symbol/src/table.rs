@@ -20,7 +20,6 @@ use crate::{
 
 mod core;
 mod drafting;
-// mod finalizing;
 mod finalizing;
 mod module;
 pub mod resolution;
@@ -406,13 +405,15 @@ impl Table {
                         .lifetime_arguments_by_parameter
                         .get(lifetime_parameter)?;
 
-                    string.push('\'');
-                    string.push_str(match lifetime_argument {
-                        LifetimeArgument::Static => "static",
-                        LifetimeArgument::Parameter(parameter) => {
-                            self.lifetime_parameters.get(*parameter)?.name()
-                        }
-                    });
+                    if lifetime_argument != &LifetimeArgument::Parameter(*lifetime_parameter) {
+                        string.push('\'');
+                        string.push_str(match lifetime_argument {
+                            LifetimeArgument::Static => "static",
+                            LifetimeArgument::Parameter(parameter) => {
+                                self.lifetime_parameters.get(*parameter)?.name()
+                            }
+                        });
+                    }
                 }
             }
 

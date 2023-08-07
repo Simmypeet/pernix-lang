@@ -14,15 +14,17 @@ use super::{
 };
 use crate::{
     error::{
-        self, AmbiguousImplements, LifetimeArgumentCountMismatch,
+        self, AmbiguousImplements, ImplementsLifetimeParameterCountMismatch,
+        ImplementsTypeParameterCountMismatch, LifetimeArgumentCountMismatch,
         LifetimeArgumentMustBeSuppliedPriorToTypeArgument, LifetimeArgumentsRequired,
-        NoGenericArgumentsRequired, SymbolRedefinition, TraitExpected, TraitMemberKind,
-        TraitMemberKindMismatch, TraitResolutionNotAllowed, TraitTypeBoundHasAlreadyBeenSpecified,
-        TypeArgumentCountMismatch, TypeExpected, UnknownTraitMemberInImplements,
+        NoGenericArgumentsRequired, PrivateSymbolLeakage, SymbolRedefinition, TraitExpected,
+        TraitMemberKind, TraitMemberKindMismatch, TraitResolutionNotAllowed,
+        TraitTypeBoundHasAlreadyBeenSpecified, TypeArgumentCountMismatch, TypeExpected,
+        UnknownTraitMemberInImplements,
     },
     table::{
         self,
-        resolution::{GenericConfiguration, ImplementsComparison},
+        resolution::{implements, BoundChecking},
     },
     ty::{self, Primitive, Reference},
     Accessibility, FunctionSignatureSyntaxTree, GenericParameters, GenericableID, Generics,
@@ -70,7 +72,7 @@ impl Table {
                 &current_root,
                 global_id,
                 substitution,
-                info.generic_configuration,
+                info.bound_checking,
                 handler,
             )?);
         }
@@ -275,9 +277,7 @@ impl Table {
             }
 
             // either supplied or not at all
-            (1.., 0, false) => {
-                // Do nothing
-            }
+            (1.., 0, false) => {}
 
             // well formed lifetime arguments
             (required, supplied, _) if required == supplied => {
@@ -390,7 +390,7 @@ impl Table {
             &resolution::Info {
                 referring_site: genericable_id.into(),
                 explicit_lifetime_required: true,
-                generic_configuration: GenericConfiguration::TraitResolutionNotAllowed,
+                bound_checking: None,
             },
             trait_bound.qualified_identifier(),
             states,
@@ -439,7 +439,7 @@ impl Table {
             &resolution::Info {
                 referring_site: genericable_id.into(),
                 explicit_lifetime_required: true,
-                generic_configuration: GenericConfiguration::TraitResolutionNotAllowed,
+                bound_checking: None,
             },
             type_bound.type_specifier(),
             states,
@@ -455,7 +455,7 @@ impl Table {
                         &resolution::Info {
                             referring_site: genericable_id.into(),
                             explicit_lifetime_required: true,
-                            generic_configuration: GenericConfiguration::TraitResolutionNotAllowed,
+                            bound_checking: None,
                         },
                         type_bound_specifier,
                         states,
@@ -630,6 +630,7 @@ impl Table {
                     .parent_trait_id
                     .into(),
                 &trait_type.trait_substitution,
+                BoundChecking::Default,
                 &where_clause_syntax_tree.span(),
                 &parent_active_where_clause,
                 handler,
@@ -657,6 +658,7 @@ impl Table {
             if !self.check_where_clause(
                 trait_bound.trait_id.into(),
                 &trait_bound.substitution,
+                BoundChecking::Default,
                 &where_clause_syntax_tree.span(),
                 &parent_active_where_clause,
                 handler,
@@ -689,6 +691,7 @@ impl Table {
             ty::Type::Struct(struct_ty) => self.check_where_clause(
                 struct_ty.struct_id.into(),
                 &struct_ty.substitution,
+                BoundChecking::Default,
                 generics_identifier_span,
                 active_where_clause,
                 handler,
@@ -704,6 +707,7 @@ impl Table {
                     .parent_trait_id
                     .into(),
                 &trait_ty.trait_substitution,
+                BoundChecking::Default,
                 generics_identifier_span,
                 active_where_clause,
                 handler,
@@ -729,7 +733,7 @@ impl Table {
             ID::Struct(id) => self.finalize_struct(id, states, handler),
             ID::Enum(_) => todo!(),
             ID::EnumVariant(_) => todo!(),
-            ID::Function(_) => todo!(),
+            ID::Function(id) => self.finalize_function(id, states, handler),
             ID::Type(id) => self.finalize_type(id, states, handler),
             ID::Field(_) => todo!(),
             ID::FunctionParameter(_) => todo!(),
@@ -773,10 +777,6 @@ impl Table {
             return;
         }
 
-        for field_id in self.structs[struct_id].field_order.iter().copied() {
-            states.add_drafted_symbol(field_id.into());
-        }
-
         if let Some(where_clause) = self.structs[struct_id]
             .syntax_tree
             .as_ref()
@@ -793,63 +793,160 @@ impl Table {
         states.remove_constructing_symbol(struct_id.into());
 
         for field_id in self.structs[struct_id].field_order.clone() {
-            self.finalize_field(field_id, states, handler);
-        }
-    }
-
-    fn finalize_field(
-        &mut self,
-        field_id: arena::ID<crate::Field>,
-        states: &mut States,
-        handler: &impl Handler<error::Error>,
-    ) {
-        assert!(
-            states.get_current_state(field_id.into()).is_some(),
-            "symbol is not drafted or being constructed"
-        );
-
-        if let Err(err) = states.mark_as_constructing(field_id.into()) {
-            handler.receive(error::Error::CyclicDependency(err));
-            return;
-        }
-
-        let ty = self
-            .resolve_type_with_finalization(
-                &resolution::Info {
-                    referring_site: field_id.into(),
-                    generic_configuration: GenericConfiguration::Default,
-                    explicit_lifetime_required: true,
-                },
-                &self.fields[field_id]
-                    .syntax_tree
-                    .as_ref()
-                    .unwrap()
-                    .type_annotation()
-                    .type_specifier()
-                    .clone(),
-                states,
-                handler,
-            )
-            .unwrap_or(ty::Type::Primitive(Primitive::Void));
-        let ty_accessibility = self.get_overall_ty_accessibility(&ty);
-
-        if ty_accessibility.rank() < self.fields[field_id].accessibility.rank() {
-            handler.receive(error::Error::PrivateSymbolLeakage(
-                error::PrivateSymbolLeakage {
-                    span: self.fields[field_id]
+            let ty = self
+                .resolve_type_with_finalization(
+                    &resolution::Info {
+                        referring_site: field_id.into(),
+                        bound_checking: Some(BoundChecking::Default),
+                        explicit_lifetime_required: true,
+                    },
+                    &self.fields[field_id]
                         .syntax_tree
                         .as_ref()
                         .unwrap()
                         .type_annotation()
                         .type_specifier()
-                        .span(),
-                },
-            ));
+                        .clone(),
+                    states,
+                    handler,
+                )
+                .unwrap_or(ty::Type::Primitive(Primitive::Void));
+
+            let ty_accessibility = self.get_overall_ty_accessibility(&ty);
+
+            if ty_accessibility.rank() < self.fields[field_id].accessibility.rank() {
+                handler.receive(error::Error::PrivateSymbolLeakage(
+                    error::PrivateSymbolLeakage {
+                        span: self.fields[field_id]
+                            .syntax_tree
+                            .as_ref()
+                            .unwrap()
+                            .type_annotation()
+                            .type_specifier()
+                            .span(),
+                    },
+                ));
+            }
+
+            self.fields[field_id].ty = ty;
+        }
+    }
+
+    fn finalize_function(
+        &mut self,
+        function_id: arena::ID<crate::Function>,
+        states: &mut States,
+        handler: &impl Handler<error::Error>,
+    ) {
+        assert!(
+            states.get_current_state(function_id.into()).is_some(),
+            "symbol is not drafted or being constructed"
+        );
+
+        if let Err(err) = states.mark_as_constructing(function_id.into()) {
+            handler.receive(error::Error::CyclicDependency(err));
+            return;
         }
 
-        self.fields[field_id].ty = ty;
+        // finalize where clause
+        if let Some(where_clause) = self.functions[function_id]
+            .signature
+            .syntax_tree
+            .as_ref()
+            .map(|x| x.where_clause.clone())
+            .unwrap()
+        {
+            if let Some(where_clause) =
+                self.construct_where_clause(&where_clause, function_id.into(), states, handler)
+            {
+                self.functions[function_id].signature.generics.where_clause = where_clause;
+            }
+        }
 
-        states.remove_constructing_symbol(field_id.into());
+        // finalize return ty
+        {
+            let return_ty = self.functions[function_id]
+                .signature
+                .syntax_tree
+                .as_ref()
+                .map(|x| x.return_type.clone())
+                .unwrap();
+
+            let return_ty = return_ty.map_or_else(
+                || ty::Type::Primitive(Primitive::Void),
+                |return_ty| {
+                    self.resolve_type_with_finalization(
+                        &resolution::Info {
+                            referring_site: function_id.into(),
+                            bound_checking: Some(BoundChecking::Default),
+                            explicit_lifetime_required: true,
+                        },
+                        return_ty.type_annotation().type_specifier(),
+                        states,
+                        handler,
+                    )
+                    .unwrap_or(ty::Type::Primitive(Primitive::Void))
+                },
+            );
+
+            let return_ty_accessibility = self.get_overall_ty_accessibility(&return_ty);
+
+            if return_ty_accessibility.rank() < self.functions[function_id].accessibility.rank() {
+                handler.receive(error::Error::PrivateSymbolLeakage(PrivateSymbolLeakage {
+                    span: self.functions[function_id]
+                        .signature
+                        .syntax_tree
+                        .as_ref()
+                        .map(|x| {
+                            x.return_type
+                                .as_ref()
+                                .map(pernixc_source::SourceElement::span)
+                                .unwrap()
+                        })
+                        .unwrap(),
+                }));
+            }
+
+            self.functions[function_id].signature.return_type = return_ty;
+        }
+
+        // finalize parameters
+        for parameter_id in self.functions[function_id].parameter_order.clone() {
+            let type_specifier = self.function_parameters[parameter_id]
+                .syntax_tree
+                .as_ref()
+                .map(|x| x.type_annotation().type_specifier().clone())
+                .unwrap();
+
+            let Some(ty) = self.resolve_type_with_finalization(
+                &resolution::Info {
+                    referring_site: parameter_id.into(),
+                    bound_checking: Some(BoundChecking::Default),
+                    explicit_lifetime_required: false,
+                },
+                &type_specifier,
+                states,
+                handler,
+            ) else {
+                continue;
+            };
+
+            let ty_accessibility = self.get_overall_ty_accessibility(&ty);
+
+            if ty_accessibility.rank() < self.functions[function_id].accessibility.rank() {
+                handler.receive(error::Error::PrivateSymbolLeakage(PrivateSymbolLeakage {
+                    span: self.function_parameters[parameter_id]
+                        .syntax_tree
+                        .as_ref()
+                        .map(|x| x.type_annotation().span())
+                        .unwrap(),
+                }));
+            }
+
+            self.function_parameters[parameter_id].ty = ty;
+        }
+
+        states.remove_constructing_symbol(function_id.into());
     }
 
     fn finalize_type(
@@ -880,7 +977,7 @@ impl Table {
             .resolve_type_with_finalization(
                 &resolution::Info {
                     referring_site: type_id.into(),
-                    generic_configuration: GenericConfiguration::TraitResolutionIgnored,
+                    bound_checking: None,
                     explicit_lifetime_required: true,
                 },
                 &type_specifier,
@@ -911,6 +1008,66 @@ impl Table {
         _handler: &impl Handler<error::Error>,
     ) {
         todo!()
+    }
+
+    fn check_generic_parameter_match<T: Into<GenericableID>>(
+        &self,
+        parent_trait_member_id: TraitMemberID,
+        implements_member_id: T,
+        implements_member_span: &Span,
+        handler: &impl Handler<error::Error>,
+    ) -> bool {
+        let (required_lifetime_parameter_count, required_type_parameter_count) = {
+            let genericable_symbol = self.get_genericable(parent_trait_member_id.into()).unwrap();
+            (
+                genericable_symbol
+                    .generic_parameters()
+                    .lifetime_parameter_ids_by_name
+                    .len(),
+                genericable_symbol
+                    .generic_parameters()
+                    .type_parameter_ids_by_name
+                    .len(),
+            )
+        };
+
+        let (found_lifetime_parameter_count, found_type_parameter_count) = {
+            let genericable_symbol = self.get_genericable(implements_member_id.into()).unwrap();
+            (
+                genericable_symbol
+                    .generic_parameters()
+                    .lifetime_parameter_ids_by_name
+                    .len(),
+                genericable_symbol
+                    .generic_parameters()
+                    .type_parameter_ids_by_name
+                    .len(),
+            )
+        };
+
+        if required_lifetime_parameter_count != found_lifetime_parameter_count {
+            handler.receive(error::Error::ImplementsLifetimeParameterCountMismatch(
+                ImplementsLifetimeParameterCountMismatch {
+                    implements_member_lifetime_parameter_count: found_lifetime_parameter_count,
+                    trait_member_id: parent_trait_member_id,
+                    implements_member_span: implements_member_span.clone(),
+                },
+            ));
+            return false;
+        }
+
+        if required_type_parameter_count != found_type_parameter_count {
+            handler.receive(error::Error::ImplementsTypeParameterCountMismatch(
+                ImplementsTypeParameterCountMismatch {
+                    implements_member_type_parameter_count: found_type_parameter_count,
+                    trait_member_id: parent_trait_member_id,
+                    implements_member_span: implements_member_span.clone(),
+                },
+            ));
+            return false;
+        }
+
+        true
     }
 
     fn finalize_trait_type(
@@ -945,10 +1102,24 @@ impl Table {
                 .type_specifier()
                 .clone();
 
+            if !self.check_generic_parameter_match(
+                trait_type_id.into(),
+                implements_type_id,
+                &self.implements_types[implements_type_id]
+                    .syntax_tree
+                    .as_ref()
+                    .map(|x| x.signature().span())
+                    .unwrap(),
+                handler,
+            ) {
+                self.remove_implements(implements_id);
+                continue;
+            }
+
             let Some(type_alias) = self.resolve_type_with_finalization(
                 &resolution::Info {
                     referring_site: implements_type_id.into(),
-                    generic_configuration: GenericConfiguration::Default,
+                    bound_checking: Some(BoundChecking::Default),
                     explicit_lifetime_required: true,
                 },
                 &type_specifier,
@@ -1077,10 +1248,10 @@ impl Table {
             };
 
             for existing_implements in self.traits[trait_id].implements.iter().copied() {
-                if resolution::compare_implements(
+                if implements::compare(
                     &self.implements[existing_implements].substitution,
                     &self.implements[new_implements].substitution,
-                ) == ImplementsComparison::Ambiguous
+                ) == implements::Comparison::Ambiguous
                 {
                     handler.receive(error::Error::AmbiguousImplements(AmbiguousImplements {
                         existing_implements,
@@ -1361,7 +1532,7 @@ impl Table {
             parent_trait_id.into(),
             &resolution::Info {
                 referring_site: implements_id.into(),
-                generic_configuration: resolution::GenericConfiguration::Default,
+                bound_checking: Some(resolution::BoundChecking::Default),
                 explicit_lifetime_required: true,
             },
             states,
@@ -1374,6 +1545,7 @@ impl Table {
         if !self.check_where_clause(
             parent_trait_id.into(),
             &substitution,
+            BoundChecking::Default,
             &generic_identifier.span(),
             &self.get_active_where_clause(implements_id.into()).unwrap(),
             handler,

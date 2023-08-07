@@ -72,7 +72,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
         for _ in 0..=largest_line_number_digits {
             print!(" ");
         }
-        println!("{}", "|".bright_cyan().bold());
+        println!("{}", "┃".bright_cyan().bold());
     }
 
     // prints previous line
@@ -86,7 +86,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
                 "",
                 width = largest_line_number_digits - get_digit(start_line - 1) + 1
             ),
-            "|".bright_cyan().bold(),
+            "┃".bright_cyan().bold(),
         );
 
         for char in line.chars() {
@@ -111,7 +111,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
                 "",
                 width = largest_line_number_digits - get_digit(line_number) + 1
             ),
-            "|".bright_cyan().bold(),
+            "┃".bright_cyan().bold(),
         );
 
         for (index, char) in span
@@ -161,7 +161,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
                 for _ in 0..=largest_line_number_digits {
                     print!(" ");
                 }
-                print!("{} ", "|".bright_cyan().bold());
+                print!("{} ", "┃".bright_cyan().bold());
             }
 
             // prints the whitespace until the start's column
@@ -198,7 +198,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
                 "",
                 width = largest_line_number_digits - get_digit(end_line + 1) + 1
             ),
-            "|".bright_cyan().bold(),
+            "┃".bright_cyan().bold(),
         );
 
         for char in line.chars() {
@@ -218,7 +218,7 @@ pub fn print_source_code(span: &Span, help_message: Option<&str>) {
         for _ in 0..=largest_line_number_digits {
             print!(" ");
         }
-        println!("{}", "|".bright_cyan().bold());
+        println!("{}", "┃".bright_cyan().bold());
     }
 
     if let Some(message) = help_message {

@@ -68,7 +68,7 @@ impl States {
     }
 
     pub(super) fn remove_constructing_symbol(&mut self, id: ID) {
-        assert!(self.symbol_states_by_id.remove(&id).is_some());
+        self.symbol_states_by_id.remove(&id);
     }
 
     pub(super) fn mark_as_constructing(&mut self, id: ID) -> Result<(), CyclicDependency> {
@@ -113,13 +113,9 @@ impl States {
                     assert!(self.symbol_states_by_id.remove(symbol).is_some());
                 }
 
-                if cyclic_symbols.is_empty() {
-                    Ok(())
-                } else {
-                    Err(CyclicDependency {
-                        participants: cyclic_symbols,
-                    })
-                }
+                Err(CyclicDependency {
+                    participants: cyclic_symbols,
+                })
             }
         }
     }
@@ -685,7 +681,7 @@ impl Table {
         };
 
         let function_id = self.functions.push(crate::Function {
-            function_signature: crate::FunctionSignature {
+            signature: crate::FunctionSignature {
                 name: signature_syntax_tree.identifier.span.str().to_string(),
                 parameter_ids_by_name: HashMap::new(), // to be filled later
                 parameter_order: Vec::new(),           // to be filled later
@@ -705,7 +701,7 @@ impl Table {
 
             self.functions[function_id].generics.parameters = generic_parameters;
         }
-        self.functions[function_id].function_signature.syntax_tree = Some(signature_syntax_tree);
+        self.functions[function_id].signature.syntax_tree = Some(signature_syntax_tree);
 
         for parameter in parameters
             .dissolve()
