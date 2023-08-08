@@ -40,19 +40,6 @@ impl Table {
                 continue;
             };
 
-            if let Some(bound_checking) = bound_checking {
-                if !self.check_where_clause(
-                    implements_id.into(),
-                    &deduced_substitution,
-                    bound_checking,
-                    trait_resolution_span,
-                    active_where_clause,
-                    &Dummy,
-                ) {
-                    continue;
-                }
-            }
-
             assert!(implements_ids_by_deduced_substitution
                 .insert(implements_id, deduced_substitution)
                 .is_none());
@@ -81,12 +68,27 @@ impl Table {
                 }));
                 None
             },
-            |implements| {
+            |implements_id| {
+                let deduced_substitution = implements_ids_by_deduced_substitution
+                    .remove(&implements_id)
+                    .unwrap();
+
+                if let Some(bound_checking) = bound_checking {
+                    if !self.check_where_clause(
+                        implements_id.into(),
+                        &deduced_substitution,
+                        bound_checking,
+                        trait_resolution_span,
+                        active_where_clause,
+                        &Dummy,
+                    ) {
+                        return None;
+                    }
+                }
+
                 Some(Implements {
-                    implements_id: implements,
-                    deduced_substitution: implements_ids_by_deduced_substitution
-                        .remove(&implements)
-                        .unwrap(),
+                    implements_id,
+                    deduced_substitution,
                 })
             },
         )

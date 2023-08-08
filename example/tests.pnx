@@ -1,8 +1,7 @@
-public struct First<'a, T>
-where:
-    T: 'a {}
+public trait MyTrait<T> {
+    Foo<U>(a: U): T;
+}
 
-public MyFunction<'b, 'a>(someParameter: First<&'a int32>)
-where:
-    'b: 'a 
-{}
+implements<A> MyTrait<A> {
+    Foo<U>(a: U): A {}
+}

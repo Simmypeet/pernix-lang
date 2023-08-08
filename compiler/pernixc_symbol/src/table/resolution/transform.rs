@@ -7,7 +7,7 @@ use super::{BoundChecking, Generics, Resolution, UnresolvedTraitType};
 use crate::{
     error::{self, TraitTypeBoundNotSatisfied},
     table::Table,
-    ty, LifetimeArgument, Substitution, TraitBound, WhereClause,
+    ty, GenericParameters, LifetimeArgument, Substitution, TraitBound, WhereClause,
 };
 
 impl Table {
@@ -28,7 +28,7 @@ impl Table {
     /// - `generic_identifier_span`: Specifying in which place that caused the substitution.
     /// - `handler`: The [`Handler`] to handle any error.
     #[allow(clippy::too_many_lines)]
-    pub(super) fn substitute_where_clause(
+    pub(in crate::table) fn substitute_where_clause(
         &self,
         where_clause: &WhereClause,
         substitution: &Substitution,
@@ -108,6 +108,7 @@ impl Table {
 
         for trait_bound in &where_clause.trait_bounds {
             let mut new_substitution = trait_bound.substitution.clone();
+
             if !self.apply_substitution_on_arguments_in_place(
                 &mut new_substitution,
                 substitution,
@@ -117,6 +118,20 @@ impl Table {
                 handler,
             ) {
                 return None;
+            }
+
+            // check if the trait implements exist
+            if new_substitution.is_concrete_substitution() {
+                self.resolve_trait_implements(
+                    trait_bound.trait_id,
+                    &new_substitution,
+                    generic_identifier_span,
+                    Some(bound_checking),
+                    active_where_clause,
+                    handler,
+                )?;
+
+                continue;
             }
 
             result_where_clause.trait_bounds.insert(TraitBound {
@@ -176,7 +191,7 @@ impl Table {
     ///  requirements.
     /// - `generic_identifier_span`: Specifying in which place that caused the substitution.
     /// - `handler`: The [`Handler`] to handle any error.
-    pub(super) fn substitute_type(
+    pub(in crate::table) fn substitute_type(
         &self,
         alias: &ty::Type,
         substitution: &Substitution,
@@ -456,5 +471,44 @@ impl Table {
                 }),
             },
         )
+    }
+
+    #[must_use]
+    pub(super) fn transform_trait_member_substitution_to_implements_substitution(
+        trait_member_substituteion: Substitution,
+        trait_member_generic_parameters: &GenericParameters,
+        implements_member_generic_parameters: &GenericParameters,
+    ) -> Substitution {
+        let mut result_substitution = Substitution::default();
+
+        for (ty_parameter, ty_argument) in trait_member_substituteion.type_arguments_by_parameter {
+            let ty_parameter_index = trait_member_generic_parameters
+                .type_parameter_order
+                .iter()
+                .copied()
+                .position(|x| x == ty_parameter)
+                .unwrap();
+            result_substitution.type_arguments_by_parameter.insert(
+                implements_member_generic_parameters.type_parameter_order[ty_parameter_index],
+                ty_argument,
+            );
+        }
+
+        for (lt_parameter, lt_argument) in
+            trait_member_substituteion.lifetime_arguments_by_parameter
+        {
+            let lt_parameter_index = trait_member_generic_parameters
+                .lifetime_parameter_order
+                .iter()
+                .copied()
+                .position(|x| x == lt_parameter)
+                .unwrap();
+            result_substitution.lifetime_arguments_by_parameter.insert(
+                implements_member_generic_parameters.lifetime_parameter_order[lt_parameter_index],
+                lt_argument,
+            );
+        }
+
+        result_substitution
     }
 }

@@ -715,7 +715,7 @@ pub struct GenericParameters {
 }
 
 /// Contains all the constraint defined on the where clause of a genericable.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WhereClause {
     /// Maps the lifetime parameter to its lifetime bounds.
     pub lifetime_argument_sets_by_lifetime_parameter:

@@ -284,8 +284,12 @@ pub enum Error {
 }
 
 impl Table {
+    /// Gets a string representation of the given [`ty::Type`].
+    ///
+    /// # Arguments
+    /// - `ty`: The type to get the string representation of.
     #[must_use]
-    fn get_type_string(&self, ty: &ty::Type) -> Option<String> {
+    pub fn get_type_string(&self, ty: &ty::Type) -> Option<String> {
         match ty {
             ty::Type::Enum(id) => self.get_qualified_name((*id).into()),
             ty::Type::Struct(struct_ty) => self.get_qualified_name_with_substitution(
@@ -373,7 +377,7 @@ impl Table {
 
         let genericable = self.get_genericable(genericable_id)?;
 
-        let lifetime_appeared = genericable
+        let parameter_has_lifetiems = genericable
             .generic_parameters()
             .lifetime_parameter_order
             .iter()
@@ -383,16 +387,19 @@ impl Table {
                     .lifetime_arguments_by_parameter
                     .contains_key(&x)
             });
+        let substitution_has_lifetime_arguments =
+            !substitution.lifetime_arguments_by_parameter.is_empty();
+
         let has_type_parameter = !genericable
             .generic_parameters()
             .type_parameter_order
             .is_empty();
 
-        if lifetime_appeared || has_type_parameter {
+        if (parameter_has_lifetiems && substitution_has_lifetime_arguments) || has_type_parameter {
             string.push('<');
             let mut first = true;
 
-            if lifetime_appeared {
+            if parameter_has_lifetiems && substitution_has_lifetime_arguments {
                 for lifetime_parameter in &genericable.generic_parameters().lifetime_parameter_order
                 {
                     if !first {

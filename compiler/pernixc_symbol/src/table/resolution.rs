@@ -22,8 +22,8 @@ use crate::{
     },
     table,
     ty::{self, Primitive, Reference},
-    Enum, EnumVariant, GenericParameters, GenericableID, GlobalID, LifetimeArgument,
-    LifetimeParameter, Module, ScopedID, Substitution, TraitBound, TypeParameter, ID,
+    Enum, EnumVariant, GenericableID, GlobalID, LifetimeArgument, LifetimeParameter, Module,
+    ScopedID, Substitution, TraitBound, TypeParameter, ID,
 };
 
 pub(super) mod constraint;
@@ -599,7 +599,6 @@ impl Table {
                     Substitution::coombine(&resolved_substitution, parent_substitution)
                 });
 
-                dbg!(&active_where_clause);
                 if !self.check_where_clause(
                     genericable_id,
                     substitution
@@ -755,45 +754,6 @@ impl Table {
                 }
             }
         })
-    }
-
-    #[must_use]
-    fn transform_trait_member_substitution_to_implements_substitution(
-        trait_member_substituteion: Substitution,
-        trait_member_generic_parameters: &GenericParameters,
-        implements_member_generic_parameters: &GenericParameters,
-    ) -> Substitution {
-        let mut result_substitution = Substitution::default();
-
-        for (ty_parameter, ty_argument) in trait_member_substituteion.type_arguments_by_parameter {
-            let ty_parameter_index = trait_member_generic_parameters
-                .type_parameter_order
-                .iter()
-                .copied()
-                .position(|x| x == ty_parameter)
-                .unwrap();
-            result_substitution.type_arguments_by_parameter.insert(
-                implements_member_generic_parameters.type_parameter_order[ty_parameter_index],
-                ty_argument,
-            );
-        }
-
-        for (lt_parameter, lt_argument) in
-            trait_member_substituteion.lifetime_arguments_by_parameter
-        {
-            let lt_parameter_index = trait_member_generic_parameters
-                .lifetime_parameter_order
-                .iter()
-                .copied()
-                .position(|x| x == lt_parameter)
-                .unwrap();
-            result_substitution.lifetime_arguments_by_parameter.insert(
-                implements_member_generic_parameters.lifetime_parameter_order[lt_parameter_index],
-                lt_argument,
-            );
-        }
-
-        result_substitution
     }
 
     // first pass resolution only involves in searching for the global id living in the root
