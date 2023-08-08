@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    ops::Bound,
-};
+use std::collections::{HashMap, HashSet};
 
 use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{

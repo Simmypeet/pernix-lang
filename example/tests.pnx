@@ -1,7 +1,0 @@
-public trait MyTrait<T> {
-    Foo<U>(a: U): T;
-}
-
-implements<A> MyTrait<A> {
-    Foo<U>(a: U): A {}
-}
