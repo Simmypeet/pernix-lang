@@ -1618,3 +1618,6 @@ impl<'a> Parser<'a> {
         Some(expression)
     }
 }
+
+#[cfg(test)]
+pub(super) mod tests;

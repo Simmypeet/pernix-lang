@@ -39,7 +39,7 @@ impl Table {
         for submodule in &file.submodules {
             let module_name = submodule.module.identifier().span.str().to_string();
             // Adds a submodule to the module list
-            let id = self.modules.push(Module {
+            let id = self.modules.insert(Module {
                 name: module_name.clone(),
                 accessibility: Accessibility::from_syntax_tree(submodule.module.access_modifier()),
                 parent_module_id: Some(parent_module_id),
@@ -61,7 +61,7 @@ impl Table {
 
     fn create_modules_from_target(&mut self, target: &Target) {
         // create a root module
-        let root_module_id = self.modules.push(Module {
+        let root_module_id = self.modules.insert(Module {
             name: target.name().clone(),
             accessibility: Accessibility::Public,
             parent_module_id: None,
@@ -203,3 +203,8 @@ impl Table {
         }
     }
 }
+
+#[cfg(test)]
+pub(super) mod input;
+#[cfg(test)]
+mod tests;

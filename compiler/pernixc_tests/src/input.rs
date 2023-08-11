@@ -1,4 +1,4 @@
-//! This crate provides a trait [`Input`] for representing inputs generated for testing purposes
+//! This module provides a trait [`Input`] for representing inputs generated for testing purposes
 
 use std::fmt::Debug;
 

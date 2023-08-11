@@ -570,7 +570,7 @@ impl Table {
 
         for constraint in where_clause_syntax_tree.constraint_list().elements() {
             match constraint {
-                syntax_tree::item::Constraint::TraitBound(trait_bound) => self
+                syntax_tree::item::Constraint::Trait(trait_bound) => self
                     .handle_where_clause_trait_bound(
                         trait_bound,
                         genericable_id,
@@ -578,14 +578,14 @@ impl Table {
                         states,
                         handler,
                     ),
-                syntax_tree::item::Constraint::LifetimeBound(lifetime_bound_syntax_tree) => self
+                syntax_tree::item::Constraint::Lifetime(lifetime_bound_syntax_tree) => self
                     .handle_where_clause_lifetime_bound(
                         lifetime_bound_syntax_tree,
                         genericable_id,
                         &mut where_clause,
                         handler,
                     ),
-                syntax_tree::item::Constraint::TypeBound(type_bound) => {
+                syntax_tree::item::Constraint::Type(type_bound) => {
                     self.handle_where_clause_type_bound(
                         type_bound,
                         genericable_id,
@@ -2005,7 +2005,7 @@ impl Table {
         let (implements_signature_syntax_tree, implements_body_syntax_tree) =
             implements_syntax_tree.dissolve();
 
-        let implements_id = self.implements.push(Implements {
+        let implements_id = self.implements.insert(Implements {
             generics: Generics::default(),
             trait_id: parent_trait_id,
             name: self.traits[parent_trait_id].name.clone(),
@@ -2303,7 +2303,7 @@ impl Table {
         parent_implements_id: arena::ID<Implements>,
         handler: &impl Handler<error::Error>,
     ) -> arena::ID<ImplementsType> {
-        let implements_type_id = self.implements_types.push(ImplementsType {
+        let implements_type_id = self.implements_types.insert(ImplementsType {
             generic_parameters: GenericParameters::default(),
             trait_type_id,
             alias: ty::Type::Primitive(Primitive::Void),
@@ -2351,7 +2351,7 @@ impl Table {
             )
         };
 
-        let implements_function_id = self.implements_functions.push(ImplementsFunction {
+        let implements_function_id = self.implements_functions.insert(ImplementsFunction {
             function_signature: crate::FunctionSignature {
                 name: signature_syntax_tree.identifier.span.str().to_string(),
                 parameter_ids_by_name: HashMap::new(), // to be filled later
@@ -2398,7 +2398,7 @@ impl Table {
 
             let parameter_name = parameter.identifier().span.str().to_string();
 
-            let parameter_id = self.implements_function_parameters.push(Parameter {
+            let parameter_id = self.implements_function_parameters.insert(Parameter {
                 name: parameter_name.clone(),
                 parameter_parent_id: implements_function_id,
                 declaration_order: function.parameter_order.len(),

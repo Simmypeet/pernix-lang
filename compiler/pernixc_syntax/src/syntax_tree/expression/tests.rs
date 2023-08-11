@@ -1,27 +1,22 @@
-//! Contains the definition of various inputs that correspond to the definitions in defined
-//! [`pernixc_syntax::syntax_tree::expression`] module.
-
 use std::fmt::{Display, Write};
 
 use enum_as_inner::EnumAsInner;
-use pernix_input::Input;
 use pernixc_lexical::token::KeywordKind;
+use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_assert_eq, prop_oneof,
+    prop_assert_eq, prop_oneof, proptest,
     strategy::{BoxedStrategy, Just, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{
-    statement::Statement, ConnectedList, ConstantPunctuation, QualifiedIdentifier, TypeSpecifier,
-};
+use crate::syntax_tree::{self, statement::tests::Statement};
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::NumericLiteral`].
+/// Represents an input for the [`super::NumericLiteral`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NumericLiteral {
-    /// The token representing the numeric literal.
-    pub numeric_literal_token: pernix_lexical_input::token::NumericLiteral,
+    /// The numeric string representing the value of the numeric literal input.
+    pub numeric_string: String,
 }
 
 impl Arbitrary for NumericLiteral {
@@ -29,30 +24,29 @@ impl Arbitrary for NumericLiteral {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        pernix_lexical_input::token::NumericLiteral::arbitrary()
-            .prop_map(|x| Self {
-                numeric_literal_token: x,
-            })
-            .boxed()
+        "[0-9]+".prop_map(|x| Self { numeric_string: x }).boxed()
     }
 }
 
 impl Input for NumericLiteral {
-    type Output = pernixc_syntax::syntax_tree::expression::NumericLiteral;
+    type Output = super::NumericLiteral;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.numeric_literal_token
-            .assert(output.numeric_literal_token())
+        prop_assert_eq!(
+            &self.numeric_string,
+            output.numeric_literal_token.span.str()
+        );
+        Ok(())
     }
 }
 
 impl Display for NumericLiteral {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.numeric_literal_token, f)
+        Display::fmt(&self.numeric_string, f)
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::BooleanLiteral`].
+/// Represents an input for the [`super::BooleanLiteral`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BooleanLiteral {
     /// The value of the boolean literal input.
@@ -71,14 +65,14 @@ impl Arbitrary for BooleanLiteral {
 }
 
 impl Input for BooleanLiteral {
-    type Output = pernixc_syntax::syntax_tree::expression::BooleanLiteral;
+    type Output = super::BooleanLiteral;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self.boolean_value, output) {
-            (true, pernixc_syntax::syntax_tree::expression::BooleanLiteral::True(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::True)
+            (true, super::BooleanLiteral::True(k)) => {
+                prop_assert_eq!(k.keyword, KeywordKind::True);
             }
-            (false, pernixc_syntax::syntax_tree::expression::BooleanLiteral::False(k)) => {
+            (false, super::BooleanLiteral::False(k)) => {
                 prop_assert_eq!(k.keyword, KeywordKind::False);
             }
             _ => {
@@ -103,15 +97,15 @@ impl Display for BooleanLiteral {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Named`].
+/// Represents an input for the [`super::Named`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
     /// The qualified identifier representing the name of the named expression.
-    pub qualified_identifier: QualifiedIdentifier,
+    pub qualified_identifier: syntax_tree::tests::QualifiedIdentifier,
 }
 
 impl Input for Named {
-    type Output = pernixc_syntax::syntax_tree::expression::Named;
+    type Output = super::Named;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.qualified_identifier
@@ -130,7 +124,7 @@ impl Arbitrary for Named {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        QualifiedIdentifier::arbitrary()
+        syntax_tree::tests::QualifiedIdentifier::arbitrary()
             .prop_map(|x| Self {
                 qualified_identifier: x,
             })
@@ -138,7 +132,7 @@ impl Arbitrary for Named {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::PrefixOperator`]
+/// Represents an input for the [`super::PrefixOperator`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum PrefixOperator {
@@ -164,29 +158,20 @@ impl Arbitrary for PrefixOperator {
 }
 
 impl Input for PrefixOperator {
-    type Output = pernixc_syntax::syntax_tree::expression::PrefixOperator;
+    type Output = super::PrefixOperator;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (
-                Self::LogicalNot,
-                pernixc_syntax::syntax_tree::expression::PrefixOperator::LogicalNot(k),
-            ) => {
+            (Self::LogicalNot, super::PrefixOperator::LogicalNot(k)) => {
                 prop_assert_eq!(k.punctuation, '!');
             }
-            (Self::Negate, pernixc_syntax::syntax_tree::expression::PrefixOperator::Negate(k)) => {
+            (Self::Negate, super::PrefixOperator::Negate(k)) => {
                 prop_assert_eq!(k.punctuation, '-');
             }
-            (
-                Self::ReferenceOf,
-                pernixc_syntax::syntax_tree::expression::PrefixOperator::ReferenceOf(k),
-            ) => {
+            (Self::ReferenceOf, super::PrefixOperator::ReferenceOf(k)) => {
                 prop_assert_eq!(k.punctuation, '&');
             }
-            (
-                Self::Dereference,
-                pernixc_syntax::syntax_tree::expression::PrefixOperator::Dereference(k),
-            ) => {
+            (Self::Dereference, super::PrefixOperator::Dereference(k)) => {
                 prop_assert_eq!(k.punctuation, '*');
             }
             _ => {
@@ -211,7 +196,7 @@ impl Display for PrefixOperator {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Prefix`].
+/// Represents an input for the [`super::Prefix`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Prefix {
     /// The prefix operator.
@@ -222,7 +207,7 @@ pub struct Prefix {
 }
 
 impl Input for Prefix {
-    type Output = pernixc_syntax::syntax_tree::expression::Prefix;
+    type Output = super::Prefix;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operator.assert(output.operator())?;
@@ -258,18 +243,18 @@ impl Arbitrary for Prefix {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::MemberAccess`].
+/// Represents an input for the [`super::MemberAccess`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MemberAccess {
     /// The operand of the member access.
     pub operand: Box<Functional>,
 
     /// The member name.
-    pub identifier: pernix_lexical_input::token::Identifier,
+    pub identifier: syntax_tree::tests::Identifier,
 }
 
 impl Input for MemberAccess {
-    type Output = pernixc_syntax::syntax_tree::expression::MemberAccess;
+    type Output = super::MemberAccess;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operand.assert(output.operand())?;
@@ -296,10 +281,7 @@ impl Arbitrary for MemberAccess {
                 !matches!(x, Functional::Prefix(..) | Functional::Binary(..))
             });
 
-        (
-            operand,
-            pernix_lexical_input::token::Identifier::arbitrary(),
-        )
+        (operand, syntax_tree::tests::Identifier::arbitrary())
             .prop_map(|(operand, identifier)| Self {
                 operand: Box::new(operand),
                 identifier,
@@ -308,7 +290,7 @@ impl Arbitrary for MemberAccess {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::BinaryOperator`]
+/// Represents an input for the [`super::BinaryOperator`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum BinaryOperator {
@@ -334,116 +316,74 @@ pub enum BinaryOperator {
 }
 
 impl Input for BinaryOperator {
-    type Output = pernixc_syntax::syntax_tree::expression::BinaryOperator;
+    type Output = super::BinaryOperator;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Add, pernixc_syntax::syntax_tree::expression::BinaryOperator::Add(k)) => {
+            (Self::Add, super::BinaryOperator::Add(k)) => {
                 prop_assert_eq!(k.punctuation, '+');
             }
-            (
-                Self::Subtract,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::Subtract(k),
-            ) => {
+            (Self::Subtract, super::BinaryOperator::Subtract(k)) => {
                 prop_assert_eq!(k.punctuation, '-');
             }
-            (
-                Self::Multiply,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::Multiply(k),
-            ) => {
+            (Self::Multiply, super::BinaryOperator::Multiply(k)) => {
                 prop_assert_eq!(k.punctuation, '*');
             }
-            (Self::Divide, pernixc_syntax::syntax_tree::expression::BinaryOperator::Divide(k)) => {
+            (Self::Divide, super::BinaryOperator::Divide(k)) => {
                 prop_assert_eq!(k.punctuation, '/');
             }
-            (Self::Modulo, pernixc_syntax::syntax_tree::expression::BinaryOperator::Modulo(k)) => {
+            (Self::Modulo, super::BinaryOperator::Modulo(k)) => {
                 prop_assert_eq!(k.punctuation, '%');
             }
-            (Self::Assign, pernixc_syntax::syntax_tree::expression::BinaryOperator::Assign(k)) => {
+            (Self::Assign, super::BinaryOperator::Assign(k)) => {
                 prop_assert_eq!(k.punctuation, '=');
             }
-            (
-                Self::CompoundAdd,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::CompoundAdd(f, s),
-            ) => {
+            (Self::CompoundAdd, super::BinaryOperator::CompoundAdd(f, s)) => {
                 prop_assert_eq!(f.punctuation, '+');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (
-                Self::CompoundSubtract,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::CompoundSubtract(f, s),
-            ) => {
+            (Self::CompoundSubtract, super::BinaryOperator::CompoundSubtract(f, s)) => {
                 prop_assert_eq!(f.punctuation, '-');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (
-                Self::CompoundMultiply,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::CompoundMultiply(f, s),
-            ) => {
+            (Self::CompoundMultiply, super::BinaryOperator::CompoundMultiply(f, s)) => {
                 prop_assert_eq!(f.punctuation, '*');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (
-                Self::CompoundDivide,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::CompoundDivide(f, s),
-            ) => {
+            (Self::CompoundDivide, super::BinaryOperator::CompoundDivide(f, s)) => {
                 prop_assert_eq!(f.punctuation, '/');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (
-                Self::CompoundModulo,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::CompoundModulo(f, s),
-            ) => {
+            (Self::CompoundModulo, super::BinaryOperator::CompoundModulo(f, s)) => {
                 prop_assert_eq!(f.punctuation, '%');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (Self::Equal, pernixc_syntax::syntax_tree::expression::BinaryOperator::Equal(f, s)) => {
+            (Self::Equal, super::BinaryOperator::Equal(f, s)) => {
                 prop_assert_eq!(f.punctuation, '=');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (
-                Self::NotEqual,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::NotEqual(f, s),
-            ) => {
+            (Self::NotEqual, super::BinaryOperator::NotEqual(f, s)) => {
                 prop_assert_eq!(f.punctuation, '!');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (
-                Self::GreaterThan,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::GreaterThan(f),
-            ) => {
+            (Self::GreaterThan, super::BinaryOperator::GreaterThan(f)) => {
                 prop_assert_eq!(f.punctuation, '>');
             }
-            (
-                Self::GreaterThanOrEqual,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::GreaterThanOrEqual(f, s),
-            ) => {
+            (Self::GreaterThanOrEqual, super::BinaryOperator::GreaterThanOrEqual(f, s)) => {
                 prop_assert_eq!(f.punctuation, '>');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (
-                Self::LessThan,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::LessThan(f),
-            ) => {
+            (Self::LessThan, super::BinaryOperator::LessThan(f)) => {
                 prop_assert_eq!(f.punctuation, '<');
             }
-            (
-                Self::LessThanOrEqual,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::LessThanOrEqual(f, s),
-            ) => {
+            (Self::LessThanOrEqual, super::BinaryOperator::LessThanOrEqual(f, s)) => {
                 prop_assert_eq!(f.punctuation, '<');
                 prop_assert_eq!(s.punctuation, '=');
             }
-            (
-                Self::LogicalAnd,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::LogicalAnd(k),
-            ) => {
+            (Self::LogicalAnd, super::BinaryOperator::LogicalAnd(k)) => {
                 prop_assert_eq!(k.keyword, KeywordKind::And);
             }
-            (
-                Self::LogicalOr,
-                pernixc_syntax::syntax_tree::expression::BinaryOperator::LogicalOr(k),
-            ) => {
+            (Self::LogicalOr, super::BinaryOperator::LogicalOr(k)) => {
                 prop_assert_eq!(k.keyword, KeywordKind::Or);
             }
             _ => {
@@ -516,7 +456,7 @@ impl Arbitrary for BinaryOperator {
 impl BinaryOperator {
     /// Returns `true` if the operator is assignment (including compound assignment)
     #[must_use]
-    pub fn is_assignment(&self) -> bool {
+    pub fn is_assignment(self) -> bool {
         matches!(
             self,
             Self::Assign
@@ -532,7 +472,7 @@ impl BinaryOperator {
     ///
     /// The least operator has precedence 1.
     #[must_use]
-    pub fn get_precedence(&self) -> u32 {
+    pub fn get_precedence(self) -> u32 {
         match self {
             Self::Assign
             | Self::CompoundAdd
@@ -553,7 +493,7 @@ impl BinaryOperator {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Binary`].
+/// Represents an input for the [`super::Binary`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Binary {
     /// The left operand of the binary expression.
@@ -567,7 +507,7 @@ pub struct Binary {
 }
 
 impl Input for Binary {
-    type Output = pernixc_syntax::syntax_tree::expression::Binary;
+    type Output = super::Binary;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operator.assert(output.operator())?;
@@ -675,18 +615,23 @@ impl Arbitrary for Binary {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::FunctionCall`].
+/// Represents an input for the [`super::FunctionCall`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionCall {
     /// The name of the function.
-    pub qualified_identifier: QualifiedIdentifier,
+    pub qualified_identifier: syntax_tree::tests::QualifiedIdentifier,
 
     /// The arguments of the function.
-    pub arguments: Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
+    pub arguments: Option<
+        syntax_tree::tests::ConnectedList<
+            Box<Expression>,
+            syntax_tree::tests::ConstantPunctuation<','>,
+        >,
+    >,
 }
 
 impl Input for FunctionCall {
-    type Output = pernixc_syntax::syntax_tree::expression::FunctionCall;
+    type Output = super::FunctionCall;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.qualified_identifier
@@ -717,10 +662,10 @@ impl Arbitrary for FunctionCall {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
         (
-            QualifiedIdentifier::arbitrary(),
-            proptest::option::of(ConnectedList::arbitrary_with(
+            syntax_tree::tests::QualifiedIdentifier::arbitrary(),
+            proptest::option::of(syntax_tree::tests::ConnectedList::arbitrary_with(
                 expression_strategy.prop_map(Box::new),
-                ConstantPunctuation::arbitrary(),
+                syntax_tree::tests::ConstantPunctuation::arbitrary(),
             )),
         )
             .prop_map(|(qualified_identifier, arguments)| Self {
@@ -731,7 +676,7 @@ impl Arbitrary for FunctionCall {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Parenthesized`].
+/// Represents an input for the [`super::Parenthesized`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parenthesized {
     /// The expression inside the parentheses.
@@ -739,7 +684,7 @@ pub struct Parenthesized {
 }
 
 impl Input for Parenthesized {
-    type Output = pernixc_syntax::syntax_tree::expression::Parenthesized;
+    type Output = super::Parenthesized;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.expression.assert(output.expression())
@@ -767,18 +712,18 @@ impl Display for Parenthesized {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::FieldInitializer`]
+/// Represents an input for the [`super::FieldInitializer`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldInitializer {
     /// The name of the field.
-    pub identifier: pernix_lexical_input::token::Identifier,
+    pub identifier: syntax_tree::tests::Identifier,
 
     /// The expression of the field.
     pub expression: Box<Expression>,
 }
 
 impl Input for FieldInitializer {
-    type Output = pernixc_syntax::syntax_tree::expression::FieldInitializer;
+    type Output = super::FieldInitializer;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
@@ -793,10 +738,7 @@ impl Arbitrary for FieldInitializer {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression = args.unwrap_or_else(Expression::arbitrary);
 
-        (
-            pernix_lexical_input::token::Identifier::arbitrary(),
-            expression,
-        )
+        (syntax_tree::tests::Identifier::arbitrary(), expression)
             .prop_map(|(identifier, expression)| Self {
                 identifier,
                 expression: Box::new(expression),
@@ -811,18 +753,23 @@ impl Display for FieldInitializer {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::StructLiteral`]
+/// Represents an input for the [`super::StructLiteral`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructLiteral {
     /// The name of the struct
-    pub qualified_identifier: QualifiedIdentifier,
+    pub qualified_identifier: syntax_tree::tests::QualifiedIdentifier,
 
     /// The field initializers of the struct.
-    pub field_initializers: Option<ConnectedList<FieldInitializer, ConstantPunctuation<','>>>,
+    pub field_initializers: Option<
+        syntax_tree::tests::ConnectedList<
+            FieldInitializer,
+            syntax_tree::tests::ConstantPunctuation<','>,
+        >,
+    >,
 }
 
 impl Input for StructLiteral {
-    type Output = pernixc_syntax::syntax_tree::expression::StructLiteral;
+    type Output = super::StructLiteral;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.qualified_identifier
@@ -838,10 +785,10 @@ impl Arbitrary for StructLiteral {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
         (
-            QualifiedIdentifier::arbitrary(),
-            proptest::option::of(ConnectedList::arbitrary_with(
+            syntax_tree::tests::QualifiedIdentifier::arbitrary(),
+            proptest::option::of(syntax_tree::tests::ConnectedList::arbitrary_with(
                 FieldInitializer::arbitrary_with(Some(expression_strategy)),
-                ConstantPunctuation::arbitrary(),
+                syntax_tree::tests::ConstantPunctuation::arbitrary(),
             )),
         )
             .prop_map(|(qualified_identifier, field_initializers)| Self {
@@ -866,18 +813,18 @@ impl Display for StructLiteral {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Cast`].
+/// Represents an input for the [`super::Cast`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cast {
     /// The expression to cast.
     pub operand: Box<Functional>,
 
     /// The type to cast to.
-    pub type_specifier: TypeSpecifier,
+    pub type_specifier: syntax_tree::tests::TypeSpecifier,
 }
 
 impl Input for Cast {
-    type Output = pernixc_syntax::syntax_tree::expression::Cast;
+    type Output = super::Cast;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operand.assert(output.operand())?;
@@ -896,7 +843,7 @@ impl Arbitrary for Cast {
                 !matches!(x, Functional::Prefix(..) | Functional::Binary(..))
             });
 
-        (operand, TypeSpecifier::arbitrary())
+        (operand, syntax_tree::tests::TypeSpecifier::arbitrary())
             .prop_map(|(operand, type_specifier)| Self {
                 operand: Box::new(operand),
                 type_specifier,
@@ -911,47 +858,15 @@ impl Display for Cast {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Label`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Label {
-    /// The identifier of the label.
-    pub identifier: pernix_lexical_input::token::Identifier,
-}
-
-impl Input for Label {
-    type Output = pernixc_syntax::syntax_tree::Label;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.identifier.assert(output.identifier())
-    }
-}
-
-impl Arbitrary for Label {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        pernix_lexical_input::token::Identifier::arbitrary()
-            .prop_map(|identifier| Self { identifier })
-            .boxed()
-    }
-}
-
-impl Display for Label {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{}", self.identifier)
-    }
-}
-
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::LabelSpecifier`].
+/// Represents an input for the [`super::LabelSpecifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelSpecifier {
     /// The identifier of the label.
-    pub label: Label,
+    pub label: syntax_tree::tests::Label,
 }
 
 impl Input for LabelSpecifier {
-    type Output = pernixc_syntax::syntax_tree::expression::LabelSpecifier;
+    type Output = super::LabelSpecifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult { self.label.assert(output.label()) }
 }
@@ -961,7 +876,9 @@ impl Arbitrary for LabelSpecifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        Label::arbitrary().prop_map(|label| Self { label }).boxed()
+        syntax_tree::tests::Label::arbitrary()
+            .prop_map(|label| Self { label })
+            .boxed()
     }
 }
 
@@ -971,7 +888,7 @@ impl Display for LabelSpecifier {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::BlockWithoutLabel`].
+/// Represents an input for the [`super::BlockWithoutLabel`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockWithoutLabel {
     /// List of statements in the block.
@@ -979,7 +896,7 @@ pub struct BlockWithoutLabel {
 }
 
 impl Input for BlockWithoutLabel {
-    type Output = pernixc_syntax::syntax_tree::expression::BlockWithoutLabel;
+    type Output = super::BlockWithoutLabel;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.statements.len(), output.statements().len());
@@ -1015,7 +932,7 @@ impl Display for BlockWithoutLabel {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Block`].
+/// Represents an input for the [`super::Block`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Block {
     /// The optional label specifier.
@@ -1026,7 +943,7 @@ pub struct Block {
 }
 
 impl Input for Block {
-    type Output = pernixc_syntax::syntax_tree::expression::Block;
+    type Output = super::Block;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.label_specifier.assert(output.label_specifier())?;
@@ -1062,7 +979,7 @@ impl Display for Block {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Loop`].
+/// Represents an input for the [`super::Loop`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Loop {
     /// The optional label specifier.
@@ -1073,7 +990,7 @@ pub struct Loop {
 }
 
 impl Input for Loop {
-    type Output = pernixc_syntax::syntax_tree::expression::Loop;
+    type Output = super::Loop;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.label_specifier.assert(output.label_specifier())?;
@@ -1111,7 +1028,7 @@ impl Display for Loop {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::IfElse`].
+/// Represents an input for the [`super::IfElse`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IfElse {
     /// The condition of the if-else statement.
@@ -1165,7 +1082,7 @@ impl Arbitrary for IfElse {
 }
 
 impl Input for IfElse {
-    type Output = pernixc_syntax::syntax_tree::expression::IfElse;
+    type Output = super::IfElse;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.condition.assert(output.condition())?;
@@ -1186,7 +1103,7 @@ impl Display for IfElse {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::BlockOrIfElse`].
+/// Represents an input for the [`super::BlockOrIfElse`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum BlockOrIfElse {
@@ -1195,17 +1112,12 @@ pub enum BlockOrIfElse {
 }
 
 impl Input for BlockOrIfElse {
-    type Output = pernixc_syntax::syntax_tree::expression::BlockOrIfElse;
+    type Output = super::BlockOrIfElse;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Block(i), pernixc_syntax::syntax_tree::expression::BlockOrIfElse::Block(o)) => {
-                i.assert(o)
-            }
-            (
-                Self::IfElse(i),
-                pernixc_syntax::syntax_tree::expression::BlockOrIfElse::IfElse(o),
-            ) => i.assert(o),
+            (Self::Block(i), super::BlockOrIfElse::Block(o)) => i.assert(o),
+            (Self::IfElse(i), super::BlockOrIfElse::IfElse(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} to be {output:?}"
             ))),
@@ -1222,7 +1134,7 @@ impl Display for BlockOrIfElse {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Else`].
+/// Represents an input for the [`super::Else`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Else {
     /// The content of the else statement.
@@ -1230,7 +1142,7 @@ pub struct Else {
 }
 
 impl Input for Else {
-    type Output = pernixc_syntax::syntax_tree::expression::Else;
+    type Output = super::Else;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.expression.assert(output.expression())
@@ -1245,7 +1157,7 @@ impl Display for Else {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Imperative`].
+/// Represents an input for the [`super::Imperative`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Imperative {
@@ -1255,19 +1167,13 @@ pub enum Imperative {
 }
 
 impl Input for Imperative {
-    type Output = pernixc_syntax::syntax_tree::expression::Imperative;
+    type Output = super::Imperative;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Block(i), pernixc_syntax::syntax_tree::expression::Imperative::Block(o)) => {
-                i.assert(o)
-            }
-            (Self::Loop(i), pernixc_syntax::syntax_tree::expression::Imperative::Loop(o)) => {
-                i.assert(o)
-            }
-            (Self::IfElse(i), pernixc_syntax::syntax_tree::expression::Imperative::IfElse(o)) => {
-                i.assert(o)
-            }
+            (Self::Block(i), super::Imperative::Block(o)) => i.assert(o),
+            (Self::Loop(i), super::Imperative::Loop(o)) => i.assert(o),
+            (Self::IfElse(i), super::Imperative::IfElse(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -1285,7 +1191,7 @@ impl Display for Imperative {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Functional`].
+/// Represents an input for the [`super::Functional`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Functional {
@@ -1302,18 +1208,18 @@ pub enum Functional {
     Cast(Cast),
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::ArrowOperator`].
+/// Represents an input for the [`super::ArrowOperator`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArrowOperator {
     /// The operand expression of the arrow operator
     pub operand: Box<Functional>,
 
     /// The name of the field to access
-    pub identifier: pernix_lexical_input::token::Identifier,
+    pub identifier: syntax_tree::tests::Identifier,
 }
 
 impl Input for ArrowOperator {
-    type Output = pernixc_syntax::syntax_tree::expression::ArrowOperator;
+    type Output = super::ArrowOperator;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operand.assert(output.operand())?;
@@ -1336,10 +1242,7 @@ impl Arbitrary for ArrowOperator {
                 }
             });
 
-        (
-            operand,
-            pernix_lexical_input::token::Identifier::arbitrary(),
-        )
+        (operand, syntax_tree::tests::Identifier::arbitrary())
             .prop_map(|(operand, identifier)| Self {
                 operand,
                 identifier,
@@ -1354,7 +1257,7 @@ impl Display for ArrowOperator {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Return`].
+/// Represents an input for the [`super::Return`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Return {
     /// The expression of the `return`.
@@ -1362,7 +1265,7 @@ pub struct Return {
 }
 
 impl Input for Return {
-    type Output = pernixc_syntax::syntax_tree::expression::Return;
+    type Output = super::Return;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.expression.assert(output.expression())
@@ -1394,15 +1297,15 @@ impl Display for Return {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Continue`].
+/// Represents an input for the [`super::Continue`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Continue {
     /// The label of the `continue`.
-    pub label: Option<Label>,
+    pub label: Option<syntax_tree::tests::Label>,
 }
 
 impl Input for Continue {
-    type Output = pernixc_syntax::syntax_tree::expression::Continue;
+    type Output = super::Continue;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult { self.label.assert(output.label()) }
 }
@@ -1412,7 +1315,7 @@ impl Arbitrary for Continue {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        proptest::option::of(Label::arbitrary())
+        proptest::option::of(syntax_tree::tests::Label::arbitrary())
             .prop_map(|label| Self { label })
             .boxed()
     }
@@ -1430,18 +1333,18 @@ impl Display for Continue {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Express`].
+/// Represents an input for the [`super::Express`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Express {
     /// The label of the `express`.
-    pub label: Option<Label>,
+    pub label: Option<syntax_tree::tests::Label>,
 
     /// The expression of the `express`.
     pub expression: Option<Functional>,
 }
 
 impl Input for Express {
-    type Output = pernixc_syntax::syntax_tree::expression::Express;
+    type Output = super::Express;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.label.assert(output.label())?;
@@ -1472,7 +1375,7 @@ impl Arbitrary for Express {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression = args.unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()));
         (
-            proptest::option::of(Label::arbitrary()),
+            proptest::option::of(syntax_tree::tests::Label::arbitrary()),
             proptest::option::of(expression),
         )
             .prop_map(|(label, expression)| Self { label, expression })
@@ -1480,18 +1383,18 @@ impl Arbitrary for Express {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Break`].
+/// Represents an input for the [`super::Break`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Break {
     /// The label of the `break`.
-    pub label: Option<Label>,
+    pub label: Option<syntax_tree::tests::Label>,
 
     /// The expression of the `break`.
     pub expression: Option<Functional>,
 }
 
 impl Input for Break {
-    type Output = pernixc_syntax::syntax_tree::expression::Break;
+    type Output = super::Break;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.label.assert(output.label())?;
@@ -1522,7 +1425,7 @@ impl Arbitrary for Break {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression = args.unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()));
         (
-            proptest::option::of(Label::arbitrary()),
+            proptest::option::of(syntax_tree::tests::Label::arbitrary()),
             proptest::option::of(expression),
         )
             .prop_map(|(label, expression)| Self { label, expression })
@@ -1530,7 +1433,7 @@ impl Arbitrary for Break {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Terminator`].
+/// Represents an input for the [`super::Terminator`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Terminator {
@@ -1541,23 +1444,14 @@ pub enum Terminator {
 }
 
 impl Input for Terminator {
-    type Output = pernixc_syntax::syntax_tree::expression::Terminator;
+    type Output = super::Terminator;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Return(i), pernixc_syntax::syntax_tree::expression::Terminator::Return(o)) => {
-                i.assert(o)
-            }
-            (
-                Self::Continue(i),
-                pernixc_syntax::syntax_tree::expression::Terminator::Continue(o),
-            ) => i.assert(o),
-            (Self::Express(i), pernixc_syntax::syntax_tree::expression::Terminator::Express(o)) => {
-                i.assert(o)
-            }
-            (Self::Break(i), pernixc_syntax::syntax_tree::expression::Terminator::Break(o)) => {
-                i.assert(o)
-            }
+            (Self::Return(i), super::Terminator::Return(o)) => i.assert(o),
+            (Self::Continue(i), super::Terminator::Continue(o)) => i.assert(o),
+            (Self::Express(i), super::Terminator::Express(o)) => i.assert(o),
+            (Self::Break(i), super::Terminator::Break(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "expected {self:?}, got {output:?}"
             ))),
@@ -1577,50 +1471,21 @@ impl Display for Terminator {
 }
 
 impl Input for Functional {
-    type Output = pernixc_syntax::syntax_tree::expression::Functional;
+    type Output = super::Functional;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (
-                Self::NumericLiteral(i),
-                pernixc_syntax::syntax_tree::expression::Functional::NumericLiteral(o),
-            ) => i.assert(o),
-            (
-                Self::BooleanLiteral(i),
-                pernixc_syntax::syntax_tree::expression::Functional::BooleanLiteral(o),
-            ) => i.assert(o),
-            (Self::Named(i), pernixc_syntax::syntax_tree::expression::Functional::Named(o)) => {
-                i.assert(o)
-            }
-            (Self::Prefix(i), pernixc_syntax::syntax_tree::expression::Functional::Prefix(o)) => {
-                i.assert(o)
-            }
-            (
-                Self::MemberAccess(i),
-                pernixc_syntax::syntax_tree::expression::Functional::MemberAccess(o),
-            ) => i.assert(o),
-            (Self::Binary(i), pernixc_syntax::syntax_tree::expression::Functional::Binary(o)) => {
-                i.assert(o)
-            }
-            (
-                Self::FunctionCall(i),
-                pernixc_syntax::syntax_tree::expression::Functional::FunctionCall(o),
-            ) => i.assert(o),
-            (
-                Self::Parenthesized(i),
-                pernixc_syntax::syntax_tree::expression::Functional::Parenthesized(o),
-            ) => i.assert(o),
-            (
-                Self::StructLiteral(i),
-                pernixc_syntax::syntax_tree::expression::Functional::StructLiteral(o),
-            ) => i.assert(o),
-            (Self::Cast(i), pernixc_syntax::syntax_tree::expression::Functional::Cast(o)) => {
-                i.assert(o)
-            }
-            (
-                Self::ArrowOperator(i),
-                pernixc_syntax::syntax_tree::expression::Functional::ArrowOperator(o),
-            ) => i.assert(o),
+            (Self::NumericLiteral(i), super::Functional::NumericLiteral(o)) => i.assert(o),
+            (Self::BooleanLiteral(i), super::Functional::BooleanLiteral(o)) => i.assert(o),
+            (Self::Named(i), super::Functional::Named(o)) => i.assert(o),
+            (Self::Prefix(i), super::Functional::Prefix(o)) => i.assert(o),
+            (Self::MemberAccess(i), super::Functional::MemberAccess(o)) => i.assert(o),
+            (Self::Binary(i), super::Functional::Binary(o)) => i.assert(o),
+            (Self::FunctionCall(i), super::Functional::FunctionCall(o)) => i.assert(o),
+            (Self::Parenthesized(i), super::Functional::Parenthesized(o)) => i.assert(o),
+            (Self::StructLiteral(i), super::Functional::StructLiteral(o)) => i.assert(o),
+            (Self::Cast(i), super::Functional::Cast(o)) => i.assert(o),
+            (Self::ArrowOperator(i), super::Functional::ArrowOperator(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "expected functional to be {self:?}, found {output:?}",
             ))),
@@ -1646,7 +1511,7 @@ impl Display for Functional {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::expression::Expression`].
+/// Represents an input for the [`super::Expression`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Expression {
@@ -1656,22 +1521,13 @@ pub enum Expression {
 }
 
 impl Input for Expression {
-    type Output = pernixc_syntax::syntax_tree::expression::Expression;
+    type Output = super::Expression;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (
-                Self::Functional(i),
-                pernixc_syntax::syntax_tree::expression::Expression::Functional(o),
-            ) => i.assert(o),
-            (
-                Self::Imperative(i),
-                pernixc_syntax::syntax_tree::expression::Expression::Imperative(o),
-            ) => i.assert(o),
-            (
-                Self::Terminator(i),
-                pernixc_syntax::syntax_tree::expression::Expression::Terminator(o),
-            ) => i.assert(o),
+            (Self::Functional(i), super::Expression::Functional(o)) => i.assert(o),
+            (Self::Imperative(i), super::Expression::Imperative(o)) => i.assert(o),
+            (Self::Terminator(i), super::Expression::Terminator(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "expected expression to be {self:?}, found {output:?}",
             ))),
@@ -1746,5 +1602,22 @@ impl Arbitrary for Expression {
             ]
         })
         .boxed()
+    }
+}
+
+proptest! {
+    #[test]
+    #[allow(clippy::redundant_closure_for_method_calls)]
+    fn expression_test(
+        expression_input in Expression::arbitrary()
+    ) {
+        let source = expression_input.to_string();
+
+        let expression = syntax_tree::tests::parse(
+            &source,
+            |parser, handler| parser.parse_expression(handler)
+        )?;
+
+        expression_input.assert(&expression)?;
     }
 }

@@ -1,31 +1,36 @@
-//! Contains the definition of various inputs that correspond to the definitions in defined
-//! [`pernixc_syntax::syntax_tree::target`] module.
-
 use std::{fmt::Display, path::Path, str::FromStr};
 
 use derive_more::From;
-use pernix_input::Input;
+use enum_as_inner::EnumAsInner;
+use pernixc_source::SourceFile;
+use pernixc_system::diagnostic::Storage;
+use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_assert_eq,
+    prop_assert_eq, proptest,
     strategy::{BoxedStrategy, Strategy},
-    test_runner::TestCaseResult,
+    test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{item::Item, AccessModifier};
+use crate::syntax_tree::{
+    self,
+    item::tests::Item,
+    target::Target,
+    tests::{AccessModifier, Identifier},
+};
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::target::ModulePath`]
+/// Represents an input for the [`super::ModulePath`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModulePath {
     /// The first identifier in the module path
-    pub first: pernix_lexical_input::token::Identifier,
+    pub first: Identifier,
 
     /// The rest of the identifiers in the module path
-    pub rest: Vec<pernix_lexical_input::token::Identifier>,
+    pub rest: Vec<Identifier>,
 }
 
 impl Input for ModulePath {
-    type Output = pernixc_syntax::syntax_tree::target::ModulePath;
+    type Output = super::ModulePath;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.first.assert(output.first())?;
@@ -45,8 +50,8 @@ impl Arbitrary for ModulePath {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
-            pernix_lexical_input::token::Identifier::arbitrary(),
-            proptest::collection::vec(pernix_lexical_input::token::Identifier::arbitrary(), 0..=7),
+            Identifier::arbitrary(),
+            proptest::collection::vec(Identifier::arbitrary(), 0..=7),
         )
             .prop_map(|(first, rest)| Self { first, rest })
             .boxed()
@@ -65,7 +70,7 @@ impl Display for ModulePath {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::target::Using`]
+/// Represents an input for the [`super::Using`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Using {
     /// The module path
@@ -73,7 +78,7 @@ pub struct Using {
 }
 
 impl Input for Using {
-    type Output = pernixc_syntax::syntax_tree::target::Using;
+    type Output = super::Using;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.module_path.assert(&output.module_path)
@@ -97,18 +102,18 @@ impl Display for Using {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::target::Module`]
+/// Represents an input for the [`super::Module`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Module {
     /// The access modifier of the module.
     pub access_modifier: AccessModifier,
 
     /// The name of the submodule.
-    pub identifier: pernix_lexical_input::token::Identifier,
+    pub identifier: Identifier,
 }
 
 impl Input for Module {
-    type Output = pernixc_syntax::syntax_tree::target::Module;
+    type Output = super::Module;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
@@ -127,10 +132,7 @@ impl Arbitrary for Module {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (
-            AccessModifier::arbitrary(),
-            pernix_lexical_input::token::Identifier::arbitrary(),
-        )
+        (AccessModifier::arbitrary(), Identifier::arbitrary())
             .prop_map(|(access_modifier, identifier)| Self {
                 access_modifier,
                 identifier,
@@ -139,7 +141,7 @@ impl Arbitrary for Module {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::target::Submodule`]
+/// Represents an input for the [`super::Submodule`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Submodule {
     /// The module declaration part of the submodule.
@@ -150,7 +152,7 @@ pub struct Submodule {
 }
 
 impl Input for Submodule {
-    type Output = pernixc_syntax::syntax_tree::target::Submodule;
+    type Output = super::Submodule;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.module.assert(&output.module)?;
@@ -158,7 +160,7 @@ impl Input for Submodule {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::target::File`]
+/// Represents an input for the [`super::File`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct File {
     usings: Vec<Using>,
@@ -167,7 +169,7 @@ pub struct File {
 }
 
 impl Input for File {
-    type Output = pernixc_syntax::syntax_tree::target::File;
+    type Output = super::File;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.usings.assert(&output.usings)?;
@@ -195,7 +197,7 @@ impl Arbitrary for File {
             (
                 proptest::collection::vec(Using::arbitrary(), 0..=4),
                 proptest::collection::hash_map(
-                    pernix_lexical_input::token::Identifier::arbitrary().prop_filter_map(
+                    Identifier::arbitrary().prop_filter_map(
                         "allows only a valid module name",
                         |mut identifier| {
                             identifier.string = identifier.string.to_lowercase();
@@ -298,4 +300,76 @@ impl File {
 
         Ok(tempdir)
     }
+}
+
+proptest! {
+    #[test]
+    #[allow(clippy::redundant_closure_for_method_calls)]
+    fn module_path_test(
+        module_path_input in ModulePath::arbitrary()
+    ) {
+        let source = module_path_input.to_string();
+
+        let module_path = syntax_tree::tests::parse(
+            &source,
+            |parser, handler| parser.parse_module_path(handler)
+        )?;
+
+        module_path_input.assert(&module_path)?;
+    }
+
+    #[test]
+    #[allow(clippy::redundant_closure_for_method_calls)]
+    fn using_test(
+        using_input in Using::arbitrary()
+    ) {
+        let source = using_input.to_string();
+
+        let using = syntax_tree::tests::parse(
+            &source,
+            |parser, handler| parser.parse_using(handler)
+        )?;
+
+        using_input.assert(&using)?;
+    }
+
+    #[test]
+    #[allow(clippy::redundant_closure_for_method_calls)]
+    fn module_test(
+        module_input in Module::arbitrary()
+    ) {
+        let source = module_input.to_string();
+
+        let module = syntax_tree::tests::parse(
+            &source,
+            |parser, handler| parser.parse_module(handler)
+        )?;
+
+        module_input.assert(&module)?;
+    }
+
+    #[test]
+    #[allow(clippy::redundant_closure_for_method_calls)]
+    fn target_test(
+        target_input in File::arbitrary()
+    ) {
+        let target_dir = target_input.create_target()?;
+        let root_source_file = SourceFile::load(&target_dir.path().join("main.pnx"))?;
+        let storage = Storage::<Error>::new();
+        let target = Target::parse(root_source_file, "test".to_string(), &storage);
+
+        if !storage.as_vec().is_empty() {
+            return Err(TestCaseError::fail(format!("parsing error: {:#?}",storage.as_vec())));
+        }
+
+        target_input.assert(target.root_file())?;
+    }
+}
+
+/// Enumeration of all error types that can be returned when parsing a target tree.
+#[derive(Debug, EnumAsInner, From)]
+enum Error {
+    Lexical(pernixc_lexical::error::Error),
+    Syntax(crate::error::Error),
+    Target(syntax_tree::target::Error),
 }

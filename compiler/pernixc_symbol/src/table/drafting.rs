@@ -372,11 +372,12 @@ impl Table {
                     }
 
                     // add lifetime parameter
-                    let lifetime_parameter_id = self.lifetime_parameters.push(LifetimeParameter {
-                        name: lt.identifier().span.str().to_string(),
-                        syntax_tree: Some(lt.clone()),
-                        parent_genericable_id,
-                    });
+                    let lifetime_parameter_id =
+                        self.lifetime_parameters.insert(LifetimeParameter {
+                            name: lt.identifier().span.str().to_string(),
+                            syntax_tree: Some(lt.clone()),
+                            parent_genericable_id,
+                        });
 
                     generic_parameters.lifetime_parameter_ids_by_name.insert(
                         lt.identifier().span.str().to_string(),
@@ -408,7 +409,7 @@ impl Table {
                         continue;
                     }
 
-                    let type_parameter_id = self.type_parameters.push(TypeParameter {
+                    let type_parameter_id = self.type_parameters.insert(TypeParameter {
                         name: ty.identifier().span.str().to_string(),
                         syntax_tree: Some(ty.clone()),
                         parent_genericable_id,
@@ -436,7 +437,7 @@ impl Table {
     ) -> arena::ID<Type> {
         let type_syntax_tree = Arc::new(type_syntax_tree);
 
-        let type_id = self.types.push(Type {
+        let type_id = self.types.insert(Type {
             name: type_syntax_tree
                 .signature()
                 .identifier()
@@ -483,7 +484,7 @@ impl Table {
             where_clause: where_clause_syntax_tree,
         };
 
-        let trait_function_id = self.trait_functions.push(TraitFunction {
+        let trait_function_id = self.trait_functions.insert(TraitFunction {
             function_signature: FunctionSignature {
                 name: function_signature_syntax_tree_without_parameters
                     .identifier
@@ -537,7 +538,7 @@ impl Table {
 
             let parameter_name = parameter.identifier().span.str().to_string();
 
-            let parameter_id = self.trait_function_parameters.push(Parameter {
+            let parameter_id = self.trait_function_parameters.insert(Parameter {
                 name: parameter_name.clone(),
                 parameter_parent_id: trait_function_id,
                 declaration_order: trait_function_symbol
@@ -569,7 +570,7 @@ impl Table {
         parent_trait_id: arena::ID<Trait>,
         handler: &impl Handler<Error>,
     ) -> arena::ID<TraitType> {
-        let trait_type_id = self.trait_types.push(TraitType {
+        let trait_type_id = self.trait_types.insert(TraitType {
             name: trait_type_syntax_tree
                 .signature()
                 .identifier()
@@ -605,7 +606,7 @@ impl Table {
         let (accessibility_syntax_tree, signature_syntax_tree, body_syntax_tree) =
             trait_syntax_tree.dissolve();
 
-        let trait_id = self.traits.push(crate::Trait {
+        let trait_id = self.traits.insert(crate::Trait {
             name: signature_syntax_tree.identifier().span.str().to_string(),
             parent_module_id,
             generics: Generics::default(), // to be filled later
@@ -680,7 +681,7 @@ impl Table {
             )
         };
 
-        let function_id = self.functions.push(crate::Function {
+        let function_id = self.functions.insert(crate::Function {
             signature: crate::FunctionSignature {
                 name: signature_syntax_tree.identifier.span.str().to_string(),
                 parameter_ids_by_name: HashMap::new(), // to be filled later
@@ -721,7 +722,7 @@ impl Table {
 
             let parameter_name = parameter.identifier().span.str().to_string();
 
-            let parameter_id = self.function_parameters.push(Parameter {
+            let parameter_id = self.function_parameters.insert(Parameter {
                 name: parameter_name.clone(),
                 parameter_parent_id: function_id,
                 declaration_order: function.parameter_order.len(),
@@ -748,7 +749,7 @@ impl Table {
         let (access_modifier, signature_syntax_tree, body_syntax_tree) =
             struct_syntax_tree.dissolve();
 
-        let struct_id = self.structs.push(Struct {
+        let struct_id = self.structs.insert(Struct {
             name: signature_syntax_tree.identifier().span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&access_modifier),
             parent_module_id,
@@ -786,7 +787,7 @@ impl Table {
                         Accessibility::from_syntax_tree(field.access_modifier());
 
                     // add the field to the struct
-                    let field_id = self.fields.push(Field {
+                    let field_id = self.fields.insert(Field {
                         name: field_name.clone(),
                         accessibility: field_accessibility,
                         parent_struct_id: struct_id,
@@ -838,7 +839,7 @@ impl Table {
         let (access_modifier, signature_syntax_tree, body_syntax_tree) =
             enum_syntax_tree.dissolve();
 
-        let enum_id = self.enums.push(Enum {
+        let enum_id = self.enums.insert(Enum {
             name: signature_syntax_tree.identifier().span.str().to_string(),
             accessibility: Accessibility::from_syntax_tree(&access_modifier),
             parent_module_id,
@@ -864,7 +865,7 @@ impl Table {
             let name = variant.span.str().to_string();
 
             // adds variant to enum
-            let variant_id = self.enum_variants.push(EnumVariant {
+            let variant_id = self.enum_variants.insert(EnumVariant {
                 name: name.clone(),
                 parent_enum_id: enum_id,
                 declaration_order: enum_symbol.variant_order.len(),
@@ -878,3 +879,9 @@ impl Table {
         enum_id
     }
 }
+
+#[cfg(test)]
+mod input;
+
+#[cfg(test)]
+mod tests;

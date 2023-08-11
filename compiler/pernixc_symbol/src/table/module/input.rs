@@ -30,7 +30,7 @@ impl Table {
         accessibility: Accessibility,
         parent_module_id: Option<arena::ID<Module>>,
     ) -> arena::ID<Module> {
-        let module_id = self.modules.push(Module {
+        let module_id = self.modules.insert(Module {
             name,
             accessibility,
             parent_module_id,

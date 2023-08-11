@@ -1,6 +1,7 @@
 use std::{collections::HashSet, ops::Deref, path::Path};
 
-use pernixc_system::{arena, input::Input};
+use pernixc_system::arena;
+use pernixc_tests::input::Input;
 use proptest::{
     prop_assert_eq,
     test_runner::{TestCaseError, TestCaseResult},
@@ -113,10 +114,10 @@ impl Table {
 
         for trait_member in trait_symbol.trait_member_ids_by_name.values() {
             match trait_member {
-                TraitMemberID::TraitFunction(trait_function_id) => {
+                TraitMemberID::Function(trait_function_id) => {
                     self.write_trait_function(file, *trait_function_id)?;
                 }
-                TraitMemberID::TraitType(trait_type_id) => {
+                TraitMemberID::Type(trait_type_id) => {
                     self.write_trait_type(file, *trait_type_id)?;
                 }
             }
@@ -1200,8 +1201,8 @@ impl<'a> Input for SymbolRef<'a, Trait> {
 
             match (input_member_id, output_member_id) {
                 (
-                    crate::TraitMemberID::TraitFunction(input_trait_function_id),
-                    crate::TraitMemberID::TraitFunction(output_trait_function_id),
+                    crate::TraitMemberID::Function(input_trait_function_id),
+                    crate::TraitMemberID::Function(output_trait_function_id),
                 ) => SymbolRef {
                     table: self.table,
                     symbol_id: input_trait_function_id,
@@ -1211,8 +1212,8 @@ impl<'a> Input for SymbolRef<'a, Trait> {
                     symbol_id: output_trait_function_id,
                 })?,
                 (
-                    crate::TraitMemberID::TraitType(input_trait_type_id),
-                    crate::TraitMemberID::TraitType(output_trait_type_id),
+                    crate::TraitMemberID::Type(input_trait_type_id),
+                    crate::TraitMemberID::Type(output_trait_type_id),
                 ) => SymbolRef {
                     table: self.table,
                     symbol_id: input_trait_type_id,

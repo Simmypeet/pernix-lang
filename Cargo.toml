@@ -7,11 +7,8 @@ members = [
     "compiler/pernixc_syntax",
     "compiler/pernixc_symbol",
     "compiler/pernixc_driver",
+    "compiler/pernixc_tests",
     "compiler/pernixc",
-
-    "inputs/pernix_input",
-    "inputs/pernix_lexical_input",
-    "inputs/pernix_syntax_input",
 ]
 
 [workspace.dependencies]

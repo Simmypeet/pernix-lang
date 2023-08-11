@@ -20,11 +20,5 @@ lazy_static = { workspace = true }
 derive_more = { workspace = true }
 
 [dev-dependencies]
-pernix_lexical_input = { path = "../../inputs/pernix_lexical_input" }
-pernix_input = { path = "../../inputs/pernix_input" }
+pernixc_tests = { path = "../pernixc_tests" }
 proptest = { workspace = true }
-
-
-[[test]]
-name = "pernixc_lexical_test"
-path = "test/pernixc_lexical_test.rs"

@@ -75,7 +75,7 @@ impl<T> Arena<T> {
     }
 
     /// Adds a symbol to the arena and returns its ID.
-    pub fn push(&mut self, item: T) -> ID<T> {
+    pub fn insert(&mut self, item: T) -> ID<T> {
         let new_id = ID {
             id: self.current_id,
             _marker: std::marker::PhantomData,
@@ -112,6 +112,9 @@ impl<T> Arena<T> {
     pub fn values_mut(&mut self) -> std::collections::hash_map::ValuesMut<'_, ID<T>, Symbol<T>> {
         self.items.values_mut()
     }
+
+    /// Returns an iterator over the IDs of the symbols in the arena.
+    pub fn ids(&self) -> impl Iterator<Item = ID<T>> + '_ { self.items.keys().copied() }
 
     /// Removes a symbol from the arena and returns it.
     pub fn remove(&mut self, id: ID<T>) -> Option<Symbol<T>> { self.items.remove(&id) }

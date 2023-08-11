@@ -12,7 +12,7 @@ impl Table {
     // Creates a table with core-language symbols
     pub(super) fn create_core_symbols(&mut self) {
         // core module id
-        let core_module_id = self.modules.push(crate::Module {
+        let core_module_id = self.modules.insert(crate::Module {
             name: "@core".to_string(),
             accessibility: Accessibility::Public,
             parent_module_id: None,
@@ -31,7 +31,7 @@ impl Table {
     fn create_copy_trait(&mut self, core_module_id: arena::ID<Module>) {
         // Drop trait
         let (trait_id, type_parameter_id) = {
-            let trait_id = self.traits.push(Trait {
+            let trait_id = self.traits.insert(Trait {
                 name: "@Copy".to_string(),
                 parent_module_id: core_module_id,
                 generics: Generics::default(),
@@ -42,7 +42,7 @@ impl Table {
             });
 
             // A type parameter for the type being dropped
-            let type_parameter_id = self.type_parameters.push(TypeParameter {
+            let type_parameter_id = self.type_parameters.insert(TypeParameter {
                 name: "T".to_string(),
                 parent_genericable_id: trait_id.into(),
                 syntax_tree: None,
@@ -67,7 +67,7 @@ impl Table {
 
         // create a function for trait
         let trait_function_id = {
-            let trait_function_id = self.trait_functions.push(TraitFunction {
+            let trait_function_id = self.trait_functions.insert(TraitFunction {
                 function_signature: crate::FunctionSignature {
                     name: "copy".to_string(),
                     parameter_ids_by_name: HashMap::new(), // to be filled later
@@ -79,7 +79,7 @@ impl Table {
                 parent_trait_id: trait_id,
             });
 
-            let lifetime_parameter = self.lifetime_parameters.push(crate::LifetimeParameter {
+            let lifetime_parameter = self.lifetime_parameters.insert(crate::LifetimeParameter {
                 name: "a".to_string(),
                 parent_genericable_id: trait_function_id.into(),
                 syntax_tree: None,
@@ -98,7 +98,7 @@ impl Table {
                 .lifetime_parameter_ids_by_name
                 .insert("a".to_string(), lifetime_parameter);
 
-            let parameter_id = self.trait_function_parameters.push(crate::Parameter {
+            let parameter_id = self.trait_function_parameters.insert(crate::Parameter {
                 name: "this".to_string(),
                 parameter_parent_id: trait_function_id,
                 declaration_order: 0,
@@ -130,7 +130,7 @@ impl Table {
     fn create_drop_trait(&mut self, core_module_id: arena::ID<Module>) {
         // Drop trait
         let (trait_id, type_parameter_id) = {
-            let trait_id = self.traits.push(Trait {
+            let trait_id = self.traits.insert(Trait {
                 name: "@Drop".to_string(),
                 parent_module_id: core_module_id,
                 generics: Generics::default(),
@@ -141,7 +141,7 @@ impl Table {
             });
 
             // A type parameter for the type being dropped
-            let type_parameter_id = self.type_parameters.push(TypeParameter {
+            let type_parameter_id = self.type_parameters.insert(TypeParameter {
                 name: "T".to_string(),
                 parent_genericable_id: trait_id.into(),
                 syntax_tree: None,
@@ -166,7 +166,7 @@ impl Table {
 
         // create a function for trait
         let trait_function_id = {
-            let trait_function_id = self.trait_functions.push(TraitFunction {
+            let trait_function_id = self.trait_functions.insert(TraitFunction {
                 function_signature: crate::FunctionSignature {
                     name: "drop".to_string(),
                     parameter_ids_by_name: HashMap::new(), // to be filled later
@@ -178,7 +178,7 @@ impl Table {
                 parent_trait_id: trait_id,
             });
 
-            let lifetime_parameter = self.lifetime_parameters.push(crate::LifetimeParameter {
+            let lifetime_parameter = self.lifetime_parameters.insert(crate::LifetimeParameter {
                 name: "a".to_string(),
                 parent_genericable_id: trait_function_id.into(),
                 syntax_tree: None,
@@ -197,7 +197,7 @@ impl Table {
                 .lifetime_parameter_ids_by_name
                 .insert("a".to_string(), lifetime_parameter);
 
-            let parameter_id = self.trait_function_parameters.push(crate::Parameter {
+            let parameter_id = self.trait_function_parameters.insert(crate::Parameter {
                 name: "this".to_string(),
                 parameter_parent_id: trait_function_id,
                 declaration_order: 0,

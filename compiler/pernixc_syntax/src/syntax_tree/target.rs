@@ -520,3 +520,6 @@ impl Target {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

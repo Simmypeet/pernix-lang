@@ -1,31 +1,31 @@
-//! Contains the definition of various inputs that correspond to the definitions in defined
-//! [`pernixc_syntax::syntax_tree::item`] module.
-
 use std::fmt::{Display, Write};
 
-use pernix_input::Input;
-use pernix_lexical_input::token::Identifier;
+use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_assert_eq, prop_oneof,
+    prop_assert_eq, prop_oneof, proptest,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{
-    statement::Statement, AccessModifier, ConnectedList, ConstantPunctuation, LifetimeArgument,
-    QualifiedIdentifier, QualifiedIdentifierArbitraryParameters, TypeAnnotation, TypeSpecifier,
+use crate::syntax_tree::{
+    self,
+    statement::tests::Statement,
+    tests::{
+        AccessModifier, ConnectedList, ConstantPunctuation, Identifier, LifetimeArgument,
+        QualifiedIdentifier, QualifiedIdentifierArbitraryParameters, TypeAnnotation, TypeSpecifier,
+    },
 };
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::LifetimeParameter`].
+/// Represents an input for the [`super::LifetimeParameter`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeParameter {
     /// The identifier of the lifetime parameter.
-    pub identifier: pernix_lexical_input::token::Identifier,
+    pub identifier: Identifier,
 }
 
 impl Input for LifetimeParameter {
-    type Output = pernixc_syntax::syntax_tree::item::LifetimeParameter;
+    type Output = super::LifetimeParameter;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())
@@ -37,7 +37,7 @@ impl Arbitrary for LifetimeParameter {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        pernix_lexical_input::token::Identifier::arbitrary()
+        Identifier::arbitrary()
             .prop_map(|identifier| Self { identifier })
             .boxed()
     }
@@ -49,15 +49,15 @@ impl Display for LifetimeParameter {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TypeParameter`].
+/// Represents an input for the [`super::TypeParameter`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeParameter {
     /// The identifier of the type parameter.
-    pub identifier: pernix_lexical_input::token::Identifier,
+    pub identifier: Identifier,
 }
 
 impl Input for TypeParameter {
-    type Output = pernixc_syntax::syntax_tree::item::TypeParameter;
+    type Output = super::TypeParameter;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())
@@ -81,7 +81,7 @@ impl Display for TypeParameter {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::GenericParameter`].
+/// Represents an input for the [`super::GenericParameter`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum GenericParameter {
@@ -90,17 +90,12 @@ pub enum GenericParameter {
 }
 
 impl Input for GenericParameter {
-    type Output = pernixc_syntax::syntax_tree::item::GenericParameter;
+    type Output = super::GenericParameter;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (
-                Self::Lifetime(i),
-                pernixc_syntax::syntax_tree::item::GenericParameter::Lifetime(o),
-            ) => i.assert(o),
-            (Self::Type(i), pernixc_syntax::syntax_tree::item::GenericParameter::Type(o)) => {
-                i.assert(o)
-            }
+            (Self::Lifetime(i), super::GenericParameter::Lifetime(o)) => i.assert(o),
+            (Self::Type(i), super::GenericParameter::Type(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}"
             ))),
@@ -130,7 +125,7 @@ impl Display for GenericParameter {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::GenericParameters`].
+/// Represents an input for the [`super::GenericParameters`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericParameters {
     /// The parameters of the generic.
@@ -138,7 +133,7 @@ pub struct GenericParameters {
 }
 
 impl Input for GenericParameters {
-    type Output = pernixc_syntax::syntax_tree::item::GenericParameters;
+    type Output = super::GenericParameters;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.parameter_list.assert(output.parameter_list())
@@ -165,7 +160,7 @@ impl Display for GenericParameters {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TraitBound`].
+/// Represents an input for the [`super::TraitBound`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitBound {
     /// The qualified identifier of the trait bound.
@@ -173,7 +168,7 @@ pub struct TraitBound {
 }
 
 impl Input for TraitBound {
-    type Output = pernixc_syntax::syntax_tree::item::TraitBound;
+    type Output = super::TraitBound;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.qualified_identifier
@@ -203,7 +198,7 @@ impl Display for TraitBound {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::BoundList`].
+/// Represents an input for the [`super::BoundList`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BoundList<T> {
     /// The first bound.
@@ -214,7 +209,7 @@ pub struct BoundList<T> {
 }
 
 impl<T: Input> Input for BoundList<T> {
-    type Output = pernixc_syntax::syntax_tree::item::BoundList<T::Output>;
+    type Output = super::BoundList<T::Output>;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.first.assert(output.first())?;
@@ -249,7 +244,7 @@ impl<T: std::fmt::Debug> BoundList<T> {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::LifetimeBound`].
+/// Represents an input for the [`super::LifetimeBound`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeBound {
     /// Lifetime parameter used in the bound.
@@ -260,7 +255,7 @@ pub struct LifetimeBound {
 }
 
 impl Input for LifetimeBound {
-    type Output = pernixc_syntax::syntax_tree::item::LifetimeBound;
+    type Output = super::LifetimeBound;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operand.assert(output.operand())?;
@@ -293,7 +288,7 @@ impl Display for LifetimeBound {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TypeBoundConstraint`].
+/// Represents an input for the [`super::TypeBoundConstraint`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum TypeBoundConstraint {
@@ -302,18 +297,14 @@ pub enum TypeBoundConstraint {
 }
 
 impl Input for TypeBoundConstraint {
-    type Output = pernixc_syntax::syntax_tree::item::TypeBoundConstraint;
+    type Output = super::TypeBoundConstraint;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (
-                Self::TypeSpecifier(a),
-                pernixc_syntax::syntax_tree::item::TypeBoundConstraint::TypeSpecifier(b),
-            ) => a.assert(b),
-            (
-                Self::LifetimeArgument(a),
-                pernixc_syntax::syntax_tree::item::TypeBoundConstraint::LifetimeArgument(b),
-            ) => a.assert(b),
+            (Self::TypeSpecifier(a), super::TypeBoundConstraint::TypeSpecifier(b)) => a.assert(b),
+            (Self::LifetimeArgument(a), super::TypeBoundConstraint::LifetimeArgument(b)) => {
+                a.assert(b)
+            }
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -343,7 +334,7 @@ impl Display for TypeBoundConstraint {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TypeBound`].
+/// Represents an input for the [`super::TypeBound`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeBound {
     /// The type_specififer of the type bound.
@@ -354,7 +345,7 @@ pub struct TypeBound {
 }
 
 impl Input for TypeBound {
-    type Output = pernixc_syntax::syntax_tree::item::TypeBound;
+    type Output = super::TypeBound;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.type_specifier.assert(output.type_specifier())?;
@@ -390,30 +381,23 @@ impl Display for TypeBound {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Constraint`].
+/// Represents an input for the [`super::Constraint`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Constraint {
-    TraitBound(TraitBound),
-    LifetimeBound(LifetimeBound),
-    TypeBound(TypeBound),
+    Trait(TraitBound),
+    Lifetime(LifetimeBound),
+    Type(TypeBound),
 }
 
 impl Input for Constraint {
-    type Output = pernixc_syntax::syntax_tree::item::Constraint;
+    type Output = super::Constraint;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::TraitBound(i), pernixc_syntax::syntax_tree::item::Constraint::TraitBound(o)) => {
-                i.assert(o)
-            }
-            (
-                Self::LifetimeBound(i),
-                pernixc_syntax::syntax_tree::item::Constraint::LifetimeBound(o),
-            ) => i.assert(o),
-            (Self::TypeBound(i), pernixc_syntax::syntax_tree::item::Constraint::TypeBound(o)) => {
-                i.assert(o)
-            }
+            (Self::Trait(i), super::Constraint::Trait(o)) => i.assert(o),
+            (Self::Lifetime(i), super::Constraint::Lifetime(o)) => i.assert(o),
+            (Self::Type(i), super::Constraint::Type(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -427,9 +411,9 @@ impl Arbitrary for Constraint {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            TraitBound::arbitrary().prop_map(Self::TraitBound),
-            LifetimeBound::arbitrary().prop_map(Self::LifetimeBound),
-            TypeBound::arbitrary().prop_map(Self::TypeBound),
+            TraitBound::arbitrary().prop_map(Self::Trait),
+            LifetimeBound::arbitrary().prop_map(Self::Lifetime),
+            TypeBound::arbitrary().prop_map(Self::Type),
         ]
         .boxed()
     }
@@ -438,14 +422,14 @@ impl Arbitrary for Constraint {
 impl Display for Constraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TraitBound(i) => Display::fmt(i, f),
-            Self::LifetimeBound(i) => Display::fmt(i, f),
-            Self::TypeBound(i) => Display::fmt(i, f),
+            Self::Trait(i) => Display::fmt(i, f),
+            Self::Lifetime(i) => Display::fmt(i, f),
+            Self::Type(i) => Display::fmt(i, f),
         }
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::WhereClause`].
+/// Represents an input for the [`super::WhereClause`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WhereClause {
     /// The list of constrains in the where clause.
@@ -453,7 +437,7 @@ pub struct WhereClause {
 }
 
 impl Input for WhereClause {
-    type Output = pernixc_syntax::syntax_tree::item::WhereClause;
+    type Output = super::WhereClause;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.constraint_list.assert(output.constraint_list())
@@ -477,7 +461,7 @@ impl Display for WhereClause {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Parameter`].
+/// Represents an input for the [`super::Parameter`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameter {
     /// Whether the parameter is mutable.
@@ -491,7 +475,7 @@ pub struct Parameter {
 }
 
 impl Input for Parameter {
-    type Output = pernixc_syntax::syntax_tree::item::Parameter;
+    type Output = super::Parameter;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.mutable, output.mutable_keyword().is_some());
@@ -528,7 +512,7 @@ impl Display for Parameter {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Parameters`].
+/// Represents an input for the [`super::Parameters`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameters {
     /// The list of parameters.
@@ -536,7 +520,7 @@ pub struct Parameters {
 }
 
 impl Input for Parameters {
-    type Output = pernixc_syntax::syntax_tree::item::Parameters;
+    type Output = super::Parameters;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.parameter_list.assert(output.parameter_list())
@@ -567,7 +551,7 @@ impl Display for Parameters {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::ReturnType`].
+/// Represents an input for the [`super::ReturnType`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReturnType {
     /// The type annotation of the return type.
@@ -575,7 +559,7 @@ pub struct ReturnType {
 }
 
 impl Input for ReturnType {
-    type Output = pernixc_syntax::syntax_tree::item::ReturnType;
+    type Output = super::ReturnType;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.type_annotation.assert(output.type_annotation())
@@ -599,7 +583,7 @@ impl Display for ReturnType {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::FunctionSignature`].
+/// Represents an input for the [`super::FunctionSignature`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionSignature {
     /// The name of the function.
@@ -619,7 +603,7 @@ pub struct FunctionSignature {
 }
 
 impl Input for FunctionSignature {
-    type Output = pernixc_syntax::syntax_tree::item::FunctionSignature;
+    type Output = super::FunctionSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
@@ -678,7 +662,7 @@ impl Display for FunctionSignature {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::FunctionBody`].
+/// Represents an input for the [`super::FunctionBody`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionBody {
     /// The statements of the function body.
@@ -686,7 +670,7 @@ pub struct FunctionBody {
 }
 
 impl Input for FunctionBody {
-    type Output = pernixc_syntax::syntax_tree::item::FunctionBody;
+    type Output = super::FunctionBody;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.statements.len(), output.statements().len());
@@ -724,7 +708,7 @@ impl Display for FunctionBody {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Function`]
+/// Represents an input for the [`super::Function`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function {
     /// The access modifier of the function.
@@ -738,7 +722,7 @@ pub struct Function {
 }
 
 impl Input for Function {
-    type Output = pernixc_syntax::syntax_tree::item::Function;
+    type Output = super::Function;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
@@ -776,7 +760,7 @@ impl Display for Function {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Item`]
+/// Represents an input for the [`super::Item`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Item {
@@ -789,20 +773,16 @@ pub enum Item {
 }
 
 impl Input for Item {
-    type Output = pernixc_syntax::syntax_tree::item::Item;
+    type Output = super::Item;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Function(i), pernixc_syntax::syntax_tree::item::Item::Function(o)) => {
-                i.assert(o)
-            }
-            (Self::Trait(i), pernixc_syntax::syntax_tree::item::Item::Trait(o)) => i.assert(o),
-            (Self::Type(i), pernixc_syntax::syntax_tree::item::Item::Type(o)) => i.assert(o),
-            (Self::Struct(i), pernixc_syntax::syntax_tree::item::Item::Struct(o)) => i.assert(o),
-            (Self::Enum(i), pernixc_syntax::syntax_tree::item::Item::Enum(o)) => i.assert(o),
-            (Self::Implements(i), pernixc_syntax::syntax_tree::item::Item::Implements(o)) => {
-                i.assert(o)
-            }
+            (Self::Function(i), super::Item::Function(o)) => i.assert(o),
+            (Self::Trait(i), super::Item::Trait(o)) => i.assert(o),
+            (Self::Type(i), super::Item::Type(o)) => i.assert(o),
+            (Self::Struct(i), super::Item::Struct(o)) => i.assert(o),
+            (Self::Enum(i), super::Item::Enum(o)) => i.assert(o),
+            (Self::Implements(i), super::Item::Implements(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -840,7 +820,7 @@ impl Display for Item {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TraitSignature`]
+/// Represents an input for the [`super::TraitSignature`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitSignature {
     /// The name of the trait
@@ -854,7 +834,7 @@ pub struct TraitSignature {
 }
 
 impl Input for TraitSignature {
-    type Output = pernixc_syntax::syntax_tree::item::TraitSignature;
+    type Output = super::TraitSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
@@ -899,7 +879,7 @@ impl Display for TraitSignature {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TypeSignature`]
+/// Represents an input for the [`super::TypeSignature`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeSignature {
     /// The name of the type.
@@ -910,7 +890,7 @@ pub struct TypeSignature {
 }
 
 impl Input for TypeSignature {
-    type Output = pernixc_syntax::syntax_tree::item::TypeSignature;
+    type Output = super::TypeSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
@@ -947,7 +927,7 @@ impl Display for TypeSignature {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TraitFunction`]
+/// Represents an input for the [`super::TraitFunction`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitFunction {
     /// The function signature of the trait function.
@@ -955,7 +935,7 @@ pub struct TraitFunction {
 }
 
 impl Input for TraitFunction {
-    type Output = pernixc_syntax::syntax_tree::item::TraitFunction;
+    type Output = super::TraitFunction;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.function_signature.assert(output.signature())
@@ -979,7 +959,7 @@ impl Display for TraitFunction {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TraitType`]
+/// Represents an input for the [`super::TraitType`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitType {
     /// The type signature of the trait type.
@@ -987,7 +967,7 @@ pub struct TraitType {
 }
 
 impl Input for TraitType {
-    type Output = pernixc_syntax::syntax_tree::item::TraitType;
+    type Output = super::TraitType;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.type_signature.assert(output.signature())
@@ -1011,7 +991,7 @@ impl Display for TraitType {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TraitMember`]
+/// Represents an input for the [`super::TraitMember`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum TraitMember {
@@ -1020,14 +1000,12 @@ pub enum TraitMember {
 }
 
 impl Input for TraitMember {
-    type Output = pernixc_syntax::syntax_tree::item::TraitMember;
+    type Output = super::TraitMember;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Function(f), pernixc_syntax::syntax_tree::item::TraitMember::Function(g)) => {
-                f.assert(g)
-            }
-            (Self::Type(f), pernixc_syntax::syntax_tree::item::TraitMember::Type(g)) => f.assert(g),
+            (Self::Function(f), super::TraitMember::Function(g)) => f.assert(g),
+            (Self::Type(f), super::TraitMember::Type(g)) => f.assert(g),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -1057,7 +1035,7 @@ impl Display for TraitMember {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TraitBody`]
+/// Represents an input for the [`super::TraitBody`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitBody {
     /// The members of the trait body.
@@ -1065,7 +1043,7 @@ pub struct TraitBody {
 }
 
 impl Input for TraitBody {
-    type Output = pernixc_syntax::syntax_tree::item::TraitBody;
+    type Output = super::TraitBody;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.members.len(), output.members().len());
@@ -1101,7 +1079,7 @@ impl Display for TraitBody {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Trait`]
+/// Represents an input for the [`super::Trait`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Trait {
     /// The access modifier of the trait.
@@ -1115,7 +1093,7 @@ pub struct Trait {
 }
 
 impl Input for Trait {
-    type Output = pernixc_syntax::syntax_tree::item::Trait;
+    type Output = super::Trait;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
@@ -1153,7 +1131,7 @@ impl Display for Trait {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::TypeDefinition`]
+/// Represents an input for the [`super::TypeDefinition`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeDefinition {
     /// The type specifier alias of the type definition.
@@ -1161,7 +1139,7 @@ pub struct TypeDefinition {
 }
 
 impl Input for TypeDefinition {
-    type Output = pernixc_syntax::syntax_tree::item::TypeDefinition;
+    type Output = super::TypeDefinition;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.type_specifier.assert(output.type_specifier())
@@ -1185,7 +1163,7 @@ impl Display for TypeDefinition {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Type`]
+/// Represents an input for the [`super::Type`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Type {
     /// The access modifier of the type.
@@ -1199,7 +1177,7 @@ pub struct Type {
 }
 
 impl Input for Type {
-    type Output = pernixc_syntax::syntax_tree::item::Type;
+    type Output = super::Type;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
@@ -1237,7 +1215,7 @@ impl Display for Type {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::StructField`]
+/// Represents an input for the [`super::StructField`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructField {
     /// The access modifier of the struct field.
@@ -1251,7 +1229,7 @@ pub struct StructField {
 }
 
 impl Input for StructField {
-    type Output = pernixc_syntax::syntax_tree::item::StructField;
+    type Output = super::StructField;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
@@ -1289,7 +1267,7 @@ impl Display for StructField {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::StructMember`]
+/// Represents an input for the [`super::StructMember`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum StructMember {
@@ -1297,13 +1275,11 @@ pub enum StructMember {
 }
 
 impl Input for StructMember {
-    type Output = pernixc_syntax::syntax_tree::item::StructMember;
+    type Output = super::StructMember;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Field(i), pernixc_syntax::syntax_tree::item::StructMember::Field(o)) => {
-                i.assert(o)
-            }
+            (Self::Field(i), super::StructMember::Field(o)) => i.assert(o),
         }
     }
 }
@@ -1325,7 +1301,7 @@ impl Display for StructMember {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::StructBody`]
+/// Represents an input for the [`super::StructBody`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructBody {
     /// The members of the struct body.
@@ -1333,7 +1309,7 @@ pub struct StructBody {
 }
 
 impl Input for StructBody {
-    type Output = pernixc_syntax::syntax_tree::item::StructBody;
+    type Output = super::StructBody;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.members.len(), output.members().len());
@@ -1369,7 +1345,7 @@ impl Display for StructBody {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::StructSignature`]
+/// Represents an input for the [`super::StructSignature`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructSignature {
     /// The identifier of the struct.
@@ -1383,7 +1359,7 @@ pub struct StructSignature {
 }
 
 impl Input for StructSignature {
-    type Output = pernixc_syntax::syntax_tree::item::StructSignature;
+    type Output = super::StructSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
@@ -1428,7 +1404,7 @@ impl Display for StructSignature {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Struct`]
+/// Represents an input for the [`super::Struct`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Struct {
     /// The access modifier of the struct.
@@ -1442,7 +1418,7 @@ pub struct Struct {
 }
 
 impl Input for Struct {
-    type Output = pernixc_syntax::syntax_tree::item::Struct;
+    type Output = super::Struct;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
@@ -1480,7 +1456,7 @@ impl Display for Struct {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::EnumSignature`]
+/// Represents an input for the [`super::EnumSignature`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnumSignature {
     /// The name of the enum.
@@ -1488,7 +1464,7 @@ pub struct EnumSignature {
 }
 
 impl Input for EnumSignature {
-    type Output = pernixc_syntax::syntax_tree::item::EnumSignature;
+    type Output = super::EnumSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())
@@ -1512,7 +1488,7 @@ impl Display for EnumSignature {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::EnumBody`]
+/// Represents an input for the [`super::EnumBody`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnumBody {
     /// The list of variants in the enum.
@@ -1520,7 +1496,7 @@ pub struct EnumBody {
 }
 
 impl Input for EnumBody {
-    type Output = pernixc_syntax::syntax_tree::item::EnumBody;
+    type Output = super::EnumBody;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.variant_list.assert(output.variant_list())
@@ -1551,7 +1527,7 @@ impl Display for EnumBody {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Enum`]
+/// Represents an input for the [`super::Enum`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum {
     /// The access modifier of the enum.
@@ -1565,7 +1541,7 @@ pub struct Enum {
 }
 
 impl Input for Enum {
-    type Output = pernixc_syntax::syntax_tree::item::Enum;
+    type Output = super::Enum;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
@@ -1603,7 +1579,7 @@ impl Display for Enum {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::ImplementsType`]
+/// Represents an input for the [`super::ImplementsType`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementsType {
     /// The type signature of the type.
@@ -1614,7 +1590,7 @@ pub struct ImplementsType {
 }
 
 impl Input for ImplementsType {
-    type Output = pernixc_syntax::syntax_tree::item::ImplementsType;
+    type Output = super::ImplementsType;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.signature.assert(output.signature())?;
@@ -1642,7 +1618,7 @@ impl Display for ImplementsType {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::ImplementsFunction`]
+/// Represents an input for the [`super::ImplementsFunction`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementsFunction {
     /// The signature of the function.
@@ -1653,7 +1629,7 @@ pub struct ImplementsFunction {
 }
 
 impl Input for ImplementsFunction {
-    type Output = pernixc_syntax::syntax_tree::item::ImplementsFunction;
+    type Output = super::ImplementsFunction;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.signature.assert(output.signature())?;
@@ -1678,7 +1654,7 @@ impl Display for ImplementsFunction {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::ImplementsMember`]
+/// Represents an input for the [`super::ImplementsMember`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum ImplementsMember {
@@ -1687,18 +1663,14 @@ pub enum ImplementsMember {
 }
 
 impl Input for ImplementsMember {
-    type Output = pernixc_syntax::syntax_tree::item::ImplementsMember;
+    type Output = super::ImplementsMember;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (
-                Self::Type(input),
-                pernixc_syntax::syntax_tree::item::ImplementsMember::Type(output),
-            ) => input.assert(output),
-            (
-                Self::Function(input),
-                pernixc_syntax::syntax_tree::item::ImplementsMember::Function(output),
-            ) => input.assert(output),
+            (Self::Type(input), super::ImplementsMember::Type(output)) => input.assert(output),
+            (Self::Function(input), super::ImplementsMember::Function(output)) => {
+                input.assert(output)
+            }
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -1728,7 +1700,7 @@ impl Display for ImplementsMember {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::ImplementsBody`]
+/// Represents an input for the [`super::ImplementsBody`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementsBody {
     /// The members of the implements body
@@ -1736,7 +1708,7 @@ pub struct ImplementsBody {
 }
 
 impl Input for ImplementsBody {
-    type Output = pernixc_syntax::syntax_tree::item::ImplementsBody;
+    type Output = super::ImplementsBody;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.members.len(), output.members().len());
@@ -1770,7 +1742,7 @@ impl Display for ImplementsBody {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::ImplementsSignature`]
+/// Represents an input for the [`super::ImplementsSignature`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementsSignature {
     /// The generic parameters of the implements signature
@@ -1784,7 +1756,7 @@ pub struct ImplementsSignature {
 }
 
 impl Input for ImplementsSignature {
-    type Output = pernixc_syntax::syntax_tree::item::ImplementsSignature;
+    type Output = super::ImplementsSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.generic_parameters
@@ -1839,7 +1811,7 @@ impl Display for ImplementsSignature {
     }
 }
 
-/// Represents an input for the [`pernixc_syntax::syntax_tree::item::Implements`]
+/// Represents an input for the [`super::Implements`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Implements {
     /// The signature of the implements
@@ -1850,7 +1822,7 @@ pub struct Implements {
 }
 
 impl Input for Implements {
-    type Output = pernixc_syntax::syntax_tree::item::Implements;
+    type Output = super::Implements;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.signature.assert(output.signature())?;
@@ -1875,5 +1847,22 @@ impl Arbitrary for Implements {
 impl Display for Implements {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.signature, self.body)
+    }
+}
+
+proptest! {
+    #[test]
+    #[allow(clippy::redundant_closure_for_method_calls)]
+    fn item_test(
+        item_input in Item::arbitrary()
+    ) {
+        let source = item_input.to_string();
+
+        let item = syntax_tree::tests::parse(
+            &source,
+            |parser, handler| parser.parse_item(handler)
+        )?;
+
+        item_input.assert(&item)?;
     }
 }

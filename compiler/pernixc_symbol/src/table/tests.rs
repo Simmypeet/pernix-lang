@@ -2,7 +2,8 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_source::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_system::{diagnostic::Storage, input::Input};
+use pernixc_system::diagnostic::Storage;
+use pernixc_tests::input::Input;
 use proptest::test_runner::{TestCaseError, TestCaseResult};
 
 use super::Table;

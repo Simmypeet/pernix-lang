@@ -206,3 +206,6 @@ impl<'a> Parser<'a> {
         })
     }
 }
+
+#[cfg(test)]
+pub(super) mod tests;

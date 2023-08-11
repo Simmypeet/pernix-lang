@@ -387,46 +387,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f746c4065a8fa3fe23974dd82f15431cc8d40779821001404d10d2e79ca7d79"
 
 [[package]]
-name = "pernix_input"
-version = "0.1.0"
-dependencies = [
- "proptest",
-]
-
-[[package]]
-name = "pernix_lexical_input"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "lazy_static",
- "pernix_input",
- "pernixc_lexical",
- "pernixc_source",
- "pernixc_system",
- "proptest",
- "strum",
-]
-
-[[package]]
-name = "pernix_syntax_input"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "enum-as-inner",
- "lazy_static",
- "pernix_input",
- "pernix_lexical_input",
- "pernixc_lexical",
- "pernixc_source",
- "pernixc_syntax",
- "pernixc_system",
- "proptest",
- "strum",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
 name = "pernixc"
 version = "0.1.0"
 dependencies = [
@@ -463,11 +423,10 @@ dependencies = [
  "enum-as-inner",
  "getset",
  "lazy_static",
- "pernix_input",
- "pernix_lexical_input",
  "pernixc_print",
  "pernixc_source",
  "pernixc_system",
+ "pernixc_tests",
  "proptest",
  "strum",
  "strum_macros",
@@ -511,6 +470,7 @@ dependencies = [
  "pernixc_source",
  "pernixc_syntax",
  "pernixc_system",
+ "pernixc_tests",
  "proptest",
  "tempfile",
  "thiserror",
@@ -524,13 +484,11 @@ dependencies = [
  "enum-as-inner",
  "getset",
  "lazy_static",
- "pernix_input",
- "pernix_lexical_input",
- "pernix_syntax_input",
  "pernixc_lexical",
  "pernixc_print",
  "pernixc_source",
  "pernixc_system",
+ "pernixc_tests",
  "proptest",
  "tempfile",
  "thiserror",
@@ -545,6 +503,13 @@ dependencies = [
  "paste",
  "proptest",
  "thiserror",
+]
+
+[[package]]
+name = "pernixc_tests"
+version = "0.1.0"
+dependencies = [
+ "proptest",
 ]
 
 [[package]]

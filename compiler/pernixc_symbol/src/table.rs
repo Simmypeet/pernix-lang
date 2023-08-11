@@ -22,6 +22,7 @@ mod core;
 mod drafting;
 mod finalizing;
 mod module;
+
 pub mod resolution;
 
 /// Represents a symbol table of the compiler.
@@ -848,3 +849,8 @@ impl<'a> Iterator for ScopeWalker<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod input;
+#[cfg(test)]
+mod tests;

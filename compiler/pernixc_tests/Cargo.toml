@@ -1,12 +1,12 @@
 [package]
-name = "pernix_input"
-version = { workspace = true }
-description = { workspace = true }
-authors = { workspace = true }
-edition = { workspace = true }
+name = "pernixc_tests"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 proptest = { workspace = true }
-

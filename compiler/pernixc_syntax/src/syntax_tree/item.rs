@@ -261,17 +261,17 @@ impl<T: SourceElement> SourceElement for BoundList<T> {
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Constraint {
-    TraitBound(TraitBound),
-    LifetimeBound(LifetimeBound),
-    TypeBound(TypeBound),
+    Trait(TraitBound),
+    Lifetime(LifetimeBound),
+    Type(TypeBound),
 }
 
 impl SourceElement for Constraint {
     fn span(&self) -> Span {
         match self {
-            Self::TraitBound(s) => s.span(),
-            Self::LifetimeBound(s) => s.span(),
-            Self::TypeBound(s) => s.span(),
+            Self::Trait(s) => s.span(),
+            Self::Lifetime(s) => s.span(),
+            Self::Type(s) => s.span(),
         }
     }
 }
@@ -1366,7 +1366,7 @@ impl<'a> Parser<'a> {
                     BoundList { first, rest }
                 };
 
-                Some(Constraint::LifetimeBound(LifetimeBound {
+                Some(Constraint::Lifetime(LifetimeBound {
                     operand: lhs_lifetime_parameter,
                     colon,
                     arguments: lifetime_bounds,
@@ -1393,7 +1393,7 @@ impl<'a> Parser<'a> {
                             BoundList { first, rest }
                         };
 
-                        Some(Constraint::TypeBound(TypeBound {
+                        Some(Constraint::Type(TypeBound {
                             type_specifier,
                             colon,
                             type_bound_constraints,
@@ -1402,7 +1402,7 @@ impl<'a> Parser<'a> {
 
                     found => match type_specifier {
                         TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
-                            Some(Constraint::TraitBound(TraitBound {
+                            Some(Constraint::Trait(TraitBound {
                                 qualified_identifier,
                             }))
                         }
@@ -1932,3 +1932,6 @@ impl<'a> Parser<'a> {
         }
     }
 }
+
+#[cfg(test)]
+pub(super) mod tests;

@@ -575,3 +575,6 @@ impl Token {
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

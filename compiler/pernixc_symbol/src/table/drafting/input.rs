@@ -9,10 +9,7 @@ use proptest::{
     strategy::{Just, Strategy},
 };
 
-use crate::{
-    table::{module::input::table_with_module_strategy, Table},
-    ty, Accessibility, GenericableID, Generics, Module, ModuleChildID,
-};
+use crate::{table::Table, ty, Accessibility, GenericableID, Generics, Module, ModuleChildID};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TraitFunction {
@@ -220,8 +217,9 @@ impl Table {
         generic_parameters: &mut crate::GenericParameters,
     ) {
         for lifetime_parameter in &drafting.lifetime_parameters {
-            let lifetime_parameter_id = self.lifetime_parameters.push(crate::LifetimeParameter {
+            let lifetime_parameter_id = self.lifetime_parameters.insert(crate::LifetimeParameter {
                 name: lifetime_parameter.clone(),
+                syntax_tree: None,
                 parent_genericable_id,
             });
 
@@ -234,8 +232,9 @@ impl Table {
         }
 
         for type_parameter in &drafting.type_parameters {
-            let type_parameter_id = self.type_parameters.push(crate::TypeParameter {
+            let type_parameter_id = self.type_parameters.insert(crate::TypeParameter {
                 name: type_parameter.clone(),
+                syntax_tree: None,
                 parent_genericable_id,
             });
 
@@ -254,8 +253,8 @@ impl Table {
         name: String,
         drafting: Function,
     ) -> ModuleChildID {
-        let function_id = self.functions.push(crate::Function {
-            function_signature: crate::FunctionSignature {
+        let function_id = self.functions.insert(crate::Function {
+            signature: crate::FunctionSignature {
                 name,
                 parameter_ids_by_name: HashMap::new(), // to be filled later
                 parameter_order: Vec::new(),           // to be filled later
@@ -277,7 +276,7 @@ impl Table {
         self.functions[function_id].generics.parameters = generic_parameters;
 
         for (index, parameter) in drafting.parameters.into_iter().enumerate() {
-            let parameter_id = self.function_parameters.push(crate::Parameter {
+            let parameter_id = self.function_parameters.insert(crate::Parameter {
                 name: parameter.0.clone(),
                 parameter_parent_id: function_id,
                 declaration_order: index,
@@ -303,7 +302,7 @@ impl Table {
         name: String,
         drafting: Struct,
     ) -> ModuleChildID {
-        let struct_id = self.structs.push(crate::Struct {
+        let struct_id = self.structs.insert(crate::Struct {
             name,
             accessibility: drafting.accessibility,
             parent_module_id,
@@ -322,7 +321,7 @@ impl Table {
         self.structs[struct_id].generics.parameters = generic_parameters;
 
         for (index, field) in drafting.fields.into_iter().enumerate() {
-            let field_id = self.fields.push(crate::Field {
+            let field_id = self.fields.insert(crate::Field {
                 name: field.clone(),
                 accessibility: drafting.accessibility,
                 parent_struct_id: struct_id,
@@ -348,7 +347,7 @@ impl Table {
         name: String,
         drafting: &Type,
     ) -> ModuleChildID {
-        let type_id = self.types.push(crate::Type {
+        let type_id = self.types.insert(crate::Type {
             name,
             accessibility: drafting.accessibility,
             parent_module_id,
@@ -374,11 +373,11 @@ impl Table {
         name: String,
         drafting: Trait,
     ) -> ModuleChildID {
-        let trait_id = self.traits.push(crate::Trait {
+        let trait_id = self.traits.insert(crate::Trait {
             name,
             parent_module_id,
             generics: Generics::default(), // to be filled later
-            implements: Vec::new(),        // to be filled later
+            implements: HashSet::new(),    // to be filled later
             syntax_tree: None,
             accessibility: drafting.accessibility,
             trait_member_ids_by_name: HashMap::new(), // to be filled later
@@ -395,7 +394,7 @@ impl Table {
         for (name, trait_member) in drafting.trait_members_by_name {
             let trait_member_id = match trait_member {
                 TraitMember::Type(trait_type) => {
-                    let trait_type_id = self.trait_types.push(crate::TraitType {
+                    let trait_type_id = self.trait_types.insert(crate::TraitType {
                         name: name.clone(),
                         generic_parameters: crate::GenericParameters::default(), /* to be filled
                                                                                   * later */
@@ -414,7 +413,7 @@ impl Table {
                     trait_type_id.into()
                 }
                 TraitMember::Function(trait_function) => {
-                    let trait_function_id = self.trait_functions.push(crate::TraitFunction {
+                    let trait_function_id = self.trait_functions.insert(crate::TraitFunction {
                         function_signature: crate::FunctionSignature {
                             name: name.clone(),
                             parameter_ids_by_name: HashMap::new(), // to be filled later
@@ -438,14 +437,15 @@ impl Table {
                     for (index, (name, is_mutable)) in
                         trait_function.parameters.into_iter().enumerate()
                     {
-                        let parameter_id = self.trait_function_parameters.push(crate::Parameter {
-                            name: name.clone(),
-                            is_mutable,
-                            syntax_tree: None,
-                            parameter_parent_id: trait_function_id,
-                            declaration_order: index,
-                            ty: ty::Type::Primitive(ty::Primitive::Void),
-                        });
+                        let parameter_id =
+                            self.trait_function_parameters.insert(crate::Parameter {
+                                name: name.clone(),
+                                is_mutable,
+                                syntax_tree: None,
+                                parameter_parent_id: trait_function_id,
+                                declaration_order: index,
+                                ty: ty::Type::Primitive(ty::Primitive::Void),
+                            });
 
                         let function_signature =
                             &mut self.trait_functions[trait_function_id].function_signature;
@@ -473,7 +473,7 @@ impl Table {
         name: String,
         drafting: &Enum,
     ) -> ModuleChildID {
-        let enum_id = self.enums.push(crate::Enum {
+        let enum_id = self.enums.insert(crate::Enum {
             name,
             accessibility: drafting.accessibility,
             parent_module_id,
@@ -483,7 +483,7 @@ impl Table {
         });
 
         for (index, variant) in drafting.variants.iter().enumerate() {
-            let enum_variant_id = self.enum_variants.push(crate::EnumVariant {
+            let enum_variant_id = self.enum_variants.insert(crate::EnumVariant {
                 name: variant.clone(),
                 parent_enum_id: enum_id,
                 declaration_order: index,
@@ -503,26 +503,27 @@ impl Table {
 
 #[allow(clippy::too_many_lines)]
 pub(in crate::table) fn table_with_drafting() -> impl Strategy<Value = Table> {
-    let table_with_draftings = table_with_module_strategy().prop_flat_map(|table| {
-        (
-            proptest::collection::hash_map(
-                proptest::sample::select(table.modules.ids().collect::<Vec<_>>()),
+    let table_with_draftings = crate::table::module::input::table_with_module_strategy()
+        .prop_flat_map(|table| {
+            (
                 proptest::collection::hash_map(
-                    crate::input::name(),
-                    prop_oneof![
-                        enum_strategy().prop_map(Drafting::Enum),
-                        struct_strategy().prop_map(Drafting::Struct),
-                        function_strategy().prop_map(Drafting::Function),
-                        type_strategy().prop_map(Drafting::Type),
-                        trait_strategy().prop_map(Drafting::Trait),
-                    ],
-                    0..=4,
+                    proptest::sample::select(table.modules.ids().collect::<Vec<_>>()),
+                    proptest::collection::hash_map(
+                        crate::input::name(),
+                        prop_oneof![
+                            enum_strategy().prop_map(Drafting::Enum),
+                            struct_strategy().prop_map(Drafting::Struct),
+                            function_strategy().prop_map(Drafting::Function),
+                            type_strategy().prop_map(Drafting::Type),
+                            trait_strategy().prop_map(Drafting::Trait),
+                        ],
+                        0..=4,
+                    ),
+                    0..=table.modules.len(),
                 ),
-                0..=table.modules.len(),
-            ),
-            Just(table),
-        )
-    });
+                Just(table),
+            )
+        });
 
     table_with_draftings.prop_map(|(draftings, mut table)| {
         for (module_id, draftings_by_name) in draftings {

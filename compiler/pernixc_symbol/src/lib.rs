@@ -38,6 +38,9 @@ pub mod error;
 pub mod table;
 pub mod ty;
 
+#[cfg(test)]
+pub(crate) mod input;
+
 /// The accessibility of the symbol. Determines where the symbol can be accessed from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, Display)]
 pub enum Accessibility {

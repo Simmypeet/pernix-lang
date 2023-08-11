@@ -189,3 +189,6 @@ impl Index<usize> for TokenStream {
 
     fn index(&self, index: usize) -> &Self::Output { &self.token_trees[index] }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

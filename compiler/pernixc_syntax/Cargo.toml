@@ -20,11 +20,5 @@ derive_more = { workspace = true }
 tempfile = { workspace = true }
 
 [dev-dependencies]
-pernix_lexical_input = { path = "../../inputs/pernix_lexical_input" }
-pernix_syntax_input = { path = "../../inputs/pernix_syntax_input" }
-pernix_input = { path = "../../inputs/pernix_input" }
+pernixc_tests = { path = "../pernixc_tests" }
 proptest = { workspace = true }
-
-[[test]]
-name = "pernixc_syntax_test"
-path = "test/pernixc_syntax_test.rs"
