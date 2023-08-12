@@ -851,6 +851,4 @@ impl<'a> Iterator for ScopeWalker<'a> {
 }
 
 #[cfg(test)]
-mod input;
-#[cfg(test)]
 mod tests;

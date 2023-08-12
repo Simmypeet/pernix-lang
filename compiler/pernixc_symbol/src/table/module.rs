@@ -205,6 +205,4 @@ impl Table {
 }
 
 #[cfg(test)]
-pub(super) mod input;
-#[cfg(test)]
-mod tests;
+pub(super) mod tests;

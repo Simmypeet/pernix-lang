@@ -881,7 +881,4 @@ impl Table {
 }
 
 #[cfg(test)]
-mod input;
-
-#[cfg(test)]
-mod tests;
+pub(super) mod tests;
