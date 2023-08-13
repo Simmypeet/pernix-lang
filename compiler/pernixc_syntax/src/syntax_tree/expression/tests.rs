@@ -10,7 +10,11 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use crate::syntax_tree::{self, statement::tests::Statement};
+use crate::syntax_tree::{
+    self,
+    statement::tests::Statement,
+    tests::{QualifiedIdentifier, TypeSpecifier},
+};
 
 /// Represents an input for the [`super::NumericLiteral`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -101,7 +105,7 @@ impl Display for BooleanLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
     /// The qualified identifier representing the name of the named expression.
-    pub qualified_identifier: syntax_tree::tests::QualifiedIdentifier,
+    pub qualified_identifier: QualifiedIdentifier,
 }
 
 impl Input for Named {
@@ -120,11 +124,11 @@ impl Display for Named {
 }
 
 impl Arbitrary for Named {
-    type Parameters = ();
+    type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        syntax_tree::tests::QualifiedIdentifier::arbitrary()
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        QualifiedIdentifier::arbitrary_with((true, args))
             .prop_map(|x| Self {
                 qualified_identifier: x,
             })
@@ -619,7 +623,7 @@ impl Arbitrary for Binary {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionCall {
     /// The name of the function.
-    pub qualified_identifier: syntax_tree::tests::QualifiedIdentifier,
+    pub qualified_identifier: QualifiedIdentifier,
 
     /// The arguments of the function.
     pub arguments: Option<
@@ -662,7 +666,7 @@ impl Arbitrary for FunctionCall {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
         (
-            syntax_tree::tests::QualifiedIdentifier::arbitrary(),
+            QualifiedIdentifier::arbitrary_with((true, Some(expression_strategy.clone()))),
             proptest::option::of(syntax_tree::tests::ConnectedList::arbitrary_with(
                 expression_strategy.prop_map(Box::new),
                 syntax_tree::tests::ConstantPunctuation::arbitrary(),
@@ -757,7 +761,7 @@ impl Display for FieldInitializer {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructLiteral {
     /// The name of the struct
-    pub qualified_identifier: syntax_tree::tests::QualifiedIdentifier,
+    pub qualified_identifier: QualifiedIdentifier,
 
     /// The field initializers of the struct.
     pub field_initializers: Option<
@@ -785,7 +789,7 @@ impl Arbitrary for StructLiteral {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
         (
-            syntax_tree::tests::QualifiedIdentifier::arbitrary(),
+            QualifiedIdentifier::arbitrary_with((true, Some(expression_strategy.clone()))),
             proptest::option::of(syntax_tree::tests::ConnectedList::arbitrary_with(
                 FieldInitializer::arbitrary_with(Some(expression_strategy)),
                 syntax_tree::tests::ConstantPunctuation::arbitrary(),
@@ -833,17 +837,29 @@ impl Input for Cast {
 }
 
 impl Arbitrary for Cast {
-    type Parameters = Option<BoxedStrategy<Functional>>;
+    type Parameters = (
+        Option<BoxedStrategy<Functional>>,
+        Option<BoxedStrategy<TypeSpecifier>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let operand = args
+            .0
+            .clone()
             .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
             .prop_filter("filter out `prefix` and `binary`", |x| {
                 !matches!(x, Functional::Prefix(..) | Functional::Binary(..))
             });
 
-        (operand, syntax_tree::tests::TypeSpecifier::arbitrary())
+        let type_specifier = args.1.unwrap_or_else(|| {
+            TypeSpecifier::arbitrary_with((
+                None,
+                Some(operand.clone().prop_map(Expression::Functional).boxed()),
+            ))
+        });
+
+        (operand.clone(), type_specifier)
             .prop_map(|(operand, type_specifier)| Self {
                 operand: Box::new(operand),
                 type_specifier,
@@ -1556,20 +1572,21 @@ fn filter_functional_variant(
 }
 
 impl Arbitrary for Expression {
-    type Parameters = ();
+    type Parameters = Option<BoxedStrategy<TypeSpecifier>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let leaf = proptest::prop_oneof![
             NumericLiteral::arbitrary()
                 .prop_map(|x| Self::Functional(Functional::NumericLiteral(x))),
             BooleanLiteral::arbitrary()
                 .prop_map(|x| Self::Functional(Functional::BooleanLiteral(x))),
-            Named::arbitrary().prop_map(|x| Self::Functional(Functional::Named(x))),
         ];
 
-        leaf.prop_recursive(8, 256, 8, |inner| {
+        leaf.prop_recursive(8, 256, 8, move |inner| {
             prop_oneof![
+                Named::arbitrary_with(Some(inner.clone()))
+                    .prop_map(|x| Self::Functional(Functional::Named(x))),
                 Prefix::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Functional(Functional::Prefix(x))),
                 MemberAccess::arbitrary_with(Some(filter_functional_variant(inner.clone())))
@@ -1582,8 +1599,11 @@ impl Arbitrary for Expression {
                     .prop_map(|x| Self::Functional(Functional::Parenthesized(x))),
                 StructLiteral::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Self::Functional(Functional::StructLiteral(x))),
-                Cast::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Functional(Functional::Cast(x))),
+                Cast::arbitrary_with((
+                    Some(filter_functional_variant(inner.clone())),
+                    args.clone()
+                ))
+                .prop_map(|x| Self::Functional(Functional::Cast(x))),
                 ArrowOperator::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Functional(Functional::ArrowOperator(x))),
                 Block::arbitrary_with(Some(inner.clone()))

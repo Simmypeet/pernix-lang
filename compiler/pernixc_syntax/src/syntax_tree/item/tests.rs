@@ -4,18 +4,288 @@ use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_assert_eq, prop_oneof, proptest,
-    strategy::{BoxedStrategy, Strategy},
+    strategy::{BoxedStrategy, Just, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
 
 use crate::syntax_tree::{
     self,
+    expression::tests::{Expression, Functional},
     statement::tests::Statement,
     tests::{
         AccessModifier, ConnectedList, ConstantPunctuation, Identifier, LifetimeArgument,
-        QualifiedIdentifier, QualifiedIdentifierArbitraryParameters, TypeAnnotation, TypeSpecifier,
+        QualifiedIdentifier, TypeAnnotation, TypeSpecifier,
     },
 };
+
+/// Represents an input for the [`super::Module`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Module {
+    /// The access modifier of the module
+    pub access_modifier: AccessModifier,
+
+    /// The signature of the module
+    pub signature: ModuleSignature,
+
+    /// The content of the module
+    pub content: ModuleContent,
+}
+
+impl Input for Module {
+    type Output = super::Module;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.access_modifier.assert(output.access_modifier())?;
+        self.signature.assert(output.signature())?;
+        self.content.assert(output.content())
+    }
+}
+
+impl Arbitrary for Module {
+    type Parameters = Option<BoxedStrategy<Item>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            AccessModifier::arbitrary(),
+            ModuleSignature::arbitrary(),
+            ModuleContent::arbitrary_with(args),
+        )
+            .prop_map(|(access_modifier, signature, content)| Self {
+                access_modifier,
+                signature,
+                content,
+            })
+            .boxed()
+    }
+}
+
+impl Display for Module {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {}{}",
+            self.access_modifier, self.signature, self.content
+        )
+    }
+}
+
+/// Represents an input for the [`super::ModulePath`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModulePath {
+    /// The first identifier in the module path
+    pub first: Identifier,
+
+    /// The rest of the identifiers in the module path
+    pub rest: Vec<Identifier>,
+}
+
+impl Input for ModulePath {
+    type Output = super::ModulePath;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.first.assert(output.first())?;
+        prop_assert_eq!(self.rest.len(), output.rest().len());
+
+        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
+            input.assert(output)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Arbitrary for ModulePath {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (
+            Identifier::arbitrary(),
+            proptest::collection::vec(Identifier::arbitrary(), 0..=7),
+        )
+            .prop_map(|(first, rest)| Self { first, rest })
+            .boxed()
+    }
+}
+
+impl Display for ModulePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.first, f)?;
+
+        for identifier in &self.rest {
+            write!(f, "::{identifier}")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Using {
+    module_path: ModulePath,
+}
+
+impl Input for Using {
+    type Output = super::Using;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.module_path.assert(output.module_path())
+    }
+}
+
+impl Arbitrary for Using {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        ModulePath::arbitrary()
+            .prop_map(|module_path| Self { module_path })
+            .boxed()
+    }
+}
+
+impl Display for Using {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "using {};", self.module_path)
+    }
+}
+
+/// Represents an input for the [`super::ModuleSignature`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModuleSignature {
+    /// The name of the module
+    identifier: Identifier,
+}
+
+impl Input for ModuleSignature {
+    type Output = super::ModuleSignature;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.identifier.assert(output.identifier())
+    }
+}
+
+impl Arbitrary for ModuleSignature {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        Identifier::arbitrary()
+            .prop_map(|identifier| Self { identifier })
+            .boxed()
+    }
+}
+
+impl Display for ModuleSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "module {}", self.identifier)
+    }
+}
+
+/// Represents an input for the [`super::ModuleBody`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModuleBody {
+    /// The list of usings in the module
+    pub usings: Vec<Using>,
+
+    /// The list of items in the module
+    pub items: Vec<Item>,
+}
+
+impl Input for ModuleBody {
+    type Output = super::ModuleBody;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(self.usings.len(), output.usings().len());
+        prop_assert_eq!(self.items.len(), output.items.len());
+
+        for (input, output) in self.usings.iter().zip(output.usings().iter()) {
+            input.assert(output)?;
+        }
+
+        for (input, output) in self.items.iter().zip(output.items.iter()) {
+            input.assert(output)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Arbitrary for ModuleBody {
+    type Parameters = Option<BoxedStrategy<Item>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let item_strategy = args.unwrap_or_else(Item::arbitrary);
+        (
+            proptest::collection::vec(Using::arbitrary(), 0..=7),
+            proptest::collection::vec(item_strategy, 0..=7),
+        )
+            .prop_map(|(usings, items)| Self { usings, items })
+            .boxed()
+    }
+}
+
+impl Display for ModuleBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+
+        for using in &self.usings {
+            write!(f, "{using}")?;
+        }
+
+        for item in &self.items {
+            write!(f, "{item}")?;
+        }
+
+        write!(f, "}}")
+    }
+}
+
+/// Represents an input for the [`super::ModuleContent`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ModuleContent {
+    File,
+    Inline(ModuleBody),
+}
+
+impl Input for ModuleContent {
+    type Output = super::ModuleContent;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::File, super::ModuleContent::File(_)) => Ok(()),
+            (Self::Inline(input), super::ModuleContent::Inline(output)) => input.assert(output),
+            _ => Err(TestCaseError::fail(format!(
+                "expected {self:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for ModuleContent {
+    type Parameters = Option<BoxedStrategy<Item>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let item_strategy = args.unwrap_or_else(Item::arbitrary);
+        prop_oneof![
+            Just(Self::File),
+            (ModuleBody::arbitrary_with(Some(item_strategy))).prop_map(Self::Inline),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for ModuleContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::File => write!(f, ";"),
+            Self::Inline(module_body) => write!(f, "{module_body}",),
+        }
+    }
+}
 
 /// Represents an input for the [`super::LifetimeParameter`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -49,18 +319,96 @@ impl Display for LifetimeParameter {
     }
 }
 
+/// Represents an input for the [`super::ConstParameter`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConstParameter {
+    /// The identifier of the const parameter.
+    pub identifier: Identifier,
+
+    /// The type specifier of the const parameter.
+    pub type_specifier: TypeSpecifier,
+
+    /// The default value of the const parameter.
+    pub default: Option<Functional>,
+}
+
+impl Input for ConstParameter {
+    type Output = super::ConstParameter;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.identifier.assert(output.identifier())?;
+        self.type_specifier
+            .assert(output.type_annotation.type_specifier())?;
+        match (self.default.as_ref(), output.default().as_ref()) {
+            (None, None) => Ok(()),
+            (Some(expected), Some(output)) => expected.assert(output.value()),
+            (expected, output) => Err(TestCaseError::fail(format!(
+                "expected {expected:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for ConstParameter {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        (
+            Identifier::arbitrary(),
+            TypeSpecifier::arbitrary(),
+            proptest::option::of(Expression::arbitrary().prop_filter_map(
+                "allows only non-binary functional variant",
+                |x| match x {
+                    Expression::Functional(Functional::Binary(_)) => None,
+                    Expression::Functional(functional) => Some(functional),
+                    _ => None,
+                },
+            )),
+        )
+            .prop_map(|(identifier, type_specifier, default)| Self {
+                identifier,
+                type_specifier,
+                default,
+            })
+            .boxed()
+    }
+}
+
+impl Display for ConstParameter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.identifier, self.type_specifier)?;
+
+        if let Some(default) = self.default.as_ref() {
+            write!(f, " = {default}")?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Represents an input for the [`super::TypeParameter`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeParameter {
     /// The identifier of the type parameter.
     pub identifier: Identifier,
+
+    /// The default type of the type parameter.
+    pub default: Option<TypeSpecifier>,
 }
 
 impl Input for TypeParameter {
     type Output = super::TypeParameter;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.identifier.assert(output.identifier())
+        self.identifier.assert(output.identifier())?;
+        match (self.default.as_ref(), output.default().as_ref()) {
+            (None, None) => Ok(()),
+            (Some(expected), Some(output)) => expected.assert(output.value()),
+            (expected, output) => Err(TestCaseError::fail(format!(
+                "expected {expected:?}, got {output:?}",
+            ))),
+        }
     }
 }
 
@@ -69,15 +417,27 @@ impl Arbitrary for TypeParameter {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        Identifier::arbitrary()
-            .prop_map(|identifier| Self { identifier })
+        (
+            Identifier::arbitrary(),
+            proptest::option::of(TypeSpecifier::arbitrary()),
+        )
+            .prop_map(|(identifier, type_specifier)| Self {
+                identifier,
+                default: type_specifier,
+            })
             .boxed()
     }
 }
 
 impl Display for TypeParameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.identifier, f)
+        Display::fmt(&self.identifier, f)?;
+
+        if let Some(type_parameter) = self.default.as_ref() {
+            write!(f, " = {type_parameter}")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -87,6 +447,7 @@ impl Display for TypeParameter {
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
+    Const(ConstParameter),
 }
 
 impl Input for GenericParameter {
@@ -96,6 +457,7 @@ impl Input for GenericParameter {
         match (self, output) {
             (Self::Lifetime(i), super::GenericParameter::Lifetime(o)) => i.assert(o),
             (Self::Type(i), super::GenericParameter::Type(o)) => i.assert(o),
+            (Self::Const(i), super::GenericParameter::Const(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}"
             ))),
@@ -111,6 +473,7 @@ impl Arbitrary for GenericParameter {
         proptest::prop_oneof![
             LifetimeParameter::arbitrary().prop_map(Self::Lifetime),
             TypeParameter::arbitrary().prop_map(Self::Type),
+            ConstParameter::arbitrary().prop_map(Self::Const),
         ]
         .boxed()
     }
@@ -121,6 +484,7 @@ impl Display for GenericParameter {
         match self {
             Self::Lifetime(l) => Display::fmt(l, f),
             Self::Type(t) => Display::fmt(t, f),
+            Self::Const(c) => Display::fmt(c, f),
         }
     }
 }
@@ -181,14 +545,11 @@ impl Arbitrary for TraitBound {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        QualifiedIdentifier::arbitrary_with(QualifiedIdentifierArbitraryParameters {
-            use_turbofish: false,
-            inner_type_specifier_strategy: None,
-        })
-        .prop_map(|qualified_identifier| Self {
-            qualified_identifier,
-        })
-        .boxed()
+        QualifiedIdentifier::arbitrary_with((false, None))
+            .prop_map(|qualified_identifier| Self {
+                qualified_identifier,
+            })
+            .boxed()
     }
 }
 
@@ -760,6 +1121,133 @@ impl Display for Function {
     }
 }
 
+/// Represents an input for the [`super::ConstSignature`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConstSignature {
+    /// The name of the constant.
+    pub identifier: Identifier,
+
+    /// The type annotation of the constant.
+    pub type_annotation: TypeAnnotation,
+}
+
+impl Input for ConstSignature {
+    type Output = super::ConstSignature;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.identifier.assert(output.identifier())?;
+        self.type_annotation.assert(output.type_annotation())
+    }
+}
+
+impl Arbitrary for ConstSignature {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (Identifier::arbitrary(), TypeAnnotation::arbitrary())
+            .prop_map(|(identifier, type_annotation)| Self {
+                identifier,
+                type_annotation,
+            })
+            .boxed()
+    }
+}
+
+impl Display for ConstSignature {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "const {}{}",
+            self.identifier, self.type_annotation
+        )
+    }
+}
+
+/// Represents an input for the [`super::ConstDefinition`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConstDefinition {
+    /// The expression of the constant.
+    expression: Expression,
+}
+
+impl Input for ConstDefinition {
+    type Output = super::ConstDefinition;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.expression.assert(output.expression())
+    }
+}
+
+impl Arbitrary for ConstDefinition {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        Expression::arbitrary()
+            .prop_map(|expression| Self { expression })
+            .boxed()
+    }
+}
+
+impl Display for ConstDefinition {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, " = {};", self.expression)
+    }
+}
+
+/// Represents an input for the [`super::Const`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Const {
+    /// The access modifier of the constant.
+    access_modifier: AccessModifier,
+
+    /// The signature of the constant.
+    signature: ConstSignature,
+
+    /// The definition of the constant.
+    definition: ConstDefinition,
+}
+
+impl Input for Const {
+    type Output = super::Const;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.access_modifier.assert(output.access_modifier())?;
+        self.signature.assert(output.signature())?;
+        self.definition.assert(output.definition())
+    }
+}
+
+impl Arbitrary for Const {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (
+            AccessModifier::arbitrary(),
+            ConstSignature::arbitrary(),
+            ConstDefinition::arbitrary(),
+        )
+            .prop_map(|(access_modifier, signature, definition)| Self {
+                access_modifier,
+                signature,
+                definition,
+            })
+            .boxed()
+    }
+}
+
+impl Display for Const {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} {}{}",
+            self.access_modifier, self.signature, self.definition
+        )
+    }
+}
+
 /// Represents an input for the [`super::Item`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -768,8 +1256,10 @@ pub enum Item {
     Trait(Trait),
     Type(Type),
     Struct(Struct),
+    Module(Module),
     Enum(Enum),
     Implements(Implements),
+    Const(Const),
 }
 
 impl Input for Item {
@@ -783,6 +1273,8 @@ impl Input for Item {
             (Self::Struct(i), super::Item::Struct(o)) => i.assert(o),
             (Self::Enum(i), super::Item::Enum(o)) => i.assert(o),
             (Self::Implements(i), super::Item::Implements(o)) => i.assert(o),
+            (Self::Module(i), super::Item::Module(o)) => i.assert(o),
+            (Self::Const(i), super::Item::Const(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -802,7 +1294,11 @@ impl Arbitrary for Item {
             Struct::arbitrary().prop_map(Self::Struct),
             Enum::arbitrary().prop_map(Self::Enum),
             Implements::arbitrary().prop_map(Self::Implements),
+            Const::arbitrary().prop_map(Self::Const),
         ]
+        .prop_recursive(8, 80, 10, |leaf| {
+            Module::arbitrary_with(Some(leaf)).prop_map(Self::Module)
+        })
         .boxed()
     }
 }
@@ -816,6 +1312,8 @@ impl Display for Item {
             Self::Struct(s) => Display::fmt(s, formatter),
             Self::Enum(e) => Display::fmt(e, formatter),
             Self::Implements(i) => Display::fmt(i, formatter),
+            Self::Module(m) => Display::fmt(m, formatter),
+            Self::Const(c) => Display::fmt(c, formatter),
         }
     }
 }
@@ -1461,13 +1959,17 @@ impl Display for Struct {
 pub struct EnumSignature {
     /// The name of the enum.
     pub identifier: Identifier,
+
+    /// The generic parameters of the enum.
+    pub generic_parameters: Option<GenericParameters>,
 }
 
 impl Input for EnumSignature {
     type Output = super::EnumSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.identifier.assert(output.identifier())
+        self.identifier.assert(output.identifier())?;
+        self.generic_parameters.assert(output.generic_parameters())
     }
 }
 
@@ -1476,15 +1978,85 @@ impl Arbitrary for EnumSignature {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        Identifier::arbitrary()
-            .prop_map(|identifier| Self { identifier })
+        (
+            Identifier::arbitrary(),
+            proptest::option::of(GenericParameters::arbitrary()),
+        )
+            .prop_map(|(identifier, generic_parameters)| Self {
+                identifier,
+                generic_parameters,
+            })
             .boxed()
     }
 }
 
 impl Display for EnumSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "enum {}", self.identifier)
+        write!(f, "enum {}", self.identifier)?;
+
+        if let Some(generic_parameters) = self.generic_parameters.as_ref() {
+            Display::fmt(generic_parameters, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Represents an input for the [`super::EnumVariant`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EnumVariant {
+    /// The identifier of the variant.
+    pub identifier: Identifier,
+
+    /// The type specifier of the associated value
+    pub associated_value_type_specifier: Option<TypeSpecifier>,
+}
+
+impl Input for EnumVariant {
+    type Output = super::EnumVariant;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.identifier.assert(output.identifier())?;
+        match (
+            self.associated_value_type_specifier.as_ref(),
+            output.asscoiated_value().as_ref(),
+        ) {
+            (None, None) => Ok(()),
+            (Some(expected), Some(output)) => expected.assert(&output.type_specifier),
+            (expected, output) => Err(TestCaseError::fail(format!(
+                "expected associated value {expected:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for EnumVariant {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (
+            Identifier::arbitrary(),
+            proptest::option::of(TypeSpecifier::arbitrary()),
+        )
+            .prop_map(|(identifier, associated_value_type_specifier)| Self {
+                identifier,
+                associated_value_type_specifier,
+            })
+            .boxed()
+    }
+}
+
+impl Display for EnumVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.identifier)?;
+
+        if let Some(associated_value_type_specifier) = self.associated_value_type_specifier.as_ref()
+        {
+            write!(f, "({associated_value_type_specifier})")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -1492,7 +2064,7 @@ impl Display for EnumSignature {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnumBody {
     /// The list of variants in the enum.
-    pub variant_list: Option<ConnectedList<Identifier, ConstantPunctuation<','>>>,
+    pub variant_list: Option<ConnectedList<EnumVariant, ConstantPunctuation<','>>>,
 }
 
 impl Input for EnumBody {
@@ -1509,7 +2081,7 @@ impl Arbitrary for EnumBody {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         proptest::option::of(ConnectedList::arbitrary_with(
-            Identifier::arbitrary(),
+            EnumVariant::arbitrary(),
             ConstantPunctuation::arbitrary(),
         ))
         .prop_map(|variant_list| Self { variant_list })
@@ -1776,10 +2348,7 @@ impl Arbitrary for ImplementsSignature {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(GenericParameters::arbitrary()),
-            QualifiedIdentifier::arbitrary_with(QualifiedIdentifierArbitraryParameters {
-                use_turbofish: false,
-                inner_type_specifier_strategy: None,
-            }),
+            QualifiedIdentifier::arbitrary_with((false, None)),
             proptest::option::of(WhereClause::arbitrary()),
         )
             .prop_map(

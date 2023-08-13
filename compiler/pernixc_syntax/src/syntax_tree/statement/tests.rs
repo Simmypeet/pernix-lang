@@ -117,7 +117,10 @@ impl Arbitrary for VariableDeclaration {
         (
             proptest::bool::ANY,
             Identifier::arbitrary(),
-            proptest::option::of(TypeAnnotation::arbitrary()),
+            proptest::option::of(TypeAnnotation::arbitrary_with((
+                None,
+                Some(expression.clone()),
+            ))),
             expression,
         )
             .prop_map(|(mutable, identifier, type_annotation, expression)| Self {

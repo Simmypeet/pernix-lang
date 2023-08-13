@@ -7,7 +7,7 @@ use pernixc_system::diagnostic::Storage;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_assert_eq, proptest,
+    proptest,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
@@ -16,59 +16,8 @@ use crate::syntax_tree::{
     self,
     item::tests::Item,
     target::Target,
-    tests::{AccessModifier, Identifier},
+    tests::{AccessModifier, Identifier, ModulePath},
 };
-
-/// Represents an input for the [`super::ModulePath`]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModulePath {
-    /// The first identifier in the module path
-    pub first: Identifier,
-
-    /// The rest of the identifiers in the module path
-    pub rest: Vec<Identifier>,
-}
-
-impl Input for ModulePath {
-    type Output = super::ModulePath;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.first.assert(output.first())?;
-        prop_assert_eq!(self.rest.len(), output.rest().len());
-
-        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
-            input.assert(output)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl Arbitrary for ModulePath {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (
-            Identifier::arbitrary(),
-            proptest::collection::vec(Identifier::arbitrary(), 0..=7),
-        )
-            .prop_map(|(first, rest)| Self { first, rest })
-            .boxed()
-    }
-}
-
-impl Display for ModulePath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.first, f)?;
-
-        for identifier in &self.rest {
-            write!(f, "::{identifier}")?;
-        }
-
-        Ok(())
-    }
-}
 
 /// Represents an input for the [`super::Using`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

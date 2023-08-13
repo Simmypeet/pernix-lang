@@ -10,6 +10,7 @@ use pernixc_lexical::{
 use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
+use self::expression::Expression;
 use crate::{
     error::{
         self, Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected,
@@ -21,7 +22,7 @@ use crate::{
 pub mod expression;
 pub mod item;
 pub mod statement;
-pub mod target;
+// pub mod target;
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
 ///
@@ -637,6 +638,96 @@ impl SourceElement for ReferenceTypeSpecifier {
     fn span(&self) -> Span { self.ampersand.span.join(&self.operand_type.span()).unwrap() }
 }
 
+/// Represents a list of type specifiers connected by commas.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// TypeSpecififerList:
+///     TypeSpecifier (',' TypeSpecifier)* ','?
+///     ;
+/// ```
+pub type TypeSpecifierList = ConnectedList<Box<TypeSpecifier>, Punctuation>;
+
+/// Represents a syntax tree node of tuple type specifier.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// TupleTypeSpecifier:
+///     '(' TypeSpecifiers? ')'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct TupleTypeSpecifier {
+    #[get = "pub"]
+    left_parenthesis: Punctuation,
+    #[get = "pub"]
+    type_specifier_list: Option<TypeSpecifierList>,
+    #[get = "pub"]
+    right_parenthesis: Punctuation,
+}
+
+impl SourceElement for TupleTypeSpecifier {
+    fn span(&self) -> Span {
+        self.left_parenthesis
+            .span
+            .join(&self.right_parenthesis.span)
+            .unwrap()
+    }
+}
+
+/// Represents a syntax tree node of array type specifier.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ArrayTypeSpecifier:
+///     '[' TypeSpecifier ':' Expression ']'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ArrayTypeSpecifier {
+    #[get = "pub"]
+    left_bracket: Punctuation,
+    #[get = "pub"]
+    operand: Box<TypeSpecifier>,
+    #[get = "pub"]
+    colon: Punctuation,
+    #[get = "pub"]
+    expression: Box<Expression>,
+    #[get = "pub"]
+    right_bracket: Punctuation,
+}
+
+impl SourceElement for ArrayTypeSpecifier {
+    fn span(&self) -> Span {
+        self.left_bracket
+            .span
+            .join(&self.right_bracket.span)
+            .unwrap()
+    }
+}
+
+/// Represents a syntax tree node of pointer type specifier.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// PointerTypeSpecifier:
+///     '*' 'mutable'? TypeSpecifier
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct PointerTypeSpecifier {
+    #[get = "pub"]
+    asterisk: Punctuation,
+    #[get = "pub"]
+    mutable_keyword: Option<Keyword>,
+    #[get = "pub"]
+    operand: Box<TypeSpecifier>,
+}
+
+impl SourceElement for PointerTypeSpecifier {
+    fn span(&self) -> Span { self.asterisk.span.join(&self.operand.span()).unwrap() }
+}
+
 /// Represents a syntax tree node of type specifier.
 ///
 /// The type specifier is used to annotate the type of various symbols in the syntax tree.
@@ -647,6 +738,7 @@ impl SourceElement for ReferenceTypeSpecifier {
 ///     PrimitiveTypeIdentifier
 ///     | QualifiedIdentifier
 ///     | ReferenceTypeSpecifier
+///     | PointerTypeSpecififer
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
@@ -655,6 +747,9 @@ pub enum TypeSpecifier {
     Primitive(PrimitiveTypeSpecifier),
     QualifiedIdentifier(QualifiedIdentifier),
     Reference(ReferenceTypeSpecifier),
+    Pointer(PointerTypeSpecifier),
+    Tuple(TupleTypeSpecifier),
+    Array(ArrayTypeSpecifier),
 }
 
 impl SourceElement for TypeSpecifier {
@@ -663,6 +758,9 @@ impl SourceElement for TypeSpecifier {
             Self::Primitive(primitive) => primitive.span(),
             Self::QualifiedIdentifier(qualified) => qualified.span(),
             Self::Reference(reference) => reference.span(),
+            Self::Pointer(pointer) => pointer.span(),
+            Self::Tuple(tuple) => tuple.span(),
+            Self::Array(array) => array.span(),
         }
     }
 }
@@ -871,6 +969,68 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_pointer_type_specifier(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> Option<PointerTypeSpecifier> {
+        let asterisk = self.parse_punctuation('*', true, handler)?;
+
+        let mutable_keyword = match self.stop_at_significant() {
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
+                self.forward();
+                Some(k)
+            }
+            _ => None,
+        };
+
+        let operand_type = Box::new(self.parse_type_specifier(handler)?);
+
+        Some(PointerTypeSpecifier {
+            asterisk,
+            mutable_keyword,
+            operand: operand_type,
+        })
+    }
+
+    fn parse_array_type_specififer(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> Option<ArrayTypeSpecifier> {
+        let left_bracket = self.step_into(Delimiter::Bracket, handler)?;
+
+        let type_specififer = self.parse_type_specifier(handler)?;
+        let colon = self.parse_punctuation(':', true, handler)?;
+        let expression = Box::new(self.parse_expression(handler)?);
+
+        let right_bracket = self.step_out(handler)?;
+
+        Some(ArrayTypeSpecifier {
+            left_bracket,
+            operand: Box::new(type_specififer),
+            colon,
+            expression,
+            right_bracket,
+        })
+    }
+
+    fn parse_tuple_type_specifier(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> Option<TupleTypeSpecifier> {
+        let type_specifiers = self.parse_enclosed_tree(
+            Delimiter::Parenthesis,
+            ',',
+            |parser, handler| parser.parse_type_specifier(handler).map(Box::new),
+            handler,
+        )?;
+
+        Some(TupleTypeSpecifier {
+            left_parenthesis: type_specifiers.open,
+            type_specifier_list: type_specifiers.list,
+            right_parenthesis: type_specifiers.close,
+        })
+    }
+
     /// Parses a [`TypeSpecifier`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_type_specifier(&mut self, handler: &impl Handler<Error>) -> Option<TypeSpecifier> {
@@ -893,10 +1053,25 @@ impl<'a> Parser<'a> {
                 self.parse_qualified_identifier(false, handler)?,
             )),
 
+            // parse pointer type
+            Some(Token::Punctuation(p)) if p.punctuation == '*' => self
+                .parse_pointer_type_specifier(handler)
+                .map(TypeSpecifier::Pointer),
+
             // parse reference
             Some(Token::Punctuation(p)) if p.punctuation == '&' => self
                 .parse_reference_type_specifier(handler)
                 .map(TypeSpecifier::Reference),
+
+            // parse array type
+            Some(Token::Punctuation(p)) if p.punctuation == '[' => self
+                .parse_array_type_specififer(handler)
+                .map(TypeSpecifier::Array),
+
+            // parse tuple type
+            Some(Token::Punctuation(p)) if p.punctuation == '(' => self
+                .parse_tuple_type_specifier(handler)
+                .map(TypeSpecifier::Tuple),
 
             // primitive type
             Some(Token::Keyword(keyword))
@@ -1045,4 +1220,4 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

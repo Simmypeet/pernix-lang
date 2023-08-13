@@ -16,7 +16,11 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use crate::{error, parser::Parser};
+use super::expression::tests::Expression;
+use crate::{
+    error::{self},
+    parser::Parser,
+};
 
 /// Represents an input for the [`pernixc_lexical::token::Identifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -354,6 +358,160 @@ impl Arbitrary for TypeAnnotation {
     }
 }
 
+/// Represents an input for the [`super::ArrayTypeSpecifier`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ArrayTypeSpecifier {
+    /// The type specifier of the array.
+    pub operand: Box<TypeSpecifier>,
+
+    /// The expression of the array.
+    pub expression: Box<Expression>,
+}
+
+impl Arbitrary for ArrayTypeSpecifier {
+    type Parameters = (
+        Option<BoxedStrategy<TypeSpecifier>>,
+        Option<BoxedStrategy<Expression>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            args.0
+                .clone()
+                .unwrap_or_else(|| TypeSpecifier::arbitrary_with((None, args.1.clone()))),
+            args.1.unwrap_or_else(|| Expression::arbitrary_with(args.0)),
+        )
+            .prop_map(|(type_specifier, expression)| {
+                dbg!(&type_specifier, &expression);
+
+                Self {
+                    operand: Box::new(type_specifier),
+                    expression: Box::new(expression),
+                }
+            })
+            .boxed()
+    }
+}
+
+impl Input for ArrayTypeSpecifier {
+    type Output = super::ArrayTypeSpecifier;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.operand.assert(output.operand())?;
+        self.expression.assert(output.expression())
+    }
+}
+
+impl Display for ArrayTypeSpecifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('[')?;
+        Display::fmt(&self.operand, f)?;
+        f.write_str(": ")?;
+        Display::fmt(&self.expression, f)?;
+        f.write_char(']')?;
+
+        Ok(())
+    }
+}
+
+/// Represents an input for the [`super::PointerTypeSpecifier`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PointerTypeSpecifier {
+    /// The type specifier of the pointer.
+    pub operand: Box<TypeSpecifier>,
+
+    /// Whether the pointer is mutable or not.
+    pub mutable: bool,
+}
+
+impl Input for PointerTypeSpecifier {
+    type Output = super::PointerTypeSpecifier;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.operand.assert(output.operand())?;
+        prop_assert_eq!(self.mutable, output.mutable_keyword().is_some());
+        Ok(())
+    }
+}
+
+impl Arbitrary for PointerTypeSpecifier {
+    type Parameters = Option<BoxedStrategy<TypeSpecifier>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            args.unwrap_or_else(TypeSpecifier::arbitrary),
+            proptest::bool::ANY,
+        )
+            .prop_map(|(operand, mutable)| Self {
+                operand: Box::new(operand),
+                mutable,
+            })
+            .boxed()
+    }
+}
+
+impl Display for PointerTypeSpecifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('*')?;
+
+        if self.mutable {
+            f.write_str("mutable ")?;
+        }
+
+        Display::fmt(&self.operand, f)
+    }
+}
+
+/// Represents an input for the [`super::TupleTypeSpecifier`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleTypeSpecifier {
+    /// The type specifier list of the tuple.
+    pub type_specifier_list: Option<ConnectedList<Box<TypeSpecifier>, ConstantPunctuation<','>>>,
+}
+
+impl Input for TupleTypeSpecifier {
+    type Output = super::TupleTypeSpecifier;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.type_specifier_list
+            .assert(output.type_specifier_list())
+    }
+}
+
+impl Arbitrary for TupleTypeSpecifier {
+    type Parameters = Option<BoxedStrategy<TypeSpecifier>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let type_specifier = args
+            .unwrap_or_else(TypeSpecifier::arbitrary)
+            .prop_map(Box::new);
+
+        proptest::option::of(ConnectedList::arbitrary_with(
+            type_specifier,
+            ConstantPunctuation::<','>::arbitrary(),
+        ))
+        .prop_map(|type_specifier_list| Self {
+            type_specifier_list,
+        })
+        .boxed()
+    }
+}
+
+impl Display for TupleTypeSpecifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('(')?;
+        if let Some(type_specifier_list) = &self.type_specifier_list {
+            Display::fmt(type_specifier_list, f)?;
+        }
+        f.write_char(')')?;
+
+        Ok(())
+    }
+}
+
 /// Represents an input for the [`super::TypeSpecifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
@@ -361,6 +519,9 @@ pub enum TypeSpecifier {
     Primitive(PrimitiveTypeSpecifier),
     Reference(ReferenceTypeSpecifier),
     QualifiedIdentifier(QualifiedIdentifier),
+    Array(ArrayTypeSpecifier),
+    Pointer(PointerTypeSpecifier),
+    Tuple(TupleTypeSpecifier),
 }
 
 impl Input for TypeSpecifier {
@@ -373,6 +534,9 @@ impl Input for TypeSpecifier {
             (Self::QualifiedIdentifier(i), super::TypeSpecifier::QualifiedIdentifier(o)) => {
                 i.assert(o)
             }
+            (Self::Array(i), super::TypeSpecifier::Array(o)) => i.assert(o),
+            (Self::Pointer(i), super::TypeSpecifier::Pointer(o)) => i.assert(o),
+            (Self::Tuple(i), super::TypeSpecifier::Tuple(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -411,27 +575,32 @@ fn remove_turbo_fish(qualified_identifier: &mut QualifiedIdentifier) {
 }
 
 impl Arbitrary for TypeSpecifier {
-    type Parameters = Option<BoxedStrategy<QualifiedIdentifier>>;
+    type Parameters = (
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Expression>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let leaf = PrimitiveTypeSpecifier::arbitrary().prop_map(TypeSpecifier::Primitive);
+        let leaf =
+            prop_oneof![PrimitiveTypeSpecifier::arbitrary().prop_map(TypeSpecifier::Primitive),];
 
         leaf.prop_recursive(8, 64, 8, move |inner| {
             prop_oneof![
                 ReferenceTypeSpecifier::arbitrary_with(Some(inner.clone()))
                     .prop_map(TypeSpecifier::Reference),
-                args.clone()
-                    .unwrap_or_else(move || QualifiedIdentifier::arbitrary_with(
-                        QualifiedIdentifierArbitraryParameters {
-                            use_turbofish: false,
-                            inner_type_specifier_strategy: Some(inner)
-                        }
-                    ))
+                args.0
+                    .clone()
+                    .unwrap_or_else(|| QualifiedIdentifier::arbitrary_with((false, args.1.clone())))
                     .prop_map(|mut x| {
                         remove_turbo_fish(&mut x);
                         Self::QualifiedIdentifier(x)
-                    })
+                    }),
+                ArrayTypeSpecifier::arbitrary_with((Some(inner.clone()), args.1.clone()))
+                    .prop_map(TypeSpecifier::Array),
+                PointerTypeSpecifier::arbitrary_with(Some(inner.clone()))
+                    .prop_map(TypeSpecifier::Pointer),
+                TupleTypeSpecifier::arbitrary_with(Some(inner)).prop_map(TypeSpecifier::Tuple),
             ]
         })
         .boxed()
@@ -444,6 +613,9 @@ impl Display for TypeSpecifier {
             Self::Primitive(i) => Display::fmt(i, f),
             Self::Reference(i) => Display::fmt(i, f),
             Self::QualifiedIdentifier(i) => Display::fmt(i, f),
+            Self::Array(i) => Display::fmt(i, f),
+            Self::Pointer(i) => Display::fmt(i, f),
+            Self::Tuple(i) => Display::fmt(i, f),
         }
     }
 }
@@ -554,17 +726,14 @@ pub enum GenericArgument {
     TypeSpecifier(Box<TypeSpecifier>),
 }
 
-impl GenericArgument {
-    fn arbitrary_with(inner_strategy: InnerStrategy) -> BoxedStrategy<Self> {
+impl Arbitrary for GenericArgument {
+    type Parameters = <TypeSpecifier as Arbitrary>::Parameters;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            LifetimeArgument::arbitrary().prop_map(GenericArgument::Lifetime),
-            match inner_strategy {
-                InnerStrategy::TypeSpecifier(s) =>
-                    s.prop_map(|x| Self::TypeSpecifier(Box::new(x))).boxed(),
-                InnerStrategy::QualifiedIdentifier(s) => TypeSpecifier::arbitrary_with(Some(s))
-                    .prop_map(|x| Self::TypeSpecifier(Box::new(x)))
-                    .boxed(),
-            }
+            LifetimeArgument::arbitrary().prop_map(Self::Lifetime),
+            TypeSpecifier::arbitrary_with(args).prop_map(|x| Self::TypeSpecifier(Box::new(x)))
         ]
         .boxed()
     }
@@ -593,12 +762,6 @@ impl Display for GenericArgument {
     }
 }
 
-#[derive(Debug, Clone)]
-enum InnerStrategy {
-    TypeSpecifier(BoxedStrategy<TypeSpecifier>),
-    QualifiedIdentifier(BoxedStrategy<QualifiedIdentifier>),
-}
-
 /// Represents an input for the [`super::GenericArguments`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericArguments {
@@ -607,6 +770,23 @@ pub struct GenericArguments {
 
     /// The arguments.
     pub argument_list: ConnectedList<GenericArgument, ConstantPunctuation<','>>,
+}
+
+impl Arbitrary for GenericArguments {
+    type Parameters = (bool, <GenericArgument as Arbitrary>::Parameters);
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (ConnectedList::arbitrary_with(
+            GenericArgument::arbitrary_with(args.1),
+            ConstantPunctuation::<','>::arbitrary(),
+        ))
+        .prop_map(move |argument_list| Self {
+            turbofish: args.0,
+            argument_list,
+        })
+        .boxed()
+    }
 }
 
 impl Input for GenericArguments {
@@ -618,20 +798,6 @@ impl Input for GenericArguments {
         self.argument_list.assert(output.argument_list())?;
 
         Ok(())
-    }
-}
-
-impl GenericArguments {
-    fn arbitrary_with(turbofish: bool, inner_strategy: InnerStrategy) -> BoxedStrategy<Self> {
-        ConnectedList::arbitrary_with(
-            GenericArgument::arbitrary_with(inner_strategy),
-            ConstantPunctuation::arbitrary(),
-        )
-        .prop_map(move |argument_list| Self {
-            turbofish,
-            argument_list,
-        })
-        .boxed()
     }
 }
 
@@ -659,11 +825,14 @@ pub struct GenericIdentifier {
     pub generic_arguments: Option<GenericArguments>,
 }
 
-impl GenericIdentifier {
-    fn arbitrary_with(turbofish: bool, inner_strategy: InnerStrategy) -> BoxedStrategy<Self> {
+impl Arbitrary for GenericIdentifier {
+    type Parameters = <GenericArguments as Arbitrary>::Parameters;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
-            proptest::option::of(GenericArguments::arbitrary_with(turbofish, inner_strategy)),
+            proptest::option::of(GenericArguments::arbitrary_with(args)),
         )
             .prop_map(|(identifier, generic_arguments)| Self {
                 identifier,
@@ -707,32 +876,13 @@ pub struct QualifiedIdentifier {
     pub rest: Vec<GenericIdentifier>,
 }
 
-/// Is used to generate the strategy for [`QualifiedIdentifier::arbitrary_with`].
-#[derive(Debug, Clone)]
-pub struct QualifiedIdentifierArbitraryParameters {
-    /// Whether the qualified identifier uses turbofish syntax.
-    pub use_turbofish: bool,
-
-    /// The strategy for generating the inner type specifiers.
-    pub inner_type_specifier_strategy: Option<BoxedStrategy<TypeSpecifier>>,
-}
-
-impl Default for QualifiedIdentifierArbitraryParameters {
-    fn default() -> Self {
-        Self {
-            use_turbofish: true,
-            inner_type_specifier_strategy: Option::default(),
-        }
-    }
-}
-
 impl Arbitrary for QualifiedIdentifier {
     /// `args` is a tuple of `(use_turbofish, inner_type_specifier_strategy)`.
     ///
     /// - `use_turbofish`: is a boolean that determines whether or not to use turbofish syntax.
     /// - `inner_type_specifier_strategy`: is an optional strategy for generating the inner type
     ///   specifiers.
-    type Parameters = QualifiedIdentifierArbitraryParameters;
+    type Parameters = (bool, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -748,14 +898,9 @@ impl Arbitrary for QualifiedIdentifier {
         );
 
         leaf.prop_recursive(8, 64, 8, move |inner| {
-            let generic_identifier_strategy = GenericIdentifier::arbitrary_with(
-                args.use_turbofish,
-                args.inner_type_specifier_strategy.clone().map_or_else(
-                    || InnerStrategy::QualifiedIdentifier(inner),
-                    InnerStrategy::TypeSpecifier,
-                ),
-            )
-            .boxed();
+            let generic_identifier_strategy =
+                GenericIdentifier::arbitrary_with((args.0, (Some(inner), args.1.clone()))).boxed();
+
             (
                 proptest::bool::ANY,
                 generic_identifier_strategy.clone(),
@@ -940,7 +1085,7 @@ impl Display for Label {
 proptest! {
     #[test]
     fn qualified_identifier_test(
-        qualified_identifier_input in QualifiedIdentifier::arbitrary(),
+        qualified_identifier_input in QualifiedIdentifier::arbitrary_with((true, None)),
     ) {
         let source = qualified_identifier_input.to_string();
         let qualified_identifier = parse(

@@ -28,7 +28,7 @@ use crate::{
 /// Expression:
 ///     Terminator
 ///     | Functional
-///     | Primary
+///     | Imperative
 ///     ;
 ///  ```
 #[derive(Debug, Clone, EnumAsInner, From)]

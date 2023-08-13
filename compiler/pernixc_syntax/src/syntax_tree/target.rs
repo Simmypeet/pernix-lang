@@ -13,77 +13,8 @@ use pernixc_print::LogSeverity;
 use pernixc_source::{SourceElement, SourceFile, Span};
 use pernixc_system::diagnostic::Dummy;
 
-use super::AccessModifier;
-use crate::{
-    error::Error as SyntaxError,
-    parser::Parser,
-    syntax_tree::{item::Item, ScopeSeparator},
-};
-
-/// Represents a moulde path in used in `module` declarations and `using` statements.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// ModulePath:
-///     Identifier ('::' Identifier)*
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
-pub struct ModulePath {
-    #[get = "pub"]
-    first: Identifier,
-    #[get = "pub"]
-    rest: Vec<(ScopeSeparator, Identifier)>,
-}
-
-impl ModulePath {
-    /// Returns an iterator over the path identifiers.
-    pub fn paths(&self) -> impl Iterator<Item = &Identifier> {
-        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, id)| id))
-    }
-}
-
-/// Represents a syntax tree node for a `module` using statement.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// Using:
-///     'using' ModulePath ';'
-///     ;
-/// ```
-#[derive(Debug, Clone)]
-#[allow(missing_docs)]
-pub struct Using {
-    pub using_keyword: Keyword,
-    pub module_path: ModulePath,
-    pub semicolon: Punctuation,
-}
-
-/// Represents a syntax tree node for a `module` declaration.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// Module:
-///     AccessModifier 'module' Identifier ';'
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
-pub struct Module {
-    #[get = "pub"]
-    access_modifier: AccessModifier,
-    #[get = "pub"]
-    module_keyword: Keyword,
-    #[get = "pub"]
-    identifier: Identifier,
-    #[get = "pub"]
-    semicolon: Punctuation,
-}
-
-impl SourceElement for Using {
-    fn span(&self) -> Span { self.using_keyword.span.join(&self.semicolon.span).unwrap() }
-}
+use super::ModulePath;
+use crate::{error::Error as SyntaxError, parser::Parser, syntax_tree::item::Item};
 
 /// Contains all the syntax trees defined within a single file.
 ///
@@ -135,27 +66,6 @@ pub struct Target {
 }
 
 impl<'a> Parser<'a> {
-    /// Parses a [`ModulePath`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_module_path(
-        &mut self,
-        handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> Option<ModulePath> {
-        let first_identifier = self.parse_identifier(handler)?;
-        let mut rest = Vec::new();
-
-        while let Some(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy))
-        {
-            let identifier = self.parse_identifier(handler)?;
-            rest.push((scope_separator, identifier));
-        }
-
-        Some(ModulePath {
-            first: first_identifier,
-            rest,
-        })
-    }
-
     /// Parses a [`Using`] declaration.
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_using(

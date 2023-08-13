@@ -11,7 +11,9 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
-    statement::Statement, AccessModifier, ConnectedList, LifetimeArgument, QualifiedIdentifier,
+    expression::{Expression, Functional},
+    statement::Statement,
+    AccessModifier, ConnectedList, LifetimeArgument, QualifiedIdentifier, ScopeSeparator,
     TypeAnnotation, TypeSpecifier,
 };
 use crate::{
@@ -21,6 +23,146 @@ use crate::{
     },
     parser::Parser,
 };
+
+/// Represents a moulde path in used in `module` declarations and `using` statements.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ModulePath:
+///     Identifier ('::' Identifier)*
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+#[allow(missing_docs)]
+pub struct ModulePath {
+    #[get = "pub"]
+    first: Identifier,
+    #[get = "pub"]
+    rest: Vec<(ScopeSeparator, Identifier)>,
+}
+
+impl ModulePath {
+    /// Returns an iterator over the path identifiers.
+    pub fn paths(&self) -> impl Iterator<Item = &Identifier> {
+        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, id)| id))
+    }
+}
+
+/// Represents a syntax tree node for a `module` using statement.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Using:
+///     'using' ModulePath ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+#[allow(missing_docs)]
+pub struct Using {
+    #[get = "pub"]
+    using_keyword: Keyword,
+    #[get = "pub"]
+    module_path: ModulePath,
+    #[get = "pub"]
+    semicolon: Punctuation,
+}
+
+impl SourceElement for Using {
+    fn span(&self) -> Span { self.using_keyword.span.join(&self.semicolon.span).unwrap() }
+}
+
+/// Represents a syntax tree node for a `module` signature.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ModuleSignature:
+///     'module' Identifier
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+#[allow(missing_docs)]
+pub struct ModuleSignature {
+    #[get = "pub"]
+    module_keyword: Keyword,
+    #[get = "pub"]
+    identifier: Identifier,
+}
+
+/// Represents a syntax tree node for a `module` declaration.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Module:
+///     AccessModifier ModuleSignature ModuleContent
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+#[allow(missing_docs)]
+pub struct Module {
+    #[get = "pub"]
+    access_modifier: AccessModifier,
+    #[get = "pub"]
+    signature: ModuleSignature,
+    #[get = "pub"]
+    content: ModuleContent,
+}
+
+impl SourceElement for Module {
+    fn span(&self) -> Span {
+        self.access_modifier
+            .span()
+            .join(&self.content.span())
+            .unwrap()
+    }
+}
+
+/// Represents a syntax tree node for a module content.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ModuleContent:
+///     ';'
+///     | ModuleBody
+///     ;
+/// ```
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum ModuleContent {
+    File(Punctuation),
+    Inline(ModuleBody),
+}
+
+impl SourceElement for ModuleContent {
+    fn span(&self) -> Span {
+        match self {
+            Self::File(p) => p.span.clone(),
+            Self::Inline(m) => m.span(),
+        }
+    }
+}
+
+/// Represents a syntax tree node for a module body.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ModuleBody:
+///    '{' Using* Item* '}'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ModuleBody {
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    usings: Vec<Using>,
+    #[get = "pub"]
+    items: Vec<Item>,
+    #[get = "pub"]
+    right_brace: Punctuation,
+}
+
+impl SourceElement for ModuleBody {
+    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+}
 
 /// Represents a syntax tree node for a lifetime parameter.
 ///
@@ -43,12 +185,45 @@ impl SourceElement for LifetimeParameter {
     fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span).unwrap() }
 }
 
+/// Represents a syntax tree node for a default generic parameter.
+#[derive(Debug, Clone, Getters)]
+pub struct DefaultGenericParameter<Value: SourceElement> {
+    #[get = "pub"]
+    equals: Punctuation,
+    #[get = "pub"]
+    value: Value,
+}
+
+impl<Value: SourceElement> SourceElement for DefaultGenericParameter<Value> {
+    fn span(&self) -> Span { self.equals.span.join(&self.value.span()).unwrap() }
+}
+
+/// Represents a syntax tree node for a default generic parameter for a type.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// DefaultTypeParameter:
+///     '=' TypeSpecifier
+///     ;
+/// ```
+type DefaultTypeParameter = DefaultGenericParameter<TypeSpecifier>;
+
+/// Represents a syntax tree node for a default generic parameter for a constant.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// DefaultConstParameter:
+///     '=' Functional
+///     ;
+/// ```
+type DefaultConstParameter = DefaultGenericParameter<Functional>;
+
 /// Represents a syntax tree node for a type parameter.
 ///
 /// Syntax Synopsis:
 /// ```text
 /// TypeParameter:
-///     Identifier
+///     Identifier DefaultTypeParameter?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -56,10 +231,55 @@ impl SourceElement for LifetimeParameter {
 pub struct TypeParameter {
     #[get = "pub"]
     identifier: Identifier,
+    #[get = "pub"]
+    default: Option<DefaultTypeParameter>,
 }
 
 impl SourceElement for TypeParameter {
-    fn span(&self) -> Span { self.identifier.span.clone() }
+    fn span(&self) -> Span {
+        self.identifier
+            .span
+            .join(
+                &self
+                    .default
+                    .as_ref()
+                    .map_or_else(|| self.identifier.span.clone(), SourceElement::span),
+            )
+            .unwrap()
+    }
+}
+
+/// Represents a syntax tree node for a const parameter.
+///
+/// Syntax Synopsis:
+/// ```text
+/// ConstParameter:
+///     Identifier TypeAnnotation DefaultConstParameter?
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+#[allow(missing_docs)]
+pub struct ConstParameter {
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    type_annotation: TypeAnnotation,
+    #[get = "pub"]
+    default: Option<DefaultConstParameter>,
+}
+
+impl SourceElement for ConstParameter {
+    fn span(&self) -> Span {
+        self.identifier
+            .span
+            .join(
+                &self
+                    .default
+                    .as_ref()
+                    .map_or_else(|| self.type_annotation.span(), SourceElement::span),
+            )
+            .unwrap()
+    }
 }
 
 /// Represents a syntax tree node for a generic parameter.
@@ -69,6 +289,7 @@ impl SourceElement for TypeParameter {
 /// GenericParameter:
 ///     LifetimeParameter
 ///     | TypeParameter
+///     | ConstParameter
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
@@ -76,6 +297,7 @@ impl SourceElement for TypeParameter {
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
+    Const(ConstParameter),
 }
 
 impl SourceElement for GenericParameter {
@@ -83,6 +305,7 @@ impl SourceElement for GenericParameter {
         match self {
             Self::Lifetime(lifetime_parameter) => lifetime_parameter.span(),
             Self::Type(type_parameter) => type_parameter.span(),
+            Self::Const(const_parameter) => const_parameter.span(),
         }
     }
 }
@@ -1105,7 +1328,7 @@ impl SourceElement for Implements {
 /// Syntax Synopsis:
 /// ```text
 /// EnumSignature:
-///     'enum' Identifier
+///     'enum' Identifier GenericParameters?
 ///     ;
 /// ``
 #[derive(Debug, Clone, Getters)]
@@ -1115,10 +1338,61 @@ pub struct EnumSignature {
     enum_keyword: Keyword,
     #[get = "pub"]
     identifier: Identifier,
+    #[get = "pub"]
+    generic_parameters: Option<GenericParameters>,
 }
 
 impl SourceElement for EnumSignature {
     fn span(&self) -> Span { self.enum_keyword.span.join(&self.identifier.span).unwrap() }
+}
+
+/// Represents a syntax tree for an associated enum value.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// AssociatedValue:
+///     '(' TypeSpecifier ')'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct AssociatedValue {
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    type_specifier: TypeSpecifier,
+    #[get = "pub"]
+    right_paren: Punctuation,
+}
+
+impl SourceElement for AssociatedValue {
+    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
+}
+
+/// Represents a syntax tree for an enum variant.
+///
+/// Syntax Synopsis:
+/// ``` text
+/// EnumVariant:
+///     Identifier AssociatedValue?
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct EnumVariant {
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    asscoiated_value: Option<AssociatedValue>,
+}
+
+impl SourceElement for EnumVariant {
+    fn span(&self) -> Span {
+        let end = self
+            .asscoiated_value
+            .as_ref()
+            .map_or_else(|| self.identifier.span.clone(), SourceElement::span);
+
+        self.identifier.span.join(&end).unwrap()
+    }
 }
 
 /// Represents a syntax tree for a list of enum variant identifiers separated by commas.
@@ -1129,7 +1403,7 @@ impl SourceElement for EnumSignature {
 ///     Identifier (',' Identifier)*
 ///     ;
 /// ```
-pub type EnumVariantList = ConnectedList<Identifier, Punctuation>;
+pub type EnumVariantList = ConnectedList<EnumVariant, Punctuation>;
 
 /// Represents a syntax tree for an enum body.
 ///
@@ -1193,6 +1467,82 @@ impl SourceElement for Enum {
     fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
 }
 
+/// Represents a syntax tree node for a const declaration signature
+///
+/// Syntax Synopsis:
+/// ```text
+/// ConstSignature:
+///     'const' Identifier TypeAnnotation
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ConstSignature {
+    #[get = "pub"]
+    const_keyword: Keyword,
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    type_annotation: TypeAnnotation,
+}
+
+impl SourceElement for ConstSignature {
+    fn span(&self) -> Span {
+        self.const_keyword
+            .span
+            .join(&self.type_annotation.span())
+            .unwrap()
+    }
+}
+
+/// Represents a syntax tree node for a const definition.
+///
+/// Syntax Synopsis:
+/// ```text
+/// ConstDefinition:
+///     '=' Expression ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ConstDefinition {
+    #[get = "pub"]
+    equals: Punctuation,
+    #[get = "pub"]
+    expression: Expression,
+    #[get = "pub"]
+    semicolon: Punctuation,
+}
+
+impl SourceElement for ConstDefinition {
+    fn span(&self) -> Span { self.equals.span.join(&self.semicolon.span).unwrap() }
+}
+
+/// Represents a syntax tree node for a const definition.
+///
+/// Syntax Synopsis:
+/// ``` ebnf
+/// ConstDefinition:
+///     '=' Expression ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct Const {
+    #[get = "pub"]
+    access_modifier: AccessModifier,
+    #[get = "pub"]
+    signature: ConstSignature,
+    #[get = "pub"]
+    definition: ConstDefinition,
+}
+
+impl SourceElement for Const {
+    fn span(&self) -> Span {
+        self.access_modifier
+            .span()
+            .join(&self.definition.span())
+            .unwrap()
+    }
+}
+
 /// Represents a syntax tree node for an item.
 ///
 /// Syntax Synopsis:
@@ -1204,6 +1554,8 @@ impl SourceElement for Enum {
 ///     | Struct
 ///     | Implements
 ///     | Enum
+///     | Module
+///     | Const
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
@@ -1216,17 +1568,21 @@ pub enum Item {
     Struct(Struct),
     Implements(Implements),
     Enum(Enum),
+    Module(Module),
+    Const(Const),
 }
 
 impl SourceElement for Item {
     fn span(&self) -> Span {
         match self {
+            Self::Module(m) => m.span(),
             Self::Trait(t) => t.span(),
             Self::Function(f) => f.span(),
             Self::Type(t) => t.span(),
             Self::Struct(s) => s.span(),
             Self::Implements(i) => i.span(),
             Self::Enum(e) => e.span(),
+            Self::Const(c) => c.span(),
         }
     }
 }
@@ -1275,9 +1631,61 @@ impl<'a> Parser<'a> {
                         identifier: parser.parse_identifier(handler)?,
                     }))
                 }
-                _ => Some(GenericParameter::Type(TypeParameter {
-                    identifier: parser.parse_identifier(handler)?,
-                })),
+                _ => {
+                    let identifier = parser.parse_identifier(handler)?;
+
+                    match parser.stop_at_significant() {
+                        // const generic parameter
+                        Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
+                            // eat colon
+                            parser.forward();
+
+                            let type_specifier = parser.parse_type_specifier(handler)?;
+                            let default = match parser.stop_at_significant() {
+                                Some(Token::Punctuation(equals)) if equals.punctuation == '=' => {
+                                    // eat equals
+                                    parser.forward();
+
+                                    Some(DefaultConstParameter {
+                                        equals,
+                                        value: parser.parse_primary_expression(handler)?,
+                                    })
+                                }
+                                _ => None,
+                            };
+
+                            Some(GenericParameter::Const(ConstParameter {
+                                identifier,
+                                type_annotation: TypeAnnotation {
+                                    colon,
+                                    type_specifier,
+                                },
+                                default,
+                            }))
+                        }
+
+                        // type generic parameter
+                        _ => {
+                            let default = match parser.stop_at_significant() {
+                                Some(Token::Punctuation(equals)) if equals.punctuation == '=' => {
+                                    // eat equals
+                                    parser.forward();
+
+                                    Some(DefaultTypeParameter {
+                                        equals,
+                                        value: parser.parse_type_specifier(handler)?,
+                                    })
+                                }
+                                _ => None,
+                            };
+
+                            Some(GenericParameter::Type(TypeParameter {
+                                identifier,
+                                default,
+                            }))
+                        }
+                    }
+                }
             },
             handler,
         )?;
@@ -1400,13 +1808,14 @@ impl<'a> Parser<'a> {
                         }))
                     }
 
-                    found => match type_specifier {
-                        TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
+                    found => {
+                        if let TypeSpecifier::QualifiedIdentifier(qualified_identifier) =
+                            type_specifier
+                        {
                             Some(Constraint::Trait(TraitBound {
                                 qualified_identifier,
                             }))
-                        }
-                        TypeSpecifier::Reference(..) | TypeSpecifier::Primitive(..) => {
+                        } else {
                             handler.receive(Error::PunctuationExpected(PunctuationExpected {
                                 expected: ':',
                                 found: self.get_actual_found_token(found),
@@ -1414,7 +1823,7 @@ impl<'a> Parser<'a> {
 
                             None
                         }
-                    },
+                    }
                 }
             }
         }
@@ -1809,21 +2218,165 @@ impl<'a> Parser<'a> {
     fn parse_enum_signature(&mut self, handler: &impl Handler<Error>) -> Option<EnumSignature> {
         let enum_keyword = self.parse_keyword(KeywordKind::Enum, handler)?;
         let identifier = self.parse_identifier(handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
 
         Some(EnumSignature {
             enum_keyword,
             identifier,
+            generic_parameters,
         })
     }
 
     fn parse_enum_body(&mut self, handler: &impl Handler<Error>) -> Option<EnumBody> {
-        let body =
-            self.parse_enclosed_tree(Delimiter::Brace, ',', Parser::parse_identifier, handler)?;
+        let body = self.parse_enclosed_tree(
+            Delimiter::Brace,
+            ',',
+            |parser, handler| {
+                let identifier = parser.parse_identifier(handler)?;
+
+                // parse associated enum value
+                let associated_value = if matches!(
+                    parser.stop_at_significant(),
+                    Some(Token::Punctuation(p)) if p.punctuation == '('
+                ) {
+                    let left_paren = parser.step_into(Delimiter::Parenthesis, handler)?;
+                    let type_specifier = parser.parse_type_specifier(handler)?;
+                    let right_paren = parser.step_out(handler)?;
+                    Some(AssociatedValue {
+                        left_paren,
+                        type_specifier,
+                        right_paren,
+                    })
+                } else {
+                    None
+                };
+
+                Some(EnumVariant {
+                    identifier,
+                    asscoiated_value: associated_value,
+                })
+            },
+            handler,
+        )?;
 
         Some(EnumBody {
             left_brace: body.open,
             variant_list: body.list,
             right_brace: body.close,
+        })
+    }
+
+    fn parse_module_signature(&mut self, handler: &impl Handler<Error>) -> Option<ModuleSignature> {
+        let module_keyword = self.parse_keyword(KeywordKind::Module, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+
+        Some(ModuleSignature {
+            module_keyword,
+            identifier,
+        })
+    }
+
+    /// Parses a [`ModulePath`]
+    #[allow(clippy::missing_errors_doc)]
+    pub fn parse_module_path(&mut self, handler: &impl Handler<Error>) -> Option<ModulePath> {
+        let first_identifier = self.parse_identifier(handler)?;
+        let mut rest = Vec::new();
+
+        while let Some(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy))
+        {
+            let identifier = self.parse_identifier(handler)?;
+            rest.push((scope_separator, identifier));
+        }
+
+        Some(ModulePath {
+            first: first_identifier,
+            rest,
+        })
+    }
+
+    fn parse_module_body(&mut self, handler: &impl Handler<Error>) -> Option<ModuleBody> {
+        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+
+        let mut items = Vec::new();
+        let mut usings = Vec::new();
+
+        while !self.is_exhausted() {
+            match (items.is_empty(), self.stop_at_significant()) {
+                (true, Some(Token::Keyword(using_keyword)))
+                    if using_keyword.keyword == KeywordKind::Using =>
+                {
+                    // eat using keyword
+                    self.forward();
+
+                    let module_path = self.parse_module_path(handler)?;
+                    let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                    usings.push(Using {
+                        using_keyword,
+                        module_path,
+                        semicolon,
+                    });
+                    continue;
+                }
+                _ => {}
+            }
+
+            if let Some(item) = self.parse_item(handler) {
+                items.push(item);
+                continue;
+            };
+
+            // try to stop at the next access modifier or usings keyword
+            self.stop_at(|token| {
+                if let Token::Keyword(keyword) = token {
+                    (keyword.keyword == KeywordKind::Public
+                        || keyword.keyword == KeywordKind::Private
+                        || keyword.keyword == KeywordKind::Internal)
+                        || if items.is_empty() {
+                            keyword.keyword == KeywordKind::Using
+                        } else {
+                            false
+                        }
+                } else {
+                    false
+                }
+            });
+
+            // eat semicolon
+            self.forward();
+        }
+
+        let right_brace = self.step_out(handler)?;
+
+        Some(ModuleBody {
+            left_brace,
+            usings,
+            items,
+            right_brace,
+        })
+    }
+
+    fn parse_const_signature(&mut self, handler: &impl Handler<Error>) -> Option<ConstSignature> {
+        let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
+        let identifier = self.parse_identifier(handler)?;
+        let type_annotation = self.parse_type_annotation(handler)?;
+
+        Some(ConstSignature {
+            const_keyword,
+            identifier,
+            type_annotation,
+        })
+    }
+
+    fn parse_const_definition(&mut self, handler: &impl Handler<Error>) -> Option<ConstDefinition> {
+        let equals = self.parse_punctuation('=', true, handler)?;
+        let expression = self.parse_expression(handler)?;
+        let semicolon = self.parse_punctuation(';', true, handler)?;
+
+        Some(ConstDefinition {
+            equals,
+            expression,
+            semicolon,
         })
     }
 
@@ -1840,6 +2393,37 @@ impl<'a> Parser<'a> {
                     access_modifier,
                     signature: function_signature,
                     body: function_body,
+                }))
+            }
+
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Const => {
+                let signature = self.parse_const_signature(handler)?;
+                let definition = self.parse_const_definition(handler)?;
+
+                Some(Item::Const(Const {
+                    access_modifier,
+                    signature,
+                    definition,
+                }))
+            }
+
+            // parse module
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Module => {
+                let signature = self.parse_module_signature(handler)?;
+
+                let content = match self.stop_at_significant() {
+                    Some(Token::Punctuation(p)) if p.punctuation == ';' => {
+                        // eat semi colon
+                        self.forward();
+                        ModuleContent::File(p)
+                    }
+                    _ => ModuleContent::Inline(self.parse_module_body(handler)?),
+                };
+
+                Some(Item::Module(Module {
+                    access_modifier,
+                    signature,
+                    content,
                 }))
             }
 
