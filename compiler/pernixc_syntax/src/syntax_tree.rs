@@ -394,12 +394,35 @@ impl SourceElement for LifetimeArgument {
     fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span()).unwrap() }
 }
 
+/// Represents a syntax tree node of a constant argument.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ConstArgument:
+///     '{' Expression '}'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ConstArgument {
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    expression: Box<Expression>,
+    #[get = "pub"]
+    right_brace: Punctuation,
+}
+
+impl SourceElement for ConstArgument {
+    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+}
+
 /// Represents a syntax tree node of a generic argument.
 ///
 /// Syntax Synopsis:
 /// ``` txt
 /// GenericArgument:
 ///     TypeSpecifier
+///     | ConstArgument
 ///     | LifetimeArgument
 ///     ;
 /// ```
@@ -407,6 +430,7 @@ impl SourceElement for LifetimeArgument {
 #[allow(missing_docs)]
 pub enum GenericArgument {
     TypeSpecifier(Box<TypeSpecifier>),
+    Const(ConstArgument),
     Lifetime(LifetimeArgument),
 }
 
@@ -415,6 +439,7 @@ impl SourceElement for GenericArgument {
         match self {
             Self::TypeSpecifier(type_specifier) => type_specifier.span(),
             Self::Lifetime(lifetime_argument) => lifetime_argument.span(),
+            Self::Const(const_argument) => const_argument.span(),
         }
     }
 }
@@ -1152,6 +1177,19 @@ impl<'a> Parser<'a> {
                 Some(GenericArgument::Lifetime(LifetimeArgument {
                     apostrophe,
                     identifier: lifetime_argument_identifier,
+                }))
+            }
+
+            // parse const argument
+            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
+                let left_brace = self.step_into(Delimiter::Brace, handler)?;
+                let expression = Box::new(self.parse_expression(handler)?);
+                let right_brace = self.step_out(handler)?;
+
+                Some(GenericArgument::Const(ConstArgument {
+                    left_brace,
+                    expression,
+                    right_brace,
                 }))
             }
 

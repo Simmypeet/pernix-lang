@@ -718,12 +718,48 @@ impl<T: Debug, U: Debug> ConnectedList<T, U> {
     }
 }
 
+/// Represents an input for the [`super::ConstArgument`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConstArgument {
+    /// The expression of the argument.
+    pub expression: Box<Expression>,
+}
+
+impl Arbitrary for ConstArgument {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        args.unwrap_or_else(|| Expression::arbitrary().boxed())
+            .prop_map(|expression| Self {
+                expression: Box::new(expression),
+            })
+            .boxed()
+    }
+}
+
+impl Input for ConstArgument {
+    type Output = super::ConstArgument;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.expression.assert(output.expression())?;
+        Ok(())
+    }
+}
+
+impl Display for ConstArgument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{{}}}", self.expression)
+    }
+}
+
 /// Represents an input for the [`super::QualifiedIdentifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum GenericArgument {
     Lifetime(LifetimeArgument),
     TypeSpecifier(Box<TypeSpecifier>),
+    Const(ConstArgument),
 }
 
 impl Arbitrary for GenericArgument {
@@ -733,7 +769,9 @@ impl Arbitrary for GenericArgument {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             LifetimeArgument::arbitrary().prop_map(Self::Lifetime),
-            TypeSpecifier::arbitrary_with(args).prop_map(|x| Self::TypeSpecifier(Box::new(x)))
+            TypeSpecifier::arbitrary_with(args.clone())
+                .prop_map(|x| Self::TypeSpecifier(Box::new(x))),
+            ConstArgument::arbitrary_with(args.1).prop_map(Self::Const),
         ]
         .boxed()
     }
@@ -746,6 +784,7 @@ impl Input for GenericArgument {
         match (self, output) {
             (Self::Lifetime(i), super::GenericArgument::Lifetime(o)) => i.assert(o),
             (Self::TypeSpecifier(i), super::GenericArgument::TypeSpecifier(o)) => i.assert(o),
+            (Self::Const(i), super::GenericArgument::Const(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -758,6 +797,7 @@ impl Display for GenericArgument {
         match self {
             Self::Lifetime(i) => Display::fmt(i, f),
             Self::TypeSpecifier(i) => Display::fmt(i, f),
+            Self::Const(i) => Display::fmt(i, f),
         }
     }
 }
