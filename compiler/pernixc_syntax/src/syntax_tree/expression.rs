@@ -95,6 +95,8 @@ impl SourceElement for Terminator {
 ///     | Parenthesized
 ///     | StructLiteral
 ///     | MemberAccess
+///     | ArrayLiteral
+///     | Subscript
 ///     | Cast
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
@@ -109,8 +111,61 @@ pub enum Functional {
     Parenthesized(Parenthesized),
     StructLiteral(StructLiteral),
     MemberAccess(MemberAccess),
+    Subscript(Subscript),
     ArrowOperator(ArrowOperator),
+    ArrayLiteral(ArrayLiteral),
     Cast(Cast),
+}
+
+/// Represnts a syntax tree node of a subscript expression.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Subscript:
+///     Functional '[' Expression ']'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct Subscript {
+    #[get = "pub"]
+    operand: Box<Functional>,
+    #[get = "pub"]
+    left_bracket: Punctuation,
+    #[get = "pub"]
+    expression: Box<Expression>,
+    #[get = "pub"]
+    right_bracket: Punctuation,
+}
+
+impl SourceElement for Subscript {
+    fn span(&self) -> Span { self.operand.span().join(&self.right_bracket.span).unwrap() }
+}
+
+/// Represnts a syntax tree node of an array literal.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ArrayLiteral:
+///     '[' ArgumentList? ']'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ArrayLiteral {
+    #[get = "pub"]
+    left_bracket: Punctuation,
+    #[get = "pub"]
+    arguments: Option<ArgumentList>,
+    #[get = "pub"]
+    right_bracket: Punctuation,
+}
+
+impl SourceElement for ArrayLiteral {
+    fn span(&self) -> Span {
+        self.left_bracket
+            .span
+            .join(&self.right_bracket.span)
+            .unwrap()
+    }
 }
 
 impl SourceElement for Functional {
@@ -125,9 +180,11 @@ impl SourceElement for Functional {
             Self::Named(identifier_expression) => identifier_expression.span(),
             Self::FunctionCall(function_call_expression) => function_call_expression.span(),
             Self::Parenthesized(parenthesized_expression) => parenthesized_expression.span(),
+            Self::Subscript(subscript_expression) => subscript_expression.span(),
             Self::StructLiteral(struct_literal) => struct_literal.span(),
             Self::MemberAccess(member_access_expression) => member_access_expression.span(),
             Self::ArrowOperator(arrow_operator_expression) => arrow_operator_expression.span(),
+            Self::ArrayLiteral(array_literal) => array_literal.span(),
             Self::Cast(cast) => cast.span(),
         }
     }
@@ -390,7 +447,6 @@ impl SourceElement for PrefixOperator {
 pub struct Prefix {
     #[get = "pub"]
     operator: PrefixOperator,
-
     #[get = "pub"]
     operand: Box<Functional>,
 }
@@ -399,7 +455,7 @@ impl SourceElement for Prefix {
     fn span(&self) -> Span { self.operator.span().join(&self.operand.span()).unwrap() }
 }
 
-/// Represents a postfix operator syntax tree.
+/// Represents a named expression syntax tree.
 ///
 /// Syntax Synopsis:
 /// ``` txt
@@ -1369,6 +1425,24 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    fn parse_array_literal_expression(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> Option<Functional> {
+        let enclosed_tree = self.parse_enclosed_tree(
+            Delimiter::Bracket,
+            ',',
+            |parser, handler| parser.parse_expression(handler).map(Box::new),
+            handler,
+        )?;
+
+        Some(Functional::ArrayLiteral(ArrayLiteral {
+            left_bracket: enclosed_tree.open,
+            arguments: enclosed_tree.list,
+            right_bracket: enclosed_tree.close,
+        }))
+    }
+
     fn parse_block_without_label(
         &mut self,
         handler: &impl Handler<Error>,
@@ -1411,8 +1485,10 @@ impl<'a> Parser<'a> {
 
     fn parse_block(&mut self, handler: &impl Handler<Error>) -> Option<Block> {
         // parse optional label specifier
-        let label_specifier = if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '\'')
-        {
+        let label_specifier = if matches!(
+            self.stop_at_significant(),
+            Some(Token::Punctuation(p)) if p.punctuation == '\''
+        ) {
             Some(self.parse_label_specifier(handler)?)
         } else {
             None
@@ -1539,6 +1615,10 @@ impl<'a> Parser<'a> {
                 Functional::BooleanLiteral(boolean_literal(boolean))
             }
 
+            Some(Token::Punctuation(p)) if p.punctuation == '[' => {
+                self.parse_array_literal_expression(handler)?
+            }
+
             // parse qualified identifier expression
             Some(Token::Identifier(..)) => self.parse_identifier_expression(handler)?,
             Some(Token::Punctuation(p))
@@ -1579,6 +1659,19 @@ impl<'a> Parser<'a> {
                         operand: Box::new(expression),
                         dot,
                         identifier,
+                    });
+                }
+                Some(Token::Punctuation(p)) if p.punctuation == '[' => {
+                    let left_bracket = self.step_into(Delimiter::Bracket, handler)?;
+                    let subscript_expression = Box::new(self.parse_expression(handler)?);
+                    let right_bracket = self.step_out(handler)?;
+
+                    // update expression
+                    expression = Functional::Subscript(Subscript {
+                        operand: Box::new(expression),
+                        left_bracket,
+                        expression: subscript_expression,
+                        right_bracket,
                     });
                 }
                 Some(Token::Keyword(as_keyword)) if as_keyword.keyword == KeywordKind::As => {

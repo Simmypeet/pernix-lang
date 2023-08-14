@@ -13,7 +13,7 @@ use proptest::{
 use crate::syntax_tree::{
     self,
     statement::tests::Statement,
-    tests::{QualifiedIdentifier, TypeSpecifier},
+    tests::{ConnectedList, ConstantPunctuation, QualifiedIdentifier, TypeSpecifier},
 };
 
 /// Represents an input for the [`super::NumericLiteral`].
@@ -98,6 +98,49 @@ impl Display for BooleanLiteral {
         } else {
             f.write_str("false")
         }
+    }
+}
+
+/// Represents an input for the [`super::ArrayLiteral`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ArrayLiteral {
+    /// The expressions of the array literal.
+    pub expressions: Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
+}
+
+impl Input for ArrayLiteral {
+    type Output = super::ArrayLiteral;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.expressions.assert(output.arguments())
+    }
+}
+
+impl Arbitrary for ArrayLiteral {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
+
+        proptest::option::of(ConnectedList::arbitrary_with(
+            expression_strategy.prop_map(Box::new),
+            ConstantPunctuation::arbitrary(),
+        ))
+        .prop_map(|expressions| Self { expressions })
+        .boxed()
+    }
+}
+
+impl Display for ArrayLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('[')?;
+
+        if let Some(expressions) = &self.expressions {
+            write!(f, "{expressions}")?;
+        }
+
+        f.write_char(']')
     }
 }
 
@@ -716,6 +759,56 @@ impl Display for Parenthesized {
     }
 }
 
+/// Represents an input for the [`super::Subscript`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Subscript {
+    /// The operand of the subscript.
+    pub operand: Box<Functional>,
+
+    /// The index of the subscript.
+    pub index: Box<Expression>,
+}
+
+impl Input for Subscript {
+    type Output = super::Subscript;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.operand.assert(output.operand())?;
+        self.index.assert(output.expression())
+    }
+}
+
+impl Arbitrary for Subscript {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
+
+        (
+            expression_strategy
+                .clone()
+                .prop_filter_map("only allows functional variants", |x| match x {
+                    Expression::Functional(Functional::Binary(_) | Functional::Prefix(_)) => None,
+                    Expression::Functional(x) => Some(x),
+                    _ => None,
+                }),
+            expression_strategy.prop_map(Box::new),
+        )
+            .prop_map(|(operand, index)| Self {
+                operand: Box::new(operand),
+                index,
+            })
+            .boxed()
+    }
+}
+
+impl Display for Subscript {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}[{}]", self.operand, self.index)
+    }
+}
+
 /// Represents an input for the [`super::FieldInitializer`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldInitializer {
@@ -1221,6 +1314,8 @@ pub enum Functional {
     Parenthesized(Parenthesized),
     StructLiteral(StructLiteral),
     ArrowOperator(ArrowOperator),
+    ArrayLiteral(ArrayLiteral),
+    Subscript(Subscript),
     Cast(Cast),
 }
 
@@ -1502,6 +1597,8 @@ impl Input for Functional {
             (Self::StructLiteral(i), super::Functional::StructLiteral(o)) => i.assert(o),
             (Self::Cast(i), super::Functional::Cast(o)) => i.assert(o),
             (Self::ArrowOperator(i), super::Functional::ArrowOperator(o)) => i.assert(o),
+            (Self::ArrayLiteral(i), super::Functional::ArrayLiteral(o)) => i.assert(o),
+            (Self::Subscript(i), super::Functional::Subscript(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "expected functional to be {self:?}, found {output:?}",
             ))),
@@ -1523,6 +1620,8 @@ impl Display for Functional {
             Self::StructLiteral(i) => Display::fmt(i, f),
             Self::Cast(i) => Display::fmt(i, f),
             Self::ArrowOperator(i) => Display::fmt(i, f),
+            Self::ArrayLiteral(a) => Display::fmt(a, f),
+            Self::Subscript(s) => Display::fmt(s, f),
         }
     }
 }
@@ -1617,8 +1716,12 @@ impl Arbitrary for Expression {
                 Continue::arbitrary().prop_map(|x| Self::Terminator(Terminator::Continue(x))),
                 Express::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Terminator(Terminator::Express(x))),
-                Break::arbitrary_with(Some(filter_functional_variant(inner)))
+                Break::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Terminator(Terminator::Break(x))),
+                ArrayLiteral::arbitrary_with(Some(inner.clone()))
+                    .prop_map(|x| Self::Functional(Functional::ArrayLiteral(x))),
+                Subscript::arbitrary_with(Some(inner))
+                    .prop_map(|x| Self::Functional(Functional::Subscript(x)))
             ]
         })
         .boxed()

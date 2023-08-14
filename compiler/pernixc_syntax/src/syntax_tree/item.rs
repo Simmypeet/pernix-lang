@@ -504,12 +504,14 @@ impl SourceElement for Constraint {
 /// Syntax Synopsis:
 /// ``` text
 /// TraitBound:
-///     QualifiedIdentifier
+///     'const'? QualifiedIdentifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct TraitBound {
+    #[get = "pub"]
+    const_keyword: Option<Keyword>,
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
 }
@@ -819,12 +821,16 @@ impl SourceElement for ReturnType {
 /// Syntax Synopsis:
 /// ``` text
 /// FunctionSignature:
-///     Identifier GenericParameters? Parameters ReturnType? WhereClause?
+///     'function' 'const'? Identifier GenericParameters? Parameters ReturnType? WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct FunctionSignature {
+    #[get = "pub"]
+    function_keyword: Keyword,
+    #[get = "pub"]
+    const_keyword: Option<Keyword>,
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
@@ -840,9 +846,12 @@ pub struct FunctionSignature {
 impl FunctionSignature {
     /// Dissolves the [`FunctionSignature`] into a tuple of its fields.
     #[must_use]
+    #[allow(clippy::type_complexity)]
     pub fn dissolve(
         self,
     ) -> (
+        Keyword,
+        Option<Keyword>,
         Identifier,
         Option<GenericParameters>,
         Parameters,
@@ -850,6 +859,8 @@ impl FunctionSignature {
         Option<WhereClause>,
     ) {
         (
+            self.function_keyword,
+            self.const_keyword,
             self.identifier,
             self.generic_parameters,
             self.parameters,
@@ -1165,7 +1176,7 @@ impl SourceElement for StructMember {
 /// Syntax Synopsis:
 /// ``` text
 /// ImplementsSignature:
-///     'implements' GenericParameters? QualifiedIdentifier WhereClause?
+///     'implements' GenericParameters? const? QualifiedIdentifier WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -1175,6 +1186,8 @@ pub struct ImplementsSignature {
     implements_keyword: Keyword,
     #[get = "pub"]
     generic_parameters: Option<GenericParameters>,
+    #[get = "pub"]
+    const_keyword: Option<Keyword>,
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
@@ -1748,6 +1761,19 @@ impl<'a> Parser<'a> {
 
     fn parse_cosntraint(&mut self, handler: &impl Handler<Error>) -> Option<Constraint> {
         match self.stop_at_significant() {
+            // parse const keyword
+            Some(Token::Keyword(const_keyword)) if const_keyword.keyword == KeywordKind::Const => {
+                // eat const keyword
+                self.forward();
+
+                let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+
+                Some(Constraint::Trait(TraitBound {
+                    const_keyword: Some(const_keyword),
+                    qualified_identifier,
+                }))
+            }
+
             // parses lifetime argument / bound
             Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat apostrophe
@@ -1813,6 +1839,7 @@ impl<'a> Parser<'a> {
                             type_specifier
                         {
                             Some(Constraint::Trait(TraitBound {
+                                const_keyword: None,
                                 qualified_identifier,
                             }))
                         } else {
@@ -1909,6 +1936,15 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &impl Handler<Error>,
     ) -> Option<FunctionSignature> {
+        let function_keyword = self.parse_keyword(KeywordKind::Function, handler)?;
+        let const_keyword = match self.stop_at_significant() {
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Const => {
+                self.forward();
+                Some(k)
+            }
+            _ => None,
+        };
+
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
 
@@ -1953,6 +1989,8 @@ impl<'a> Parser<'a> {
         let where_clause = self.try_parse_where_clause(handler)?;
 
         Some(FunctionSignature {
+            function_keyword,
+            const_keyword,
             identifier,
             generic_parameters,
             parameters,
@@ -1979,7 +2017,9 @@ impl<'a> Parser<'a> {
         handler: &impl Handler<Error>,
     ) -> Option<ImplementsMember> {
         match self.stop_at_significant() {
-            Some(Token::Identifier(..)) => {
+            Some(Token::Keyword(function_keyword))
+                if function_keyword.keyword == KeywordKind::Function =>
+            {
                 let function_signature = self.parse_function_signature(handler)?;
                 let function_body = self.parse_function_body(handler)?;
 
@@ -2043,6 +2083,15 @@ impl<'a> Parser<'a> {
     fn parse_implements(&mut self, handler: &impl Handler<Error>) -> Option<Implements> {
         let implements_keyword = self.parse_keyword(KeywordKind::Implements, handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
+        let const_keyword = match self.stop_at_significant() {
+            Some(Token::Keyword(const_keyword)) if const_keyword.keyword == KeywordKind::Const => {
+                // eat const keyword
+                self.forward();
+
+                Some(const_keyword)
+            }
+            _ => None,
+        };
         let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
         let implements_body = self.parse_implements_body(handler)?;
@@ -2051,6 +2100,7 @@ impl<'a> Parser<'a> {
             signature: ImplementsSignature {
                 implements_keyword,
                 generic_parameters,
+                const_keyword,
                 qualified_identifier,
                 where_clause,
             },
@@ -2074,7 +2124,9 @@ impl<'a> Parser<'a> {
 
     fn parse_trait_member(&mut self, handler: &impl Handler<Error>) -> Option<TraitMember> {
         match self.stop_at_significant() {
-            Some(Token::Identifier(..)) => {
+            Some(Token::Keyword(function_keyword))
+                if function_keyword.keyword == KeywordKind::Function =>
+            {
                 let function_signature = self.parse_function_signature(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
@@ -2385,7 +2437,7 @@ impl<'a> Parser<'a> {
 
         match self.stop_at_significant() {
             // parse function
-            Some(Token::Identifier(..)) => {
+            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Function => {
                 let function_signature = self.parse_function_signature(handler)?;
                 let function_body = self.parse_function_body(handler)?;
 

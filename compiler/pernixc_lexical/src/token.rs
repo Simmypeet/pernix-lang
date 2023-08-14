@@ -111,6 +111,8 @@ pub enum KeywordKind {
     Using,
     /// `is` keyword.
     Is,
+    /// `function` keyword.
+    Function,
 }
 
 impl ToString for KeywordKind {
@@ -147,6 +149,7 @@ impl KeywordKind {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Function => "function",
             Self::As => "as",
             Self::Enum => "enum",
             Self::Struct => "struct",

@@ -382,13 +382,9 @@ impl Arbitrary for ArrayTypeSpecifier {
                 .unwrap_or_else(|| TypeSpecifier::arbitrary_with((None, args.1.clone()))),
             args.1.unwrap_or_else(|| Expression::arbitrary_with(args.0)),
         )
-            .prop_map(|(type_specifier, expression)| {
-                dbg!(&type_specifier, &expression);
-
-                Self {
-                    operand: Box::new(type_specifier),
-                    expression: Box::new(expression),
-                }
+            .prop_map(|(type_specifier, expression)| Self {
+                operand: Box::new(type_specifier),
+                expression: Box::new(expression),
             })
             .boxed()
     }

@@ -527,6 +527,9 @@ impl Display for GenericParameters {
 /// Represents an input for the [`super::TraitBound`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitBound {
+    /// Checks if the trait bound is const.
+    pub is_const: bool,
+
     /// The qualified identifier of the trait bound.
     pub qualified_identifier: QualifiedIdentifier,
 }
@@ -535,6 +538,7 @@ impl Input for TraitBound {
     type Output = super::TraitBound;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(self.is_const, output.const_keyword.is_some());
         self.qualified_identifier
             .assert(output.qualified_identifier())
     }
@@ -545,8 +549,12 @@ impl Arbitrary for TraitBound {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        QualifiedIdentifier::arbitrary_with((false, None))
-            .prop_map(|qualified_identifier| Self {
+        (
+            QualifiedIdentifier::arbitrary_with((false, None)),
+            proptest::bool::ANY,
+        )
+            .prop_map(|(qualified_identifier, is_const)| Self {
+                is_const,
                 qualified_identifier,
             })
             .boxed()
@@ -555,6 +563,10 @@ impl Arbitrary for TraitBound {
 
 impl Display for TraitBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_const {
+            write!(f, "const ")?;
+        }
+
         Display::fmt(&self.qualified_identifier, f)
     }
 }
@@ -947,6 +959,9 @@ impl Display for ReturnType {
 /// Represents an input for the [`super::FunctionSignature`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionSignature {
+    /// Whether if the function is const.
+    is_const: bool,
+
     /// The name of the function.
     identifier: Identifier,
 
@@ -967,6 +982,7 @@ impl Input for FunctionSignature {
     type Output = super::FunctionSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(self.is_const, output.const_keyword.is_some());
         self.identifier.assert(output.identifier())?;
         self.generic_parameters
             .assert(output.generic_parameters())?;
@@ -982,6 +998,7 @@ impl Arbitrary for FunctionSignature {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
+            proptest::bool::ANY,
             Identifier::arbitrary(),
             proptest::option::of(GenericParameters::arbitrary()),
             Parameters::arbitrary(),
@@ -989,7 +1006,15 @@ impl Arbitrary for FunctionSignature {
             proptest::option::of(WhereClause::arbitrary()),
         )
             .prop_map(
-                |(identifier, generic_parameters, parameters, return_type, where_clause)| Self {
+                |(
+                    is_const,
+                    identifier,
+                    generic_parameters,
+                    parameters,
+                    return_type,
+                    where_clause,
+                )| Self {
+                    is_const,
                     identifier,
                     generic_parameters,
                     parameters,
@@ -1003,6 +1028,12 @@ impl Arbitrary for FunctionSignature {
 
 impl Display for FunctionSignature {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("function ")?;
+
+        if self.is_const {
+            formatter.write_str("const ")?;
+        }
+
         Display::fmt(&self.identifier, formatter)?;
 
         if let Some(generic_parameters) = &self.generic_parameters {
@@ -2320,6 +2351,9 @@ pub struct ImplementsSignature {
     /// The generic parameters of the implements signature
     pub generic_parameters: Option<GenericParameters>,
 
+    /// Whether if this implements signature is const
+    pub is_const: bool,
+
     /// The qualified identifier of the implements signature
     pub qualified_identifier: QualifiedIdentifier,
 
@@ -2335,6 +2369,7 @@ impl Input for ImplementsSignature {
             .assert(output.generic_parameters())?;
         self.qualified_identifier
             .assert(output.qualified_identifier())?;
+        prop_assert_eq!(self.is_const, output.const_keyword.is_some());
         self.where_clause.assert(output.where_clause())?;
 
         Ok(())
@@ -2349,11 +2384,13 @@ impl Arbitrary for ImplementsSignature {
         (
             proptest::option::of(GenericParameters::arbitrary()),
             QualifiedIdentifier::arbitrary_with((false, None)),
+            proptest::bool::ANY,
             proptest::option::of(WhereClause::arbitrary()),
         )
             .prop_map(
-                |(generic_parameters, qualified_identifier, where_clause)| Self {
+                |(generic_parameters, qualified_identifier, is_const, where_clause)| Self {
                     generic_parameters,
+                    is_const,
                     qualified_identifier,
                     where_clause,
                 },
@@ -2368,6 +2405,10 @@ impl Display for ImplementsSignature {
 
         if let Some(generic_parameters) = &self.generic_parameters {
             Display::fmt(generic_parameters, f)?;
+        }
+
+        if self.is_const {
+            write!(f, " const")?;
         }
 
         write!(f, " {}", self.qualified_identifier)?;
