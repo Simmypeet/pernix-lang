@@ -21,6 +21,8 @@ use crate::error::{self, UnterminatedDelimitedComment};
 /// `Function` variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter)]
 pub enum KeywordKind {
+    /// `match` keyword.
+    Match,
     /// `public` keyword.
     Public,
     /// `struct` keyword.
@@ -51,8 +53,6 @@ pub enum KeywordKind {
     True,
     /// `false` keyword.
     False,
-    /// `void` keyword.
-    Void,
     /// `bool` keyword.
     Bool,
     /// `int8` keyword.
@@ -113,6 +113,8 @@ pub enum KeywordKind {
     Is,
     /// `function` keyword.
     Function,
+    /// `unsafe` keyword.
+    Unsafe,
 }
 
 impl ToString for KeywordKind {
@@ -169,7 +171,6 @@ impl KeywordKind {
             Self::Return => "return",
             Self::True => "true",
             Self::False => "false",
-            Self::Void => "void",
             Self::Bool => "bool",
             Self::Int8 => "int8",
             Self::Int16 => "int16",
@@ -195,6 +196,8 @@ impl KeywordKind {
             Self::Trait => "trait",
             Self::Using => "using",
             Self::Is => "is",
+            Self::Unsafe => "unsafe",
+            Self::Match => "match",
         }
     }
 }

@@ -18,7 +18,7 @@ use super::{
     statement::Statement, ConnectedList, EnclosedList, Label, QualifiedIdentifier, TypeSpecifier,
 };
 use crate::{
-    error::{Error, ExpressionExpected},
+    error::{Error, ExpressionExpected, PatternExpected},
     parser::Parser,
 };
 
@@ -690,6 +690,7 @@ pub enum Imperative {
     Block(Block),
     IfElse(IfElse),
     Loop(Loop),
+    Match(Match),
 }
 
 impl SourceElement for Imperative {
@@ -698,7 +699,198 @@ impl SourceElement for Imperative {
             Self::Block(block) => block.span(),
             Self::IfElse(if_else) => if_else.span(),
             Self::Loop(loop_) => loop_.span(),
+            Self::Match(match_) => match_.span(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct AssociatedFieldPattern {
+    #[get = "pub"]
+    colon: Punctuation,
+    #[get = "pub"]
+    pattern: Box<Pattern>,
+}
+
+impl SourceElement for AssociatedFieldPattern {
+    fn span(&self) -> Span { self.colon.span.join(&self.pattern().span()).unwrap() }
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct FieldPattern {
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    association: Option<AssociatedFieldPattern>,
+}
+
+impl SourceElement for FieldPattern {
+    fn span(&self) -> Span {
+        self.association.as_ref().map_or_else(
+            || self.identifier.span.clone(),
+            |end| self.identifier.span.join(&end.span()).unwrap(),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct StructuralPattern {
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    fields: Option<ConnectedList<FieldPattern, Punctuation>>,
+    #[get = "pub"]
+    right_brace: Punctuation,
+}
+
+impl SourceElement for StructuralPattern {
+    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct AssociatedEnumPattern {
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    pattern: Box<Pattern>,
+    #[get = "pub"]
+    right_paren: Punctuation,
+}
+
+impl SourceElement for AssociatedEnumPattern {
+    fn span(&self) -> Span { self.identifier.span().join(&self.right_paren.span).unwrap() }
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct TuplePattern {
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    patterns: Option<ConnectedList<Box<Pattern>, Punctuation>>,
+    #[get = "pub"]
+    right_paren: Punctuation,
+}
+
+impl SourceElement for TuplePattern {
+    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
+}
+
+/// Represents a syntax tree node for a pattern.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Pattern:
+///     BooleanLiteral
+///     | NumericLiteral
+///     | StructuralPattern
+///     | AssociatedEnumPattern
+///     | Identifier
+///     | TuplePattern
+/// ```
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum Pattern {
+    BooleanLiteral(BooleanLiteral),
+    NumericLiteral(NumericLiteral),
+    Structural(StructuralPattern),
+    AssociatedEnum(AssociatedEnumPattern),
+    Identifier(Identifier),
+    Tuple(TuplePattern),
+}
+
+impl SourceElement for Pattern {
+    fn span(&self) -> Span {
+        match self {
+            Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
+            Self::NumericLiteral(numeric_literal) => numeric_literal.span(),
+            Self::Structural(structural) => structural.span(),
+            Self::AssociatedEnum(associated_enum) => associated_enum.span(),
+            Self::Identifier(identifier) => identifier.span(),
+            Self::Tuple(tuple_pattern) => tuple_pattern.span(),
+        }
+    }
+}
+
+/// Represents a syntax tree node for an arm guard in the match arm
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ArmGuard:
+///     'if' '(' Expression ')'
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct MatchArmGuard {
+    #[get = "pub"]
+    if_keyword: Keyword,
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    expression: Box<Expression>,
+    #[get = "pub"]
+    right_paren: Punctuation,
+}
+
+impl SourceElement for MatchArmGuard {
+    fn span(&self) -> Span { self.if_keyword.span.join(&self.right_paren.span).unwrap() }
+}
+
+/// Represents a syntax tree node for the match arm in the match expression
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// MatchArm:
+///     Pattern ArmGuard? ':' Block
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct MatchArm {
+    #[get = "pub"]
+    pattern: Pattern,
+    #[get = "pub"]
+    guard: Option<MatchArmGuard>,
+    #[get = "pub"]
+    colon: Punctuation,
+    #[get = "pub"]
+    block: Block,
+}
+
+impl SourceElement for MatchArm {
+    fn span(&self) -> Span { self.pattern.span().join(&self.block.span()).unwrap() }
+}
+
+/// Represents a syntax tree node for the match expression
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// Match:
+///     'match' '(' Expression ')' '{' MatchArm* '}'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct Match {
+    #[get = "pub"]
+    match_keyword: Keyword,
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    expression: Box<Expression>,
+    #[get = "pub"]
+    right_paren: Punctuation,
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    arms: Vec<MatchArm>,
+    #[get = "pub"]
+    right_brace: Punctuation,
+}
+
+impl SourceElement for Match {
+    fn span(&self) -> Span {
+        self.match_keyword
+            .span
+            .join(&self.right_brace.span)
+            .unwrap()
     }
 }
 
@@ -723,17 +915,17 @@ impl SourceElement for LabelSpecifier {
     fn span(&self) -> Span { self.label.span().join(&self.colon.span).unwrap() }
 }
 
-/// Represents a block syntax tree.
+/// Represents a syntax tree node of a list of statements enclosed by curly braces.
 ///
 /// Syntax Synopsis:
 /// ``` txt
-/// BlockWithoutLabel:
+/// Statements:
 ///     '{' Statement* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
-pub struct BlockWithoutLabel {
+pub struct Statements {
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
@@ -742,7 +934,7 @@ pub struct BlockWithoutLabel {
     right_brace: Punctuation,
 }
 
-impl SourceElement for BlockWithoutLabel {
+impl SourceElement for Statements {
     fn span(&self) -> Span { self.left_brace.span().join(&self.right_brace.span).unwrap() }
 }
 
@@ -751,7 +943,7 @@ impl SourceElement for BlockWithoutLabel {
 /// Syntax Synopsis:
 /// ``` txt
 /// Block:
-///     LabelSpecifier? '{' Statement* '}'
+///     LabelSpecifier? 'unsafe'? Statements*
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -760,20 +952,23 @@ pub struct Block {
     #[get = "pub"]
     label_specifier: Option<LabelSpecifier>,
     #[get = "pub"]
-    block_without_label: BlockWithoutLabel,
+    unsafe_keyword: Option<Keyword>,
+    #[get = "pub"]
+    statements: Statements,
 }
 
 impl SourceElement for Block {
     fn span(&self) -> Span {
-        self.label_specifier.as_ref().map_or_else(
-            || self.block_without_label.span(),
-            |label_specifier| {
-                label_specifier
-                    .span()
-                    .join(&self.block_without_label.span())
-                    .unwrap()
+        let start = self.label_specifier.as_ref().map_or_else(
+            || {
+                self.unsafe_keyword
+                    .as_ref()
+                    .map_or_else(|| self.statements.span(), SourceElement::span)
             },
-        )
+            SourceElement::span,
+        );
+        let end = self.statements.span();
+        start.join(&end).unwrap()
     }
 }
 
@@ -872,30 +1067,20 @@ impl SourceElement for IfElse {
 /// Syntax Synopsis:
 /// ``` txt
 /// Loop:
-///     LabelSpecifier? 'loop' BlockWithoutLabel
+///     'loop' Block
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Loop {
     #[get = "pub"]
-    label_specifier: Option<LabelSpecifier>,
-    #[get = "pub"]
     loop_keyword: Keyword,
     #[get = "pub"]
-    block_without_label: BlockWithoutLabel,
+    block: Block,
 }
 
 impl SourceElement for Loop {
-    fn span(&self) -> Span {
-        let start = self.label_specifier.as_ref().map_or_else(
-            || self.loop_keyword.span.clone(),
-            pernixc_source::SourceElement::span,
-        );
-        let end = self.block_without_label.span();
-
-        start.join(&end).unwrap()
-    }
+    fn span(&self) -> Span { self.loop_keyword.span.join(&self.block.span()).unwrap() }
 }
 
 /// Represents a continue expression syntax tree.
@@ -918,10 +1103,10 @@ pub struct Continue {
 impl SourceElement for Continue {
     fn span(&self) -> Span {
         let start = self.continue_keyword.span.clone();
-        let end = self.label.as_ref().map_or_else(
-            || self.continue_keyword.span.clone(),
-            pernixc_source::SourceElement::span,
-        );
+        let end = self
+            .label
+            .as_ref()
+            .map_or_else(|| self.continue_keyword.span.clone(), SourceElement::span);
 
         start.join(&end).unwrap()
     }
@@ -957,7 +1142,7 @@ impl SourceElement for Express {
                         expression.span()
                     })
             },
-            pernixc_source::SourceElement::span,
+            SourceElement::span,
         );
 
         start.join(&end).unwrap()
@@ -988,12 +1173,11 @@ impl SourceElement for Break {
         let start = self.break_keyword.span.clone();
         let end = self.label.as_ref().map_or_else(
             || {
-                self.expression.as_ref().map_or_else(
-                    || self.break_keyword.span.clone(),
-                    pernixc_source::SourceElement::span,
-                )
+                self.expression
+                    .as_ref()
+                    .map_or_else(|| self.break_keyword.span.clone(), SourceElement::span)
             },
-            pernixc_source::SourceElement::span,
+            SourceElement::span,
         );
 
         start.join(&end).unwrap()
@@ -1020,10 +1204,10 @@ pub struct Return {
 impl SourceElement for Return {
     fn span(&self) -> Span {
         let start = self.return_keyword.span.clone();
-        let end = self.expression.as_ref().map_or_else(
-            || self.return_keyword.span.clone(),
-            pernixc_source::SourceElement::span,
-        );
+        let end = self
+            .expression
+            .as_ref()
+            .map_or_else(|| self.return_keyword.span.clone(), SourceElement::span);
 
         start.join(&end).unwrap()
     }
@@ -1101,43 +1285,42 @@ impl<'a> Parser<'a> {
         Some(first_functional)
     }
 
-    fn parse_loop_and_block(
-        &mut self,
-        label_specifier: Option<LabelSpecifier>,
-        handler: &impl Handler<Error>,
-    ) -> Option<Imperative> {
-        Some(match self.stop_at_significant() {
-            Some(Token::Punctuation(p)) if p.punctuation == '{' => {
-                let block_without_label = self.parse_block_without_label(handler)?;
-
-                // parse block
-                Imperative::Block(Block {
-                    label_specifier,
-                    block_without_label,
-                })
-            }
-            Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == KeywordKind::Loop => {
-                // eat loop keyword
+    fn parse_block(&mut self, handler: &impl Handler<Error>) -> Option<Block> {
+        let label_specifier = match self.stop_at_significant() {
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                // eat apostrophe
                 self.forward();
 
-                let block_without_label = self.parse_block_without_label(handler)?;
+                let identifier = self.parse_identifier(handler)?;
+                let colon = self.parse_punctuation(':', true, handler)?;
 
-                // parse loop
-                Imperative::Loop(Loop {
-                    label_specifier,
-                    loop_keyword,
-                    block_without_label,
+                Some(LabelSpecifier {
+                    label: Label {
+                        apostrophe,
+                        identifier,
+                    },
+                    colon,
                 })
             }
+            _ => None,
+        };
 
-            found => {
-                // forward/make progress
+        let unsafe_keyword = match self.stop_at_significant() {
+            Some(Token::Keyword(unsafe_keyword))
+                if unsafe_keyword.keyword == KeywordKind::Unsafe =>
+            {
                 self.forward();
-                handler.receive(Error::ExpressionExpected(ExpressionExpected {
-                    found: self.get_actual_found_token(found),
-                }));
-                return None;
+                Some(unsafe_keyword)
             }
+            _ => None,
+        };
+        let statements = self.parse_statements(handler)?;
+
+        // parse block
+        Some(Block {
+            label_specifier,
+            unsafe_keyword,
+            statements,
         })
     }
 
@@ -1207,39 +1390,39 @@ impl<'a> Parser<'a> {
                 })))
             }
 
+            // parse match expression
+            Some(Token::Keyword(match_keyword)) if match_keyword.keyword == KeywordKind::Match => {
+                self.parse_match(handler)
+                    .map(|x| Expression::Imperative(Imperative::Match(x)))
+            }
+
             // parse if else expression
             Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => self
                 .parse_if_else(handler)
                 .map(|x| Expression::Imperative(Imperative::IfElse(x))),
 
-            // parse loop or block expression with additional label sepcifier
-            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
-                // eat apostrophe
-                self.next_token();
-
-                let identifier = self.parse_identifier(handler)?;
-                let colon = self.parse_punctuation(':', true, handler)?;
-
-                Some(Expression::Imperative(self.parse_loop_and_block(
-                    Some(LabelSpecifier {
-                        label: Label {
-                            apostrophe,
-                            identifier,
-                        },
-                        colon,
-                    }),
-                    handler,
-                )?))
-            }
-
-            // parse loop or block expression
-            Some(token)
-                if matches!(&token, Token::Punctuation(p) if p.punctuation == '{')
-                    || matches!(&token, Token::Keyword(loop_keyword) if loop_keyword.keyword == KeywordKind::Loop) =>
+            Some(Token::Keyword(unsafe_keyword))
+                if unsafe_keyword.keyword == KeywordKind::Unsafe =>
             {
-                Some(Expression::Imperative(
-                    self.parse_loop_and_block(None, handler)?,
-                ))
+                self.parse_block(handler)
+                    .map(|x| Expression::Imperative(Imperative::Block(x)))
+            }
+            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => self
+                .parse_block(handler)
+                .map(|x| Expression::Imperative(Imperative::Block(x))),
+            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => self
+                .parse_block(handler)
+                .map(|x| Expression::Imperative(Imperative::Block(x))),
+            Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == KeywordKind::Loop => {
+                // eat loop
+                self.forward();
+
+                let block = self.parse_block(handler)?;
+
+                Some(Expression::Imperative(Imperative::Loop(Loop {
+                    loop_keyword,
+                    block,
+                })))
             }
 
             _ => self
@@ -1256,13 +1439,6 @@ impl<'a> Parser<'a> {
             apostrophe,
             identifier,
         })
-    }
-
-    fn parse_label_specifier(&mut self, handler: &impl Handler<Error>) -> Option<LabelSpecifier> {
-        let label = self.parse_label(handler)?;
-        let colon = self.parse_punctuation(':', true, handler)?;
-
-        Some(LabelSpecifier { label, colon })
     }
 
     fn try_parse_binary_operator(&mut self) -> Option<BinaryOperator> {
@@ -1443,10 +1619,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_block_without_label(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<BlockWithoutLabel> {
+    fn parse_statements(&mut self, handler: &impl Handler<Error>) -> Option<Statements> {
         fn skip_to_next_statement(this: &mut Parser) {
             this.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
 
@@ -1476,30 +1649,10 @@ impl<'a> Parser<'a> {
 
         self.step_out(handler)?;
 
-        Some(BlockWithoutLabel {
+        Some(Statements {
             left_brace,
             statements,
             right_brace,
-        })
-    }
-
-    fn parse_block(&mut self, handler: &impl Handler<Error>) -> Option<Block> {
-        // parse optional label specifier
-        let label_specifier = if matches!(
-            self.stop_at_significant(),
-            Some(Token::Punctuation(p)) if p.punctuation == '\''
-        ) {
-            Some(self.parse_label_specifier(handler)?)
-        } else {
-            None
-        };
-
-        // parse the block
-        let block_without_label = self.parse_block_without_label(handler)?;
-
-        Some(Block {
-            label_specifier,
-            block_without_label,
         })
     }
 
@@ -1517,6 +1670,189 @@ impl<'a> Parser<'a> {
         Some(Else {
             else_keyword,
             expression,
+        })
+    }
+
+    fn parse_identifier_pattern(&mut self, handler: &impl Handler<Error>) -> Option<Pattern> {
+        let identifier = self.parse_identifier(handler)?;
+
+        // can be an associated enum pattern
+        if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '(')
+        {
+            let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
+            let pattern = Box::new(self.parse_pattern(handler)?);
+            let right_paren = self.step_out(handler)?;
+
+            Some(Pattern::AssociatedEnum(AssociatedEnumPattern {
+                identifier,
+                left_paren,
+                pattern,
+                right_paren,
+            }))
+        } else {
+            Some(Pattern::Identifier(identifier))
+        }
+    }
+
+    fn parse_pattern(&mut self, handler: &impl Handler<Error>) -> Option<Pattern> {
+        match self.stop_at_significant() {
+            // Named/AssociatedEnum pattern
+            Some(Token::Identifier(..)) => self.parse_identifier_pattern(handler),
+
+            // Numeric literal pattern
+            Some(Token::NumericLiteral(numeric_literal)) => {
+                // eat the numeric literal
+                self.forward();
+
+                Some(Pattern::NumericLiteral(NumericLiteral {
+                    numeric_literal_token: numeric_literal,
+                }))
+            }
+
+            // Boolean literal pattern
+            Some(Token::Keyword(boolean_keyword))
+                if matches!(
+                    boolean_keyword.keyword,
+                    KeywordKind::True | KeywordKind::False
+                ) =>
+            {
+                // eat the boolean literal
+                self.forward();
+
+                let boolean_literal_constructor = match boolean_keyword.keyword {
+                    KeywordKind::True => BooleanLiteral::True,
+                    KeywordKind::False => BooleanLiteral::False,
+                    _ => unreachable!(),
+                };
+
+                Some(Pattern::BooleanLiteral(boolean_literal_constructor(
+                    boolean_keyword,
+                )))
+            }
+
+            // Structural pattern
+            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
+                let enclosed_tree = self.parse_enclosed_tree(
+                    Delimiter::Brace,
+                    ',',
+                    |parser, handler| {
+                        let identifier = parser.parse_identifier(handler)?;
+                        let association = match parser.stop_at_significant() {
+                            Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
+                                parser.forward();
+                                let pattern = Box::new(parser.parse_pattern(handler)?);
+
+                                Some(AssociatedFieldPattern { colon, pattern })
+                            }
+                            _ => None,
+                        };
+
+                        Some(FieldPattern {
+                            identifier,
+                            association,
+                        })
+                    },
+                    handler,
+                )?;
+
+                Some(Pattern::Structural(StructuralPattern {
+                    left_brace: enclosed_tree.open,
+                    fields: enclosed_tree.list,
+                    right_brace: enclosed_tree.close,
+                }))
+            }
+
+            // Tuple pattern
+            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
+                let enclosed_tree = self.parse_enclosed_tree(
+                    Delimiter::Parenthesis,
+                    ',',
+                    |parser, handler| parser.parse_pattern(handler).map(Box::new),
+                    handler,
+                )?;
+
+                Some(Pattern::Tuple(TuplePattern {
+                    left_paren: enclosed_tree.open,
+                    patterns: enclosed_tree.list,
+                    right_paren: enclosed_tree.close,
+                }))
+            }
+
+            found => {
+                handler.receive(Error::PatternExpected(PatternExpected { found }));
+
+                None
+            }
+        }
+    }
+
+    fn parse_match_arm(&mut self, handler: &impl Handler<Error>) -> Option<MatchArm> {
+        let pattern = self.parse_pattern(handler)?;
+
+        let guard = match self.stop_at_significant() {
+            Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
+                // eat if keyword
+                self.forward();
+
+                let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
+                let expression = Box::new(self.parse_expression(handler)?);
+                let right_paren = self.step_out(handler)?;
+
+                Some(MatchArmGuard {
+                    if_keyword,
+                    left_paren,
+                    expression,
+                    right_paren,
+                })
+            }
+            _ => None,
+        };
+
+        let colon = self.parse_punctuation(':', true, handler)?;
+        let block = self.parse_block(handler)?;
+
+        Some(MatchArm {
+            pattern,
+            guard,
+            colon,
+            block,
+        })
+    }
+
+    fn parse_match(&mut self, handler: &impl Handler<Error>) -> Option<Match> {
+        let match_keyword = self.parse_keyword(KeywordKind::Match, handler)?;
+
+        let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
+        let expression = Box::new(self.parse_expression(handler)?);
+        let right_paren = self.step_out(handler)?;
+
+        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+        let mut arms = Vec::new();
+
+        while !self.is_exhausted() {
+            let Some(arm) = self.parse_match_arm(handler) else {
+                // forward to the next {}
+                self.stop_at(
+                    |token| matches!(token, Token::Punctuation(p) if p.punctuation == '{'),
+                );
+                self.forward();
+
+                continue;
+            };
+
+            arms.push(arm);
+        }
+
+        let right_brace = self.step_out(handler)?;
+
+        Some(Match {
+            match_keyword,
+            left_paren,
+            expression,
+            right_paren,
+            left_brace,
+            arms,
+            right_brace,
         })
     }
 

@@ -8,6 +8,30 @@ use pernixc_print::LogSeverity;
 use pernixc_source::Span;
 use thiserror::Error;
 
+/// A pattern syntax is expected but found an other invalid token.
+#[derive(Debug, Clone)]
+pub struct PatternExpected {
+    /// The invalid token that was found.
+    pub found: Option<Token>,
+}
+
+impl PatternExpected {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            format!(
+                "a pattern syntax is expected, found: {}",
+                found_string(&self.found)
+            )
+            .as_str(),
+        );
+        if let Some(token) = self.found.as_ref() {
+            pernixc_print::print_source_code(token.span(), Some("pattern syntax expected here"));
+        }
+    }
+}
+
 /// An identifier is expected but found an another invalid token.
 #[derive(Debug, Clone)]
 pub struct IdentifierExpected {
@@ -331,6 +355,7 @@ pub enum Error {
     TraitMemberExpected(TraitMemberExpected),
     ImplementsMemberExpected(ImplementsMemberExpected),
     GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty),
+    PatternExpected(PatternExpected),
 }
 
 impl Error {
@@ -348,6 +373,7 @@ impl Error {
             Self::GenericArgumentParameterListCannotBeEmpty(e) => e.print(),
             Self::TraitMemberExpected(e) => e.print(),
             Self::ImplementsMemberExpected(e) => e.print(),
+            Self::PatternExpected(e) => e.print(),
         }
     }
 }

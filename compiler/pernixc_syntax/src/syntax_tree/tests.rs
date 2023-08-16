@@ -245,7 +245,6 @@ impl Display for ReferenceTypeSpecifier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum PrimitiveTypeSpecifier {
-    Void,
     Bool,
     Float32,
     Float64,
@@ -265,7 +264,6 @@ impl Arbitrary for PrimitiveTypeSpecifier {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Just(Self::Void),
             Just(Self::Bool),
             Just(Self::Float32),
             Just(Self::Float64),
@@ -287,8 +285,7 @@ impl Input for PrimitiveTypeSpecifier {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Void, super::PrimitiveTypeSpecifier::Void(..))
-            | (Self::Bool, super::PrimitiveTypeSpecifier::Bool(..))
+            (Self::Bool, super::PrimitiveTypeSpecifier::Bool(..))
             | (Self::Float32, super::PrimitiveTypeSpecifier::Float32(..))
             | (Self::Float64, super::PrimitiveTypeSpecifier::Float64(..))
             | (Self::Int8, super::PrimitiveTypeSpecifier::Int8(..))
@@ -310,7 +307,6 @@ impl Input for PrimitiveTypeSpecifier {
 impl Display for PrimitiveTypeSpecifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Void => write!(f, "void"),
             Self::Bool => write!(f, "bool"),
             Self::Float32 => write!(f, "float32"),
             Self::Float64 => write!(f, "float64"),

@@ -565,7 +565,6 @@ impl SourceElement for QualifiedIdentifier {
 /// ``` txt
 /// PrimitiveTypeSpecifier:
 ///     'bool'
-///     | 'void'
 ///     | 'float32'
 ///     | 'float64'
 ///     | 'int8'
@@ -582,7 +581,6 @@ impl SourceElement for QualifiedIdentifier {
 #[allow(missing_docs)]
 pub enum PrimitiveTypeSpecifier {
     Bool(Keyword),
-    Void(Keyword),
     Float32(Keyword),
     Float64(Keyword),
     Int8(Keyword),
@@ -599,7 +597,6 @@ impl SourceElement for PrimitiveTypeSpecifier {
     fn span(&self) -> Span {
         match self {
             Self::Bool(token)
-            | Self::Void(token)
             | Self::Float32(token)
             | Self::Float64(token)
             | Self::Int8(token)
@@ -1113,14 +1110,12 @@ impl<'a> Parser<'a> {
                         | KeywordKind::Float32
                         | KeywordKind::Float64
                         | KeywordKind::Bool
-                        | KeywordKind::Void
                 ) =>
             {
                 // eat primitive type token
                 self.next_token();
 
                 let primitive_type = match keyword.keyword {
-                    KeywordKind::Void => PrimitiveTypeSpecifier::Void(keyword),
                     KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword),
                     KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword),
                     KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword),

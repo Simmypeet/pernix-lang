@@ -13,7 +13,7 @@ use proptest::{
 use crate::syntax_tree::{
     self,
     statement::tests::Statement,
-    tests::{ConnectedList, ConstantPunctuation, QualifiedIdentifier, TypeSpecifier},
+    tests::{ConnectedList, ConstantPunctuation, Identifier, QualifiedIdentifier, TypeSpecifier},
 };
 
 /// Represents an input for the [`super::NumericLiteral`].
@@ -997,15 +997,15 @@ impl Display for LabelSpecifier {
     }
 }
 
-/// Represents an input for the [`super::BlockWithoutLabel`].
+/// Represents an input for the [`super::Statements`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BlockWithoutLabel {
+pub struct Statements {
     /// List of statements in the block.
     pub statements: Vec<Statement>,
 }
 
-impl Input for BlockWithoutLabel {
-    type Output = super::BlockWithoutLabel;
+impl Input for Statements {
+    type Output = super::Statements;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.statements.len(), output.statements().len());
@@ -1018,7 +1018,7 @@ impl Input for BlockWithoutLabel {
     }
 }
 
-impl Arbitrary for BlockWithoutLabel {
+impl Arbitrary for Statements {
     type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
@@ -1031,7 +1031,7 @@ impl Arbitrary for BlockWithoutLabel {
     }
 }
 
-impl Display for BlockWithoutLabel {
+impl Display for Statements {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('{')?;
         for statement in &self.statements {
@@ -1047,8 +1047,11 @@ pub struct Block {
     /// The optional label specifier.
     pub label_specifier: Option<LabelSpecifier>,
 
+    /// Whether the block is unsafe.
+    pub is_unsafe: bool,
+
     /// The list of statements in the block.
-    pub block_without_label: BlockWithoutLabel,
+    pub statements: Statements,
 }
 
 impl Input for Block {
@@ -1056,8 +1059,8 @@ impl Input for Block {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.label_specifier.assert(output.label_specifier())?;
-        self.block_without_label
-            .assert(output.block_without_label())
+        prop_assert_eq!(self.is_unsafe, output.unsafe_keyword.is_some());
+        self.statements.assert(output.statements())
     }
 }
 
@@ -1068,11 +1071,13 @@ impl Arbitrary for Block {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(LabelSpecifier::arbitrary()),
-            BlockWithoutLabel::arbitrary_with(args),
+            proptest::bool::ANY,
+            Statements::arbitrary_with(args),
         )
-            .prop_map(|(label_specifier, block_without_label)| Self {
+            .prop_map(|(label_specifier, is_unsafe, statements)| Self {
                 label_specifier,
-                block_without_label,
+                is_unsafe,
+                statements,
             })
             .boxed()
     }
@@ -1084,28 +1089,25 @@ impl Display for Block {
             Display::fmt(label_specifier, f)?;
         }
 
-        Display::fmt(&self.block_without_label, f)
+        if self.is_unsafe {
+            f.write_str(" unsafe ")?;
+        }
+
+        Display::fmt(&self.statements, f)
     }
 }
 
 /// Represents an input for the [`super::Loop`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Loop {
-    /// The optional label specifier.
-    pub label_specifier: Option<LabelSpecifier>,
-
-    /// The list of statements in the loop.
-    pub block_without_label: BlockWithoutLabel,
+    /// The block of the loop.
+    pub block: Block,
 }
 
 impl Input for Loop {
     type Output = super::Loop;
 
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.label_specifier.assert(output.label_specifier())?;
-        self.block_without_label
-            .assert(output.block_without_label())
-    }
+    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.block.assert(output.block()) }
 }
 
 impl Arbitrary for Loop {
@@ -1113,27 +1115,17 @@ impl Arbitrary for Loop {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        (
-            proptest::option::of(LabelSpecifier::arbitrary()),
-            BlockWithoutLabel::arbitrary_with(args),
-        )
-            .prop_map(|(label_specifier, block_without_label)| Self {
-                label_specifier,
-                block_without_label,
-            })
+        Block::arbitrary_with(args)
+            .prop_map(|block| Self { block })
             .boxed()
     }
 }
 
 impl Display for Loop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(label_specifier) = &self.label_specifier {
-            Display::fmt(label_specifier, f)?;
-        }
-
         f.write_str("loop ")?;
 
-        Display::fmt(&self.block_without_label, f)
+        Display::fmt(&self.block, f)
     }
 }
 
@@ -1266,6 +1258,150 @@ impl Display for Else {
     }
 }
 
+/// Represents an input for the [`super::MatchArmGuard`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MatchArmGuard {
+    /// The expression of the guard.
+    pub expression: Box<Expression>,
+}
+
+impl Arbitrary for MatchArmGuard {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        args.unwrap_or_else(Expression::arbitrary)
+            .prop_map(|expression| Self {
+                expression: Box::new(expression),
+            })
+            .boxed()
+    }
+}
+
+impl Input for MatchArmGuard {
+    type Output = super::MatchArmGuard;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.expression.assert(output.expression())
+    }
+}
+
+impl Display for MatchArmGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "if ({})", self.expression)
+    }
+}
+
+/// Represents an input for the [`super::MatchArm`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MatchArm {
+    /// The pattern of the match arm.
+    pub pattern: Pattern,
+
+    /// The guard of the match arm.
+    pub guard: Option<MatchArmGuard>,
+
+    /// The expression of the match arm.
+    pub block: Block,
+}
+
+impl Arbitrary for MatchArm {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression = args.unwrap_or_else(Expression::arbitrary);
+
+        (
+            Pattern::arbitrary(),
+            proptest::option::of(MatchArmGuard::arbitrary_with(Some(expression.clone()))),
+            Block::arbitrary_with(Some(expression)),
+        )
+            .prop_map(|(pattern, guard, block)| Self {
+                pattern,
+                guard,
+                block,
+            })
+            .boxed()
+    }
+}
+
+impl Input for MatchArm {
+    type Output = super::MatchArm;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.pattern.assert(output.pattern())?;
+        self.guard.assert(output.guard())?;
+        self.block.assert(output.block())
+    }
+}
+
+impl Display for MatchArm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.pattern)?;
+
+        if let Some(guard) = &self.guard {
+            write!(f, " {guard}")?;
+        }
+
+        write!(f, ": {}", self.block)
+    }
+}
+
+/// Represents an input for the [`super::Match`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Match {
+    /// The expression of the match.
+    pub expression: Box<Expression>,
+
+    /// The arms of the match.
+    pub arms: Vec<MatchArm>,
+}
+
+impl Input for Match {
+    type Output = super::Match;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.expression.assert(output.expression())?;
+        prop_assert_eq!(self.arms.len(), output.arms().len());
+
+        for (i, arm) in self.arms.iter().enumerate() {
+            arm.assert(&output.arms()[i])?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Arbitrary for Match {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression = args.unwrap_or_else(Expression::arbitrary);
+
+        (
+            expression.clone(),
+            proptest::collection::vec(MatchArm::arbitrary_with(Some(expression)), 1..=8),
+        )
+            .prop_map(|(expression, arms)| Self {
+                expression: Box::new(expression),
+                arms,
+            })
+            .boxed()
+    }
+}
+
+impl Display for Match {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "match ({}) {{", self.expression)?;
+        for arm in &self.arms {
+            write!(f, "{arm}")?;
+        }
+        write!(f, "}}")
+    }
+}
+
 /// Represents an input for the [`super::Imperative`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
@@ -1273,6 +1409,7 @@ pub enum Imperative {
     Block(Block),
     Loop(Loop),
     IfElse(IfElse),
+    Match(Match),
 }
 
 impl Input for Imperative {
@@ -1283,6 +1420,7 @@ impl Input for Imperative {
             (Self::Block(i), super::Imperative::Block(o)) => i.assert(o),
             (Self::Loop(i), super::Imperative::Loop(o)) => i.assert(o),
             (Self::IfElse(i), super::Imperative::IfElse(o)) => i.assert(o),
+            (Self::Match(i), super::Imperative::Match(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -1296,6 +1434,7 @@ impl Display for Imperative {
             Self::Block(i) => Display::fmt(i, f),
             Self::Loop(i) => Display::fmt(i, f),
             Self::IfElse(i) => Display::fmt(i, f),
+            Self::Match(i) => Display::fmt(i, f),
         }
     }
 }
@@ -1441,6 +1580,261 @@ impl Display for Continue {
         }
 
         Ok(())
+    }
+}
+
+/// Represents an input for the [`super::FieldPattern`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FieldPattern {
+    /// Represents the name of the field
+    pub identifier: Identifier,
+
+    /// Represents the associated pattern of the field
+    pub association_pattern: Option<Box<Pattern>>,
+}
+
+impl Input for FieldPattern {
+    type Output = super::FieldPattern;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.identifier.assert(output.identifier())?;
+        match (&self.association_pattern, &output.association) {
+            (None, None) => Ok(()),
+            (Some(input), Some(output)) => input.assert(&output.pattern),
+            (input, output) => Err(TestCaseError::fail(format!(
+                "Expected {input:?}, found {output:?}"
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for FieldPattern {
+    type Parameters = Option<BoxedStrategy<Pattern>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let pattern_strategy = args.unwrap_or_else(Pattern::arbitrary);
+
+        (
+            Identifier::arbitrary(),
+            proptest::option::of(pattern_strategy.prop_map(Box::new)),
+        )
+            .prop_map(|(identifier, association_pattern)| Self {
+                identifier,
+                association_pattern,
+            })
+            .boxed()
+    }
+}
+
+impl Display for FieldPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.identifier)?;
+
+        if let Some(association_pattern) = &self.association_pattern {
+            write!(f, ": {association_pattern}")?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Represents an input for the [`super::StructuralPattern`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StructuralPattern {
+    /// Field patterns of the structural pattern
+    pub fields: Option<ConnectedList<FieldPattern, ConstantPunctuation<','>>>,
+}
+
+impl Input for StructuralPattern {
+    type Output = super::StructuralPattern;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.fields.assert(&output.fields) }
+}
+
+impl Arbitrary for StructuralPattern {
+    type Parameters = Option<BoxedStrategy<Pattern>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        proptest::option::of(ConnectedList::arbitrary_with(
+            FieldPattern::arbitrary_with(args),
+            ConstantPunctuation::<','>::arbitrary(),
+        ))
+        .prop_map(|fields| Self { fields })
+        .boxed()
+    }
+}
+
+impl Display for StructuralPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+        if let Some(fields) = &self.fields {
+            write!(f, "{fields}",)?;
+        }
+        write!(f, "}}")?;
+
+        Ok(())
+    }
+}
+
+/// Represents an input for the [`super::TuplePattern`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TuplePattern {
+    /// Patterns of the tuple pattern
+    pub patterns: Option<ConnectedList<Box<Pattern>, ConstantPunctuation<','>>>,
+}
+
+impl Input for TuplePattern {
+    type Output = super::TuplePattern;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.patterns.assert(&output.patterns)
+    }
+}
+
+impl Arbitrary for TuplePattern {
+    type Parameters = Option<BoxedStrategy<Pattern>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        proptest::option::of(ConnectedList::arbitrary_with(
+            args.unwrap_or_else(Pattern::arbitrary).prop_map(Box::new),
+            ConstantPunctuation::<','>::arbitrary(),
+        ))
+        .prop_map(|patterns| Self { patterns })
+        .boxed()
+    }
+}
+
+impl Display for TuplePattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        if let Some(patterns) = &self.patterns {
+            write!(f, "{patterns}")?;
+        }
+        write!(f, ")")?;
+
+        Ok(())
+    }
+}
+
+/// Represents an input ofr the [`super::AssociatedEnumPattern`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AssociatedEnumPattern {
+    /// Represents the name of the enum
+    pub identifier: Identifier,
+
+    /// Represents the associated pattern of the enum
+    pub pattern: Box<Pattern>,
+}
+
+impl Input for AssociatedEnumPattern {
+    type Output = super::AssociatedEnumPattern;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.identifier.assert(output.identifier())?;
+        self.pattern.assert(&output.pattern)
+    }
+}
+
+impl Arbitrary for AssociatedEnumPattern {
+    type Parameters = Option<BoxedStrategy<Pattern>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            Identifier::arbitrary(),
+            args.unwrap_or_else(Pattern::arbitrary).prop_map(Box::new),
+        )
+            .prop_map(|(identifier, pattern)| Self {
+                identifier,
+                pattern,
+            })
+            .boxed()
+    }
+}
+
+impl Display for AssociatedEnumPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{identifier}({pattern})",
+            identifier = self.identifier,
+            pattern = self.pattern
+        )
+    }
+}
+
+/// Represents an input for the [`super::Pattern`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Pattern {
+    BooleanLiteral(BooleanLiteral),
+    NumericLiteral(NumericLiteral),
+    Identifier(Identifier),
+    Structural(StructuralPattern),
+    TuplePattern(TuplePattern),
+    AssociatedEnum(AssociatedEnumPattern),
+}
+
+impl Input for Pattern {
+    type Output = super::Pattern;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::BooleanLiteral(i), super::Pattern::BooleanLiteral(o)) => i.assert(o),
+            (Self::NumericLiteral(i), super::Pattern::NumericLiteral(o)) => i.assert(o),
+            (Self::Identifier(i), super::Pattern::Identifier(o)) => i.assert(o),
+            (Self::Structural(i), super::Pattern::Structural(o)) => i.assert(o),
+            (Self::TuplePattern(i), super::Pattern::Tuple(o)) => i.assert(o),
+            (Self::AssociatedEnum(i), super::Pattern::AssociatedEnum(o)) => i.assert(o),
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}"
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for Pattern {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        let leaf = prop_oneof![
+            BooleanLiteral::arbitrary().prop_map(Pattern::BooleanLiteral),
+            NumericLiteral::arbitrary().prop_map(Pattern::NumericLiteral),
+            Identifier::arbitrary().prop_map(Pattern::Identifier),
+        ];
+
+        leaf.prop_recursive(8, 64, 8, |inner| {
+            prop_oneof![
+                StructuralPattern::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Pattern::Structural),
+                TuplePattern::arbitrary_with(Some(inner.clone())).prop_map(Pattern::TuplePattern),
+                AssociatedEnumPattern::arbitrary_with(Some(inner))
+                    .prop_map(Pattern::AssociatedEnum),
+            ]
+        })
+        .boxed()
+    }
+}
+
+impl Display for Pattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BooleanLiteral(boolean_literal) => {
+                write!(f, "{boolean_literal}")
+            }
+            Self::NumericLiteral(numeric_literal) => write!(f, "{numeric_literal}"),
+            Self::Identifier(identifier) => write!(f, "{identifier}"),
+            Self::Structural(structural_pattern) => {
+                write!(f, "{structural_pattern}")
+            }
+            Self::TuplePattern(tuple_pattern) => write!(f, "{tuple_pattern}"),
+            Self::AssociatedEnum(associated_enum_pattern) => {
+                write!(f, "{associated_enum_pattern}")
+            }
+        }
     }
 }
 
@@ -1681,8 +2075,7 @@ impl Arbitrary for Expression {
             BooleanLiteral::arbitrary()
                 .prop_map(|x| Self::Functional(Functional::BooleanLiteral(x))),
         ];
-
-        leaf.prop_recursive(8, 256, 8, move |inner| {
+        leaf.prop_recursive(16, 1024, 16, move |inner| {
             prop_oneof![
                 Named::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Self::Functional(Functional::Named(x))),
@@ -1709,6 +2102,8 @@ impl Arbitrary for Expression {
                     .prop_map(|x| Self::Imperative(Imperative::Block(x))),
                 Loop::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Self::Imperative(Imperative::Loop(x))),
+                Match::arbitrary_with(Some(inner.clone()))
+                    .prop_map(|x| Self::Imperative(Imperative::Match(x))),
                 IfElse::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Self::Imperative(Imperative::IfElse(x))),
                 Return::arbitrary_with(Some(filter_functional_variant(inner.clone())))
