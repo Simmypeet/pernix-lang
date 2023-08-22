@@ -23,7 +23,7 @@ pub mod expression;
 pub mod item;
 pub mod pattern;
 pub mod statement;
-// pub mod target;
+pub mod target;
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
 ///
@@ -666,10 +666,10 @@ impl SourceElement for ReferenceTypeSpecifier {
 /// Syntax Synopsis:
 /// ``` txt
 /// TypeSpecififerList:
-///     TypeSpecifier (',' TypeSpecifier)* ','?
+///     VariadicableTypeSpecifier (',' VariadicableTypeSpecifier)* ','?
 ///     ;
 /// ```
-pub type TypeSpecifierList = ConnectedList<Box<TypeSpecifier>, Punctuation>;
+pub type VariadicableTypeSpecifierList = ConnectedList<Box<VariadicableTypeSpecifier>, Punctuation>;
 
 /// Represents a syntax tree node of tuple type specifier.
 ///
@@ -682,20 +682,15 @@ pub type TypeSpecifierList = ConnectedList<Box<TypeSpecifier>, Punctuation>;
 #[derive(Debug, Clone, Getters)]
 pub struct TupleTypeSpecifier {
     #[get = "pub"]
-    left_parenthesis: Punctuation,
+    left_paren: Punctuation,
     #[get = "pub"]
-    type_specifier_list: Option<TypeSpecifierList>,
+    type_specifier_list: Option<VariadicableTypeSpecifierList>,
     #[get = "pub"]
-    right_parenthesis: Punctuation,
+    right_paren: Punctuation,
 }
 
 impl SourceElement for TupleTypeSpecifier {
-    fn span(&self) -> Span {
-        self.left_parenthesis
-            .span
-            .join(&self.right_parenthesis.span)
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
 }
 
 /// Represents a syntax tree node of array type specifier.
@@ -786,6 +781,41 @@ impl SourceElement for TypeSpecifier {
             Self::Array(array) => array.span(),
         }
     }
+}
+
+/// Represents a syntax tree node of a variadic type parameter.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// VariadicTypeParameter:
+///     '...' Identifier
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct VariadicTypeParameter {
+    #[get = "pub"]
+    ellipsis: (Punctuation, Punctuation, Punctuation),
+    #[get = "pub"]
+    identifier: Identifier,
+}
+
+impl SourceElement for VariadicTypeParameter {
+    fn span(&self) -> Span { self.ellipsis.0.span.join(&self.identifier.span).unwrap() }
+}
+
+/// Represents a syntax tree node of a variadicable type specifier.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// VariadicableTypeSpecifier:
+///     TypeSpecifier
+///     | VariadicTypeParameter
+///     ;
+/// ```
+#[derive(Debug, Clone, EnumAsInner, From)]
+pub enum VariadicableTypeSpecifier {
+    TypeSpecifier(TypeSpecifier),
+    Variadic(VariadicTypeParameter),
 }
 
 /// Is a syntax tree node that represents a label.
@@ -1021,17 +1051,22 @@ impl<'a> Parser<'a> {
     ) -> Option<ArrayTypeSpecifier> {
         let left_bracket = self.step_into(Delimiter::Bracket, handler)?;
 
-        let type_specififer = self.parse_type_specifier(handler)?;
-        let colon = self.parse_punctuation(':', true, handler)?;
-        let expression = Box::new(self.parse_expression(handler)?);
+        let result = (|| {
+            let type_specififer = Box::new(self.parse_type_specifier(handler)?);
+            let colon = self.parse_punctuation(':', true, handler)?;
+            let expression = Box::new(self.parse_expression(handler)?);
+
+            Some((type_specififer, colon, expression))
+        })();
 
         let right_bracket = self.step_out(handler)?;
+        let result = result?;
 
         Some(ArrayTypeSpecifier {
             left_bracket,
-            operand: Box::new(type_specififer),
-            colon,
-            expression,
+            operand: result.0,
+            colon: result.1,
+            expression: result.2,
             right_bracket,
         })
     }
@@ -1043,14 +1078,46 @@ impl<'a> Parser<'a> {
         let type_specifiers = self.parse_enclosed_tree(
             Delimiter::Parenthesis,
             ',',
-            |parser, handler| parser.parse_type_specifier(handler).map(Box::new),
+            |parser, handler| {
+                // stop at significant token
+                parser.stop_at_significant();
+
+                match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
+                    (
+                        Some(Token::Punctuation(p1)),
+                        Some(Token::Punctuation(p2)),
+                        Some(Token::Punctuation(p3)),
+                    ) if p1.punctuation == '.'
+                        && p2.punctuation == '.'
+                        && p3.punctuation == '.' =>
+                    {
+                        // eat three dots (ellipsis)
+                        parser.forward();
+                        parser.forward();
+                        parser.forward();
+
+                        let identifier = parser.parse_identifier(handler)?;
+
+                        Some(Box::new(VariadicableTypeSpecifier::Variadic(
+                            VariadicTypeParameter {
+                                ellipsis: (p1, p2, p3),
+                                identifier,
+                            },
+                        )))
+                    }
+
+                    _ => Some(Box::new(VariadicableTypeSpecifier::TypeSpecifier(
+                        parser.parse_type_specifier(handler)?,
+                    ))),
+                }
+            },
             handler,
         )?;
 
         Some(TupleTypeSpecifier {
-            left_parenthesis: type_specifiers.open,
+            left_paren: type_specifiers.open,
             type_specifier_list: type_specifiers.list,
-            right_parenthesis: type_specifiers.close,
+            right_paren: type_specifiers.close,
         })
     }
 
@@ -1179,12 +1246,12 @@ impl<'a> Parser<'a> {
             // parse const argument
             Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
                 let left_brace = self.step_into(Delimiter::Brace, handler)?;
-                let expression = Box::new(self.parse_expression(handler)?);
+                let expression = (|| Some(Box::new(self.parse_expression(handler)?)))();
                 let right_brace = self.step_out(handler)?;
 
                 Some(GenericArgument::Const(ConstArgument {
                     left_brace,
-                    expression,
+                    expression: expression?,
                     right_brace,
                 }))
             }

@@ -1,5 +1,0 @@
-public module first;
-private module second;
-
-public struct PublicStruct {}
-private struct PrivateStruct {}

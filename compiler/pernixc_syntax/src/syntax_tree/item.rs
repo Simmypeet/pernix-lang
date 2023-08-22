@@ -15,7 +15,7 @@ use super::{
     pattern,
     statement::Statement,
     AccessModifier, ConnectedList, LifetimeArgument, QualifiedIdentifier, ScopeSeparator,
-    TypeAnnotation, TypeSpecifier,
+    TypeAnnotation, TypeSpecifier, VariadicableTypeSpecifier,
 };
 use crate::{
     error::{
@@ -94,27 +94,45 @@ pub struct ModuleSignature {
 /// Syntax Synopsis:
 /// ``` txt
 /// Module:
-///     AccessModifier ModuleSignature ModuleContent
+///     AccessModifier ModuleSignature ModuleKind
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Module {
     #[get = "pub"]
-    access_modifier: AccessModifier,
+    pub(super) access_modifier: AccessModifier,
     #[get = "pub"]
-    signature: ModuleSignature,
+    pub(super) signature: ModuleSignature,
     #[get = "pub"]
-    content: ModuleContent,
+    pub(super) kind: ModuleKind,
 }
 
 impl SourceElement for Module {
-    fn span(&self) -> Span {
-        self.access_modifier
-            .span()
-            .join(&self.content.span())
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.access_modifier.span().join(&self.kind.span()).unwrap() }
+}
+
+/// Represents a syntax tree node containing the content of the module.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// ModuleItems:
+///     Using*
+///     Item*
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ModuleContent {
+    #[get = "pub"]
+    pub(super) usings: Vec<Using>,
+    #[get = "pub"]
+    pub(super) items: Vec<Item>,
+}
+
+impl ModuleContent {
+    /// Dissolves the [`ModuleItems`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Vec<Using>, Vec<Item>) { (self.usings, self.items) }
 }
 
 /// Represents a syntax tree node for a module content.
@@ -127,12 +145,12 @@ impl SourceElement for Module {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner)]
-pub enum ModuleContent {
+pub enum ModuleKind {
     File(Punctuation),
     Inline(ModuleBody),
 }
 
-impl SourceElement for ModuleContent {
+impl SourceElement for ModuleKind {
     fn span(&self) -> Span {
         match self {
             Self::File(p) => p.span.clone(),
@@ -154,9 +172,7 @@ pub struct ModuleBody {
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
-    usings: Vec<Using>,
-    #[get = "pub"]
-    items: Vec<Item>,
+    pub(super) content: ModuleContent,
     #[get = "pub"]
     right_brace: Punctuation,
 }
@@ -480,6 +496,7 @@ impl<T: SourceElement> SourceElement for BoundList<T> {
 ///     TraitBound
 ///     | LifetimeBound
 ///     | TypeBound
+///     | TupleBound
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
@@ -488,6 +505,7 @@ pub enum Constraint {
     Trait(TraitBound),
     Lifetime(LifetimeBound),
     Type(TypeBound),
+    Tuple(TupleBound),
 }
 
 impl SourceElement for Constraint {
@@ -496,8 +514,31 @@ impl SourceElement for Constraint {
             Self::Trait(s) => s.span(),
             Self::Lifetime(s) => s.span(),
             Self::Type(s) => s.span(),
+            Self::Tuple(s) => s.span(),
         }
     }
+}
+
+/// Represents a syntax tree node for a tuple type constraint.
+///
+/// Syntax Synopsis:
+/// ``` txt
+/// TupleBound:
+///     '(' QualifiedIdentifier ')'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct TupleBound {
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    qualified_identifier: QualifiedIdentifier,
+    #[get = "pub"]
+    right_paren: Punctuation,
+}
+
+impl SourceElement for TupleBound {
+    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
 }
 
 /// Represents a syntax tree node for a trait bound used in a where clause.
@@ -1758,7 +1799,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_cosntraint(&mut self, handler: &impl Handler<Error>) -> Option<Constraint> {
+    fn parse_constraint(&mut self, handler: &impl Handler<Error>) -> Option<Constraint> {
         match self.stop_at_significant() {
             // parse const keyword
             Some(Token::Keyword(const_keyword)) if const_keyword.keyword == KeywordKind::Const => {
@@ -1834,21 +1875,39 @@ impl<'a> Parser<'a> {
                     }
 
                     found => {
-                        if let TypeSpecifier::QualifiedIdentifier(qualified_identifier) =
-                            type_specifier
-                        {
-                            Some(Constraint::Trait(TraitBound {
-                                const_keyword: None,
-                                qualified_identifier,
-                            }))
-                        } else {
-                            handler.receive(Error::PunctuationExpected(PunctuationExpected {
-                                expected: ':',
-                                found: self.get_actual_found_token(found),
-                            }));
-
-                            None
+                        match type_specifier {
+                            TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
+                                return Some(Constraint::Trait(TraitBound {
+                                    const_keyword: None,
+                                    qualified_identifier,
+                                }));
+                            }
+                            TypeSpecifier::Tuple(tuple_type) => {
+                                if let Some((
+                                    VariadicableTypeSpecifier::TypeSpecifier(
+                                        TypeSpecifier::QualifiedIdentifier(q),
+                                    ),
+                                    true,
+                                    true,
+                                )) = tuple_type.type_specifier_list.map(|x| {
+                                    (*x.first, x.rest.is_empty(), x.trailing_separator.is_none())
+                                }) {
+                                    return Some(Constraint::Tuple(TupleBound {
+                                        left_paren: tuple_type.left_paren,
+                                        qualified_identifier: q,
+                                        right_paren: tuple_type.right_paren,
+                                    }));
+                                }
+                            }
+                            _ => {}
                         }
+
+                        handler.receive(Error::PunctuationExpected(PunctuationExpected {
+                            expected: ':',
+                            found: self.get_actual_found_token(found),
+                        }));
+
+                        None
                     }
                 }
             }
@@ -1859,7 +1918,7 @@ impl<'a> Parser<'a> {
         let where_keyword = self.parse_keyword(KeywordKind::Where, handler)?;
         let colon = self.parse_punctuation(':', true, handler)?;
 
-        let first = self.parse_cosntraint(handler)?;
+        let first = self.parse_constraint(handler)?;
         let mut rest = Vec::new();
         let mut trailing_separator = None;
 
@@ -1872,7 +1931,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let constraint = self.parse_cosntraint(handler)?;
+            let constraint = self.parse_constraint(handler)?;
             rest.push((comma, constraint));
         }
 
@@ -2335,6 +2394,61 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_using(&mut self, handler: &impl Handler<Error>) -> Option<Using> {
+        let using_keyword = self.parse_keyword(KeywordKind::Using, handler)?;
+        let module_path = self.parse_module_path(handler)?;
+        let semicolon = self.parse_punctuation(';', true, handler)?;
+
+        Some(Using {
+            using_keyword,
+            module_path,
+            semicolon,
+        })
+    }
+
+    /// Parses a [`ModuleContent`]
+    pub fn parse_module_content(&mut self, handler: &impl Handler<Error>) -> ModuleContent {
+        let mut items = Vec::new();
+        let mut usings = Vec::new();
+
+        while !self.is_exhausted() {
+            match (items.is_empty(), self.stop_at_significant()) {
+                (true, Some(Token::Keyword(using_keyword)))
+                    if using_keyword.keyword == KeywordKind::Using =>
+                {
+                    if let Some(using) = self.parse_using(handler) {
+                        usings.push(using);
+                        continue;
+                    }
+                }
+                _ => {
+                    if let Some(item) = self.parse_item(handler) {
+                        items.push(item);
+                        continue;
+                    };
+                }
+            }
+
+            // try to stop at the next access modifier or usings keyword
+            self.stop_at(|token| {
+                if let Token::Keyword(keyword) = token {
+                    (keyword.keyword == KeywordKind::Public
+                        || keyword.keyword == KeywordKind::Private
+                        || keyword.keyword == KeywordKind::Internal)
+                        || if items.is_empty() {
+                            keyword.keyword == KeywordKind::Using
+                        } else {
+                            false
+                        }
+                } else {
+                    false
+                }
+            });
+        }
+
+        ModuleContent { usings, items }
+    }
+
     fn parse_module_body(&mut self, handler: &impl Handler<Error>) -> Option<ModuleBody> {
         let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
@@ -2391,8 +2505,7 @@ impl<'a> Parser<'a> {
 
         Some(ModuleBody {
             left_brace,
-            usings,
-            items,
+            content: ModuleContent { usings, items },
             right_brace,
         })
     }
@@ -2456,15 +2569,15 @@ impl<'a> Parser<'a> {
                     Some(Token::Punctuation(p)) if p.punctuation == ';' => {
                         // eat semi colon
                         self.forward();
-                        ModuleContent::File(p)
+                        ModuleKind::File(p)
                     }
-                    _ => ModuleContent::Inline(self.parse_module_body(handler)?),
+                    _ => ModuleKind::Inline(self.parse_module_body(handler)?),
                 };
 
                 Some(Item::Module(Module {
                     access_modifier,
                     signature,
-                    content,
+                    kind: content,
                 }))
             }
 

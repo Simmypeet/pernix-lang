@@ -723,18 +723,63 @@ impl Arbitrary for FunctionCall {
     }
 }
 
+/// Represents an input for the [`super::Unpackable`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Unpackable {
+    /// Whether the expression is unpacked
+    pub ellipsis: bool,
+
+    /// The expression of the unpackable.
+    pub expression: Box<Expression>,
+}
+
+impl Input for Unpackable {
+    type Output = super::Unpackable;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        prop_assert_eq!(self.ellipsis, output.ellipsis().is_some());
+        self.expression.assert(output.expression())
+    }
+}
+
+impl Display for Unpackable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.ellipsis {
+            f.write_str("...")?;
+        }
+
+        Display::fmt(&self.expression, f)
+    }
+}
+
+impl Arbitrary for Unpackable {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
+
+        (proptest::bool::ANY, expression_strategy.prop_map(Box::new))
+            .prop_map(|(ellipsis, expression)| Self {
+                ellipsis,
+                expression,
+            })
+            .boxed()
+    }
+}
+
 /// Represents an input for the [`super::Parenthesized`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parenthesized {
     /// The expression inside the parentheses.
-    pub expression: Box<Expression>,
+    pub expressions: Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
 }
 
 impl Input for Parenthesized {
     type Output = super::Parenthesized;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.expression.assert(output.expression())
+        self.expressions.assert(output.expression())
     }
 }
 
@@ -743,19 +788,24 @@ impl Arbitrary for Parenthesized {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
-
-        expression_strategy
-            .prop_map(|expression| Self {
-                expression: Box::new(expression),
-            })
-            .boxed()
+        proptest::option::of(ConnectedList::arbitrary_with(
+            Unpackable::arbitrary_with(args),
+            ConstantPunctuation::<','>::arbitrary(),
+        ))
+        .prop_map(|expressions| Self { expressions })
+        .boxed()
     }
 }
 
 impl Display for Parenthesized {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({})", self.expression)
+        write!(f, "(")?;
+
+        if let Some(expressions) = &self.expressions {
+            write!(f, "{expressions}")?;
+        }
+
+        write!(f, ")")
     }
 }
 
@@ -1317,8 +1367,8 @@ impl Arbitrary for MatchArm {
             proptest::option::of(MatchArmGuard::arbitrary_with(Some(expression.clone()))),
             Block::arbitrary_with(Some(expression)),
         )
-            .prop_map(|(refutable_pattern, guard, block)| Self {
-                refutable_pattern,
+            .prop_map(|(pattern, guard, block)| Self {
+                refutable_pattern: pattern,
                 guard,
                 block,
             })

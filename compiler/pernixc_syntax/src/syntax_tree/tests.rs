@@ -456,11 +456,90 @@ impl Display for PointerTypeSpecifier {
     }
 }
 
+/// Represents an input for the [`super::VariadicTypeParameter`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VariadicTypeParameter {
+    /// The identifier of the variadic type.
+    pub identifier: Identifier,
+}
+
+impl Input for VariadicTypeParameter {
+    type Output = super::VariadicTypeParameter;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.identifier.assert(output.identifier())
+    }
+}
+
+impl Arbitrary for VariadicTypeParameter {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        Identifier::arbitrary()
+            .prop_map(|identifier| Self { identifier })
+            .boxed()
+    }
+}
+
+impl Display for VariadicTypeParameter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "...{}", self.identifier)
+    }
+}
+
+/// Represents an input for the [`super::VariadicableTypeSpecifier`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum VariadicableTypeSpecifier {
+    TypeSpecifier(TypeSpecifier),
+    Variadic(VariadicTypeParameter),
+}
+
+impl Input for VariadicableTypeSpecifier {
+    type Output = super::VariadicableTypeSpecifier;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::TypeSpecifier(i), super::VariadicableTypeSpecifier::TypeSpecifier(o)) => {
+                i.assert(o)
+            }
+            (Self::Variadic(i), super::VariadicableTypeSpecifier::Variadic(o)) => i.assert(o),
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?} but got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for VariadicableTypeSpecifier {
+    type Parameters = Option<BoxedStrategy<TypeSpecifier>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            args.unwrap_or_else(TypeSpecifier::arbitrary)
+                .prop_map(Self::TypeSpecifier),
+            VariadicTypeParameter::arbitrary().prop_map(Self::Variadic),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for VariadicableTypeSpecifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TypeSpecifier(i) => Display::fmt(i, f),
+            Self::Variadic(i) => Display::fmt(i, f),
+        }
+    }
+}
+
 /// Represents an input for the [`super::TupleTypeSpecifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleTypeSpecifier {
     /// The type specifier list of the tuple.
-    pub type_specifier_list: Option<ConnectedList<Box<TypeSpecifier>, ConstantPunctuation<','>>>,
+    pub type_specifier_list:
+        Option<ConnectedList<Box<VariadicableTypeSpecifier>, ConstantPunctuation<','>>>,
 }
 
 impl Input for TupleTypeSpecifier {
@@ -477,12 +556,8 @@ impl Arbitrary for TupleTypeSpecifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let type_specifier = args
-            .unwrap_or_else(TypeSpecifier::arbitrary)
-            .prop_map(Box::new);
-
         proptest::option::of(ConnectedList::arbitrary_with(
-            type_specifier,
+            VariadicableTypeSpecifier::arbitrary_with(args).prop_map(Box::new),
             ConstantPunctuation::<','>::arbitrary(),
         ))
         .prop_map(|type_specifier_list| Self {
@@ -1045,7 +1120,7 @@ impl Display for AccessModifier {
 
 pub fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
 where
-    for<'a> F: FnOnce(&mut Parser<'a>, &Storage<error::Error>) -> Option<T>,
+    F: FnOnce(&mut Parser, &Storage<error::Error>) -> Option<T>,
 {
     let source_file = SourceFile::temp(source)?;
 

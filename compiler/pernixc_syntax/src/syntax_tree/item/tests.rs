@@ -29,7 +29,7 @@ pub struct Module {
     pub signature: ModuleSignature,
 
     /// The content of the module
-    pub content: ModuleContent,
+    pub kind: ModuleKind,
 }
 
 impl Input for Module {
@@ -38,7 +38,7 @@ impl Input for Module {
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.signature.assert(output.signature())?;
-        self.content.assert(output.content())
+        self.kind.assert(output.kind())
     }
 }
 
@@ -50,12 +50,12 @@ impl Arbitrary for Module {
         (
             AccessModifier::arbitrary(),
             ModuleSignature::arbitrary(),
-            ModuleContent::arbitrary_with(args),
+            ModuleKind::arbitrary_with(args),
         )
             .prop_map(|(access_modifier, signature, content)| Self {
                 access_modifier,
                 signature,
-                content,
+                kind: content,
             })
             .boxed()
     }
@@ -66,7 +66,7 @@ impl Display for Module {
         write!(
             f,
             "{} {}{}",
-            self.access_modifier, self.signature, self.content
+            self.access_modifier, self.signature, self.kind
         )
     }
 }
@@ -186,7 +186,7 @@ impl Display for ModuleSignature {
 
 /// Represents an input for the [`super::ModuleBody`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModuleBody {
+pub struct ModuleContent {
     /// The list of usings in the module
     pub usings: Vec<Using>,
 
@@ -194,18 +194,18 @@ pub struct ModuleBody {
     pub items: Vec<Item>,
 }
 
-impl Input for ModuleBody {
-    type Output = super::ModuleBody;
+impl Input for ModuleContent {
+    type Output = super::ModuleContent;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         prop_assert_eq!(self.usings.len(), output.usings().len());
-        prop_assert_eq!(self.items.len(), output.items.len());
+        prop_assert_eq!(self.items.len(), output.items().len());
 
         for (input, output) in self.usings.iter().zip(output.usings().iter()) {
             input.assert(output)?;
         }
 
-        for (input, output) in self.items.iter().zip(output.items.iter()) {
+        for (input, output) in self.items.iter().zip(output.items().iter()) {
             input.assert(output)?;
         }
 
@@ -213,7 +213,7 @@ impl Input for ModuleBody {
     }
 }
 
-impl Arbitrary for ModuleBody {
+impl Arbitrary for ModuleContent {
     type Parameters = Option<BoxedStrategy<Item>>;
     type Strategy = BoxedStrategy<Self>;
 
@@ -228,10 +228,8 @@ impl Arbitrary for ModuleBody {
     }
 }
 
-impl Display for ModuleBody {
+impl Display for ModuleContent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{")?;
-
         for using in &self.usings {
             write!(f, "{using}")?;
         }
@@ -240,24 +238,26 @@ impl Display for ModuleBody {
             write!(f, "{item}")?;
         }
 
-        write!(f, "}}")
+        Ok(())
     }
 }
 
 /// Represents an input for the [`super::ModuleContent`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ModuleContent {
+pub enum ModuleKind {
     File,
-    Inline(ModuleBody),
+    Inline(ModuleContent),
 }
 
-impl Input for ModuleContent {
-    type Output = super::ModuleContent;
+impl Input for ModuleKind {
+    type Output = super::ModuleKind;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::File, super::ModuleContent::File(_)) => Ok(()),
-            (Self::Inline(input), super::ModuleContent::Inline(output)) => input.assert(output),
+            (Self::File, super::ModuleKind::File(_)) => Ok(()),
+            (Self::Inline(input), super::ModuleKind::Inline(output)) => {
+                input.assert(output.content())
+            }
             _ => Err(TestCaseError::fail(format!(
                 "expected {self:?}, got {output:?}",
             ))),
@@ -265,25 +265,26 @@ impl Input for ModuleContent {
     }
 }
 
-impl Arbitrary for ModuleContent {
+impl Arbitrary for ModuleKind {
     type Parameters = Option<BoxedStrategy<Item>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let item_strategy = args.unwrap_or_else(Item::arbitrary);
+
         prop_oneof![
             Just(Self::File),
-            (ModuleBody::arbitrary_with(Some(item_strategy))).prop_map(Self::Inline),
+            (ModuleContent::arbitrary_with(Some(item_strategy))).prop_map(Self::Inline),
         ]
         .boxed()
     }
 }
 
-impl Display for ModuleContent {
+impl Display for ModuleKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::File => write!(f, ";"),
-            Self::Inline(module_body) => write!(f, "{module_body}",),
+            Self::Inline(module_body) => write!(f, "{{ {module_body} }}",),
         }
     }
 }
@@ -755,6 +756,41 @@ impl Display for TypeBound {
     }
 }
 
+/// Represents an input for the [`super::TupleBound`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleBound {
+    /// The type under the tuple bound.
+    pub qualified_identifier: QualifiedIdentifier,
+}
+
+impl Input for TupleBound {
+    type Output = super::TupleBound;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.qualified_identifier
+            .assert(output.qualified_identifier())
+    }
+}
+
+impl Arbitrary for TupleBound {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        QualifiedIdentifier::arbitrary_with((false, None))
+            .prop_map(|qualified_identifier| Self {
+                qualified_identifier,
+            })
+            .boxed()
+    }
+}
+
+impl Display for TupleBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({})", self.qualified_identifier)
+    }
+}
+
 /// Represents an input for the [`super::Constraint`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -762,6 +798,7 @@ pub enum Constraint {
     Trait(TraitBound),
     Lifetime(LifetimeBound),
     Type(TypeBound),
+    Tuple(TupleBound),
 }
 
 impl Input for Constraint {
@@ -772,6 +809,7 @@ impl Input for Constraint {
             (Self::Trait(i), super::Constraint::Trait(o)) => i.assert(o),
             (Self::Lifetime(i), super::Constraint::Lifetime(o)) => i.assert(o),
             (Self::Type(i), super::Constraint::Type(o)) => i.assert(o),
+            (Self::Tuple(i), super::Constraint::Tuple(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -788,6 +826,7 @@ impl Arbitrary for Constraint {
             TraitBound::arbitrary().prop_map(Self::Trait),
             LifetimeBound::arbitrary().prop_map(Self::Lifetime),
             TypeBound::arbitrary().prop_map(Self::Type),
+            TupleBound::arbitrary().prop_map(Self::Tuple),
         ]
         .boxed()
     }
@@ -799,6 +838,7 @@ impl Display for Constraint {
             Self::Trait(i) => Display::fmt(i, f),
             Self::Lifetime(i) => Display::fmt(i, f),
             Self::Type(i) => Display::fmt(i, f),
+            Self::Tuple(i) => Display::fmt(i, f),
         }
     }
 }
@@ -838,7 +878,7 @@ impl Display for WhereClause {
 /// Represents an input for the [`super::Parameter`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameter {
-    /// Pattern of the parameter.
+    /// The pattern of the parameter.
     pub irrefutable_pattern: pattern::tests::Irrefutable,
 
     /// The type annotation of the parameter.
@@ -1307,11 +1347,11 @@ impl Input for Item {
 }
 
 impl Arbitrary for Item {
-    type Parameters = ();
+    type Parameters = bool;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        prop_oneof![
+    fn arbitrary_with(avoid_module: Self::Parameters) -> Self::Strategy {
+        let leaf = prop_oneof![
             Function::arbitrary().prop_map(Self::Function),
             Trait::arbitrary().prop_map(Self::Trait),
             Type::arbitrary().prop_map(Self::Type),
@@ -1319,11 +1359,16 @@ impl Arbitrary for Item {
             Enum::arbitrary().prop_map(Self::Enum),
             Implements::arbitrary().prop_map(Self::Implements),
             Const::arbitrary().prop_map(Self::Const),
-        ]
-        .prop_recursive(8, 80, 10, |leaf| {
-            Module::arbitrary_with(Some(leaf)).prop_map(Self::Module)
-        })
-        .boxed()
+        ];
+
+        if avoid_module {
+            leaf.boxed()
+        } else {
+            leaf.prop_recursive(4, 64, 4, move |inner| {
+                Module::arbitrary_with(Some(inner)).prop_map(Self::Module)
+            })
+            .boxed()
+        }
     }
 }
 

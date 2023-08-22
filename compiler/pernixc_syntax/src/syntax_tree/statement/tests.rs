@@ -84,7 +84,7 @@ impl Display for Statement {
 /// Represents an input for the [`super::VariableDeclaration`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableDeclaration {
-    /// The pattern accepted by the variable.
+    /// The pattern of the variable delcaration.
     pub irrefutable_pattern: pattern::tests::Irrefutable,
 
     /// The type specifier of the variable.

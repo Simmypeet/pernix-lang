@@ -9,7 +9,8 @@ use pernixc_system::diagnostic::Handler;
 
 use super::{
     expression::{Expression, Functional, Imperative, Terminator},
-    pattern, TypeAnnotation,
+    pattern::Irrefutable,
+    TypeAnnotation,
 };
 use crate::{error::Error, parser::Parser};
 
@@ -51,7 +52,7 @@ pub struct VariableDeclaration {
     #[get = "pub"]
     let_keyword: Keyword,
     #[get = "pub"]
-    irrefutable_pattern: pattern::Irrefutable,
+    irrefutable_pattern: Irrefutable,
     #[get = "pub"]
     type_annotation: Option<TypeAnnotation>,
     #[get = "pub"]
@@ -100,8 +101,7 @@ impl SourceElement for Expressive {
 /// ``` text
 /// SemiExpression:
 ///     Functional
-///     | Terminator
-///     ;
+///     | Terminator ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(missing_docs)]

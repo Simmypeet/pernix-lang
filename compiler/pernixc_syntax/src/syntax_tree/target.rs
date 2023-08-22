@@ -1,253 +1,54 @@
-//! Contains the definition of [`Target`]
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread::ScopedJoinHandle,
+};
 
-use std::{collections::HashSet, path::PathBuf, str::FromStr, sync::Arc};
-
-use derive_more::{Deref, DerefMut, From};
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
-    token_stream::TokenStream,
+use pernixc_lexical::token_stream::TokenStream;
+use pernixc_source::{SourceFile, Span};
+use pernixc_system::diagnostic::Handler;
+
+use super::{
+    item::{Module, ModuleContent},
+    AccessModifier,
 };
-use pernixc_print::LogSeverity;
-use pernixc_source::{SourceElement, SourceFile, Span};
-use pernixc_system::diagnostic::Dummy;
+use crate::{error, parser::Parser, syntax_tree::item::ModuleKind};
 
-use super::ModulePath;
-use crate::{error::Error as SyntaxError, parser::Parser, syntax_tree::item::Item};
-
-/// Contains all the syntax trees defined within a single file.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// File:
-///     Using*
-///     Module*
-///     Item*
-///     ;
-/// ```
-#[derive(Debug, Clone)]
-pub struct File {
-    /// List of using statements syntax tree.
-    pub usings: Vec<Using>,
-
-    /// List of using statements syntax tree.
-    pub submodules: Vec<Submodule>,
-
-    /// List of item syntax trees defined within the file.
-    pub items: Vec<Item>,
-
-    /// The source file from which the syntax tree was parsed.
-    pub source_file: Arc<SourceFile>,
-}
-
-/// Composition of a [`Module`] declaration syntax tree and the [`File`] syntax tree representing
-/// the contents of the module.
-#[derive(Debug, Clone)]
-pub struct Submodule {
-    /// THe [`Module`] declaration syntax tree.
-    pub module: Module,
-
-    /// The [`File`] syntax tree representing the contents of the module.
-    pub file: File,
-}
-
-/// The syntax tree containing the definition of the whole target's module tree.
-#[derive(Debug, Deref, DerefMut, Getters)]
-pub struct Target {
-    #[deref]
-    #[deref_mut]
+/// Represents a syntax tree node for a module with its submodule children.
+#[derive(Debug, Clone, Getters)]
+pub struct ModuleTree {
+    /// The access modifier of this module.
+    ///
+    /// If this module is the root module, this field will be `None`.
     #[get = "pub"]
-    root_file: File,
+    access_modifier: Option<AccessModifier>,
+
+    /// Contains the content of this module.
+    ///
+    /// The [`ModuleContent::items`] field will not contain any [`super::item::Module`]s as they
+    /// are stored in the [`Self::submodules_by_name`] field instead.
+    #[get = "pub"]
+    module_content: ModuleContent,
+
+    /// Contains the submodules of this module.
+    #[get = "pub"]
+    submodules_by_name: HashMap<String, ModuleTree>,
+}
+
+/// Represents a parsing target containing a module tree representing the whole target program.
+#[derive(Debug, Clone, Getters)]
+pub struct Target {
+    /// Contains the content of the root module.
+    #[get = "pub"]
+    module_tree: ModuleTree,
 
     /// The name of the target.
     #[get = "pub"]
-    name: String,
-}
-
-impl<'a> Parser<'a> {
-    /// Parses a [`Using`] declaration.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_using(
-        &mut self,
-        handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> Option<Using> {
-        let using_keyword = self.parse_keyword(KeywordKind::Using, handler)?;
-        let module_path = self.parse_module_path(handler)?;
-        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-        Some(Using {
-            using_keyword,
-            module_path,
-            semicolon,
-        })
-    }
-
-    /// Parses a [`Module`] declaration.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_module(
-        &mut self,
-        handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> Option<Module> {
-        let access_modifier = self.parse_access_modifier(handler)?;
-        let module_keyword = self.parse_keyword(KeywordKind::Module, handler)?;
-        let identifier = self.parse_identifier(handler)?;
-        let semicolon = self.parse_punctuation(';', true, handler)?;
-
-        Some(Module {
-            access_modifier,
-            module_keyword,
-            identifier,
-            semicolon,
-        })
-    }
-
-    fn parse_usings(
-        &mut self,
-        handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> Vec<Using> {
-        let mut usings = Vec::new();
-        loop {
-            let using_keyword = match self.stop_at_significant() {
-                Some(Token::Keyword(using_keyword))
-                    if using_keyword.keyword == KeywordKind::Using =>
-                {
-                    self.forward();
-                    using_keyword
-                }
-                _ => break,
-            };
-
-            #[allow(clippy::collection_is_never_read)]
-            let using: Option<Using> = (|| {
-                let module_path = self.parse_module_path(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-                Some(Using {
-                    using_keyword,
-                    module_path,
-                    semicolon,
-                })
-            })();
-
-            // try to stop after the semicolon or brace pair
-            using.map_or_else(
-                || {
-                    self.stop_at(|token| {
-                        matches!(token, Token::Punctuation(p) if p.punctuation == ';' ||  p.punctuation == '{')
-                    });
-                    self.forward();
-                },
-                |using| usings.push(using),
-            );
-        }
-
-        usings
-    }
-
-    fn parse_modules(
-        &mut self,
-        handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> Vec<Module> {
-        let mut modules = Vec::new();
-
-        loop {
-            let result = self.try_parse(|parser| {
-                let access_modifier = parser.parse_access_modifier(&Dummy)?;
-                let module_keyword = parser.parse_keyword(KeywordKind::Module, &Dummy)?;
-
-                Some((access_modifier, module_keyword))
-            });
-
-            let Some((access_modifier, module_keyword)) = result else {
-                break;
-            };
-
-            #[allow(clippy::collection_is_never_read)]
-            let result: Option<(Identifier, Punctuation)> = (|| {
-                let identifier = self.parse_identifier(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
-
-                Some((identifier, semicolon))
-            })();
-
-            // try to stop after the semicolon or brace pair
-            result.map_or_else(
-                || {
-                    self.stop_at(|token| {
-                        matches!(token, Token::Punctuation(p) if p.punctuation == ';' ||  p.punctuation == '{')
-                    });
-                    self.forward();
-                },
-                |(identifier, semicolon)| modules.push(Module {
-                    access_modifier,
-                    module_keyword,
-                    identifier,
-                    semicolon
-                })
-            );
-        }
-
-        modules
-    }
-
-    fn parse_file(
-        &mut self,
-        handler: &impl pernixc_system::diagnostic::Handler<SyntaxError>,
-    ) -> (Vec<Using>, Vec<Module>, Vec<Item>) {
-        let usings = self.parse_usings(handler);
-        let modules = self.parse_modules(handler);
-        let items = {
-            let mut items = Vec::new();
-            while !self.is_exhausted() {
-                self.parse_item(handler).map_or_else(|| {
-                    self.stop_at(|token| {
-                        matches!(token, Token::Punctuation(p) if p.punctuation == ';' ||  p.punctuation == '{')
-                    });
-                    self.forward();
-                }, |item| items.push(item));
-            }
-            items
-        };
-
-        (usings, modules, items)
-    }
-}
-
-/// Is a super trait of [`pernixc_system::diagnostic::Handler`] that allows handling all errors
-/// occurred while parsing the [`Target`]
-pub trait Handler:
-    pernixc_system::diagnostic::Handler<pernixc_lexical::error::Error>
-    + pernixc_system::diagnostic::Handler<crate::error::Error>
-    + pernixc_system::diagnostic::Handler<Error>
-{
-}
-
-impl<
-        T: pernixc_system::diagnostic::Handler<pernixc_lexical::error::Error>
-            + pernixc_system::diagnostic::Handler<crate::error::Error>
-            + pernixc_system::diagnostic::Handler<Error>,
-    > Handler for T
-{
-}
-
-/// Is an error that occurred while parsing the [`Target::parse()`].
-#[derive(Debug, EnumAsInner, From)]
-#[allow(missing_docs)]
-pub enum Error {
-    RootSubmoduleConflict(RootSubmoduleConflict),
-    SourceFileLoadFail(SourceFileLoadFail),
-    ModuleRedefinition(ModuleRedefinition),
-}
-
-impl Error {
-    /// Prints the error message to the console.
-    pub fn print(&self) {
-        match self {
-            Self::RootSubmoduleConflict(error) => error.print(),
-            Self::SourceFileLoadFail(error) => error.print(),
-            Self::ModuleRedefinition(error) => error.print(),
-        }
-    }
+    target_name: String,
 }
 
 /// The submodule of the root source file ends up pointing to the root source file itself.
@@ -257,20 +58,7 @@ pub struct RootSubmoduleConflict {
     pub root: Arc<SourceFile>,
 
     /// The submodule that points to the root source file.
-    pub submodule: Module,
-}
-
-impl RootSubmoduleConflict {
-    /// Prints the error message to the console.
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            "the submodule's source file ended up having the same path as the parent module \
-             itself.",
-        );
-
-        pernixc_print::print_source_code(&self.submodule.identifier.span, None);
-    }
+    pub submodule_span: Span,
 }
 
 /// Failed to load a source file for the submodule.
@@ -286,147 +74,219 @@ pub struct SourceFileLoadFail {
     pub path: PathBuf,
 }
 
-impl SourceFileLoadFail {
-    /// Prints the error message to the console.
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            &format!(
-                "failed to load the submodule's source file from the path `{}`.",
-                self.path.display()
-            ),
-        );
-
-        pernixc_print::print_source_code(&self.submodule.identifier.span, None);
-    }
-}
-
 /// A module with the given name already exists.
 #[derive(Debug, Clone)]
 pub struct ModuleRedefinition {
-    /// The submodule that is redefined.
-    pub redifinition_submodule: Module,
+    /// The span of the existing module.
+    pub existing_module_span: Span,
+
+    /// The submodule that redefines the module.
+    pub redifinition_submodule_span: Span,
 }
 
-impl ModuleRedefinition {
-    /// Prints the error message to the console.
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            &format!(
-                "the module `{}` was already defined.",
-                self.redifinition_submodule.identifier.span.str()
-            ),
-        );
+/// Contains all possible errors that can occur when parsing a module tree for the target program.
+#[derive(Debug, EnumAsInner, From)]
+pub enum Error {
+    ModuleRedefinition(ModuleRedefinition),
+    RootSubmoduleConflict(RootSubmoduleConflict),
+    SourceFileLoadFail(SourceFileLoadFail),
+}
 
-        pernixc_print::print_source_code(&self.redifinition_submodule.identifier.span, None);
-    }
+#[derive(Debug, Clone)]
+enum Input {
+    Inline {
+        module_content: ModuleContent,
+        module_name: String,
+        access_modifier: AccessModifier,
+    },
+    File {
+        source_file: Arc<SourceFile>,
+        access_modifier: Option<AccessModifier>,
+    },
 }
 
 impl Target {
-    /// Dissolves the target into the root source file and the name of the root module.
-    #[must_use]
-    pub fn dissolve(self) -> (File, String) { (self.root_file, self.name) }
+    #[allow(clippy::too_many_lines)]
+    fn parse_input<
+        T: Handler<error::Error> + Handler<pernixc_lexical::error::Error> + Handler<Error>,
+    >(
+        input: Input,
+        current_directory: &Path,
+        handler: &T,
+    ) -> ModuleTree {
+        let (mut module_content, source_file, current_module_name, access_modifier) = match input {
+            Input::Inline {
+                module_content,
+                module_name,
+                access_modifier,
+            } => (module_content, None, module_name, Some(access_modifier)),
+            Input::File {
+                source_file,
+                access_modifier,
+            } => {
+                let token_stream = TokenStream::tokenize(&source_file, handler);
+                let mut parser = Parser::new(&token_stream);
 
-    fn parse_single_file(
-        source_file: Arc<SourceFile>,
-        handler: &impl Handler,
-        is_root: bool,
-    ) -> File {
-        let token_stream = TokenStream::tokenize(&source_file, handler);
-        let mut parser = Parser::new(&token_stream);
-
-        let (usings, modules, items) = parser.parse_file(handler);
-        let submodule_files = std::thread::scope(|scope| {
-            let mut submodules = Vec::new();
-            let mut defined_submodules = HashSet::new();
-
-            for module in &modules {
-                if !defined_submodules.insert(module.identifier.span.str()) {
-                    submodules.push(None);
-                    handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
-                        redifinition_submodule: module.clone(),
-                    }));
-                    continue;
-                }
-
-                // get the file path of the module
-                let submodule_path = if is_root {
-                    let mut submodule_path = source_file.full_path().parent().map_or_else(
-                        || {
-                            PathBuf::from_str(module.identifier.span.str())
-                                .expect("should not fail")
-                        },
-                        |parent| parent.join(module.identifier.span.str()),
-                    );
-
-                    // check if the submodule path is the same as the root file path
-                    if submodule_path == *source_file.full_path() {
-                        submodules.push(None);
-                        handler.receive(Error::RootSubmoduleConflict(RootSubmoduleConflict {
-                            root: source_file.clone(),
-                            submodule: module.clone(),
-                        }));
-                        continue;
-                    }
-
-                    submodule_path.set_extension("pnx");
-
-                    submodule_path
-                } else {
+                (
+                    parser.parse_module_content(handler),
+                    Some((access_modifier.is_none(), source_file.clone())),
                     source_file
                         .full_path()
-                        .with_extension("")
-                        .join(format!("{}.pnx", module.identifier.span.str()))
-                };
+                        .file_stem()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string(),
+                    access_modifier,
+                )
+            }
+        };
+        let mut index = 0;
+        let submodule_current_directory = if source_file.as_ref().map_or(false, |x| x.0) {
+            current_directory.to_path_buf()
+        } else {
+            current_directory.join(&current_module_name)
+        };
 
-                // submodule source file
-                let submodule_source_file = match SourceFile::load(&submodule_path) {
-                    Ok(submodule_source_file) => submodule_source_file,
-                    Err(io_error) => {
-                        submodules.push(None);
-                        handler.receive(Error::SourceFileLoadFail(SourceFileLoadFail {
-                            io_error,
-                            path: submodule_path,
-                            submodule: module.clone(),
-                        }));
-                        continue;
+        let submodules_by_name = std::thread::scope(|scope| {
+            let mut module_contents_by_name =
+                HashMap::<String, (ScopedJoinHandle<ModuleTree>, Span)>::new();
+
+            while index < module_content.items.len() {
+                if module_content.items[index].is_module() {
+                    let submodule = module_content.items.remove(index).into_module().unwrap();
+
+                    // check for redifinitions
+                    let entry = match module_contents_by_name
+                        .entry(submodule.signature().identifier().span.str().to_string())
+                    {
+                        Entry::Occupied(entry) => {
+                            handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
+                                existing_module_span: entry.get().1.clone(),
+                                redifinition_submodule_span: submodule
+                                    .signature()
+                                    .identifier()
+                                    .span
+                                    .clone(),
+                            }));
+                            index += 1;
+                            continue;
+                        }
+                        Entry::Vacant(entry) => entry,
+                    };
+
+                    if let ModuleKind::Inline(inline_module_content) = submodule.kind {
+                        let submodule_name =
+                            submodule.signature.identifier().span.str().to_string();
+                        entry.insert((
+                            scope.spawn(|| {
+                                Self::parse_input(
+                                    Input::Inline {
+                                        module_content: inline_module_content.content,
+                                        module_name: submodule_name,
+                                        access_modifier: submodule.access_modifier,
+                                    },
+                                    &submodule_current_directory,
+                                    handler,
+                                )
+                            }),
+                            submodule.signature.identifier().span.clone(),
+                        ));
+                    } else {
+                        match &source_file {
+                            Some((true, source_file))
+                                if current_module_name
+                                    == submodule.signature.identifier().span.str() =>
+                            {
+                                handler.receive(Error::RootSubmoduleConflict(
+                                    RootSubmoduleConflict {
+                                        root: source_file.clone(),
+                                        submodule_span: submodule
+                                            .signature
+                                            .identifier()
+                                            .span
+                                            .clone(),
+                                    },
+                                ));
+                            }
+                            _ => {
+                                let mut source_file_path = submodule_current_directory
+                                    .join(submodule.signature.identifier().span.str());
+                                source_file_path.set_extension("pnx");
+
+                                // load the source file
+                                let source_file = match SourceFile::load(&source_file_path) {
+                                    Ok(source_file) => source_file,
+                                    Err(io_error) => {
+                                        handler.receive(Error::SourceFileLoadFail(
+                                            SourceFileLoadFail {
+                                                io_error,
+                                                submodule,
+                                                path: source_file_path,
+                                            },
+                                        ));
+                                        index += 1;
+                                        continue;
+                                    }
+                                };
+
+                                entry.insert((
+                                    scope.spawn(|| {
+                                        Self::parse_input(
+                                            Input::File {
+                                                source_file,
+                                                access_modifier: Some(submodule.access_modifier),
+                                            },
+                                            &submodule_current_directory,
+                                            handler,
+                                        )
+                                    }),
+                                    submodule.signature.identifier().span.clone(),
+                                ));
+                            }
+                        }
                     }
-                };
-
-                submodules.push(Some(scope.spawn(|| {
-                    Self::parse_single_file(submodule_source_file, handler, false)
-                })));
+                } else {
+                    index += 1;
+                }
             }
 
-            submodules
+            module_contents_by_name
                 .into_iter()
-                .map(|submodule| submodule.map(|submodule| submodule.join().unwrap()))
-                .collect::<Vec<_>>()
+                .map(|(name, (join_handle, _))| (name, join_handle.join().unwrap()))
+                .collect()
         });
 
-        let mut submodules = Vec::new();
-        for (module, file) in modules.into_iter().zip(submodule_files.into_iter()) {
-            let Some(file) = file else {
-                continue;
-            };
-
-            submodules.push(Submodule { module, file });
-        }
-
-        File {
-            usings,
-            submodules,
-            items,
-            source_file,
+        ModuleTree {
+            access_modifier,
+            module_content,
+            submodules_by_name,
         }
     }
 
-    /// Parses the whole target tree
-    pub fn parse(module_root_file: Arc<SourceFile>, name: String, handler: &impl Handler) -> Self {
+    /// Parses the whole module tree for the target program from the given root source file.
+    pub fn parse<
+        T: Handler<error::Error> + Handler<pernixc_lexical::error::Error> + Handler<Error>,
+    >(
+        root_source_file: &Arc<SourceFile>,
+        target_name: String,
+        handler: &T,
+    ) -> Self {
+        let module_tree = Self::parse_input(
+            Input::File {
+                source_file: root_source_file.clone(),
+                access_modifier: None,
+            },
+            root_source_file
+                .full_path()
+                .parent()
+                .unwrap_or_else(|| Path::new("")),
+            handler,
+        );
+
         Self {
-            root_file: Self::parse_single_file(module_root_file, handler, true),
-            name,
+            module_tree,
+            target_name,
         }
     }
 }
