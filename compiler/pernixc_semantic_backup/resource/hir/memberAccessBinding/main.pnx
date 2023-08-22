@@ -1,0 +1,8 @@
+public module vector;
+
+public function main(): void {
+    let first = vector::newVector3();
+    first.z;
+    first.vector2.x; 
+    first.vector2.y; // inaccessible
+}

@@ -11,6 +11,7 @@ use proptest::{
 use crate::syntax_tree::{
     self,
     expression::tests::{Expression, Functional},
+    pattern,
     statement::tests::Statement,
     tests::{
         AccessModifier, ConnectedList, ConstantPunctuation, Identifier, LifetimeArgument,
@@ -837,11 +838,8 @@ impl Display for WhereClause {
 /// Represents an input for the [`super::Parameter`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameter {
-    /// Whether the parameter is mutable.
-    pub mutable: bool,
-
-    /// The identifier of the parameter.
-    pub identifier: Identifier,
+    /// Pattern of the parameter.
+    pub irrefutable_pattern: pattern::tests::Irrefutable,
 
     /// The type annotation of the parameter.
     pub type_annotation: TypeAnnotation,
@@ -851,8 +849,8 @@ impl Input for Parameter {
     type Output = super::Parameter;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.mutable, output.mutable_keyword().is_some());
-        self.identifier.assert(output.identifier())?;
+        self.irrefutable_pattern
+            .assert(output.irrefutable_pattern())?;
         self.type_annotation.assert(output.type_annotation())
     }
 }
@@ -863,13 +861,11 @@ impl Arbitrary for Parameter {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
-            proptest::bool::ANY,
-            Identifier::arbitrary(),
+            pattern::tests::Irrefutable::arbitrary(),
             TypeAnnotation::arbitrary(),
         )
-            .prop_map(|(mutable, identifier, type_annotation)| Self {
-                mutable,
-                identifier,
+            .prop_map(|(irrefutable_pattern, type_annotation)| Self {
+                irrefutable_pattern,
                 type_annotation,
             })
             .boxed()
@@ -878,10 +874,7 @@ impl Arbitrary for Parameter {
 
 impl Display for Parameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.mutable {
-            write!(f, "mutable ")?;
-        }
-        write!(f, "{}{}", self.identifier, self.type_annotation)
+        write!(f, "{}{}", self.irrefutable_pattern, self.type_annotation)
     }
 }
 

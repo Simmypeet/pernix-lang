@@ -1,0 +1,33 @@
+public struct Vector3 {
+    public let x: float32;
+    public let y: float32;
+    public let z: float32;
+}
+
+public function new(): Vector3 {
+    return Vector2 {
+        x: 0,
+        y: 0,
+        z: 0,
+    };
+}
+
+public function take(a: float32): float32 {
+    return a;
+}
+
+public function main(): void {
+    let vector = new();
+    let anotherVector = new();
+    
+    if (true) {
+        take(vector.x); // move(vector.x)
+        take(vector.y); // move(vector.y)
+    } else {
+        // drop(vector.y)
+        take(vector.x); // move(vector.x)
+    }
+
+    // drop(anotherVector)
+    // drop(vector.z)
+}

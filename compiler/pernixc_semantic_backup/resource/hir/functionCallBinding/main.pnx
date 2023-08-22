@@ -1,0 +1,31 @@
+public module inner;
+
+public function someFunction(a: uint32, b: uint32): uint32 { // first overload
+    return a + b;
+}
+
+public function someFunction(a: int8): int8 { // second overload
+    return a; 
+}
+
+public function someFunction(a: float32): float32 { // third overload
+    return a;
+}
+
+public function main(): void {
+    someFunction(1, 2); // 1st overload
+
+    someFunction(true, false, true); // argument length mismatch
+
+    someFunction(3); // ambigious: overload 2nd and 3rd
+
+    someFunction(4.0); // 3rd overload
+
+    someFunction(5i32); // type mismatch
+
+    someFunction(6f32); // 3rd overload
+
+    someFunction(7i8); // 4th overload
+
+    inner::someFunction(8u8); // inaccessible
+} 

@@ -3,13 +3,13 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation, Token};
+use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation, Token};
 use pernixc_source::{SourceElement, Span};
-use pernixc_system::diagnostic::{Dummy, Handler};
+use pernixc_system::diagnostic::Handler;
 
 use super::{
     expression::{Expression, Functional, Imperative, Terminator},
-    TypeAnnotation,
+    pattern, TypeAnnotation,
 };
 use crate::{error::Error, parser::Parser};
 
@@ -42,7 +42,7 @@ impl SourceElement for Statement {
 /// Syntax Synopsis:
 /// ``` text
 /// VariableDeclaration:
-///     'let' 'mutable'? Identifier TypeAnnotation? '=' Expression ';'
+///     'let' Irrefutable TypeAnnotation? '=' Expression ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -51,9 +51,7 @@ pub struct VariableDeclaration {
     #[get = "pub"]
     let_keyword: Keyword,
     #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
-    #[get = "pub"]
-    identifier: Identifier,
+    irrefutable_pattern: pattern::Irrefutable,
     #[get = "pub"]
     type_annotation: Option<TypeAnnotation>,
     #[get = "pub"]
@@ -177,11 +175,7 @@ impl<'a> Parser<'a> {
     ) -> Option<VariableDeclaration> {
         let let_keyword = self.parse_keyword(KeywordKind::Let, handler)?;
 
-        // parse optional mutable binding
-        let mutable_keyword =
-            self.try_parse(|parser| parser.parse_keyword(KeywordKind::Mutable, &Dummy));
-
-        let identifier = self.parse_identifier(handler)?;
+        let irrefutable_pattern = self.parse_irrefutable_pattern(handler)?;
 
         // parse optional type annotation
         let type_annotation = if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == ':')
@@ -197,8 +191,7 @@ impl<'a> Parser<'a> {
 
         Some(VariableDeclaration {
             let_keyword,
-            mutable_keyword,
-            identifier,
+            irrefutable_pattern,
             type_annotation,
             equals,
             expression,

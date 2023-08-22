@@ -1,0 +1,21 @@
+public function main(): void {
+    // empty block binding
+    {}
+    
+    // normal block binding
+    {
+        express 0;
+    }
+
+    // block with unreachable
+    {
+        express 1;
+        express 2u32; // unreachable 
+    }
+
+    // unreachable block
+    {
+        return;
+        express 3u32;
+    }
+}

@@ -1,0 +1,20 @@
+[package]
+name = "pernixc_semantic"
+version = { workspace = true }
+description = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pernixc_system = { path = "../pernixc_system" }
+pernixc_source = { path = "../pernixc_source" }
+pernixc_syntax = { path = "../pernixc_syntax" }
+pernixc_lexical = { path = "../pernixc_lexical" }
+pernixc_print = { path = "../pernixc_print" }
+enum-as-inner = { workspace = true }
+thiserror = { workspace = true }
+getset = { workspace = true }
+derive_more = { workspace = true }
+paste = { workspace = true }

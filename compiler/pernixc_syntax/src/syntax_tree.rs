@@ -21,6 +21,7 @@ use crate::{
 
 pub mod expression;
 pub mod item;
+pub mod pattern;
 pub mod statement;
 // pub mod target;
 

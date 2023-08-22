@@ -15,10 +15,11 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
-    statement::Statement, ConnectedList, EnclosedList, Label, QualifiedIdentifier, TypeSpecifier,
+    pattern, statement::Statement, ConnectedList, EnclosedList, Label, QualifiedIdentifier,
+    TypeSpecifier,
 };
 use crate::{
-    error::{Error, ExpressionExpected, PatternExpected},
+    error::{Error, ExpressionExpected},
     parser::Parser,
 };
 
@@ -202,7 +203,7 @@ impl SourceElement for Functional {
 #[allow(missing_docs)]
 pub struct NumericLiteral {
     #[get = "pub"]
-    numeric_literal_token: NumericLiteralToken,
+    pub(super) numeric_literal_token: NumericLiteralToken,
 }
 
 impl SourceElement for NumericLiteral {
@@ -703,115 +704,6 @@ impl SourceElement for Imperative {
         }
     }
 }
-
-#[derive(Debug, Clone, Getters)]
-pub struct AssociatedFieldPattern {
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    pattern: Box<Pattern>,
-}
-
-impl SourceElement for AssociatedFieldPattern {
-    fn span(&self) -> Span { self.colon.span.join(&self.pattern().span()).unwrap() }
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct FieldPattern {
-    #[get = "pub"]
-    identifier: Identifier,
-    #[get = "pub"]
-    association: Option<AssociatedFieldPattern>,
-}
-
-impl SourceElement for FieldPattern {
-    fn span(&self) -> Span {
-        self.association.as_ref().map_or_else(
-            || self.identifier.span.clone(),
-            |end| self.identifier.span.join(&end.span()).unwrap(),
-        )
-    }
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct StructuralPattern {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    fields: Option<ConnectedList<FieldPattern, Punctuation>>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
-
-impl SourceElement for StructuralPattern {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct AssociatedEnumPattern {
-    #[get = "pub"]
-    identifier: Identifier,
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    pattern: Box<Pattern>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
-
-impl SourceElement for AssociatedEnumPattern {
-    fn span(&self) -> Span { self.identifier.span().join(&self.right_paren.span).unwrap() }
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct TuplePattern {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    patterns: Option<ConnectedList<Box<Pattern>, Punctuation>>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
-
-impl SourceElement for TuplePattern {
-    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
-}
-
-/// Represents a syntax tree node for a pattern.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// Pattern:
-///     BooleanLiteral
-///     | NumericLiteral
-///     | StructuralPattern
-///     | AssociatedEnumPattern
-///     | Identifier
-///     | TuplePattern
-/// ```
-#[derive(Debug, Clone, EnumAsInner)]
-pub enum Pattern {
-    BooleanLiteral(BooleanLiteral),
-    NumericLiteral(NumericLiteral),
-    Structural(StructuralPattern),
-    AssociatedEnum(AssociatedEnumPattern),
-    Identifier(Identifier),
-    Tuple(TuplePattern),
-}
-
-impl SourceElement for Pattern {
-    fn span(&self) -> Span {
-        match self {
-            Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
-            Self::NumericLiteral(numeric_literal) => numeric_literal.span(),
-            Self::Structural(structural) => structural.span(),
-            Self::AssociatedEnum(associated_enum) => associated_enum.span(),
-            Self::Identifier(identifier) => identifier.span(),
-            Self::Tuple(tuple_pattern) => tuple_pattern.span(),
-        }
-    }
-}
-
 /// Represents a syntax tree node for an arm guard in the match arm
 ///
 /// Syntax Synopsis:
@@ -840,13 +732,13 @@ impl SourceElement for MatchArmGuard {
 /// Syntax Synopsis:
 /// ``` txt
 /// MatchArm:
-///     Pattern ArmGuard? ':' Block
+///     Reftuable ArmGuard? ':' Block
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 pub struct MatchArm {
     #[get = "pub"]
-    pattern: Pattern,
+    refutable_pattern: pattern::Refutable,
     #[get = "pub"]
     guard: Option<MatchArmGuard>,
     #[get = "pub"]
@@ -856,7 +748,12 @@ pub struct MatchArm {
 }
 
 impl SourceElement for MatchArm {
-    fn span(&self) -> Span { self.pattern.span().join(&self.block.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.refutable_pattern
+            .span()
+            .join(&self.block.span())
+            .unwrap()
+    }
 }
 
 /// Represents a syntax tree node for the match expression
@@ -1673,121 +1570,8 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_identifier_pattern(&mut self, handler: &impl Handler<Error>) -> Option<Pattern> {
-        let identifier = self.parse_identifier(handler)?;
-
-        // can be an associated enum pattern
-        if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '(')
-        {
-            let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
-            let pattern = Box::new(self.parse_pattern(handler)?);
-            let right_paren = self.step_out(handler)?;
-
-            Some(Pattern::AssociatedEnum(AssociatedEnumPattern {
-                identifier,
-                left_paren,
-                pattern,
-                right_paren,
-            }))
-        } else {
-            Some(Pattern::Identifier(identifier))
-        }
-    }
-
-    fn parse_pattern(&mut self, handler: &impl Handler<Error>) -> Option<Pattern> {
-        match self.stop_at_significant() {
-            // Named/AssociatedEnum pattern
-            Some(Token::Identifier(..)) => self.parse_identifier_pattern(handler),
-
-            // Numeric literal pattern
-            Some(Token::NumericLiteral(numeric_literal)) => {
-                // eat the numeric literal
-                self.forward();
-
-                Some(Pattern::NumericLiteral(NumericLiteral {
-                    numeric_literal_token: numeric_literal,
-                }))
-            }
-
-            // Boolean literal pattern
-            Some(Token::Keyword(boolean_keyword))
-                if matches!(
-                    boolean_keyword.keyword,
-                    KeywordKind::True | KeywordKind::False
-                ) =>
-            {
-                // eat the boolean literal
-                self.forward();
-
-                let boolean_literal_constructor = match boolean_keyword.keyword {
-                    KeywordKind::True => BooleanLiteral::True,
-                    KeywordKind::False => BooleanLiteral::False,
-                    _ => unreachable!(),
-                };
-
-                Some(Pattern::BooleanLiteral(boolean_literal_constructor(
-                    boolean_keyword,
-                )))
-            }
-
-            // Structural pattern
-            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
-                let enclosed_tree = self.parse_enclosed_tree(
-                    Delimiter::Brace,
-                    ',',
-                    |parser, handler| {
-                        let identifier = parser.parse_identifier(handler)?;
-                        let association = match parser.stop_at_significant() {
-                            Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
-                                parser.forward();
-                                let pattern = Box::new(parser.parse_pattern(handler)?);
-
-                                Some(AssociatedFieldPattern { colon, pattern })
-                            }
-                            _ => None,
-                        };
-
-                        Some(FieldPattern {
-                            identifier,
-                            association,
-                        })
-                    },
-                    handler,
-                )?;
-
-                Some(Pattern::Structural(StructuralPattern {
-                    left_brace: enclosed_tree.open,
-                    fields: enclosed_tree.list,
-                    right_brace: enclosed_tree.close,
-                }))
-            }
-
-            // Tuple pattern
-            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
-                let enclosed_tree = self.parse_enclosed_tree(
-                    Delimiter::Parenthesis,
-                    ',',
-                    |parser, handler| parser.parse_pattern(handler).map(Box::new),
-                    handler,
-                )?;
-
-                Some(Pattern::Tuple(TuplePattern {
-                    left_paren: enclosed_tree.open,
-                    patterns: enclosed_tree.list,
-                    right_paren: enclosed_tree.close,
-                }))
-            }
-
-            found => {
-                handler.receive(Error::PatternExpected(PatternExpected { found }));
-
-                None
-            }
-        }
-    }
-
     fn parse_match_arm(&mut self, handler: &impl Handler<Error>) -> Option<MatchArm> {
-        let pattern = self.parse_pattern(handler)?;
+        let refutable_pattern = self.parse_refutable_pattern(handler)?;
 
         let guard = match self.stop_at_significant() {
             Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
@@ -1812,7 +1596,7 @@ impl<'a> Parser<'a> {
         let block = self.parse_block(handler)?;
 
         Some(MatchArm {
-            pattern,
+            refutable_pattern,
             guard,
             colon,
             block,

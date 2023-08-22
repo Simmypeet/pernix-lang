@@ -3,7 +3,7 @@ use std::fmt::Display;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
-    prop_assert_eq, prop_oneof, proptest,
+    prop_oneof, proptest,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
@@ -14,7 +14,8 @@ use crate::syntax_tree::{
         self,
         tests::{Expression, Functional, Imperative, Terminator},
     },
-    tests::{Identifier, TypeAnnotation},
+    pattern,
+    tests::TypeAnnotation,
 };
 
 /// Represents an input for the [`super::Statement`].
@@ -83,11 +84,8 @@ impl Display for Statement {
 /// Represents an input for the [`super::VariableDeclaration`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableDeclaration {
-    /// Whether the variable is mutable.
-    pub mutable: bool,
-
-    /// The identifier of the variable.
-    pub identifier: Identifier,
+    /// The pattern accepted by the variable.
+    pub irrefutable_pattern: pattern::tests::Irrefutable,
 
     /// The type specifier of the variable.
     pub type_annotation: Option<TypeAnnotation>,
@@ -100,8 +98,8 @@ impl Input for VariableDeclaration {
     type Output = super::VariableDeclaration;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.mutable, output.mutable_keyword().is_some());
-        self.identifier.assert(output.identifier())?;
+        self.irrefutable_pattern
+            .assert(output.irrefutable_pattern())?;
         self.type_annotation.assert(output.type_annotation())?;
         self.expression.assert(output.expression())
     }
@@ -115,17 +113,15 @@ impl Arbitrary for VariableDeclaration {
         let expression = args.unwrap_or_else(Expression::arbitrary);
 
         (
-            proptest::bool::ANY,
-            Identifier::arbitrary(),
+            pattern::tests::Irrefutable::arbitrary(),
             proptest::option::of(TypeAnnotation::arbitrary_with((
                 None,
                 Some(expression.clone()),
             ))),
             expression,
         )
-            .prop_map(|(mutable, identifier, type_annotation, expression)| Self {
-                mutable,
-                identifier,
+            .prop_map(|(irrefutable_pattern, type_annotation, expression)| Self {
+                irrefutable_pattern,
                 type_annotation,
                 expression,
             })
@@ -135,12 +131,9 @@ impl Arbitrary for VariableDeclaration {
 
 impl Display for VariableDeclaration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("let")?;
-        if self.mutable {
-            f.write_str(" mutable")?;
-        }
+        f.write_str("let ")?;
 
-        write!(f, " {}", self.identifier)?;
+        Display::fmt(&self.irrefutable_pattern, f)?;
 
         if let Some(type_annotation) = &self.type_annotation {
             Display::fmt(type_annotation, f)?;

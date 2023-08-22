@@ -12,6 +12,7 @@ use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
     expression::{Expression, Functional},
+    pattern,
     statement::Statement,
     AccessModifier, ConnectedList, LifetimeArgument, QualifiedIdentifier, ScopeSeparator,
     TypeAnnotation, TypeSpecifier,
@@ -735,23 +736,21 @@ impl SourceElement for TraitMember {
 /// Syntax Synopsis:
 /// ``` text
 /// Parameter:
-///     'mutable'? Identifier TypeAnnotation
+///     Irrefutable TypeAnnotation
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 #[allow(missing_docs)]
 pub struct Parameter {
     #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
-    #[get = "pub"]
-    identifier: Identifier,
+    irrefutable_pattern: pattern::Irrefutable,
     #[get = "pub"]
     type_annotation: TypeAnnotation,
 }
 
 impl SourceElement for Parameter {
     fn span(&self) -> Span {
-        self.identifier
+        self.irrefutable_pattern
             .span()
             .join(&self.type_annotation.span())
             .unwrap()
@@ -1952,21 +1951,11 @@ impl<'a> Parser<'a> {
             Delimiter::Parenthesis,
             ',',
             |parser, handler| {
-                // parse optional mutable keyword
-                let mutable_keyword = match parser.stop_at_significant() {
-                    Some(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
-                        parser.forward();
-                        Some(k)
-                    }
-                    _ => None,
-                };
-
-                let identifier = parser.parse_identifier(handler)?;
+                let irrefutable_pattern = parser.parse_irrefutable_pattern(handler)?;
                 let type_annotation = parser.parse_type_annotation(handler)?;
 
                 Some(Parameter {
-                    mutable_keyword,
-                    identifier,
+                    irrefutable_pattern,
                     type_annotation,
                 })
             },

@@ -1,0 +1,8 @@
+public function main(): void {
+    1;
+    2.0;
+    3.0f32;
+    4.0i32;
+    5u8;
+    6f32;
+}
