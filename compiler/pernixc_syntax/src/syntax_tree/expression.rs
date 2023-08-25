@@ -1,5 +1,3 @@
-//! Contains the definitions of expression syntax tree.
-
 use std::cmp::Ordering;
 
 use derive_more::From;
@@ -15,16 +13,15 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
-    pattern, statement::Statement, ConnectedList, EnclosedList, Label, QualifiedIdentifier,
-    TypeSpecifier,
+    pattern, statement::Statement, ty::Type, ConnectedList, EnclosedList, Label,
+    QualifiedIdentifier,
 };
 use crate::{
     error::{Error, ExpressionExpected},
     parser::Parser,
 };
 
-/// Is an enumeration of all kinds of expressions.
-///
+/// Syntax Synopsis:
 /// ``` txt
 /// Expression:
 ///     Terminator
@@ -50,8 +47,7 @@ impl SourceElement for Expression {
     }
 }
 
-/// Is an enumeration of all terminator expressions.
-///
+/// Syntax Synopsis:
 /// ``` txt
 /// Terminator:
 ///     Return
@@ -79,11 +75,6 @@ impl SourceElement for Terminator {
     }
 }
 
-/// Is an enumeration of all kinds of functional expressions.
-///
-/// Functional epxressions are expressions immediately evaluated to a value without introducing
-/// control flow.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Functional:
@@ -118,8 +109,6 @@ pub enum Functional {
     Cast(Cast),
 }
 
-/// Represnts a syntax tree node of a subscript expression.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Subscript:
@@ -142,8 +131,6 @@ impl SourceElement for Subscript {
     fn span(&self) -> Span { self.operand.span().join(&self.right_bracket.span).unwrap() }
 }
 
-/// Represnts a syntax tree node of an array literal.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ArrayLiteral:
@@ -191,8 +178,6 @@ impl SourceElement for Functional {
     }
 }
 
-/// Represents a numeric literal syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// NumericLiteral:
@@ -210,12 +195,10 @@ impl SourceElement for NumericLiteral {
     fn span(&self) -> Span { self.numeric_literal_token.span.clone() }
 }
 
-/// Represents a cast expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// CastExpression:
-///     Functional 'as' '(' TypeSpecifier ')'
+///     Functional 'as' '(' Type ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -228,7 +211,7 @@ pub struct Cast {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
-    type_specifier: TypeSpecifier,
+    ty: Type,
     #[get = "pub"]
     right_paren: Punctuation,
 }
@@ -237,8 +220,6 @@ impl SourceElement for Cast {
     fn span(&self) -> Span { self.operand.span().join(&self.right_paren.span).unwrap() }
 }
 
-/// Represents a boolean literal syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// BooleanLiteral:
@@ -261,8 +242,6 @@ impl SourceElement for BooleanLiteral {
     }
 }
 
-/// Represents a binary expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Binary:
@@ -289,8 +268,6 @@ impl SourceElement for Binary {
     }
 }
 
-/// Represents a binary operator syntax tree
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// BinaryOperator:
@@ -404,8 +381,6 @@ impl SourceElement for BinaryOperator {
     }
 }
 
-/// Represents a prefix operator syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// PrefixOperator:
@@ -435,8 +410,6 @@ impl SourceElement for PrefixOperator {
     }
 }
 
-/// Represents a prefix expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Prefix:
@@ -456,8 +429,6 @@ impl SourceElement for Prefix {
     fn span(&self) -> Span { self.operator.span().join(&self.operand.span()).unwrap() }
 }
 
-/// Represents a named expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Named:
@@ -475,8 +446,6 @@ impl SourceElement for Named {
     fn span(&self) -> Span { self.qualified_identifier.span() }
 }
 
-/// Represents a syntax tree node of an unpackable expression.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Unpackable:
@@ -500,8 +469,6 @@ impl SourceElement for Unpackable {
     }
 }
 
-/// Represents a list of expressions separated by commas.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ArgumentList:
@@ -510,8 +477,6 @@ impl SourceElement for Unpackable {
 /// ```
 pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 
-/// Represents a function call syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// FunctionCall:
@@ -540,12 +505,10 @@ impl SourceElement for FunctionCall {
     }
 }
 
-/// Represents an expression that is surrounded by parentheses.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Parenthesized:
-///     '(' (Unpackabke (',' Unpackabke)* ','? )? ')'
+///     '(' (Unpackable (',' Unpackable)* ','? )? ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -563,8 +526,6 @@ impl SourceElement for Parenthesized {
     fn span(&self) -> Span { self.left_paren.span().join(&self.right_paren.span).unwrap() }
 }
 
-/// Represents a field initializer syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// FieldInitializer:
@@ -591,8 +552,6 @@ impl SourceElement for FieldInitializer {
     }
 }
 
-/// Represents a list of field initializers separated by commas.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// FieldInitializeList:
@@ -601,8 +560,6 @@ impl SourceElement for FieldInitializer {
 /// ```
 pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 
-/// Represents a struct literal syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// StructLiteral:
@@ -631,8 +588,6 @@ impl SourceElement for StructLiteral {
     }
 }
 
-/// Represents a member access syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// MemberAccess:
@@ -654,8 +609,6 @@ impl SourceElement for MemberAccess {
     fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
 }
 
-/// Represents an arrow syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Arrow:
@@ -675,8 +628,6 @@ impl SourceElement for Arrow {
     fn span(&self) -> Span { self.hyphen.span.join(&self.right_angle.span).unwrap() }
 }
 
-/// Represents an arrow operator syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ArrowOperator:
@@ -698,8 +649,6 @@ impl SourceElement for ArrowOperator {
     fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
 }
 
-/// Is an enumeration of all kinds of imperative expressions.
-///
 /// Imperative expressions are expressions that yield a value by executing a list of statements.
 ///
 /// Syntax Synopsis:
@@ -730,8 +679,6 @@ impl SourceElement for Imperative {
     }
 }
 
-/// Represents a syntax tree node for an arm guard in the match arm
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ArmGuard:
@@ -753,8 +700,6 @@ impl SourceElement for MatchArmGuard {
     fn span(&self) -> Span { self.if_keyword.span.join(&self.right_paren.span).unwrap() }
 }
 
-/// Represents a syntax tree node for the match arm in the match expression
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// MatchArm:
@@ -782,8 +727,6 @@ impl SourceElement for MatchArm {
     }
 }
 
-/// Represents a syntax tree node for the match expression
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Match:
@@ -817,8 +760,6 @@ impl SourceElement for Match {
     }
 }
 
-/// Represents a label specifier syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// LabelSpecifier:
@@ -838,8 +779,6 @@ impl SourceElement for LabelSpecifier {
     fn span(&self) -> Span { self.label.span().join(&self.colon.span).unwrap() }
 }
 
-/// Represents a syntax tree node of a list of statements enclosed by curly braces.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Statements:
@@ -861,8 +800,6 @@ impl SourceElement for Statements {
     fn span(&self) -> Span { self.left_brace.span().join(&self.right_brace.span).unwrap() }
 }
 
-/// Represents a block syntax tree with an optional label specifier.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Block:
@@ -895,8 +832,6 @@ impl SourceElement for Block {
     }
 }
 
-/// Is an enumeration of either a block or an if-else expression.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// BlockOrIfElse:
@@ -920,8 +855,6 @@ impl SourceElement for BlockOrIfElse {
     }
 }
 
-/// Represents an else portion of an if-else expression.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Else:
@@ -946,8 +879,6 @@ impl SourceElement for Else {
     }
 }
 
-/// Represents an if-else expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// IfElse:
@@ -985,8 +916,6 @@ impl SourceElement for IfElse {
     }
 }
 
-/// Represents a loop expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Loop:
@@ -1006,8 +935,6 @@ impl SourceElement for Loop {
     fn span(&self) -> Span { self.loop_keyword.span.join(&self.block.span()).unwrap() }
 }
 
-/// Represents a continue expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Continue:
@@ -1035,8 +962,6 @@ impl SourceElement for Continue {
     }
 }
 
-/// Represents an express expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Express:
@@ -1072,8 +997,6 @@ impl SourceElement for Express {
     }
 }
 
-/// Represents a break expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Break:
@@ -1107,8 +1030,6 @@ impl SourceElement for Break {
     }
 }
 
-/// Represents a return expression syntax tree.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Return:
@@ -1441,7 +1362,7 @@ impl<'a> Parser<'a> {
             open: left_brace,
             list: field_initializers,
             close: right_brace,
-        } = self.parse_enclosed_tree(
+        } = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
             |this, handler| {
@@ -1476,7 +1397,7 @@ impl<'a> Parser<'a> {
             open: left_paren,
             list: arguments,
             close: right_paren,
-        } = self.parse_enclosed_tree(
+        } = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
             |this, handler| Some(Box::new(this.parse_expression(handler)?)),
@@ -1513,7 +1434,7 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &impl Handler<Error>,
     ) -> Option<Functional> {
-        let enclosed_tree = self.parse_enclosed_tree(
+        let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
             |parser, handler| {
@@ -1560,7 +1481,7 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &impl Handler<Error>,
     ) -> Option<Functional> {
-        let enclosed_tree = self.parse_enclosed_tree(
+        let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Bracket,
             ',',
             |parser, handler| parser.parse_expression(handler).map(Box::new),
@@ -1859,7 +1780,7 @@ impl<'a> Parser<'a> {
                     self.forward();
 
                     let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
-                    let type_specifier = self.parse_type_specifier(handler);
+                    let ty = self.parse_type(handler);
                     let right_paren = self.step_out(handler)?;
 
                     // update expression
@@ -1867,7 +1788,7 @@ impl<'a> Parser<'a> {
                         operand: Box::new(expression),
                         as_keyword,
                         left_paren,
-                        type_specifier: type_specifier?,
+                        ty: ty?,
                         right_paren,
                     });
                 }

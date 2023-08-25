@@ -15,10 +15,9 @@ use crate::syntax_tree::{
         tests::{Expression, Functional, Imperative, Terminator},
     },
     pattern,
-    tests::TypeAnnotation,
+    ty::tests::Type,
 };
 
-/// Represents an input for the [`super::Statement`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Statement {
@@ -81,16 +80,10 @@ impl Display for Statement {
     }
 }
 
-/// Represents an input for the [`super::VariableDeclaration`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableDeclaration {
-    /// The pattern of the variable delcaration.
     pub irrefutable_pattern: pattern::tests::Irrefutable,
-
-    /// The type specifier of the variable.
-    pub type_annotation: Option<TypeAnnotation>,
-
-    /// The initalizer expression of the variable.
+    pub ty: Option<Type>,
     pub expression: Expression,
 }
 
@@ -100,7 +93,17 @@ impl Input for VariableDeclaration {
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.irrefutable_pattern
             .assert(output.irrefutable_pattern())?;
-        self.type_annotation.assert(output.type_annotation())?;
+
+        match (&self.ty, output.type_annotation()) {
+            (Some(ty), Some(output_ty)) => ty.assert(output_ty.ty())?,
+            (None, None) => {}
+            _ => {
+                return Err(TestCaseError::fail(format!(
+                    "Expected {self:?}, found {output:?}",
+                )))
+            }
+        }
+
         self.expression.assert(output.expression())
     }
 }
@@ -114,15 +117,12 @@ impl Arbitrary for VariableDeclaration {
 
         (
             pattern::tests::Irrefutable::arbitrary(),
-            proptest::option::of(TypeAnnotation::arbitrary_with((
-                None,
-                Some(expression.clone()),
-            ))),
+            proptest::option::of(Type::arbitrary_with((None, Some(expression.clone())))),
             expression,
         )
-            .prop_map(|(irrefutable_pattern, type_annotation, expression)| Self {
+            .prop_map(|(irrefutable_pattern, ty, expression)| Self {
                 irrefutable_pattern,
-                type_annotation,
+                ty,
                 expression,
             })
             .boxed()
@@ -135,15 +135,14 @@ impl Display for VariableDeclaration {
 
         Display::fmt(&self.irrefutable_pattern, f)?;
 
-        if let Some(type_annotation) = &self.type_annotation {
-            Display::fmt(type_annotation, f)?;
+        if let Some(type_annotation) = &self.ty {
+            write!(f, ": {type_annotation}")?;
         }
 
         write!(f, " = {};", self.expression)
     }
 }
 
-/// Represents an input for the [`super::Expressive`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Expressive {
@@ -174,7 +173,6 @@ impl Display for Expressive {
     }
 }
 
-/// Represents an input for the [`super::SemiExpression`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum SemiExpression {
@@ -205,10 +203,8 @@ impl Display for SemiExpression {
     }
 }
 
-/// Represents an input for the [`super::Semi`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Semi {
-    /// The expression of the semi-statement.
     pub expression: SemiExpression,
 }
 

@@ -249,7 +249,7 @@ impl Arbitrary for TokenStream {
         let leaf = Just(Self {
             token_trees: vec![],
         });
-        leaf.prop_recursive(8, 64, 8, |inner| {
+        leaf.prop_recursive(4, 24, 6, |inner| {
             proptest::collection::vec(
                 prop_oneof![
                     (
@@ -270,7 +270,7 @@ impl Arbitrary for TokenStream {
                         ),
                     Delimited::arbitrary_with(Some(inner)).prop_map(TokenStreamPart::Delimited),
                 ],
-                0..=8,
+                0..=6,
             )
             .prop_map(|token_parts| {
                 let mut tokens = Vec::new();

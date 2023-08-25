@@ -39,7 +39,7 @@ pub struct ModuleTree {
     submodules_by_name: HashMap<String, ModuleTree>,
 }
 
-/// Represents a parsing target containing a module tree representing the whole target program.
+/// Is a complete syntax tree representing the whole target program.
 #[derive(Debug, Clone, Getters)]
 pub struct Target {
     /// Contains the content of the root module.

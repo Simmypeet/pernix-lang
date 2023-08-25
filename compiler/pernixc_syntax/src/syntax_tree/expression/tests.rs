@@ -13,13 +13,12 @@ use proptest::{
 use crate::syntax_tree::{
     self, pattern,
     statement::tests::Statement,
-    tests::{ConnectedList, ConstantPunctuation, QualifiedIdentifier, TypeSpecifier},
+    tests::{ConnectedList, ConstantPunctuation, QualifiedIdentifier},
+    ty::tests::Type,
 };
 
-/// Represents an input for the [`super::NumericLiteral`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NumericLiteral {
-    /// The numeric string representing the value of the numeric literal input.
     pub numeric_string: String,
 }
 
@@ -50,10 +49,8 @@ impl Display for NumericLiteral {
     }
 }
 
-/// Represents an input for the [`super::BooleanLiteral`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BooleanLiteral {
-    /// The value of the boolean literal input.
     pub boolean_value: bool,
 }
 
@@ -101,10 +98,8 @@ impl Display for BooleanLiteral {
     }
 }
 
-/// Represents an input for the [`super::ArrayLiteral`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArrayLiteral {
-    /// The expressions of the array literal.
     pub expressions: Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
 }
 
@@ -144,10 +139,8 @@ impl Display for ArrayLiteral {
     }
 }
 
-/// Represents an input for the [`super::Named`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
-    /// The qualified identifier representing the name of the named expression.
     pub qualified_identifier: QualifiedIdentifier,
 }
 
@@ -179,7 +172,6 @@ impl Arbitrary for Named {
     }
 }
 
-/// Represents an input for the [`super::PrefixOperator`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum PrefixOperator {
@@ -243,13 +235,9 @@ impl Display for PrefixOperator {
     }
 }
 
-/// Represents an input for the [`super::Prefix`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Prefix {
-    /// The prefix operator.
     pub operator: PrefixOperator,
-
-    /// The operand of the prefix operator.
     pub operand: Box<Functional>,
 }
 
@@ -280,7 +268,6 @@ impl Arbitrary for Prefix {
                 !matches!(x, Functional::Binary(..))
             });
 
-        // TODO: Filter out binary variants.
         (prefix, PrefixOperator::arbitrary())
             .prop_map(|(operand, operator)| Self {
                 operator,
@@ -290,13 +277,9 @@ impl Arbitrary for Prefix {
     }
 }
 
-/// Represents an input for the [`super::MemberAccess`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MemberAccess {
-    /// The operand of the member access.
     pub operand: Box<Functional>,
-
-    /// The member name.
     pub identifier: syntax_tree::tests::Identifier,
 }
 
@@ -337,7 +320,6 @@ impl Arbitrary for MemberAccess {
     }
 }
 
-/// Represents an input for the [`super::BinaryOperator`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum BinaryOperator {
@@ -501,7 +483,6 @@ impl Arbitrary for BinaryOperator {
 }
 
 impl BinaryOperator {
-    /// Returns `true` if the operator is assignment (including compound assignment)
     #[must_use]
     pub fn is_assignment(self) -> bool {
         matches!(
@@ -515,9 +496,6 @@ impl BinaryOperator {
         )
     }
 
-    /// Gets the precedence of the operator (the higher the number, the first it will be evaluated)
-    ///
-    /// The least operator has precedence 1.
     #[must_use]
     pub fn get_precedence(self) -> u32 {
         match self {
@@ -540,16 +518,10 @@ impl BinaryOperator {
     }
 }
 
-/// Represents an input for the [`super::Binary`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Binary {
-    /// The left operand of the binary expression.
     pub left_operand: Box<Functional>,
-
-    /// The operator of the binary expression.
     pub operator: BinaryOperator,
-
-    /// The right operand of the binary expression.
     pub right_operand: Box<Functional>,
 }
 
@@ -662,13 +634,9 @@ impl Arbitrary for Binary {
     }
 }
 
-/// Represents an input for the [`super::FunctionCall`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionCall {
-    /// The name of the function.
     pub qualified_identifier: QualifiedIdentifier,
-
-    /// The arguments of the function.
     pub arguments: Option<
         syntax_tree::tests::ConnectedList<
             Box<Expression>,
@@ -723,13 +691,9 @@ impl Arbitrary for FunctionCall {
     }
 }
 
-/// Represents an input for the [`super::Unpackable`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unpackable {
-    /// Whether the expression is unpacked
     pub ellipsis: bool,
-
-    /// The expression of the unpackable.
     pub expression: Box<Expression>,
 }
 
@@ -768,10 +732,8 @@ impl Arbitrary for Unpackable {
     }
 }
 
-/// Represents an input for the [`super::Parenthesized`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parenthesized {
-    /// The expression inside the parentheses.
     pub expressions: Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
 }
 
@@ -809,13 +771,9 @@ impl Display for Parenthesized {
     }
 }
 
-/// Represents an input for the [`super::Subscript`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Subscript {
-    /// The operand of the subscript.
     pub operand: Box<Functional>,
-
-    /// The index of the subscript.
     pub index: Box<Expression>,
 }
 
@@ -859,13 +817,9 @@ impl Display for Subscript {
     }
 }
 
-/// Represents an input for the [`super::FieldInitializer`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldInitializer {
-    /// The name of the field.
     pub identifier: syntax_tree::tests::Identifier,
-
-    /// The expression of the field.
     pub expression: Box<Expression>,
 }
 
@@ -900,13 +854,9 @@ impl Display for FieldInitializer {
     }
 }
 
-/// Represents an input for the [`super::StructLiteral`]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructLiteral {
-    /// The name of the struct
     pub qualified_identifier: QualifiedIdentifier,
-
-    /// The field initializers of the struct.
     pub field_initializers: Option<
         syntax_tree::tests::ConnectedList<
             FieldInitializer,
@@ -960,14 +910,10 @@ impl Display for StructLiteral {
     }
 }
 
-/// Represents an input for the [`super::Cast`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cast {
-    /// The expression to cast.
     pub operand: Box<Functional>,
-
-    /// The type to cast to.
-    pub type_specifier: syntax_tree::tests::TypeSpecifier,
+    pub ty: Type,
 }
 
 impl Input for Cast {
@@ -975,14 +921,14 @@ impl Input for Cast {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operand.assert(output.operand())?;
-        self.type_specifier.assert(output.type_specifier())
+        self.ty.assert(output.ty())
     }
 }
 
 impl Arbitrary for Cast {
     type Parameters = (
         Option<BoxedStrategy<Functional>>,
-        Option<BoxedStrategy<TypeSpecifier>>,
+        Option<BoxedStrategy<Type>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -995,17 +941,17 @@ impl Arbitrary for Cast {
                 !matches!(x, Functional::Prefix(..) | Functional::Binary(..))
             });
 
-        let type_specifier = args.1.unwrap_or_else(|| {
-            TypeSpecifier::arbitrary_with((
+        let ty = args.1.unwrap_or_else(|| {
+            Type::arbitrary_with((
                 None,
                 Some(operand.clone().prop_map(Expression::Functional).boxed()),
             ))
         });
 
-        (operand.clone(), type_specifier)
-            .prop_map(|(operand, type_specifier)| Self {
+        (operand.clone(), ty)
+            .prop_map(|(operand, ty)| Self {
                 operand: Box::new(operand),
-                type_specifier,
+                ty,
             })
             .boxed()
     }
@@ -1013,14 +959,12 @@ impl Arbitrary for Cast {
 
 impl Display for Cast {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} as ({})", self.operand, self.type_specifier)
+        write!(f, "{} as ({})", self.operand, self.ty)
     }
 }
 
-/// Represents an input for the [`super::LabelSpecifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelSpecifier {
-    /// The identifier of the label.
     pub label: syntax_tree::tests::Label,
 }
 
@@ -1047,10 +991,8 @@ impl Display for LabelSpecifier {
     }
 }
 
-/// Represents an input for the [`super::Statements`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Statements {
-    /// List of statements in the block.
     pub statements: Vec<Statement>,
 }
 
@@ -1075,7 +1017,7 @@ impl Arbitrary for Statements {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let statement = Statement::arbitrary_with(args);
 
-        proptest::collection::vec(statement, 0..=8)
+        proptest::collection::vec(statement, 0..=6)
             .prop_map(|statements| Self { statements })
             .boxed()
     }
@@ -1091,16 +1033,10 @@ impl Display for Statements {
     }
 }
 
-/// Represents an input for the [`super::Block`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Block {
-    /// The optional label specifier.
     pub label_specifier: Option<LabelSpecifier>,
-
-    /// Whether the block is unsafe.
     pub is_unsafe: bool,
-
-    /// The list of statements in the block.
     pub statements: Statements,
 }
 
@@ -1147,10 +1083,8 @@ impl Display for Block {
     }
 }
 
-/// Represents an input for the [`super::Loop`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Loop {
-    /// The block of the loop.
     pub block: Block,
 }
 
@@ -1179,16 +1113,10 @@ impl Display for Loop {
     }
 }
 
-/// Represents an input for the [`super::IfElse`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IfElse {
-    /// The condition of the if-else statement.
     pub condition: Box<Expression>,
-
-    /// The then block of the if-else statement.
     pub then_expression: Block,
-
-    /// The else block of the if-else statement.
     pub else_expression: Option<Else>,
 }
 
@@ -1209,7 +1137,7 @@ impl Arbitrary for IfElse {
                 else_expression: None,
             });
 
-        leaf.prop_recursive(4, 16, 4, move |inner| {
+        leaf.prop_recursive(4, 24, 6, move |inner| {
             (
                 expression.clone(),
                 Block::arbitrary_with(Some(expression.clone())),
@@ -1254,7 +1182,6 @@ impl Display for IfElse {
     }
 }
 
-/// Represents an input for the [`super::BlockOrIfElse`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum BlockOrIfElse {
@@ -1285,10 +1212,8 @@ impl Display for BlockOrIfElse {
     }
 }
 
-/// Represents an input for the [`super::Else`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Else {
-    /// The content of the else statement.
     expression: Box<BlockOrIfElse>,
 }
 
@@ -1308,10 +1233,8 @@ impl Display for Else {
     }
 }
 
-/// Represents an input for the [`super::MatchArmGuard`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchArmGuard {
-    /// The expression of the guard.
     pub expression: Box<Expression>,
 }
 
@@ -1342,16 +1265,10 @@ impl Display for MatchArmGuard {
     }
 }
 
-/// Represents an input for the [`super::MatchArm`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchArm {
-    /// The pattern of the match arm.
     pub refutable_pattern: pattern::tests::Refutable,
-
-    /// The guard of the match arm.
     pub guard: Option<MatchArmGuard>,
-
-    /// The expression of the match arm.
     pub block: Block,
 }
 
@@ -1398,13 +1315,9 @@ impl Display for MatchArm {
     }
 }
 
-/// Represents an input for the [`super::Match`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Match {
-    /// The expression of the match.
     pub expression: Box<Expression>,
-
-    /// The arms of the match.
     pub arms: Vec<MatchArm>,
 }
 
@@ -1432,7 +1345,7 @@ impl Arbitrary for Match {
 
         (
             expression.clone(),
-            proptest::collection::vec(MatchArm::arbitrary_with(Some(expression)), 1..=8),
+            proptest::collection::vec(MatchArm::arbitrary_with(Some(expression)), 1..=6),
         )
             .prop_map(|(expression, arms)| Self {
                 expression: Box::new(expression),
@@ -1452,7 +1365,6 @@ impl Display for Match {
     }
 }
 
-/// Represents an input for the [`super::Imperative`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Imperative {
@@ -1489,7 +1401,6 @@ impl Display for Imperative {
     }
 }
 
-/// Represents an input for the [`super::Functional`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Functional {
@@ -1508,13 +1419,9 @@ pub enum Functional {
     Cast(Cast),
 }
 
-/// Represents an input for the [`super::ArrowOperator`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArrowOperator {
-    /// The operand expression of the arrow operator
     pub operand: Box<Functional>,
-
-    /// The name of the field to access
     pub identifier: syntax_tree::tests::Identifier,
 }
 
@@ -1557,10 +1464,8 @@ impl Display for ArrowOperator {
     }
 }
 
-/// Represents an input for the [`super::Return`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Return {
-    /// The expression of the `return`.
     pub expression: Option<Functional>,
 }
 
@@ -1597,10 +1502,8 @@ impl Display for Return {
     }
 }
 
-/// Represents an input for the [`super::Continue`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Continue {
-    /// The label of the `continue`.
     pub label: Option<syntax_tree::tests::Label>,
 }
 
@@ -1633,13 +1536,9 @@ impl Display for Continue {
     }
 }
 
-/// Represents an input for the [`super::Express`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Express {
-    /// The label of the `express`.
     pub label: Option<syntax_tree::tests::Label>,
-
-    /// The expression of the `express`.
     pub expression: Option<Functional>,
 }
 
@@ -1683,13 +1582,9 @@ impl Arbitrary for Express {
     }
 }
 
-/// Represents an input for the [`super::Break`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Break {
-    /// The label of the `break`.
     pub label: Option<syntax_tree::tests::Label>,
-
-    /// The expression of the `break`.
     pub expression: Option<Functional>,
 }
 
@@ -1733,7 +1628,6 @@ impl Arbitrary for Break {
     }
 }
 
-/// Represents an input for the [`super::Terminator`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Terminator {
@@ -1815,7 +1709,6 @@ impl Display for Functional {
     }
 }
 
-/// Represents an input for the [`super::Expression`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Expression {
@@ -1860,7 +1753,7 @@ fn filter_functional_variant(
 }
 
 impl Arbitrary for Expression {
-    type Parameters = Option<BoxedStrategy<TypeSpecifier>>;
+    type Parameters = Option<BoxedStrategy<Type>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -1870,7 +1763,7 @@ impl Arbitrary for Expression {
             BooleanLiteral::arbitrary()
                 .prop_map(|x| Self::Functional(Functional::BooleanLiteral(x))),
         ];
-        leaf.prop_recursive(16, 1024, 16, move |inner| {
+        leaf.prop_recursive(4, 24, 6, move |inner| {
             prop_oneof![
                 Named::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Self::Functional(Functional::Named(x))),

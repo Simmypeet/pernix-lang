@@ -49,7 +49,7 @@ fn trait_function_strategy(
     parent_generic_parameters: GenericParameters,
 ) -> impl Strategy<Value = TraitFunction> {
     (
-        proptest::collection::hash_map(crate::input::name(), proptest::bool::ANY, 0..=4),
+        proptest::collection::hash_map(crate::input::name(), proptest::bool::ANY, 0..=6),
         generic_parameters_strategy(Some(parent_generic_parameters)),
     )
         .prop_map(|(parameters, generic_parameters)| TraitFunction {

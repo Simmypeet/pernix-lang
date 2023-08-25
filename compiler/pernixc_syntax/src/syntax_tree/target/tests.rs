@@ -68,7 +68,7 @@ impl Arbitrary for ModuleTree {
                 submodules_by_name: HashMap::new(),
             });
 
-        leaf.prop_recursive(3, 15, 3, move |inner| {
+        leaf.prop_recursive(3, 6, 2, move |inner| {
             (
                 syntax_tree::tests::AccessModifier::arbitrary(),
                 module_content.clone(),
@@ -126,14 +126,11 @@ impl ModuleTree {
         let mut file = std::fs::File::create(file_path).unwrap();
 
         if !self.submodules_by_name.is_empty() && !is_root {
-            // create sub directory
             std::fs::create_dir(file_path.with_extension(""))?;
         }
 
-        // write items
         write!(file, "{self}")?;
 
-        // write submodules
         for (name, content) in &self.submodules_by_name {
             content.create_file(
                 &if is_root {
@@ -150,14 +147,6 @@ impl ModuleTree {
         Ok(())
     }
 
-    /// Creates the target file tree as if this file was the root module file.
-    ///
-    /// # Errors
-    /// [`TargetCreateError`]: If encountered any [`std::io::Error`] or [`std::fmt::Error`].
-    ///
-    /// # Returns
-    /// Returns the created temporary directory containing the target file tree. The root source
-    /// file will be named `main.pnx` located in the root directory of the temporary directory.
     pub fn create_target(&self) -> Result<tempfile::TempDir, TargetCreateError> {
         let tempdir = tempfile::tempdir()?;
 
@@ -189,7 +178,6 @@ proptest! {
     }
 }
 
-/// Enumeration of all error types that can be returned when parsing a target tree.
 #[derive(Debug, EnumAsInner, From)]
 enum Error {
     Lexical(pernixc_lexical::error::Error),

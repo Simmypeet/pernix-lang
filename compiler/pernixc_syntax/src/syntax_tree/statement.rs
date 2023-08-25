@@ -1,5 +1,3 @@
-//! Contains the definitions of statement syntax tree.
-
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -10,14 +8,12 @@ use pernixc_system::diagnostic::Handler;
 use super::{
     expression::{Expression, Functional, Imperative, Terminator},
     pattern::Irrefutable,
-    TypeAnnotation,
+    ty::Type,
 };
 use crate::{error::Error, parser::Parser};
 
-/// Represents a statement syntax tree node
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Statement:
 ///     VariableDeclaration
 ///     | Expressive
@@ -38,10 +34,26 @@ impl SourceElement for Statement {
     }
 }
 
-/// Represents a variable declaration syntax tree node
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
+/// TypeAnnotation:
+///     ':' Type
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct TypeAnnotation {
+    #[get = "pub"]
+    colon: Punctuation,
+    #[get = "pub"]
+    ty: Type,
+}
+
+impl SourceElement for TypeAnnotation {
+    fn span(&self) -> Span { self.colon.span().join(&self.ty.span()).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// VariableDeclaration:
 ///     'let' Irrefutable TypeAnnotation? '=' Expression ';'
 ///     ;
@@ -67,13 +79,8 @@ impl SourceElement for VariableDeclaration {
     fn span(&self) -> Span { self.let_keyword.span().join(&self.semicolon.span).unwrap() }
 }
 
-/// Represents an expressive statement syntax tree node
-///
-/// Expressive statements are statements that interest in the side effects of evaluating an
-/// expression.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Expressive:
 ///     Semi
 ///     | Imperative
@@ -95,13 +102,12 @@ impl SourceElement for Expressive {
     }
 }
 
-/// Is an enumeration of all expressions that can be used in [`Semi`] statement.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// SemiExpression:
 ///     Functional
-///     | Terminator ///     ;
+///     | Terminator
+///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(missing_docs)]
@@ -119,12 +125,8 @@ impl SourceElement for SemiExpression {
     }
 }
 
-/// Represents a semi statement syntax tree node
-///
-/// Semi statements are statements that are a functional expression followed by a semicolon.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Semi:
 ///     Functional ';'
 ///     ;
@@ -178,11 +180,13 @@ impl<'a> Parser<'a> {
         let irrefutable_pattern = self.parse_irrefutable_pattern(handler)?;
 
         // parse optional type annotation
-        let type_annotation = if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == ':')
-        {
-            Some(self.parse_type_annotation(handler)?)
-        } else {
-            None
+        let type_annotation = match self.stop_at_significant() {
+            Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
+                self.forward();
+                let ty = self.parse_type(handler)?;
+                Some(TypeAnnotation { colon, ty })
+            }
+            _ => None,
         };
 
         let equals = self.parse_punctuation('=', true, handler)?;

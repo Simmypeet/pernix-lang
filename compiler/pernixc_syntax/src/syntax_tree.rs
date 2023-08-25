@@ -10,13 +10,13 @@ use pernixc_lexical::{
 use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
-use self::expression::Expression;
+use self::{expression::Expression, ty::Type};
 use crate::{
     error::{
         self, Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected,
-        PunctuationExpected, TypeSpecifierExpected,
+        PunctuationExpected,
     },
-    parser::{Parser, TokenProvider},
+    parser::Parser,
 };
 
 pub mod expression;
@@ -24,6 +24,7 @@ pub mod item;
 pub mod pattern;
 pub mod statement;
 pub mod target;
+pub mod ty;
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
 ///
@@ -165,7 +166,7 @@ impl<'a> Parser<'a> {
         ))
     }
 }
-/// Is the result of [`Parser::parse_enclosed_frame()`].
+/// Is the result of [`Parser::parse_enclosed_list()`].
 #[derive(Debug, Clone, Getters)]
 pub struct EnclosedList<T> {
     /// The open delimiter of the list.
@@ -190,27 +191,21 @@ impl<'a> Parser<'a> {
     /// # Errors
     /// - if the parser position is not at the delimited list of the given delimiter.
     /// - any error returned by the given parser function.
-    pub fn parse_enclosed_tree<T, H: Handler<Error>>(
+    pub fn parse_enclosed_list<T: std::fmt::Debug, H: Handler<Error>>(
         &mut self,
         delimiter: Delimiter,
         separator: char,
         mut f: impl FnMut(&mut Self, &H) -> Option<T>,
         handler: &H,
     ) -> Option<EnclosedList<T>> {
-        fn skip_to_next_separator(this: &mut Parser, separator: char) {
-            // skip to next separator
-            if this
-                .stop_at(|token| {
-                    token
-                        .as_punctuation()
-                        .map_or(false, |x| x.punctuation == separator)
-                })
-                .map_or(false, |x| {
-                    x.as_punctuation()
-                        .map_or(false, |x| x.punctuation == separator)
-                })
-            {
+        fn skip_to_next_separator(this: &mut Parser, separator: char) -> Option<Punctuation> {
+            if let Some(Token::Punctuation(punc)) = this.stop_at(
+                |token| matches!(token, Token::Punctuation(punc) if punc.punctuation == separator),
+            ) {
                 this.forward();
+                Some(punc)
+            } else {
+                None
             }
         }
 
@@ -236,13 +231,16 @@ impl<'a> Parser<'a> {
                     rest.push((separator.clone(), element));
                     trailing_separator = None;
                 }
-                _ => unreachable!(),
+                (first, trailing_separator) => unreachable!("{first:?} {trailing_separator:?}"),
             }
 
             // expect separator if not exhausted
             if !self.is_exhausted() {
                 let Some(separator) = self.parse_punctuation(separator, true, handler) else {
-                    skip_to_next_separator(self, separator);
+                    if let Some(punctuation) = skip_to_next_separator(self, separator) {
+                        trailing_separator = Some(punctuation);
+                    }
+
                     continue;
                 };
 
@@ -304,10 +302,8 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
     pub fn is_empty(&self) -> bool { false }
 }
 
-/// Represents a syntax tree for an access modifier.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// AccessModifier:
 ///     'public'
 ///      | 'private'
@@ -348,8 +344,6 @@ impl SourceElement for ScopeSeparator {
     fn span(&self) -> Span { self.first.span.join(&self.second.span).unwrap() }
 }
 
-/// Represents a syntax tree node of a lifetime argument identifier.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// LifetimeArgumentIdentifier:
@@ -373,8 +367,6 @@ impl SourceElement for LifetimeArgumentIdentifier {
     }
 }
 
-/// Represents a syntax tree node of a lifetime argument.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// LifetimeArgument:
@@ -386,7 +378,6 @@ impl SourceElement for LifetimeArgumentIdentifier {
 pub struct LifetimeArgument {
     #[get = "pub"]
     apostrophe: Punctuation,
-
     #[get = "pub"]
     identifier: LifetimeArgumentIdentifier,
 }
@@ -395,8 +386,6 @@ impl SourceElement for LifetimeArgument {
     fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span()).unwrap() }
 }
 
-/// Represents a syntax tree node of a constant argument.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ConstArgument:
@@ -417,12 +406,10 @@ impl SourceElement for ConstArgument {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
-/// Represents a syntax tree node of a generic argument.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// GenericArgument:
-///     TypeSpecifier
+///     Type
 ///     | ConstArgument
 ///     | LifetimeArgument
 ///     ;
@@ -430,7 +417,7 @@ impl SourceElement for ConstArgument {
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum GenericArgument {
-    TypeSpecifier(Box<TypeSpecifier>),
+    Type(Box<Type>),
     Const(ConstArgument),
     Lifetime(LifetimeArgument),
 }
@@ -438,15 +425,13 @@ pub enum GenericArgument {
 impl SourceElement for GenericArgument {
     fn span(&self) -> Span {
         match self {
-            Self::TypeSpecifier(type_specifier) => type_specifier.span(),
+            Self::Type(type_specifier) => type_specifier.span(),
             Self::Lifetime(lifetime_argument) => lifetime_argument.span(),
             Self::Const(const_argument) => const_argument.span(),
         }
     }
 }
 
-/// Represents a syntax tree node of a list of generic arguments separated by commas.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// GenericArgumentList:
@@ -455,8 +440,6 @@ impl SourceElement for GenericArgument {
 /// ```
 pub type GenericArgumentList = ConnectedList<GenericArgument, Punctuation>;
 
-/// Represents a syntax tree node of a list of generic arguments.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// GenericArguments:
@@ -487,8 +470,6 @@ impl SourceElement for GenericArguments {
     }
 }
 
-/// Represents a syntax tree node of an identifier with optional generic arguments.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// GenericIdentifier:
@@ -518,8 +499,6 @@ impl SourceElement for GenericIdentifier {
     }
 }
 
-/// Represents a syntax tree node of identifiers separated by scope separators.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// QualifiedIdentifier:
@@ -560,266 +539,6 @@ impl SourceElement for QualifiedIdentifier {
     }
 }
 
-/// Represents a syntax tree node of primitive type specifier.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// PrimitiveTypeSpecifier:
-///     'bool'
-///     | 'float32'
-///     | 'float64'
-///     | 'int8'
-///     | 'int16'
-///     | 'int32'
-///     | 'int64'
-///     | 'uint8'
-///     | 'uint16'
-///     | 'uint32'
-///     | 'uint64'
-///     ;
-/// ```
-#[derive(Debug, Clone, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum PrimitiveTypeSpecifier {
-    Bool(Keyword),
-    Float32(Keyword),
-    Float64(Keyword),
-    Int8(Keyword),
-    Int16(Keyword),
-    Int32(Keyword),
-    Int64(Keyword),
-    Uint8(Keyword),
-    Uint16(Keyword),
-    Uint32(Keyword),
-    Uint64(Keyword),
-}
-
-impl SourceElement for PrimitiveTypeSpecifier {
-    fn span(&self) -> Span {
-        match self {
-            Self::Bool(token)
-            | Self::Float32(token)
-            | Self::Float64(token)
-            | Self::Int8(token)
-            | Self::Int16(token)
-            | Self::Int32(token)
-            | Self::Int64(token)
-            | Self::Uint8(token)
-            | Self::Uint16(token)
-            | Self::Uint32(token)
-            | Self::Uint64(token) => token.span.clone(),
-        }
-    }
-}
-
-/// Represents a syntax tree node of reference qualifier.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// ReferenceQualifier:
-///     'mutable'
-///     | 'restrict'
-///     ;
-/// ```
-#[derive(Debug, Clone, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum ReferenceQualifier {
-    Mutable(Keyword),
-    Restrict(Keyword),
-}
-
-impl SourceElement for ReferenceQualifier {
-    fn span(&self) -> Span {
-        match self {
-            Self::Mutable(token) | Self::Restrict(token) => token.span.clone(),
-        }
-    }
-}
-
-/// Represents a syntax tree node of reference type specifier.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// ReferenceTypeSpecifier:
-///     '&' LifetimeArgument? ReferenceQualifier? TypeSpecifier
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
-pub struct ReferenceTypeSpecifier {
-    #[get = "pub"]
-    ampersand: Punctuation,
-    #[get = "pub"]
-    lifetime_argument: Option<LifetimeArgument>,
-    #[get = "pub"]
-    qualifier: Option<ReferenceQualifier>,
-    #[get = "pub"]
-    operand_type: Box<TypeSpecifier>,
-}
-
-impl SourceElement for ReferenceTypeSpecifier {
-    fn span(&self) -> Span { self.ampersand.span.join(&self.operand_type.span()).unwrap() }
-}
-
-/// Represents a list of type specifiers connected by commas.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// TypeSpecififerList:
-///     VariadicableTypeSpecifier (',' VariadicableTypeSpecifier)* ','?
-///     ;
-/// ```
-pub type VariadicableTypeSpecifierList = ConnectedList<Box<VariadicableTypeSpecifier>, Punctuation>;
-
-/// Represents a syntax tree node of tuple type specifier.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// TupleTypeSpecifier:
-///     '(' TypeSpecifiers? ')'
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct TupleTypeSpecifier {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    type_specifier_list: Option<VariadicableTypeSpecifierList>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
-
-impl SourceElement for TupleTypeSpecifier {
-    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
-}
-
-/// Represents a syntax tree node of array type specifier.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// ArrayTypeSpecifier:
-///     '[' TypeSpecifier ':' Expression ']'
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct ArrayTypeSpecifier {
-    #[get = "pub"]
-    left_bracket: Punctuation,
-    #[get = "pub"]
-    operand: Box<TypeSpecifier>,
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    expression: Box<Expression>,
-    #[get = "pub"]
-    right_bracket: Punctuation,
-}
-
-impl SourceElement for ArrayTypeSpecifier {
-    fn span(&self) -> Span {
-        self.left_bracket
-            .span
-            .join(&self.right_bracket.span)
-            .unwrap()
-    }
-}
-
-/// Represents a syntax tree node of pointer type specifier.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// PointerTypeSpecifier:
-///     '*' 'mutable'? TypeSpecifier
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct PointerTypeSpecifier {
-    #[get = "pub"]
-    asterisk: Punctuation,
-    #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
-    #[get = "pub"]
-    operand: Box<TypeSpecifier>,
-}
-
-impl SourceElement for PointerTypeSpecifier {
-    fn span(&self) -> Span { self.asterisk.span.join(&self.operand.span()).unwrap() }
-}
-
-/// Represents a syntax tree node of type specifier.
-///
-/// The type specifier is used to annotate the type of various symbols in the syntax tree.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// TypeSpecifier:
-///     PrimitiveTypeIdentifier
-///     | QualifiedIdentifier
-///     | ReferenceTypeSpecifier
-///     | PointerTypeSpecififer
-///     ;
-/// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
-#[allow(missing_docs)]
-pub enum TypeSpecifier {
-    Primitive(PrimitiveTypeSpecifier),
-    QualifiedIdentifier(QualifiedIdentifier),
-    Reference(ReferenceTypeSpecifier),
-    Pointer(PointerTypeSpecifier),
-    Tuple(TupleTypeSpecifier),
-    Array(ArrayTypeSpecifier),
-}
-
-impl SourceElement for TypeSpecifier {
-    fn span(&self) -> Span {
-        match self {
-            Self::Primitive(primitive) => primitive.span(),
-            Self::QualifiedIdentifier(qualified) => qualified.span(),
-            Self::Reference(reference) => reference.span(),
-            Self::Pointer(pointer) => pointer.span(),
-            Self::Tuple(tuple) => tuple.span(),
-            Self::Array(array) => array.span(),
-        }
-    }
-}
-
-/// Represents a syntax tree node of a variadic type parameter.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// VariadicTypeParameter:
-///     '...' Identifier
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct VariadicTypeParameter {
-    #[get = "pub"]
-    ellipsis: (Punctuation, Punctuation, Punctuation),
-    #[get = "pub"]
-    identifier: Identifier,
-}
-
-impl SourceElement for VariadicTypeParameter {
-    fn span(&self) -> Span { self.ellipsis.0.span.join(&self.identifier.span).unwrap() }
-}
-
-/// Represents a syntax tree node of a variadicable type specifier.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// VariadicableTypeSpecifier:
-///     TypeSpecifier
-///     | VariadicTypeParameter
-///     ;
-/// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
-pub enum VariadicableTypeSpecifier {
-    TypeSpecifier(TypeSpecifier),
-    Variadic(VariadicTypeParameter),
-}
-
-/// Is a syntax tree node that represents a label.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Label:
@@ -837,27 +556,6 @@ pub struct Label {
 
 impl SourceElement for Label {
     fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span).unwrap() }
-}
-
-/// Represents a type annotation used to annotate the type of a symbol.
-///
-/// Syntax Synopsis:
-/// ``` txt
-/// TypeAnnotation:
-///     ':' TypeSpecifier
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
-pub struct TypeAnnotation {
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    type_specifier: TypeSpecifier,
-}
-
-impl SourceElement for TypeAnnotation {
-    fn span(&self) -> Span { self.colon.span.join(&self.type_specifier.span()).unwrap() }
 }
 
 impl<'a> Parser<'a> {
@@ -952,276 +650,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_lifetime_argument_identifier(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<LifetimeArgumentIdentifier> {
-        match self.next_significant_token() {
-            // static
-            Some(Token::Keyword(static_keyword))
-                if static_keyword.keyword == KeywordKind::Static =>
-            {
-                Some(LifetimeArgumentIdentifier::Static(static_keyword))
-            }
-
-            // identifier
-            Some(Token::Identifier(identifier)) => {
-                Some(LifetimeArgumentIdentifier::Identifier(identifier))
-            }
-
-            // error: lifetime argument identifier expected
-            found => {
-                handler.receive(Error::IdentifierExpected(IdentifierExpected { found }));
-
-                None
-            }
-        }
-    }
-
-    fn parse_reference_type_specifier(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<ReferenceTypeSpecifier> {
-        let ampersand = self.parse_punctuation('&', true, handler)?;
-        let lifetime_argument = match self.stop_at_significant() {
-            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
-                // eat apostrophe
-                self.forward();
-
-                let lifetime_argument_identifier =
-                    self.parse_lifetime_argument_identifier(handler)?;
-
-                Some(LifetimeArgument {
-                    apostrophe,
-                    identifier: lifetime_argument_identifier,
-                })
-            }
-
-            _ => None,
-        };
-        let reference_qualifier = match self.stop_at_significant() {
-            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
-                self.forward();
-                Some(ReferenceQualifier::Mutable(k))
-            }
-
-            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
-                self.forward();
-                Some(ReferenceQualifier::Restrict(k))
-            }
-
-            _ => None,
-        };
-        let operand_type = Box::new(self.parse_type_specifier(handler)?);
-
-        Some(ReferenceTypeSpecifier {
-            ampersand,
-            lifetime_argument,
-            qualifier: reference_qualifier,
-            operand_type,
-        })
-    }
-
-    fn parse_pointer_type_specifier(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<PointerTypeSpecifier> {
-        let asterisk = self.parse_punctuation('*', true, handler)?;
-
-        let mutable_keyword = match self.stop_at_significant() {
-            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
-                self.forward();
-                Some(k)
-            }
-            _ => None,
-        };
-
-        let operand_type = Box::new(self.parse_type_specifier(handler)?);
-
-        Some(PointerTypeSpecifier {
-            asterisk,
-            mutable_keyword,
-            operand: operand_type,
-        })
-    }
-
-    fn parse_array_type_specififer(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<ArrayTypeSpecifier> {
-        let left_bracket = self.step_into(Delimiter::Bracket, handler)?;
-
-        let result = (|| {
-            let type_specififer = Box::new(self.parse_type_specifier(handler)?);
-            let colon = self.parse_punctuation(':', true, handler)?;
-            let expression = Box::new(self.parse_expression(handler)?);
-
-            Some((type_specififer, colon, expression))
-        })();
-
-        let right_bracket = self.step_out(handler)?;
-        let result = result?;
-
-        Some(ArrayTypeSpecifier {
-            left_bracket,
-            operand: result.0,
-            colon: result.1,
-            expression: result.2,
-            right_bracket,
-        })
-    }
-
-    fn parse_tuple_type_specifier(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<TupleTypeSpecifier> {
-        let type_specifiers = self.parse_enclosed_tree(
-            Delimiter::Parenthesis,
-            ',',
-            |parser, handler| {
-                // stop at significant token
-                parser.stop_at_significant();
-
-                match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
-                    (
-                        Some(Token::Punctuation(p1)),
-                        Some(Token::Punctuation(p2)),
-                        Some(Token::Punctuation(p3)),
-                    ) if p1.punctuation == '.'
-                        && p2.punctuation == '.'
-                        && p3.punctuation == '.' =>
-                    {
-                        // eat three dots (ellipsis)
-                        parser.forward();
-                        parser.forward();
-                        parser.forward();
-
-                        let identifier = parser.parse_identifier(handler)?;
-
-                        Some(Box::new(VariadicableTypeSpecifier::Variadic(
-                            VariadicTypeParameter {
-                                ellipsis: (p1, p2, p3),
-                                identifier,
-                            },
-                        )))
-                    }
-
-                    _ => Some(Box::new(VariadicableTypeSpecifier::TypeSpecifier(
-                        parser.parse_type_specifier(handler)?,
-                    ))),
-                }
-            },
-            handler,
-        )?;
-
-        Some(TupleTypeSpecifier {
-            left_paren: type_specifiers.open,
-            type_specifier_list: type_specifiers.list,
-            right_paren: type_specifiers.close,
-        })
-    }
-
-    /// Parses a [`TypeSpecifier`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_type_specifier(&mut self, handler: &impl Handler<Error>) -> Option<TypeSpecifier> {
-        match self.stop_at_significant() {
-            // parse qualified identifier
-            Some(Token::Punctuation(first_colon))
-                if first_colon.punctuation == ':'
-                    && self.peek_offset(1).map_or(
-                        false,
-                        |x| matches!(x, Token::Punctuation(p) if p.punctuation == ':'),
-                    ) =>
-            {
-                Some(TypeSpecifier::QualifiedIdentifier(
-                    self.parse_qualified_identifier(false, handler)?,
-                ))
-            }
-
-            // parse qualified identifier
-            Some(Token::Identifier(..)) => Some(TypeSpecifier::QualifiedIdentifier(
-                self.parse_qualified_identifier(false, handler)?,
-            )),
-
-            // parse pointer type
-            Some(Token::Punctuation(p)) if p.punctuation == '*' => self
-                .parse_pointer_type_specifier(handler)
-                .map(TypeSpecifier::Pointer),
-
-            // parse reference
-            Some(Token::Punctuation(p)) if p.punctuation == '&' => self
-                .parse_reference_type_specifier(handler)
-                .map(TypeSpecifier::Reference),
-
-            // parse array type
-            Some(Token::Punctuation(p)) if p.punctuation == '[' => self
-                .parse_array_type_specififer(handler)
-                .map(TypeSpecifier::Array),
-
-            // parse tuple type
-            Some(Token::Punctuation(p)) if p.punctuation == '(' => self
-                .parse_tuple_type_specifier(handler)
-                .map(TypeSpecifier::Tuple),
-
-            // primitive type
-            Some(Token::Keyword(keyword))
-                if matches!(
-                    keyword.keyword,
-                    KeywordKind::Int8
-                        | KeywordKind::Int16
-                        | KeywordKind::Int32
-                        | KeywordKind::Int64
-                        | KeywordKind::Uint8
-                        | KeywordKind::Uint16
-                        | KeywordKind::Uint32
-                        | KeywordKind::Uint64
-                        | KeywordKind::Float32
-                        | KeywordKind::Float64
-                        | KeywordKind::Bool
-                ) =>
-            {
-                // eat primitive type token
-                self.next_token();
-
-                let primitive_type = match keyword.keyword {
-                    KeywordKind::Bool => PrimitiveTypeSpecifier::Bool(keyword),
-                    KeywordKind::Int8 => PrimitiveTypeSpecifier::Int8(keyword),
-                    KeywordKind::Int16 => PrimitiveTypeSpecifier::Int16(keyword),
-                    KeywordKind::Int32 => PrimitiveTypeSpecifier::Int32(keyword),
-                    KeywordKind::Int64 => PrimitiveTypeSpecifier::Int64(keyword),
-                    KeywordKind::Uint8 => PrimitiveTypeSpecifier::Uint8(keyword),
-                    KeywordKind::Uint16 => PrimitiveTypeSpecifier::Uint16(keyword),
-                    KeywordKind::Uint32 => PrimitiveTypeSpecifier::Uint32(keyword),
-                    KeywordKind::Uint64 => PrimitiveTypeSpecifier::Uint64(keyword),
-                    KeywordKind::Float32 => PrimitiveTypeSpecifier::Float32(keyword),
-                    KeywordKind::Float64 => PrimitiveTypeSpecifier::Float64(keyword),
-                    _ => unreachable!(),
-                };
-
-                Some(TypeSpecifier::Primitive(primitive_type))
-            }
-
-            found => {
-                // eat the current token / make progress
-                self.forward();
-
-                handler.receive(Error::TypeSpecifierExpected(TypeSpecifierExpected {
-                    found: match found {
-                        None => match self.token_provider {
-                            TokenProvider::TokenStream(..) => None,
-                            TokenProvider::Delimited(delimited) => {
-                                Some(Token::Punctuation(delimited.close.clone()))
-                            }
-                        },
-                        found => found,
-                    },
-                }));
-
-                None
-            }
-        }
-    }
-
     /// Parses a [`GenericArgument`]
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_generic_argument(
@@ -1257,9 +685,7 @@ impl<'a> Parser<'a> {
             }
 
             // parse type argument
-            _ => Some(GenericArgument::TypeSpecifier(Box::new(
-                self.parse_type_specifier(handler)?,
-            ))),
+            _ => Some(GenericArgument::Type(Box::new(self.parse_type(handler)?))),
         }
     }
 
@@ -1303,20 +729,30 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parsers a [`TypeAnnotation`]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn parse_type_annotation(
+    fn parse_lifetime_argument_identifier(
         &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<TypeAnnotation> {
-        let colon = self.parse_punctuation(':', true, handler)?;
+        handler: &impl Handler<error::Error>,
+    ) -> Option<LifetimeArgumentIdentifier> {
+        match self.next_significant_token() {
+            // static
+            Some(Token::Keyword(static_keyword))
+                if static_keyword.keyword == KeywordKind::Static =>
+            {
+                Some(LifetimeArgumentIdentifier::Static(static_keyword))
+            }
 
-        let type_specifier = self.parse_type_specifier(handler)?;
+            // identifier
+            Some(Token::Identifier(identifier)) => {
+                Some(LifetimeArgumentIdentifier::Identifier(identifier))
+            }
 
-        Some(TypeAnnotation {
-            colon,
-            type_specifier,
-        })
+            // error: lifetime argument identifier expected
+            found => {
+                handler.receive(Error::IdentifierExpected(IdentifierExpected { found }));
+
+                None
+            }
+        }
     }
 }
 

@@ -1,5 +1,3 @@
-//! Contains all kinds of errors that can occur while parsing the source code.
-
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
@@ -7,6 +5,65 @@ use pernixc_lexical::token::{KeywordKind, Token};
 use pernixc_print::LogSeverity;
 use pernixc_source::Span;
 use thiserror::Error;
+
+/// A higher ranked bound syntax is expected but found an other invalid token.
+#[derive(Debug, Clone)]
+pub struct HigherRankedBoundExpected {
+    /// The invalid token that was found.
+    pub found: Option<Token>,
+}
+
+impl HigherRankedBoundExpected {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "a higher ranked bound syntax is expected",
+        );
+        if let Some(token) = self.found.as_ref() {
+            pernixc_print::print_source_code(
+                token.span(),
+                Some("higher ranked bound syntax expected here"),
+            );
+        }
+    }
+}
+
+/// A higher ranked bound parameter cannot be empty.
+#[derive(Debug, Clone)]
+pub struct HigherRankedBoundParameterCannotBeEmpty {
+    /// The span of the higher ranked bound parameter.
+    pub span: Span,
+}
+
+impl HigherRankedBoundParameterCannotBeEmpty {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "a higher ranked bound parameter cannot be empty",
+        );
+        pernixc_print::print_source_code(&self.span, None);
+    }
+}
+
+/// Empty tuple pattern cannot be empty in this context
+#[derive(Debug, Clone)]
+pub struct TuplePatternCannotBeEmpty {
+    /// The span of the tuple pattern.
+    pub span: Span,
+}
+
+impl TuplePatternCannotBeEmpty {
+    /// Prints the error message to the console
+    pub fn print(&self) {
+        pernixc_print::print(
+            LogSeverity::Error,
+            "empty tuple pattern cannot be empty in this context",
+        );
+        pernixc_print::print_source_code(&self.span, None);
+    }
+}
 
 /// A pattern syntax is expected but found an other invalid token.
 #[derive(Debug, Clone)]
@@ -356,6 +413,9 @@ pub enum Error {
     ImplementsMemberExpected(ImplementsMemberExpected),
     GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty),
     PatternExpected(PatternExpected),
+    HigherRankedBoundExpected(HigherRankedBoundExpected),
+    HigherRankedBoundParameterCannotBeEmpty(HigherRankedBoundParameterCannotBeEmpty),
+    TuplePatternCannotBeEmpty(TuplePatternCannotBeEmpty),
 }
 
 impl Error {
@@ -374,6 +434,9 @@ impl Error {
             Self::TraitMemberExpected(e) => e.print(),
             Self::ImplementsMemberExpected(e) => e.print(),
             Self::PatternExpected(e) => e.print(),
+            Self::HigherRankedBoundExpected(e) => e.print(),
+            Self::HigherRankedBoundParameterCannotBeEmpty(e) => e.print(),
+            Self::TuplePatternCannotBeEmpty(e) => e.print(),
         }
     }
 }

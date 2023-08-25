@@ -1,4 +1,4 @@
-//! Contains the definitions of pattern syntax trees
+use std::fmt::Debug;
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -253,11 +253,11 @@ trait Pattern {
 }
 
 impl<'a> Parser<'a> {
-    fn parse_structural_pattern<T: Pattern>(
+    fn parse_structural_pattern<T: Pattern + Debug>(
         &mut self,
         handler: &impl Handler<error::Error>,
     ) -> Option<Structural<T>> {
-        let enclosed_tree = self.parse_enclosed_tree(
+        let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
             |parser, handler| {
@@ -300,11 +300,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_tuple_pattern<T: Pattern>(
+    fn parse_tuple_pattern<T: Pattern + Debug>(
         &mut self,
         handler: &impl Handler<error::Error>,
     ) -> Option<Tuple<T>> {
-        let enclosed_tree = self.parse_enclosed_tree(
+        let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
             |parser, handler| {

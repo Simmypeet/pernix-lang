@@ -1,5 +1,3 @@
-//! Contains the definitions of item syntax tree.
-
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -14,19 +12,18 @@ use super::{
     expression::{Expression, Functional},
     pattern,
     statement::Statement,
-    AccessModifier, ConnectedList, LifetimeArgument, QualifiedIdentifier, ScopeSeparator,
-    TypeAnnotation, TypeSpecifier, VariadicableTypeSpecifier,
+    ty, AccessModifier, ConnectedList, EnclosedList, LifetimeArgument, QualifiedIdentifier,
+    ScopeSeparator,
 };
 use crate::{
     error::{
-        AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty, ItemExpected,
-        PunctuationExpected,
+        AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty,
+        HigherRankedBoundExpected, HigherRankedBoundParameterCannotBeEmpty, ItemExpected,
+        PunctuationExpected, TuplePatternCannotBeEmpty,
     },
     parser::Parser,
 };
 
-/// Represents a moulde path in used in `module` declarations and `using` statements.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ModulePath:
@@ -34,7 +31,6 @@ use crate::{
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct ModulePath {
     #[get = "pub"]
     first: Identifier,
@@ -49,8 +45,6 @@ impl ModulePath {
     }
 }
 
-/// Represents a syntax tree node for a `module` using statement.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Using:
@@ -58,7 +52,6 @@ impl ModulePath {
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Using {
     #[get = "pub"]
     using_keyword: Keyword,
@@ -72,8 +65,6 @@ impl SourceElement for Using {
     fn span(&self) -> Span { self.using_keyword.span.join(&self.semicolon.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a `module` signature.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ModuleSignature:
@@ -81,7 +72,6 @@ impl SourceElement for Using {
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct ModuleSignature {
     #[get = "pub"]
     module_keyword: Keyword,
@@ -89,8 +79,6 @@ pub struct ModuleSignature {
     identifier: Identifier,
 }
 
-/// Represents a syntax tree node for a `module` declaration.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// Module:
@@ -98,7 +86,6 @@ pub struct ModuleSignature {
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Module {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -112,8 +99,6 @@ impl SourceElement for Module {
     fn span(&self) -> Span { self.access_modifier.span().join(&self.kind.span()).unwrap() }
 }
 
-/// Represents a syntax tree node containing the content of the module.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ModuleItems:
@@ -135,8 +120,6 @@ impl ModuleContent {
     pub fn dissolve(self) -> (Vec<Using>, Vec<Item>) { (self.usings, self.items) }
 }
 
-/// Represents a syntax tree node for a module content.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ModuleContent:
@@ -159,8 +142,6 @@ impl SourceElement for ModuleKind {
     }
 }
 
-/// Represents a syntax tree node for a module body.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// ModuleBody:
@@ -181,16 +162,13 @@ impl SourceElement for ModuleBody {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a lifetime parameter.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// LifetimeParameter:
 ///     '\'' Identifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct LifetimeParameter {
     #[get = "pub"]
     apostrophe: Punctuation,
@@ -215,18 +193,14 @@ impl<Value: SourceElement> SourceElement for DefaultGenericParameter<Value> {
     fn span(&self) -> Span { self.equals.span.join(&self.value.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a default generic parameter for a type.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// DefaultTypeParameter:
 ///     '=' TypeSpecifier
 ///     ;
 /// ```
-type DefaultTypeParameter = DefaultGenericParameter<TypeSpecifier>;
+type DefaultTypeParameter = DefaultGenericParameter<ty::Type>;
 
-/// Represents a syntax tree node for a default generic parameter for a constant.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// DefaultConstParameter:
@@ -235,16 +209,13 @@ type DefaultTypeParameter = DefaultGenericParameter<TypeSpecifier>;
 /// ```
 type DefaultConstParameter = DefaultGenericParameter<Functional>;
 
-/// Represents a syntax tree node for a type parameter.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// TypeParameter:
 ///     Identifier DefaultTypeParameter?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct TypeParameter {
     #[get = "pub"]
     identifier: Identifier,
@@ -266,21 +237,20 @@ impl SourceElement for TypeParameter {
     }
 }
 
-/// Represents a syntax tree node for a const parameter.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// ConstParameter:
 ///     Identifier TypeAnnotation DefaultConstParameter?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct ConstParameter {
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
-    type_annotation: TypeAnnotation,
+    colon: Punctuation,
+    #[get = "pub"]
+    ty: ty::Type,
     #[get = "pub"]
     default: Option<DefaultConstParameter>,
 }
@@ -293,16 +263,14 @@ impl SourceElement for ConstParameter {
                 &self
                     .default
                     .as_ref()
-                    .map_or_else(|| self.type_annotation.span(), SourceElement::span),
+                    .map_or_else(|| self.ty.span(), SourceElement::span),
             )
             .unwrap()
     }
 }
 
-/// Represents a syntax tree node for a generic parameter.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// GenericParameter:
 ///     LifetimeParameter
 ///     | TypeParameter
@@ -310,7 +278,6 @@ impl SourceElement for ConstParameter {
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
-#[allow(missing_docs)]
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
@@ -327,26 +294,21 @@ impl SourceElement for GenericParameter {
     }
 }
 
-/// Represents a syntax tree node for a list of generic parameters separated by commas.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 ///  GenericParameterList:
 ///     GenericParameter (',' GenericParameter)*
 ///     ;
 /// ```
 pub type GenericParameterList = ConnectedList<GenericParameter, Punctuation>;
 
-/// Represents a syntax tree node for a generic parameters used in various item definitions.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// GenericParameters:
 ///     '<' GenericParameterList '>'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct GenericParameters {
     #[get = "pub"]
     left_angle_bracket: Punctuation,
@@ -377,16 +339,13 @@ impl SourceElement for GenericParameters {
     }
 }
 
-/// Represents a syntax tree node of a lifetime bound used in a where clause.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// LifetimeBound:
 ///     LifetimeParameter ':' LifetimeArgument ('+' LifetimeArgument)*
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct LifetimeBound {
     #[get = "pub"]
     operand: LifetimeParameter,
@@ -400,44 +359,38 @@ impl SourceElement for LifetimeBound {
     fn span(&self) -> Span { self.operand.span().join(&self.arguments.span()).unwrap() }
 }
 
-/// Represents a syntax tree node of a type bound constraint.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TypeBoundConstraint:
-///     TypeSpecifier
+///     Type
 ///     | LifetimeArgument
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
-#[allow(missing_docs)]
 pub enum TypeBoundConstraint {
-    TypeSpecifier(TypeSpecifier),
+    Type(ty::Type),
     LifetimeArgument(LifetimeArgument),
 }
 
 impl SourceElement for TypeBoundConstraint {
     fn span(&self) -> Span {
         match self {
-            Self::TypeSpecifier(s) => s.span(),
+            Self::Type(s) => s.span(),
             Self::LifetimeArgument(s) => s.span(),
         }
     }
 }
 
-/// Represents a syntax tree node of a type bound used in a where clause.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TypeBound:
-///     TypeSpecifier ':' TypeBoundConstraint ('+' TypeBoundConstraint)*
+///     Type ':' TypeBoundConstraint ('+' TypeBoundConstraint)*
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct TypeBound {
     #[get = "pub"]
-    type_specifier: TypeSpecifier,
+    ty: ty::Type,
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
@@ -446,7 +399,7 @@ pub struct TypeBound {
 
 impl SourceElement for TypeBound {
     fn span(&self) -> Span {
-        self.type_specifier
+        self.ty
             .span()
             .join(&self.type_bound_constraints.span())
             .unwrap()
@@ -488,24 +441,96 @@ impl<T: SourceElement> SourceElement for BoundList<T> {
     }
 }
 
-/// Represents a syntax tree node of a constraint used in a where clause.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
+/// PackedTuple:
+///     '(' Identifier (',' Identifier)* ','? ')'
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct PackedTupleEach {
+    #[get = "pub"]
+    left_paren: Punctuation,
+    #[get = "pub"]
+    identifier_list: ConnectedList<Identifier, Punctuation>,
+    #[get = "pub"]
+    right_paren: Punctuation,
+}
+
+impl SourceElement for PackedTupleEach {
+    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// TupleEach:
+///     PackedTuple
+///     | Identifier
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+pub enum TupleEach {
+    Packed(PackedTupleEach),
+    Identifier(Identifier),
+}
+
+impl SourceElement for TupleEach {
+    fn span(&self) -> Span {
+        match self {
+            Self::Packed(p) => p.span(),
+            Self::Identifier(i) => i.span.clone(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// ForTupleBound:
+///     'for' '<' TupleEach ':' TupleEach '>' '{' ConstraintList? '}'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ForTupleBound {
+    #[get = "pub"]
+    for_keyword: Keyword,
+    #[get = "pub"]
+    left_angle_bracket: Punctuation,
+    #[get = "pub"]
+    tuple_each_pattern: TupleEach,
+    #[get = "pub"]
+    colon: Punctuation,
+    #[get = "pub"]
+    tuple_each_argument: TupleEach,
+    #[get = "pub"]
+    right_angle_bracket: Punctuation,
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    constraint_list: Option<ConnectedList<Box<Constraint>, Punctuation>>,
+    #[get = "pub"]
+    right_brace: Punctuation,
+}
+
+impl SourceElement for ForTupleBound {
+    fn span(&self) -> Span { self.for_keyword.span.join(&self.right_brace.span).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Constraint:
 ///     TraitBound
 ///     | LifetimeBound
 ///     | TypeBound
 ///     | TupleBound
+///     | ForTupleBound
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
-#[allow(missing_docs)]
 pub enum Constraint {
     Trait(TraitBound),
     Lifetime(LifetimeBound),
     Type(TypeBound),
     Tuple(TupleBound),
+    ForTuple(ForTupleBound),
 }
 
 impl SourceElement for Constraint {
@@ -515,16 +540,15 @@ impl SourceElement for Constraint {
             Self::Lifetime(s) => s.span(),
             Self::Type(s) => s.span(),
             Self::Tuple(s) => s.span(),
+            Self::ForTuple(s) => s.span(),
         }
     }
 }
 
-/// Represents a syntax tree node for a tuple type constraint.
-///
 /// Syntax Synopsis:
 /// ``` txt
 /// TupleBound:
-///     '(' QualifiedIdentifier ')'
+///     '(' Identifier ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -532,7 +556,7 @@ pub struct TupleBound {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
-    qualified_identifier: QualifiedIdentifier,
+    identifier: Identifier,
     #[get = "pub"]
     right_paren: Punctuation,
 }
@@ -541,17 +565,43 @@ impl SourceElement for TupleBound {
     fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a trait bound used in a where clause.
-///
 /// Syntax Synopsis:
-/// ``` text
-/// TraitBound:
-///     'const'? QualifiedIdentifier
+/// ``` txt
+/// HigherRankedLifetimeParameters:
+///     'for' '<' LifetimeParameter (',' LifetimeParameter)* ','? '>'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
+pub struct HigherRankedLifetimeParameters {
+    #[get = "pub"]
+    for_keyword: Keyword,
+    #[get = "pub"]
+    left_angle_bracket: Punctuation,
+    #[get = "pub"]
+    lifetime_parameter_list: ConnectedList<LifetimeParameter, Punctuation>,
+    #[get = "pub"]
+    right_angle_bracket: Punctuation,
+}
+
+impl SourceElement for HigherRankedLifetimeParameters {
+    fn span(&self) -> Span {
+        self.for_keyword
+            .span
+            .join(&self.right_angle_bracket.span)
+            .unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// TraitBound:
+///     HigherRankedLifetimeParameters? 'const'? QualifiedIdentifier
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
 pub struct TraitBound {
+    #[get = "pub"]
+    higher_ranked_lifetime_parameters: Option<HigherRankedLifetimeParameters>,
     #[get = "pub"]
     const_keyword: Option<Keyword>,
     #[get = "pub"]
@@ -559,29 +609,44 @@ pub struct TraitBound {
 }
 
 impl SourceElement for TraitBound {
-    fn span(&self) -> Span { self.qualified_identifier.span() }
+    fn span(&self) -> Span {
+        self.higher_ranked_lifetime_parameters.as_ref().map_or_else(
+            || {
+                self.const_keyword.as_ref().map_or_else(
+                    || self.qualified_identifier.span(),
+                    |const_keyword| {
+                        const_keyword
+                            .span
+                            .join(&self.qualified_identifier.span())
+                            .unwrap()
+                    },
+                )
+            },
+            |higher_ranked_lifetime_parameters| {
+                higher_ranked_lifetime_parameters
+                    .span()
+                    .join(&self.qualified_identifier.span())
+                    .unwrap()
+            },
+        )
+    }
 }
 
-/// Represents a syntax tree node for a list of constraints separated by commas.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// ConstraintList:
 ///     Constraint (',' Constraint)*
 ///     ;
 /// ```
 pub type ConstraintList = ConnectedList<Constraint, Punctuation>;
 
-/// Represents a syntax tree node for a where clause.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// WhereClause:
 ///     'where' ':' ConstraintList
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct WhereClause {
     #[get = "pub"]
     where_keyword: Keyword,
@@ -600,16 +665,13 @@ impl SourceElement for WhereClause {
     }
 }
 
-/// Represents a syntax tree node for a trait signature.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TraitDeclaration:
 ///     'trait' Identifier GenericParameters? WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct TraitSignature {
     #[get = "pub"]
     trait_keyword: Keyword,
@@ -636,16 +698,13 @@ impl SourceElement for TraitSignature {
     }
 }
 
-/// Represents a syntax tree node for a trait body.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TraitBody:
 ///     '{' TraitMember* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct TraitBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -667,16 +726,13 @@ impl SourceElement for TraitBody {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a trait item declaration.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Trait:
 ///     AccessModifier TraitSignature TraitBody
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Trait {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -698,16 +754,13 @@ impl SourceElement for Trait {
     fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a trait function member.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TraitFunction:
 ///     FunctionSignature ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct TraitFunction {
     #[get = "pub"]
     signature: FunctionSignature,
@@ -725,16 +778,13 @@ impl SourceElement for TraitFunction {
     fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a trait type member.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TraitType:
 ///     TypeSignature ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct TraitType {
     #[get = "pub"]
     signature: TypeSignature,
@@ -746,10 +796,8 @@ impl SourceElement for TraitType {
     fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a trait member.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TraitMember:
 ///     TraitFunction
 ///     | TraitType
@@ -757,7 +805,6 @@ impl SourceElement for TraitType {
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(clippy::large_enum_variant)]
-#[allow(missing_docs)]
 pub enum TraitMember {
     Function(TraitFunction),
     Type(TraitType),
@@ -772,50 +819,46 @@ impl SourceElement for TraitMember {
     }
 }
 
-/// Represents a syntax tree node for function parameter.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Parameter:
-///     Irrefutable TypeAnnotation
+///     Irrefutable ':' Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Parameter {
     #[get = "pub"]
     irrefutable_pattern: pattern::Irrefutable,
     #[get = "pub"]
-    type_annotation: TypeAnnotation,
+    colon: Punctuation,
+    #[get = "pub"]
+    ty: ty::Type,
 }
 
 impl SourceElement for Parameter {
     fn span(&self) -> Span {
         self.irrefutable_pattern
             .span()
-            .join(&self.type_annotation.span())
+            .join(&self.ty.span())
             .unwrap()
     }
 }
 
-/// Represents a list of parameter separated by commas.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
+/// ParameterList:
+///     Parameter (',' Parameter)* ','?
 ///     ;
 /// ```
 pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 
-/// Represents a syntax tree node for a list of parameters enclosed in parentheses.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Parameters:
 ///     '(' ParameterList? ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Parameters {
     #[get = "pub"]
     left_paren: Punctuation,
@@ -840,32 +883,30 @@ impl SourceElement for Parameters {
 /// Represents a syntax tree node for a return type in a function signature.
 ///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// ReturnType:
-///     TypeAnnotation
+///     ':' Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct ReturnType {
     #[get = "pub"]
-    type_annotation: TypeAnnotation,
+    colon: Punctuation,
+    #[get = "pub"]
+    ty: ty::Type,
 }
 
 impl SourceElement for ReturnType {
-    fn span(&self) -> Span { self.type_annotation.span() }
+    fn span(&self) -> Span { self.colon.span.join(&self.ty.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a function signature.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// FunctionSignature:
 ///     'function' 'const'? Identifier GenericParameters? Parameters ReturnType? WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct FunctionSignature {
     #[get = "pub"]
     function_keyword: Keyword,
@@ -924,16 +965,13 @@ impl SourceElement for FunctionSignature {
     }
 }
 
-/// Represents a syntax tree node for a function body.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// FunctionBody:
 ///     '{' Statement* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct FunctionBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -947,16 +985,13 @@ impl SourceElement for FunctionBody {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a function item declaration.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Function:
 ///     AccessModifier FunctionSignature FunctionBody
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Function {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -978,16 +1013,13 @@ impl SourceElement for Function {
     fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a `type` alias signature.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TypeSignature:
 ///     'type' Identifier GenericParameters?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct TypeSignature {
     #[get = "pub"]
     type_keyword: Keyword,
@@ -1016,37 +1048,31 @@ impl SourceElement for TypeSignature {
     }
 }
 
-/// Represents a syntax tree node for a `type` alias declaration.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// TypeDeclaration:
-///     '=' TypeSpecifier
+///     '=' Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct TypeDefinition {
     #[get = "pub"]
     equals: Punctuation,
     #[get = "pub"]
-    type_specifier: TypeSpecifier,
+    ty: ty::Type,
 }
 
 impl SourceElement for TypeDefinition {
-    fn span(&self) -> Span { self.equals.span.join(&self.type_specifier.span()).unwrap() }
+    fn span(&self) -> Span { self.equals.span.join(&self.ty.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a `type` alias item declaration.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Type:
 ///     AccessModifier TypeSignature TypeDefinition ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Type {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1067,16 +1093,13 @@ impl SourceElement for Type {
     }
 }
 
-/// Represents a syntax tree node for a struct signature.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// StructSignature:
 ///     'struct' Identifier GenericParameters? WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct StructSignature {
     #[get = "pub"]
     struct_keyword: Keyword,
@@ -1097,21 +1120,26 @@ impl SourceElement for StructSignature {
     }
 }
 
-/// Represents a syntax tree node for a struct definition.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
+/// StructMemberList:
+///     StructMember (',' StructMember)* ','?
+///     ;
+/// ```
+pub type StructMemberList = ConnectedList<StructMember, Punctuation>;
+
+/// Syntax Synopsis:
+/// ``` txt
 /// StructDefinition:
 ///     '{' StructMember* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct StructBody {
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
-    members: Vec<StructMember>,
+    struct_member_list: Option<StructMemberList>,
     #[get = "pub"]
     right_brace: Punctuation,
 }
@@ -1119,8 +1147,8 @@ pub struct StructBody {
 impl StructBody {
     /// Dissolves the [`StructBody`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Vec<StructMember>, Punctuation) {
-        (self.left_brace, self.members, self.right_brace)
+    pub fn dissolve(self) -> (Punctuation, Option<StructMemberList>, Punctuation) {
+        (self.left_brace, self.struct_member_list, self.right_brace)
     }
 }
 
@@ -1128,16 +1156,13 @@ impl SourceElement for StructBody {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a struct item declaration.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Struct:
 ///     AccessModifier StructSignature StructBody
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Struct {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1159,46 +1184,35 @@ impl SourceElement for Struct {
     fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a struct field member.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// StructField:
-///     AccessModifier Identifier TypeAnnotation ';'
+///     AccessModifier Identifier ':' Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct StructField {
     #[get = "pub"]
     access_modifier: AccessModifier,
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
-    type_annotation: TypeAnnotation,
+    colon: Punctuation,
     #[get = "pub"]
-    semicolon: Punctuation,
+    ty: ty::Type,
 }
 
 impl SourceElement for StructField {
-    fn span(&self) -> Span {
-        self.access_modifier
-            .span()
-            .join(&self.semicolon.span)
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.access_modifier.span().join(&self.ty.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a struct member.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// StructMember:
 ///     StructField
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
-#[allow(missing_docs)]
 pub enum StructMember {
     Field(StructField),
 }
@@ -1211,16 +1225,13 @@ impl SourceElement for StructMember {
     }
 }
 
-/// Represents a syntax tree node for a implements block signature.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// ImplementsSignature:
 ///     'implements' GenericParameters? const? QualifiedIdentifier WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct ImplementsSignature {
     #[get = "pub"]
     implements_keyword: Keyword,
@@ -1243,16 +1254,13 @@ impl SourceElement for ImplementsSignature {
     }
 }
 
-/// Represents a syntax tree node for an implements function member.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// ImplementsFunction:
 ///     FunctionSignature FunctionBody
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct ImplementsFunction {
     #[get = "pub"]
     signature: FunctionSignature,
@@ -1270,16 +1278,13 @@ impl SourceElement for ImplementsFunction {
     fn span(&self) -> Span { self.signature.span().join(&self.body.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for an implements type member.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// ImplementsType:
 ///     TypeSignature TypeDefinition ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct ImplementsType {
     #[get = "pub"]
     signature: TypeSignature,
@@ -1293,17 +1298,14 @@ impl SourceElement for ImplementsType {
     fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a member in an implements block.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// ImplementsMember:
 ///     ImplementsFunction
 ///     | ImplementsType
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
-#[allow(missing_docs)]
 pub enum ImplementsMember {
     Type(ImplementsType),
     Function(ImplementsFunction),
@@ -1318,16 +1320,13 @@ impl SourceElement for ImplementsMember {
     }
 }
 
-/// Represents a syntax tree node for an implements block body.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// ImplementsBody:
 ///     '{' ImplementsMember* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct ImplementsBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -1349,16 +1348,13 @@ impl SourceElement for ImplementsBody {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
-/// Represents a syntax tree node for an implements block item.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// Implements:
 ///     ImplementsSignature ImplementsBody
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Implements {
     #[get = "pub"]
     signature: ImplementsSignature,
@@ -1376,16 +1372,13 @@ impl SourceElement for Implements {
     fn span(&self) -> Span { self.signature.span().join(&self.body.span()).unwrap() }
 }
 
-/// Represents a syntax tree for an enum signature.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// EnumSignature:
 ///     'enum' Identifier GenericParameters?
 ///     ;
 /// ``
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct EnumSignature {
     #[get = "pub"]
     enum_keyword: Keyword,
@@ -1399,34 +1392,30 @@ impl SourceElement for EnumSignature {
     fn span(&self) -> Span { self.enum_keyword.span.join(&self.identifier.span).unwrap() }
 }
 
-/// Represents a syntax tree for an associated enum value.
-///
 /// Syntax Synopsis:
 /// ``` txt
-/// AssociatedValue:
+/// VariantAssociation:
 ///     '(' TypeSpecifier ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-pub struct AssociatedValue {
+pub struct VariantAssociation {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
-    type_specifier: TypeSpecifier,
+    ty: ty::Type,
     #[get = "pub"]
     right_paren: Punctuation,
 }
 
-impl SourceElement for AssociatedValue {
+impl SourceElement for VariantAssociation {
     fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
 }
 
-/// Represents a syntax tree for an enum variant.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// EnumVariant:
-///     Identifier AssociatedValue?
+///     Identifier VariantAssociation?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -1434,13 +1423,13 @@ pub struct EnumVariant {
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
-    asscoiated_value: Option<AssociatedValue>,
+    variant_association: Option<VariantAssociation>,
 }
 
 impl SourceElement for EnumVariant {
     fn span(&self) -> Span {
         let end = self
-            .asscoiated_value
+            .variant_association
             .as_ref()
             .map_or_else(|| self.identifier.span.clone(), SourceElement::span);
 
@@ -1448,26 +1437,21 @@ impl SourceElement for EnumVariant {
     }
 }
 
-/// Represents a syntax tree for a list of enum variant identifiers separated by commas.
-///
 /// Syntax Synopsis:
-/// ``` text
+/// ``` txt
 /// EnumVariantList:
 ///     Identifier (',' Identifier)*
 ///     ;
 /// ```
 pub type EnumVariantList = ConnectedList<EnumVariant, Punctuation>;
 
-/// Represents a syntax tree for an enum body.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// EnumBody:
 ///     '{' EnumVariantList? '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct EnumBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -1489,16 +1473,13 @@ impl SourceElement for EnumBody {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
-/// Represents a syntax tree for an enum.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// Enum:
 ///     AccessModifier EnumSignature EnumBody
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
 pub struct Enum {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1520,12 +1501,10 @@ impl SourceElement for Enum {
     fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a const declaration signature
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// ConstSignature:
-///     'const' Identifier TypeAnnotation
+///     'const' Identifier ':' Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -1535,22 +1514,17 @@ pub struct ConstSignature {
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
-    type_annotation: TypeAnnotation,
+    colon: Punctuation,
+    #[get = "pub"]
+    ty: ty::Type,
 }
 
 impl SourceElement for ConstSignature {
-    fn span(&self) -> Span {
-        self.const_keyword
-            .span
-            .join(&self.type_annotation.span())
-            .unwrap()
-    }
+    fn span(&self) -> Span { self.const_keyword.span.join(&self.ty.span()).unwrap() }
 }
 
-/// Represents a syntax tree node for a const definition.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// ConstDefinition:
 ///     '=' Expression ';'
 ///     ;
@@ -1569,8 +1543,6 @@ impl SourceElement for ConstDefinition {
     fn span(&self) -> Span { self.equals.span.join(&self.semicolon.span).unwrap() }
 }
 
-/// Represents a syntax tree node for a const definition.
-///
 /// Syntax Synopsis:
 /// ``` ebnf
 /// ConstDefinition:
@@ -1596,10 +1568,8 @@ impl SourceElement for Const {
     }
 }
 
-/// Represents a syntax tree node for an item.
-///
 /// Syntax Synopsis:
-/// ```text
+/// ``` txt
 /// Item:
 ///     Trait
 ///     | Function
@@ -1613,7 +1583,6 @@ impl SourceElement for Const {
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(clippy::large_enum_variant)]
-#[allow(missing_docs)]
 pub enum Item {
     Trait(Trait),
     Function(Function),
@@ -1693,7 +1662,7 @@ impl<'a> Parser<'a> {
                             // eat colon
                             parser.forward();
 
-                            let type_specifier = parser.parse_type_specifier(handler)?;
+                            let ty = parser.parse_type(handler)?;
                             let default = match parser.stop_at_significant() {
                                 Some(Token::Punctuation(equals)) if equals.punctuation == '=' => {
                                     // eat equals
@@ -1709,10 +1678,8 @@ impl<'a> Parser<'a> {
 
                             Some(GenericParameter::Const(ConstParameter {
                                 identifier,
-                                type_annotation: TypeAnnotation {
-                                    colon,
-                                    type_specifier,
-                                },
+                                colon,
+                                ty,
                                 default,
                             }))
                         }
@@ -1726,7 +1693,7 @@ impl<'a> Parser<'a> {
 
                                     Some(DefaultTypeParameter {
                                         equals,
-                                        value: parser.parse_type_specifier(handler)?,
+                                        value: parser.parse_type(handler)?,
                                     })
                                 }
                                 _ => None,
@@ -1780,9 +1747,7 @@ impl<'a> Parser<'a> {
                 }))
             }
 
-            _ => Some(TypeBoundConstraint::TypeSpecifier(
-                self.parse_type_specifier(handler)?,
-            )),
+            _ => Some(TypeBoundConstraint::Type(self.parse_type(handler)?)),
         }
     }
 
@@ -1799,8 +1764,171 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_tuple_each(&mut self, handler: &impl Handler<Error>) -> Option<TupleEach> {
+        match self.stop_at_significant() {
+            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
+                let enclosed_list = self.parse_enclosed_list(
+                    Delimiter::Parenthesis,
+                    ',',
+                    Self::parse_identifier,
+                    handler,
+                )?;
+
+                let EnclosedList {
+                    open,
+                    list: Some(list),
+                    close,
+                } = enclosed_list
+                else {
+                    handler.receive(Error::TuplePatternCannotBeEmpty(
+                        TuplePatternCannotBeEmpty {
+                            span: left_paren
+                                .span
+                                .join(&enclosed_list.close.span)
+                                .expect("Span should be joint successfully"),
+                        },
+                    ));
+                    return None;
+                };
+
+                Some(TupleEach::Packed(PackedTupleEach {
+                    left_paren: open,
+                    identifier_list: list,
+                    right_paren: close,
+                }))
+            }
+            _ => {
+                let identifier = self.parse_identifier(handler)?;
+
+                Some(TupleEach::Identifier(identifier))
+            }
+        }
+    }
+
+    fn parse_for_tuple_bound(
+        &mut self,
+        for_keyword: Keyword,
+        left_angle_bracket: Punctuation,
+        handler: &impl Handler<Error>,
+    ) -> Option<ForTupleBound> {
+        let tuple_each_pattern = self.parse_tuple_each(handler)?;
+        let colon = self.parse_punctuation(':', true, handler)?;
+        let tuple_each_argument = self.parse_tuple_each(handler)?;
+        let right_angle_bracket = self.parse_punctuation('>', true, handler)?;
+
+        let enclosed_tree = self.parse_enclosed_list(
+            Delimiter::Brace,
+            ',',
+            |parser, handler| parser.parse_constraint(handler).map(Box::new),
+            handler,
+        )?;
+
+        Some(ForTupleBound {
+            for_keyword,
+            left_angle_bracket,
+            tuple_each_pattern,
+            colon,
+            tuple_each_argument,
+            right_angle_bracket,
+            left_brace: enclosed_tree.open,
+            constraint_list: enclosed_tree.list,
+            right_brace: enclosed_tree.close,
+        })
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn parse_constraint(&mut self, handler: &impl Handler<Error>) -> Option<Constraint> {
         match self.stop_at_significant() {
+            // parse for higher ranked bounds
+            Some(Token::Keyword(for_keyword)) if for_keyword.keyword == KeywordKind::For => {
+                // eat for keyword
+                self.forward();
+
+                let left_angle_bracket = self.parse_punctuation('<', true, handler)?;
+
+                match self.stop_at_significant() {
+                    // parse higher rankned lifetime bounds
+                    Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                        let enclosed_tree = self.parse_enclosed_list_manual(
+                            '>',
+                            ',',
+                            |parser| {
+                                let apostrophe = parser.parse_punctuation('\'', true, handler)?;
+                                let identifier = parser.parse_identifier(handler)?;
+
+                                Some(LifetimeParameter {
+                                    apostrophe,
+                                    identifier,
+                                })
+                            },
+                            handler,
+                        )?;
+
+                        let const_keyword = match self.stop_at_significant() {
+                            Some(Token::Keyword(const_keyword))
+                                if const_keyword.keyword == KeywordKind::Const =>
+                            {
+                                // eat `const` keyword
+                                self.forward();
+
+                                Some(const_keyword)
+                            }
+                            _ => None,
+                        };
+
+                        let qualified_identifier =
+                            self.parse_qualified_identifier(false, handler)?;
+
+                        Some(Constraint::Trait(TraitBound {
+                            higher_ranked_lifetime_parameters: Some(
+                                HigherRankedLifetimeParameters {
+                                    for_keyword,
+                                    left_angle_bracket,
+                                    lifetime_parameter_list: enclosed_tree.0.unwrap(),
+                                    right_angle_bracket: enclosed_tree.1,
+                                },
+                            ),
+                            const_keyword,
+                            qualified_identifier,
+                        }))
+                    }
+
+                    // parse for tuple bound
+                    Some(Token::Punctuation(parenthesis)) if parenthesis.punctuation == '(' => self
+                        .parse_for_tuple_bound(for_keyword, left_angle_bracket, handler)
+                        .map(Constraint::ForTuple),
+                    Some(Token::Identifier(..)) => self
+                        .parse_for_tuple_bound(for_keyword, left_angle_bracket, handler)
+                        .map(Constraint::ForTuple),
+
+                    // empty higher ranked bounds
+                    Some(Token::Punctuation(right_angle_bracket))
+                        if right_angle_bracket.punctuation == '>' =>
+                    {
+                        // eat right angle bracket
+                        self.forward();
+
+                        // error
+                        handler.receive(Error::HigherRankedBoundParameterCannotBeEmpty(
+                            HigherRankedBoundParameterCannotBeEmpty {
+                                span: for_keyword.span.join(&right_angle_bracket.span).unwrap(),
+                            },
+                        ));
+                        None
+                    }
+
+                    found => {
+                        // error
+                        handler.receive(Error::HigherRankedBoundExpected(
+                            HigherRankedBoundExpected {
+                                found: self.get_actual_found_token(found),
+                            },
+                        ));
+                        None
+                    }
+                }
+            }
+
             // parse const keyword
             Some(Token::Keyword(const_keyword)) if const_keyword.keyword == KeywordKind::Const => {
                 // eat const keyword
@@ -1809,6 +1937,7 @@ impl<'a> Parser<'a> {
                 let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
 
                 Some(Constraint::Trait(TraitBound {
+                    higher_ranked_lifetime_parameters: None,
                     const_keyword: Some(const_keyword),
                     qualified_identifier,
                 }))
@@ -1847,7 +1976,7 @@ impl<'a> Parser<'a> {
                 }))
             }
             _ => {
-                let type_specifier = self.parse_type_specifier(handler)?;
+                let ty = self.parse_type(handler)?;
 
                 match self.stop_at_significant() {
                     Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
@@ -1868,35 +1997,42 @@ impl<'a> Parser<'a> {
                         };
 
                         Some(Constraint::Type(TypeBound {
-                            type_specifier,
+                            ty,
                             colon,
                             type_bound_constraints,
                         }))
                     }
 
                     found => {
-                        match type_specifier {
-                            TypeSpecifier::QualifiedIdentifier(qualified_identifier) => {
+                        match ty {
+                            ty::Type::QualifiedIdentifier(qualified_identifier) => {
                                 return Some(Constraint::Trait(TraitBound {
+                                    higher_ranked_lifetime_parameters: None,
                                     const_keyword: None,
                                     qualified_identifier,
                                 }));
                             }
-                            TypeSpecifier::Tuple(tuple_type) => {
-                                if let Some((
-                                    VariadicableTypeSpecifier::TypeSpecifier(
-                                        TypeSpecifier::QualifiedIdentifier(q),
-                                    ),
-                                    true,
-                                    true,
-                                )) = tuple_type.type_specifier_list.map(|x| {
-                                    (*x.first, x.rest.is_empty(), x.trailing_separator.is_none())
-                                }) {
-                                    return Some(Constraint::Tuple(TupleBound {
-                                        left_paren: tuple_type.left_paren,
-                                        qualified_identifier: q,
-                                        right_paren: tuple_type.right_paren,
-                                    }));
+                            ty::Type::Tuple(ty::Tuple {
+                                left_paren,
+                                unpackable_list:
+                                    Some(ConnectedList {
+                                        first: ty::Unpackable { ellipsis: None, ty },
+                                        rest,
+                                        trailing_separator: None,
+                                    }),
+                                right_paren,
+                            }) if rest.is_empty() => {
+                                if let ty::Type::QualifiedIdentifier(ty) = *ty {
+                                    if ty.rest.is_empty()
+                                        && ty.first.generic_arguments.is_none()
+                                        && ty.leading_scope_separator.is_none()
+                                    {
+                                        return Some(Constraint::Tuple(TupleBound {
+                                            left_paren,
+                                            identifier: ty.first.identifier,
+                                            right_paren,
+                                        }));
+                                    }
                                 }
                             }
                             _ => {}
@@ -2006,16 +2142,18 @@ impl<'a> Parser<'a> {
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
 
-        let parameters = self.parse_enclosed_tree(
+        let parameters = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
             |parser, handler| {
                 let irrefutable_pattern = parser.parse_irrefutable_pattern(handler)?;
-                let type_annotation = parser.parse_type_annotation(handler)?;
+                let colon = parser.parse_punctuation(':', true, handler)?;
+                let ty = parser.parse_type(handler)?;
 
                 Some(Parameter {
                     irrefutable_pattern,
-                    type_annotation,
+                    colon,
+                    ty,
                 })
             },
             handler,
@@ -2029,7 +2167,8 @@ impl<'a> Parser<'a> {
 
         let return_type = match self.stop_at_significant() {
             Some(Token::Punctuation(p)) if p.punctuation == ':' => Some(ReturnType {
-                type_annotation: self.parse_type_annotation(handler)?,
+                colon: self.parse_punctuation(':', true, handler)?,
+                ty: self.parse_type(handler)?,
             }),
             _ => None,
         };
@@ -2247,57 +2386,35 @@ impl<'a> Parser<'a> {
 
     fn parse_type_definition(&mut self, handler: &impl Handler<Error>) -> Option<TypeDefinition> {
         let equals = self.parse_punctuation('=', true, handler)?;
-        let type_specifier = self.parse_type_specifier(handler)?;
+        let ty = self.parse_type(handler)?;
 
-        Some(TypeDefinition {
-            equals,
-            type_specifier,
-        })
+        Some(TypeDefinition { equals, ty })
     }
 
     fn parse_struct_body(&mut self, handler: &impl Handler<Error>) -> Option<StructBody> {
-        let left_brace = self.step_into(Delimiter::Brace, handler)?;
-
-        let mut struct_members = Vec::new();
-
-        while !self.is_exhausted() {
-            let result: Option<StructMember> = (|| {
-                let access_modifier = self.parse_access_modifier(handler)?;
-                let identifier = self.parse_identifier(handler)?;
-                let type_annotation = self.parse_type_annotation(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
+        let enclosed_list = self.parse_enclosed_list(
+            Delimiter::Brace,
+            ',',
+            |parser, handler| {
+                let access_modifier = parser.parse_access_modifier(handler)?;
+                let identifier = parser.parse_identifier(handler)?;
+                let colon = parser.parse_punctuation(':', true, handler)?;
+                let ty = parser.parse_type(handler)?;
 
                 Some(StructMember::Field(StructField {
                     access_modifier,
                     identifier,
-                    type_annotation,
-                    semicolon,
+                    colon,
+                    ty,
                 }))
-            })();
-
-            // pushes a result
-            if let Some(struct_member) = result {
-                struct_members.push(struct_member);
-                continue;
-            }
-
-            // stop at next member
-            self.stop_at(|token| {
-                matches!(token, Token::Keyword(k)
-                if matches!(k.keyword,
-                    KeywordKind::Public
-                    | KeywordKind::Private
-                    | KeywordKind::Internal)
-                )
-            });
-        }
-
-        let right_brace = self.step_out(handler)?;
+            },
+            handler,
+        )?;
 
         Some(StructBody {
-            left_brace,
-            members: struct_members,
-            right_brace,
+            left_brace: enclosed_list.open,
+            struct_member_list: enclosed_list.list,
+            right_brace: enclosed_list.close,
         })
     }
 
@@ -2328,7 +2445,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_enum_body(&mut self, handler: &impl Handler<Error>) -> Option<EnumBody> {
-        let body = self.parse_enclosed_tree(
+        let body = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
             |parser, handler| {
@@ -2340,11 +2457,12 @@ impl<'a> Parser<'a> {
                     Some(Token::Punctuation(p)) if p.punctuation == '('
                 ) {
                     let left_paren = parser.step_into(Delimiter::Parenthesis, handler)?;
-                    let type_specifier = parser.parse_type_specifier(handler)?;
+                    let ty = parser.parse_type(handler)?;
                     let right_paren = parser.step_out(handler)?;
-                    Some(AssociatedValue {
+
+                    Some(VariantAssociation {
                         left_paren,
-                        type_specifier,
+                        ty,
                         right_paren,
                     })
                 } else {
@@ -2353,7 +2471,7 @@ impl<'a> Parser<'a> {
 
                 Some(EnumVariant {
                     identifier,
-                    asscoiated_value: associated_value,
+                    variant_association: associated_value,
                 })
             },
             handler,
@@ -2513,12 +2631,14 @@ impl<'a> Parser<'a> {
     fn parse_const_signature(&mut self, handler: &impl Handler<Error>) -> Option<ConstSignature> {
         let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
         let identifier = self.parse_identifier(handler)?;
-        let type_annotation = self.parse_type_annotation(handler)?;
+        let colon = self.parse_punctuation(':', true, handler)?;
+        let ty = self.parse_type(handler)?;
 
         Some(ConstSignature {
             const_keyword,
             identifier,
-            type_annotation,
+            colon,
+            ty,
         })
     }
 

@@ -12,7 +12,7 @@ use crate::error::{
     Error as SyntacticError, IdentifierExpected, KeywordExpected, PunctuationExpected,
 };
 
-/// Is an enumeration of all the possible [`Token`] stream providers.
+/// Represents a source where the parser can get tokens from.
 #[derive(Debug, Clone, Copy, EnumAsInner, From)]
 pub enum TokenProvider<'a> {
     /// Top-level [`TokenStream`], not enclosed in any delimiters.
@@ -38,7 +38,6 @@ impl<'a> TokenProvider<'a> {
 pub struct Frame<'a> {
     /// The [`TokenProvider`] that provides the [`TokenStream`] to parse.
     pub token_provider: TokenProvider<'a>,
-
     current_index: usize,
 }
 

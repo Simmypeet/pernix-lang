@@ -20,6 +20,7 @@ pub struct Named {
     pub is_mutable: bool,
     pub identifier: Identifier,
 }
+
 impl Input for Named {
     type Output = super::Named;
 
@@ -336,7 +337,7 @@ impl Arbitrary for Irrefutable {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         let leaf = Named::arbitrary().prop_map(Self::Named);
 
-        leaf.prop_recursive(4, 16, 4, |inner| {
+        leaf.prop_recursive(4, 24, 6, |inner| {
             prop_oneof![
                 Structural::arbitrary_with(Some(inner.clone())).prop_map(Self::Structural),
                 Tuple::arbitrary_with(Some(inner)).prop_map(Self::Tuple),
@@ -440,7 +441,7 @@ impl Arbitrary for Refutable {
             Named::arbitrary().prop_map(Self::Named),
         ];
 
-        leaf.prop_recursive(6, 36, 6, |inner| {
+        leaf.prop_recursive(4, 24, 6, |inner| {
             prop_oneof![
                 Structural::arbitrary_with(Some(inner.clone())).prop_map(Self::Structural),
                 Tuple::arbitrary_with(Some(inner.clone())).prop_map(Self::Tuple),
