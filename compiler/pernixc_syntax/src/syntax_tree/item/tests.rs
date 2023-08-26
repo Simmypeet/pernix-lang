@@ -1,5 +1,6 @@
 use std::fmt::{Display, Write};
 
+use enum_as_inner::EnumAsInner;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
@@ -625,9 +626,53 @@ impl<T: std::fmt::Debug> BoundList<T> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum LifetimeBoundOperand {
+    LifetimeParameter(LifetimeParameter),
+    Type(ty::tests::Type),
+}
+
+impl Input for LifetimeBoundOperand {
+    type Output = super::LifetimeBoundOperand;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::LifetimeParameter(i), super::LifetimeBoundOperand::LifetimeParameter(o)) => {
+                i.assert(o)
+            }
+            (Self::Type(i), super::LifetimeBoundOperand::Type(o)) => i.assert(o),
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}"
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for LifetimeBoundOperand {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            LifetimeParameter::arbitrary().prop_map(Self::LifetimeParameter),
+            ty::tests::Type::arbitrary().prop_map(Self::Type),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for LifetimeBoundOperand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LifetimeParameter(lifetime_parameter) => Display::fmt(lifetime_parameter, f),
+            Self::Type(ty) => Display::fmt(ty, f),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeBound {
-    pub operand: LifetimeParameter,
+    pub operand: LifetimeBoundOperand,
     pub parameters: BoundList<LifetimeArgument>,
 }
 
@@ -648,7 +693,7 @@ impl Arbitrary for LifetimeBound {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
-            LifetimeParameter::arbitrary(),
+            LifetimeBoundOperand::arbitrary(),
             BoundList::arbitrary_with(LifetimeArgument::arbitrary()),
         )
             .prop_map(|(operand, parameters)| Self {
@@ -662,89 +707,6 @@ impl Arbitrary for LifetimeBound {
 impl Display for LifetimeBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.operand, self.parameters)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TypeBoundConstraint {
-    Type(ty::tests::Type),
-    LifetimeArgument(LifetimeArgument),
-}
-
-impl Input for TypeBoundConstraint {
-    type Output = super::TypeBoundConstraint;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::Type(a), super::TypeBoundConstraint::Type(b)) => a.assert(b),
-            (Self::LifetimeArgument(a), super::TypeBoundConstraint::LifetimeArgument(b)) => {
-                a.assert(b)
-            }
-            _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?}, got {output:?}",
-            ))),
-        }
-    }
-}
-
-impl Arbitrary for TypeBoundConstraint {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            ty::tests::Type::arbitrary().prop_map(Self::Type),
-            LifetimeArgument::arbitrary().prop_map(Self::LifetimeArgument),
-        ]
-        .boxed()
-    }
-}
-
-impl Display for TypeBoundConstraint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Type(a) => a.fmt(f),
-            Self::LifetimeArgument(a) => a.fmt(f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeBound {
-    pub ty: ty::tests::Type,
-    pub type_bound_constraints: BoundList<TypeBoundConstraint>,
-}
-
-impl Input for TypeBound {
-    type Output = super::TypeBound;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.ty.assert(output.ty())?;
-        self.type_bound_constraints
-            .assert(output.type_bound_constraints())
-    }
-}
-
-impl Arbitrary for TypeBound {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (
-            ty::tests::Type::arbitrary(),
-            BoundList::arbitrary_with(TypeBoundConstraint::arbitrary()),
-        )
-            .prop_map(|(ty, type_bound_constraints)| Self {
-                ty,
-                type_bound_constraints,
-            })
-            .boxed()
-    }
-}
-
-impl Display for TypeBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.ty, self.type_bound_constraints)
     }
 }
 
@@ -890,12 +852,97 @@ impl Display for ForTupleBound {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TraitAssociationBoundArgument {
+    Const(Expression),
+    Type(ty::tests::Type),
+}
+
+impl Input for TraitAssociationBoundArgument {
+    type Output = super::TraitAssociationBoundArgument;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::Const(i), super::TraitAssociationBoundArgument::Const(o)) => {
+                i.assert(o.expression())
+            }
+            (Self::Type(i), super::TraitAssociationBoundArgument::Type(o)) => i.assert(o),
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}"
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for TraitAssociationBoundArgument {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Expression::arbitrary().prop_map(Self::Const),
+            ty::tests::Type::arbitrary().prop_map(Self::Type),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for TraitAssociationBoundArgument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Const(expression) => {
+                write!(f, "{{{expression}}}")
+            }
+            Self::Type(ty) => Display::fmt(ty, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TraitAssociationBound {
+    pub qualified_identifier: QualifiedIdentifier,
+    pub argument: TraitAssociationBoundArgument,
+}
+
+impl Input for TraitAssociationBound {
+    type Output = super::TraitAssociationBound;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.qualified_identifier
+            .assert(output.qualified_identifier())?;
+        self.argument.assert(output.argument())
+    }
+}
+
+impl Arbitrary for TraitAssociationBound {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (
+            QualifiedIdentifier::arbitrary_with((false, None)),
+            TraitAssociationBoundArgument::arbitrary(),
+        )
+            .prop_map(|(qualified_identifier, argument)| Self {
+                qualified_identifier,
+                argument,
+            })
+            .boxed()
+    }
+}
+
+impl Display for TraitAssociationBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} = {}", self.qualified_identifier, self.argument)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Constraint {
     Trait(TraitBound),
     Lifetime(LifetimeBound),
-    Type(TypeBound),
     Tuple(TupleBound),
     ForTuple(ForTupleBound),
+    TraitAssociation(TraitAssociationBound),
 }
 
 impl Input for Constraint {
@@ -905,9 +952,9 @@ impl Input for Constraint {
         match (self, output) {
             (Self::Trait(i), super::Constraint::Trait(o)) => i.assert(o),
             (Self::Lifetime(i), super::Constraint::Lifetime(o)) => i.assert(o),
-            (Self::Type(i), super::Constraint::Type(o)) => i.assert(o),
             (Self::Tuple(i), super::Constraint::Tuple(o)) => i.assert(o),
             (Self::ForTuple(i), super::Constraint::ForTuple(o)) => i.assert(o),
+            (Self::TraitAssociation(i), super::Constraint::TraitAssociation(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -923,8 +970,8 @@ impl Arbitrary for Constraint {
         let leaf = prop_oneof![
             TraitBound::arbitrary().prop_map(Self::Trait),
             LifetimeBound::arbitrary().prop_map(Self::Lifetime),
-            TypeBound::arbitrary().prop_map(Self::Type),
             TupleBound::arbitrary().prop_map(Self::Tuple),
+            TraitAssociationBound::arbitrary().prop_map(Self::TraitAssociation),
         ];
 
         leaf.prop_recursive(2, 12, 6, |inner| {
@@ -939,9 +986,9 @@ impl Display for Constraint {
         match self {
             Self::Trait(i) => Display::fmt(i, f),
             Self::Lifetime(i) => Display::fmt(i, f),
-            Self::Type(i) => Display::fmt(i, f),
             Self::Tuple(i) => Display::fmt(i, f),
             Self::ForTuple(i) => Display::fmt(i, f),
+            Self::TraitAssociation(i) => Display::fmt(i, f),
         }
     }
 }

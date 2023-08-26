@@ -342,13 +342,13 @@ impl SourceElement for GenericParameters {
 /// Syntax Synopsis:
 /// ``` txt
 /// LifetimeBound:
-///     LifetimeParameter ':' LifetimeArgument ('+' LifetimeArgument)*
+///     LifetimeBoundOperand ':' LifetimeArgument ('+' LifetimeArgument)*
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 pub struct LifetimeBound {
     #[get = "pub"]
-    operand: LifetimeParameter,
+    operand: LifetimeBoundOperand,
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
@@ -361,48 +361,23 @@ impl SourceElement for LifetimeBound {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// TypeBoundConstraint:
-///     Type
-///     | LifetimeArgument
+/// LifetimeBoundOperand:
+///     LifetimeParameter
+///     | Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
-pub enum TypeBoundConstraint {
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum LifetimeBoundOperand {
+    LifetimeParameter(LifetimeParameter),
     Type(ty::Type),
-    LifetimeArgument(LifetimeArgument),
 }
 
-impl SourceElement for TypeBoundConstraint {
+impl SourceElement for LifetimeBoundOperand {
     fn span(&self) -> Span {
         match self {
-            Self::Type(s) => s.span(),
-            Self::LifetimeArgument(s) => s.span(),
+            Self::LifetimeParameter(lifetime_parameter) => lifetime_parameter.span(),
+            Self::Type(ty) => ty.span(),
         }
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// TypeBound:
-///     Type ':' TypeBoundConstraint ('+' TypeBoundConstraint)*
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct TypeBound {
-    #[get = "pub"]
-    ty: ty::Type,
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    type_bound_constraints: BoundList<TypeBoundConstraint>,
-}
-
-impl SourceElement for TypeBound {
-    fn span(&self) -> Span {
-        self.ty
-            .span()
-            .join(&self.type_bound_constraints.span())
-            .unwrap()
     }
 }
 
@@ -526,9 +501,9 @@ impl SourceElement for ForTupleBound {
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 pub enum Constraint {
+    TraitAssociation(TraitAssociationBound),
     Trait(TraitBound),
     Lifetime(LifetimeBound),
-    Type(TypeBound),
     Tuple(TupleBound),
     ForTuple(ForTupleBound),
 }
@@ -536,12 +511,79 @@ pub enum Constraint {
 impl SourceElement for Constraint {
     fn span(&self) -> Span {
         match self {
+            Self::TraitAssociation(s) => s.span(),
             Self::Trait(s) => s.span(),
             Self::Lifetime(s) => s.span(),
-            Self::Type(s) => s.span(),
             Self::Tuple(s) => s.span(),
             Self::ForTuple(s) => s.span(),
         }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// TraitConstAssociationBoundArgument:
+///     '{' Expression '}'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct TraitConstAssociationBoundArgument {
+    #[get = "pub"]
+    left_brace: Punctuation,
+    #[get = "pub"]
+    expression: Expression,
+    #[get = "pub"]
+    right_brace: Punctuation,
+}
+
+impl SourceElement for TraitConstAssociationBoundArgument {
+    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// TraitAssociationBoundArgument:
+///     Type
+///     | TraitConstAssociationBoundArgument
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+pub enum TraitAssociationBoundArgument {
+    Type(ty::Type),
+    Const(TraitConstAssociationBoundArgument),
+}
+
+impl SourceElement for TraitAssociationBoundArgument {
+    fn span(&self) -> Span {
+        match self {
+            Self::Type(ty) => ty.span(),
+            Self::Const(c) => c.span(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// TraitAssociationBound:
+///     QualifiedIdentifier '=' TraitAssociationBoundArgument
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct TraitAssociationBound {
+    #[get = "pub"]
+    qualified_identifier: QualifiedIdentifier,
+    #[get = "pub"]
+    equals: Punctuation,
+    #[get = "pub"]
+    argument: TraitAssociationBoundArgument,
+}
+
+impl SourceElement for TraitAssociationBound {
+    fn span(&self) -> Span {
+        self.qualified_identifier
+            .span()
+            .join(&self.argument.span())
+            .unwrap()
     }
 }
 
@@ -1729,28 +1771,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_type_bound_constraint(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<TypeBoundConstraint> {
-        match self.stop_at_significant() {
-            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
-                // eat apostrophe
-                self.forward();
-
-                let lifetime_argument_identifier =
-                    self.parse_lifetime_argument_identifier(handler)?;
-
-                Some(TypeBoundConstraint::LifetimeArgument(LifetimeArgument {
-                    apostrophe,
-                    identifier: lifetime_argument_identifier,
-                }))
-            }
-
-            _ => Some(TypeBoundConstraint::Type(self.parse_type(handler)?)),
-        }
-    }
-
     fn parse_lifetime_argument(
         &mut self,
         handler: &impl Handler<Error>,
@@ -1836,7 +1856,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn parse_constraint(&mut self, handler: &impl Handler<Error>) -> Option<Constraint> {
         match self.stop_at_significant() {
             // parse for higher ranked bounds
@@ -1951,12 +1971,12 @@ impl<'a> Parser<'a> {
                 let identifier = self.parse_identifier(handler)?;
                 let colon = self.parse_punctuation(':', true, handler)?;
 
-                let lhs_lifetime_parameter = LifetimeParameter {
+                let operand = LifetimeBoundOperand::LifetimeParameter(LifetimeParameter {
                     apostrophe,
                     identifier,
-                };
+                });
 
-                let lifetime_bounds = {
+                let arguments = {
                     let first = self.parse_lifetime_argument(handler)?;
                     let mut rest = Vec::new();
 
@@ -1970,9 +1990,9 @@ impl<'a> Parser<'a> {
                 };
 
                 Some(Constraint::Lifetime(LifetimeBound {
-                    operand: lhs_lifetime_parameter,
+                    operand,
                     colon,
-                    arguments: lifetime_bounds,
+                    arguments,
                 }))
             }
             _ => {
@@ -1983,34 +2003,74 @@ impl<'a> Parser<'a> {
                         // eat colon
                         self.forward();
 
-                        let type_bound_constraints = {
-                            let first = self.parse_type_bound_constraint(handler)?;
+                        let arguments = {
+                            let first = self.parse_lifetime_argument(handler)?;
                             let mut rest = Vec::new();
 
                             while let Some(plus) =
                                 self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
                             {
-                                rest.push((plus, self.parse_type_bound_constraint(handler)?));
+                                rest.push((plus, self.parse_lifetime_argument(handler)?));
                             }
 
                             BoundList { first, rest }
                         };
 
-                        Some(Constraint::Type(TypeBound {
-                            ty,
+                        Some(Constraint::Lifetime(LifetimeBound {
+                            operand: LifetimeBoundOperand::Type(ty),
                             colon,
-                            type_bound_constraints,
+                            arguments,
                         }))
                     }
 
                     found => {
                         match ty {
                             ty::Type::QualifiedIdentifier(qualified_identifier) => {
-                                return Some(Constraint::Trait(TraitBound {
-                                    higher_ranked_lifetime_parameters: None,
-                                    const_keyword: None,
-                                    qualified_identifier,
-                                }));
+                                match self.stop_at_significant() {
+                                    Some(Token::Punctuation(equals))
+                                        if equals.punctuation == '=' =>
+                                    {
+                                        // eat equals
+                                        self.forward();
+
+                                        let argument = match self.stop_at_significant() {
+                                            Some(Token::Punctuation(left_brace))
+                                                if left_brace.punctuation == '{' =>
+                                            {
+                                                let left_brace =
+                                                    self.step_into(Delimiter::Brace, handler)?;
+                                                let expression = self.parse_expression(handler);
+                                                let right_brace = self.step_out(handler)?;
+
+                                                TraitAssociationBoundArgument::Const(
+                                                    TraitConstAssociationBoundArgument {
+                                                        left_brace,
+                                                        expression: expression?,
+                                                        right_brace,
+                                                    },
+                                                )
+                                            }
+                                            _ => TraitAssociationBoundArgument::Type(
+                                                self.parse_type(handler)?,
+                                            ),
+                                        };
+
+                                        return Some(Constraint::TraitAssociation(
+                                            TraitAssociationBound {
+                                                qualified_identifier,
+                                                equals,
+                                                argument,
+                                            },
+                                        ));
+                                    }
+                                    _ => {
+                                        return Some(Constraint::Trait(TraitBound {
+                                            higher_ranked_lifetime_parameters: None,
+                                            const_keyword: None,
+                                            qualified_identifier,
+                                        }));
+                                    }
+                                }
                             }
                             ty::Type::Tuple(ty::Tuple {
                                 left_paren,
