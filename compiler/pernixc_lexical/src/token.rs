@@ -117,6 +117,8 @@ pub enum KeywordKind {
     Unsafe,
     /// `for` keyword
     For,
+    /// `delete` keyword
+    Delete,
 }
 
 impl ToString for KeywordKind {
@@ -192,6 +194,7 @@ impl KeywordKind {
             Self::Private => "private",
             Self::Internal => "internal",
             Self::Module => "module",
+            Self::Delete => "delete",
             Self::Type => "type",
             Self::Static => "static",
             Self::Restrict => "restrict",

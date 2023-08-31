@@ -12,14 +12,13 @@ use super::{
     expression::{Expression, Functional},
     pattern,
     statement::Statement,
-    ty, AccessModifier, ConnectedList, EnclosedList, LifetimeArgument, QualifiedIdentifier,
-    ScopeSeparator,
+    ty, AccessModifier, ConnectedList, LifetimeArgument, QualifiedIdentifier, ScopeSeparator,
 };
 use crate::{
     error::{
         AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty,
         HigherRankedBoundExpected, HigherRankedBoundParameterCannotBeEmpty, ItemExpected,
-        PunctuationExpected, TuplePatternCannotBeEmpty,
+        PunctuationExpected,
     },
     parser::Parser,
 };
@@ -115,7 +114,7 @@ pub struct ModuleContent {
 }
 
 impl ModuleContent {
-    /// Dissolves the [`ModuleItems`] into a tuple of its fields.
+    /// Dissolves the [`ModuleContent`] into a tuple of its fields.
     #[must_use]
     pub fn dissolve(self) -> (Vec<Using>, Vec<Item>) { (self.usings, self.items) }
 }
@@ -418,79 +417,6 @@ impl<T: SourceElement> SourceElement for BoundList<T> {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// PackedTuple:
-///     '(' Identifier (',' Identifier)* ','? ')'
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct PackedTupleEach {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    identifier_list: ConnectedList<Identifier, Punctuation>,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
-
-impl SourceElement for PackedTupleEach {
-    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// TupleEach:
-///     PackedTuple
-///     | Identifier
-///     ;
-/// ```
-#[derive(Debug, Clone)]
-pub enum TupleEach {
-    Packed(PackedTupleEach),
-    Identifier(Identifier),
-}
-
-impl SourceElement for TupleEach {
-    fn span(&self) -> Span {
-        match self {
-            Self::Packed(p) => p.span(),
-            Self::Identifier(i) => i.span.clone(),
-        }
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// ForTupleBound:
-///     'for' '<' TupleEach ':' TupleEach '>' '{' ConstraintList? '}'
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct ForTupleBound {
-    #[get = "pub"]
-    for_keyword: Keyword,
-    #[get = "pub"]
-    left_angle_bracket: Punctuation,
-    #[get = "pub"]
-    tuple_each_pattern: TupleEach,
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    tuple_each_argument: TupleEach,
-    #[get = "pub"]
-    right_angle_bracket: Punctuation,
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    constraint_list: Option<ConnectedList<Box<Constraint>, Punctuation>>,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
-
-impl SourceElement for ForTupleBound {
-    fn span(&self) -> Span { self.for_keyword.span.join(&self.right_brace.span).unwrap() }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
 /// Constraint:
 ///     TraitBound
 ///     | LifetimeBound
@@ -505,7 +431,6 @@ pub enum Constraint {
     Trait(TraitBound),
     Lifetime(LifetimeBound),
     Tuple(TupleBound),
-    ForTuple(ForTupleBound),
 }
 
 impl SourceElement for Constraint {
@@ -515,7 +440,6 @@ impl SourceElement for Constraint {
             Self::Trait(s) => s.span(),
             Self::Lifetime(s) => s.span(),
             Self::Tuple(s) => s.span(),
-            Self::ForTuple(s) => s.span(),
         }
     }
 }
@@ -590,7 +514,7 @@ impl SourceElement for TraitAssociationBound {
 /// Syntax Synopsis:
 /// ``` txt
 /// TupleBound:
-///     '(' Identifier ')'
+///     '(' QualifiedIdentifier ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -598,7 +522,7 @@ pub struct TupleBound {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
-    identifier: Identifier,
+    qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
     right_paren: Punctuation,
 }
@@ -1270,7 +1194,7 @@ impl SourceElement for StructMember {
 /// Syntax Synopsis:
 /// ``` txt
 /// ImplementsSignature:
-///     'implements' GenericParameters? const? QualifiedIdentifier WhereClause?
+///     'implements' GenericParameters? const? QualifiedIdentifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -1283,8 +1207,6 @@ pub struct ImplementsSignature {
     const_keyword: Option<Keyword>,
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
-    #[get = "pub"]
-    where_clause: Option<WhereClause>,
 }
 
 impl SourceElement for ImplementsSignature {
@@ -1364,12 +1286,34 @@ impl SourceElement for ImplementsMember {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// NegativeImplements:
+///     '=' 'delete' ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct NegativeImplements {
+    #[get = "pub"]
+    equals: Punctuation,
+    #[get = "pub"]
+    delete_keyword: Keyword,
+    #[get = "pub"]
+    semicolon: Punctuation,
+}
+
+impl SourceElement for NegativeImplements {
+    fn span(&self) -> Span { self.equals.span.join(&self.semicolon.span).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// ImplementsBody:
-///     '{' ImplementsMember* '}'
+///     WhereClause? '{' ImplementsMember* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 pub struct ImplementsBody {
+    #[get = "pub"]
+    where_clause: Option<WhereClause>,
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
@@ -1381,19 +1325,60 @@ pub struct ImplementsBody {
 impl ImplementsBody {
     /// Dissolves the [`ImplementsBody`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Vec<ImplementsMember>, Punctuation) {
-        (self.left_brace, self.members, self.right_brace)
+    pub fn dissolve(
+        self,
+    ) -> (
+        Option<WhereClause>,
+        Punctuation,
+        Vec<ImplementsMember>,
+        Punctuation,
+    ) {
+        (
+            self.where_clause,
+            self.left_brace,
+            self.members,
+            self.right_brace,
+        )
     }
 }
 
 impl SourceElement for ImplementsBody {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        let start = self
+            .where_clause
+            .as_ref()
+            .map_or_else(|| self.left_brace.span.clone(), SourceElement::span);
+
+        start.join(&self.right_brace.span).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// ImplementsKind:
+///     NegativeImplements
+///     | ImplementsBody
+///     ;
+/// ```
+#[derive(Debug, Clone, EnumAsInner)]
+pub enum ImplementsKind {
+    Negative(NegativeImplements),
+    Positive(ImplementsBody),
+}
+
+impl SourceElement for ImplementsKind {
+    fn span(&self) -> Span {
+        match self {
+            Self::Negative(negative) => negative.span(),
+            Self::Positive(positive) => positive.span(),
+        }
+    }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
 /// Implements:
-///     ImplementsSignature ImplementsBody
+///     ImplementsSignature ImplementsKind
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -1401,17 +1386,17 @@ pub struct Implements {
     #[get = "pub"]
     signature: ImplementsSignature,
     #[get = "pub"]
-    body: ImplementsBody,
+    kind: ImplementsKind,
 }
 
 impl Implements {
     /// Dissolves the [`Implements`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (ImplementsSignature, ImplementsBody) { (self.signature, self.body) }
+    pub fn dissolve(self) -> (ImplementsSignature, ImplementsKind) { (self.signature, self.kind) }
 }
 
 impl SourceElement for Implements {
-    fn span(&self) -> Span { self.signature.span().join(&self.body.span()).unwrap() }
+    fn span(&self) -> Span { self.signature.span().join(&self.kind.span()).unwrap() }
 }
 
 /// Syntax Synopsis:
@@ -1784,78 +1769,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_tuple_each(&mut self, handler: &impl Handler<Error>) -> Option<TupleEach> {
-        match self.stop_at_significant() {
-            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
-                let enclosed_list = self.parse_enclosed_list(
-                    Delimiter::Parenthesis,
-                    ',',
-                    Self::parse_identifier,
-                    handler,
-                )?;
-
-                let EnclosedList {
-                    open,
-                    list: Some(list),
-                    close,
-                } = enclosed_list
-                else {
-                    handler.receive(Error::TuplePatternCannotBeEmpty(
-                        TuplePatternCannotBeEmpty {
-                            span: left_paren
-                                .span
-                                .join(&enclosed_list.close.span)
-                                .expect("Span should be joint successfully"),
-                        },
-                    ));
-                    return None;
-                };
-
-                Some(TupleEach::Packed(PackedTupleEach {
-                    left_paren: open,
-                    identifier_list: list,
-                    right_paren: close,
-                }))
-            }
-            _ => {
-                let identifier = self.parse_identifier(handler)?;
-
-                Some(TupleEach::Identifier(identifier))
-            }
-        }
-    }
-
-    fn parse_for_tuple_bound(
-        &mut self,
-        for_keyword: Keyword,
-        left_angle_bracket: Punctuation,
-        handler: &impl Handler<Error>,
-    ) -> Option<ForTupleBound> {
-        let tuple_each_pattern = self.parse_tuple_each(handler)?;
-        let colon = self.parse_punctuation(':', true, handler)?;
-        let tuple_each_argument = self.parse_tuple_each(handler)?;
-        let right_angle_bracket = self.parse_punctuation('>', true, handler)?;
-
-        let enclosed_tree = self.parse_enclosed_list(
-            Delimiter::Brace,
-            ',',
-            |parser, handler| parser.parse_constraint(handler).map(Box::new),
-            handler,
-        )?;
-
-        Some(ForTupleBound {
-            for_keyword,
-            left_angle_bracket,
-            tuple_each_pattern,
-            colon,
-            tuple_each_argument,
-            right_angle_bracket,
-            left_brace: enclosed_tree.open,
-            constraint_list: enclosed_tree.list,
-            right_brace: enclosed_tree.close,
-        })
-    }
-
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn parse_constraint(&mut self, handler: &impl Handler<Error>) -> Option<Constraint> {
         match self.stop_at_significant() {
@@ -1912,14 +1825,6 @@ impl<'a> Parser<'a> {
                             qualified_identifier,
                         }))
                     }
-
-                    // parse for tuple bound
-                    Some(Token::Punctuation(parenthesis)) if parenthesis.punctuation == '(' => self
-                        .parse_for_tuple_bound(for_keyword, left_angle_bracket, handler)
-                        .map(Constraint::ForTuple),
-                    Some(Token::Identifier(..)) => self
-                        .parse_for_tuple_bound(for_keyword, left_angle_bracket, handler)
-                        .map(Constraint::ForTuple),
 
                     // empty higher ranked bounds
                     Some(Token::Punctuation(right_angle_bracket))
@@ -2083,16 +1988,11 @@ impl<'a> Parser<'a> {
                                 right_paren,
                             }) if rest.is_empty() => {
                                 if let ty::Type::QualifiedIdentifier(ty) = *ty {
-                                    if ty.rest.is_empty()
-                                        && ty.first.generic_arguments.is_none()
-                                        && ty.leading_scope_separator.is_none()
-                                    {
-                                        return Some(Constraint::Tuple(TupleBound {
-                                            left_paren,
-                                            identifier: ty.first.identifier,
-                                            right_paren,
-                                        }));
-                                    }
+                                    return Some(Constraint::Tuple(TupleBound {
+                                        left_paren,
+                                        qualified_identifier: ty,
+                                        right_paren,
+                                    }));
                                 }
                             }
                             _ => {}
@@ -2301,6 +2201,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_implements_body(&mut self, handler: &impl Handler<Error>) -> Option<ImplementsBody> {
+        let where_clause = self.try_parse_where_clause(handler)?;
         let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
         let mut implements_members = Vec::new();
@@ -2321,6 +2222,7 @@ impl<'a> Parser<'a> {
             .expect("All the tokens should be consumed");
 
         Some(ImplementsBody {
+            where_clause,
             left_brace,
             members: implements_members,
             right_brace,
@@ -2340,8 +2242,24 @@ impl<'a> Parser<'a> {
             _ => None,
         };
         let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
-        let where_clause = self.try_parse_where_clause(handler)?;
-        let implements_body = self.parse_implements_body(handler)?;
+
+        let kind = match self.stop_at_significant() {
+            Some(Token::Punctuation(equals)) if equals.punctuation == '=' => {
+                // eat equals
+                self.forward();
+
+                // eat delete keyword
+                let delete_keyword = self.parse_keyword(KeywordKind::Delete, handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                ImplementsKind::Negative(NegativeImplements {
+                    equals,
+                    delete_keyword,
+                    semicolon,
+                })
+            }
+            _ => ImplementsKind::Positive(self.parse_implements_body(handler)?),
+        };
 
         Some(Implements {
             signature: ImplementsSignature {
@@ -2349,9 +2267,8 @@ impl<'a> Parser<'a> {
                 generic_parameters,
                 const_keyword,
                 qualified_identifier,
-                where_clause,
             },
-            body: implements_body,
+            kind,
         })
     }
 

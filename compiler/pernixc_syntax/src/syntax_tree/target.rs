@@ -51,6 +51,12 @@ pub struct Target {
     target_name: String,
 }
 
+impl Target {
+    /// Dissolves the target into its module tree and target name.
+    #[must_use]
+    pub fn dissolve(self) -> (ModuleTree, String) { (self.module_tree, self.target_name) }
+}
+
 /// The submodule of the root source file ends up pointing to the root source file itself.
 #[derive(Debug, Clone)]
 pub struct RootSubmoduleConflict {

@@ -17,6 +17,22 @@ pub enum Primitive {
     Bool,
 }
 
+/// Is an enumeration of all possible unpackable constants.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Unpackable {
+    Parameter(TypeParameterRef),
+    TraitAssociated(TraitAssociated),
+}
+
+/// Represents a single element of a tuple.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TupleElement {
+    /// A regular singular constant.
+    Regular(Type),
+    /// A constant that can be unpacked into multiple elements.
+    Unpacked(Unpackable),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple(pub Vec<Type>);
 
@@ -33,11 +49,26 @@ pub struct Enum {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TraitAssociated {
+    pub reference: TypeParameterRef,
+    pub association_substitution: LocalSubstitution,
+    pub trait_substitution: LocalSubstitution,
+}
+
+/// Represents a type parameter that has been bounded to be a tuple type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TupleBoundableType {
+    TypeParameter(TypeParameterRef),
+    TraitAssociatedType(TraitAssociated),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Type {
     Primitive(Primitive),
     Tuple(Tuple),
     Struct(Struct),
-    Type(TypeParameterRef),
+    Parameter(TypeParameterRef),
+    TraitAssociated(TraitAssociated),
 }
 
 impl Default for Type {

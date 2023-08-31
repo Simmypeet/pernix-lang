@@ -712,14 +712,15 @@ impl Display for LifetimeBound {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleBound {
-    pub identifier: Identifier,
+    pub qualified_identifier: QualifiedIdentifier,
 }
 
 impl Input for TupleBound {
     type Output = super::TupleBound;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.identifier.assert(output.identifier())
+        self.qualified_identifier
+            .assert(output.qualified_identifier())
     }
 }
 
@@ -728,126 +729,17 @@ impl Arbitrary for TupleBound {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        Identifier::arbitrary()
-            .prop_map(|identifier| Self { identifier })
+        QualifiedIdentifier::arbitrary_with((false, None))
+            .prop_map(|qualified_identifier| Self {
+                qualified_identifier,
+            })
             .boxed()
     }
 }
 
 impl Display for TupleBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({})", self.identifier)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TupleEach {
-    Packed(ConnectedList<Identifier, ConstantPunctuation<','>>),
-    Identifier(Identifier),
-}
-
-impl Input for TupleEach {
-    type Output = super::TupleEach;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::Packed(input), super::TupleEach::Packed(output)) => {
-                input.assert(output.identifier_list())
-            }
-            (Self::Identifier(input), super::TupleEach::Identifier(output)) => input.assert(output),
-            (input, output) => Err(TestCaseError::fail(format!(
-                "Expected {input:?}, got {output:?}"
-            ))),
-        }
-    }
-}
-
-impl Arbitrary for TupleEach {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            ConnectedList::arbitrary_with(
-                Identifier::arbitrary(),
-                ConstantPunctuation::arbitrary()
-            )
-            .prop_map(Self::Packed),
-            Identifier::arbitrary().prop_map(Self::Identifier),
-        ]
-        .boxed()
-    }
-}
-
-impl Display for TupleEach {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Packed(input) => write!(f, "({input})"),
-            Self::Identifier(input) => Display::fmt(input, f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ForTupleBound {
-    pub tuple_each_pattern: TupleEach,
-    pub tuple_each_argument: TupleEach,
-    pub constraint_list: Option<ConnectedList<Box<Constraint>, ConstantPunctuation<','>>>,
-}
-
-impl Input for ForTupleBound {
-    type Output = super::ForTupleBound;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.tuple_each_pattern
-            .assert(output.tuple_each_pattern())?;
-        self.tuple_each_argument
-            .assert(output.tuple_each_argument())?;
-        self.constraint_list.assert(output.constraint_list())
-    }
-}
-
-impl Arbitrary for ForTupleBound {
-    type Parameters = Option<BoxedStrategy<Constraint>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
-        let constraint_strategy = arg.unwrap_or_else(Constraint::arbitrary);
-
-        (
-            TupleEach::arbitrary(),
-            TupleEach::arbitrary(),
-            proptest::option::of(ConnectedList::arbitrary_with(
-                constraint_strategy.prop_map(Box::new),
-                ConstantPunctuation::arbitrary(),
-            )),
-        )
-            .prop_map(
-                |(tuple_each_pattern, tuple_each_argument, constraint_list)| Self {
-                    tuple_each_pattern,
-                    tuple_each_argument,
-                    constraint_list,
-                },
-            )
-            .boxed()
-    }
-}
-
-impl Display for ForTupleBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "for<{}: {}>",
-            self.tuple_each_pattern, self.tuple_each_argument,
-        )?;
-
-        write!(f, "{{")?;
-        if let Some(constraint_list) = self.constraint_list.as_ref() {
-            write!(f, " {constraint_list} ")?;
-        }
-        write!(f, "}}")?;
-
-        Ok(())
+        write!(f, "({})", self.qualified_identifier)
     }
 }
 
@@ -941,7 +833,6 @@ pub enum Constraint {
     Trait(TraitBound),
     Lifetime(LifetimeBound),
     Tuple(TupleBound),
-    ForTuple(ForTupleBound),
     TraitAssociation(TraitAssociationBound),
 }
 
@@ -953,7 +844,6 @@ impl Input for Constraint {
             (Self::Trait(i), super::Constraint::Trait(o)) => i.assert(o),
             (Self::Lifetime(i), super::Constraint::Lifetime(o)) => i.assert(o),
             (Self::Tuple(i), super::Constraint::Tuple(o)) => i.assert(o),
-            (Self::ForTuple(i), super::Constraint::ForTuple(o)) => i.assert(o),
             (Self::TraitAssociation(i), super::Constraint::TraitAssociation(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
@@ -967,16 +857,12 @@ impl Arbitrary for Constraint {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        let leaf = prop_oneof![
+        prop_oneof![
             TraitBound::arbitrary().prop_map(Self::Trait),
             LifetimeBound::arbitrary().prop_map(Self::Lifetime),
             TupleBound::arbitrary().prop_map(Self::Tuple),
             TraitAssociationBound::arbitrary().prop_map(Self::TraitAssociation),
-        ];
-
-        leaf.prop_recursive(2, 12, 6, |inner| {
-            ForTupleBound::arbitrary_with(Some(inner)).prop_map(Self::ForTuple)
-        })
+        ]
         .boxed()
     }
 }
@@ -987,7 +873,6 @@ impl Display for Constraint {
             Self::Trait(i) => Display::fmt(i, f),
             Self::Lifetime(i) => Display::fmt(i, f),
             Self::Tuple(i) => Display::fmt(i, f),
-            Self::ForTuple(i) => Display::fmt(i, f),
             Self::TraitAssociation(i) => Display::fmt(i, f),
         }
     }
@@ -2357,6 +2242,7 @@ impl Display for ImplementsMember {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementsBody {
+    pub where_clause: Option<WhereClause>,
     pub members: Vec<ImplementsMember>,
 }
 
@@ -2364,6 +2250,7 @@ impl Input for ImplementsBody {
     type Output = super::ImplementsBody;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.where_clause.assert(output.where_clause())?;
         prop_assert_eq!(self.members.len(), output.members().len());
 
         for (input, output) in self.members.iter().zip(output.members().iter()) {
@@ -2379,14 +2266,24 @@ impl Arbitrary for ImplementsBody {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (proptest::collection::vec(ImplementsMember::arbitrary(), 0..=6))
-            .prop_map(|members| Self { members })
+        (
+            proptest::option::of(WhereClause::arbitrary()),
+            proptest::collection::vec(ImplementsMember::arbitrary(), 0..=6),
+        )
+            .prop_map(|(where_clause, members)| Self {
+                where_clause,
+                members,
+            })
             .boxed()
     }
 }
 
 impl Display for ImplementsBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(where_clause) = &self.where_clause {
+            write!(f, " {where_clause}")?;
+        }
+
         f.write_char('{')?;
         for member in &self.members {
             Display::fmt(member, f)?;
@@ -2400,7 +2297,6 @@ pub struct ImplementsSignature {
     pub generic_parameters: Option<GenericParameters>,
     pub is_const: bool,
     pub qualified_identifier: QualifiedIdentifier,
-    pub where_clause: Option<WhereClause>,
 }
 
 impl Input for ImplementsSignature {
@@ -2412,7 +2308,6 @@ impl Input for ImplementsSignature {
         self.qualified_identifier
             .assert(output.qualified_identifier())?;
         prop_assert_eq!(self.is_const, output.const_keyword.is_some());
-        self.where_clause.assert(output.where_clause())?;
 
         Ok(())
     }
@@ -2427,14 +2322,12 @@ impl Arbitrary for ImplementsSignature {
             proptest::option::of(GenericParameters::arbitrary()),
             QualifiedIdentifier::arbitrary_with((false, None)),
             proptest::bool::ANY,
-            proptest::option::of(WhereClause::arbitrary()),
         )
             .prop_map(
-                |(generic_parameters, qualified_identifier, is_const, where_clause)| Self {
+                |(generic_parameters, qualified_identifier, is_const)| Self {
                     generic_parameters,
                     is_const,
                     qualified_identifier,
-                    where_clause,
                 },
             )
             .boxed()
@@ -2455,18 +2348,58 @@ impl Display for ImplementsSignature {
 
         write!(f, " {}", self.qualified_identifier)?;
 
-        if let Some(where_clause) = &self.where_clause {
-            write!(f, " {where_clause}")?;
-        }
-
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ImplementsKind {
+    Negative,
+    Positive(ImplementsBody),
+}
+
+impl Input for ImplementsKind {
+    type Output = super::ImplementsKind;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::Negative, super::ImplementsKind::Negative(..)) => Ok(()),
+            (Self::Positive(input), super::ImplementsKind::Positive(output)) => {
+                input.assert(output)
+            }
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}"
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for ImplementsKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::Negative),
+            ImplementsBody::arbitrary().prop_map(Self::Positive),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for ImplementsKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Negative => write!(f, "= delete;"),
+            Self::Positive(body) => Display::fmt(body, f),
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Implements {
     pub signature: ImplementsSignature,
-    pub body: ImplementsBody,
+    pub kind: ImplementsKind,
 }
 
 impl Input for Implements {
@@ -2474,7 +2407,7 @@ impl Input for Implements {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.signature.assert(output.signature())?;
-        self.body.assert(output.body())
+        self.kind.assert(output.kind())
     }
 }
 
@@ -2485,16 +2418,16 @@ impl Arbitrary for Implements {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
             ImplementsSignature::arbitrary(),
-            ImplementsBody::arbitrary(),
+            ImplementsKind::arbitrary(),
         )
-            .prop_map(|(signature, body)| Self { signature, body })
+            .prop_map(|(signature, kind)| Self { signature, kind })
             .boxed()
     }
 }
 
 impl Display for Implements {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.signature, self.body)
+        write!(f, "{} {}", self.signature, self.kind)
     }
 }
 

@@ -1,0 +1,27 @@
+public trait @Copy<T> {
+    function copy(this: &T): T;
+}
+
+public trait @Drop<T> {
+    function drop(this: &restrict T);
+}
+
+public trait @Into<T, To> {
+    function into(this: T): To;
+}
+
+public trait @From<T, From> {
+    function from(from: From): T;
+}
+
+public trait Sync<T> {}
+
+implements<T> Sync<T> {}
+
+// specifically disable Sync for mutable references
+implements<T> Sync<&mutable T> = delete;
+
+public trait @Function<T, Args, Ret>
+where: (Args) {
+    function call(this: &T, args: Args): Ret;
+}
