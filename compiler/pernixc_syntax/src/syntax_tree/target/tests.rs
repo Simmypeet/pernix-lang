@@ -10,11 +10,11 @@ use proptest::{
     prelude::Arbitrary, prop_assert_eq, proptest, strategy::Strategy, test_runner::TestCaseError,
 };
 
-use crate::syntax_tree::{self, item, target::Target};
+use crate::syntax_tree::{self, item, target::Target, tests::AccessModifier};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleTree {
-    access_modifier: Option<syntax_tree::tests::AccessModifier>,
+    signature: Option<AccessModifier>,
     module_content: item::tests::ModuleContent,
     submodules_by_name: HashMap<String, ModuleTree>,
 }
@@ -23,7 +23,19 @@ impl Input for ModuleTree {
     type Output = super::ModuleTree;
 
     fn assert(&self, output: &Self::Output) -> proptest::test_runner::TestCaseResult {
-        self.access_modifier.assert(&output.access_modifier)?;
+        match (&self.signature, &output.signature) {
+            (Some(self_signature), Some(output_signature)) => {
+                self_signature.assert(&output_signature.access_modifier)?;
+            }
+            (None, None) => (),
+            _ => {
+                return Err(TestCaseError::fail(format!(
+                    "expected signature: {:#?}, got: {:#?}",
+                    self.signature, output.signature
+                )))
+            }
+        }
+
         self.module_content.assert(&output.module_content)?;
 
         prop_assert_eq!(
@@ -63,7 +75,7 @@ impl Arbitrary for ModuleTree {
             module_content.clone(),
         )
             .prop_map(|(access_modifier, module_content)| Self {
-                access_modifier: Some(access_modifier),
+                signature: Some(access_modifier),
                 module_content,
                 submodules_by_name: HashMap::new(),
             });
@@ -76,7 +88,7 @@ impl Arbitrary for ModuleTree {
             )
                 .prop_map(|(access_modifier, module_content, submodules_by_name)| {
                     Self {
-                        access_modifier: Some(access_modifier),
+                        signature: Some(access_modifier),
                         module_content,
                         submodules_by_name,
                     }
@@ -96,7 +108,7 @@ impl Display for ModuleTree {
             writeln!(
                 f,
                 "{} module {};",
-                match content.access_modifier {
+                match content.signature {
                     Some(Public) | None => "public",
                     Some(Private) => "private",
                     Some(Internal) => "internal",
@@ -163,7 +175,7 @@ proptest! {
     fn target_test(
         mut target_module_tree in ModuleTree::arbitrary()
     ) {
-        target_module_tree.access_modifier = None;
+        target_module_tree.signature = None;
 
         let target_dir = target_module_tree.create_target()?;
         let root_source_file = SourceFile::load(&target_dir.path().join("main.pnx"))?;

@@ -13,19 +13,25 @@ use pernixc_source::{SourceFile, Span};
 use pernixc_system::diagnostic::Handler;
 
 use super::{
-    item::{Module, ModuleContent},
+    item::{Module, ModuleContent, ModuleSignature},
     AccessModifier,
 };
 use crate::{error, parser::Parser, syntax_tree::item::ModuleKind};
 
+#[derive(Debug, Clone, Getters)]
+pub struct ModuleSignatureWithAccessModifier {
+    pub access_modifier: AccessModifier,
+    pub signature: ModuleSignature,
+}
+
 /// Represents a syntax tree node for a module with its submodule children.
 #[derive(Debug, Clone, Getters)]
 pub struct ModuleTree {
-    /// The access modifier of this module.
+    /// The signature syntax tree of this module.
     ///
     /// If this module is the root module, this field will be `None`.
     #[get = "pub"]
-    access_modifier: Option<AccessModifier>,
+    signature: Option<ModuleSignatureWithAccessModifier>,
 
     /// Contains the content of this module.
     ///
@@ -37,6 +43,20 @@ pub struct ModuleTree {
     /// Contains the submodules of this module.
     #[get = "pub"]
     submodules_by_name: HashMap<String, ModuleTree>,
+}
+
+impl ModuleTree {
+    /// Dissolves the [`ModuleTree`] into its tuple of fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Option<ModuleSignatureWithAccessModifier>,
+        ModuleContent,
+        HashMap<String, Self>,
+    ) {
+        (self.signature, self.module_content, self.submodules_by_name)
+    }
 }
 
 /// Is a complete syntax tree representing the whole target program.
@@ -103,11 +123,11 @@ enum Input {
     Inline {
         module_content: ModuleContent,
         module_name: String,
-        access_modifier: AccessModifier,
+        signature: ModuleSignatureWithAccessModifier,
     },
     File {
         source_file: Arc<SourceFile>,
-        access_modifier: Option<AccessModifier>,
+        signature: Option<ModuleSignatureWithAccessModifier>,
     },
 }
 
@@ -120,15 +140,15 @@ impl Target {
         current_directory: &Path,
         handler: &T,
     ) -> ModuleTree {
-        let (mut module_content, source_file, current_module_name, access_modifier) = match input {
+        let (mut module_content, source_file, current_module_name, signature) = match input {
             Input::Inline {
                 module_content,
                 module_name,
-                access_modifier,
+                signature: access_modifier,
             } => (module_content, None, module_name, Some(access_modifier)),
             Input::File {
                 source_file,
-                access_modifier,
+                signature: access_modifier,
             } => {
                 let token_stream = TokenStream::tokenize(&source_file, handler);
                 let mut parser = Parser::new(&token_stream);
@@ -182,21 +202,31 @@ impl Target {
                     };
 
                     if let ModuleKind::Inline(inline_module_content) = submodule.kind {
-                        let submodule_name =
-                            submodule.signature.identifier().span.str().to_string();
+                        let signature_wtih_access_modifier = ModuleSignatureWithAccessModifier {
+                            access_modifier: submodule.access_modifier,
+                            signature: submodule.signature,
+                        };
+                        let identifier_span = signature_wtih_access_modifier
+                            .signature
+                            .identifier()
+                            .span
+                            .clone();
+                        let identifier_span_closure = identifier_span.clone();
+                        let submodule_current_directory = &submodule_current_directory;
+
                         entry.insert((
-                            scope.spawn(|| {
+                            scope.spawn(move || {
                                 Self::parse_input(
                                     Input::Inline {
                                         module_content: inline_module_content.content,
-                                        module_name: submodule_name,
-                                        access_modifier: submodule.access_modifier,
+                                        module_name: identifier_span_closure.str().to_string(),
+                                        signature: signature_wtih_access_modifier,
                                     },
-                                    &submodule_current_directory,
+                                    submodule_current_directory,
                                     handler,
                                 )
                             }),
-                            submodule.signature.identifier().span.clone(),
+                            identifier_span,
                         ));
                     } else {
                         match &source_file {
@@ -236,18 +266,32 @@ impl Target {
                                     }
                                 };
 
+                                let submodule_signature_with_access_modifier =
+                                    ModuleSignatureWithAccessModifier {
+                                        access_modifier: submodule.access_modifier,
+                                        signature: submodule.signature,
+                                    };
+                                let identifier_span = submodule_signature_with_access_modifier
+                                    .signature
+                                    .identifier()
+                                    .span
+                                    .clone();
+                                let submodule_current_directory = &submodule_current_directory;
+
                                 entry.insert((
-                                    scope.spawn(|| {
+                                    scope.spawn(move || {
                                         Self::parse_input(
                                             Input::File {
                                                 source_file,
-                                                access_modifier: Some(submodule.access_modifier),
+                                                signature: Some(
+                                                    submodule_signature_with_access_modifier,
+                                                ),
                                             },
-                                            &submodule_current_directory,
+                                            submodule_current_directory,
                                             handler,
                                         )
                                     }),
-                                    submodule.signature.identifier().span.clone(),
+                                    identifier_span,
                                 ));
                             }
                         }
@@ -264,7 +308,7 @@ impl Target {
         });
 
         ModuleTree {
-            access_modifier,
+            signature,
             module_content,
             submodules_by_name,
         }
@@ -281,7 +325,7 @@ impl Target {
         let module_tree = Self::parse_input(
             Input::File {
                 source_file: root_source_file.clone(),
-                access_modifier: None,
+                signature: None,
             },
             root_source_file
                 .full_path()

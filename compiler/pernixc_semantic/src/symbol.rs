@@ -1,22 +1,26 @@
 use std::{
-    borrow::Borrow,
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fmt::Debug,
     hash::Hash,
     sync::atomic::AtomicUsize,
 };
 
-use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_system::arena::{self, Arena};
+use pernixc_source::{SourceElement, Span};
+use pernixc_syntax::syntax_tree::{self, target::Target};
+use pernixc_system::{
+    arena::{self, Arena},
+    diagnostic::Handler,
+};
 
 use crate::{
     constant::{self, Constant},
+    error::Error,
     pattern::Irrefutable,
-    ty::{self, TupleBoundableType},
+    ty::{self, TupleBoundable},
 };
 
 mod core;
-mod module;
+mod drafting;
 pub mod resolution;
 
 /// Represents an automatic generated lifetime used in the place where the lifetime is elided.
@@ -27,113 +31,109 @@ pub struct ElidedLifetime {
 }
 
 /// Represents a reference to the associated item declared in various items.
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct AssociatedItemRef<Parent, Kind> {
     pub parent: arena::ID<Parent>,
-    pub index: usize,
-    _phantom: std::marker::PhantomData<Kind>,
+    pub associated_item: arena::ID<Kind>,
 }
 
-impl<Parent: Debug, Kind> Debug for AssociatedItemRef<Parent, Kind> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(
-            format!(
-                "AssociatedItemRef<{}, {}>",
-                std::any::type_name::<Parent>(),
-                std::any::type_name::<Kind>()
-            )
-            .as_str(),
-        )
-        .field("parent", &self.parent)
-        .field("index", &self.index)
-        .finish()
+impl<Parent, Kind> Clone for AssociatedItemRef<Parent, Kind> {
+    fn clone(&self) -> Self {
+        Self {
+            parent: self.parent,
+            associated_item: self.associated_item,
+        }
     }
 }
 
-impl<Parent: Clone, Kind: Clone> Copy for AssociatedItemRef<Parent, Kind> {}
+impl<Parent, Kind> Copy for AssociatedItemRef<Parent, Kind> {}
 
 impl<Parent, Kind> PartialEq for AssociatedItemRef<Parent, Kind> {
-    fn eq(&self, other: &Self) -> bool { self.parent == other.parent && self.index == other.index }
+    fn eq(&self, other: &Self) -> bool {
+        self.parent == other.parent && self.associated_item == other.associated_item
+    }
 }
 
 impl<Parent, Kind> Eq for AssociatedItemRef<Parent, Kind> {}
 
 impl<Parent, Kind> PartialOrd for AssociatedItemRef<Parent, Kind> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.parent.cmp(&other.parent) {
-            std::cmp::Ordering::Equal => self.index.partial_cmp(&other.index),
-            ordering => Some(ordering),
-        }
+        self.parent
+            .partial_cmp(&other.parent)
+            .and_then(|ordering| match ordering {
+                std::cmp::Ordering::Equal => {
+                    self.associated_item.partial_cmp(&other.associated_item)
+                }
+                _ => Some(ordering),
+            })
     }
 }
 
 impl<Parent, Kind> Ord for AssociatedItemRef<Parent, Kind> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.parent.cmp(&other.parent) {
-            std::cmp::Ordering::Equal => self.index.cmp(&other.index),
-            ordering => ordering,
-        }
+        self.parent
+            .cmp(&other.parent)
+            .then_with(|| self.associated_item.cmp(&other.associated_item))
     }
 }
 
 impl<Parent, Kind> Hash for AssociatedItemRef<Parent, Kind> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.parent.hash(state);
-        self.index.hash(state);
+        self.associated_item.hash(state);
     }
 }
 
 /// Represents a trait associated type declaration entry in the [`Trait`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitAssociatedType {}
+pub struct TraitType {}
 
 /// Represents a trait associated const declaration entry in the [`Trait`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitAssociatedConstant {}
+pub struct TraitConstant {}
 
-/// Represents a reference to the trait associated type declared in the trait.
-pub type TraitAssociatedTypeRef = AssociatedItemRef<Trait, TraitAssociatedType>;
+/// Represents a trait associated function declaration entry in the [`Trait`].
+#[derive(Debug, Clone)]
+pub struct TraitFunction {
+    pub generic_parameters: GenericParameters,
+    pub where_clause: WhereClause,
+    pub name: String,
+    pub parameters: Arena<Parameter>,
+    pub return_type: ty::Type,
+}
+
+/// Represents a reference to the trait associated function declared in the trait.
+pub type TraitFunctionRef = AssociatedItemRef<Trait, TraitFunction>;
 
 /// Represents a reference to the trait associated const declared in the trait.
-pub type TraitAssociatedConstantRef = AssociatedItemRef<Trait, TraitAssociatedConstant>;
+pub type TraitConstantRef = AssociatedItemRef<Trait, TraitConstant>;
+
+/// Represents a reference to the trait associated type declared in the trait.
+pub type TraitTypeRef = AssociatedItemRef<Trait, TraitType>;
 
 /// Represents a reference to the generic parameter declared in the item.
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct GenericParameterRef<Kind> {
     /// The index of the generic parameter in the declared list of the item.
-    pub index: usize,
+    pub id: arena::ID<Kind>,
     /// The reference to the generic item that generates this generic parameter.
     pub generic_item_ref: GenericItemRef,
-
-    _phantom: std::marker::PhantomData<Kind>,
 }
 
-impl<T> Debug for GenericParameterRef<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(
-            format!("GenericParameterarena::ID<{}>", std::any::type_name::<T>()).as_str(),
-        )
-        .field("index", &self.index)
-        .finish()
-    }
-}
-
-impl<T: Clone> Copy for GenericParameterRef<T> {}
-
-impl<Kind> GenericParameterRef<Kind> {
-    #[must_use]
-    pub fn new(index: usize, generic_item_ref: GenericItemRef) -> Self {
+impl<Kind> Clone for GenericParameterRef<Kind> {
+    fn clone(&self) -> Self {
         Self {
-            index,
-            generic_item_ref,
-            _phantom: std::marker::PhantomData,
+            id: self.id,
+            generic_item_ref: self.generic_item_ref,
         }
     }
 }
 
+impl<Kind> Copy for GenericParameterRef<Kind> {}
+
 impl<Kind> PartialEq for GenericParameterRef<Kind> {
     fn eq(&self, other: &Self) -> bool {
-        self.index == other.index && self.generic_item_ref == other.generic_item_ref
+        self.id == other.id && self.generic_item_ref == other.generic_item_ref
     }
 }
 
@@ -141,31 +141,34 @@ impl<Kind> Eq for GenericParameterRef<Kind> {}
 
 impl<Kind> PartialOrd for GenericParameterRef<Kind> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.generic_item_ref.cmp(&other.generic_item_ref) {
-            std::cmp::Ordering::Equal => self.index.partial_cmp(&other.index),
-            ordering => Some(ordering),
-        }
+        self.id
+            .partial_cmp(&other.id)
+            .and_then(|ordering| match ordering {
+                std::cmp::Ordering::Equal => {
+                    self.generic_item_ref.partial_cmp(&other.generic_item_ref)
+                }
+                _ => Some(ordering),
+            })
     }
 }
 
 impl<Kind> Ord for GenericParameterRef<Kind> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.generic_item_ref.cmp(&other.generic_item_ref) {
-            std::cmp::Ordering::Equal => self.index.cmp(&other.index),
-            ordering => ordering,
-        }
+        self.id
+            .cmp(&other.id)
+            .then_with(|| self.generic_item_ref.cmp(&other.generic_item_ref))
     }
 }
 
 impl<Kind> Hash for GenericParameterRef<Kind> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.index.hash(state);
+        self.id.hash(state);
         self.generic_item_ref.hash(state);
     }
 }
 
 /// Represents a declaration of a generic lifetime parameter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct LifetimeParameter {
     pub name: String,
 }
@@ -174,7 +177,7 @@ pub struct LifetimeParameter {
 pub type LifetimeParameterRef = GenericParameterRef<LifetimeParameter>;
 
 /// Represents a declaration of a generic type parameter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct TypeParameter {
     pub name: String,
 }
@@ -183,7 +186,7 @@ pub struct TypeParameter {
 pub type TypeParameterRef = GenericParameterRef<TypeParameter>;
 
 /// Represents a declaration of a generic constant parameter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ConstantParameter {
     pub name: String,
     pub ty: ty::Type,
@@ -198,6 +201,12 @@ pub trait Symbol {
     /// This name doesn't need to accurately represent the symbol's name in the source code.
     /// It is only meant for readability purposes.
     fn name(&self) -> &str;
+
+    /// The accessibility of the symbol.
+    fn accessibility(&self) -> Accessibility;
+
+    /// Span of the symbol in the source code.
+    fn span(&self) -> Option<Span>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -224,13 +233,31 @@ pub struct Field {
 }
 
 /// Represents a struct declaration entry in the symbol table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Struct {
     pub accessibility: Accessibility,
     pub name: String,
     pub generic_parameters: GenericParameters,
     pub where_clause: WhereClause,
-    pub fields: VecMap<Field>,
+    pub fields: Arena<Field>,
+    pub syntax_tree: Option<syntax_tree::item::Struct>,
+}
+
+impl Symbol for arena::Symbol<Struct> {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn span(&self) -> Option<Span> {
+        self.syntax_tree.as_ref().map(|syntax_tree| {
+            syntax_tree
+                .signature()
+                .struct_keyword()
+                .span
+                .join(&syntax_tree.signature().identifier().span)
+                .unwrap()
+        })
+    }
 }
 
 /// Represents a variant declaration entry in the [`Enum`].
@@ -241,20 +268,39 @@ pub struct Variant {
 }
 
 /// Represents an enum declaration entry in the symbol table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Enum {
     pub accessibility: Accessibility,
     pub name: String,
     pub generic_parameters: GenericParameters,
     pub where_clause: WhereClause,
-    pub variants: VecMap<Variant>,
+    pub variants: Arena<Variant>,
+    pub syntax_tree: Option<syntax_tree::item::Enum>,
+}
+
+impl Symbol for arena::Symbol<Enum> {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn span(&self) -> Option<Span> {
+        self.syntax_tree.as_ref().map(|syntax_tree| {
+            syntax_tree
+                .signature()
+                .enum_keyword()
+                .span
+                .join(&syntax_tree.signature().identifier().span)
+                .unwrap()
+        })
+    }
 }
 
 /// Represents an index of a trait associated type or trait associated const.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TraitAssociatedIndex {
-    Type(usize),
-    Constant(usize),
+pub enum TraitAssociatedID {
+    Type(arena::ID<TraitType>),
+    Constant(arena::ID<TraitConstant>),
+    Function(arena::ID<TraitFunction>),
 }
 
 /// Represents a higher ranked lifetime defined in the trait bounds.
@@ -280,16 +326,59 @@ pub enum HigherRankedableLifetime {
     HigherRanked(HigherRankedLifetime),
 }
 
+#[derive(Debug, Clone)]
+pub struct ImplementsSignature {
+    pub generic_parameters: GenericParameters,
+    pub trait_substitution: LocalSubstitution,
+}
+
+#[derive(Debug, Clone)]
+pub struct Implements {
+    pub signature: ImplementsSignature,
+    pub is_const_implements: bool,
+    pub where_clause: WhereClause,
+}
+
+/// Represents a trait implements declaration entry associated with the [`Trait`].
+#[derive(Debug, Clone)]
+pub enum ImplementsKind {
+    /// If the generic parameters substitution matches to the negative signature, then the trait
+    /// resolution will fail.
+    Negative(ImplementsSignature),
+
+    Positive(Implements),
+}
+
 /// Represents a trait declaration entry in the symbol table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Trait {
     pub accessibility: Accessibility,
     pub name: String,
     pub generic_parameters: GenericParameters,
     pub where_clause: WhereClause,
-    pub trait_associated_indices_by_name: HashMap<String, TraitAssociatedIndex>,
-    pub trait_associated_constants: VecMap<TraitAssociatedConstant>,
-    pub trait_associated_types: VecMap<TraitAssociatedType>,
+    pub trait_associated_ids_by_name: HashMap<String, TraitAssociatedID>,
+    pub trait_constants: Arena<TraitConstant>,
+    pub trait_types: Arena<TraitType>,
+    pub trait_functions: Arena<TraitFunction>,
+    pub trait_implements: Arena<ImplementsKind>,
+    pub syntax_tree: Option<syntax_tree::item::Trait>,
+}
+
+impl Symbol for arena::Symbol<Trait> {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn span(&self) -> Option<Span> {
+        self.syntax_tree.as_ref().map(|syntax_tree| {
+            syntax_tree
+                .signature()
+                .trait_keyword()
+                .span
+                .join(&syntax_tree.signature().identifier().span)
+                .unwrap()
+        })
+    }
 }
 
 /// Represents a trait bound entry in the [`WhereClause`].
@@ -312,10 +401,10 @@ pub enum LifetimeBoundOperand {
 }
 
 /// Represents a where clause declaration in various item.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WhereClause {
     /// Set of type parameters that needs to be a tuple type.
-    pub tuple_bounds: HashSet<TupleBoundableType>,
+    pub tuple_bounds: HashSet<TupleBoundable>,
 
     /// Set of required trait bounds and whether the trait bounds are const or not.
     ///
@@ -343,11 +432,11 @@ pub struct WhereClause {
 }
 
 /// Represents a generic parameter declaration in various items signatures.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct GenericParameters {
-    pub lifetimes: VecMap<LifetimeParameter>,
-    pub types: VecMap<TypeParameter>,
-    pub constants: VecMap<ConstantParameter>,
+    pub lifetimes: arena::NamedMap<LifetimeParameter>,
+    pub types: arena::NamedMap<TypeParameter>,
+    pub constants: arena::NamedMap<ConstantParameter>,
 }
 
 /// Represents a generic argument substitution for a single generic item.
@@ -369,39 +458,87 @@ pub struct Subsitution {
 }
 
 /// Represents a module declaration entry in the symbol table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Module {
     pub accessibility: Accessibility,
     pub name: String,
     pub parent_module_id: Option<arena::ID<Module>>,
     pub children_ids_by_name: HashMap<String, ID>,
+    pub usings: HashMap<arena::ID<Module>, syntax_tree::item::Using>,
+    pub syntax_tree: Option<syntax_tree::item::ModuleSignature>,
+}
+
+impl Symbol for arena::Symbol<Module> {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn span(&self) -> Option<Span> { self.syntax_tree.as_ref().map(SourceElement::span) }
 }
 
 /// Represents a type declaration entry in the symbol table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Type {
     pub accessibility: Accessibility,
     pub name: String,
     pub generic_parameters: GenericParameters,
     pub alias: ty::Type,
+    pub syntax_tree: Option<syntax_tree::item::Type>,
+}
+
+impl Symbol for arena::Symbol<Type> {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn span(&self) -> Option<Span> {
+        self.syntax_tree.as_ref().map(|syntax_tree| {
+            syntax_tree
+                .signature()
+                .type_keyword()
+                .span
+                .join(&syntax_tree.signature().identifier().span)
+                .unwrap()
+        })
+    }
 }
 
 /// Represents a parameter declaration entry in the [`Function`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Paramter {
+pub struct Parameter {
     pub pattern: Irrefutable,
     pub ty: ty::Type,
 }
 
 /// Represents a function declaration entry in the symbol table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub accessibility: Accessibility,
     pub name: String,
     pub generic_parameters: GenericParameters,
     pub where_clause: WhereClause,
-    pub parameters: Vec<Paramter>,
+    pub parameters: Vec<Parameter>,
     pub return_type: ty::Type,
+    pub syntax_tree: Option<syntax_tree::item::Function>,
+}
+
+impl Symbol for arena::Symbol<Function> {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn span(&self) -> Option<Span> {
+        self.syntax_tree
+            .as_ref()
+            .map(|signature| {
+                signature
+                    .signature()
+                    .function_keyword()
+                    .span
+                    .join(&signature.signature().identifier().span)
+            })
+            .unwrap()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -414,98 +551,15 @@ pub enum ID {
     Function(arena::ID<Function>),
 }
 
+/// Represents a reference to the item in the [`Table`] that can have generic parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GenericItemRef {
     Struct(arena::ID<Struct>),
     Enum(arena::ID<Enum>),
-    TraitAssociatedType(TraitAssociatedTypeRef),
-    TraitAssociatedConstant(TraitAssociatedConstantRef),
-}
-
-/// A container class for storing multiple symbols.
-///
-/// The container offers two ways to access the symbols either by name or by index.
-///
-/// When accessing the symbols by name, the container will perform a hash table lookup to find the
-/// symbol. On the other hand, when accessing the symbols by index, the container will simply index
-/// into the underlying vector, which offers a faster access time.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct VecMap<T> {
-    vec: Vec<T>,
-    map: HashMap<String, usize>,
-}
-
-impl<T> VecMap<T> {
-    //// Creates a new empty [`VecMap`].
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            vec: Vec::new(),
-            map: HashMap::new(),
-        }
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize { self.vec.len() }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool { self.vec.is_empty() }
-
-    /// Inserts a new value into the [`VecMap`].
-    ///
-    /// # Arguments
-    ///
-    /// - `name`: The name of the value.
-    /// - `value`: The value to be inserted.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Ok` with the index of the inserted value if the name is not already in the map.
-    /// Otherwise, returns `Err` with the index of the existing value.
-    pub fn insert(&mut self, name: String, value: T) -> Result<usize, usize> {
-        match self.map.entry(name) {
-            Entry::Occupied(entry) => Err(*entry.get()),
-            Entry::Vacant(entry) => {
-                let index = self.vec.len();
-                entry.insert(index);
-                self.vec.push(value);
-                Ok(index)
-            }
-        }
-    }
-
-    #[must_use]
-    pub fn get_by_name<Q>(&self, name: &Q) -> Option<&T>
-    where
-        String: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.map.get(name).map(|index| &self.vec[*index])
-    }
-
-    #[must_use]
-    pub fn get_by_name_mut<Q>(&mut self, name: &Q) -> Option<&mut T>
-    where
-        String: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.map.get(name).map(|index| &mut self.vec[*index])
-    }
-
-    #[must_use]
-    pub fn get_by_index(&self, index: usize) -> Option<&T> { self.vec.get(index) }
-
-    #[must_use]
-    pub fn get_by_index_mut(&mut self, index: usize) -> Option<&mut T> { self.vec.get_mut(index) }
-
-    #[must_use]
-    pub fn map_name_to_index<Q>(&self, name: &Q) -> Option<usize>
-    where
-        String: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.map.get(name).copied()
-    }
+    Trait(arena::ID<Trait>),
+    TraitType(TraitFunctionRef),
+    TraitConstant(TraitConstantRef),
+    TraitFunction(TraitFunctionRef),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
@@ -528,10 +582,6 @@ pub enum BuildError {
     TargetNamedCore(TargetNamedCoreError),
 }
 
-/// The symbol table of the compiler.
-///
-/// The table virtually contains all the information about the program. The structure of the table
-/// is flattened and is not a heirarchy. The table is also not a tree, but rather a graph.
 #[derive(Debug, Clone)]
 pub struct Table {
     modules: Arena<Module>,
@@ -541,7 +591,7 @@ pub struct Table {
     types: Arena<Type>,
     functions: Arena<Function>,
 
-    root_target_module_ids_by_name: HashMap<String, arena::ID<Module>>,
+    target_root_module_ids_by_name: HashMap<String, arena::ID<Module>>,
 }
 
 impl Table {
@@ -551,7 +601,10 @@ impl Table {
     /// - [`BuildError::TargetNameDuplication`] is returned if there are multiple targets with the
     /// same name.
     /// - [`BuildError::TargetNamedCore`] is returned if there is a target named `@core`.
-    pub fn build(target: impl Iterator<Item = Target>) -> Result<Self, BuildError> {
+    pub fn build(
+        targets: impl Iterator<Item = Target>,
+        handler: &impl Handler<Error>,
+    ) -> Result<Self, BuildError> {
         // default table
         let mut table = Self {
             modules: Arena::new(),
@@ -560,15 +613,35 @@ impl Table {
             traits: Arena::new(),
             types: Arena::new(),
             functions: Arena::new(),
-            root_target_module_ids_by_name: HashMap::new(),
+            target_root_module_ids_by_name: HashMap::new(),
         };
 
         table.create_core_module();
 
+        for target in targets {
+            table.draft_target(target, handler)?;
+        }
+
         Ok(table)
+    }
+
+    /// Gets the [`Symbol`] stored in the table.
+    #[must_use]
+    pub fn get_symbol(&self, id: ID) -> Option<&dyn Symbol> {
+        match id {
+            ID::Module(id) => self.modules.get(id).map(|x| x as _),
+            ID::Struct(id) => self.structs.get(id).map(|x| x as _),
+            ID::Enum(id) => self.enums.get(id).map(|x| x as _),
+            ID::Trait(id) => self.traits.get(id).map(|x| x as _),
+            ID::Type(id) => self.types.get(id).map(|x| x as _),
+            ID::Function(id) => self.functions.get(id).map(|x| x as _),
+        }
     }
 }
 
 // TODO: Create a module heirarchy
 // TODO: Draft the symbols
 // TODO: Finalize the symbols
+
+#[cfg(test)]
+mod tests;

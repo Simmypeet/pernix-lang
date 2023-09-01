@@ -1,6 +1,6 @@
-use pernixc_system::arena::ID;
+use pernixc_system::arena::{self, ID};
 
-use crate::symbol::{self, ConstantParameterRef, LocalSubstitution, TraitAssociatedConstantRef};
+use crate::symbol::{self, ConstantParameterRef, LocalSubstitution, TraitConstantRef};
 
 /// Is an enumeration of all possible unpackable constants.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -33,7 +33,7 @@ pub struct Enum {
     pub enum_id: ID<symbol::Enum>,
     /// The subsitution of the enum type must be *complete*.
     pub substitution: LocalSubstitution,
-    pub variant_index: usize,
+    pub variant_id: arena::ID<symbol::Variant>,
     pub constant: Box<Constant>,
 }
 
@@ -47,7 +47,7 @@ pub struct Struct {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitAssociated {
-    pub reference: TraitAssociatedConstantRef,
+    pub reference: TraitConstantRef,
     pub association_substitution: LocalSubstitution,
     pub trait_substitution: LocalSubstitution,
 }

@@ -3,11 +3,12 @@ use pernixc_system::arena::ID;
 
 use crate::{
     symbol,
-    ty::{self, TupleBoundableType},
+    ty::{self, TupleBoundable},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Irrefutable {
+    Discard,
     Named(Named),
     Structural(Structural<Self>),
     Tuple(Tuple<Self>),
@@ -57,7 +58,7 @@ pub struct Structural<Pattern> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unpack {
-    pub ty: TupleBoundableType,
+    pub ty: TupleBoundable,
     pub name: String,
     pub mutable: bool,
 }

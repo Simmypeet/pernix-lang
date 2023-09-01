@@ -78,6 +78,15 @@ pub struct ModuleSignature {
     identifier: Identifier,
 }
 
+impl SourceElement for ModuleSignature {
+    fn span(&self) -> Span {
+        self.module_keyword
+            .span
+            .join(&self.identifier.span)
+            .unwrap()
+    }
+}
+
 /// Syntax Synopsis:
 /// ``` txt
 /// Module:

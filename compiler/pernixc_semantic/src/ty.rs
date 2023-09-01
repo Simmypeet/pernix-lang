@@ -1,6 +1,6 @@
-use pernixc_system::arena::ID;
+use pernixc_system::arena;
 
-use crate::symbol::{self, LocalSubstitution, TypeParameterRef};
+use crate::symbol::{self, Lifetime, LocalSubstitution, TypeParameterRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Primitive {
@@ -38,13 +38,13 @@ pub struct Tuple(pub Vec<Type>);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Struct {
-    pub struct_id: ID<symbol::Struct>,
+    pub struct_index: arena::ID<symbol::Struct>,
     pub substitution: LocalSubstitution,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum {
-    pub enum_id: ID<symbol::Enum>,
+    pub eunm_id: arena::ID<symbol::Enum>,
     pub substitution: LocalSubstitution,
 }
 
@@ -57,9 +57,22 @@ pub struct TraitAssociated {
 
 /// Represents a type parameter that has been bounded to be a tuple type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TupleBoundableType {
+pub enum TupleBoundable {
     TypeParameter(TypeParameterRef),
     TraitAssociatedType(TraitAssociated),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ReferenceQualifier {
+    Mutable,
+    Restrict,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Reference {
+    pub qualifier: Option<ReferenceQualifier>,
+    pub lifetime: Lifetime,
+    pub ty: Box<Type>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -68,7 +81,9 @@ pub enum Type {
     Tuple(Tuple),
     Struct(Struct),
     Parameter(TypeParameterRef),
+    Enum(Enum),
     TraitAssociated(TraitAssociated),
+    Reference(Reference),
 }
 
 impl Default for Type {

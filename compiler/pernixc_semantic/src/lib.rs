@@ -10,6 +10,7 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
 pub mod constant;
+pub mod error;
 pub mod pattern;
 pub mod symbol;
 pub mod ty;
