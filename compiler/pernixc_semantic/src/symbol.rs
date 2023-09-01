@@ -517,7 +517,7 @@ pub struct Function {
     pub name: String,
     pub generic_parameters: GenericParameters,
     pub where_clause: WhereClause,
-    pub parameters: Vec<Parameter>,
+    pub parameters: Arena<Parameter>,
     pub return_type: ty::Type,
     pub syntax_tree: Option<syntax_tree::item::Function>,
 }
@@ -582,6 +582,51 @@ pub enum BuildError {
     TargetNamedCore(TargetNamedCoreError),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum State {
+    Drafting,
+    Constructing,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DraftingSymbolRef {
+    Module(arena::ID<Module>),
+    Struct(arena::ID<Struct>),
+    Enum(arena::ID<Enum>),
+    Trait(arena::ID<Trait>),
+    Type(arena::ID<Type>),
+    Function(arena::ID<Function>),
+}
+
+impl PartialEq for DraftingSymbolRef {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Module(id), Self::Module(other_id)) => id == other_id,
+            (Self::Struct(id), Self::Struct(other_id)) => id == other_id,
+            (Self::Enum(id), Self::Enum(other_id)) => id == other_id,
+            (Self::Trait(id), Self::Trait(other_id)) => id == other_id,
+            (Self::Type(id), Self::Type(other_id)) => id == other_id,
+            (Self::Function(id), Self::Function(other_id)) => id == other_id,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for DraftingSymbolRef {}
+
+impl std::hash::Hash for DraftingSymbolRef {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Module(id) => id.hash(state),
+            Self::Struct(id) => id.hash(state),
+            Self::Enum(id) => id.hash(state),
+            Self::Trait(id) => id.hash(state),
+            Self::Type(id) => id.hash(state),
+            Self::Function(id) => id.hash(state),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Table {
     modules: Arena<Module>,
@@ -592,6 +637,8 @@ pub struct Table {
     functions: Arena<Function>,
 
     target_root_module_ids_by_name: HashMap<String, arena::ID<Module>>,
+
+    states_by_drafting_symbol_refs: HashMap<DraftingSymbolRef, State>,
 }
 
 impl Table {
@@ -614,12 +661,19 @@ impl Table {
             types: Arena::new(),
             functions: Arena::new(),
             target_root_module_ids_by_name: HashMap::new(),
+            states_by_drafting_symbol_refs: HashMap::new(),
         };
 
         table.create_core_module();
 
+        let mut implements_syntax_tree_vecs_by_module_id = HashMap::new();
+
         for target in targets {
-            table.draft_target(target, handler)?;
+            table.draft_target(
+                target,
+                &mut implements_syntax_tree_vecs_by_module_id,
+                handler,
+            )?;
         }
 
         Ok(table)

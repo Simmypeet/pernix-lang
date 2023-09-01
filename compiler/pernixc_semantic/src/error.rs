@@ -35,9 +35,20 @@ pub struct UsingDuplication {
     pub existing_using_span: Span,
 }
 
+/// The symbol with the given name was already declared in the module.
+#[derive(Debug, Clone)]
+pub struct SymbolDuplication {
+    /// Span of the symbol that caused the duplication.
+    pub duplicate_span: Span,
+
+    /// Span of the symbol that was already declared.
+    pub existing_symbol_id: symbol::ID,
+}
+
 #[derive(Debug)]
 pub enum Error {
     UsingDuplication(UsingDuplication),
     ModuleNotFound(ModuleNotFound),
     ModuleExpected(ModuleExpected),
+    SymbolDuplication(SymbolDuplication),
 }
