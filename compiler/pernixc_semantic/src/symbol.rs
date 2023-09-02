@@ -13,7 +13,7 @@ use pernixc_system::{
 };
 
 use crate::{
-    constant::{self, Constant},
+    constant,
     error::Error,
     pattern::Irrefutable,
     ty::{self, TupleBoundable},
@@ -168,28 +168,31 @@ impl<Kind> Hash for GenericParameterRef<Kind> {
 }
 
 /// Represents a declaration of a generic lifetime parameter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct LifetimeParameter {
     pub name: String,
+    pub span: Option<Span>,
 }
 
 /// Represents an identifier/reference to a lifetime parameter declared in the item.
 pub type LifetimeParameterRef = GenericParameterRef<LifetimeParameter>;
 
 /// Represents a declaration of a generic type parameter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TypeParameter {
     pub name: String,
+    pub span: Option<Span>,
 }
 
 /// Represents an identifier/reference to a type parameter declared in the item.
 pub type TypeParameterRef = GenericParameterRef<TypeParameter>;
 
 /// Represents a declaration of a generic constant parameter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ConstantParameter {
     pub name: String,
     pub ty: ty::Type,
+    pub span: Option<Span>,
 }
 
 /// Represents an identifier/reference to a constant parameter declared in the item.
@@ -391,7 +394,7 @@ pub struct TraitBound {
     /// The substitution of trait's generic lifetime parameters.
     pub lifetimes: Vec<HigherRankedableLifetime>,
     /// The substitution of trait's generic constant parameters.
-    pub constants: Vec<Constant>,
+    pub constants: Vec<constant::Constant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -422,7 +425,7 @@ pub struct WhereClause {
     ///
     /// The key is the trait associated type and the value is the constant that the trait
     /// associated constant must be.
-    pub trait_associated_constant_bounds: HashMap<constant::TraitAssociated, Constant>,
+    pub trait_associated_constant_bounds: HashMap<constant::TraitAssociated, constant::Constant>,
 
     /// Set of trait associated type bounds.
     ///
@@ -444,7 +447,7 @@ pub struct GenericParameters {
 pub struct LocalSubstitution {
     pub lifetimes: Vec<Lifetime>,
     pub types: Vec<ty::Type>,
-    pub constants: Vec<Constant>,
+    pub constants: Vec<constant::Constant>,
     pub elided_lifetime: Lifetime,
 }
 
@@ -541,6 +544,33 @@ impl Symbol for arena::Symbol<Function> {
     }
 }
 
+/// Represents a constant declaration entry in the symbol table.
+#[derive(Debug, Clone)]
+pub struct Constant {
+    pub name: String,
+    pub accessibility: Accessibility,
+    pub ty: ty::Type,
+    pub constant: constant::Constant,
+    pub syntax_tree: Option<syntax_tree::item::Constant>,
+}
+
+impl Symbol for arena::Symbol<Constant> {
+    fn name(&self) -> &str { &self.name }
+
+    fn accessibility(&self) -> Accessibility { self.accessibility }
+
+    fn span(&self) -> Option<Span> {
+        self.syntax_tree.as_ref().map(|syntax_tree| {
+            syntax_tree
+                .signature()
+                .const_keyword()
+                .span
+                .join(&syntax_tree.signature().identifier().span)
+                .unwrap()
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ID {
     Module(arena::ID<Module>),
@@ -549,6 +579,7 @@ pub enum ID {
     Trait(arena::ID<Trait>),
     Type(arena::ID<Type>),
     Function(arena::ID<Function>),
+    Constant(arena::ID<Constant>),
 }
 
 /// Represents a reference to the item in the [`Table`] that can have generic parameters.
@@ -557,6 +588,8 @@ pub enum GenericItemRef {
     Struct(arena::ID<Struct>),
     Enum(arena::ID<Enum>),
     Trait(arena::ID<Trait>),
+    Type(arena::ID<Type>),
+    Function(arena::ID<Function>),
     TraitType(TraitFunctionRef),
     TraitConstant(TraitConstantRef),
     TraitFunction(TraitFunctionRef),
@@ -590,23 +623,23 @@ enum State {
 
 #[derive(Debug, Clone, Copy)]
 enum DraftingSymbolRef {
-    Module(arena::ID<Module>),
     Struct(arena::ID<Struct>),
     Enum(arena::ID<Enum>),
     Trait(arena::ID<Trait>),
     Type(arena::ID<Type>),
     Function(arena::ID<Function>),
+    Constant(arena::ID<Constant>),
 }
 
 impl PartialEq for DraftingSymbolRef {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Module(id), Self::Module(other_id)) => id == other_id,
             (Self::Struct(id), Self::Struct(other_id)) => id == other_id,
             (Self::Enum(id), Self::Enum(other_id)) => id == other_id,
             (Self::Trait(id), Self::Trait(other_id)) => id == other_id,
             (Self::Type(id), Self::Type(other_id)) => id == other_id,
             (Self::Function(id), Self::Function(other_id)) => id == other_id,
+            (Self::Constant(id), Self::Constant(other_id)) => id == other_id,
             _ => false,
         }
     }
@@ -617,12 +650,12 @@ impl Eq for DraftingSymbolRef {}
 impl std::hash::Hash for DraftingSymbolRef {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            Self::Module(id) => id.hash(state),
             Self::Struct(id) => id.hash(state),
             Self::Enum(id) => id.hash(state),
             Self::Trait(id) => id.hash(state),
             Self::Type(id) => id.hash(state),
             Self::Function(id) => id.hash(state),
+            Self::Constant(id) => id.hash(state),
         }
     }
 }
@@ -635,6 +668,7 @@ pub struct Table {
     traits: Arena<Trait>,
     types: Arena<Type>,
     functions: Arena<Function>,
+    constants: Arena<Constant>,
 
     target_root_module_ids_by_name: HashMap<String, arena::ID<Module>>,
 
@@ -660,6 +694,7 @@ impl Table {
             traits: Arena::new(),
             types: Arena::new(),
             functions: Arena::new(),
+            constants: Arena::new(),
             target_root_module_ids_by_name: HashMap::new(),
             states_by_drafting_symbol_refs: HashMap::new(),
         };
@@ -689,6 +724,7 @@ impl Table {
             ID::Trait(id) => self.traits.get(id).map(|x| x as _),
             ID::Type(id) => self.types.get(id).map(|x| x as _),
             ID::Function(id) => self.functions.get(id).map(|x| x as _),
+            ID::Constant(id) => self.constants.get(id).map(|x| x as _),
         }
     }
 }
@@ -696,6 +732,3 @@ impl Table {
 // TODO: Create a module heirarchy
 // TODO: Draft the symbols
 // TODO: Finalize the symbols
-
-#[cfg(test)]
-mod tests;

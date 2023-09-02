@@ -1,6 +1,5 @@
 //! Contains the definition of all semantic errors that can occur during the symbol
 //! resolution/analysis.
-
 use pernixc_print::LogSeverity;
 use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::item::StructField;

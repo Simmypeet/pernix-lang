@@ -211,11 +211,11 @@ type DefaultTypeParameter = DefaultGenericParameter<ty::Type>;
 
 /// Syntax Synopsis:
 /// ``` txt
-/// DefaultConstParameter:
+/// DefaultConstantParameter:
 ///     '=' Functional
 ///     ;
 /// ```
-type DefaultConstParameter = DefaultGenericParameter<Functional>;
+type DefaultConstantParameter = DefaultGenericParameter<Functional>;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -247,12 +247,12 @@ impl SourceElement for TypeParameter {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ConstParameter:
+/// ConstantParameter:
 ///     Identifier TypeAnnotation DefaultConstParameter?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-pub struct ConstParameter {
+pub struct ConstantParameter {
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
@@ -260,10 +260,10 @@ pub struct ConstParameter {
     #[get = "pub"]
     ty: ty::Type,
     #[get = "pub"]
-    default: Option<DefaultConstParameter>,
+    default: Option<DefaultConstantParameter>,
 }
 
-impl SourceElement for ConstParameter {
+impl SourceElement for ConstantParameter {
     fn span(&self) -> Span {
         self.identifier
             .span
@@ -282,14 +282,14 @@ impl SourceElement for ConstParameter {
 /// GenericParameter:
 ///     LifetimeParameter
 ///     | TypeParameter
-///     | ConstParameter
+///     | ConstantParameter
 ///     ;
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
-    Const(ConstParameter),
+    Constant(ConstantParameter),
 }
 
 impl SourceElement for GenericParameter {
@@ -297,7 +297,7 @@ impl SourceElement for GenericParameter {
         match self {
             Self::Lifetime(lifetime_parameter) => lifetime_parameter.span(),
             Self::Type(type_parameter) => type_parameter.span(),
-            Self::Const(const_parameter) => const_parameter.span(),
+            Self::Constant(const_parameter) => const_parameter.span(),
         }
     }
 }
@@ -460,7 +460,7 @@ impl SourceElement for Constraint {
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-pub struct TraitConstAssociationBoundArgument {
+pub struct TraitAssociationConstantBoundArgument {
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
@@ -469,7 +469,7 @@ pub struct TraitConstAssociationBoundArgument {
     right_brace: Punctuation,
 }
 
-impl SourceElement for TraitConstAssociationBoundArgument {
+impl SourceElement for TraitAssociationConstantBoundArgument {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
@@ -483,14 +483,14 @@ impl SourceElement for TraitConstAssociationBoundArgument {
 #[derive(Debug, Clone)]
 pub enum TraitAssociationBoundArgument {
     Type(ty::Type),
-    Const(TraitConstAssociationBoundArgument),
+    Constant(TraitAssociationConstantBoundArgument),
 }
 
 impl SourceElement for TraitAssociationBoundArgument {
     fn span(&self) -> Span {
         match self {
             Self::Type(ty) => ty.span(),
-            Self::Const(c) => c.span(),
+            Self::Constant(c) => c.span(),
         }
     }
 }
@@ -1544,7 +1544,7 @@ impl SourceElement for Enum {
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-pub struct ConstSignature {
+pub struct ConstantSignature {
     #[get = "pub"]
     const_keyword: Keyword,
     #[get = "pub"]
@@ -1555,7 +1555,7 @@ pub struct ConstSignature {
     ty: ty::Type,
 }
 
-impl SourceElement for ConstSignature {
+impl SourceElement for ConstantSignature {
     fn span(&self) -> Span { self.const_keyword.span.join(&self.ty.span()).unwrap() }
 }
 
@@ -1566,7 +1566,7 @@ impl SourceElement for ConstSignature {
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-pub struct ConstDefinition {
+pub struct ConstantDefinition {
     #[get = "pub"]
     equals: Punctuation,
     #[get = "pub"]
@@ -1575,27 +1575,27 @@ pub struct ConstDefinition {
     semicolon: Punctuation,
 }
 
-impl SourceElement for ConstDefinition {
+impl SourceElement for ConstantDefinition {
     fn span(&self) -> Span { self.equals.span.join(&self.semicolon.span).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` ebnf
-/// ConstDefinition:
+/// Constant:
 ///     '=' Expression ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-pub struct Const {
+pub struct Constant {
     #[get = "pub"]
     access_modifier: AccessModifier,
     #[get = "pub"]
-    signature: ConstSignature,
+    signature: ConstantSignature,
     #[get = "pub"]
-    definition: ConstDefinition,
+    definition: ConstantDefinition,
 }
 
-impl SourceElement for Const {
+impl SourceElement for Constant {
     fn span(&self) -> Span {
         self.access_modifier
             .span()
@@ -1627,7 +1627,7 @@ pub enum Item {
     Implements(Implements),
     Enum(Enum),
     Module(Module),
-    Const(Const),
+    Constant(Constant),
 }
 
 impl SourceElement for Item {
@@ -1640,7 +1640,7 @@ impl SourceElement for Item {
             Self::Struct(s) => s.span(),
             Self::Implements(i) => i.span(),
             Self::Enum(e) => e.span(),
-            Self::Const(c) => c.span(),
+            Self::Constant(c) => c.span(),
         }
     }
 }
@@ -1704,7 +1704,7 @@ impl<'a> Parser<'a> {
                                     // eat equals
                                     parser.forward();
 
-                                    Some(DefaultConstParameter {
+                                    Some(DefaultConstantParameter {
                                         equals,
                                         value: parser.parse_primary_expression(handler)?,
                                     })
@@ -1712,7 +1712,7 @@ impl<'a> Parser<'a> {
                                 _ => None,
                             };
 
-                            Some(GenericParameter::Const(ConstParameter {
+                            Some(GenericParameter::Constant(ConstantParameter {
                                 identifier,
                                 colon,
                                 ty,
@@ -1956,8 +1956,8 @@ impl<'a> Parser<'a> {
                                                 let expression = self.parse_expression(handler);
                                                 let right_brace = self.step_out(handler)?;
 
-                                                TraitAssociationBoundArgument::Const(
-                                                    TraitConstAssociationBoundArgument {
+                                                TraitAssociationBoundArgument::Constant(
+                                                    TraitAssociationConstantBoundArgument {
                                                         left_brace,
                                                         expression: expression?,
                                                         right_brace,
@@ -2614,13 +2614,16 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_const_signature(&mut self, handler: &impl Handler<Error>) -> Option<ConstSignature> {
+    fn parse_const_signature(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> Option<ConstantSignature> {
         let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let colon = self.parse_punctuation(':', true, handler)?;
         let ty = self.parse_type(handler)?;
 
-        Some(ConstSignature {
+        Some(ConstantSignature {
             const_keyword,
             identifier,
             colon,
@@ -2628,12 +2631,15 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_const_definition(&mut self, handler: &impl Handler<Error>) -> Option<ConstDefinition> {
+    fn parse_const_definition(
+        &mut self,
+        handler: &impl Handler<Error>,
+    ) -> Option<ConstantDefinition> {
         let equals = self.parse_punctuation('=', true, handler)?;
         let expression = self.parse_expression(handler)?;
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
-        Some(ConstDefinition {
+        Some(ConstantDefinition {
             equals,
             expression,
             semicolon,
@@ -2660,7 +2666,7 @@ impl<'a> Parser<'a> {
                 let signature = self.parse_const_signature(handler)?;
                 let definition = self.parse_const_definition(handler)?;
 
-                Some(Item::Const(Const {
+                Some(Item::Constant(Constant {
                     access_modifier,
                     signature,
                     definition,

@@ -60,6 +60,7 @@ impl Table {
                 .types
                 .insert(type_parameter_name.clone(), TypeParameter {
                     name: type_parameter_name,
+                    span: None,
                 })
                 .expect("should have no name duplication in `type_parameter_names`");
 

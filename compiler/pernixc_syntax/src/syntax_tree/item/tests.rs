@@ -312,7 +312,7 @@ pub struct ConstParameter {
 }
 
 impl Input for ConstParameter {
-    type Output = super::ConstParameter;
+    type Output = super::ConstantParameter;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
@@ -429,7 +429,7 @@ impl Input for GenericParameter {
         match (self, output) {
             (Self::Lifetime(i), super::GenericParameter::Lifetime(o)) => i.assert(o),
             (Self::Type(i), super::GenericParameter::Type(o)) => i.assert(o),
-            (Self::Const(i), super::GenericParameter::Const(o)) => i.assert(o),
+            (Self::Const(i), super::GenericParameter::Constant(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}"
             ))),
@@ -754,7 +754,7 @@ impl Input for TraitAssociationBoundArgument {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Const(i), super::TraitAssociationBoundArgument::Const(o)) => {
+            (Self::Const(i), super::TraitAssociationBoundArgument::Constant(o)) => {
                 i.assert(o.expression())
             }
             (Self::Type(i), super::TraitAssociationBoundArgument::Type(o)) => i.assert(o),
@@ -1193,7 +1193,7 @@ pub struct ConstSignature {
 }
 
 impl Input for ConstSignature {
-    type Output = super::ConstSignature;
+    type Output = super::ConstantSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
@@ -1224,7 +1224,7 @@ pub struct ConstDefinition {
 }
 
 impl Input for ConstDefinition {
-    type Output = super::ConstDefinition;
+    type Output = super::ConstantDefinition;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.expression.assert(output.expression())
@@ -1256,7 +1256,7 @@ pub struct Const {
 }
 
 impl Input for Const {
-    type Output = super::Const;
+    type Output = super::Constant;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
@@ -1318,7 +1318,7 @@ impl Input for Item {
             (Self::Enum(i), super::Item::Enum(o)) => i.assert(o),
             (Self::Implements(i), super::Item::Implements(o)) => i.assert(o),
             (Self::Module(i), super::Item::Module(o)) => i.assert(o),
-            (Self::Const(i), super::Item::Const(o)) => i.assert(o),
+            (Self::Const(i), super::Item::Constant(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),

@@ -1,7 +1,8 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_source::Span;
 use pernixc_system::arena;
 
-use crate::symbol::{self, Module};
+use crate::symbol::{self, ConstantParameterRef, Module};
 
 /// After resolved the module path, the found symbol was not a `module` but something else.
 #[derive(Debug, Clone)]
@@ -35,6 +36,13 @@ pub struct UsingDuplication {
     pub existing_using_span: Span,
 }
 
+/// The using statement uses the module that is using itself.
+#[derive(Debug, Clone)]
+pub struct ModuleUsingItself {
+    /// Span of the `using` statement that caused the error.
+    pub using_span: Span,
+}
+
 /// The symbol with the given name was already declared in the module.
 #[derive(Debug, Clone)]
 pub struct SymbolDuplication {
@@ -45,10 +53,62 @@ pub struct SymbolDuplication {
     pub existing_symbol_id: symbol::ID,
 }
 
-#[derive(Debug)]
+/// The constant parameter with the given name was already declared in the generic parameters.
+#[derive(Debug, Clone)]
+pub struct ConstantParameterDuplication {
+    /// Span of the constant parameter that caused the duplication.
+    pub duplicate_span: Span,
+
+    /// The reference to the existing constant parameter with the same name.
+    pub existing_constant_parameter_ref: ConstantParameterRef,
+}
+
+/// The type parameter with the given name was already declared in the generic parameters.
+#[derive(Debug, Clone)]
+pub struct TypeParameterDuplication {
+    /// Span of the type parameter that caused the duplication.
+    pub duplicate_span: Span,
+
+    /// The reference to the existing type parameter with the same name.
+    pub existing_type_parameter_ref: symbol::TypeParameterRef,
+}
+
+/// The lifetime parameter with the given name was already declared in the generic parameters.
+#[derive(Debug, Clone)]
+pub struct LifetimeParameterDuplication {
+    /// Span of the lifetime parameter that caused the duplication.
+    pub duplicate_span: Span,
+
+    /// The reference to the existing lifetime parameter with the same name.
+    pub existing_lifetime_parameter_ref: symbol::LifetimeParameterRef,
+}
+
+/// The lifetime parameter was declared after the type or constant parameter.
+#[derive(Debug, Clone)]
+pub struct LifetimeParameterDeclaredAfterTypeOrConstantParameter {
+    /// Span of the lifetime parameter that caused the error.
+    pub lifetime_parameter_span: Span,
+}
+
+/// The type parameter was declared after the constant parameter.
+#[derive(Debug, Clone)]
+pub struct TypeParameterDeclaredAfterConstantParameter {
+    /// Span of the type parameter that caused the error.
+    pub type_parameter_span: Span,
+}
+
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum Error {
     UsingDuplication(UsingDuplication),
     ModuleNotFound(ModuleNotFound),
     ModuleExpected(ModuleExpected),
     SymbolDuplication(SymbolDuplication),
+    ConstantParameterDuplication(ConstantParameterDuplication),
+    TypeParameterDuplication(TypeParameterDuplication),
+    LifetimeParameterDuplication(LifetimeParameterDuplication),
+    ModuleUsingItself(ModuleUsingItself),
+    LifetimeParameterDeclaredAfterTypeOrConstantParameter(
+        LifetimeParameterDeclaredAfterTypeOrConstantParameter,
+    ),
+    TypeParameterDeclaredAfterConstantParameter(TypeParameterDeclaredAfterConstantParameter),
 }

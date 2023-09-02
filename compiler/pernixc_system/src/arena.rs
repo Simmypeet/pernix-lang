@@ -1,6 +1,6 @@
 //! Contains the definition of the [`Arena`] type.
 
-use std::collections::HashMap;
+use std::{borrow::Borrow, cmp::Eq, collections::HashMap, hash::Hash};
 
 use derive_more::{Deref, DerefMut};
 use getset::CopyGetters;
@@ -67,7 +67,7 @@ impl<T> Ord for ID<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.id.cmp(&other.id) }
 }
 
-impl<T> std::hash::Hash for ID<T> {
+impl<T> Hash for ID<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.id.hash(state) }
 }
 
@@ -227,14 +227,20 @@ impl<T> NamedMap<T> {
 
     /// Returns a reference to the item in the [`NamedMap`] with the given name.
     #[must_use]
-    pub fn get_by_name(&self, name: &str) -> Option<&Symbol<T>> {
+    pub fn get_by_name<Q: ?Sized + Hash + Eq>(&self, name: &Q) -> Option<&Symbol<T>>
+    where
+        String: Borrow<Q>,
+    {
         let id = self.ids_by_name.get(name)?;
         self.items.get(*id)
     }
 
     /// Returns a mutable reference to the item in the [`NamedMap`] with the given name.
     #[must_use]
-    pub fn get_mut_by_name(&mut self, name: &str) -> Option<&mut Symbol<T>> {
+    pub fn get_mut_by_name<Q: ?Sized + Hash + Eq>(&mut self, name: &Q) -> Option<&mut Symbol<T>>
+    where
+        String: Borrow<Q>,
+    {
         let id = self.ids_by_name.get(name)?;
         self.items.get_mut(*id)
     }
@@ -247,5 +253,10 @@ impl<T> NamedMap<T> {
 
     /// Gets the ID of the item in the [`NamedMap`] with the given name.
     #[must_use]
-    pub fn name_to_id(&self, name: &str) -> Option<ID<T>> { self.ids_by_name.get(name).copied() }
+    pub fn name_to_id<Q: ?Sized + Hash + Eq>(&self, name: &Q) -> Option<ID<T>>
+    where
+        String: Borrow<Q>,
+    {
+        self.ids_by_name.get(name).copied()
+    }
 }
