@@ -11,7 +11,10 @@ use proptest::{
 
 use crate::syntax_tree::{
     self,
-    expression::tests::{Expression, Functional},
+    expression::{
+        self,
+        tests::{Expression, Functional},
+    },
     pattern,
     statement::tests::Statement,
     tests::{
@@ -1525,9 +1528,42 @@ impl Display for TraitType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TraitConstant {
+    pub identifier: Identifier,
+    pub ty: ty::tests::Type,
+}
+
+impl Input for TraitConstant {
+    type Output = super::TraitConstant;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.identifier.assert(output.signature().identifier())?;
+        self.ty.assert(output.signature().ty())
+    }
+}
+
+impl Arbitrary for TraitConstant {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (Identifier::arbitrary(), ty::tests::Type::arbitrary())
+            .prop_map(|(identifier, ty)| Self { identifier, ty })
+            .boxed()
+    }
+}
+
+impl Display for TraitConstant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "const {}: {};", self.identifier, self.ty)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TraitMember {
     Function(TraitFunction),
     Type(TraitType),
+    Constant(TraitConstant),
 }
 
 impl Input for TraitMember {
@@ -1537,6 +1573,7 @@ impl Input for TraitMember {
         match (self, output) {
             (Self::Function(f), super::TraitMember::Function(g)) => f.assert(g),
             (Self::Type(f), super::TraitMember::Type(g)) => f.assert(g),
+            (Self::Constant(f), super::TraitMember::Constant(g)) => f.assert(g),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -1552,6 +1589,7 @@ impl Arbitrary for TraitMember {
         prop_oneof![
             TraitFunction::arbitrary().prop_map(Self::Function),
             TraitType::arbitrary().prop_map(Self::Type),
+            TraitConstant::arbitrary().prop_map(Self::Constant),
         ]
         .boxed()
     }
@@ -1562,6 +1600,7 @@ impl Display for TraitMember {
         match self {
             Self::Function(function) => Display::fmt(function, f),
             Self::Type(type_) => Display::fmt(type_, f),
+            Self::Constant(constant) => Display::fmt(constant, f),
         }
     }
 }
@@ -2000,7 +2039,7 @@ pub struct EnumVariant {
 }
 
 impl Input for EnumVariant {
-    type Output = super::EnumVariant;
+    type Output = super::Variant;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
@@ -2194,6 +2233,13 @@ impl Display for ImplementsFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.signature, self.body)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ImplementsConstant {
+    pub identifier: Identifier,
+    pub ty: ty::tests::Type,
+    pub expression: expression::tests::Expression,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

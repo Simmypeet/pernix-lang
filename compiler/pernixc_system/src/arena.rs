@@ -180,10 +180,14 @@ impl<'a, T> IntoIterator for &'a mut Arena<T> {
 ///
 /// The [`NamedMap`] is a wrapper around an [`Arena`] that allows for accessing its symbols by name.
 /// However, accessing symbols by ID provides better lookup performance and should be preferred.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamedMap<T> {
     ids_by_name: HashMap<String, ID<T>>,
     items: Arena<T>,
+}
+
+impl<T> Default for NamedMap<T> {
+    fn default() -> Self { Self::new() }
 }
 
 impl<T> NamedMap<T> {

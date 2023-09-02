@@ -43,12 +43,14 @@ impl Table {
             name: trait_name.clone(),
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
-            trait_associated_ids_by_name: HashMap::new(),
-            trait_constants: Arena::default(),
-            trait_types: Arena::default(),
-            trait_functions: Arena::default(),
-            trait_implements: Arena::default(),
+            associated_ids_by_name: HashMap::new(),
+            constants: Arena::default(),
+            types: Arena::default(),
+            functions: Arena::default(),
+            implements: Arena::default(),
+            negative_implements: Arena::default(),
             syntax_tree: None,
+            parent_module_id: core_module,
         });
         let triat_symbol = &mut self.traits[trait_id];
 
@@ -80,17 +82,20 @@ impl Table {
         function_name: String,
         initializer: impl FnOnce(&mut arena::Symbol<TraitFunction>),
     ) {
-        let trait_function_id = trait_symbol.trait_functions.push(TraitFunction {
+        let parent_trait_id = trait_symbol.id();
+        let trait_function_id = trait_symbol.functions.push(TraitFunction {
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
             name: function_name.clone(),
             parameters: Arena::new(),
             return_type: ty::Type::default(),
+            parent_trait_id,
+            syntax_tree: None,
         });
 
-        initializer(&mut trait_symbol.trait_functions[trait_function_id]);
+        initializer(&mut trait_symbol.functions[trait_function_id]);
 
-        trait_symbol.trait_associated_ids_by_name.insert(
+        trait_symbol.associated_ids_by_name.insert(
             function_name,
             super::TraitAssociatedID::Function(trait_function_id),
         );

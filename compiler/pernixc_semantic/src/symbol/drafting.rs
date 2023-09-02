@@ -5,26 +5,29 @@ use pernixc_syntax::syntax_tree::{
     self,
     item::{GenericParameter, Item, ModulePath},
     target::{ModuleTree, Target},
-    AccessModifier,
+    AccessModifier, ConnectedList,
 };
 use pernixc_system::{
-    arena::{self, Arena},
+    arena::{self, Arena, NamedMap},
     diagnostic::Handler,
 };
 
 use super::{
-    Accessibility, BuildError, ConstantParameter, ConstantParameterRef, Function, GenericItemRef,
-    GenericParameters, LifetimeParameter, LifetimeParameterRef, Struct, Table,
-    TargetNamedCoreError, TypeParameterRef, WhereClause,
+    Accessibility, BuildError, ConstantParameter, Function, GenericParameters, LifetimeParameter,
+    Struct, Table, TargetNamedCoreError, WhereClause,
 };
 use crate::{
     constant,
     error::{
         ConstantParameterDuplication, Error, LifetimeParameterDeclaredAfterTypeOrConstantParameter,
         LifetimeParameterDuplication, ModuleExpected, ModuleNotFound, SymbolDuplication,
-        TypeParameterDeclaredAfterConstantParameter, TypeParameterDuplication, UsingDuplication,
+        TraitMemberDuplication, TypeParameterDeclaredAfterConstantParameter,
+        TypeParameterDuplication, UsingDuplication, VariantDuplication,
     },
-    symbol::{DraftingSymbolRef, Module, State, TargetNameDuplicationError, Trait, Type, ID},
+    symbol::{
+        DraftingSymbolRef, Global, Module, State, TargetNameDuplicationError, Trait,
+        TraitAssociatedID, TraitFunction, Type, ID,
+    },
     ty,
 };
 
@@ -70,7 +73,6 @@ impl Table {
 
     #[allow(clippy::too_many_lines)]
     fn draft_generic_parameters(
-        generic_item_ref: GenericItemRef,
         generic_parameters: &mut GenericParameters,
         syntax_tree: &syntax_tree::item::GenericParameters,
         handler: &impl Handler<Error>,
@@ -99,10 +101,7 @@ impl Table {
                         handler.receive(Error::LifetimeParameterDuplication(
                             LifetimeParameterDuplication {
                                 duplicate_span: param.span(),
-                                existing_lifetime_parameter_ref: LifetimeParameterRef {
-                                    id: symbol.id(),
-                                    generic_item_ref,
-                                },
+                                existing_lifetime_parameter_span: symbol.span.clone().unwrap(),
                             },
                         ));
                         continue;
@@ -137,10 +136,7 @@ impl Table {
                         handler.receive(Error::TypeParameterDuplication(
                             TypeParameterDuplication {
                                 duplicate_span: generic_parameter.span(),
-                                existing_type_parameter_ref: TypeParameterRef {
-                                    id: symbol.id(),
-                                    generic_item_ref,
-                                },
+                                existing_type_parameter: symbol.span.clone().unwrap(),
                             },
                         ));
                         continue;
@@ -166,10 +162,7 @@ impl Table {
                         handler.receive(Error::ConstantParameterDuplication(
                             ConstantParameterDuplication {
                                 duplicate_span: param.span(),
-                                existing_constant_parameter_ref: ConstantParameterRef {
-                                    id: symbol.id(),
-                                    generic_item_ref,
-                                },
+                                existing_constant_parameter: symbol.span.clone().unwrap(),
                             },
                         ));
                         continue;
@@ -211,6 +204,7 @@ impl Table {
             parameters: Arena::default(),
             return_type: ty::Type::default(),
             syntax_tree: Some(syntax_tree),
+            parent_module_id,
         });
 
         let function_sym = &mut self.functions[function];
@@ -224,12 +218,7 @@ impl Table {
             .as_ref()
         {
             let mut generic_parameters = GenericParameters::default();
-            Self::draft_generic_parameters(
-                GenericItemRef::Function(function),
-                &mut generic_parameters,
-                syntax_tree,
-                handler,
-            );
+            Self::draft_generic_parameters(&mut generic_parameters, syntax_tree, handler);
             function_sym.generic_parameters = generic_parameters;
         }
 
@@ -245,6 +234,7 @@ impl Table {
             .insert(DraftingSymbolRef::Function(function), State::Drafting);
     }
 
+    #[allow(clippy::too_many_lines)]
     fn draft_module_tree(
         &mut self,
         parent_module_id: Option<arena::ID<Module>>,
@@ -349,7 +339,11 @@ impl Table {
             {
                 handler.receive(Error::SymbolDuplication(SymbolDuplication {
                     duplicate_span: identifier_span,
-                    existing_symbol_id: *existing_symbol,
+                    existing_symbol_span: self
+                        .get_global((*existing_symbol).into())
+                        .unwrap()
+                        .span()
+                        .unwrap(),
                 }));
                 continue;
             }
@@ -385,6 +379,7 @@ impl Table {
             syntax_tree: Some(syntax_tree),
             ty: ty::Type::default(),
             constant: constant::Constant::Tuple(constant::Tuple(Vec::new())),
+            parent_module_id,
         });
 
         assert!(
@@ -405,10 +400,12 @@ impl Table {
         syntax_tree: syntax_tree::item::Enum,
         handler: &impl Handler<Error>,
     ) {
-        let enum_name = syntax_tree.signature().identifier().span.str().to_string();
+        let (accessibility, signature_syntax, body_syntax) = syntax_tree.dissolve();
+
+        let enum_name = signature_syntax.identifier().span.str().to_string();
 
         let enum_id = self.enums.push(super::Enum {
-            accessibility: match syntax_tree.access_modifier() {
+            accessibility: match accessibility {
                 AccessModifier::Public(_) => Accessibility::Public,
                 AccessModifier::Private(_) => Accessibility::Private,
                 AccessModifier::Internal(_) => Accessibility::Internal,
@@ -416,8 +413,9 @@ impl Table {
             name: enum_name.clone(),
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
-            syntax_tree: Some(syntax_tree),
-            variants: Arena::default(),
+            syntax_tree: Some(signature_syntax),
+            variants: NamedMap::default(),
+            parent_module_id,
         });
 
         let enum_sym = &mut self.enums[enum_id];
@@ -426,18 +424,38 @@ impl Table {
             .syntax_tree
             .as_ref()
             .unwrap()
-            .signature()
             .generic_parameters()
             .as_ref()
         {
             let mut generic_parameters = GenericParameters::default();
-            Self::draft_generic_parameters(
-                GenericItemRef::Enum(enum_id),
-                &mut generic_parameters,
-                syntax_tree,
-                handler,
-            );
+            Self::draft_generic_parameters(&mut generic_parameters, syntax_tree, handler);
             enum_sym.generic_parameters = generic_parameters;
+        }
+
+        for variant_syn in body_syntax
+            .dissolve()
+            .1
+            .into_iter()
+            .flat_map(ConnectedList::into_elements)
+        {
+            let variant_name = variant_syn.identifier().span.str();
+
+            if let Some(variant) = enum_sym.variants.get_by_name(variant_name) {
+                handler.receive(Error::VariantDuplication(VariantDuplication {
+                    duplication_span: variant_syn.identifier().span.clone(),
+                    existing_variant_span: variant.span().unwrap(),
+                }));
+            }
+
+            enum_sym
+                .variants
+                .insert(variant_name.to_string(), super::Variant {
+                    name: variant_name.to_string(),
+                    parent_enum_id: enum_id,
+                    association_type: None,
+                    syntax_tree: Some(variant_syn),
+                })
+                .expect("should've not duplicated");
         }
 
         assert!(
@@ -471,6 +489,7 @@ impl Table {
             syntax_tree: Some(syntax_tree),
             where_clause: WhereClause::default(),
             fields: Arena::default(),
+            parent_module_id,
         });
 
         let struct_sym = &mut self.structs[struct_id];
@@ -484,12 +503,7 @@ impl Table {
             .as_ref()
         {
             let mut generic_parameters = GenericParameters::default();
-            Self::draft_generic_parameters(
-                GenericItemRef::Struct(struct_id),
-                &mut generic_parameters,
-                syntax_tree,
-                handler,
-            );
+            Self::draft_generic_parameters(&mut generic_parameters, syntax_tree, handler);
             struct_sym.generic_parameters = generic_parameters;
         }
 
@@ -523,6 +537,7 @@ impl Table {
             generic_parameters: GenericParameters::default(),
             syntax_tree: Some(syntax_tree),
             alias: ty::Type::default(),
+            parent_module_id,
         });
 
         let type_sym = &mut self.types[type_id];
@@ -536,12 +551,7 @@ impl Table {
             .as_ref()
         {
             let mut generic_parameters = GenericParameters::default();
-            Self::draft_generic_parameters(
-                GenericItemRef::Type(type_id),
-                &mut generic_parameters,
-                syntax_tree,
-                handler,
-            );
+            Self::draft_generic_parameters(&mut generic_parameters, syntax_tree, handler);
             type_sym.generic_parameters = generic_parameters;
         }
 
@@ -557,16 +567,19 @@ impl Table {
             .insert(DraftingSymbolRef::Type(type_id), State::Drafting);
     }
 
+    #[allow(clippy::too_many_lines)]
     fn draft_trait(
         &mut self,
         parent_module_id: arena::ID<Module>,
         syntax_tree: syntax_tree::item::Trait,
         handler: &impl Handler<Error>,
     ) {
-        let trait_name = syntax_tree.signature().identifier().span.str().to_string();
+        let (accessibility, signature_syntax, body_syntax) = syntax_tree.dissolve();
+
+        let trait_name = signature_syntax.identifier().span.str().to_string();
 
         let trait_id = self.traits.push(Trait {
-            accessibility: match syntax_tree.access_modifier() {
+            accessibility: match accessibility {
                 AccessModifier::Public(_) => Accessibility::Public,
                 AccessModifier::Private(_) => Accessibility::Private,
                 AccessModifier::Internal(_) => Accessibility::Internal,
@@ -574,12 +587,14 @@ impl Table {
             name: trait_name.clone(),
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
-            trait_associated_ids_by_name: HashMap::new(),
-            trait_constants: Arena::default(),
-            trait_types: Arena::default(),
-            trait_functions: Arena::default(),
-            trait_implements: Arena::default(),
-            syntax_tree: Some(syntax_tree),
+            associated_ids_by_name: HashMap::new(),
+            constants: Arena::default(),
+            types: Arena::default(),
+            functions: Arena::default(),
+            implements: Arena::default(),
+            syntax_tree: Some(signature_syntax),
+            negative_implements: Arena::default(),
+            parent_module_id,
         });
 
         let trait_sym = &mut self.traits[trait_id];
@@ -588,18 +603,109 @@ impl Table {
             .syntax_tree
             .as_ref()
             .unwrap()
-            .signature()
             .generic_parameters()
             .as_ref()
         {
             let mut generic_parameters = GenericParameters::default();
-            Self::draft_generic_parameters(
-                GenericItemRef::Trait(trait_id),
-                &mut generic_parameters,
-                syntax_tree,
-                handler,
-            );
+            Self::draft_generic_parameters(&mut generic_parameters, syntax_tree, handler);
             trait_sym.generic_parameters = generic_parameters;
+        }
+
+        for member_syn in body_syntax.dissolve().1 {
+            let identifier_span = match &member_syn {
+                syntax_tree::item::TraitMember::Function(syn) => {
+                    syn.signature().identifier().span.clone()
+                }
+                syntax_tree::item::TraitMember::Type(syn) => {
+                    syn.signature().identifier().span.clone()
+                }
+                syntax_tree::item::TraitMember::Constant(syn) => {
+                    syn.signature().identifier().span.clone()
+                }
+            };
+
+            if let Some(existing_symbol_id) =
+                trait_sym.associated_ids_by_name.get(identifier_span.str())
+            {
+                handler.receive(Error::TraitMemberDuplication(TraitMemberDuplication {
+                    duplication_span: identifier_span,
+                    existing_trait_member_span: match existing_symbol_id {
+                        TraitAssociatedID::Type(id) => trait_sym.types[*id].span().unwrap().clone(),
+                        TraitAssociatedID::Constant(id) => {
+                            trait_sym.constants[*id].span().unwrap().clone()
+                        }
+                        TraitAssociatedID::Function(id) => {
+                            trait_sym.functions[*id].span().unwrap().clone()
+                        }
+                    },
+                }));
+                continue;
+            }
+
+            let trait_associated_id = match member_syn {
+                syntax_tree::item::TraitMember::Function(func) => {
+                    TraitAssociatedID::Function(trait_sym.functions.push(TraitFunction {
+                        generic_parameters: {
+                            let mut generic_parameters = GenericParameters::default();
+
+                            if let Some(generic_parameters_syn) =
+                                func.signature().generic_parameters().as_ref()
+                            {
+                                Self::draft_generic_parameters(
+                                    &mut generic_parameters,
+                                    generic_parameters_syn,
+                                    handler,
+                                );
+                            }
+
+                            generic_parameters
+                        },
+                        where_clause: WhereClause::default(),
+                        name: identifier_span.str().to_string(),
+                        parameters: Arena::new(),
+                        parent_trait_id: trait_id,
+                        syntax_tree: Some(func),
+                        return_type: ty::Type::default(),
+                    }))
+                }
+                syntax_tree::item::TraitMember::Type(type_syn) => {
+                    TraitAssociatedID::Type(trait_sym.types.push(super::TraitType {
+                        generic_parameters: {
+                            let mut generic_parameters = GenericParameters::default();
+
+                            if let Some(generic_parameters_syn) =
+                                type_syn.signature().generic_parameters().as_ref()
+                            {
+                                Self::draft_generic_parameters(
+                                    &mut generic_parameters,
+                                    generic_parameters_syn,
+                                    handler,
+                                );
+                            }
+
+                            generic_parameters
+                        },
+                        name: identifier_span.str().to_string(),
+                        parent_trait_id: trait_id,
+                        syntax_tree: Some(type_syn),
+                        alias: ty::Type::default(),
+                    }))
+                }
+                syntax_tree::item::TraitMember::Constant(const_syn) => {
+                    TraitAssociatedID::Constant(trait_sym.constants.push(super::TraitConstant {
+                        name: identifier_span.str().to_string(),
+                        parent_trait_id: trait_id,
+                        syntax_tree: Some(const_syn),
+                        ty: ty::Type::default(),
+                        constant: constant::Constant::Tuple(constant::Tuple(Vec::new())),
+                    }))
+                }
+            };
+
+            trait_sym
+                .associated_ids_by_name
+                .insert(identifier_span.str().to_string(), trait_associated_id)
+                .expect("should've not duplicated");
         }
 
         assert!(
@@ -638,7 +744,6 @@ impl Table {
                     let ID::Module(module_id) = id else {
                         handler.receive(Error::ModuleExpected(ModuleExpected {
                             module_path_span: path.span.clone(),
-                            found_symbol_id: id,
                         }));
                         return None;
                     };

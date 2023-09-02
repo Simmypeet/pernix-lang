@@ -773,6 +773,24 @@ impl SourceElement for TraitType {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// TraitConstant:
+///     ConstantSignature ';'
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct TraitConstant {
+    #[get = "pub"]
+    signature: ConstantSignature,
+    #[get = "pub"]
+    semicolon: Punctuation,
+}
+
+impl SourceElement for TraitConstant {
+    fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// TraitMember:
 ///     TraitFunction
 ///     | TraitType
@@ -783,6 +801,7 @@ impl SourceElement for TraitType {
 pub enum TraitMember {
     Function(TraitFunction),
     Type(TraitType),
+    Constant(TraitConstant),
 }
 
 impl SourceElement for TraitMember {
@@ -790,6 +809,7 @@ impl SourceElement for TraitMember {
         match self {
             Self::Function(f) => f.span(),
             Self::Type(f) => f.span(),
+            Self::Constant(f) => f.span(),
         }
     }
 }
@@ -1273,6 +1293,24 @@ impl SourceElement for ImplementsType {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// ImplementsConstant:
+///     ConstantSignature ConstantDefinition
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ImplementsConstant {
+    #[get = "pub"]
+    signature: ConstantSignature,
+    #[get = "pub"]
+    definition: ConstantDefinition,
+}
+
+impl SourceElement for ImplementsConstant {
+    fn span(&self) -> Span { self.signature.span().join(&self.definition.span()).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// ImplementsMember:
 ///     ImplementsFunction
 ///     | ImplementsType
@@ -1282,11 +1320,13 @@ impl SourceElement for ImplementsType {
 pub enum ImplementsMember {
     Type(ImplementsType),
     Function(ImplementsFunction),
+    Constant(ImplementsConstant),
 }
 
 impl SourceElement for ImplementsMember {
     fn span(&self) -> Span {
         match self {
+            Self::Constant(constant) => constant.span(),
             Self::Function(function) => function.span(),
             Self::Type(ty) => ty.span(),
         }
@@ -1455,14 +1495,14 @@ impl SourceElement for VariantAssociation {
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
-pub struct EnumVariant {
+pub struct Variant {
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
     variant_association: Option<VariantAssociation>,
 }
 
-impl SourceElement for EnumVariant {
+impl SourceElement for Variant {
     fn span(&self) -> Span {
         let end = self
             .variant_association
@@ -1479,7 +1519,7 @@ impl SourceElement for EnumVariant {
 ///     Identifier (',' Identifier)*
 ///     ;
 /// ```
-pub type EnumVariantList = ConnectedList<EnumVariant, Punctuation>;
+pub type EnumVariantList = ConnectedList<Variant, Punctuation>;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -2185,6 +2225,30 @@ impl<'a> Parser<'a> {
                 }))
             }
 
+            Some(Token::Keyword(const_keyword)) if const_keyword.keyword == KeywordKind::Const => {
+                let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
+                let identifier = self.parse_identifier(handler)?;
+                let colon = self.parse_punctuation(':', true, handler)?;
+                let ty = self.parse_type(handler)?;
+                let equals = self.parse_punctuation('=', true, handler)?;
+                let expression = self.parse_expression(handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                Some(ImplementsMember::Constant(ImplementsConstant {
+                    signature: ConstantSignature {
+                        const_keyword,
+                        identifier,
+                        colon,
+                        ty,
+                    },
+                    definition: ConstantDefinition {
+                        equals,
+                        expression,
+                        semicolon,
+                    },
+                }))
+            }
+
             Some(Token::Keyword(type_keyword)) if type_keyword.keyword == KeywordKind::Type => {
                 let type_signature = self.parse_type_signature(handler)?;
                 let type_definition = self.parse_type_definition(handler)?;
@@ -2305,6 +2369,24 @@ impl<'a> Parser<'a> {
 
                 Some(TraitMember::Function(TraitFunction {
                     signature: function_signature,
+                    semicolon,
+                }))
+            }
+
+            Some(Token::Keyword(const_keyword)) if const_keyword.keyword == KeywordKind::Const => {
+                let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
+                let identifier = self.parse_identifier(handler)?;
+                let colon = self.parse_punctuation(':', true, handler)?;
+                let ty = self.parse_type(handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                Some(TraitMember::Constant(TraitConstant {
+                    signature: ConstantSignature {
+                        const_keyword,
+                        identifier,
+                        colon,
+                        ty,
+                    },
                     semicolon,
                 }))
             }
@@ -2455,7 +2537,7 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-                Some(EnumVariant {
+                Some(Variant {
                     identifier,
                     variant_association: associated_value,
                 })

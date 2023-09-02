@@ -239,9 +239,12 @@ impl Module {
 
             prop_assert_eq!(
                 item.accessibility,
-                output.table.get_symbol(item_id).unwrap().accessibility()
+                output.table.get_accessibility(item_id.into()).unwrap()
             );
-            prop_assert_eq!(item_name, output.table.get_symbol(item_id).unwrap().name());
+            prop_assert_eq!(
+                item_name,
+                output.table.get_global(item_id.into()).unwrap().name()
+            );
 
             match (&item.kind, item_id) {
                 (ItemKind::Type(generic_parameters), ID::Type(type_id)) => {
