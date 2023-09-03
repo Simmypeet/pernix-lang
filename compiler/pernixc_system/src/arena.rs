@@ -264,3 +264,35 @@ impl<T> NamedMap<T> {
         self.ids_by_name.get(name).copied()
     }
 }
+
+impl<T> std::ops::Index<ID<T>> for NamedMap<T> {
+    type Output = Symbol<T>;
+
+    fn index(&self, id: ID<T>) -> &Self::Output { &self.items[id] }
+}
+
+impl<T> std::ops::IndexMut<ID<T>> for NamedMap<T> {
+    fn index_mut(&mut self, id: ID<T>) -> &mut Self::Output { &mut self.items[id] }
+}
+
+impl<T, Q: ?Sized + Eq + Hash> std::ops::Index<&Q> for NamedMap<T>
+where
+    String: Borrow<Q>,
+{
+    type Output = Symbol<T>;
+
+    fn index(&self, name: &Q) -> &Self::Output {
+        let id = self.ids_by_name.get(name).unwrap();
+        &self.items[*id]
+    }
+}
+
+impl<T, Q: ?Sized + Eq + Hash> std::ops::IndexMut<&Q> for NamedMap<T>
+where
+    String: Borrow<Q>,
+{
+    fn index_mut(&mut self, index: &Q) -> &mut Self::Output {
+        let id = self.ids_by_name.get(index).unwrap();
+        &mut self.items[*id]
+    }
+}

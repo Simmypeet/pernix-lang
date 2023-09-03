@@ -148,6 +148,40 @@ pub struct NoGenericArgumentsRequired {
     pub qualified_name: String,
 }
 
+/// Couldn't refer to the target symbol because the target symbol was not found.
+#[derive(Debug, Clone)]
+pub struct TargetNotFound {
+    /// The span of the target symbol reference.
+    pub target_name_span: Span,
+}
+
+/// The symbol was not accessible from the current scope.
+#[derive(Debug, Clone)]
+pub struct SymbolNotAccessible {
+    /// The span of the symbol reference.
+    pub reference_span: Span,
+
+    /// The qualified-name of the scope that referred to the access target.
+    pub referring_site_qualified_name: String,
+
+    /// The qualified-name of the referred symbol.
+    pub referred_site_qualified_name: String,
+}
+
+/// The expression doesn't have the member with the given name.
+#[derive(Debug, Clone)]
+pub struct NoMemberOnExpression {
+    /// The span of the path that tried to access the member on the expression.
+    pub member_reference_span: Span,
+}
+
+/// Cyclic dependency was detected.
+#[derive(Debug, Clone)]
+pub struct CyclicDependency {
+    /// Span to the symbol declaration that participated in the cycle.
+    pub participant_spans: Vec<Span>,
+}
+
 #[derive(Debug, Clone, EnumAsInner)]
 pub enum Error {
     VariantDuplication(VariantDuplication),
@@ -160,9 +194,12 @@ pub enum Error {
     ConstantParameterDuplication(ConstantParameterDuplication),
     TypeParameterDuplication(TypeParameterDuplication),
     LifetimeParameterDuplication(LifetimeParameterDuplication),
+    NoMemberOnExpression(NoMemberOnExpression),
     ModuleUsingItself(ModuleUsingItself),
     ResolutionAmbiguity(ResolutionAmbiguity),
+    SymbolNotAccessible(SymbolNotAccessible),
     SymbolNotFound(SymbolNotFound),
+    TargetNotFound(TargetNotFound),
     TraitExpected(TraitExpected),
     LifetimeParameterDeclaredAfterTypeOrConstantParameter(
         LifetimeParameterDeclaredAfterTypeOrConstantParameter,

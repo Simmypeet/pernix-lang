@@ -1,8 +1,3 @@
-// Test for the correctness of module path using resolving
-// Test for the correctness of module tree
-// Test for the correctness of generic parameters drafting
-// Test for the correctness of symbol drafting
-
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     sync::atomic::AtomicUsize,
@@ -10,10 +5,7 @@ use std::{
 
 use pernixc_source::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_system::{
-    arena::{self, Arena},
-    diagnostic::Storage,
-};
+use pernixc_system::{arena, diagnostic::Storage};
 use proptest::{
     prelude::Arbitrary,
     prop_assert_eq, prop_oneof, proptest,
@@ -220,13 +212,15 @@ impl Module {
     ) -> TestCaseResult {
         module_test_id_by_module_table_id.insert(self.unique_id, output.module_id);
 
-        let output_module = &output.table.modules[output.module_id];
+        let output_table_container = output.table.container.read();
+
+        let output_module = &output_table_container.modules[output.module_id];
 
         prop_assert_eq!(name, &output_module.name);
         prop_assert_eq!(accessibility, output_module.accessibility);
 
         for (item_name, item) in &self.items {
-            let item_id = output.table.modules[output.module_id]
+            let item_id = output_table_container.modules[output.module_id]
                 .children_ids_by_name
                 .get(item_name)
                 .copied();
@@ -241,38 +235,38 @@ impl Module {
                 item.accessibility,
                 output.table.get_accessibility(item_id.into()).unwrap()
             );
-            prop_assert_eq!(
-                item_name,
-                output.table.get_global(item_id.into()).unwrap().name()
-            );
+            {
+                let global = output.table.get_global(item_id.into()).unwrap();
+                prop_assert_eq!(item_name, global.name());
+            }
 
             match (&item.kind, item_id) {
                 (ItemKind::Type(generic_parameters), ID::Type(type_id)) => {
-                    let output_type = &output.table.types[type_id];
+                    let output_type = &output_table_container.types[type_id];
 
                     generic_parameters.validate(&output_type.generic_parameters)?;
                 }
 
                 (ItemKind::Trait(generic_parameters), ID::Trait(trait_id)) => {
-                    let output_trait = &output.table.traits[trait_id];
+                    let output_trait = &output_table_container.traits[trait_id];
 
                     generic_parameters.validate(&output_trait.generic_parameters)?;
                 }
 
                 (ItemKind::Struct(generic_parameters), ID::Struct(struct_id)) => {
-                    let output_struct = &output.table.structs[struct_id];
+                    let output_struct = &output_table_container.structs[struct_id];
 
                     generic_parameters.validate(&output_struct.generic_parameters)?;
                 }
 
                 (ItemKind::Enum(generic_parameters), ID::Enum(enum_id)) => {
-                    let output_enum = &output.table.enums[enum_id];
+                    let output_enum = &output_table_container.enums[enum_id];
 
                     generic_parameters.validate(&output_enum.generic_parameters)?;
                 }
 
                 (ItemKind::Function(generic_parameters), ID::Function(function_id)) => {
-                    let output_function = &output.table.functions[function_id];
+                    let output_function = &output_table_container.functions[function_id];
 
                     generic_parameters.validate(&output_function.generic_parameters)?;
                 }
@@ -464,31 +458,19 @@ proptest! {
             )));
         }
 
-        let mut table = Table {
-            modules: Arena::default(),
-            structs: Arena::default(),
-            enums: Arena::default(),
-            traits: Arena::default(),
-            types: Arena::default(),
-            functions: Arena::default(),
-            constants: Arena::default(),
-            target_root_module_ids_by_name: HashMap::new(),
-            states_by_drafting_symbol_refs: HashMap::new(),
-        };
+        let table = Table::new();
 
         let mut module_test_id_by_module_table_id = HashMap::new();
-        let mut implements_syntax_tree_vecs_by_module_id = HashMap::new();
 
         let storage: Storage<Error> = Storage::new();
 
-        table.draft_target(
-            target,
-            &mut implements_syntax_tree_vecs_by_module_id,
+        table.draft_targets(
+            std::iter::once(target),
             &storage
         ).expect("should've no problem");
 
         let root_target_id = table
-            .target_root_module_ids_by_name
+            .target_root_module_ids_by_name.read()
             .get("Test")
             .copied()
             .unwrap();

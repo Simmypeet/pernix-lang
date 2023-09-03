@@ -1,4 +1,4 @@
-use pernixc_system::arena::{self, ID};
+use pernixc_system::arena;
 
 use crate::symbol::{self, ConstantParameterRef, LocalSubstitution, TraitConstantRef};
 
@@ -30,7 +30,7 @@ pub struct Array(pub Vec<Constant>);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum {
-    pub enum_id: ID<symbol::Enum>,
+    pub enum_id: arena::ID<symbol::Enum>,
     /// The subsitution of the enum type must be *complete*.
     pub substitution: LocalSubstitution,
     pub variant_id: arena::ID<symbol::Variant>,
@@ -39,7 +39,7 @@ pub struct Enum {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Struct {
-    pub struct_id: ID<symbol::Struct>,
+    pub struct_id: arena::ID<symbol::Struct>,
     /// The subsitution of the struct type must be *complete*.
     pub substitution: LocalSubstitution,
     pub field_constants: Vec<Constant>,

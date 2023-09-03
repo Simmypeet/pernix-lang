@@ -1,5 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 
+use parking_lot::RwLock;
 use pernixc_source::SourceElement;
 use pernixc_syntax::syntax_tree::{
     self,
@@ -13,8 +14,8 @@ use pernixc_system::{
 };
 
 use super::{
-    Accessibility, BuildError, ConstantParameter, Function, GenericParameters, LifetimeParameter,
-    Struct, Table, TargetNamedCoreError, WhereClause,
+    Accessibility, BuildError, ConstantParameter, Function, GenericParameters, Implements,
+    ImplementsSignature, LifetimeParameter, Struct, Table, TargetNamedCoreError, WhereClause,
 };
 use crate::{
     constant,
@@ -25,19 +26,64 @@ use crate::{
         TypeParameterDuplication, UsingDuplication, VariantDuplication,
     },
     symbol::{
-        DraftingSymbolRef, Global, Module, State, TargetNameDuplicationError, Trait,
-        TraitAssociatedID, TraitFunction, Type, ID,
+        DraftingSymbolRef, Global, Module, TargetNameDuplicationError, Trait, TraitAssociatedID,
+        TraitFunction, Type, ID,
     },
     ty,
 };
 
 impl Table {
-    pub(super) fn draft_target(
-        &mut self,
+    pub(super) fn draft_targets(
+        &self,
+        targets: impl Iterator<Item = Target>,
+        handler: &impl Handler<Error>,
+    ) -> Result<(), BuildError> {
+        let implements_syntax_tree_vecs_by_module_id = RwLock::new(HashMap::new());
+
+        for target in targets {
+            self.draft_target(target, &implements_syntax_tree_vecs_by_module_id, handler)?;
+        }
+
+        let implements_syntax_tree_vecs_by_module_id =
+            implements_syntax_tree_vecs_by_module_id.into_inner();
+
+        for (module_id, implements_syntax_tree) in implements_syntax_tree_vecs_by_module_id
+            .into_iter()
+            .flat_map(|x| x.1.into_iter().map(move |syn| (x.0, syn)))
+        {
+            let Ok(trait_id) = self.resolve_trait_path(
+                implements_syntax_tree.signature().qualified_identifier(),
+                module_id,
+                handler,
+            ) else {
+                continue;
+            };
+
+            let mut container = self.container.write();
+            let trait_name = container.traits[trait_id].name.clone();
+            container.traits[trait_id].implements.push(Implements {
+                signature: ImplementsSignature::default(),
+                is_const_implements: false,
+                where_clause: WhereClause::default(),
+                parent_trait_id: trait_id,
+                syntax_tree: Some(implements_syntax_tree),
+                associated_ids_by_name: HashMap::new(),
+                types: Arena::new(),
+                functions: Arena::new(),
+                constants: Arena::new(),
+                declared_in_module_id: module_id,
+                trait_name,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn draft_target(
+        &self,
         target: Target,
-        implements_syntax_tree_vecs_by_module_id: &mut HashMap<
-            arena::ID<Module>,
-            Vec<syntax_tree::item::Implements>,
+        implements_syntax_tree_vecs_by_module_id: &RwLock<
+            HashMap<arena::ID<Module>, Vec<syntax_tree::item::Implements>>,
         >,
         handler: &impl Handler<Error>,
     ) -> Result<(), BuildError> {
@@ -49,6 +95,7 @@ impl Table {
         // target name can't be duplicated
         if self
             .target_root_module_ids_by_name
+            .read()
             .contains_key(target.target_name())
         {
             return Err(BuildError::TargetNameDuplication(
@@ -149,6 +196,7 @@ impl Table {
                             super::TypeParameter {
                                 name: param.identifier().span.str().to_string(),
                                 span: Some(param.span()),
+                                default: None,
                             },
                         )
                         .expect("should not be duplicated");
@@ -176,6 +224,7 @@ impl Table {
                                 name: param.identifier().span.str().to_string(),
                                 ty: ty::Type::default(),
                                 span: Some(param.span()),
+                                default: None,
                             },
                         )
                         .expect("should not be duplicated");
@@ -184,15 +233,17 @@ impl Table {
         }
     }
 
+    #[allow(clippy::significant_drop_tightening)]
     fn draft_function(
-        &mut self,
+        &self,
         parent_module_id: arena::ID<Module>,
         syntax_tree: syntax_tree::item::Function,
         handler: &impl Handler<Error>,
     ) {
+        let mut container = self.container.write();
         let function_name = syntax_tree.signature().identifier().span.str().to_string();
 
-        let function = self.functions.push(Function {
+        let function = container.functions.push(Function {
             accessibility: match syntax_tree.access_modifier() {
                 AccessModifier::Public(_) => Accessibility::Public,
                 AccessModifier::Private(_) => Accessibility::Private,
@@ -207,7 +258,7 @@ impl Table {
             parent_module_id,
         });
 
-        let function_sym = &mut self.functions[function];
+        let function_sym = &mut container.functions[function];
 
         if let Some(syntax_tree) = function_sym
             .syntax_tree
@@ -223,30 +274,28 @@ impl Table {
         }
 
         assert!(
-            self.modules[parent_module_id]
+            container.modules[parent_module_id]
                 .children_ids_by_name
                 .insert(function_name, ID::Function(function))
                 .is_none(),
             "Duplication detected, but it should've already been checked."
         );
 
-        self.states_by_drafting_symbol_refs
-            .insert(DraftingSymbolRef::Function(function), State::Drafting);
+        self.add_drafted_symbol(DraftingSymbolRef::Function(function));
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::significant_drop_in_scrutinee)]
     fn draft_module_tree(
-        &mut self,
+        &self,
         parent_module_id: Option<arena::ID<Module>>,
         module_name: String,
         module_tree: ModuleTree,
-        implements_syntax_tree_vecs_by_module_id: &mut HashMap<
-            arena::ID<Module>,
-            Vec<syntax_tree::item::Implements>,
+        implements_syntax_tree_vecs_by_module_id: &RwLock<
+            HashMap<arena::ID<Module>, Vec<syntax_tree::item::Implements>>,
         >,
         handler: &impl Handler<Error>,
     ) {
-        let current_module_id = self.modules.push(Module {
+        let current_module_id = self.container.write().modules.push(Module {
             accessibility: module_tree
                 .signature()
                 .as_ref()
@@ -265,7 +314,7 @@ impl Table {
         // add to the parent module
         if let Some(parent_module_id) = parent_module_id {
             assert!(
-                self.modules[parent_module_id]
+                self.container.write().modules[parent_module_id]
                     .children_ids_by_name
                     .insert(module_name, ID::Module(current_module_id))
                     .is_none(),
@@ -274,6 +323,7 @@ impl Table {
         } else {
             assert!(
                 self.target_root_module_ids_by_name
+                    .write()
                     .insert(module_name, current_module_id)
                     .is_none(),
                 "Duplication detected, but it should've already been checked."
@@ -284,14 +334,20 @@ impl Table {
         let (content_using, content_module) = content.dissolve();
 
         // create all submodules first
-        for (name, submodule) in submodules {
-            self.draft_module_tree(
-                Some(current_module_id),
-                name,
-                submodule,
-                implements_syntax_tree_vecs_by_module_id,
-                handler,
-            );
+        {
+            std::thread::scope(move |scope| {
+                for (name, submodule) in submodules {
+                    scope.spawn(move || {
+                        self.draft_module_tree(
+                            Some(current_module_id),
+                            name,
+                            submodule,
+                            implements_syntax_tree_vecs_by_module_id,
+                            handler,
+                        );
+                    });
+                }
+            });
         }
 
         // then create the using statements
@@ -300,7 +356,8 @@ impl Table {
                 continue;
             };
 
-            match self.modules[current_module_id].usings.entry(module_id) {
+            let mut container = self.container.write();
+            match container.modules[current_module_id].usings.entry(module_id) {
                 Entry::Occupied(entry) => {
                     handler.receive(Error::UsingDuplication(UsingDuplication {
                         duplicate_span: using.span(),
@@ -322,6 +379,7 @@ impl Table {
                 Item::Struct(ref syn) => syn.signature().identifier().span(),
                 Item::Implements(syn) => {
                     implements_syntax_tree_vecs_by_module_id
+                        .write()
                         .entry(current_module_id)
                         .or_default()
                         .push(syn);
@@ -333,7 +391,7 @@ impl Table {
                 Item::Module(_) => unreachable!("submodules should've been extracted out already"),
             };
 
-            if let Some(existing_symbol) = self.modules[current_module_id]
+            if let Some(existing_symbol) = self.container.write().modules[current_module_id]
                 .children_ids_by_name
                 .get(identifier_span.str())
             {
@@ -362,14 +420,16 @@ impl Table {
         }
     }
 
+    #[allow(clippy::significant_drop_tightening)]
     fn draft_constant(
-        &mut self,
+        &self,
         parent_module_id: arena::ID<Module>,
         syntax_tree: syntax_tree::item::Constant,
     ) {
+        let mut container = self.container.write();
         let constant_name = syntax_tree.signature().identifier().span.str().to_string();
 
-        let constant_id = self.constants.push(super::Constant {
+        let constant_id = container.constants.push(super::Constant {
             accessibility: match syntax_tree.access_modifier() {
                 AccessModifier::Public(_) => Accessibility::Public,
                 AccessModifier::Private(_) => Accessibility::Private,
@@ -383,28 +443,30 @@ impl Table {
         });
 
         assert!(
-            self.modules[parent_module_id]
+            container.modules[parent_module_id]
                 .children_ids_by_name
                 .insert(constant_name, ID::Constant(constant_id))
                 .is_none(),
             "Duplication detected, but it should've already been checked."
         );
 
-        self.states_by_drafting_symbol_refs
-            .insert(DraftingSymbolRef::Constant(constant_id), State::Drafting);
+        self.add_drafted_symbol(DraftingSymbolRef::Constant(constant_id));
     }
 
+    #[allow(clippy::significant_drop_tightening)]
     fn draft_enum(
-        &mut self,
+        &self,
         parent_module_id: arena::ID<Module>,
         syntax_tree: syntax_tree::item::Enum,
         handler: &impl Handler<Error>,
     ) {
+        let mut container = self.container.write();
+
         let (accessibility, signature_syntax, body_syntax) = syntax_tree.dissolve();
 
         let enum_name = signature_syntax.identifier().span.str().to_string();
 
-        let enum_id = self.enums.push(super::Enum {
+        let enum_id = container.enums.push(super::Enum {
             accessibility: match accessibility {
                 AccessModifier::Public(_) => Accessibility::Public,
                 AccessModifier::Private(_) => Accessibility::Private,
@@ -418,7 +480,7 @@ impl Table {
             parent_module_id,
         });
 
-        let enum_sym = &mut self.enums[enum_id];
+        let enum_sym = &mut container.enums[enum_id];
 
         if let Some(syntax_tree) = enum_sym
             .syntax_tree
@@ -459,75 +521,81 @@ impl Table {
         }
 
         assert!(
-            self.modules[parent_module_id]
+            container.modules[parent_module_id]
                 .children_ids_by_name
                 .insert(enum_name, ID::Enum(enum_id))
                 .is_none(),
             "Duplication detected, but it should've already been checked."
         );
 
-        self.states_by_drafting_symbol_refs
-            .insert(DraftingSymbolRef::Enum(enum_id), State::Drafting);
+        self.add_drafted_symbol(DraftingSymbolRef::Enum(enum_id));
     }
 
+    #[allow(clippy::significant_drop_tightening)]
     fn draft_struct(
-        &mut self,
+        &self,
         parent_module_id: arena::ID<Module>,
         syntax_tree: syntax_tree::item::Struct,
         handler: &impl Handler<Error>,
     ) {
-        let struct_name = syntax_tree.signature().identifier().span.str().to_string();
+        let struct_id = {
+            let mut container = self.container.write();
+            let struct_name = syntax_tree.signature().identifier().span.str().to_string();
 
-        let struct_id = self.structs.push(Struct {
-            accessibility: match syntax_tree.access_modifier() {
-                AccessModifier::Public(_) => Accessibility::Public,
-                AccessModifier::Private(_) => Accessibility::Private,
-                AccessModifier::Internal(_) => Accessibility::Internal,
-            },
-            name: struct_name.clone(),
-            generic_parameters: GenericParameters::default(),
-            syntax_tree: Some(syntax_tree),
-            where_clause: WhereClause::default(),
-            fields: Arena::default(),
-            parent_module_id,
-        });
+            let struct_id = container.structs.push(Struct {
+                accessibility: match syntax_tree.access_modifier() {
+                    AccessModifier::Public(_) => Accessibility::Public,
+                    AccessModifier::Private(_) => Accessibility::Private,
+                    AccessModifier::Internal(_) => Accessibility::Internal,
+                },
+                name: struct_name.clone(),
+                generic_parameters: GenericParameters::default(),
+                syntax_tree: Some(syntax_tree),
+                where_clause: WhereClause::default(),
+                fields: Arena::default(),
+                parent_module_id,
+            });
 
-        let struct_sym = &mut self.structs[struct_id];
+            let struct_sym = &mut container.structs[struct_id];
 
-        if let Some(syntax_tree) = struct_sym
-            .syntax_tree
-            .as_ref()
-            .unwrap()
-            .signature()
-            .generic_parameters()
-            .as_ref()
-        {
-            let mut generic_parameters = GenericParameters::default();
-            Self::draft_generic_parameters(&mut generic_parameters, syntax_tree, handler);
-            struct_sym.generic_parameters = generic_parameters;
-        }
+            if let Some(syntax_tree) = struct_sym
+                .syntax_tree
+                .as_ref()
+                .unwrap()
+                .signature()
+                .generic_parameters()
+                .as_ref()
+            {
+                let mut generic_parameters = GenericParameters::default();
+                Self::draft_generic_parameters(&mut generic_parameters, syntax_tree, handler);
+                struct_sym.generic_parameters = generic_parameters;
+            }
 
-        assert!(
-            self.modules[parent_module_id]
-                .children_ids_by_name
-                .insert(struct_name, ID::Struct(struct_id))
-                .is_none(),
-            "Duplication detected, but it should've already been checked."
-        );
+            assert!(
+                container.modules[parent_module_id]
+                    .children_ids_by_name
+                    .insert(struct_name, ID::Struct(struct_id))
+                    .is_none(),
+                "Duplication detected, but it should've already been checked."
+            );
 
-        self.states_by_drafting_symbol_refs
-            .insert(DraftingSymbolRef::Struct(struct_id), State::Drafting);
+            struct_id
+        };
+
+        self.add_drafted_symbol(DraftingSymbolRef::Struct(struct_id));
     }
 
+    #[allow(clippy::significant_drop_tightening)]
     fn draft_type(
-        &mut self,
+        &self,
         parent_module_id: arena::ID<Module>,
         syntax_tree: syntax_tree::item::Type,
         handler: &impl Handler<Error>,
     ) {
+        let mut container = self.container.write();
         let type_name = syntax_tree.signature().identifier().span.str().to_string();
 
-        let type_id = self.types.push(Type {
+        let type_id = container.types.push(Type {
             accessibility: match syntax_tree.access_modifier() {
                 AccessModifier::Public(_) => Accessibility::Public,
                 AccessModifier::Private(_) => Accessibility::Private,
@@ -540,7 +608,7 @@ impl Table {
             parent_module_id,
         });
 
-        let type_sym = &mut self.types[type_id];
+        let type_sym = &mut container.types[type_id];
 
         if let Some(syntax_tree) = type_sym
             .syntax_tree
@@ -556,29 +624,30 @@ impl Table {
         }
 
         assert!(
-            self.modules[parent_module_id]
+            container.modules[parent_module_id]
                 .children_ids_by_name
                 .insert(type_name, ID::Type(type_id))
                 .is_none(),
             "Duplication detected, but it should've already been checked."
         );
 
-        self.states_by_drafting_symbol_refs
-            .insert(DraftingSymbolRef::Type(type_id), State::Drafting);
+        self.add_drafted_symbol(DraftingSymbolRef::Type(type_id));
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     fn draft_trait(
-        &mut self,
+        &self,
         parent_module_id: arena::ID<Module>,
         syntax_tree: syntax_tree::item::Trait,
         handler: &impl Handler<Error>,
     ) {
+        let mut container = self.container.write();
+
         let (accessibility, signature_syntax, body_syntax) = syntax_tree.dissolve();
 
         let trait_name = signature_syntax.identifier().span.str().to_string();
 
-        let trait_id = self.traits.push(Trait {
+        let trait_id = container.traits.push(Trait {
             accessibility: match accessibility {
                 AccessModifier::Public(_) => Accessibility::Public,
                 AccessModifier::Private(_) => Accessibility::Private,
@@ -597,7 +666,7 @@ impl Table {
             parent_module_id,
         });
 
-        let trait_sym = &mut self.traits[trait_id];
+        let trait_sym = &mut container.traits[trait_id];
 
         if let Some(syntax_tree) = trait_sym
             .syntax_tree
@@ -709,15 +778,14 @@ impl Table {
         }
 
         assert!(
-            self.modules[parent_module_id]
+            container.modules[parent_module_id]
                 .children_ids_by_name
                 .insert(trait_name, ID::Trait(trait_id))
                 .is_none(),
             "Duplication detected, but it should've already been checked."
         );
 
-        self.states_by_drafting_symbol_refs
-            .insert(DraftingSymbolRef::Trait(trait_id), State::Drafting);
+        self.add_drafted_symbol(DraftingSymbolRef::Trait(trait_id));
     }
 
     fn resolve_module_path(
@@ -732,7 +800,7 @@ impl Table {
                 // continue searching from current module
                 Some(current_module_id) => 'a: {
                     // search from current module id
-                    let Some(id) = self.modules[current_module_id]
+                    let Some(id) = self.container.read().modules[current_module_id]
                         .children_ids_by_name
                         .get(path.span.str())
                         .copied()
@@ -754,6 +822,7 @@ impl Table {
                 // search from root
                 None => self
                     .target_root_module_ids_by_name
+                    .read()
                     .get(path.span.str())
                     .copied(),
             };

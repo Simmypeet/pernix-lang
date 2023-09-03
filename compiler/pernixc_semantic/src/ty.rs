@@ -1,6 +1,23 @@
 use pernixc_system::arena;
 
-use crate::symbol::{self, Lifetime, LocalSubstitution, TypeParameterRef};
+use crate::symbol::{
+    self, GenericItemRef, LifetimeParameterRef, LocalSubstitution, TypeParameterRef,
+};
+
+/// Represents an automatic generated lifetime used in the place where the lifetime is elided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ElidedLifetime {
+    /// The reference to the generic item that generates this elided lifetime.
+    pub generic_item_ref: GenericItemRef,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum Lifetime {
+    #[default]
+    Static,
+    Parameter(LifetimeParameterRef),
+    ElidedLifetime(ElidedLifetime),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Primitive {
@@ -63,15 +80,21 @@ pub enum TupleBoundable {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ReferenceQualifier {
+pub enum Qualifier {
     Mutable,
     Restrict,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reference {
-    pub qualifier: Option<ReferenceQualifier>,
+    pub qualifier: Option<Qualifier>,
     pub lifetime: Lifetime,
+    pub ty: Box<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Pointer {
+    pub qualifier: Option<Qualifier>,
     pub ty: Box<Type>,
 }
 
@@ -84,6 +107,7 @@ pub enum Type {
     Enum(Enum),
     TraitAssociated(TraitAssociated),
     Reference(Reference),
+    Pointer(Pointer),
 }
 
 impl Default for Type {
