@@ -189,7 +189,7 @@ impl Display for InsignificantToken {
 enum SignificantToken {
     Identifier(token::tests::Identifier),
     Keyword(token::tests::Keyword),
-    NumericLiteral(token::tests::NumericLiteral),
+    NumericLiteral(token::tests::Numeric),
     Punctuation(token::tests::Punctuation),
 }
 
@@ -212,7 +212,7 @@ impl Arbitrary for SignificantToken {
         prop_oneof![
             token::tests::Identifier::arbitrary().prop_map(Self::Identifier),
             token::tests::Keyword::arbitrary().prop_map(Self::Keyword),
-            token::tests::NumericLiteral::arbitrary().prop_map(Self::NumericLiteral),
+            token::tests::Numeric::arbitrary().prop_map(Self::NumericLiteral),
             token::tests::Punctuation::arbitrary().prop_filter_map(
                 "filters out the punctuation that might collide with the delimiters",
                 |p| {

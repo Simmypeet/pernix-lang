@@ -13,3 +13,4 @@ derive_more = { workspace = true }
 thiserror = { workspace = true }
 paste = { workspace = true }
 proptest = { workspace = true }
+parking_lot = { workspace = true }

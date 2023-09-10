@@ -5,7 +5,7 @@ use std::{
 
 use derive_more::{Deref, DerefMut};
 use lazy_static::lazy_static;
-use pernixc_source::{SourceFile, Span};
+use pernixc_source::SourceFile;
 use pernixc_system::diagnostic::Storage;
 use pernixc_tests::input::Input;
 use proptest::{
@@ -95,64 +95,36 @@ impl Input for Keyword {
     }
 }
 
-/// Represents an input for the [`super::NumericLiteral`].
+/// Represents an input for the [`super::Numeric`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NumericLiteral {
+pub struct Numeric {
     /// The valid numeric literal value string.
     pub value: String,
-
-    /// The optional suffix of the numeric literal.
-    pub suffix: Option<String>,
 }
 
-impl Display for NumericLiteral {
+impl Display for Numeric {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.value)?;
-        if let Some(suffix) = &self.suffix {
-            f.write_str(suffix)?;
-        }
         Ok(())
     }
 }
 
-impl Arbitrary for NumericLiteral {
+impl Arbitrary for Numeric {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (
-            prop_oneof![
-                proptest::num::f64::ANY.prop_filter_map(
-                    "filter out negative numbers and inf",
-                    |x| {
-                        if x.is_finite() && x.is_sign_positive() {
-                            Some(x.to_string())
-                        } else {
-                            None
-                        }
-                    }
-                ),
-                proptest::num::u64::ANY.prop_map(|x| x.to_string())
-            ],
-            proptest::option::of(Identifier::arbitrary()),
-        )
-            .prop_map(|(value, suffix)| Self {
-                value,
-                suffix: suffix.map(|x| x.string),
-            })
+        (proptest::num::u64::ANY.prop_map(|x| x.to_string()))
+            .prop_map(|value| Self { value })
             .boxed()
     }
 }
 
-impl NumericLiteral {
-    /// Verifies that the given [`super::NumericLiteral`] complies with this input.
+impl Numeric {
+    /// Verifies that the given [`super::Numeric`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
-    pub fn assert(&self, output: &super::NumericLiteral) -> TestCaseResult {
-        prop_assert_eq!(output.value_span.str(), self.value.as_str());
-        prop_assert_eq!(
-            output.suffix_span.as_ref().map(Span::str),
-            self.suffix.as_deref()
-        );
+    pub fn assert(&self, output: &super::Numeric) -> TestCaseResult {
+        prop_assert_eq!(self.value.as_str(), output.span.str());
         Ok(())
     }
 }
@@ -390,7 +362,7 @@ pub enum Token {
     Identifier(Identifier),
     Comment(Comment),
     Keyword(Keyword),
-    NumericLiteral(NumericLiteral),
+    NumericLiteral(Numeric),
     WhiteSpaces(WhiteSpaces),
     Punctuation(Punctuation),
 }
@@ -404,7 +376,7 @@ impl Arbitrary for Token {
             Identifier::arbitrary().prop_map(Self::Identifier),
             Comment::arbitrary().prop_map(Self::Comment),
             Keyword::arbitrary().prop_map(Self::Keyword),
-            NumericLiteral::arbitrary().prop_map(Self::NumericLiteral),
+            Numeric::arbitrary().prop_map(Self::NumericLiteral),
             WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
             Punctuation::arbitrary().prop_map(Self::Punctuation)
         ]
@@ -438,7 +410,7 @@ impl Input for Token {
             (Self::Keyword(i), super::Token::Keyword(o)) => {
                 i.assert(o)?;
             }
-            (Self::NumericLiteral(i), super::Token::NumericLiteral(o)) => {
+            (Self::NumericLiteral(i), super::Token::Numeric(o)) => {
                 i.assert(o)?;
             }
             (Self::Comment(i), super::Token::Comment(o)) => {

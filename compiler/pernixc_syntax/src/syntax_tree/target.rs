@@ -68,13 +68,13 @@ pub struct Target {
 
     /// The name of the target.
     #[get = "pub"]
-    target_name: String,
+    name: String,
 }
 
 impl Target {
     /// Dissolves the target into its module tree and target name.
     #[must_use]
-    pub fn dissolve(self) -> (ModuleTree, String) { (self.module_tree, self.target_name) }
+    pub fn dissolve(self) -> (ModuleTree, String) { (self.module_tree, self.name) }
 }
 
 /// The submodule of the root source file ends up pointing to the root source file itself.
@@ -336,7 +336,7 @@ impl Target {
 
         Self {
             module_tree,
-            target_name,
+            name: target_name,
         }
     }
 }

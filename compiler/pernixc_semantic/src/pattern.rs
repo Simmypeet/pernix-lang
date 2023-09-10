@@ -1,10 +1,6 @@
 use enum_as_inner::EnumAsInner;
-use pernixc_system::arena::ID;
 
-use crate::{
-    symbol,
-    ty::{self, TupleBoundable},
-};
+use crate::ty;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Irrefutable {
@@ -28,8 +24,8 @@ pub enum NumericLiteral {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum<Pattern> {
-    pub enum_id: ID<symbol::Enum>,
-    pub variant_id: usize,
+    pub enum_index: usize,
+    pub variant_index: usize,
     pub pattern: Box<Pattern>,
 }
 
@@ -58,7 +54,7 @@ pub struct Structural<Pattern> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unpack {
-    pub ty: TupleBoundable,
+    pub ty: ty::Type,
     pub name: String,
     pub mutable: bool,
 }

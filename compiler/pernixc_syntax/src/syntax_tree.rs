@@ -49,6 +49,13 @@ pub struct ConnectedList<Element, Separator> {
     trailing_separator: Option<Separator>,
 }
 
+#[derive(Debug, Clone)]
+pub struct DelimitedList<T> {
+    pub open: Punctuation,
+    pub list: Option<ConnectedList<T, Punctuation>>,
+    pub close: Punctuation,
+}
+
 impl<'a> Parser<'a> {
     /// Parses a list of items that are separated by a particular separator.
     ///
@@ -166,21 +173,6 @@ impl<'a> Parser<'a> {
         ))
     }
 }
-/// Is the result of [`Parser::parse_enclosed_list()`].
-#[derive(Debug, Clone, Getters)]
-pub struct EnclosedList<T> {
-    /// The open delimiter of the list.
-    #[get = "pub"]
-    open: Punctuation,
-
-    /// The list of elements.
-    #[get = "pub"]
-    list: Option<ConnectedList<T, Punctuation>>,
-
-    /// The close delimiter of the list.
-    #[get = "pub"]
-    close: Punctuation,
-}
 
 impl<'a> Parser<'a> {
     /// Parses a list of elements enclosed by a pair of delimiters, separated by a separator.
@@ -191,13 +183,13 @@ impl<'a> Parser<'a> {
     /// # Errors
     /// - if the parser position is not at the delimited list of the given delimiter.
     /// - any error returned by the given parser function.
-    pub fn parse_enclosed_list<T: std::fmt::Debug, H: Handler<Error>>(
+    pub fn parse_enclosed_list<T: std::fmt::Debug>(
         &mut self,
         delimiter: Delimiter,
         separator: char,
-        mut f: impl FnMut(&mut Self, &H) -> Option<T>,
-        handler: &H,
-    ) -> Option<EnclosedList<T>> {
+        mut f: impl FnMut(&mut Self) -> Option<T>,
+        handler: &impl Handler<error::Error>,
+    ) -> Option<DelimitedList<T>> {
         fn skip_to_next_separator(this: &mut Parser, separator: char) -> Option<Punctuation> {
             if let Some(Token::Punctuation(punc)) = this.stop_at(
                 |token| matches!(token, Token::Punctuation(punc) if punc.punctuation == separator),
@@ -209,58 +201,61 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // step into the delimited
-        let open = self.step_into(delimiter, handler)?;
+        let delimited_tree = self.step_into(
+            delimiter,
+            |parser| {
+                let mut first = None;
+                let mut rest = Vec::new();
+                let mut trailing_separator: Option<Punctuation> = None;
 
-        let mut first = None;
-        let mut rest = Vec::new();
-        let mut trailing_separator: Option<Punctuation> = None;
+                while !parser.is_exhausted() {
+                    let Some(element) = f(parser) else {
+                        skip_to_next_separator(parser, separator);
+                        continue;
+                    };
 
-        while !self.is_exhausted() {
-            let Some(element) = f(self, handler) else {
-                skip_to_next_separator(self, separator);
-                continue;
-            };
-
-            // adds new element
-            match (&first, &trailing_separator) {
-                (None, None) => {
-                    first = Some(element);
-                }
-                (Some(_), Some(separator)) => {
-                    rest.push((separator.clone(), element));
-                    trailing_separator = None;
-                }
-                (first, trailing_separator) => unreachable!("{first:?} {trailing_separator:?}"),
-            }
-
-            // expect separator if not exhausted
-            if !self.is_exhausted() {
-                let Some(separator) = self.parse_punctuation(separator, true, handler) else {
-                    if let Some(punctuation) = skip_to_next_separator(self, separator) {
-                        trailing_separator = Some(punctuation);
+                    // adds new element
+                    match (&first, &trailing_separator) {
+                        (None, None) => {
+                            first = Some(element);
+                        }
+                        (Some(_), Some(separator)) => {
+                            rest.push((separator.clone(), element));
+                            trailing_separator = None;
+                        }
+                        (first, trailing_separator) => {
+                            unreachable!("{first:?} {trailing_separator:?}")
+                        }
                     }
 
-                    continue;
-                };
+                    // expect separator if not exhausted
+                    if !parser.is_exhausted() {
+                        let Some(separator) = parser.parse_punctuation(separator, true, handler)
+                        else {
+                            if let Some(punctuation) = skip_to_next_separator(parser, separator) {
+                                trailing_separator = Some(punctuation);
+                            }
 
-                trailing_separator = Some(separator);
-            }
-        }
+                            continue;
+                        };
 
-        // step out from the delimited list
-        let close = self
-            .step_out(handler)
-            .expect("must be able to step out, the list is exhausted");
+                        trailing_separator = Some(separator);
+                    }
+                }
 
-        Some(EnclosedList {
-            open,
-            list: first.map(|first| ConnectedList {
-                first,
-                rest,
-                trailing_separator,
-            }),
-            close,
+                Some(first.map(|first| ConnectedList {
+                    first,
+                    rest,
+                    trailing_separator,
+                }))
+            },
+            handler,
+        )?;
+
+        Some(DelimitedList {
+            open: delimited_tree.open,
+            list: delimited_tree.tree.unwrap(),
+            close: delimited_tree.close,
         })
     }
 }
@@ -673,14 +668,16 @@ impl<'a> Parser<'a> {
 
             // parse const argument
             Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => {
-                let left_brace = self.step_into(Delimiter::Brace, handler)?;
-                let expression = (|| Some(Box::new(self.parse_expression(handler)?)))();
-                let right_brace = self.step_out(handler)?;
+                let delimited_tree = self.step_into(
+                    Delimiter::Brace,
+                    |parser| parser.parse_expression(handler).map(Box::new),
+                    handler,
+                )?;
 
                 Some(GenericArgument::Const(ConstArgument {
-                    left_brace,
-                    expression: expression?,
-                    right_brace,
+                    left_brace: delimited_tree.open,
+                    expression: delimited_tree.tree?,
+                    right_brace: delimited_tree.close,
                 }))
             }
 

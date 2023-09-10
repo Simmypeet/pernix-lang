@@ -196,6 +196,13 @@ pub struct Parser<'a> {
     trying_stack: Vec<usize>,
 }
 
+#[derive(Debug, Clone)]
+pub struct DelimitedTree<T> {
+    pub open: Punctuation,
+    pub tree: Option<T>,
+    pub close: Punctuation,
+}
+
 impl<'a> Parser<'a> {
     /// Creates a new parser from the given token stream.
     #[must_use]
@@ -210,19 +217,15 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Steps into the delimited token stream of the given delimiter for the next significant
-    /// token.
+    /// Steps into the [`Delimited`] token stream and parses the content within the delimiters.
     ///
-    /// # Errors
-    /// - If the next significant token is not a delimited token tree.
-    ///
-    /// # Returns
-    /// The open punctuation token of the delimited token tree.
-    pub fn step_into(
+    /// The parser's position must be at the delimited token stream.
+    pub fn step_into<T>(
         &mut self,
         delimiter: Delimiter,
+        f: impl FnOnce(&mut Self) -> Option<T>,
         handler: &impl Handler<SyntacticError>,
-    ) -> Option<Punctuation> {
+    ) -> Option<DelimitedTree<T>> {
         self.current_frame.stop_at_significant();
         let raw_token_tree = self
             .current_frame
@@ -277,17 +280,10 @@ impl<'a> Parser<'a> {
         self.stack
             .push(std::mem::replace(&mut self.current_frame, new_frame));
 
-        Some(delimited_stream.open.clone())
-    }
+        let open = delimited_stream.open.clone();
 
-    /// Steps out from the current frame, replacing it with the frame on top of the stack.
-    ///
-    /// # Errors
-    /// If the current [`Frame`]'s token provider is not [`Delimited`].
-    ///
-    /// # Returns
-    /// The close punctuation token of the delimited token tree.
-    pub fn step_out(&mut self, handler: &impl Handler<SyntacticError>) -> Option<Punctuation> {
+        let tree = f(self);
+
         if let Some(threshold) = self.trying_stack.last().copied() {
             assert!(self.stack.len() > threshold);
         }
@@ -328,7 +324,11 @@ impl<'a> Parser<'a> {
         // replaces the current frame with the popped one
         self.current_frame = new_frame;
 
-        Some(close_punctuation)
+        Some(DelimitedTree {
+            open,
+            tree,
+            close: close_punctuation,
+        })
     }
 
     /// Performs a rollback if the parsing fails.

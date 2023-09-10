@@ -4,16 +4,14 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_lexical::{
-    token::{
-        Identifier, Keyword, KeywordKind, NumericLiteral as NumericLiteralToken, Punctuation, Token,
-    },
+    token::{Identifier, Keyword, KeywordKind, Numeric, Punctuation, Token},
     token_stream::Delimiter,
 };
 use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
-    pattern, statement::Statement, ty::Type, ConnectedList, EnclosedList, Label,
+    pattern, statement::Statement, ty::Type, ConnectedList, DelimitedList, Label,
     QualifiedIdentifier,
 };
 use crate::{
@@ -104,8 +102,8 @@ pub enum Functional {
     StructLiteral(StructLiteral),
     MemberAccess(MemberAccess),
     Subscript(Subscript),
-    ArrowOperator(ArrowOperator),
     ArrayLiteral(ArrayLiteral),
+    TupleAccess(TupleAccess),
     Cast(Cast),
 }
 
@@ -159,9 +157,7 @@ impl SourceElement for ArrayLiteral {
 impl SourceElement for Functional {
     fn span(&self) -> Span {
         match self {
-            Self::NumericLiteral(numeric_literal) => {
-                numeric_literal.numeric_literal_token.span.clone()
-            }
+            Self::NumericLiteral(numeric_literal) => numeric_literal.numeric.span.clone(),
             Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
             Self::Binary(binary_expression) => binary_expression.span(),
             Self::Prefix(prefix_expression) => prefix_expression.span(),
@@ -171,11 +167,29 @@ impl SourceElement for Functional {
             Self::Subscript(subscript_expression) => subscript_expression.span(),
             Self::StructLiteral(struct_literal) => struct_literal.span(),
             Self::MemberAccess(member_access_expression) => member_access_expression.span(),
-            Self::ArrowOperator(arrow_operator_expression) => arrow_operator_expression.span(),
+            Self::TupleAccess(tuple_access_expression) => tuple_access_expression.span(),
             Self::ArrayLiteral(array_literal) => array_literal.span(),
             Self::Cast(cast) => cast.span(),
         }
     }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Decimal:
+///     '.' Numeric
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct Decimal {
+    #[get = "pub"]
+    pub(super) dot: Punctuation,
+    #[get = "pub"]
+    pub(super) numeric: Numeric,
+}
+
+impl SourceElement for Decimal {
+    fn span(&self) -> Span { self.dot.span().join(&self.numeric.span).unwrap() }
 }
 
 /// Syntax Synopsis:
@@ -188,11 +202,46 @@ impl SourceElement for Functional {
 #[allow(missing_docs)]
 pub struct NumericLiteral {
     #[get = "pub"]
-    pub(super) numeric_literal_token: NumericLiteralToken,
+    pub(super) numeric: Numeric,
+    #[get = "pub"]
+    pub(super) decimal: Option<Decimal>,
+    #[get = "pub"]
+    pub(super) suffix: Option<Identifier>,
 }
 
 impl SourceElement for NumericLiteral {
-    fn span(&self) -> Span { self.numeric_literal_token.span.clone() }
+    fn span(&self) -> Span {
+        let end = self.suffix.as_ref().map_or_else(
+            || {
+                self.decimal
+                    .as_ref()
+                    .map_or_else(|| self.numeric.span.clone(), SourceElement::span)
+            },
+            SourceElement::span,
+        );
+
+        self.numeric.span().join(&end).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// TupleAccess:
+///     Functional '.' Numeric
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct TupleAccess {
+    #[get = "pub"]
+    pub(super) operand: Box<Functional>,
+    #[get = "pub"]
+    pub(super) dot: Punctuation,
+    #[get = "pub"]
+    pub(super) index: Numeric,
+}
+
+impl SourceElement for TupleAccess {
+    fn span(&self) -> Span { self.operand.span().join(&self.index.span).unwrap() }
 }
 
 /// Syntax Synopsis:
@@ -606,46 +655,6 @@ pub struct MemberAccess {
 }
 
 impl SourceElement for MemberAccess {
-    fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Arrow:
-///     '->'
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
-pub struct Arrow {
-    #[get = "pub"]
-    hyphen: Punctuation,
-    #[get = "pub"]
-    right_angle: Punctuation,
-}
-
-impl SourceElement for Arrow {
-    fn span(&self) -> Span { self.hyphen.span.join(&self.right_angle.span).unwrap() }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// ArrowOperator:
-///     Functional Arrow Identifier
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
-pub struct ArrowOperator {
-    #[get = "pub"]
-    operand: Box<Functional>,
-    #[get = "pub"]
-    arrow: Arrow,
-    #[get = "pub"]
-    identifier: Identifier,
-}
-
-impl SourceElement for ArrowOperator {
     fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
 }
 
@@ -1358,14 +1367,14 @@ impl<'a> Parser<'a> {
         qualified_identifier: QualifiedIdentifier,
         handler: &impl Handler<Error>,
     ) -> Option<Functional> {
-        let EnclosedList {
+        let DelimitedList {
             open: left_brace,
             list: field_initializers,
             close: right_brace,
         } = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
-            |this, handler| {
+            |this| {
                 let identifier = this.parse_identifier(handler)?;
                 let colon = this.parse_punctuation(':', true, handler)?;
                 let expression = Box::new(this.parse_expression(handler)?);
@@ -1393,14 +1402,14 @@ impl<'a> Parser<'a> {
         qualified_identifier: QualifiedIdentifier,
         handler: &impl Handler<Error>,
     ) -> Option<Functional> {
-        let EnclosedList {
+        let DelimitedList {
             open: left_paren,
             list: arguments,
             close: right_paren,
         } = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
-            |this, handler| Some(Box::new(this.parse_expression(handler)?)),
+            |this| Some(Box::new(this.parse_expression(handler)?)),
             handler,
         )?;
 
@@ -1437,7 +1446,7 @@ impl<'a> Parser<'a> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
-            |parser, handler| {
+            |parser| {
                 parser.stop_at_significant();
 
                 let ellipsis = match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
@@ -1484,7 +1493,7 @@ impl<'a> Parser<'a> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Bracket,
             ',',
-            |parser, handler| parser.parse_expression(handler).map(Box::new),
+            |parser| parser.parse_expression(handler).map(Box::new),
             handler,
         )?;
 
@@ -1504,31 +1513,30 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.step_into(Delimiter::Brace, handler)?;
+        let delimited_tree = self.step_into(
+            Delimiter::Brace,
+            |parser| {
+                let mut statements = Vec::new();
 
-        let (left_brace, right_brace) = {
-            let delimited = self.token_provider.as_delimited().unwrap();
-            (delimited.open.clone(), delimited.close.clone())
-        };
+                while !parser.is_exhausted() {
+                    // parse the statement
+                    let Some(statement) = parser.parse_statement(handler) else {
+                        skip_to_next_statement(parser);
+                        continue;
+                    };
 
-        let mut statements = Vec::new();
+                    statements.push(statement);
+                }
 
-        while !self.is_exhausted() {
-            // parse the statement
-            let Some(statement) = self.parse_statement(handler) else {
-                skip_to_next_statement(self);
-                continue;
-            };
-
-            statements.push(statement);
-        }
-
-        self.step_out(handler)?;
+                Some(statements)
+            },
+            handler,
+        )?;
 
         Some(Statements {
-            left_brace,
-            statements,
-            right_brace,
+            left_brace: delimited_tree.open,
+            statements: delimited_tree.tree?,
+            right_brace: delimited_tree.close,
         })
     }
 
@@ -1557,15 +1565,17 @@ impl<'a> Parser<'a> {
                 // eat if keyword
                 self.forward();
 
-                let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
-                let expression = self.parse_expression(handler).map(Box::new);
-                let right_paren = self.step_out(handler)?;
+                let delimited_tree = self.step_into(
+                    Delimiter::Parenthesis,
+                    |parser| parser.parse_expression(handler).map(Box::new),
+                    handler,
+                )?;
 
                 Some(MatchArmGuard {
                     if_keyword,
-                    left_paren,
-                    expression: expression?,
-                    right_paren,
+                    left_paren: delimited_tree.open,
+                    expression: delimited_tree.tree?,
+                    right_paren: delimited_tree.close,
                 })
             }
             _ => None,
@@ -1585,46 +1595,55 @@ impl<'a> Parser<'a> {
     fn parse_match(&mut self, handler: &impl Handler<Error>) -> Option<Match> {
         let match_keyword = self.parse_keyword(KeywordKind::Match, handler)?;
 
-        let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
-        let expression = self.parse_expression(handler).map(Box::new);
-        let right_paren = self.step_out(handler)?;
+        let delimited_tree_expression = self.step_into(
+            Delimiter::Parenthesis,
+            |parser| parser.parse_expression(handler).map(Box::new),
+            handler,
+        )?;
 
-        let left_brace = self.step_into(Delimiter::Brace, handler)?;
-        let mut arms = Vec::new();
+        let delimited_tree_arms = self.step_into(
+            Delimiter::Brace,
+            |parser| {
+                let mut arms = Vec::new();
 
-        while !self.is_exhausted() {
-            let Some(arm) = self.parse_match_arm(handler) else {
-                // forward to the next {}
-                self.stop_at(
-                    |token| matches!(token, Token::Punctuation(p) if p.punctuation == '{'),
-                );
-                self.forward();
+                while !parser.is_exhausted() {
+                    let Some(arm) = parser.parse_match_arm(handler) else {
+                        // forward to the next {}
+                        parser.stop_at(
+                            |token| matches!(token, Token::Punctuation(p) if p.punctuation == '{'),
+                        );
+                        parser.forward();
 
-                continue;
-            };
+                        continue;
+                    };
 
-            arms.push(arm);
-        }
+                    arms.push(arm);
+                }
 
-        let right_brace = self.step_out(handler)?;
+                Some(arms)
+            },
+            handler,
+        )?;
 
         Some(Match {
             match_keyword,
-            left_paren,
-            expression: expression?,
-            right_paren,
-            left_brace,
-            arms,
-            right_brace,
+            left_paren: delimited_tree_expression.open,
+            expression: delimited_tree_expression.tree?,
+            right_paren: delimited_tree_expression.close,
+            left_brace: delimited_tree_arms.open,
+            arms: delimited_tree_arms.tree?,
+            right_brace: delimited_tree_arms.close,
         })
     }
 
     fn parse_if_else(&mut self, handler: &impl Handler<Error>) -> Option<IfElse> {
         let if_keyword = self.parse_keyword(KeywordKind::If, handler)?;
 
-        let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
-        let condition = self.parse_expression(handler).map(Box::new);
-        let right_paren = self.step_out(handler)?;
+        let delimited_tree_condition = self.step_into(
+            Delimiter::Parenthesis,
+            |parser| parser.parse_expression(handler).map(Box::new),
+            handler,
+        )?;
 
         let then_expression = self.parse_block(handler)?;
         let else_expression = if matches!(self.stop_at_significant(),
@@ -1638,9 +1657,9 @@ impl<'a> Parser<'a> {
 
         Some(IfElse {
             if_keyword,
-            left_paren,
-            condition: condition?,
-            right_paren,
+            left_paren: delimited_tree_condition.open,
+            condition: delimited_tree_condition.tree?,
+            right_paren: delimited_tree_condition.close,
             then_expression,
             else_expression,
         })
@@ -1663,15 +1682,33 @@ impl<'a> Parser<'a> {
         )
     }
 
-    fn try_parse_arrow(&mut self) -> Option<Arrow> {
-        self.try_parse(|parser| {
-            let hyphen = parser.parse_punctuation('-', true, &Dummy)?;
-            let right_angle = parser.parse_punctuation('>', false, &Dummy)?;
+    pub(super) fn parse_numeric_literal(&mut self) -> Option<NumericLiteral> {
+        let Some(Token::Numeric(numeric)) = self.next_significant_token() else {
+            return None;
+        };
 
-            Some(Arrow {
-                hyphen,
-                right_angle,
-            })
+        let decimal = match (self.peek(), self.peek_offset(1)) {
+            (Some(Token::Punctuation(dot)), Some(Token::Numeric(numeric)))
+                if dot.punctuation == '.' =>
+            {
+                self.forward();
+                self.forward();
+                Some(Decimal { dot, numeric })
+            }
+            _ => None,
+        };
+
+        let suffix = if let Some(Token::Identifier(identifier)) = self.peek() {
+            self.forward();
+            Some(identifier)
+        } else {
+            None
+        };
+
+        Some(NumericLiteral {
+            numeric,
+            decimal,
+            suffix,
         })
     }
 
@@ -1691,14 +1728,7 @@ impl<'a> Parser<'a> {
 
         let mut expression = match self.stop_at_significant() {
             // parse numeric literal
-            Some(Token::NumericLiteral(numeric_literal_token)) => {
-                // eat numericl iteral
-                self.forward();
-
-                Functional::NumericLiteral(NumericLiteral {
-                    numeric_literal_token,
-                })
-            }
+            Some(Token::Numeric(_)) => Functional::NumericLiteral(self.parse_numeric_literal()?),
 
             // parse boolean literal
             Some(Token::Keyword(boolean))
@@ -1753,59 +1783,60 @@ impl<'a> Parser<'a> {
                     // eat token
                     self.forward();
 
-                    let identifier = self.parse_identifier(handler)?;
+                    if let Some(Token::Numeric(index)) = self.stop_at_significant() {
+                        self.forward();
 
-                    // update expression
-                    expression = Functional::MemberAccess(MemberAccess {
-                        operand: Box::new(expression),
-                        dot,
-                        identifier,
-                    });
+                        expression = Functional::TupleAccess(TupleAccess {
+                            operand: Box::new(expression),
+                            dot,
+                            index,
+                        });
+                    } else {
+                        let identifier = self.parse_identifier(handler)?;
+
+                        // update expression
+                        expression = Functional::MemberAccess(MemberAccess {
+                            operand: Box::new(expression),
+                            dot,
+                            identifier,
+                        });
+                    }
                 }
                 Some(Token::Punctuation(p)) if p.punctuation == '[' => {
-                    let left_bracket = self.step_into(Delimiter::Bracket, handler)?;
-                    let subscript_expression = self.parse_expression(handler).map(Box::new);
-                    let right_bracket = self.step_out(handler)?;
+                    let delimited_tree = self.step_into(
+                        Delimiter::Bracket,
+                        |parser| parser.parse_expression(handler).map(Box::new),
+                        handler,
+                    )?;
 
                     // update expression
                     expression = Functional::Subscript(Subscript {
                         operand: Box::new(expression),
-                        left_bracket,
-                        expression: subscript_expression?,
-                        right_bracket,
+                        left_bracket: delimited_tree.open,
+                        expression: delimited_tree.tree?,
+                        right_bracket: delimited_tree.close,
                     });
                 }
                 Some(Token::Keyword(as_keyword)) if as_keyword.keyword == KeywordKind::As => {
                     // eat token
                     self.forward();
 
-                    let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
-                    let ty = self.parse_type(handler);
-                    let right_paren = self.step_out(handler)?;
+                    let delimited_tree = self.step_into(
+                        Delimiter::Parenthesis,
+                        |parser| parser.parse_type(handler),
+                        handler,
+                    )?;
 
                     // update expression
                     expression = Functional::Cast(Cast {
                         operand: Box::new(expression),
                         as_keyword,
-                        left_paren,
-                        ty: ty?,
-                        right_paren,
+                        left_paren: delimited_tree.open,
+                        ty: delimited_tree.tree?,
+                        right_paren: delimited_tree.close,
                     });
                 }
-                _ => {
-                    let Some(arrow) = self.try_parse_arrow() else {
-                        break;
-                    };
-
-                    let identifier = self.parse_identifier(handler)?;
-
-                    // update expression
-                    expression = Functional::ArrowOperator(ArrowOperator {
-                        operand: Box::new(expression),
-                        arrow,
-                        identifier,
-                    });
-                }
+                _ => break,
             };
         }
 

@@ -426,10 +426,30 @@ impl<T: SourceElement> SourceElement for BoundList<T> {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// ConstantTypeBound:
+///     'const' 'type' Type
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct ConstantTypeBound {
+    #[get = "pub"]
+    const_keyword: Keyword,
+    #[get = "pub"]
+    type_keyword: Keyword,
+    #[get = "pub"]
+    ty: ty::Type,
+}
+
+impl SourceElement for ConstantTypeBound {
+    fn span(&self) -> Span { self.const_keyword.span.join(&self.ty.span()).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Constraint:
 ///     TraitBound
 ///     | LifetimeBound
-///     | TypeBound
+///     | ConstantTypeBound
 ///     | TupleBound
 ///     | ForTupleBound
 ///     ;
@@ -439,7 +459,7 @@ pub enum Constraint {
     TraitAssociation(TraitAssociationBound),
     Trait(TraitBound),
     Lifetime(LifetimeBound),
-    Tuple(TupleBound),
+    ConstantType(ConstantTypeBound),
 }
 
 impl SourceElement for Constraint {
@@ -448,7 +468,7 @@ impl SourceElement for Constraint {
             Self::TraitAssociation(s) => s.span(),
             Self::Trait(s) => s.span(),
             Self::Lifetime(s) => s.span(),
-            Self::Tuple(s) => s.span(),
+            Self::ConstantType(s) => s.span(),
         }
     }
 }
@@ -518,26 +538,6 @@ impl SourceElement for TraitAssociationBound {
             .join(&self.argument.span())
             .unwrap()
     }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// TupleBound:
-///     '(' QualifiedIdentifier ')'
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct TupleBound {
-    #[get = "pub"]
-    left_paren: Punctuation,
-    #[get = "pub"]
-    qualified_identifier: QualifiedIdentifier,
-    #[get = "pub"]
-    right_paren: Punctuation,
-}
-
-impl SourceElement for TupleBound {
-    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
 }
 
 /// Syntax Synopsis:
@@ -756,13 +756,15 @@ impl SourceElement for TraitFunction {
 /// Syntax Synopsis:
 /// ``` txt
 /// TraitType:
-///     TypeSignature ';'
+///     TypeSignature WhereClause? ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
 pub struct TraitType {
     #[get = "pub"]
     signature: TypeSignature,
+    #[get = "pub"]
+    where_clause: Option<WhereClause>,
     #[get = "pub"]
     semicolon: Punctuation,
 }
@@ -1046,7 +1048,7 @@ impl SourceElement for TypeSignature {
 /// Syntax Synopsis:
 /// ``` txt
 /// TypeDeclaration:
-///     '=' Type
+///     '=' Type WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, Getters)]
@@ -1055,10 +1057,22 @@ pub struct TypeDefinition {
     equals: Punctuation,
     #[get = "pub"]
     ty: ty::Type,
+    #[get = "pub"]
+    where_clause: Option<WhereClause>,
 }
 
 impl SourceElement for TypeDefinition {
-    fn span(&self) -> Span { self.equals.span.join(&self.ty.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.equals
+            .span
+            .join(
+                &self
+                    .where_clause
+                    .as_ref()
+                    .map_or_else(|| self.ty.span(), SourceElement::span),
+            )
+            .unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1908,13 +1922,32 @@ impl<'a> Parser<'a> {
                 // eat const keyword
                 self.forward();
 
-                let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+                match self.stop_at_significant() {
+                    Some(Token::Keyword(type_keyword))
+                        if type_keyword.keyword == KeywordKind::Type =>
+                    {
+                        // eat type keyword
+                        self.forward();
 
-                Some(Constraint::Trait(TraitBound {
-                    higher_ranked_lifetime_parameters: None,
-                    const_keyword: Some(const_keyword),
-                    qualified_identifier,
-                }))
+                        let ty = self.parse_type(handler)?;
+
+                        Some(Constraint::ConstantType(ConstantTypeBound {
+                            const_keyword,
+                            type_keyword,
+                            ty,
+                        }))
+                    }
+                    _ => {
+                        let qualified_identifier =
+                            self.parse_qualified_identifier(false, handler)?;
+
+                        Some(Constraint::Trait(TraitBound {
+                            higher_ranked_lifetime_parameters: None,
+                            const_keyword: Some(const_keyword),
+                            qualified_identifier,
+                        }))
+                    }
+                }
             }
 
             // parses lifetime argument / bound
@@ -1978,73 +2011,51 @@ impl<'a> Parser<'a> {
                     }
 
                     found => {
-                        match ty {
-                            ty::Type::QualifiedIdentifier(qualified_identifier) => {
-                                match self.stop_at_significant() {
-                                    Some(Token::Punctuation(equals))
-                                        if equals.punctuation == '=' =>
-                                    {
-                                        // eat equals
-                                        self.forward();
+                        if let ty::Type::QualifiedIdentifier(qualified_identifier) = ty {
+                            match self.stop_at_significant() {
+                                Some(Token::Punctuation(equals)) if equals.punctuation == '=' => {
+                                    // eat equals
+                                    self.forward();
 
-                                        let argument = match self.stop_at_significant() {
-                                            Some(Token::Punctuation(left_brace))
-                                                if left_brace.punctuation == '{' =>
-                                            {
-                                                let left_brace =
-                                                    self.step_into(Delimiter::Brace, handler)?;
-                                                let expression = self.parse_expression(handler);
-                                                let right_brace = self.step_out(handler)?;
+                                    let argument = match self.stop_at_significant() {
+                                        Some(Token::Punctuation(left_brace))
+                                            if left_brace.punctuation == '{' =>
+                                        {
+                                            let delimited_tree = self.step_into(
+                                                Delimiter::Brace,
+                                                |parser| parser.parse_expression(handler),
+                                                handler,
+                                            )?;
 
-                                                TraitAssociationBoundArgument::Constant(
-                                                    TraitAssociationConstantBoundArgument {
-                                                        left_brace,
-                                                        expression: expression?,
-                                                        right_brace,
-                                                    },
-                                                )
-                                            }
-                                            _ => TraitAssociationBoundArgument::Type(
-                                                self.parse_type(handler)?,
-                                            ),
-                                        };
+                                            TraitAssociationBoundArgument::Constant(
+                                                TraitAssociationConstantBoundArgument {
+                                                    left_brace: delimited_tree.open,
+                                                    expression: delimited_tree.tree?,
+                                                    right_brace: delimited_tree.close,
+                                                },
+                                            )
+                                        }
+                                        _ => TraitAssociationBoundArgument::Type(
+                                            self.parse_type(handler)?,
+                                        ),
+                                    };
 
-                                        return Some(Constraint::TraitAssociation(
-                                            TraitAssociationBound {
-                                                qualified_identifier,
-                                                equals,
-                                                argument,
-                                            },
-                                        ));
-                                    }
-                                    _ => {
-                                        return Some(Constraint::Trait(TraitBound {
-                                            higher_ranked_lifetime_parameters: None,
-                                            const_keyword: None,
+                                    return Some(Constraint::TraitAssociation(
+                                        TraitAssociationBound {
                                             qualified_identifier,
-                                        }));
-                                    }
+                                            equals,
+                                            argument,
+                                        },
+                                    ));
                                 }
-                            }
-                            ty::Type::Tuple(ty::Tuple {
-                                left_paren,
-                                unpackable_list:
-                                    Some(ConnectedList {
-                                        first: ty::Unpackable { ellipsis: None, ty },
-                                        rest,
-                                        trailing_separator: None,
-                                    }),
-                                right_paren,
-                            }) if rest.is_empty() => {
-                                if let ty::Type::QualifiedIdentifier(ty) = *ty {
-                                    return Some(Constraint::Tuple(TupleBound {
-                                        left_paren,
-                                        qualified_identifier: ty,
-                                        right_paren,
+                                _ => {
+                                    return Some(Constraint::Trait(TraitBound {
+                                        higher_ranked_lifetime_parameters: None,
+                                        const_keyword: None,
+                                        qualified_identifier,
                                     }));
                                 }
                             }
-                            _ => {}
                         }
 
                         handler.receive(Error::PunctuationExpected(PunctuationExpected {
@@ -2105,33 +2116,33 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function_body(&mut self, handler: &impl Handler<Error>) -> Option<FunctionBody> {
-        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+        let delimited_tree = self.step_into(Delimiter::Brace, |parser| {
+            let mut statements = Vec::new();
 
-        let mut statements = Vec::new();
+            while !parser.is_exhausted() {
+                // parse statements
+                if let Some(statement) = parser.parse_statement(handler) {
+                    statements.push(statement);
+                    continue;
+                }
 
-        while !self.is_exhausted() {
-            // parse statements
-            if let Some(statement) = self.parse_statement(handler) {
-                statements.push(statement);
-                continue;
+                // try to stop at next statement
+                parser.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
+
+                // go after the semicolon
+                if matches!(parser.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == ';')
+                {
+                    parser.forward();
+                }
             }
 
-            // try to stop at next statement
-            self.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
-
-            // go after the semicolon
-            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == ';')
-            {
-                self.forward();
-            }
-        }
-
-        let right_brace = self.step_out(handler)?;
+            Some(statements)
+        }, handler)?;
 
         Some(FunctionBody {
-            left_brace,
-            statements,
-            right_brace,
+            left_brace: delimited_tree.open,
+            statements: delimited_tree.tree?,
+            right_brace: delimited_tree.close,
         })
     }
 
@@ -2154,7 +2165,7 @@ impl<'a> Parser<'a> {
         let parameters = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
-            |parser, handler| {
+            |parser| {
                 let irrefutable_pattern = parser.parse_irrefutable_pattern(handler)?;
                 let colon = parser.parse_punctuation(':', true, handler)?;
                 let ty = parser.parse_type(handler)?;
@@ -2275,30 +2286,35 @@ impl<'a> Parser<'a> {
 
     fn parse_implements_body(&mut self, handler: &impl Handler<Error>) -> Option<ImplementsBody> {
         let where_clause = self.try_parse_where_clause(handler)?;
-        let left_brace = self.step_into(Delimiter::Brace, handler)?;
 
-        let mut implements_members = Vec::new();
+        let delimited_tree = self.step_into(
+            Delimiter::Brace,
+            |parser| {
+                let mut implements_members = Vec::new();
 
-        while !self.is_exhausted() {
-            if let Some(member) = self.parse_implements_member(handler) {
-                implements_members.push(member);
-                continue;
-            }
+                while !parser.is_exhausted() {
+                    if let Some(member) = parser.parse_implements_member(handler) {
+                        implements_members.push(member);
+                        continue;
+                    }
 
-            // try to stop at next function signature
-            self.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == '{'));
-            self.forward();
-        }
+                    // try to stop at next function signature
+                    parser.stop_at(
+                        |token| matches!(token, Token::Punctuation(p) if p.punctuation == '{'),
+                    );
+                    parser.forward();
+                }
 
-        let right_brace = self
-            .step_out(handler)
-            .expect("All the tokens should be consumed");
+                Some(implements_members)
+            },
+            handler,
+        )?;
 
         Some(ImplementsBody {
             where_clause,
-            left_brace,
-            members: implements_members,
-            right_brace,
+            left_brace: delimited_tree.open,
+            members: delimited_tree.tree?,
+            right_brace: delimited_tree.close,
         })
     }
 
@@ -2392,11 +2408,13 @@ impl<'a> Parser<'a> {
             }
 
             Some(Token::Keyword(type_keyword)) if type_keyword.keyword == KeywordKind::Type => {
-                let type_signature = self.parse_type_signature(handler)?;
+                let signature = self.parse_type_signature(handler)?;
+                let where_clause = self.try_parse_where_clause(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Some(TraitMember::Type(TraitType {
-                    signature: type_signature,
+                    signature,
+                    where_clause,
                     semicolon,
                 }))
             }
@@ -2414,29 +2432,34 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_trait_body(&mut self, handler: &impl Handler<Error>) -> Option<TraitBody> {
-        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+        let delimited_tree = self.step_into(
+            Delimiter::Brace,
+            |parser| {
+                let mut trait_members = Vec::new();
 
-        let mut trait_members = Vec::new();
+                while !parser.is_exhausted() {
+                    if let Some(trait_member) = parser.parse_trait_member(handler) {
+                        trait_members.push(trait_member);
+                        continue;
+                    }
 
-        while !self.is_exhausted() {
-            if let Some(trait_member) = self.parse_trait_member(handler) {
-                trait_members.push(trait_member);
-                continue;
-            }
+                    // try to stop at the next semicolon
+                    parser.stop_at(
+                        |token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'),
+                    );
 
-            // try to stop at the next semicolon
-            self.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
-
-            // eat semicolon
-            self.forward();
-        }
-
-        let right_brace = self.step_out(handler)?;
+                    // eat semicolon
+                    parser.forward();
+                }
+                Some(trait_members)
+            },
+            handler,
+        )?;
 
         Some(TraitBody {
-            left_brace,
-            members: trait_members,
-            right_brace,
+            left_brace: delimited_tree.open,
+            members: delimited_tree.tree?,
+            right_brace: delimited_tree.close,
         })
     }
 
@@ -2455,15 +2478,20 @@ impl<'a> Parser<'a> {
     fn parse_type_definition(&mut self, handler: &impl Handler<Error>) -> Option<TypeDefinition> {
         let equals = self.parse_punctuation('=', true, handler)?;
         let ty = self.parse_type(handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
 
-        Some(TypeDefinition { equals, ty })
+        Some(TypeDefinition {
+            equals,
+            ty,
+            where_clause,
+        })
     }
 
     fn parse_struct_body(&mut self, handler: &impl Handler<Error>) -> Option<StructBody> {
         let enclosed_list = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
-            |parser, handler| {
+            |parser| {
                 let access_modifier = parser.parse_access_modifier(handler)?;
                 let identifier = parser.parse_identifier(handler)?;
                 let colon = parser.parse_punctuation(':', true, handler)?;
@@ -2516,7 +2544,7 @@ impl<'a> Parser<'a> {
         let body = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
-            |parser, handler| {
+            |parser| {
                 let identifier = parser.parse_identifier(handler)?;
 
                 // parse associated enum value
@@ -2524,14 +2552,16 @@ impl<'a> Parser<'a> {
                     parser.stop_at_significant(),
                     Some(Token::Punctuation(p)) if p.punctuation == '('
                 ) {
-                    let left_paren = parser.step_into(Delimiter::Parenthesis, handler)?;
-                    let ty = parser.parse_type(handler)?;
-                    let right_paren = parser.step_out(handler)?;
+                    let delimited_tree = parser.step_into(
+                        Delimiter::Parenthesis,
+                        |parser| parser.parse_type(handler),
+                        handler,
+                    )?;
 
                     Some(VariantAssociation {
-                        left_paren,
-                        ty,
-                        right_paren,
+                        left_paren: delimited_tree.open,
+                        ty: delimited_tree.tree?,
+                        right_paren: delimited_tree.close,
                     })
                 } else {
                     None
@@ -2636,63 +2666,67 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_module_body(&mut self, handler: &impl Handler<Error>) -> Option<ModuleBody> {
-        let left_brace = self.step_into(Delimiter::Brace, handler)?;
+        let delimited_tree = self.step_into(
+            Delimiter::Brace,
+            |parser| {
+                let mut items = Vec::new();
+                let mut usings = Vec::new();
 
-        let mut items = Vec::new();
-        let mut usings = Vec::new();
+                while !parser.is_exhausted() {
+                    match (items.is_empty(), parser.stop_at_significant()) {
+                        (true, Some(Token::Keyword(using_keyword)))
+                            if using_keyword.keyword == KeywordKind::Using =>
+                        {
+                            // eat using keyword
+                            parser.forward();
 
-        while !self.is_exhausted() {
-            match (items.is_empty(), self.stop_at_significant()) {
-                (true, Some(Token::Keyword(using_keyword)))
-                    if using_keyword.keyword == KeywordKind::Using =>
-                {
-                    // eat using keyword
-                    self.forward();
+                            let module_path = parser.parse_module_path(handler)?;
+                            let semicolon = parser.parse_punctuation(';', true, handler)?;
 
-                    let module_path = self.parse_module_path(handler)?;
-                    let semicolon = self.parse_punctuation(';', true, handler)?;
+                            usings.push(Using {
+                                using_keyword,
+                                module_path,
+                                semicolon,
+                            });
+                            continue;
+                        }
+                        _ => {}
+                    }
 
-                    usings.push(Using {
-                        using_keyword,
-                        module_path,
-                        semicolon,
-                    });
-                    continue;
-                }
-                _ => {}
-            }
+                    if let Some(item) = parser.parse_item(handler) {
+                        items.push(item);
+                        continue;
+                    };
 
-            if let Some(item) = self.parse_item(handler) {
-                items.push(item);
-                continue;
-            };
-
-            // try to stop at the next access modifier or usings keyword
-            self.stop_at(|token| {
-                if let Token::Keyword(keyword) = token {
-                    (keyword.keyword == KeywordKind::Public
-                        || keyword.keyword == KeywordKind::Private
-                        || keyword.keyword == KeywordKind::Internal)
-                        || if items.is_empty() {
-                            keyword.keyword == KeywordKind::Using
+                    // try to stop at the next access modifier or usings keyword
+                    parser.stop_at(|token| {
+                        if let Token::Keyword(keyword) = token {
+                            (keyword.keyword == KeywordKind::Public
+                                || keyword.keyword == KeywordKind::Private
+                                || keyword.keyword == KeywordKind::Internal)
+                                || if items.is_empty() {
+                                    keyword.keyword == KeywordKind::Using
+                                } else {
+                                    false
+                                }
                         } else {
                             false
                         }
-                } else {
-                    false
+                    });
+
+                    // eat semicolon
+                    parser.forward();
                 }
-            });
 
-            // eat semicolon
-            self.forward();
-        }
-
-        let right_brace = self.step_out(handler)?;
+                Some(ModuleContent { usings, items })
+            },
+            handler,
+        )?;
 
         Some(ModuleBody {
-            left_brace,
-            content: ModuleContent { usings, items },
-            right_brace,
+            left_brace: delimited_tree.open,
+            content: delimited_tree.tree?,
+            right_brace: delimited_tree.close,
         })
     }
 

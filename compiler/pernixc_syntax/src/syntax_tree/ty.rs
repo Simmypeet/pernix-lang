@@ -304,25 +304,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_array_type(&mut self, handler: &impl Handler<Error>) -> Option<Array> {
-        let left_bracket = self.step_into(Delimiter::Bracket, handler)?;
+        let delimited_tree = self.step_into(
+            Delimiter::Bracket,
+            |parser| {
+                let ty = parser.parse_type(handler)?;
+                let colon = parser.parse_punctuation(':', true, handler)?;
+                let expression = parser.parse_expression(handler)?;
+                Some((ty, colon, expression))
+            },
+            handler,
+        )?;
 
-        let result = (|| {
-            let type_specififer = Box::new(self.parse_type(handler)?);
-            let colon = self.parse_punctuation(':', true, handler)?;
-            let expression = Box::new(self.parse_expression(handler)?);
-
-            Some((type_specififer, colon, expression))
-        })();
-
-        let right_bracket = self.step_out(handler)?;
-        let result = result?;
+        let tree = delimited_tree.tree?;
 
         Some(Array {
-            left_bracket,
-            operand: result.0,
-            colon: result.1,
-            expression: result.2,
-            right_bracket,
+            left_bracket: delimited_tree.open,
+            operand: Box::new(tree.0),
+            colon: tree.1,
+            expression: Box::new(tree.2),
+            right_bracket: delimited_tree.close,
         })
     }
 
@@ -330,7 +330,7 @@ impl<'a> Parser<'a> {
         let type_specifiers = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
-            |parser, handler| {
+            |parser| {
                 // stop at significant token
                 parser.stop_at_significant();
 

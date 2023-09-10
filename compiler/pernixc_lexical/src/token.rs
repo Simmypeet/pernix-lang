@@ -27,8 +27,6 @@ pub enum KeywordKind {
     Public,
     /// `struct` keyword.
     Struct,
-    /// `interface` keyword.
-    Interface,
     /// `implements` keyword.
     Implements,
     /// `let` keyword.
@@ -109,8 +107,6 @@ pub enum KeywordKind {
     Trait,
     /// `using` keyword.
     Using,
-    /// `is` keyword.
-    Is,
     /// `function` keyword.
     Function,
     /// `unsafe` keyword.
@@ -163,7 +159,6 @@ impl KeywordKind {
             Self::Express => "express",
             Self::Loop => "loop",
             Self::Public => "public",
-            Self::Interface => "interface",
             Self::Implements => "implements",
             Self::Let => "let",
             Self::Const => "const",
@@ -201,7 +196,6 @@ impl KeywordKind {
             Self::Where => "where",
             Self::Trait => "trait",
             Self::Using => "using",
-            Self::Is => "is",
             Self::Unsafe => "unsafe",
             Self::Match => "match",
         }
@@ -216,7 +210,7 @@ pub enum Token {
     Identifier(Identifier),
     Keyword(Keyword),
     Punctuation(Punctuation),
-    NumericLiteral(NumericLiteral),
+    Numeric(Numeric),
     Comment(Comment),
 }
 
@@ -229,7 +223,7 @@ impl Token {
             Self::Identifier(token) => &token.span,
             Self::Keyword(token) => &token.span,
             Self::Punctuation(token) => &token.span,
-            Self::NumericLiteral(token) => &token.span,
+            Self::Numeric(token) => &token.span,
             Self::Comment(token) => &token.span,
         }
     }
@@ -242,7 +236,7 @@ impl SourceElement for Token {
             Self::Identifier(token) => token.span(),
             Self::Keyword(token) => token.span(),
             Self::Punctuation(token) => token.span(),
-            Self::NumericLiteral(token) => token.span(),
+            Self::Numeric(token) => token.span(),
             Self::Comment(token) => token.span(),
         }
     }
@@ -300,18 +294,12 @@ impl SourceElement for Punctuation {
 
 /// Represents a hardcoded numeric literal value in the source code.
 #[derive(Debug, Clone, Getters)]
-pub struct NumericLiteral {
+pub struct Numeric {
     /// Is the span that makes up the token.
     pub span: Span,
-
-    /// Is the sapn representing the value part of the numeric literal.
-    pub value_span: Span,
-
-    /// Is the span representing the suffix part of the numeric literal if it exists.
-    pub suffix_span: Option<Span>,
 }
 
-impl SourceElement for NumericLiteral {
+impl SourceElement for Numeric {
     fn span(&self) -> Span { self.span.clone() }
 }
 
@@ -488,56 +476,8 @@ impl Token {
         // Tokenizes the whole number part
         Self::walk_iter(iter, |character| character.is_ascii_digit());
 
-        // Tokenizes the fractional part
-        if let Some((_, '.')) = iter.peek() {
-            let iter_clone = iter.clone();
-
-            iter.next();
-
-            // Checks if the fractional part is followed by a digit
-            if let Some((_, character)) = iter.peek() {
-                if character.is_ascii_digit() {
-                    iter.next();
-
-                    Self::walk_iter(iter, |character| character.is_ascii_digit());
-                } else {
-                    *iter = iter_clone;
-                }
-            } else {
-                *iter = iter_clone;
-            }
-        }
-
-        let mut value_iter_end = iter.clone();
-
-        // Lexes the suffix
-        let suffix_span = if let Some((_, character)) = iter.peek() {
-            if Self::is_first_identifier_character(character) {
-                iter.next();
-                Self::walk_iter(iter, Self::is_identifier_character);
-
-                let span = Self::create_span(value_iter_end.peek().unwrap().0, iter);
-
-                // the span must not be a keyword
-                if KeywordKind::from_str(span.str()).is_err() {
-                    Some(span)
-                } else {
-                    // resets the iterator
-                    *iter = value_iter_end.clone();
-
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        NumericLiteral {
+        Numeric {
             span: Self::create_span(start, iter),
-            value_span: Self::create_span(start, &mut value_iter_end),
-            suffix_span,
         }
         .into()
     }

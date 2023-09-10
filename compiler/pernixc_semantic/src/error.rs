@@ -1,8 +1,5 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_source::Span;
-use pernixc_system::arena;
-
-use crate::symbol::Module;
 
 /// After resolved the module path, the found symbol was not a `module` but something else.
 #[derive(Debug, Clone)]
@@ -24,10 +21,10 @@ pub struct ModuleNotFound {
     /// The span of the module path that was attempted to be resolved.
     pub module_path_span: Span,
 
-    /// The ID of the module that was searched.
+    /// The name of the module that was searched.
     ///
     /// If `None`, the search was started from the root module.
-    pub serached_module_id: Option<arena::ID<Module>>,
+    pub searched_module_name: Option<String>,
 }
 
 /// The module was already used in the `using` statement.

@@ -11,7 +11,7 @@
 
 pub mod constant;
 pub mod error;
-pub mod ir;
 pub mod pattern;
 pub mod symbol;
+pub mod table;
 pub mod ty;

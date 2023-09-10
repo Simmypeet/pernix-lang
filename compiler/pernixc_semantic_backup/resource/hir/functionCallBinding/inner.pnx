@@ -1,2 +1,0 @@
-private function someFunction(a: int32): int32 { return a; }
-private function someFunction(a: uint8): uint8 { return a; }

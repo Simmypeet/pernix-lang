@@ -10,7 +10,7 @@ use pernixc_source::{SourceElement, Span};
 use pernixc_system::diagnostic::Handler;
 
 use super::{
-    expression::{self, BooleanLiteral, NumericLiteral},
+    expression::{BooleanLiteral, NumericLiteral},
     ConnectedList,
 };
 use crate::{
@@ -260,7 +260,7 @@ impl<'a> Parser<'a> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
-            |parser, handler| {
+            |parser| {
                 let mutable_keyword = match parser.stop_at_significant() {
                     Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::Mutable => {
                         parser.forward();
@@ -307,7 +307,7 @@ impl<'a> Parser<'a> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
-            |parser, handler| {
+            |parser| {
                 parser.stop_at_significant();
 
                 match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
@@ -377,16 +377,18 @@ impl<'a> Parser<'a> {
         match self.stop_at_significant() {
             // parse enum pattern
             Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
-                let left_paren = self.step_into(Delimiter::Parenthesis, handler)?;
-                let pattern = T::parse(self, handler).map(Box::new);
-                let right_paren = self.step_out(handler)?;
+                let delimited_tree = self.step_into(
+                    Delimiter::Parenthesis,
+                    |parser| T::parse(parser, handler).map(Box::new),
+                    handler,
+                )?;
 
                 Some(
                     Enum {
                         identifier,
-                        left_paren,
-                        pattern: pattern?,
-                        right_paren,
+                        left_paren: delimited_tree.open,
+                        pattern: delimited_tree.tree?,
+                        right_paren: delimited_tree.close,
                     }
                     .into(),
                 )
@@ -482,12 +484,7 @@ impl Pattern for Refutable {
                 .map(Self::Structural),
 
             // parse numeric literal pattern
-            Some(Token::NumericLiteral(numeric_literal_token)) => {
-                parser.forward();
-                Some(Self::NumericLiteral(expression::NumericLiteral {
-                    numeric_literal_token,
-                }))
-            }
+            Some(Token::Numeric(_)) => Some(Self::NumericLiteral(parser.parse_numeric_literal()?)),
 
             // parse boolean literal pattern
             Some(Token::Keyword(boolean_keyword))

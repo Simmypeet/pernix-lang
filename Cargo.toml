@@ -5,11 +5,8 @@ members = [
     "compiler/pernixc_print",
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
-    #"compiler/pernixc_symbol",
-    #"compiler/pernixc_driver",
-    "compiler/pernixc_semantic",
     "compiler/pernixc_tests",
-    #"compiler/pernixc",
+    "compiler/pernixc_semantic",
 ]
 
 [workspace.dependencies]

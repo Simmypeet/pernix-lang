@@ -20,6 +20,8 @@ use crate::syntax_tree::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NumericLiteral {
     pub numeric_string: String,
+    pub decimal_string: Option<String>,
+    pub suffix_string: Option<String>,
 }
 
 impl Arbitrary for NumericLiteral {
@@ -27,7 +29,17 @@ impl Arbitrary for NumericLiteral {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        "[0-9]+".prop_map(|x| Self { numeric_string: x }).boxed()
+        (
+            "[0-9]+",
+            proptest::option::of("[0-9]+"),
+            proptest::option::of(syntax_tree::tests::Identifier::arbitrary()),
+        )
+            .prop_map(|(numeric, decimal, suffix)| Self {
+                numeric_string: numeric,
+                decimal_string: decimal,
+                suffix_string: suffix.map(|x| x.string),
+            })
+            .boxed()
     }
 }
 
@@ -35,17 +47,49 @@ impl Input for NumericLiteral {
     type Output = super::NumericLiteral;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(
-            &self.numeric_string,
-            output.numeric_literal_token.span.str()
-        );
+        prop_assert_eq!(&self.numeric_string, output.numeric.span.str());
+
+        match (&self.decimal_string, &output.decimal) {
+            (Some(input), Some(output)) => {
+                prop_assert_eq!(input, output.numeric.span.str());
+            }
+            (None, None) => {}
+            (input, output) => {
+                return Err(TestCaseError::fail(format!(
+                    "expected decimal to be {input:?}, found {output:?}"
+                )))
+            }
+        }
+
+        match (&self.suffix_string, &output.suffix) {
+            (Some(input), Some(output)) => {
+                prop_assert_eq!(input, output.span.str());
+            }
+            (None, None) => {}
+            (input, output) => {
+                return Err(TestCaseError::fail(format!(
+                    "expected suffix to be {input:?}, found {output:?}"
+                )))
+            }
+        }
+
         Ok(())
     }
 }
 
 impl Display for NumericLiteral {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.numeric_string, f)
+        Display::fmt(&self.numeric_string, f)?;
+
+        if let Some(decimal) = self.decimal_string.as_ref() {
+            write!(f, ".{decimal}")?;
+        }
+
+        if let Some(suffix) = self.suffix_string.as_ref() {
+            write!(f, "{suffix}")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -1402,6 +1446,56 @@ impl Display for Imperative {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleAccess {
+    pub operand: Box<Functional>,
+    pub index: usize,
+}
+
+impl Input for TupleAccess {
+    type Output = super::TupleAccess;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.operand.assert(output.operand())?;
+        prop_assert_eq!(self.index, output.index().span.str().parse().unwrap());
+
+        Ok(())
+    }
+}
+
+impl Display for TupleAccess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.operand, f)?;
+        f.write_char('.')?;
+        Display::fmt(&self.index, f)
+    }
+}
+
+impl Arbitrary for TupleAccess {
+    type Parameters = Option<BoxedStrategy<Functional>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let operand = args
+            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
+            .prop_filter("filter out `prefix` and `binary`", |x| {
+                !matches!(
+                    x,
+                    Functional::Prefix(..)
+                        | Functional::Binary(..)
+                        | Functional::NumericLiteral(..)
+                )
+            });
+
+        (operand, proptest::num::usize::ANY)
+            .prop_map(|(operand, index)| Self {
+                operand: Box::new(operand),
+                index,
+            })
+            .boxed()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Functional {
     NumericLiteral(NumericLiteral),
@@ -1409,59 +1503,14 @@ pub enum Functional {
     Named(Named),
     Prefix(Prefix),
     MemberAccess(MemberAccess),
+    TupleAccess(TupleAccess),
     Binary(Binary),
     FunctionCall(FunctionCall),
     Parenthesized(Parenthesized),
     StructLiteral(StructLiteral),
-    ArrowOperator(ArrowOperator),
     ArrayLiteral(ArrayLiteral),
     Subscript(Subscript),
     Cast(Cast),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ArrowOperator {
-    pub operand: Box<Functional>,
-    pub identifier: syntax_tree::tests::Identifier,
-}
-
-impl Input for ArrowOperator {
-    type Output = super::ArrowOperator;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.identifier.assert(output.identifier())
-    }
-}
-
-impl Arbitrary for ArrowOperator {
-    type Parameters = Option<BoxedStrategy<Functional>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let operand = args
-            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
-            .prop_filter_map("filter out grammar ambiguity", |x| {
-                if matches!(x, Functional::Prefix(..) | Functional::Binary(..)) {
-                    None
-                } else {
-                    Some(Box::new(x))
-                }
-            });
-
-        (operand, syntax_tree::tests::Identifier::arbitrary())
-            .prop_map(|(operand, identifier)| Self {
-                operand,
-                identifier,
-            })
-            .boxed()
-    }
-}
-
-impl Display for ArrowOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}->{}", self.operand, self.identifier)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1679,7 +1728,7 @@ impl Input for Functional {
             (Self::Parenthesized(i), super::Functional::Parenthesized(o)) => i.assert(o),
             (Self::StructLiteral(i), super::Functional::StructLiteral(o)) => i.assert(o),
             (Self::Cast(i), super::Functional::Cast(o)) => i.assert(o),
-            (Self::ArrowOperator(i), super::Functional::ArrowOperator(o)) => i.assert(o),
+            (Self::TupleAccess(i), super::Functional::TupleAccess(o)) => i.assert(o),
             (Self::ArrayLiteral(i), super::Functional::ArrayLiteral(o)) => i.assert(o),
             (Self::Subscript(i), super::Functional::Subscript(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
@@ -1697,12 +1746,12 @@ impl Display for Functional {
             Self::Named(i) => Display::fmt(i, f),
             Self::Prefix(i) => Display::fmt(i, f),
             Self::MemberAccess(i) => Display::fmt(i, f),
+            Self::TupleAccess(i) => Display::fmt(i, f),
             Self::Binary(i) => Display::fmt(i, f),
             Self::FunctionCall(i) => Display::fmt(i, f),
             Self::Parenthesized(i) => Display::fmt(i, f),
             Self::StructLiteral(i) => Display::fmt(i, f),
             Self::Cast(i) => Display::fmt(i, f),
-            Self::ArrowOperator(i) => Display::fmt(i, f),
             Self::ArrayLiteral(a) => Display::fmt(a, f),
             Self::Subscript(s) => Display::fmt(s, f),
         }
@@ -1771,6 +1820,8 @@ impl Arbitrary for Expression {
                     .prop_map(|x| Self::Functional(Functional::Prefix(x))),
                 MemberAccess::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Functional(Functional::MemberAccess(x))),
+                TupleAccess::arbitrary_with(Some(filter_functional_variant(inner.clone())))
+                    .prop_map(|x| Self::Functional(Functional::TupleAccess(x))),
                 Binary::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Functional(Functional::Binary(x))),
                 FunctionCall::arbitrary_with(Some(inner.clone()))
@@ -1784,8 +1835,6 @@ impl Arbitrary for Expression {
                     args.clone()
                 ))
                 .prop_map(|x| Self::Functional(Functional::Cast(x))),
-                ArrowOperator::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Functional(Functional::ArrowOperator(x))),
                 Block::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Self::Imperative(Imperative::Block(x))),
                 Loop::arbitrary_with(Some(inner.clone()))

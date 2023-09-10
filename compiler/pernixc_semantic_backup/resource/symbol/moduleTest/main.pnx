@@ -1,7 +1,0 @@
-public module sub;
-
-public test(): void {
-    if (true) {
-        test = 32;
-    };
-}

@@ -106,7 +106,7 @@ fn found_string(found: &Option<Token>) -> String {
         Token::WhiteSpaces(_) => "whitespaces".to_string(),
         Token::Identifier(_) => format!("`{}` identifier", token.span().str()),
         Token::Keyword(_) => format!("`{}` keyword", token.span().str()),
-        Token::Punctuation(_) | Token::NumericLiteral(_) => {
+        Token::Punctuation(_) | Token::Numeric(_) => {
             format!("`{}`", token.span().str())
         }
         Token::Comment(_) => "comment".to_string(),

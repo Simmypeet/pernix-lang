@@ -714,39 +714,6 @@ impl Display for LifetimeBound {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TupleBound {
-    pub qualified_identifier: QualifiedIdentifier,
-}
-
-impl Input for TupleBound {
-    type Output = super::TupleBound;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.qualified_identifier
-            .assert(output.qualified_identifier())
-    }
-}
-
-impl Arbitrary for TupleBound {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        QualifiedIdentifier::arbitrary_with((false, None))
-            .prop_map(|qualified_identifier| Self {
-                qualified_identifier,
-            })
-            .boxed()
-    }
-}
-
-impl Display for TupleBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({})", self.qualified_identifier)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TraitAssociationBoundArgument {
     Const(Expression),
     Type(ty::tests::Type),
@@ -835,7 +802,6 @@ impl Display for TraitAssociationBound {
 pub enum Constraint {
     Trait(TraitBound),
     Lifetime(LifetimeBound),
-    Tuple(TupleBound),
     TraitAssociation(TraitAssociationBound),
 }
 
@@ -846,7 +812,6 @@ impl Input for Constraint {
         match (self, output) {
             (Self::Trait(i), super::Constraint::Trait(o)) => i.assert(o),
             (Self::Lifetime(i), super::Constraint::Lifetime(o)) => i.assert(o),
-            (Self::Tuple(i), super::Constraint::Tuple(o)) => i.assert(o),
             (Self::TraitAssociation(i), super::Constraint::TraitAssociation(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
@@ -863,7 +828,6 @@ impl Arbitrary for Constraint {
         prop_oneof![
             TraitBound::arbitrary().prop_map(Self::Trait),
             LifetimeBound::arbitrary().prop_map(Self::Lifetime),
-            TupleBound::arbitrary().prop_map(Self::Tuple),
             TraitAssociationBound::arbitrary().prop_map(Self::TraitAssociation),
         ]
         .boxed()
@@ -875,7 +839,6 @@ impl Display for Constraint {
         match self {
             Self::Trait(i) => Display::fmt(i, f),
             Self::Lifetime(i) => Display::fmt(i, f),
-            Self::Tuple(i) => Display::fmt(i, f),
             Self::TraitAssociation(i) => Display::fmt(i, f),
         }
     }
@@ -1500,13 +1463,15 @@ impl Display for TraitFunction {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitType {
     pub type_signature: TypeSignature,
+    pub where_clause: Option<WhereClause>,
 }
 
 impl Input for TraitType {
     type Output = super::TraitType;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.type_signature.assert(output.signature())
+        self.type_signature.assert(output.signature())?;
+        self.where_clause.assert(output.where_clause())
     }
 }
 
@@ -1515,15 +1480,29 @@ impl Arbitrary for TraitType {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        TypeSignature::arbitrary()
-            .prop_map(|type_signature| Self { type_signature })
+        (
+            TypeSignature::arbitrary(),
+            proptest::option::of(WhereClause::arbitrary()),
+        )
+            .prop_map(|(type_signature, where_clause)| Self {
+                type_signature,
+                where_clause,
+            })
             .boxed()
     }
 }
 
 impl Display for TraitType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{};", self.type_signature)
+        write!(f, "{}", self.type_signature)?;
+
+        if let Some(where_clause) = self.where_clause.as_ref() {
+            write!(f, " {where_clause}")?;
+        }
+
+        write!(f, ";")?;
+
+        Ok(())
     }
 }
 
@@ -1696,12 +1675,16 @@ impl Display for Trait {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeDefinition {
     pub ty: ty::tests::Type,
+    pub where_clause: Option<WhereClause>,
 }
 
 impl Input for TypeDefinition {
     type Output = super::TypeDefinition;
 
-    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.ty.assert(output.ty()) }
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.ty.assert(output.ty())?;
+        self.where_clause.assert(output.where_clause())
+    }
 }
 
 impl Arbitrary for TypeDefinition {
@@ -1709,15 +1692,24 @@ impl Arbitrary for TypeDefinition {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        ty::tests::Type::arbitrary()
-            .prop_map(|ty| Self { ty })
+        (
+            ty::tests::Type::arbitrary(),
+            proptest::option::of(WhereClause::arbitrary()),
+        )
+            .prop_map(|(ty, where_clause)| Self { ty, where_clause })
             .boxed()
     }
 }
 
 impl Display for TypeDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "= {}", self.ty)
+        write!(f, "= {}", self.ty)?;
+
+        if let Some(where_clause) = &self.where_clause {
+            write!(f, " {where_clause}")?;
+        }
+
+        Ok(())
     }
 }
 
