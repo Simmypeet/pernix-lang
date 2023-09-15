@@ -1,0 +1,11 @@
+public trait ReferenceProvider<T, const IS_RESTRICT: bool> {
+    type Output<'a>;
+}
+
+implements<T> ReferenceProvier<T, {true}> {
+    type Output<'a> = &'a restrict T;
+}
+
+implements<T> ReferenceProvier<T, {false}> {
+    type Output<'a> = &'a mutable T;
+}

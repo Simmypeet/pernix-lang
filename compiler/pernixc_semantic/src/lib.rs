@@ -1,4 +1,14 @@
+//! The semantic analyzer of the Pernix compiler.
+//!
+//! The crate includes following features:
+//!
+//! - Symbol table and resolution
+//! - Typing and Constant model
+//! - Intermediate Representation
+//! - Compile-time evaluation (IR evaluation)
+
 #![deny(
+    missing_docs,
     missing_debug_implementations,
     missing_copy_implementations,
     clippy::all,

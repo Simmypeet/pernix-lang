@@ -1,11 +1,15 @@
 use std::collections::HashMap;
 
-use super::{Module, Table};
+use super::{
+    state::{DraftedSymbolRef, DraftedSymbolSyntax},
+    Module, Table,
+};
 use crate::{
     pattern,
     symbol::{
-        Accessibility, GenericItemRef, GenericParameterRef, GenericParameters, ModuleMemberRef,
-        Parameter, Trait, TraitAssociatedItemRef, TraitFunction, TypeParameter, WhereClause,
+        Accessibility, GenericItemRef, GenericParameterRef, GenericParameters, Index,
+        ModuleMemberRef, Parameter, Trait, TraitAssociatedRef, TraitFunction, TypeParameter,
+        WhereClause,
     },
     ty,
 };
@@ -34,6 +38,44 @@ impl Table {
         self.create_copy_trait(core_module_index);
         self.create_drop_trait(core_module_index);
         self.create_into_trait(core_module_index);
+        self.create_assign_trait(core_module_index);
+        self.create_assign_restrict_trait(core_module_index);
+
+        self.state_mananger.add_drafted_symbol(
+            DraftedSymbolRef::Trait(self.builtin_copy_trait_index),
+            DraftedSymbolSyntax::Trait {
+                trait_syntax: None,
+                implements_syntax: Vec::new(),
+            },
+        );
+        self.state_mananger.add_drafted_symbol(
+            DraftedSymbolRef::Trait(self.builtin_drop_trait_index),
+            DraftedSymbolSyntax::Trait {
+                trait_syntax: None,
+                implements_syntax: Vec::new(),
+            },
+        );
+        self.state_mananger.add_drafted_symbol(
+            DraftedSymbolRef::Trait(self.builtin_into_trait_index),
+            DraftedSymbolSyntax::Trait {
+                trait_syntax: None,
+                implements_syntax: Vec::new(),
+            },
+        );
+        self.state_mananger.add_drafted_symbol(
+            DraftedSymbolRef::Trait(self.builtin_assign_trait_index),
+            DraftedSymbolSyntax::Trait {
+                trait_syntax: None,
+                implements_syntax: Vec::new(),
+            },
+        );
+        self.state_mananger.add_drafted_symbol(
+            DraftedSymbolRef::Trait(self.builtin_assign_restrict_trait_index),
+            DraftedSymbolSyntax::Trait {
+                trait_syntax: None,
+                implements_syntax: Vec::new(),
+            },
+        );
     }
 
     fn create_core_trait<const N: usize>(
@@ -42,7 +84,7 @@ impl Table {
         trait_name: String,
         type_parameter_names: [String; N],
         initializer: impl FnOnce(&mut Trait, [GenericParameterRef; N]),
-    ) {
+    ) -> Index {
         let trait_index = self.traits.len();
         self.traits.push(Trait {
             name: trait_name.clone(),
@@ -88,6 +130,8 @@ impl Table {
         self.modules[core_module_index]
             .module_member_refs_by_name
             .insert(trait_name, ModuleMemberRef::Trait(trait_index));
+
+        trait_index
     }
 
     fn create_trait_function(
@@ -116,13 +160,75 @@ impl Table {
             .associated_ids_by_name
             .insert(
                 function_name,
-                TraitAssociatedItemRef::Function(trait_function_index),
+                TraitAssociatedRef::Function(trait_function_index),
             )
             .is_none());
     }
 
+    fn create_assign_restrict_trait(&mut self, core_module_index: usize) {
+        self.builtin_assign_restrict_trait_index = self.create_core_trait(
+            core_module_index,
+            "@AssignRestrict".to_string(),
+            ["T".to_string()],
+            |assign_trait, type_parameters| {
+                Self::create_trait_function(
+                    assign_trait,
+                    "assignRestrict".to_string(),
+                    |assign_function| {
+                        // update the return type NONE
+                        assign_function.return_type = ty::Type::unit();
+
+                        assign_function.parameters.push(Parameter {
+                            index: 0,
+                            parent_function_index: assign_function.index,
+                            ty: ty::Type::Reference(ty::Reference {
+                                qualifier: ty::Qualifier::Restrict,
+                                lifetime: ty::Lifetime::Elided(GenericItemRef::Function(
+                                    assign_function.index,
+                                )),
+                                operand: Box::new(ty::Type::Parameter(type_parameters[0])),
+                            }),
+                            pattern: pattern::Irrefutable::Discard,
+                        });
+                    },
+                );
+            },
+        );
+    }
+
+    fn create_assign_trait(&mut self, core_module_index: usize) {
+        self.builtin_assign_trait_index = self.create_core_trait(
+            core_module_index,
+            "@Assign".to_string(),
+            ["T".to_string()],
+            |assign_trait, type_parameters| {
+                Self::create_trait_function(
+                    assign_trait,
+                    "assign".to_string(),
+                    |assign_function| {
+                        // update the return type NONE
+                        assign_function.return_type = ty::Type::unit();
+
+                        assign_function.parameters.push(Parameter {
+                            index: 0,
+                            parent_function_index: assign_function.index,
+                            ty: ty::Type::Reference(ty::Reference {
+                                qualifier: ty::Qualifier::Mutable,
+                                lifetime: ty::Lifetime::Elided(GenericItemRef::Function(
+                                    assign_function.index,
+                                )),
+                                operand: Box::new(ty::Type::Parameter(type_parameters[0])),
+                            }),
+                            pattern: pattern::Irrefutable::Discard,
+                        });
+                    },
+                );
+            },
+        );
+    }
+
     fn create_into_trait(&mut self, core_module_index: usize) {
-        self.create_core_trait(
+        self.builtin_into_trait_index = self.create_core_trait(
             core_module_index,
             "@Into".to_string(),
             ["T".to_string(), "To".to_string()],
@@ -148,7 +254,7 @@ impl Table {
     }
 
     fn create_drop_trait(&mut self, core_module_index: usize) {
-        self.create_core_trait(
+        self.builtin_drop_trait_index = self.create_core_trait(
             core_module_index,
             "@Drop".to_string(),
             ["T".to_string()],
@@ -173,7 +279,7 @@ impl Table {
     }
 
     fn create_copy_trait(&mut self, core_module_index: usize) {
-        self.create_core_trait(
+        self.builtin_copy_trait_index = self.create_core_trait(
             core_module_index,
             "@Copy".to_string(),
             ["T".to_string()],
@@ -202,3 +308,25 @@ impl Table {
         );
     }
 }
+
+/*
+public trait @Copy<T> {
+    function copy(this: &T): T;
+}
+
+public trait @Drop<T> {
+    function drop(this: &restrict T);
+}
+
+public trait @Into<T, To> {
+    function into(this: T): To;
+}
+
+public trait @Assign<T> {
+    function assign(this: &mutable T, value: T);
+}
+
+public trait @AssignRestrict<T> {
+    function assignRestrict(this: &restrict T, value: T);
+}
+*/

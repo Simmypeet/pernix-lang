@@ -75,6 +75,88 @@ impl SourceElement for Terminator {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// Access:
+///     Identifier
+///     | Numeric
+///     ;
+/// ```
+#[derive(Debug, Clone)]
+pub enum Access {
+    Struct(Identifier),
+    Tuple(Numeric),
+}
+
+impl SourceElement for Access {
+    fn span(&self) -> Span {
+        match self {
+            Self::Struct(identifier) => identifier.span.clone(),
+            Self::Tuple(numeric) => numeric.span.clone(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Dot:
+///     Functional '.' Access
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct Dot {
+    #[get = "pub"]
+    pub(super) operand: Box<Functional>,
+    #[get = "pub"]
+    pub(super) dot: Punctuation,
+    #[get = "pub"]
+    pub(super) access: Access,
+}
+
+impl SourceElement for Dot {
+    fn span(&self) -> Span { self.operand.span().join(&self.access.span()).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Arrow:
+///     Functional '->' Access
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct Arrow {
+    #[get = "pub"]
+    pub(super) operand: Box<Functional>,
+    #[get = "pub"]
+    pub(super) hyphen: Punctuation,
+    #[get = "pub"]
+    pub(super) right_angle_bracket: Punctuation,
+    #[get = "pub"]
+    pub(super) access: Access,
+}
+
+impl SourceElement for Arrow {
+    fn span(&self) -> Span { self.operand.span().join(&self.access.span()).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Copy:
+///     Functional '\''
+///     ;
+/// ```
+#[derive(Debug, Clone, Getters)]
+pub struct Copy {
+    #[get = "pub"]
+    pub(super) operand: Box<Functional>,
+    #[get = "pub"]
+    pub(super) single_quote: Punctuation,
+}
+
+impl SourceElement for Copy {
+    fn span(&self) -> Span { self.operand.span().join(&self.single_quote.span).unwrap() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Functional:
 ///     NumericLiteral
 ///     | BooleanLiteral
@@ -84,10 +166,12 @@ impl SourceElement for Terminator {
 ///     | FunctionCall
 ///     | Parenthesized
 ///     | StructLiteral
-///     | MemberAccess
 ///     | ArrayLiteral
 ///     | Subscript
 ///     | Cast
+///     | Dot
+///     | Copy
+///     | Arrow
 /// ```
 #[derive(Debug, Clone, EnumAsInner, From)]
 #[allow(missing_docs)]
@@ -100,11 +184,12 @@ pub enum Functional {
     FunctionCall(FunctionCall),
     Parenthesized(Parenthesized),
     StructLiteral(StructLiteral),
-    MemberAccess(MemberAccess),
     Subscript(Subscript),
     ArrayLiteral(ArrayLiteral),
-    TupleAccess(TupleAccess),
     Cast(Cast),
+    Copy(Copy),
+    Dot(Dot),
+    Arrow(Arrow),
 }
 
 /// Syntax Synopsis:
@@ -166,10 +251,11 @@ impl SourceElement for Functional {
             Self::Parenthesized(parenthesized_expression) => parenthesized_expression.span(),
             Self::Subscript(subscript_expression) => subscript_expression.span(),
             Self::StructLiteral(struct_literal) => struct_literal.span(),
-            Self::MemberAccess(member_access_expression) => member_access_expression.span(),
-            Self::TupleAccess(tuple_access_expression) => tuple_access_expression.span(),
             Self::ArrayLiteral(array_literal) => array_literal.span(),
             Self::Cast(cast) => cast.span(),
+            Self::Copy(copy) => copy.span(),
+            Self::Dot(dot) => dot.span(),
+            Self::Arrow(arrow) => arrow.span(),
         }
     }
 }
@@ -222,26 +308,6 @@ impl SourceElement for NumericLiteral {
 
         self.numeric.span().join(&end).unwrap()
     }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// TupleAccess:
-///     Functional '.' Numeric
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-pub struct TupleAccess {
-    #[get = "pub"]
-    pub(super) operand: Box<Functional>,
-    #[get = "pub"]
-    pub(super) dot: Punctuation,
-    #[get = "pub"]
-    pub(super) index: Numeric,
-}
-
-impl SourceElement for TupleAccess {
-    fn span(&self) -> Span { self.operand.span().join(&self.index.span).unwrap() }
 }
 
 /// Syntax Synopsis:
@@ -337,6 +403,7 @@ impl SourceElement for Binary {
 ///     | '<='
 ///     | '>'
 ///     | '>='
+///     | ':='
 ///     | 'and'
 ///     | 'or'
 ///     ;
@@ -361,6 +428,7 @@ pub enum BinaryOperator {
     LessThanOrEqual(Punctuation, Punctuation),
     GreaterThan(Punctuation),
     GreaterThanOrEqual(Punctuation, Punctuation),
+    RestrictAssign(Punctuation, Punctuation),
     LogicalAnd(Keyword),
     LogicalOr(Keyword),
 }
@@ -387,6 +455,7 @@ impl BinaryOperator {
     pub fn get_precedence(&self) -> u32 {
         match self {
             Self::Assign(..)
+            | Self::RestrictAssign(..)
             | Self::CompoundAdd(..)
             | Self::CompoundSubtract(..)
             | Self::CompoundMultiply(..)
@@ -424,6 +493,7 @@ impl SourceElement for BinaryOperator {
             | Self::Equal(token, token1)
             | Self::NotEqual(token, token1)
             | Self::LessThanOrEqual(token, token1)
+            | Self::RestrictAssign(token, token1)
             | Self::GreaterThanOrEqual(token, token1) => token.span().join(&token1.span).unwrap(),
             Self::LogicalAnd(token) | Self::LogicalOr(token) => token.span.clone(),
         }
@@ -635,27 +705,6 @@ impl SourceElement for StructLiteral {
             .join(&self.right_brace.span)
             .unwrap()
     }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// MemberAccess:
-///     Functional '.' Identifier
-///     ;
-/// ```
-#[derive(Debug, Clone, Getters)]
-#[allow(missing_docs)]
-pub struct MemberAccess {
-    #[get = "pub"]
-    operand: Box<Functional>,
-    #[get = "pub"]
-    dot: Punctuation,
-    #[get = "pub"]
-    identifier: Identifier,
-}
-
-impl SourceElement for MemberAccess {
-    fn span(&self) -> Span { self.operand.span().join(&self.identifier.span).unwrap() }
 }
 
 /// Imperative expressions are expressions that yield a value by executing a list of statements.
@@ -1303,6 +1352,10 @@ impl<'a> Parser<'a> {
                 '/' => Some(BinaryOperator::Divide(p)),
                 '%' => Some(BinaryOperator::Modulo(p)),
                 '=' => Some(BinaryOperator::Assign(p)),
+                ':' => {
+                    let equal = parser.parse_punctuation('=', false, &Dummy)?;
+                    Some(BinaryOperator::RestrictAssign(p, equal))
+                }
                 '!' => {
                     let equal = parser.parse_punctuation('=', false, &Dummy)?;
                     Some(BinaryOperator::NotEqual(p, equal))
@@ -1712,6 +1765,18 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_access(&mut self, handler: &impl Handler<Error>) -> Option<Access> {
+        match self.stop_at_significant() {
+            Some(Token::Numeric(numeric)) => {
+                // eat numeric token
+                self.forward();
+
+                Some(Access::Tuple(numeric))
+            }
+            _ => Some(Access::Struct(self.parse_identifier(handler)?)),
+        }
+    }
+
     /// Parses a primary [`Expression`]
     #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
     pub fn parse_primary_expression(
@@ -1779,29 +1844,56 @@ impl<'a> Parser<'a> {
 
         loop {
             match self.stop_at_significant() {
+                // parse dot op
                 Some(Token::Punctuation(dot)) if dot.punctuation == '.' => {
                     // eat token
                     self.forward();
+                    let access = self.parse_access(handler)?;
 
-                    if let Some(Token::Numeric(index)) = self.stop_at_significant() {
-                        self.forward();
-
-                        expression = Functional::TupleAccess(TupleAccess {
-                            operand: Box::new(expression),
-                            dot,
-                            index,
-                        });
-                    } else {
-                        let identifier = self.parse_identifier(handler)?;
-
-                        // update expression
-                        expression = Functional::MemberAccess(MemberAccess {
-                            operand: Box::new(expression),
-                            dot,
-                            identifier,
-                        });
-                    }
+                    expression = Functional::Dot(Dot {
+                        operand: Box::new(expression),
+                        dot,
+                        access,
+                    });
                 }
+
+                // parse copy
+                Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
+                    // eat token
+                    self.forward();
+
+                    expression = Functional::Copy(Copy {
+                        operand: Box::new(expression),
+                        single_quote,
+                    });
+                }
+
+                // parse arrow op
+                Some(Token::Punctuation(hyphen))
+                    if hyphen.punctuation == '-'
+                        && matches!(
+                            self.peek_offset(1),
+                            Some(Token::Punctuation(right_angle_bracket))
+                                if right_angle_bracket.punctuation == '>'
+                        ) =>
+                {
+                    // eat token
+                    self.forward();
+
+                    let right_angle_bracket = self
+                        .parse_punctuation('>', false, handler)
+                        .expect("should be valid");
+
+                    let access = self.parse_access(handler)?;
+
+                    expression = Functional::Arrow(Arrow {
+                        operand: Box::new(expression),
+                        hyphen,
+                        right_angle_bracket,
+                        access,
+                    });
+                }
+
                 Some(Token::Punctuation(p)) if p.punctuation == '[' => {
                     let delimited_tree = self.step_into(
                         Delimiter::Bracket,

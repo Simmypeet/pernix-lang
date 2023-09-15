@@ -1,3 +1,5 @@
+//! Contains the definition of the semantic errors.
+
 use enum_as_inner::EnumAsInner;
 use pernixc_source::Span;
 
@@ -179,7 +181,9 @@ pub struct CyclicDependency {
     pub participant_spans: Vec<Span>,
 }
 
+/// Enumeration containing all possible semantic errors that can occur in this phase.
 #[derive(Debug, Clone, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum Error {
     VariantDuplication(VariantDuplication),
     TraitMemberDuplication(TraitMemberDuplication),
@@ -201,5 +205,6 @@ pub enum Error {
     LifetimeParameterDeclaredAfterTypeOrConstantParameter(
         LifetimeParameterDeclaredAfterTypeOrConstantParameter,
     ),
+    CyclicDependency(CyclicDependency),
     TypeParameterDeclaredAfterConstantParameter(TypeParameterDeclaredAfterConstantParameter),
 }

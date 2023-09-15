@@ -255,6 +255,49 @@ impl Debug for Span {
     }
 }
 
+impl PartialEq for Span {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.source_file, &other.source_file)
+            && self.start == other.start
+            && self.end == other.end
+    }
+}
+
+impl Eq for Span {}
+
+impl PartialOrd for Span {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let self_ptr_value = Arc::as_ptr(&self.source_file) as usize;
+        let other_ptr_value = Arc::as_ptr(&other.source_file) as usize;
+
+        Some(self_ptr_value.cmp(&other_ptr_value).then_with(|| {
+            self.start
+                .cmp(&other.start)
+                .then_with(|| self.end.cmp(&other.end))
+        }))
+    }
+}
+
+impl Ord for Span {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let self_ptr_value = Arc::as_ptr(&self.source_file) as usize;
+        let other_ptr_value = Arc::as_ptr(&other.source_file) as usize;
+
+        self_ptr_value
+            .cmp(&other_ptr_value)
+            .then_with(|| self.start.cmp(&other.start))
+            .then_with(|| self.end.cmp(&other.end))
+    }
+}
+
+impl std::hash::Hash for Span {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.start.hash(state);
+        self.end.hash(state);
+        Arc::as_ptr(&self.source_file).hash(state);
+    }
+}
+
 /// Is a struct pointing to a particular location in a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Location {

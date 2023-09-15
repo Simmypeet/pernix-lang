@@ -134,7 +134,11 @@ enum Input {
 impl Target {
     #[allow(clippy::too_many_lines)]
     fn parse_input<
-        T: Handler<error::Error> + Handler<pernixc_lexical::error::Error> + Handler<Error>,
+        T: Handler<error::Error>
+            + Handler<pernixc_lexical::error::Error>
+            + Handler<Error>
+            + Send
+            + Sync,
     >(
         input: Input,
         current_directory: &Path,
@@ -316,7 +320,11 @@ impl Target {
 
     /// Parses the whole module tree for the target program from the given root source file.
     pub fn parse<
-        T: Handler<error::Error> + Handler<pernixc_lexical::error::Error> + Handler<Error>,
+        T: Handler<error::Error>
+            + Handler<pernixc_lexical::error::Error>
+            + Handler<Error>
+            + Send
+            + Sync,
     >(
         root_source_file: &Arc<SourceFile>,
         target_name: String,

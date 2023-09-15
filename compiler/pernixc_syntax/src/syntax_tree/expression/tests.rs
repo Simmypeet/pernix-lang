@@ -322,29 +322,112 @@ impl Arbitrary for Prefix {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MemberAccess {
-    pub operand: Box<Functional>,
-    pub identifier: syntax_tree::tests::Identifier,
+pub enum Access {
+    Struct(syntax_tree::tests::Identifier),
+    Tuple(usize),
 }
 
-impl Input for MemberAccess {
-    type Output = super::MemberAccess;
+impl Input for Access {
+    type Output = super::Access;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::Struct(input), super::Access::Struct(output)) => input.assert(output),
+            (Self::Tuple(input), super::Access::Tuple(output)) => {
+                prop_assert_eq!(*input, output.span.str().parse().unwrap());
+                Ok(())
+            }
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected access to be {input:?}, found {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for Access {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            syntax_tree::tests::Identifier::arbitrary().prop_map(Access::Struct),
+            usize::arbitrary().prop_map(Access::Tuple),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for Access {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Struct(x) => Display::fmt(x, f),
+            Self::Tuple(x) => Display::fmt(x, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Dot {
+    pub operand: Box<Functional>,
+    pub access: Access,
+}
+
+impl Input for Dot {
+    type Output = super::Dot;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operand.assert(output.operand())?;
-        self.identifier.assert(output.identifier())
+        self.access.assert(output.access())
     }
 }
 
-impl Display for MemberAccess {
+impl Arbitrary for Dot {
+    type Parameters = Option<BoxedStrategy<Functional>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let operand = args
+            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
+            .prop_filter("filter out `prefix` and `binary`", |x| {
+                !matches!(
+                    x,
+                    Functional::Prefix(..)
+                        | Functional::Binary(..)
+                        | Functional::NumericLiteral(..)
+                )
+            });
+
+        (operand, Access::arbitrary())
+            .prop_map(|(operand, access)| Self {
+                operand: Box::new(operand),
+                access,
+            })
+            .boxed()
+    }
+}
+
+impl Display for Dot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.operand, f)?;
-        f.write_char('.')?;
-        Display::fmt(&self.identifier, f)
+        write!(f, "{}.{}", self.operand, self.access)
     }
 }
 
-impl Arbitrary for MemberAccess {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Arrow {
+    pub operand: Box<Functional>,
+    pub access: Access,
+}
+
+impl Input for Arrow {
+    type Output = super::Arrow;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.operand.assert(output.operand())?;
+        self.access.assert(output.access())
+    }
+}
+
+impl Arbitrary for Arrow {
     type Parameters = Option<BoxedStrategy<Functional>>;
     type Strategy = BoxedStrategy<Self>;
 
@@ -355,12 +438,60 @@ impl Arbitrary for MemberAccess {
                 !matches!(x, Functional::Prefix(..) | Functional::Binary(..))
             });
 
-        (operand, syntax_tree::tests::Identifier::arbitrary())
-            .prop_map(|(operand, identifier)| Self {
+        (operand, Access::arbitrary())
+            .prop_map(|(operand, access)| Self {
                 operand: Box::new(operand),
-                identifier,
+                access,
             })
             .boxed()
+    }
+}
+
+impl Display for Arrow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}->{}", self.operand, self.access)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Copy {
+    pub operand: Box<Functional>,
+}
+
+impl Input for Copy {
+    type Output = super::Copy;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.operand.assert(output.operand())
+    }
+}
+
+impl Arbitrary for Copy {
+    type Parameters = Option<BoxedStrategy<Functional>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression_strategy = args.unwrap_or_else(|| {
+            Expression::arbitrary()
+                .prop_filter_map("filter functional variant", |x| x.into_functional().ok())
+                .boxed()
+        });
+
+        expression_strategy
+            .prop_filter_map("only allows functional variants", |x| match x {
+                Functional::Binary(_) | Functional::Prefix(_) => None,
+                functional => Some(functional),
+            })
+            .prop_map(|operand| Self {
+                operand: Box::new(operand),
+            })
+            .boxed()
+    }
+}
+
+impl Display for Copy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}'", self.operand)
     }
 }
 
@@ -1446,64 +1577,12 @@ impl Display for Imperative {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TupleAccess {
-    pub operand: Box<Functional>,
-    pub index: usize,
-}
-
-impl Input for TupleAccess {
-    type Output = super::TupleAccess;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        prop_assert_eq!(self.index, output.index().span.str().parse().unwrap());
-
-        Ok(())
-    }
-}
-
-impl Display for TupleAccess {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.operand, f)?;
-        f.write_char('.')?;
-        Display::fmt(&self.index, f)
-    }
-}
-
-impl Arbitrary for TupleAccess {
-    type Parameters = Option<BoxedStrategy<Functional>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let operand = args
-            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
-            .prop_filter("filter out `prefix` and `binary`", |x| {
-                !matches!(
-                    x,
-                    Functional::Prefix(..)
-                        | Functional::Binary(..)
-                        | Functional::NumericLiteral(..)
-                )
-            });
-
-        (operand, proptest::num::usize::ANY)
-            .prop_map(|(operand, index)| Self {
-                operand: Box::new(operand),
-                index,
-            })
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Functional {
     NumericLiteral(NumericLiteral),
     BooleanLiteral(BooleanLiteral),
     Named(Named),
     Prefix(Prefix),
-    MemberAccess(MemberAccess),
-    TupleAccess(TupleAccess),
     Binary(Binary),
     FunctionCall(FunctionCall),
     Parenthesized(Parenthesized),
@@ -1511,6 +1590,9 @@ pub enum Functional {
     ArrayLiteral(ArrayLiteral),
     Subscript(Subscript),
     Cast(Cast),
+    Arrow(Arrow),
+    Dot(Dot),
+    Copy(Copy),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1722,15 +1804,16 @@ impl Input for Functional {
             (Self::BooleanLiteral(i), super::Functional::BooleanLiteral(o)) => i.assert(o),
             (Self::Named(i), super::Functional::Named(o)) => i.assert(o),
             (Self::Prefix(i), super::Functional::Prefix(o)) => i.assert(o),
-            (Self::MemberAccess(i), super::Functional::MemberAccess(o)) => i.assert(o),
             (Self::Binary(i), super::Functional::Binary(o)) => i.assert(o),
             (Self::FunctionCall(i), super::Functional::FunctionCall(o)) => i.assert(o),
             (Self::Parenthesized(i), super::Functional::Parenthesized(o)) => i.assert(o),
             (Self::StructLiteral(i), super::Functional::StructLiteral(o)) => i.assert(o),
             (Self::Cast(i), super::Functional::Cast(o)) => i.assert(o),
-            (Self::TupleAccess(i), super::Functional::TupleAccess(o)) => i.assert(o),
             (Self::ArrayLiteral(i), super::Functional::ArrayLiteral(o)) => i.assert(o),
             (Self::Subscript(i), super::Functional::Subscript(o)) => i.assert(o),
+            (Self::Arrow(i), super::Functional::Arrow(o)) => i.assert(o),
+            (Self::Dot(i), super::Functional::Dot(o)) => i.assert(o),
+            (Self::Copy(i), super::Functional::Copy(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "expected functional to be {self:?}, found {output:?}",
             ))),
@@ -1745,8 +1828,6 @@ impl Display for Functional {
             Self::BooleanLiteral(i) => Display::fmt(i, f),
             Self::Named(i) => Display::fmt(i, f),
             Self::Prefix(i) => Display::fmt(i, f),
-            Self::MemberAccess(i) => Display::fmt(i, f),
-            Self::TupleAccess(i) => Display::fmt(i, f),
             Self::Binary(i) => Display::fmt(i, f),
             Self::FunctionCall(i) => Display::fmt(i, f),
             Self::Parenthesized(i) => Display::fmt(i, f),
@@ -1754,11 +1835,14 @@ impl Display for Functional {
             Self::Cast(i) => Display::fmt(i, f),
             Self::ArrayLiteral(a) => Display::fmt(a, f),
             Self::Subscript(s) => Display::fmt(s, f),
+            Self::Arrow(s) => Display::fmt(s, f),
+            Self::Dot(s) => Display::fmt(s, f),
+            Self::Copy(s) => Display::fmt(s, f),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Expression {
     Functional(Functional),
@@ -1818,10 +1902,6 @@ impl Arbitrary for Expression {
                     .prop_map(|x| Self::Functional(Functional::Named(x))),
                 Prefix::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Functional(Functional::Prefix(x))),
-                MemberAccess::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Functional(Functional::MemberAccess(x))),
-                TupleAccess::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Functional(Functional::TupleAccess(x))),
                 Binary::arbitrary_with(Some(filter_functional_variant(inner.clone())))
                     .prop_map(|x| Self::Functional(Functional::Binary(x))),
                 FunctionCall::arbitrary_with(Some(inner.clone()))
@@ -1852,8 +1932,14 @@ impl Arbitrary for Expression {
                     .prop_map(|x| Self::Terminator(Terminator::Break(x))),
                 ArrayLiteral::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Self::Functional(Functional::ArrayLiteral(x))),
-                Subscript::arbitrary_with(Some(inner))
-                    .prop_map(|x| Self::Functional(Functional::Subscript(x)))
+                Subscript::arbitrary_with(Some(inner.clone()))
+                    .prop_map(|x| Self::Functional(Functional::Subscript(x))),
+                Dot::arbitrary_with(Some(filter_functional_variant(inner.clone())))
+                    .prop_map(|x| Self::Functional(Functional::Dot(x))),
+                Arrow::arbitrary_with(Some(filter_functional_variant(inner.clone())))
+                    .prop_map(|x| Self::Functional(Functional::Arrow(x))),
+                Copy::arbitrary_with(Some(filter_functional_variant(inner)))
+                    .prop_map(|x| Self::Functional(Functional::Copy(x))),
             ]
         })
         .boxed()

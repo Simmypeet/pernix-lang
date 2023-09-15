@@ -631,6 +631,14 @@ pub struct WhereClause {
     constraint_list: ConstraintList,
 }
 
+impl WhereClause {
+    /// Dissolves the [`WhereClause`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Keyword, Punctuation, ConstraintList) {
+        (self.where_keyword, self.colon, self.constraint_list)
+    }
+}
+
 impl SourceElement for WhereClause {
     fn span(&self) -> Span {
         self.where_keyword
@@ -1118,6 +1126,26 @@ pub struct StructSignature {
     generic_parameters: Option<GenericParameters>,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
+}
+
+impl StructSignature {
+    /// Dissolves the [`StructSignature`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Keyword,
+        Identifier,
+        Option<GenericParameters>,
+        Option<WhereClause>,
+    ) {
+        (
+            self.struct_keyword,
+            self.identifier,
+            self.generic_parameters,
+            self.where_clause,
+        )
+    }
 }
 
 impl SourceElement for StructSignature {

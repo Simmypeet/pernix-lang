@@ -10,7 +10,7 @@ use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use derive_more::{Deref, DerefMut};
 
 /// Represents a trait responsible for handling compilation diagnostics in the compiler.
-pub trait Handler<T>: Send + Sync {
+pub trait Handler<T> {
     /// Receives an error and handles it.
     fn receive(&self, error: T);
 }

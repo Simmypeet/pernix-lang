@@ -1,5 +1,0 @@
-{
-    "rust-analyzer.linkedProjects": [
-        "./compiler/pernixc_semantic/Cargo.toml"
-    ]
-}

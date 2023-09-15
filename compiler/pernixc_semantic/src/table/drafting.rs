@@ -8,15 +8,15 @@ use pernixc_syntax::syntax_tree::{
 use pernixc_system::diagnostic::Handler;
 
 use super::{
-    state::{DraftedSymbolRef, GlobalItemSyntax},
+    state::{DraftedSymbolRef, DraftedSymbolSyntax},
     BuildError, Table,
 };
 use crate::{
     constant,
     error::{self, ModuleUsingItself, UsingDuplication},
     symbol::{
-        Accessibility, Constant, Function, GenericParameters, Module, Trait, Type, VecNameMap,
-        WhereClause,
+        Accessibility, Constant, Function, GenericParameters, Index, Module, ModuleMemberRef,
+        Trait, Type, VecNameMap, WhereClause,
     },
     ty,
 };
@@ -37,6 +37,28 @@ impl Table {
             )?;
         }
 
+        for (module_index, implements_syntax_trees) in implements_syntax_tree_vecs_by_module_index {
+            for implement_syntax_tree in implements_syntax_trees {
+                let Ok(trait_index) = self.resolve_trait_path(
+                    implement_syntax_tree.signature().qualified_identifier(),
+                    module_index,
+                    handler,
+                ) else {
+                    eprintln!("FAILED TO RESOLVE");
+                    continue;
+                };
+
+                // add to the implements syntax tree list
+                self.state_mananger
+                    .get_item_syntax_mut(DraftedSymbolRef::Trait(trait_index))
+                    .expect("should exist")
+                    .as_trait_mut()
+                    .unwrap()
+                    .1
+                    .push((module_index, implement_syntax_tree));
+            }
+        }
+
         Ok(())
     }
 
@@ -44,7 +66,7 @@ impl Table {
         &mut self,
         target: Target,
         implements_syntax_tree_vecs_by_module_index: &mut HashMap<
-            usize,
+            Index,
             Vec<syntax_tree::item::Implements>,
         >,
         handler: &impl Handler<error::Error>,
@@ -78,11 +100,11 @@ impl Table {
     #[allow(clippy::too_many_lines)]
     fn draft_module_tree(
         &mut self,
-        parent_module_index: Option<usize>,
+        parent_module_index: Option<Index>,
         module_name: String,
         module_tree: ModuleTree,
         implements_syntax_tree_vecs_by_module_index: &mut HashMap<
-            usize,
+            Index,
             Vec<syntax_tree::item::Implements>,
         >,
         handler: &impl Handler<error::Error>,
@@ -226,37 +248,41 @@ impl Table {
                 continue;
             }
 
-            match item {
+            let module_member_ref = match item {
                 syntax_tree::item::Item::Trait(syntax_tree) => {
-                    self.draft_trait(current_module_index, syntax_tree);
+                    ModuleMemberRef::Trait(self.draft_trait(current_module_index, syntax_tree))
                 }
-                syntax_tree::item::Item::Function(syntax_tree) => {
-                    self.draft_function(current_module_index, syntax_tree);
-                }
+                syntax_tree::item::Item::Function(syntax_tree) => ModuleMemberRef::Function(
+                    self.draft_function(current_module_index, syntax_tree),
+                ),
                 syntax_tree::item::Item::Type(syntax_tree) => {
-                    self.draft_type(current_module_index, syntax_tree);
+                    ModuleMemberRef::Type(self.draft_type(current_module_index, syntax_tree))
                 }
                 syntax_tree::item::Item::Struct(syntax_tree) => {
-                    self.draft_struct(current_module_index, syntax_tree);
+                    ModuleMemberRef::Struct(self.draft_struct(current_module_index, syntax_tree))
                 }
                 syntax_tree::item::Item::Enum(syntax_tree) => {
-                    self.draft_enum(current_module_index, syntax_tree);
+                    ModuleMemberRef::Enum(self.draft_enum(current_module_index, syntax_tree))
                 }
-                syntax_tree::item::Item::Constant(syntax_tree) => {
-                    self.draft_constant(current_module_index, syntax_tree);
-                }
+                syntax_tree::item::Item::Constant(syntax_tree) => ModuleMemberRef::Constant(
+                    self.draft_constant(current_module_index, syntax_tree),
+                ),
                 syntax_tree::item::Item::Module(_) | syntax_tree::item::Item::Implements(_) => {
                     unreachable!("it should've been filtered out already")
                 }
-            }
+            };
+
+            self.modules[current_module_index]
+                .module_member_refs_by_name
+                .insert(identifier_span.str().to_string(), module_member_ref);
         }
     }
 
     fn draft_constant(
         &mut self,
-        parent_module_index: usize,
+        parent_module_index: Index,
         syntax_tree: syntax_tree::item::Constant,
-    ) {
+    ) -> Index {
         let constant_index = self.constants.len();
         self.constants.push(Constant {
             name: syntax_tree.signature().identifier().span.str().to_string(),
@@ -283,13 +309,19 @@ impl Table {
 
         self.state_mananger.add_drafted_symbol(
             DraftedSymbolRef::Constant(constant_index),
-            GlobalItemSyntax::Constant {
+            DraftedSymbolSyntax::Constant {
                 constant_syntax: syntax_tree,
             },
         );
+
+        constant_index
     }
 
-    fn draft_enum(&mut self, parent_module_index: usize, syntax_tree: syntax_tree::item::Enum) {
+    fn draft_enum(
+        &mut self,
+        parent_module_index: Index,
+        syntax_tree: syntax_tree::item::Enum,
+    ) -> Index {
         let enum_index = self.enums.len();
         self.enums.push(crate::symbol::Enum {
             name: syntax_tree.signature().identifier().span.str().to_string(),
@@ -315,13 +347,19 @@ impl Table {
 
         self.state_mananger.add_drafted_symbol(
             DraftedSymbolRef::Enum(enum_index),
-            GlobalItemSyntax::Enum {
+            DraftedSymbolSyntax::Enum {
                 enum_syntax: syntax_tree,
             },
         );
+
+        enum_index
     }
 
-    fn draft_struct(&mut self, parent_module_index: usize, syntax_tree: syntax_tree::item::Struct) {
+    fn draft_struct(
+        &mut self,
+        parent_module_index: Index,
+        syntax_tree: syntax_tree::item::Struct,
+    ) -> Index {
         let struct_index = self.structs.len();
         self.structs.push(crate::symbol::Struct {
             name: syntax_tree.signature().identifier().span.str().to_string(),
@@ -347,13 +385,19 @@ impl Table {
 
         self.state_mananger.add_drafted_symbol(
             DraftedSymbolRef::Struct(struct_index),
-            GlobalItemSyntax::Struct {
+            DraftedSymbolSyntax::Struct {
                 struct_syntax: syntax_tree,
             },
         );
+
+        struct_index
     }
 
-    fn draft_type(&mut self, parent_module_index: usize, syntax_tree: syntax_tree::item::Type) {
+    fn draft_type(
+        &mut self,
+        parent_module_index: Index,
+        syntax_tree: syntax_tree::item::Type,
+    ) -> Index {
         let type_index = self.types.len();
         self.types.push(Type {
             name: syntax_tree.signature().identifier().span.str().to_string(),
@@ -381,17 +425,19 @@ impl Table {
 
         self.state_mananger.add_drafted_symbol(
             DraftedSymbolRef::Type(type_index),
-            GlobalItemSyntax::Type {
+            DraftedSymbolSyntax::Type {
                 type_syntax: syntax_tree,
             },
         );
+
+        type_index
     }
 
     fn draft_function(
         &mut self,
-        parent_module_index: usize,
+        parent_module_index: Index,
         syntax_tree: syntax_tree::item::Function,
-    ) {
+    ) -> Index {
         let function_index = self.functions.len();
         self.functions.push(Function {
             name: syntax_tree.signature().identifier().span.str().to_string(),
@@ -420,13 +466,19 @@ impl Table {
 
         self.state_mananger.add_drafted_symbol(
             DraftedSymbolRef::Function(function_index),
-            GlobalItemSyntax::Function {
+            DraftedSymbolSyntax::Function {
                 function_syntax: syntax_tree,
             },
         );
+
+        function_index
     }
 
-    fn draft_trait(&mut self, parent_module_index: usize, syntax_tree: syntax_tree::item::Trait) {
+    fn draft_trait(
+        &mut self,
+        parent_module_index: Index,
+        syntax_tree: syntax_tree::item::Trait,
+    ) -> Index {
         let trait_index = self.traits.len();
         self.traits.push(Trait {
             name: syntax_tree.signature().identifier().span.str().to_string(),
@@ -457,10 +509,12 @@ impl Table {
 
         self.state_mananger.add_drafted_symbol(
             DraftedSymbolRef::Trait(trait_index),
-            GlobalItemSyntax::Trait {
-                trait_syntax: syntax_tree,
+            DraftedSymbolSyntax::Trait {
+                trait_syntax: Some(syntax_tree),
                 implements_syntax: Vec::new(),
             },
         );
+
+        trait_index
     }
 }
