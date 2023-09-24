@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     error::{self, CyclicDependency},
-    symbol::{GenericItemRef, GlobalItem, Index},
+    symbol::{GenericItemRef, StructRef},
 };
 
 mod generic;
@@ -32,10 +32,7 @@ impl Table {
 
             Err(symbol_refs) => {
                 handler.receive(error::Error::CyclicDependency(CyclicDependency {
-                    participant_spans: symbol_refs
-                        .into_iter()
-                        .filter_map(|x| self.get_global_item(x.into()).and_then(GlobalItem::span))
-                        .collect(),
+                    participant_refs: symbol_refs.into_iter().map(Into::into).collect(),
                 }));
                 return false;
             }
@@ -55,7 +52,7 @@ impl Table {
 
     pub(super) fn finalize_struct(
         &mut self,
-        struct_index: Index,
+        struct_ref: StructRef,
         syntax: syntax_tree::item::Struct,
         handler: &impl Handler<error::Error>,
     ) -> bool {
@@ -63,14 +60,14 @@ impl Table {
         let (.., identifier, generic_parameters, where_clause) = signature.dissolve();
 
         self.finalize_generic(
-            GenericItemRef::Struct(struct_index),
+            GenericItemRef::Struct(struct_ref),
             generic_parameters,
             where_clause,
             handler,
         );
 
         self.state_mananger
-            .mark_as_done(DraftedSymbolRef::Struct(struct_index));
+            .mark_as_done(DraftedSymbolRef::Struct(struct_ref));
 
         true
     }

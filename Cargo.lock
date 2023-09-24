@@ -74,6 +74,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
+name = "derive-new"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3418329ca0ad70234b9735dc4ceed10af4df60eff9c8e7b06cb5e520d92c3535"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "derive_more"
 version = "0.99.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -254,6 +265,7 @@ checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
 name = "pernixc_lexical"
 version = "0.1.0"
 dependencies = [
+ "derive-new",
  "derive_more",
  "enum-as-inner",
  "getset",
@@ -272,7 +284,7 @@ dependencies = [
 name = "pernixc_print"
 version = "0.1.0"
 dependencies = [
- "colored",
+ "derive-new",
  "pernixc_source",
 ]
 
@@ -284,7 +296,7 @@ dependencies = [
  "enum-as-inner",
  "getset",
  "lazy_static",
- "parking_lot",
+ "paste",
  "pernixc_lexical",
  "pernixc_print",
  "pernixc_source",

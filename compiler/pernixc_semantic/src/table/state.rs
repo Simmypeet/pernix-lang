@@ -4,7 +4,8 @@ use enum_as_inner::EnumAsInner;
 use pernixc_syntax::syntax_tree;
 
 use crate::symbol::{
-    AssociatedItemRef, GlobalItemRef, ImplementsAssociatedRef, Index, TraitAssociatedRef,
+    ConstantRef, EnumRef, FunctionRef, GlobalItemRef, ImplementsAssociatedRef, ModuleRef,
+    StructRef, TraitAssociatedRef, TraitRef, TypeRef,
 };
 
 #[derive(Debug, Clone, EnumAsInner)]
@@ -13,7 +14,7 @@ pub(super) enum DraftedSymbolSyntax {
         trait_syntax: Option<syntax_tree::item::Trait>,
         // pair of the index of the module in which the implements syntax is declared and the
         // implements syntax
-        implements_syntax: Vec<(Index, syntax_tree::item::Implements)>,
+        implements_syntax: Vec<(ModuleRef, syntax_tree::item::Implements)>,
     },
     Function {
         function_syntax: syntax_tree::item::Function,
@@ -43,16 +44,36 @@ pub(super) enum State {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum DraftedSymbolRef {
-    Trait(Index),
-    Function(Index),
-    Type(Index),
-    Struct(Index),
-    Enum(Index),
-    Constant(Index),
-    TraitAssociated(AssociatedItemRef<Index, TraitAssociatedRef>),
-    ImplementsAssociated(
-        AssociatedItemRef<AssociatedItemRef<Index, Index>, ImplementsAssociatedRef>,
-    ),
+    Trait(TraitRef),
+    Function(FunctionRef),
+    Type(TypeRef),
+    Struct(StructRef),
+    Enum(EnumRef),
+    Constant(ConstantRef),
+    TraitAssociated(TraitAssociatedRef),
+    ImplementsAssociated(ImplementsAssociatedRef),
+}
+
+impl TryFrom<GlobalItemRef> for DraftedSymbolRef {
+    type Error = GlobalItemRef;
+
+    fn try_from(value: GlobalItemRef) -> Result<Self, Self::Error> {
+        match value {
+            GlobalItemRef::Struct(struct_id) => Ok(Self::Struct(struct_id)),
+            GlobalItemRef::Enum(enum_id) => Ok(Self::Enum(enum_id)),
+            GlobalItemRef::Type(type_id) => Ok(Self::Type(type_id)),
+            GlobalItemRef::Constant(constant_id) => Ok(Self::Constant(constant_id)),
+            GlobalItemRef::Function(function_id) => Ok(Self::Function(function_id)),
+            GlobalItemRef::Trait(trait_id) => Ok(Self::Trait(trait_id)),
+            GlobalItemRef::TraitAssociated(trait_associated) => {
+                Ok(Self::TraitAssociated(trait_associated))
+            }
+            GlobalItemRef::ImplementsAssociated(implements_associated) => {
+                Ok(Self::ImplementsAssociated(implements_associated))
+            }
+            err => Err(err),
+        }
+    }
 }
 
 impl From<DraftedSymbolRef> for GlobalItemRef {

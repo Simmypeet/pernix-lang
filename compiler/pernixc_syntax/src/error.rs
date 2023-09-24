@@ -1,442 +1,139 @@
+use std::fmt::Display;
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use getset::CopyGetters;
 use pernixc_lexical::token::{KeywordKind, Token};
-use pernixc_print::LogSeverity;
+use pernixc_print::{LogSeverity, MessageLog, SourceCodeDisplay};
 use pernixc_source::Span;
-use thiserror::Error;
 
-/// A higher ranked bound syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct HigherRankedBoundExpected {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum SyntaxKind {
+    Pattern,
+    HigherRankedBound,
+    Identifier,
+    TypeSpecifier,
+    Expression,
+    StructMember,
+    Item,
+    AccessModifier,
+    Punctuation(char),
+    Keyword(KeywordKind),
+    TraitMember,
+    ImplementsMember,
+}
+
+/// A syntax/token is expected but found an other invalid token.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnexpectedSyntax {
+    /// The kind of syntax that was expected.
+    pub expected: SyntaxKind,
+
     /// The invalid token that was found.
     pub found: Option<Token>,
 }
 
-impl HigherRankedBoundExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            "a higher ranked bound syntax is expected",
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(
-                token.span(),
-                Some("higher ranked bound syntax expected here"),
-            );
-        }
+impl Display for UnexpectedSyntax {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let expected_binding = match self.expected {
+            SyntaxKind::HigherRankedBound => "a higher ranked bound syntax".to_string(),
+            SyntaxKind::Identifier => "an identifier token".to_string(),
+            SyntaxKind::TypeSpecifier => "a type specifier syntax".to_string(),
+            SyntaxKind::Expression => "an expression syntax".to_string(),
+            SyntaxKind::StructMember => "a struct member syntax".to_string(),
+            SyntaxKind::Item => "an item syntax".to_string(),
+            SyntaxKind::AccessModifier => "an access modifier syntax".to_string(),
+            SyntaxKind::Punctuation(char) => format!("a punctuation token `{char}`"),
+            SyntaxKind::Keyword(keyword) => format!("a keyword token `{}`", keyword.as_str()),
+            SyntaxKind::TraitMember => "a trait member syntax".to_string(),
+            SyntaxKind::ImplementsMember => "an implements member syntax".to_string(),
+            SyntaxKind::Pattern => "a pattern syntax".to_string(),
+        };
+        let found_binding = match self.found.clone() {
+            Some(Token::Comment(..)) => "a comment token".to_string(),
+            Some(Token::Identifier(..)) => "an identifier token".to_string(),
+            Some(Token::Keyword(keyword)) => {
+                format!("a keyword token `{}`", keyword.keyword.as_str())
+            }
+            Some(Token::WhiteSpaces(..)) => "a white spaces token".to_string(),
+            Some(Token::Punctuation(punctuation)) => {
+                format!("a punctuation token `{}`", punctuation.punctuation)
+            }
+            Some(Token::Numeric(..)) => "a numeric token".to_string(),
+
+            None => "EOF".to_string(),
+        };
+
+        let message = format!("expected {expected_binding}, but found {found_binding}");
+
+        write!(f, "{}", MessageLog::new(LogSeverity::Error, message))?;
+
+        self.found.as_ref().map_or(Ok(()), |span| {
+            write!(
+                f,
+                "{}",
+                SourceCodeDisplay::new(span.span(), Option::<i32>::None)
+            )
+        })
     }
 }
 
 /// A higher ranked bound parameter cannot be empty.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HigherRankedBoundParameterCannotBeEmpty {
     /// The span of the higher ranked bound parameter.
     pub span: Span,
 }
 
-impl HigherRankedBoundParameterCannotBeEmpty {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            "a higher ranked bound parameter cannot be empty",
-        );
-        pernixc_print::print_source_code(&self.span, None);
-    }
-}
-
-/// Empty tuple pattern cannot be empty in this context
-#[derive(Debug, Clone)]
-pub struct TuplePatternCannotBeEmpty {
-    /// The span of the tuple pattern.
-    pub span: Span,
-}
-
-impl TuplePatternCannotBeEmpty {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            "empty tuple pattern cannot be empty in this context",
-        );
-        pernixc_print::print_source_code(&self.span, None);
-    }
-}
-
-/// A pattern syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct PatternExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl PatternExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "a pattern syntax is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(token.span(), Some("pattern syntax expected here"));
-        }
-    }
-}
-
-/// An identifier is expected but found an another invalid token.
-#[derive(Debug, Clone)]
-pub struct IdentifierExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-fn found_string(found: &Option<Token>) -> String {
-    let found = found.as_ref();
-    let Some(token) = found else {
-        return "`end of file`".to_string();
-    };
-
-    match token {
-        Token::WhiteSpaces(_) => "whitespaces".to_string(),
-        Token::Identifier(_) => format!("`{}` identifier", token.span().str()),
-        Token::Keyword(_) => format!("`{}` keyword", token.span().str()),
-        Token::Punctuation(_) | Token::Numeric(_) => {
-            format!("`{}`", token.span().str())
-        }
-        Token::Comment(_) => "comment".to_string(),
-    }
-}
-
-impl IdentifierExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "an identifier is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(token.span(), Some("identifier expected here"));
-        }
-    }
-}
-
-/// A type specifier syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct TypeSpecifierExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl TypeSpecifierExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "a type specifier syntax is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(
-                token.span(),
-                Some("type specifier syntax expected here"),
-            );
-        }
-    }
-}
-
-/// An expression syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct ExpressionExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl ExpressionExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "an expression syntax is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(token.span(), Some("expression syntax expected here"));
-        }
-    }
-}
-
-/// A struct member syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct StructMemberExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl StructMemberExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "a member syntax is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(token.span(), Some("member syntax expected here"));
-        }
-    }
-}
-
-/// An item syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct ItemExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl ItemExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "an item syntax is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(token.span(), Some("item syntax expected here"));
-        }
-    }
-}
-
-/// An access modifier syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct AccessModifierExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl AccessModifierExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "an access modifier syntax is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(
-                token.span(),
-                Some("access modifier syntax expected here"),
-            );
-        }
-    }
-}
-
-/// A punctuation of a particular character is expected but found an other invalid token.
-#[derive(Debug, Clone, CopyGetters)]
-pub struct PunctuationExpected {
-    /// The character of the expected punctuation.
-    pub expected: char,
-
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-/// Prints the error message to the console
-impl PunctuationExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "a punctuation of character `{}` is expected, found: {}",
-                self.expected,
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(
-                token.span(),
-                Some(
-                    format!("punctuation of character `{}` expected here", self.expected).as_str(),
-                ),
-            );
-        }
-    }
-}
-
-/// A keyword of a particular kind is expected but found an other invalid token.
-#[derive(Debug, Clone, CopyGetters)]
-pub struct KeywordExpected {
-    /// The kind of the expected keyword.
-    pub expected: KeywordKind,
-
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl KeywordExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "a keyword of `{}` is expected, found: {}",
-                self.expected.as_str(),
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(
-                token.span(),
-                Some(format!("keyword of `{}` expected here", self.expected.as_str()).as_str()),
-            );
-        }
+impl Display for HigherRankedBoundParameterCannotBeEmpty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            MessageLog::new(
+                LogSeverity::Error,
+                "a higher ranked bound parameter cannot be empty"
+            ),
+            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
+        )
     }
 }
 
 /// A generic arugment/parameter list cannot be empty.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericArgumentParameterListCannotBeEmpty {
     /// The span of the generic argument/parameter.
     pub span: Span,
 }
 
-impl GenericArgumentParameterListCannotBeEmpty {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            "a generic argument/parameter list cannot be empty",
-        );
-        pernixc_print::print_source_code(
-            &self.span,
-            Some("generic argument/parameter list cannot be empty"),
-        );
-    }
-}
-
-/// A trait member syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct TraitMemberExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl TraitMemberExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "a trait member syntax is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(
-                token.span(),
-                Some("trait member syntax expected here"),
-            );
-        }
-    }
-}
-
-/// An implements member syntax is expected but found an other invalid token.
-#[derive(Debug, Clone)]
-pub struct ImplementsMemberExpected {
-    /// The invalid token that was found.
-    pub found: Option<Token>,
-}
-
-impl ImplementsMemberExpected {
-    /// Prints the error message to the console
-    pub fn print(&self) {
-        pernixc_print::print(
-            LogSeverity::Error,
-            format!(
-                "an implements member syntax is expected, found: {}",
-                found_string(&self.found)
-            )
-            .as_str(),
-        );
-        if let Some(token) = self.found.as_ref() {
-            pernixc_print::print_source_code(
-                token.span(),
-                Some("implements member syntax expected here"),
-            );
-        }
+impl Display for GenericArgumentParameterListCannotBeEmpty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            MessageLog::new(
+                LogSeverity::Error,
+                "a generic argument/parameter list cannot be empty"
+            ),
+            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
+        )
     }
 }
 
 /// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
-#[derive(Debug, Clone, EnumAsInner, Error, From)]
-#[error("encountered a syntactic error while parsing the source code.")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Error {
-    IdentifierExpected(IdentifierExpected),
-    TypeSpecifierExpected(TypeSpecifierExpected),
-    ExpressionExpected(ExpressionExpected),
-    ItemExpected(ItemExpected),
-    AccessModifierExpected(AccessModifierExpected),
-    PunctuationExpected(PunctuationExpected),
-    KeywordExpected(KeywordExpected),
-    StructMemberExpected(StructMemberExpected),
-    TraitMemberExpected(TraitMemberExpected),
-    ImplementsMemberExpected(ImplementsMemberExpected),
     GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty),
-    PatternExpected(PatternExpected),
-    HigherRankedBoundExpected(HigherRankedBoundExpected),
     HigherRankedBoundParameterCannotBeEmpty(HigherRankedBoundParameterCannotBeEmpty),
-    TuplePatternCannotBeEmpty(TuplePatternCannotBeEmpty),
+    UnexpectedSyntax(UnexpectedSyntax),
 }
 
-impl Error {
-    /// Prints the error message to the console
-    pub fn print(&self) {
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IdentifierExpected(e) => e.print(),
-            Self::TypeSpecifierExpected(e) => e.print(),
-            Self::ExpressionExpected(e) => e.print(),
-            Self::ItemExpected(e) => e.print(),
-            Self::AccessModifierExpected(e) => e.print(),
-            Self::PunctuationExpected(e) => e.print(),
-            Self::KeywordExpected(e) => e.print(),
-            Self::StructMemberExpected(e) => e.print(),
-            Self::GenericArgumentParameterListCannotBeEmpty(e) => e.print(),
-            Self::TraitMemberExpected(e) => e.print(),
-            Self::ImplementsMemberExpected(e) => e.print(),
-            Self::PatternExpected(e) => e.print(),
-            Self::HigherRankedBoundExpected(e) => e.print(),
-            Self::HigherRankedBoundParameterCannotBeEmpty(e) => e.print(),
-            Self::TuplePatternCannotBeEmpty(e) => e.print(),
+            Self::GenericArgumentParameterListCannotBeEmpty(e) => e.fmt(f),
+            Self::HigherRankedBoundParameterCannotBeEmpty(e) => e.fmt(f),
+            Self::UnexpectedSyntax(e) => e.fmt(f),
         }
     }
 }

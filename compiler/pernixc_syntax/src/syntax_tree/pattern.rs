@@ -14,7 +14,7 @@ use super::{
     ConnectedList,
 };
 use crate::{
-    error::{self, PatternExpected},
+    error::{self, SyntaxKind, UnexpectedSyntax},
     parser::Parser,
 };
 
@@ -24,7 +24,7 @@ use crate::{
 ///     Identifier ':' Pattern
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct FieldAssociation<Pattern> {
     #[get = "pub"]
     identifier: Identifier,
@@ -45,7 +45,7 @@ impl<Pattern: SourceElement> SourceElement for FieldAssociation<Pattern> {
 ///     | Named
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Field<Pattern> {
     Association(FieldAssociation<Pattern>),
     Named(Named),
@@ -66,7 +66,7 @@ impl<Pattern: SourceElement> SourceElement for Field<Pattern> {
 ///     '{' (Field (',' Field)* ','?)? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Structural<Pattern> {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -86,7 +86,7 @@ impl<Pattern> SourceElement for Structural<Pattern> {
 ///     Identifier '(' Pattern ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Enum<Pattern> {
     #[get = "pub"]
     identifier: Identifier,
@@ -108,7 +108,7 @@ impl<Pattern> SourceElement for Enum<Pattern> {
 ///     '...' 'mutable'? Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Unpack {
     #[get = "pub"]
     ellipsis: (Punctuation, Punctuation, Punctuation),
@@ -129,7 +129,7 @@ impl SourceElement for Unpack {
 ///     | Pattern
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Unpackable<Pattern> {
     Unpack(Unpack),
     Pattern(Box<Pattern>),
@@ -150,7 +150,7 @@ impl<Pattern: SourceElement> SourceElement for Unpackable<Pattern> {
 ///     '(' (Unpackable (',' Unpackable)* ','?)? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Tuple<Pattern> {
     #[get = "pub"]
     left_paren: Punctuation,
@@ -170,7 +170,7 @@ impl<Pattern> SourceElement for Tuple<Pattern> {
 ///     'mutable'? Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Named {
     #[get = "pub"]
     mutable_keyword: Option<Keyword>,
@@ -197,7 +197,7 @@ impl SourceElement for Named {
 ///     | Named
 ///     | Tuple
 /// ```
-#[derive(Debug, Clone, EnumAsInner, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
 pub enum Refutable {
     BooleanLiteral(BooleanLiteral),
     NumericLiteral(NumericLiteral),
@@ -229,7 +229,7 @@ impl SourceElement for Refutable {
 ///     | Tuple
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
 pub enum Irrefutable {
     Structural(Structural<Self>),
     Named(Named),
@@ -445,7 +445,10 @@ impl Pattern for Irrefutable {
                 .map(Self::Structural),
 
             found => {
-                handler.receive(error::Error::PatternExpected(PatternExpected { found }));
+                handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Pattern,
+                    found,
+                }));
                 None
             }
         }
@@ -503,7 +506,10 @@ impl Pattern for Refutable {
             }
 
             found => {
-                handler.receive(error::Error::PatternExpected(PatternExpected { found }));
+                handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Pattern,
+                    found,
+                }));
                 None
             }
         }

@@ -15,8 +15,9 @@ use crate::{
     constant,
     error::{self, ModuleUsingItself, UsingDuplication},
     symbol::{
-        Accessibility, Constant, Function, GenericParameters, Index, Module, ModuleMemberRef,
-        Trait, Type, VecNameMap, WhereClause,
+        Accessibility, Constant, ConstantRef, EnumRef, Function, FunctionRef, GenericParameters,
+        Module, ModuleMemberRef, ModuleRef, StructRef, Trait, TraitRef, Type, TypeRef, VecNameMap,
+        WhereClause,
     },
     ty,
 };
@@ -66,7 +67,7 @@ impl Table {
         &mut self,
         target: Target,
         implements_syntax_tree_vecs_by_module_index: &mut HashMap<
-            Index,
+            ModuleRef,
             Vec<syntax_tree::item::Implements>,
         >,
         handler: &impl Handler<error::Error>,
@@ -100,20 +101,20 @@ impl Table {
     #[allow(clippy::too_many_lines)]
     fn draft_module_tree(
         &mut self,
-        parent_module_index: Option<Index>,
+        parent_module_ref: Option<ModuleRef>,
         module_name: String,
         module_tree: ModuleTree,
         implements_syntax_tree_vecs_by_module_index: &mut HashMap<
-            Index,
+            ModuleRef,
             Vec<syntax_tree::item::Implements>,
         >,
         handler: &impl Handler<error::Error>,
     ) {
         // create a new module
-        let current_module_index = self.modules.len();
+        let current_module_ref = ModuleRef(self.modules.len());
         self.modules.push(Module {
             name: module_name.clone(),
-            index: current_module_index,
+            module_ref: current_module_ref,
             accessibility: module_tree
                 .signature()
                 .as_ref()
@@ -122,7 +123,7 @@ impl Table {
                     syntax_tree::AccessModifier::Private(_) => Accessibility::Private,
                     syntax_tree::AccessModifier::Internal(_) => Accessibility::Internal,
                 }),
-            parent_module_index,
+            parent_module_ref,
             module_member_refs_by_name: HashMap::new(),
             usings: HashMap::new(),
             span: module_tree.signature().as_ref().map(|x| {
@@ -135,13 +136,13 @@ impl Table {
         });
 
         // add the module to the parent module
-        if let Some(parent_module_index) = parent_module_index {
+        if let Some(parent_module_ref) = parent_module_ref {
             assert!(
-                self.modules[parent_module_index]
+                self.modules[parent_module_ref.0]
                     .module_member_refs_by_name
                     .insert(
                         module_name,
-                        crate::symbol::ModuleMemberRef::Module(current_module_index)
+                        crate::symbol::ModuleMemberRef::Module(current_module_ref)
                     )
                     .is_none(),
                 "Module duplication detected, but it should've been detected in the parser \
@@ -151,7 +152,7 @@ impl Table {
             // add the module to the target root module indices
             assert!(
                 self.target_root_module_indices_by_name
-                    .insert(module_name, current_module_index)
+                    .insert(module_name, current_module_ref)
                     .is_none(),
                 "Module duplication detected, but it should've been detected in the earlier \
                  function already."
@@ -164,7 +165,7 @@ impl Table {
         // create all submodules
         for (name, submodule) in submodules {
             self.draft_module_tree(
-                Some(current_module_index),
+                Some(current_module_ref),
                 name,
                 submodule,
                 implements_syntax_tree_vecs_by_module_index,
@@ -180,14 +181,14 @@ impl Table {
             };
 
             // check: module using duplication, module using self
-            if module_index == current_module_index {
+            if module_index == current_module_ref {
                 handler.receive(error::Error::ModuleUsingItself(ModuleUsingItself {
                     using_span: using.span(),
                 }));
                 continue;
             }
 
-            match self.modules[current_module_index]
+            match self.modules[current_module_ref.0]
                 .usings
                 .entry(module_index)
             {
@@ -217,7 +218,7 @@ impl Table {
                 }
                 syntax_tree::item::Item::Implements(syn) => {
                     implements_syntax_tree_vecs_by_module_index
-                        .entry(current_module_index)
+                        .entry(current_module_ref)
                         .or_default()
                         .push(syn);
                     continue;
@@ -232,47 +233,43 @@ impl Table {
             };
 
             // redefinition check
-            if let Some(existing_symbol) = self.modules[current_module_index]
+            if let Some(existing_module_member_ref) = self.modules[current_module_ref.0]
                 .module_member_refs_by_name
                 .get(identifier_span.str())
                 .copied()
             {
                 handler.receive(error::Error::SymbolDuplication(error::SymbolDuplication {
                     duplicate_span: identifier_span,
-                    existing_symbol_span: self
-                        .get_global_item(existing_symbol.into())
-                        .unwrap()
-                        .span()
-                        .unwrap(),
+                    existing_module_member_ref,
                 }));
                 continue;
             }
 
             let module_member_ref = match item {
                 syntax_tree::item::Item::Trait(syntax_tree) => {
-                    ModuleMemberRef::Trait(self.draft_trait(current_module_index, syntax_tree))
+                    ModuleMemberRef::Trait(self.draft_trait(current_module_ref, syntax_tree))
                 }
-                syntax_tree::item::Item::Function(syntax_tree) => ModuleMemberRef::Function(
-                    self.draft_function(current_module_index, syntax_tree),
-                ),
+                syntax_tree::item::Item::Function(syntax_tree) => {
+                    ModuleMemberRef::Function(self.draft_function(current_module_ref, syntax_tree))
+                }
                 syntax_tree::item::Item::Type(syntax_tree) => {
-                    ModuleMemberRef::Type(self.draft_type(current_module_index, syntax_tree))
+                    ModuleMemberRef::Type(self.draft_type(current_module_ref, syntax_tree))
                 }
                 syntax_tree::item::Item::Struct(syntax_tree) => {
-                    ModuleMemberRef::Struct(self.draft_struct(current_module_index, syntax_tree))
+                    ModuleMemberRef::Struct(self.draft_struct(current_module_ref, syntax_tree))
                 }
                 syntax_tree::item::Item::Enum(syntax_tree) => {
-                    ModuleMemberRef::Enum(self.draft_enum(current_module_index, syntax_tree))
+                    ModuleMemberRef::Enum(self.draft_enum(current_module_ref, syntax_tree))
                 }
-                syntax_tree::item::Item::Constant(syntax_tree) => ModuleMemberRef::Constant(
-                    self.draft_constant(current_module_index, syntax_tree),
-                ),
+                syntax_tree::item::Item::Constant(syntax_tree) => {
+                    ModuleMemberRef::Constant(self.draft_constant(current_module_ref, syntax_tree))
+                }
                 syntax_tree::item::Item::Module(_) | syntax_tree::item::Item::Implements(_) => {
                     unreachable!("it should've been filtered out already")
                 }
             };
 
-            self.modules[current_module_index]
+            self.modules[current_module_ref.0]
                 .module_member_refs_by_name
                 .insert(identifier_span.str().to_string(), module_member_ref);
         }
@@ -280,23 +277,23 @@ impl Table {
 
     fn draft_constant(
         &mut self,
-        parent_module_index: Index,
+        parent_module_ref: ModuleRef,
         syntax_tree: syntax_tree::item::Constant,
-    ) -> Index {
-        let constant_index = self.constants.len();
+    ) -> ConstantRef {
+        let constant_ref = ConstantRef(self.constants.len());
         self.constants.push(Constant {
             name: syntax_tree.signature().identifier().span.str().to_string(),
-            index: constant_index,
+            constant_ref,
             accessibility: match syntax_tree.access_modifier() {
                 syntax_tree::AccessModifier::Public(_) => Accessibility::Public,
                 syntax_tree::AccessModifier::Private(_) => Accessibility::Private,
                 syntax_tree::AccessModifier::Internal(_) => Accessibility::Internal,
             },
-            parent_module_index,
+            parent_module_ref,
             ty: ty::Type::Tuple(ty::Tuple {
                 elements: Vec::new(),
             }),
-            constant: constant::Constant::Bool(true),
+            constant: constant::Constant::Primitive(constant::Primitive::Bool(true)),
             span: Some(
                 syntax_tree
                     .signature()
@@ -308,30 +305,30 @@ impl Table {
         });
 
         self.state_mananger.add_drafted_symbol(
-            DraftedSymbolRef::Constant(constant_index),
+            DraftedSymbolRef::Constant(constant_ref),
             DraftedSymbolSyntax::Constant {
                 constant_syntax: syntax_tree,
             },
         );
 
-        constant_index
+        constant_ref
     }
 
     fn draft_enum(
         &mut self,
-        parent_module_index: Index,
+        parent_module_ref: ModuleRef,
         syntax_tree: syntax_tree::item::Enum,
-    ) -> Index {
-        let enum_index = self.enums.len();
+    ) -> EnumRef {
+        let enum_ref = EnumRef(self.enums.len());
         self.enums.push(crate::symbol::Enum {
             name: syntax_tree.signature().identifier().span.str().to_string(),
-            index: enum_index,
+            enum_ref,
             accessibility: match syntax_tree.access_modifier() {
                 syntax_tree::AccessModifier::Public(_) => Accessibility::Public,
                 syntax_tree::AccessModifier::Private(_) => Accessibility::Private,
                 syntax_tree::AccessModifier::Internal(_) => Accessibility::Internal,
             },
-            parent_module_index,
+            parent_module_ref,
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
             variants: VecNameMap::new(),
@@ -346,30 +343,30 @@ impl Table {
         });
 
         self.state_mananger.add_drafted_symbol(
-            DraftedSymbolRef::Enum(enum_index),
+            DraftedSymbolRef::Enum(enum_ref),
             DraftedSymbolSyntax::Enum {
                 enum_syntax: syntax_tree,
             },
         );
 
-        enum_index
+        enum_ref
     }
 
     fn draft_struct(
         &mut self,
-        parent_module_index: Index,
+        parent_module_ref: ModuleRef,
         syntax_tree: syntax_tree::item::Struct,
-    ) -> Index {
-        let struct_index = self.structs.len();
+    ) -> StructRef {
+        let struct_ref = StructRef(self.structs.len());
         self.structs.push(crate::symbol::Struct {
             name: syntax_tree.signature().identifier().span.str().to_string(),
-            index: struct_index,
+            struct_ref,
             accessibility: match syntax_tree.access_modifier() {
                 syntax_tree::AccessModifier::Public(_) => Accessibility::Public,
                 syntax_tree::AccessModifier::Private(_) => Accessibility::Private,
                 syntax_tree::AccessModifier::Internal(_) => Accessibility::Internal,
             },
-            parent_module_index,
+            parent_module_ref,
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
             fields: VecNameMap::new(),
@@ -384,30 +381,30 @@ impl Table {
         });
 
         self.state_mananger.add_drafted_symbol(
-            DraftedSymbolRef::Struct(struct_index),
+            DraftedSymbolRef::Struct(struct_ref),
             DraftedSymbolSyntax::Struct {
                 struct_syntax: syntax_tree,
             },
         );
 
-        struct_index
+        struct_ref
     }
 
     fn draft_type(
         &mut self,
-        parent_module_index: Index,
+        parent_module_ref: ModuleRef,
         syntax_tree: syntax_tree::item::Type,
-    ) -> Index {
-        let type_index = self.types.len();
+    ) -> TypeRef {
+        let type_ref = TypeRef(self.types.len());
         self.types.push(Type {
             name: syntax_tree.signature().identifier().span.str().to_string(),
-            index: type_index,
+            type_ref,
             accessibility: match syntax_tree.access_modifier() {
                 syntax_tree::AccessModifier::Public(_) => Accessibility::Public,
                 syntax_tree::AccessModifier::Private(_) => Accessibility::Private,
                 syntax_tree::AccessModifier::Internal(_) => Accessibility::Internal,
             },
-            parent_module_index,
+            parent_module_ref,
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
             ty: ty::Type::Tuple(ty::Tuple {
@@ -424,24 +421,24 @@ impl Table {
         });
 
         self.state_mananger.add_drafted_symbol(
-            DraftedSymbolRef::Type(type_index),
+            DraftedSymbolRef::Type(type_ref),
             DraftedSymbolSyntax::Type {
                 type_syntax: syntax_tree,
             },
         );
 
-        type_index
+        type_ref
     }
 
     fn draft_function(
         &mut self,
-        parent_module_index: Index,
+        parent_module_ref: ModuleRef,
         syntax_tree: syntax_tree::item::Function,
-    ) -> Index {
-        let function_index = self.functions.len();
+    ) -> FunctionRef {
+        let function_ref = FunctionRef(self.functions.len());
         self.functions.push(Function {
             name: syntax_tree.signature().identifier().span.str().to_string(),
-            index: function_index,
+            function_ref,
             accessibility: match syntax_tree.access_modifier() {
                 syntax_tree::AccessModifier::Public(_) => Accessibility::Public,
                 syntax_tree::AccessModifier::Private(_) => Accessibility::Private,
@@ -461,40 +458,40 @@ impl Table {
                     .join(&syntax_tree.signature().identifier().span)
                     .unwrap(),
             ),
-            parent_module_index,
+            parent_module_ref,
         });
 
         self.state_mananger.add_drafted_symbol(
-            DraftedSymbolRef::Function(function_index),
+            DraftedSymbolRef::Function(function_ref),
             DraftedSymbolSyntax::Function {
                 function_syntax: syntax_tree,
             },
         );
 
-        function_index
+        function_ref
     }
 
     fn draft_trait(
         &mut self,
-        parent_module_index: Index,
+        parent_module_ref: ModuleRef,
         syntax_tree: syntax_tree::item::Trait,
-    ) -> Index {
-        let trait_index = self.traits.len();
+    ) -> TraitRef {
+        let trait_ref = TraitRef(self.traits.len());
         self.traits.push(Trait {
             name: syntax_tree.signature().identifier().span.str().to_string(),
-            index: trait_index,
+            trait_ref,
             accessibility: match syntax_tree.access_modifier() {
                 syntax_tree::AccessModifier::Public(_) => Accessibility::Public,
                 syntax_tree::AccessModifier::Private(_) => Accessibility::Private,
                 syntax_tree::AccessModifier::Internal(_) => Accessibility::Internal,
             },
-            parent_module_index,
+            parent_module_ref,
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
             functions: Vec::new(),
             types: Vec::new(),
             constants: Vec::new(),
-            associated_ids_by_name: HashMap::new(),
+            associated_refs_by_name: HashMap::new(),
             span: Some(
                 syntax_tree
                     .signature()
@@ -508,13 +505,13 @@ impl Table {
         });
 
         self.state_mananger.add_drafted_symbol(
-            DraftedSymbolRef::Trait(trait_index),
+            DraftedSymbolRef::Trait(trait_ref),
             DraftedSymbolSyntax::Trait {
                 trait_syntax: Some(syntax_tree),
                 implements_syntax: Vec::new(),
             },
         );
 
-        trait_index
+        trait_ref
     }
 }

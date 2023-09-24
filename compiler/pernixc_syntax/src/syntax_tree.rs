@@ -12,10 +12,7 @@ use pernixc_system::diagnostic::{Dummy, Handler};
 
 use self::{expression::Expression, ty::Type};
 use crate::{
-    error::{
-        self, Error, GenericArgumentParameterListCannotBeEmpty, IdentifierExpected,
-        PunctuationExpected,
-    },
+    error::{self, Error, GenericArgumentParameterListCannotBeEmpty, SyntaxKind, UnexpectedSyntax},
     parser::Parser,
 };
 
@@ -31,7 +28,7 @@ pub mod ty;
 /// This struct is useful for representing syntax tree nodes that are separated by a separator.
 /// For example, a comma separated list of expressions such as `1, 2, 3` can be represented by a
 /// [`ConnectedList`] with the separator being a comma token and the elements being the expressions.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ConnectedList<Element, Separator> {
     /// The first element of the list.
     #[get = "pub"]
@@ -49,7 +46,7 @@ pub struct ConnectedList<Element, Separator> {
     trailing_separator: Option<Separator>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DelimitedList<T> {
     pub open: Punctuation,
     pub list: Option<ConnectedList<T, Punctuation>>,
@@ -79,8 +76,8 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 return Some((None, punc));
             }
-            None => handler.receive(error::Error::PunctuationExpected(PunctuationExpected {
-                expected: delimiter,
+            None => handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
+                expected: SyntaxKind::Punctuation(delimiter),
                 found: self.get_actual_found_token(None),
             })),
             _ => (),
@@ -154,8 +151,8 @@ impl<'a> Parser<'a> {
                     break delimiter_token;
                 }
                 found => {
-                    handler.receive(error::Error::PunctuationExpected(PunctuationExpected {
-                        expected: delimiter,
+                    handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
+                        expected: SyntaxKind::Punctuation(delimiter),
                         found,
                     }));
                     return None;
@@ -305,7 +302,7 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
 ///      | 'internal'
 ///      ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum AccessModifier {
     Public(Keyword),
@@ -325,7 +322,7 @@ impl SourceElement for AccessModifier {
 ///
 /// This syntax tree is used to represent the scope separator `::` in the qualified identifier
 /// syntax
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct ScopeSeparator {
     #[get = "pub"]
@@ -346,7 +343,7 @@ impl SourceElement for ScopeSeparator {
 ///     | 'static'
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum LifetimeArgumentIdentifier {
     Identifier(Identifier),
@@ -368,7 +365,7 @@ impl SourceElement for LifetimeArgumentIdentifier {
 ///     '/'' LifetimeArgumentIdentifier
 ///     ;
 /// ``
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct LifetimeArgument {
     #[get = "pub"]
@@ -383,12 +380,12 @@ impl SourceElement for LifetimeArgument {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ConstArgument:
+/// ConstantArgument:
 ///     '{' Expression '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
-pub struct ConstArgument {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct ConstantArgument {
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
@@ -397,7 +394,7 @@ pub struct ConstArgument {
     right_brace: Punctuation,
 }
 
-impl SourceElement for ConstArgument {
+impl SourceElement for ConstantArgument {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
@@ -405,15 +402,15 @@ impl SourceElement for ConstArgument {
 /// ``` txt
 /// GenericArgument:
 ///     Type
-///     | ConstArgument
+///     | ConstantArgument
 ///     | LifetimeArgument
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum GenericArgument {
     Type(Box<Type>),
-    Const(ConstArgument),
+    Constant(ConstantArgument),
     Lifetime(LifetimeArgument),
 }
 
@@ -422,7 +419,7 @@ impl SourceElement for GenericArgument {
         match self {
             Self::Type(type_specifier) => type_specifier.span(),
             Self::Lifetime(lifetime_argument) => lifetime_argument.span(),
-            Self::Const(const_argument) => const_argument.span(),
+            Self::Constant(const_argument) => const_argument.span(),
         }
     }
 }
@@ -441,7 +438,7 @@ pub type GenericArgumentList = ConnectedList<GenericArgument, Punctuation>;
 ///     ':'? '<' GenericArgumentList '>'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct GenericArguments {
     #[get = "pub"]
@@ -471,7 +468,7 @@ impl SourceElement for GenericArguments {
 ///     Identifier GenericArguments?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct GenericIdentifier {
     #[get = "pub"]
@@ -500,7 +497,7 @@ impl SourceElement for GenericIdentifier {
 ///     '::'? GenericIdentifier ('::' GenericIdentifier)*
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct QualifiedIdentifier {
     #[get = "pub"]
@@ -540,7 +537,7 @@ impl SourceElement for QualifiedIdentifier {
 ///     '\'' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Label {
     #[get = "pub"]
@@ -674,7 +671,7 @@ impl<'a> Parser<'a> {
                     handler,
                 )?;
 
-                Some(GenericArgument::Const(ConstArgument {
+                Some(GenericArgument::Constant(ConstantArgument {
                     left_brace: delimited_tree.open,
                     expression: delimited_tree.tree?,
                     right_brace: delimited_tree.close,
@@ -745,7 +742,10 @@ impl<'a> Parser<'a> {
 
             // error: lifetime argument identifier expected
             found => {
-                handler.receive(Error::IdentifierExpected(IdentifierExpected { found }));
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Identifier,
+                    found,
+                }));
 
                 None
             }

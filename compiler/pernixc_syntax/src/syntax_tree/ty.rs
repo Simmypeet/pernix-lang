@@ -9,7 +9,7 @@ use pernixc_system::diagnostic::Handler;
 
 use super::{expression::Expression, ConnectedList, LifetimeArgument, QualifiedIdentifier};
 use crate::{
-    error::{Error, TypeSpecifierExpected},
+    error::{Error, SyntaxKind, UnexpectedSyntax},
     parser::Parser,
 };
 
@@ -29,7 +29,7 @@ use crate::{
 ///     | 'uint64'
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Primitive {
     Bool(Keyword),
@@ -70,7 +70,7 @@ impl SourceElement for Primitive {
 ///     | 'restrict'
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum ReferenceQualifier {
     Mutable(Keyword),
@@ -91,7 +91,7 @@ impl SourceElement for ReferenceQualifier {
 ///     '&' LifetimeArgument? ReferenceQualifier? Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Reference {
     #[get = "pub"]
@@ -122,7 +122,7 @@ pub type UnpackableList = ConnectedList<Unpackable, Punctuation>;
 ///     '(' UnpackableList? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Tuple {
     #[get = "pub"]
     pub(super) left_paren: Punctuation,
@@ -142,7 +142,7 @@ impl SourceElement for Tuple {
 ///     '[' Type ':' Expression ']'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Array {
     #[get = "pub"]
     left_bracket: Punctuation,
@@ -171,7 +171,7 @@ impl SourceElement for Array {
 ///     '*' 'mutable'? Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Pointer {
     #[get = "pub"]
     asterisk: Punctuation,
@@ -194,7 +194,7 @@ impl SourceElement for Pointer {
 ///     | Pointer
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
 #[allow(missing_docs)]
 pub enum Type {
     Primitive(Primitive),
@@ -224,7 +224,7 @@ impl SourceElement for Type {
 ///     '...'? Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Unpackable {
     #[get = "pub"]
     pub(super) ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
@@ -455,7 +455,8 @@ impl<'a> Parser<'a> {
                 // eat the current token / make progress
                 self.forward();
 
-                handler.receive(Error::TypeSpecifierExpected(TypeSpecifierExpected {
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::TypeSpecifier,
                     found,
                 }));
 

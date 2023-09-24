@@ -7,11 +7,12 @@ use super::{
 use crate::{
     pattern,
     symbol::{
-        Accessibility, GenericItemRef, GenericParameterRef, GenericParameters, Index,
-        ModuleMemberRef, Parameter, Trait, TraitAssociatedRef, TraitFunction, TypeParameter,
-        WhereClause,
+        Accessibility, GenericItemRef, GenericParameters, LocalParameterRef,
+        LocalTraitAssociatedRef, LocalTraitFunctionRef, LocalTypeParameterRef, ModuleMemberRef,
+        ModuleRef, Parameter, Trait, TraitFunction, TraitFunctionRef, TraitRef, TypeParameter,
+        TypeParameterRef, WhereClause,
     },
-    ty,
+    ty::{self, ElidedLifetime},
 };
 
 impl Table {
@@ -19,17 +20,18 @@ impl Table {
         // core module
         let core_module_name = "@core".to_string();
         let core_module_index = {
-            let index = self.modules.len();
+            let module_ref = ModuleRef(self.modules.len());
             self.modules.push(Module {
                 name: "@core".to_string(),
-                index,
+                module_ref,
                 accessibility: Accessibility::Public,
-                parent_module_index: None,
+                parent_module_ref: None,
                 module_member_refs_by_name: HashMap::new(),
                 usings: HashMap::new(),
                 span: None,
             });
-            index
+
+            module_ref
         };
 
         self.target_root_module_indices_by_name
@@ -80,32 +82,32 @@ impl Table {
 
     fn create_core_trait<const N: usize>(
         &mut self,
-        core_module_index: usize,
+        core_module_ref: ModuleRef,
         trait_name: String,
         type_parameter_names: [String; N],
-        initializer: impl FnOnce(&mut Trait, [GenericParameterRef; N]),
-    ) -> Index {
-        let trait_index = self.traits.len();
+        initializer: impl FnOnce(&mut Trait, [TypeParameterRef; N]),
+    ) -> TraitRef {
+        let trait_ref = TraitRef(self.traits.len());
         self.traits.push(Trait {
             name: trait_name.clone(),
-            index: trait_index,
+            trait_ref,
             accessibility: Accessibility::Public,
-            parent_module_index: core_module_index,
+            parent_module_ref: core_module_ref,
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
             functions: Vec::default(),
             types: Vec::default(),
             constants: Vec::default(),
-            associated_ids_by_name: HashMap::default(),
+            associated_refs_by_name: HashMap::default(),
             span: None,
             implements: Vec::new(),
             negative_implements: Vec::new(),
         });
-        let triat_symbol = &mut self.traits[trait_index];
+        let triat_symbol = &mut self.traits[trait_ref.0];
 
-        let mut type_parameter_refs: [GenericParameterRef; N] = [GenericParameterRef {
-            generic_item_ref: GenericItemRef::Trait(trait_index),
-            index: 0,
+        let mut type_parameter_refs: [TypeParameterRef; N] = [TypeParameterRef {
+            generic_item_ref: GenericItemRef::Trait(trait_ref),
+            local_ref: LocalTypeParameterRef(0),
         }; N];
 
         // add type parameters
@@ -116,22 +118,22 @@ impl Table {
                 .insert(type_parameter_name.clone(), TypeParameter {
                     name: type_parameter_name,
                     span: None,
-                    index,
-                    parent_generic_item_ref: GenericItemRef::Trait(trait_index),
+                    local_type_parameter_ref: LocalTypeParameterRef(index),
+                    parent_generic_item_ref: GenericItemRef::Trait(trait_ref),
                 })
                 .expect("should have no name duplication in `type_parameter_names`");
 
-            type_parameter_refs[index].index = index;
+            type_parameter_refs[index].local_ref = LocalTypeParameterRef(index);
         }
 
         initializer(triat_symbol, type_parameter_refs);
 
         // add to the core module
-        self.modules[core_module_index]
+        self.modules[core_module_ref.0]
             .module_member_refs_by_name
-            .insert(trait_name, ModuleMemberRef::Trait(trait_index));
+            .insert(trait_name, ModuleMemberRef::Trait(trait_ref));
 
-        trait_index
+        trait_ref
     }
 
     fn create_trait_function(
@@ -139,8 +141,8 @@ impl Table {
         function_name: String,
         initializer: impl FnOnce(&mut TraitFunction),
     ) {
-        let parent_trait_index = trait_symbol.index;
-        let trait_function_index = trait_symbol.functions.len();
+        let parent_trait_ref = trait_symbol.trait_ref;
+        let trait_function_ref = LocalTraitFunctionRef(trait_symbol.functions.len());
         trait_symbol.functions.push(TraitFunction {
             generic_parameters: GenericParameters::default(),
             where_clause: WhereClause::default(),
@@ -148,26 +150,26 @@ impl Table {
             return_type: ty::Type::Tuple(ty::Tuple {
                 elements: Vec::new(),
             }),
-            index: trait_function_index,
-            parent_trait_index,
             parameters: Vec::new(),
             span: None,
+            trait_function_ref,
+            parent_trait_ref,
         });
 
-        initializer(&mut trait_symbol.functions[trait_function_index]);
+        initializer(&mut trait_symbol.functions[trait_function_ref.0]);
 
         assert!(trait_symbol
-            .associated_ids_by_name
+            .associated_refs_by_name
             .insert(
                 function_name,
-                TraitAssociatedRef::Function(trait_function_index),
+                LocalTraitAssociatedRef::Function(trait_function_ref),
             )
             .is_none());
     }
 
-    fn create_assign_restrict_trait(&mut self, core_module_index: usize) {
+    fn create_assign_restrict_trait(&mut self, core_module_ref: ModuleRef) {
         self.builtin_assign_restrict_trait_index = self.create_core_trait(
-            core_module_index,
+            core_module_ref,
             "@AssignRestrict".to_string(),
             ["T".to_string()],
             |assign_trait, type_parameters| {
@@ -179,16 +181,24 @@ impl Table {
                         assign_function.return_type = ty::Type::unit();
 
                         assign_function.parameters.push(Parameter {
-                            index: 0,
-                            parent_function_index: assign_function.index,
                             ty: ty::Type::Reference(ty::Reference {
                                 qualifier: ty::Qualifier::Restrict,
-                                lifetime: ty::Lifetime::Elided(GenericItemRef::Function(
-                                    assign_function.index,
-                                )),
+                                lifetime: ty::Lifetime::Elided(ElidedLifetime {
+                                    generic_item_ref: GenericItemRef::TraitFunction(
+                                        TraitFunctionRef {
+                                            trait_ref: assign_function.parent_trait_ref,
+                                            local_ref: assign_function.trait_function_ref,
+                                        },
+                                    ),
+                                }),
                                 operand: Box::new(ty::Type::Parameter(type_parameters[0])),
                             }),
                             pattern: pattern::Irrefutable::Discard,
+                            parameter_ref: LocalParameterRef(0),
+                            parent_ref: TraitFunctionRef {
+                                trait_ref: assign_function.parent_trait_ref,
+                                local_ref: assign_function.trait_function_ref,
+                            },
                         });
                     },
                 );
@@ -196,9 +206,9 @@ impl Table {
         );
     }
 
-    fn create_assign_trait(&mut self, core_module_index: usize) {
+    fn create_assign_trait(&mut self, core_module_ref: ModuleRef) {
         self.builtin_assign_trait_index = self.create_core_trait(
-            core_module_index,
+            core_module_ref,
             "@Assign".to_string(),
             ["T".to_string()],
             |assign_trait, type_parameters| {
@@ -210,16 +220,24 @@ impl Table {
                         assign_function.return_type = ty::Type::unit();
 
                         assign_function.parameters.push(Parameter {
-                            index: 0,
-                            parent_function_index: assign_function.index,
                             ty: ty::Type::Reference(ty::Reference {
                                 qualifier: ty::Qualifier::Mutable,
-                                lifetime: ty::Lifetime::Elided(GenericItemRef::Function(
-                                    assign_function.index,
-                                )),
+                                lifetime: ty::Lifetime::Elided(ElidedLifetime {
+                                    generic_item_ref: GenericItemRef::TraitFunction(
+                                        TraitFunctionRef {
+                                            trait_ref: assign_function.parent_trait_ref,
+                                            local_ref: assign_function.trait_function_ref,
+                                        },
+                                    ),
+                                }),
                                 operand: Box::new(ty::Type::Parameter(type_parameters[0])),
                             }),
                             pattern: pattern::Irrefutable::Discard,
+                            parameter_ref: LocalParameterRef(0),
+                            parent_ref: TraitFunctionRef {
+                                trait_ref: assign_function.parent_trait_ref,
+                                local_ref: assign_function.trait_function_ref,
+                            },
                         });
                     },
                 );
@@ -227,9 +245,9 @@ impl Table {
         );
     }
 
-    fn create_into_trait(&mut self, core_module_index: usize) {
+    fn create_into_trait(&mut self, core_module_ref: ModuleRef) {
         self.builtin_into_trait_index = self.create_core_trait(
-            core_module_index,
+            core_module_ref,
             "@Into".to_string(),
             ["T".to_string(), "To".to_string()],
             |into_trait, type_parameters| {
@@ -243,60 +261,75 @@ impl Table {
                     //
                     // T
                     into_function.parameters.push(Parameter {
+                        parameter_ref: LocalParameterRef(0),
                         pattern: pattern::Irrefutable::Discard,
-                        index: 0,
                         ty: ty::Type::Parameter(type_parameters[0]),
-                        parent_function_index: into_function.index,
+                        parent_ref: TraitFunctionRef {
+                            trait_ref: into_function.parent_trait_ref,
+                            local_ref: into_function.trait_function_ref,
+                        },
                     });
                 });
             },
         );
     }
 
-    fn create_drop_trait(&mut self, core_module_index: usize) {
+    fn create_drop_trait(&mut self, core_module_ref: ModuleRef) {
         self.builtin_drop_trait_index = self.create_core_trait(
-            core_module_index,
+            core_module_ref,
             "@Drop".to_string(),
             ["T".to_string()],
             |drop_trait, type_parameters| {
                 Self::create_trait_function(drop_trait, "drop".to_string(), |drop_function| {
                     // &restrict T
                     drop_function.parameters.push(Parameter {
+                        parameter_ref: LocalParameterRef(0),
                         pattern: pattern::Irrefutable::Discard,
                         ty: ty::Type::Reference(ty::Reference {
                             qualifier: ty::Qualifier::Restrict,
-                            lifetime: ty::Lifetime::Elided(GenericItemRef::Function(
-                                drop_function.index,
-                            )),
+                            lifetime: ty::Lifetime::Elided(ElidedLifetime {
+                                generic_item_ref: GenericItemRef::TraitFunction(TraitFunctionRef {
+                                    trait_ref: drop_function.parent_trait_ref,
+                                    local_ref: drop_function.trait_function_ref,
+                                }),
+                            }),
                             operand: Box::new(ty::Type::Parameter(type_parameters[0])),
                         }),
-                        index: 0,
-                        parent_function_index: drop_function.index,
+                        parent_ref: TraitFunctionRef {
+                            trait_ref: drop_function.parent_trait_ref,
+                            local_ref: drop_function.trait_function_ref,
+                        },
                     });
                 });
             },
         );
     }
 
-    fn create_copy_trait(&mut self, core_module_index: usize) {
+    fn create_copy_trait(&mut self, core_module_ref: ModuleRef) {
         self.builtin_copy_trait_index = self.create_core_trait(
-            core_module_index,
+            core_module_ref,
             "@Copy".to_string(),
             ["T".to_string()],
             |copy_trait, type_parameters| {
                 Self::create_trait_function(copy_trait, "copy".to_string(), |copy_function| {
                     // &T
                     copy_function.parameters.push(Parameter {
+                        parameter_ref: LocalParameterRef(0),
                         pattern: pattern::Irrefutable::Discard,
                         ty: ty::Type::Reference(ty::Reference {
                             qualifier: ty::Qualifier::Immutable,
-                            lifetime: ty::Lifetime::Elided(GenericItemRef::Function(
-                                copy_function.index,
-                            )),
+                            lifetime: ty::Lifetime::Elided(ElidedLifetime {
+                                generic_item_ref: GenericItemRef::TraitFunction(TraitFunctionRef {
+                                    trait_ref: copy_function.parent_trait_ref,
+                                    local_ref: copy_function.trait_function_ref,
+                                }),
+                            }),
                             operand: Box::new(ty::Type::Parameter(type_parameters[0])),
                         }),
-                        index: 0,
-                        parent_function_index: copy_function.index,
+                        parent_ref: TraitFunctionRef {
+                            trait_ref: copy_function.parent_trait_ref,
+                            local_ref: copy_function.trait_function_ref,
+                        },
                     });
 
                     // update return type
@@ -308,25 +341,3 @@ impl Table {
         );
     }
 }
-
-/*
-public trait @Copy<T> {
-    function copy(this: &T): T;
-}
-
-public trait @Drop<T> {
-    function drop(this: &restrict T);
-}
-
-public trait @Into<T, To> {
-    function into(this: T): To;
-}
-
-public trait @Assign<T> {
-    function assign(this: &mutable T, value: T);
-}
-
-public trait @AssignRestrict<T> {
-    function assignRestrict(this: &restrict T, value: T);
-}
-*/

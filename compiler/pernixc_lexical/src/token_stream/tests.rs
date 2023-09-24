@@ -325,7 +325,7 @@ proptest! {
         input in TokenStream::arbitrary()
     ) {
         let source = input.to_string();
-        let source_file = SourceFile::temp(&source)?;
+        let source_file = SourceFile::temp(source)?;
 
         let storage: Storage<Error> = Storage::new();
         let token_stream =

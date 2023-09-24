@@ -3,7 +3,7 @@
 use enum_as_inner::EnumAsInner;
 
 use crate::{
-    symbol::{GenericParameterRef, Index},
+    symbol::{StructRef, TypeParameterRef, VariantRef},
     ty,
 };
 
@@ -35,10 +35,8 @@ pub enum NumericLiteral {
 /// `case Variant(...)` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum<Pattern> {
-    /// The index of the enum in the [`crate::table::Table::enums`] field.
-    pub enum_index: Index,
-    /// The index of the variant in the [`crate::symbol::Enum::variants`] field.
-    pub variant_index: Index,
+    /// The reference to the variant that will be matched.
+    pub variant_ref: VariantRef,
     /// The pattern that will match the associated value of the variant.
     pub pattern: Option<Box<Pattern>>,
 }
@@ -71,8 +69,8 @@ pub struct Named {
 /// A pattern matching for each field of a struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Structural<Pattern> {
-    /// The index of the struct in the [`crate::table::Table::structs`] field.
-    pub struct_index: Index,
+    /// The reference of the struct in the [`crate::table::Table::structs`] field.
+    pub struct_ref: StructRef,
 
     /// The pattern will match to each field in the struct.
     pub patterns: Vec<Pattern>,
@@ -82,7 +80,7 @@ pub struct Structural<Pattern> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum PackedType {
-    Paraeter(GenericParameterRef),
+    Paraeter(TypeParameterRef),
     TraitAssociated(ty::TraitAssociated),
     Tuple(ty::Tuple),
 }

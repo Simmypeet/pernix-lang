@@ -1,5 +1,5 @@
-use pernixc_source::SourceElement;
-use pernixc_syntax::syntax_tree::{self, item::Constraint};
+use pernixc_source::{SourceElement, Span};
+use pernixc_syntax::syntax_tree::{self};
 use pernixc_system::diagnostic::{Handler, Storage};
 
 use crate::{
@@ -8,7 +8,11 @@ use crate::{
         LifetimeParameterDuplication, TypeParameterDeclaredAfterConstantParameter,
         TypeParameterDuplication,
     },
-    symbol::{ConstantParameter, GenericItemRef, LifetimeParameter, TypeParameter},
+    symbol::{
+        AssociatedBounds, ConstantParameter, ConstantParameterRef, GenericItemRef,
+        LifetimeParameter, LifetimeParameterRef, LocalConstantParameterRef,
+        LocalLifetimeParameterRef, LocalTypeParameterRef, TypeParameter, TypeParameterRef,
+    },
     table::{
         resolution::{CheckingBehavior, CheckingWithSpan, Config, ExplicitLifetimeRequired},
         Table,
@@ -28,6 +32,169 @@ unexpectedly.
 */
 
 impl Table {
+    #[allow(clippy::too_many_lines)]
+    fn create_trait_associated_bounds(
+        &mut self,
+        _generic_item_ref: GenericItemRef,
+        _constraint_list: &syntax_tree::item::ConstraintList,
+        _where_clause_span: &Span,
+        _checking_handler: &impl Handler<CheckingWithSpan>,
+        _handler: &impl Handler<error::Error>,
+    ) -> Option<AssociatedBounds> {
+        todo!()
+        /*
+        let parent_where_clause = self
+            .get_global_item(generic_item_ref.into())
+            .unwrap()
+            .parent()
+            .map_or_else(WhereClause::default, |parent| {
+                self.get_active_where_clause(parent).unwrap()
+            });
+
+        let mut associated_bounds = AssociatedBounds::default();
+
+        let config = Config {
+            referring_site: generic_item_ref.into(),
+            checking: CheckingBehavior::Defer(Some(checking_handler)),
+            explicit_lifetime_required: ExplicitLifetimeRequired::True,
+        };
+
+        // construct the associated type bounds first
+        for bound in constraint_list.elements() {
+            let Constraint::TraitAssociation(trait_association) = bound else {
+                continue;
+            };
+
+            // resolve the trait association
+            let Ok(resolved) = self.resolve_with_finalization(
+                trait_association.qualified_identifier(),
+                &config,
+                handler,
+            ) else {
+                continue;
+            };
+
+            match (resolved, trait_association.argument()) {
+                // trait type bound
+                (
+                    Resolution::TraitType(associated_ty),
+                    TraitAssociationBoundArgument::Type(bound),
+                ) => {
+                    // resolve the bound type
+                    let Ok(resolved_ty) =
+                        self.resolve_type_with_finalization(bound, &config, handler)
+                    else {
+                        continue;
+                    };
+
+                    // insert the associated bound
+                    let Entry::Vacant(entry) =
+                        associated_bounds
+                            .associated_type_bounds
+                            .entry(ty::TraitAssociated {
+                                trait_index: associated_ty.trait_index,
+                                associated_index: associated_ty.associated_index,
+                                trait_substitution: associated_ty.trait_substitution,
+                                associated_substitution: associated_ty.associated_substitution,
+                            })
+                    else {
+                        handler.receive(error::Error::AssociatedBoundConflict(
+                            AssociatedBoundConflict {
+                                where_clause_span: where_clause_span.clone(),
+                            },
+                        ));
+                        continue;
+                    };
+
+                    entry.insert(resolved_ty);
+                }
+                // trait constant bound
+                (
+                    Resolution::TraitConstant(associated_constant),
+                    TraitAssociationBoundArgument::Constant(constant),
+                ) => {
+                    // resolve the bound type
+                    let Ok(resolved_constant) = self.evaluate_constant(
+                        constant.expression(),
+                        generic_item_ref.into(),
+                        CheckingBehavior::Defer(Some(checking_handler)),
+                        handler,
+                    ) else {
+                        continue;
+                    };
+
+                    // insert the associated bound
+                    let Entry::Vacant(entry) = associated_bounds.associated_constant_bounds.entry(
+                        constant::TraitAssociated {
+                            trait_index: associated_constant.trait_index,
+                            associated_index: associated_constant.constant_index,
+                            trait_substitution: associated_constant.trait_substitution,
+                        },
+                    ) else {
+                        handler.receive(error::Error::AssociatedBoundConflict(
+                            AssociatedBoundConflict {
+                                where_clause_span: where_clause_span.clone(),
+                            },
+                        ));
+                        continue;
+                    };
+
+                    entry.insert(resolved_constant);
+                }
+
+                // mismatched type and constant
+                (Resolution::TraitType(..) | Resolution::TraitConstant(..), _) => handler.receive(
+                    error::Error::MismatchedTraitAssociatedBound(MismatchedTraitAssociatedBound {
+                        trait_associated_bound_span: trait_association.span(),
+                    }),
+                ),
+
+                // expect trait association
+                _ => {
+                    handler.receive(error::Error::TraitAssociatedItemExpected(
+                        TraitAssociatedItemExpected {
+                            expected_span: trait_association.span(),
+                        },
+                    ));
+                }
+            }
+        }
+
+        associated_bounds =
+            match self.flatten_associated_bounds(associated_bounds, &ToCheckingWithSpanHandler {
+                span: where_clause_span.clone(),
+                handler: checking_handler,
+            }) {
+                Ok(ok) => ok,
+                Err(err) => {
+                    Self::handle_associated_bound_error(&err, where_clause_span.clone(), handler);
+                    return None;
+                }
+            };
+
+        // if we can combine this new associated bounds with the parent associated bounds without
+        // any errors, then it's pretty much valid.
+        if let Err(associated_bounds_error) = self.combine_associated_bounds(
+            parent_where_clause.associated_bounds,
+            &associated_bounds,
+            &ToCheckingWithSpanHandler {
+                span: where_clause_span.clone(),
+                handler: checking_handler,
+            },
+        ) {
+            Self::handle_associated_bound_error(
+                &associated_bounds_error,
+                where_clause_span.clone(),
+                handler,
+            );
+            return None;
+        }
+
+        Some(associated_bounds)
+
+        */
+    }
+
     fn create_where_clause(
         &mut self,
         generic_item_ref: GenericItemRef,
@@ -35,14 +202,16 @@ impl Table {
         checking_handler: &impl Handler<CheckingWithSpan>,
         handler: &impl Handler<error::Error>,
     ) {
-        let (where_clause_keyword, colon, constraint_list) = where_clause_syntax.dissolve();
+        let where_clause_span = where_clause_syntax.span();
+        let (_where_clause_keyword, _colonn, constraint_list) = where_clause_syntax.dissolve();
 
-        // construct the associated type bounds first
-        for bound in constraint_list.elements() {
-            let Constraint::TraitAssociation(trait_association) = bound else {
-                continue;
-            };
-        }
+        let _associated_bounds = self.create_trait_associated_bounds(
+            generic_item_ref,
+            &constraint_list,
+            &where_clause_span,
+            checking_handler,
+            handler,
+        );
     }
 
     #[allow(clippy::too_many_lines)]
@@ -107,7 +276,7 @@ impl Table {
                 lt_syn.identifier().span.str().to_string(),
                 LifetimeParameter {
                     name: lt_syn.identifier().span.str().to_string(),
-                    index,
+                    local_lifetime_parameter_ref: LocalLifetimeParameterRef(index),
                     parent_generic_item_ref: generic_item_ref,
                     span: Some(lt_syn.span()),
                 },
@@ -115,12 +284,10 @@ impl Table {
                 handler.receive(error::Error::LifetimeParameterDuplication(
                     LifetimeParameterDuplication {
                         duplicate_span: lt_syn.span(),
-                        existing_lifetime_parameter_span: generic_item
-                            .generic_parameters()
-                            .lifetimes[existing_index]
-                            .span
-                            .clone()
-                            .unwrap(),
+                        existing_lifetime_parameter_ref: LifetimeParameterRef {
+                            generic_item_ref,
+                            local_ref: LocalLifetimeParameterRef(existing_index),
+                        },
                     },
                 ));
             };
@@ -133,7 +300,7 @@ impl Table {
                 ty_parameter.identifier().span.str().to_string(),
                 TypeParameter {
                     name: ty_parameter.identifier().span.str().to_string(),
-                    index,
+                    local_type_parameter_ref: LocalTypeParameterRef(index),
                     parent_generic_item_ref: generic_item_ref,
                     span: Some(ty_parameter.span()),
                 },
@@ -141,11 +308,10 @@ impl Table {
                 handler.receive(error::Error::TypeParameterDuplication(
                     TypeParameterDuplication {
                         duplicate_span: ty_parameter.span(),
-                        existing_type_parameter: generic_item.generic_parameters().types
-                            [existing_index]
-                            .span
-                            .clone()
-                            .unwrap(),
+                        existing_type_parameter_ref: TypeParameterRef {
+                            generic_item_ref,
+                            local_ref: LocalTypeParameterRef(existing_index),
+                        },
                     },
                 ));
             }
@@ -180,7 +346,7 @@ impl Table {
                     constant_parameter.identifier().span.str().to_string(),
                     ConstantParameter {
                         name: constant_parameter.identifier().span.str().to_string(),
-                        index,
+                        local_constant_parameter_ref: LocalConstantParameterRef(index),
                         ty,
                         parent_generic_item_ref: generic_item_ref,
                         span: Some(constant_parameter.span()),
@@ -190,14 +356,10 @@ impl Table {
                 handler.receive(error::Error::ConstantParameterDuplication(
                     ConstantParameterDuplication {
                         duplicate_span: constant_parameter.span(),
-                        existing_constant_parameter: self
-                            .get_generic_item(generic_item_ref)
-                            .unwrap()
-                            .generic_parameters()
-                            .constants[existing_index]
-                            .span
-                            .clone()
-                            .unwrap(),
+                        existing_constant_parameter_ref: ConstantParameterRef {
+                            generic_item_ref,
+                            local_ref: LocalConstantParameterRef(existing_index),
+                        },
                     },
                 ));
             }
@@ -224,6 +386,13 @@ impl Table {
         }
 
         // create where caluse
-        if let Some(where_clause_syntax) = where_clause_syntax {}
+        if let Some(where_clause_syntax) = where_clause_syntax {
+            self.create_where_clause(
+                generic_item_ref,
+                where_clause_syntax,
+                &checking_storage,
+                handler,
+            );
+        }
     }
 }

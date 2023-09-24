@@ -9,4 +9,4 @@ edition = { workspace = true }
 
 [dependencies]
 pernixc_source = { path = "../pernixc_source" }
-colored = { workspace = true }
+derive-new = { workspace = true }

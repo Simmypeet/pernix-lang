@@ -18,6 +18,7 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 lazy_static = { workspace = true }
 derive_more = { workspace = true }
+derive-new = { workspace = true }
 
 [dev-dependencies]
 pernixc_tests = { path = "../pernixc_tests" }

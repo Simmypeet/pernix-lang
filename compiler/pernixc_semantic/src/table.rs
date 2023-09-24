@@ -1,25 +1,29 @@
 //! Contains the definition of [`Table`].
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_system::diagnostic::Handler;
 use thiserror::Error;
 
 use crate::{
-    error,
+    constant, error,
     symbol::{
-        Accessibility, Constant, Enum, Function, GenericItem, GenericItemRef, GlobalItem,
-        GlobalItemRef, HigherRankedLifetime, HigherRankedableLifetime, ImplementsAssociatedRef,
-        Index, Module, Struct, Trait, TraitAssociatedRef, TraitBound, Type, WhereClause,
+        Accessibility, Bounds, Constant, Enum, Function, GenericItem, GenericItemRef, GlobalItem,
+        GlobalItemRef, LocalImplementsAssociatedRef, LocalTraitAssociatedRef, Module, ModuleRef,
+        Struct, Substitution, Trait, TraitRef, Type, WhereClause,
     },
+    ty,
 };
 
 mod core;
 mod drafting;
+mod evaluation;
 mod finalizing;
 pub mod resolution;
 mod state;
+mod trait_resolution;
+mod transformation;
 
 /// Contains all the symbols and information about the program.
 ///
@@ -36,15 +40,15 @@ pub struct Table {
     traits: Vec<Trait>,
     constants: Vec<Constant>,
 
-    target_root_module_indices_by_name: HashMap<String, Index>,
+    target_root_module_indices_by_name: HashMap<String, ModuleRef>,
 
     state_mananger: state::Manager,
 
-    builtin_copy_trait_index: Index,
-    builtin_drop_trait_index: Index,
-    builtin_into_trait_index: Index,
-    builtin_assign_trait_index: Index,
-    builtin_assign_restrict_trait_index: Index,
+    builtin_copy_trait_index: TraitRef,
+    builtin_drop_trait_index: TraitRef,
+    builtin_into_trait_index: TraitRef,
+    builtin_assign_trait_index: TraitRef,
+    builtin_assign_restrict_trait_index: TraitRef,
 }
 
 impl Table {
@@ -60,11 +64,11 @@ impl Table {
             target_root_module_indices_by_name: HashMap::new(),
             state_mananger: state::Manager::default(),
 
-            builtin_copy_trait_index: 0,            // will be overwritten
-            builtin_drop_trait_index: 0,            // will be overwritten
-            builtin_into_trait_index: 0,            // will be overwritten
-            builtin_assign_trait_index: 0,          // will be overwritten
-            builtin_assign_restrict_trait_index: 0, // will be overwritten
+            builtin_copy_trait_index: TraitRef(0), // will be overwritten
+            builtin_drop_trait_index: TraitRef(0), // will be overwritten
+            builtin_into_trait_index: TraitRef(0), // will be overwritten
+            builtin_assign_trait_index: TraitRef(0), // will be overwritten
+            builtin_assign_restrict_trait_index: TraitRef(0), // will be overwritten
         }
     }
 }
@@ -115,37 +119,37 @@ impl Table {
     #[must_use]
     pub fn get_generic_item(&self, generic_item_ref: GenericItemRef) -> Option<&dyn GenericItem> {
         match generic_item_ref {
-            GenericItemRef::Enum(id) => self.enums.get(id).map(|x| x as _),
-            GenericItemRef::Struct(id) => self.structs.get(id).map(|x| x as _),
-            GenericItemRef::Type(id) => self.types.get(id).map(|x| x as _),
-            GenericItemRef::Function(id) => self.functions.get(id).map(|x| x as _),
-            GenericItemRef::Trait(id) => self.traits.get(id).map(|x| x as _),
+            GenericItemRef::Enum(id) => self.enums.get(id.0).map(|x| x as _),
+            GenericItemRef::Struct(id) => self.structs.get(id.0).map(|x| x as _),
+            GenericItemRef::Type(id) => self.types.get(id.0).map(|x| x as _),
+            GenericItemRef::Function(id) => self.functions.get(id.0).map(|x| x as _),
+            GenericItemRef::Trait(id) => self.traits.get(id.0).map(|x| x as _),
             GenericItemRef::TraitType(id) => self
                 .traits
-                .get(id.parent_ref)
-                .and_then(|x| x.types.get(id.associated_item_ref))
+                .get(id.trait_ref.0)
+                .and_then(|x| x.types.get(id.local_ref.0))
                 .map(|x| x as _),
             GenericItemRef::TraitFunction(id) => self
                 .traits
-                .get(id.parent_ref)
-                .and_then(|x| x.functions.get(id.associated_item_ref))
+                .get(id.trait_ref.0)
+                .and_then(|x| x.functions.get(id.local_ref.0))
                 .map(|x| x as _),
             GenericItemRef::Implements(id) => self
                 .traits
-                .get(id.parent_ref)
-                .and_then(|x| x.implements.get(id.associated_item_ref))
+                .get(id.trait_ref.0)
+                .and_then(|x| x.implements.get(id.local_ref.0))
                 .map(|x| x as _),
             GenericItemRef::ImplementsType(id) => self
                 .traits
-                .get(id.parent_ref.parent_ref)
-                .and_then(|x| x.implements.get(id.parent_ref.associated_item_ref))
-                .and_then(|x| x.types.get(id.associated_item_ref))
+                .get(id.implements_ref.trait_ref.0)
+                .and_then(|x| x.implements.get(id.implements_ref.local_ref.0))
+                .and_then(|x| x.types.get(id.local_ref.0))
                 .map(|x| x as _),
             GenericItemRef::ImplementsFunction(id) => self
                 .traits
-                .get(id.parent_ref.parent_ref)
-                .and_then(|x| x.implements.get(id.parent_ref.associated_item_ref))
-                .and_then(|x| x.functions.get(id.associated_item_ref))
+                .get(id.implements_ref.trait_ref.0)
+                .and_then(|x| x.implements.get(id.implements_ref.local_ref.0))
+                .and_then(|x| x.functions.get(id.local_ref.0))
                 .map(|x| x as _),
         }
     }
@@ -155,37 +159,37 @@ impl Table {
         generic_item_ref: GenericItemRef,
     ) -> Option<&mut dyn GenericItem> {
         match generic_item_ref {
-            GenericItemRef::Enum(id) => self.enums.get_mut(id).map(|x| x as _),
-            GenericItemRef::Struct(id) => self.structs.get_mut(id).map(|x| x as _),
-            GenericItemRef::Type(id) => self.types.get_mut(id).map(|x| x as _),
-            GenericItemRef::Function(id) => self.functions.get_mut(id).map(|x| x as _),
-            GenericItemRef::Trait(id) => self.traits.get_mut(id).map(|x| x as _),
+            GenericItemRef::Enum(id) => self.enums.get_mut(id.0).map(|x| x as _),
+            GenericItemRef::Struct(id) => self.structs.get_mut(id.0).map(|x| x as _),
+            GenericItemRef::Type(id) => self.types.get_mut(id.0).map(|x| x as _),
+            GenericItemRef::Function(id) => self.functions.get_mut(id.0).map(|x| x as _),
+            GenericItemRef::Trait(id) => self.traits.get_mut(id.0).map(|x| x as _),
             GenericItemRef::TraitType(id) => self
                 .traits
-                .get_mut(id.parent_ref)
-                .and_then(|x| x.types.get_mut(id.associated_item_ref))
+                .get_mut(id.trait_ref.0)
+                .and_then(|x| x.types.get_mut(id.local_ref.0))
                 .map(|x| x as _),
             GenericItemRef::TraitFunction(id) => self
                 .traits
-                .get_mut(id.parent_ref)
-                .and_then(|x| x.functions.get_mut(id.associated_item_ref))
+                .get_mut(id.trait_ref.0)
+                .and_then(|x| x.functions.get_mut(id.local_ref.0))
                 .map(|x| x as _),
             GenericItemRef::Implements(id) => self
                 .traits
-                .get_mut(id.parent_ref)
-                .and_then(|x| x.implements.get_mut(id.associated_item_ref))
+                .get_mut(id.trait_ref.0)
+                .and_then(|x| x.implements.get_mut(id.local_ref.0))
                 .map(|x| x as _),
             GenericItemRef::ImplementsType(id) => self
                 .traits
-                .get_mut(id.parent_ref.parent_ref)
-                .and_then(|x| x.implements.get_mut(id.parent_ref.associated_item_ref))
-                .and_then(|x| x.types.get_mut(id.associated_item_ref))
+                .get_mut(id.implements_ref.trait_ref.0)
+                .and_then(|x| x.implements.get_mut(id.implements_ref.local_ref.0))
+                .and_then(|x| x.types.get_mut(id.local_ref.0))
                 .map(|x| x as _),
             GenericItemRef::ImplementsFunction(id) => self
                 .traits
-                .get_mut(id.parent_ref.parent_ref)
-                .and_then(|x| x.implements.get_mut(id.parent_ref.associated_item_ref))
-                .and_then(|x| x.functions.get_mut(id.associated_item_ref))
+                .get_mut(id.implements_ref.trait_ref.0)
+                .and_then(|x| x.implements.get_mut(id.implements_ref.local_ref.0))
+                .and_then(|x| x.functions.get_mut(id.local_ref.0))
                 .map(|x| x as _),
         }
     }
@@ -195,36 +199,36 @@ impl Table {
     #[allow(clippy::too_many_lines)]
     pub fn get_accessibility(&self, global_item_ref: GlobalItemRef) -> Option<Accessibility> {
         match global_item_ref {
-            GlobalItemRef::Module(id) => self.modules.get(id).map(|x| x.accessibility),
-            GlobalItemRef::Struct(id) => self.structs.get(id).map(|x| x.accessibility),
-            GlobalItemRef::Enum(id) => self.enums.get(id).map(|x| x.accessibility),
+            GlobalItemRef::Module(id) => self.modules.get(id.0).map(|x| x.accessibility),
+            GlobalItemRef::Struct(id) => self.structs.get(id.0).map(|x| x.accessibility),
+            GlobalItemRef::Enum(id) => self.enums.get(id.0).map(|x| x.accessibility),
             GlobalItemRef::Variant(id) => {
                 if self
                     .enums
-                    .get(id.parent_ref)
-                    .and_then(|x| x.variants.get(id.associated_item_ref))
+                    .get(id.enum_ref.0)
+                    .and_then(|x| x.variants.get(id.local_ref.0))
                     .is_some()
                 {
-                    Some(self.enums[id.parent_ref].accessibility)
+                    Some(self.enums[id.enum_ref.0].accessibility)
                 } else {
                     None
                 }
             }
-            GlobalItemRef::Type(id) => self.types.get(id).map(|x| x.accessibility),
-            GlobalItemRef::Constant(id) => self.constants.get(id).map(|x| x.accessibility),
-            GlobalItemRef::Function(id) => self.functions.get(id).map(|x| x.accessibility),
-            GlobalItemRef::Trait(id) => self.traits.get(id).map(|x| x.accessibility),
+            GlobalItemRef::Type(id) => self.types.get(id.0).map(|x| x.accessibility),
+            GlobalItemRef::Constant(id) => self.constants.get(id.0).map(|x| x.accessibility),
+            GlobalItemRef::Function(id) => self.functions.get(id.0).map(|x| x.accessibility),
+            GlobalItemRef::Trait(id) => self.traits.get(id.0).map(|x| x.accessibility),
             GlobalItemRef::TraitAssociated(id) => {
                 if self
                     .traits
-                    .get(id.parent_ref)
-                    .map(|x| match id.associated_item_ref {
-                        TraitAssociatedRef::Function(id) => x.functions.get(id).is_some(),
-                        TraitAssociatedRef::Type(id) => x.types.get(id).is_some(),
-                        TraitAssociatedRef::Constant(id) => x.constants.get(id).is_some(),
+                    .get(id.trait_ref.0)
+                    .map(|x| match id.local_ref {
+                        LocalTraitAssociatedRef::Function(id) => x.functions.get(id.0).is_some(),
+                        LocalTraitAssociatedRef::Type(id) => x.types.get(id.0).is_some(),
+                        LocalTraitAssociatedRef::Constant(id) => x.constants.get(id.0).is_some(),
                     })?
                 {
-                    Some(self.traits[id.parent_ref].accessibility)
+                    Some(self.traits[id.trait_ref.0].accessibility)
                 } else {
                     None
                 }
@@ -232,11 +236,11 @@ impl Table {
             GlobalItemRef::Implements(id) => {
                 if self
                     .traits
-                    .get(id.parent_ref)
-                    .and_then(|x| x.implements.get(id.associated_item_ref))
+                    .get(id.trait_ref.0)
+                    .and_then(|x| x.implements.get(id.local_ref.0))
                     .is_some()
                 {
-                    Some(self.traits[id.parent_ref].accessibility)
+                    Some(self.traits[id.trait_ref.0].accessibility)
                 } else {
                     None
                 }
@@ -244,15 +248,19 @@ impl Table {
             GlobalItemRef::ImplementsAssociated(id) => {
                 if self
                     .traits
-                    .get(id.parent_ref.parent_ref)
-                    .and_then(|x| x.implements.get(id.parent_ref.associated_item_ref))
-                    .map(|x| match id.associated_item_ref {
-                        ImplementsAssociatedRef::Type(id) => x.types.get(id).is_some(),
-                        ImplementsAssociatedRef::Function(id) => x.functions.get(id).is_some(),
-                        ImplementsAssociatedRef::Constant(id) => x.constants.get(id).is_some(),
+                    .get(id.implements_ref.trait_ref.0)
+                    .and_then(|x| x.implements.get(id.implements_ref.local_ref.0))
+                    .map(|x| match id.local_ref {
+                        LocalImplementsAssociatedRef::Type(id) => x.types.get(id.0).is_some(),
+                        LocalImplementsAssociatedRef::Function(id) => {
+                            x.functions.get(id.0).is_some()
+                        }
+                        LocalImplementsAssociatedRef::Constant(id) => {
+                            x.constants.get(id.0).is_some()
+                        }
                     })?
                 {
-                    Some(self.traits[id.parent_ref.parent_ref].accessibility)
+                    Some(self.traits[id.implements_ref.trait_ref.0].accessibility)
                 } else {
                     None
                 }
@@ -260,12 +268,12 @@ impl Table {
         }
     }
 
-    /// Gets the index of the [`Module`] where the given [`GlobalItemRef`] symbol is defined in.
+    /// Gets the ref of the [`Module`] where the given [`GlobalItemRef`] symbol is defined in.
     ///
-    /// If the `global_item_ref` itself is a [`Module`], then the index of the module itself will
+    /// If the `global_item_ref` itself is a [`Module`], then the ref of the module itself will
     /// be returned.
     #[must_use]
-    pub fn get_closet_module_index(&self, mut global_item_ref: GlobalItemRef) -> Option<Index> {
+    pub fn get_closet_module_ref(&self, mut global_item_ref: GlobalItemRef) -> Option<ModuleRef> {
         let _ = self.get_global_item(global_item_ref)?;
 
         loop {
@@ -301,8 +309,8 @@ impl Table {
                 Some(true)
             }
             Accessibility::Private => {
-                let referred_module_id = self.get_closet_module_index(referred)?;
-                let referring_module_id = self.get_closet_module_index(referring)?;
+                let referred_module_id = self.get_closet_module_ref(referred)?;
+                let referring_module_id = self.get_closet_module_ref(referring)?;
 
                 // if same module, it is accessible
                 if referred_module_id == referring_module_id {
@@ -335,10 +343,22 @@ impl Table {
         }
     }
 
-    /// Gets the index of the target's root [`Module`] where the given [`GlobalItemRef`] symbol is
+    /// Gets the [`ScopeWalker`] iterator starting from the given [`GlobalItemRef`].
+    #[must_use]
+    pub fn scope_walker(&self, global_item_ref: GlobalItemRef) -> Option<ScopeWalker> {
+        // check if the ref is valid
+        self.get_global_item(global_item_ref)?;
+
+        Some(ScopeWalker {
+            table: self,
+            current_gloabal_item_ref: Some(global_item_ref),
+        })
+    }
+
+    /// Gets the ref of the target's root [`Module`] where the given [`GlobalItemRef`] symbol is
     /// defined in.
     #[must_use]
-    pub fn get_target_root_module_index(&self, mut id: GlobalItemRef) -> Option<Index> {
+    pub fn get_target_root_module_index(&self, mut id: GlobalItemRef) -> Option<ModuleRef> {
         while let Some(parent_id) = self.get_global_item(id)?.parent() {
             id = parent_id;
         }
@@ -353,182 +373,98 @@ impl Table {
     #[must_use]
     pub fn get_global_item(&self, global_item_ref: GlobalItemRef) -> Option<&dyn GlobalItem> {
         match global_item_ref {
-            GlobalItemRef::Module(id) => self.modules.get(id).map(|x| x as _),
-            GlobalItemRef::Struct(id) => self.structs.get(id).map(|x| x as _),
-            GlobalItemRef::Enum(id) => self.enums.get(id).map(|x| x as _),
-            GlobalItemRef::Trait(id) => self.traits.get(id).map(|x| x as _),
-            GlobalItemRef::Function(id) => self.functions.get(id).map(|x| x as _),
-            GlobalItemRef::Type(id) => self.types.get(id).map(|x| x as _),
-            GlobalItemRef::Constant(id) => self.constants.get(id).map(|x| x as _),
+            GlobalItemRef::Module(id) => self.modules.get(id.0).map(|x| x as _),
+            GlobalItemRef::Struct(id) => self.structs.get(id.0).map(|x| x as _),
+            GlobalItemRef::Enum(id) => self.enums.get(id.0).map(|x| x as _),
+            GlobalItemRef::Trait(id) => self.traits.get(id.0).map(|x| x as _),
+            GlobalItemRef::Function(id) => self.functions.get(id.0).map(|x| x as _),
+            GlobalItemRef::Type(id) => self.types.get(id.0).map(|x| x as _),
+            GlobalItemRef::Constant(id) => self.constants.get(id.0).map(|x| x as _),
             GlobalItemRef::Variant(id) => self
                 .enums
-                .get(id.parent_ref)
-                .and_then(|x| x.variants.get(id.associated_item_ref))
+                .get(id.enum_ref.0)
+                .and_then(|x| x.variants.get(id.local_ref.0))
                 .map(|x| x as _),
             GlobalItemRef::Implements(id) => self
                 .traits
-                .get(id.parent_ref)
-                .and_then(|x| x.implements.get(id.associated_item_ref))
+                .get(id.trait_ref.0)
+                .and_then(|x| x.implements.get(id.local_ref.0))
                 .map(|x| x as _),
             GlobalItemRef::ImplementsAssociated(id) => self
                 .traits
-                .get(id.parent_ref.parent_ref)
-                .and_then(|x| x.implements.get(id.parent_ref.associated_item_ref))
-                .and_then(|x| match id.associated_item_ref {
-                    ImplementsAssociatedRef::Type(id) => x.types.get(id).map(|x| x as _),
-                    ImplementsAssociatedRef::Function(id) => x.functions.get(id).map(|x| x as _),
-                    ImplementsAssociatedRef::Constant(id) => x.constants.get(id).map(|x| x as _),
+                .get(id.implements_ref.trait_ref.0)
+                .and_then(|x| x.implements.get(id.implements_ref.local_ref.0))
+                .and_then(|x| match id.local_ref {
+                    LocalImplementsAssociatedRef::Type(id) => x.types.get(id.0).map(|x| x as _),
+                    LocalImplementsAssociatedRef::Function(id) => {
+                        x.functions.get(id.0).map(|x| x as _)
+                    }
+                    LocalImplementsAssociatedRef::Constant(id) => {
+                        x.constants.get(id.0).map(|x| x as _)
+                    }
                 }),
             GlobalItemRef::TraitAssociated(id) => {
                 self.traits
-                    .get(id.parent_ref)
-                    .and_then(|x| match id.associated_item_ref {
-                        TraitAssociatedRef::Function(id) => x.functions.get(id).map(|x| x as _),
-                        TraitAssociatedRef::Type(id) => x.types.get(id).map(|x| x as _),
-                        TraitAssociatedRef::Constant(id) => x.constants.get(id).map(|x| x as _),
+                    .get(id.trait_ref.0)
+                    .and_then(|x| match id.local_ref {
+                        LocalTraitAssociatedRef::Function(id) => {
+                            x.functions.get(id.0).map(|x| x as _)
+                        }
+                        LocalTraitAssociatedRef::Type(id) => x.types.get(id.0).map(|x| x as _),
+                        LocalTraitAssociatedRef::Constant(id) => {
+                            x.constants.get(id.0).map(|x| x as _)
+                        }
                     })
             }
         }
     }
 
-    fn trait_bound_is_subset_or_equal(target: &TraitBound, source: &TraitBound) -> bool {
-        if !(target.trait_index == source.trait_index
-            && target.type_substituions == source.type_substituions
-            && target.constant_substituions == source.constant_substituions)
-        {
-            return false;
-        }
+    /// Gets the type of the [`constant::Constant`] value.
+    #[must_use]
+    pub fn get_constant_ty(&self, _constant: &constant::Constant) -> Option<ty::Type> { todo!() }
 
-        assert_eq!(
-            target.lifetime_substituions.len(),
-            source.lifetime_substituions.len()
-        );
+    /// Combining where clause in the table here we assume that everything is in the correct state
+    /// and thus, should be able to combine
+    fn combine_where_clause(&self, first: &WhereClause, second: &WhereClause) -> WhereClause {
+        // combine associated bounds
+        let associated_bounds = self
+            .combine_associated_bounds(&first.associated_bounds, &second.associated_bounds)
+            .expect("The associated bounds of where clauses should be valid")
+            .transformed;
 
-        let mut source_higher_ranked_lifetime_map: HashMap<
-            HigherRankedLifetime,
-            HigherRankedableLifetime,
-        > = HashMap::new();
+        let mut bounds = Bounds::combine(&first.bounds, &second.bounds);
+        bounds = self
+            .transform_bounds(bounds, &Substitution::default(), &associated_bounds)
+            .unwrap()
+            .transformed;
 
-        for (target_lt, source_lt) in target
-            .lifetime_substituions
-            .iter()
-            .copied()
-            .zip(source.lifetime_substituions.iter().copied())
-        {
-            match (target_lt, source_lt) {
-                // arbitrary lifetime check
-                (
-                    HigherRankedableLifetime::Regular(target),
-                    HigherRankedableLifetime::Regular(source),
-                ) => {
-                    if target != source {
-                        return false;
-                    }
-                }
-                // maps the higher ranked trait bound of source to target lt
-                (target_lt, HigherRankedableLifetime::HigherRanked(source)) => {
-                    match source_higher_ranked_lifetime_map.entry(source) {
-                        Entry::Occupied(existing) => {
-                            if *existing.get() != target_lt {
-                                return false;
-                            }
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(target_lt);
-                        }
-                    }
-                }
-                _ => return false,
-            }
-        }
-
-        true
-    }
-
-    fn combine_where_clause(target: &mut WhereClause, source: &WhereClause) {
-        // combine associated bound
-        for (trait_associated_ty, bound) in &source.associated_type_bounds {
-            assert!(target
-                .associated_type_bounds
-                .insert(trait_associated_ty.clone(), bound.clone())
-                .is_none());
-        }
-        for (trait_associated_constant, bound) in &source.associated_constant_bounds {
-            assert!(target
-                .associated_constant_bounds
-                .insert(trait_associated_constant.clone(), bound.clone())
-                .is_none());
-        }
-
-        // combine lifetime bound
-        for (operand, bound) in &source.lifetime_bounds {
-            let bounds = target.lifetime_bounds.entry(operand.clone()).or_default();
-
-            for bound in bound {
-                bounds.insert(*bound);
-            }
-        }
-
-        // combine trait bound
-        for (trait_bound, is_const) in &source.trait_bounds {
-            let mut is_subset_or_equal = false;
-            for (existing_trait_bound, existing_is_const) in &target.trait_bounds {
-                if Self::trait_bound_is_subset_or_equal(trait_bound, existing_trait_bound)
-                    && (!*is_const || *existing_is_const)
-                {
-                    is_subset_or_equal = true;
-                    break;
-                }
-            }
-
-            // there is already a superset trait bound, so we don't need to add this trait bound
-            if is_subset_or_equal {
-                continue;
-            }
-
-            let mut removing_trait_bounds = Vec::new();
-
-            for (existing_trait_bound, existing_is_const) in &mut target.trait_bounds {
-                if Self::trait_bound_is_subset_or_equal(existing_trait_bound, trait_bound)
-                    && (!*existing_is_const || *is_const)
-                {
-                    removing_trait_bounds.push(existing_trait_bound.clone());
-                }
-            }
-
-            for removing_trait_bound in removing_trait_bounds {
-                assert!(target.trait_bounds.remove(&removing_trait_bound).is_some());
-            }
-
-            assert!(target
-                .trait_bounds
-                .insert(trait_bound.clone(), *is_const)
-                .is_none());
+        WhereClause {
+            associated_bounds,
+            bounds,
         }
     }
 
-    /// Gets all the required [`WhereClause`] up to the scope of the given [`GlobalItemRef`].
+    /// Gets all the required  up to the scope of the given [`GlobalItemRef`].
     #[must_use]
     pub fn get_active_where_clause(&self, global_item_ref: GlobalItemRef) -> Option<WhereClause> {
-        let mut result_where_clause = WhereClause::default();
+        let mut current_where_clause: Option<WhereClause> = None;
 
-        let mut global_item_ref = Some(global_item_ref);
+        for generic_item_ref in self.scope_walker(global_item_ref)? {
+            let Ok(generic_item_ref) = GenericItemRef::try_from(generic_item_ref) else {
+                continue;
+            };
 
-        while let Some(current_global_item_ref) = global_item_ref {
-            // combine the where clause
-            if let Ok(current_generic_item_ref) = GenericItemRef::try_from(current_global_item_ref)
-            {
-                Self::combine_where_clause(
-                    &mut result_where_clause,
-                    self.get_generic_item(current_generic_item_ref)?
-                        .where_clause(),
-                );
+            let generic_item = self.get_generic_item(generic_item_ref)?;
+
+            if let Some(where_clause) = current_where_clause {
+                current_where_clause =
+                    Some(self.combine_where_clause(&where_clause, generic_item.where_clause()));
+            } else {
+                current_where_clause = Some(generic_item.where_clause().clone());
             }
-
-            global_item_ref = self.get_global_item(current_global_item_ref)?.parent();
         }
 
-        Some(result_where_clause)
+        Some(current_where_clause.unwrap_or_default())
     }
 
     /// Gets the qualified name of the given [`GlobalItemRef`].
@@ -544,6 +480,34 @@ impl Table {
         }
 
         Some(name)
+    }
+}
+
+/// An iterator walking down the heirarchy scope of a particular [`GlobalItemRef`].
+#[derive(Debug, Clone)]
+pub struct ScopeWalker<'a> {
+    table: &'a Table,
+    current_gloabal_item_ref: Option<GlobalItemRef>,
+}
+
+impl<'a> ScopeWalker<'a> {
+    /// Creates a new scope walker.
+    #[must_use]
+    pub fn table(&self) -> &'a Table { self.table }
+}
+
+impl<'a> Iterator for ScopeWalker<'a> {
+    type Item = GlobalItemRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current_gloabal_item_ref {
+            Some(current_id) => {
+                let next_id = self.table.get_global_item(current_id).unwrap().parent();
+                self.current_gloabal_item_ref = next_id;
+                Some(current_id)
+            }
+            None => None,
+        }
     }
 }
 

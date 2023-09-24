@@ -18,14 +18,14 @@ use super::{
 };
 use crate::{error, parser::Parser, syntax_tree::item::ModuleKind};
 
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ModuleSignatureWithAccessModifier {
     pub access_modifier: AccessModifier,
     pub signature: ModuleSignature,
 }
 
 /// Represents a syntax tree node for a module with its submodule children.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
 pub struct ModuleTree {
     /// The signature syntax tree of this module.
     ///
@@ -60,7 +60,7 @@ impl ModuleTree {
 }
 
 /// Is a complete syntax tree representing the whole target program.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
 pub struct Target {
     /// Contains the content of the root module.
     #[get = "pub"]
@@ -101,7 +101,7 @@ pub struct SourceFileLoadFail {
 }
 
 /// A module with the given name already exists.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModuleRedefinition {
     /// The span of the existing module.
     pub existing_module_span: Span,

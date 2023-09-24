@@ -16,9 +16,8 @@ use super::{
 };
 use crate::{
     error::{
-        AccessModifierExpected, Error, GenericArgumentParameterListCannotBeEmpty,
-        HigherRankedBoundExpected, HigherRankedBoundParameterCannotBeEmpty, ItemExpected,
-        PunctuationExpected,
+        Error, GenericArgumentParameterListCannotBeEmpty, HigherRankedBoundParameterCannotBeEmpty,
+        SyntaxKind, UnexpectedSyntax,
     },
     parser::Parser,
 };
@@ -29,7 +28,7 @@ use crate::{
 ///     Identifier ('::' Identifier)*
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ModulePath {
     #[get = "pub"]
     first: Identifier,
@@ -50,7 +49,7 @@ impl ModulePath {
 ///     'using' ModulePath ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Using {
     #[get = "pub"]
     using_keyword: Keyword,
@@ -70,7 +69,7 @@ impl SourceElement for Using {
 ///     'module' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ModuleSignature {
     #[get = "pub"]
     module_keyword: Keyword,
@@ -93,7 +92,7 @@ impl SourceElement for ModuleSignature {
 ///     AccessModifier ModuleSignature ModuleKind
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Module {
     #[get = "pub"]
     pub(super) access_modifier: AccessModifier,
@@ -114,7 +113,7 @@ impl SourceElement for Module {
 ///     Item*
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ModuleContent {
     #[get = "pub"]
     pub(super) usings: Vec<Using>,
@@ -135,7 +134,7 @@ impl ModuleContent {
 ///     | ModuleBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum ModuleKind {
     File(Punctuation),
     Inline(ModuleBody),
@@ -156,7 +155,7 @@ impl SourceElement for ModuleKind {
 ///    '{' Using* Item* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ModuleBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -176,7 +175,7 @@ impl SourceElement for ModuleBody {
 ///     '\'' Identifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct LifetimeParameter {
     #[get = "pub"]
     apostrophe: Punctuation,
@@ -189,7 +188,7 @@ impl SourceElement for LifetimeParameter {
 }
 
 /// Represents a syntax tree node for a default generic parameter.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct DefaultGenericParameter<Value: SourceElement> {
     #[get = "pub"]
     equals: Punctuation,
@@ -223,7 +222,7 @@ type DefaultConstantParameter = DefaultGenericParameter<Functional>;
 ///     Identifier DefaultTypeParameter?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TypeParameter {
     #[get = "pub"]
     identifier: Identifier,
@@ -251,7 +250,7 @@ impl SourceElement for TypeParameter {
 ///     Identifier TypeAnnotation DefaultConstParameter?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ConstantParameter {
     #[get = "pub"]
     identifier: Identifier,
@@ -285,7 +284,7 @@ impl SourceElement for ConstantParameter {
 ///     | ConstantParameter
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
@@ -316,7 +315,7 @@ pub type GenericParameterList = ConnectedList<GenericParameter, Punctuation>;
 ///     '<' GenericParameterList '>'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct GenericParameters {
     #[get = "pub"]
     left_angle_bracket: Punctuation,
@@ -353,7 +352,7 @@ impl SourceElement for GenericParameters {
 ///     LifetimeBoundOperand ':' LifetimeArgument ('+' LifetimeArgument)*
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct LifetimeBound {
     #[get = "pub"]
     operand: LifetimeBoundOperand,
@@ -374,7 +373,7 @@ impl SourceElement for LifetimeBound {
 ///     | Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum LifetimeBoundOperand {
     LifetimeParameter(LifetimeParameter),
     Type(ty::Type),
@@ -391,7 +390,7 @@ impl SourceElement for LifetimeBoundOperand {
 
 /// Similar to [`ConnectedList`] but specifically for list of constraints separated by plus sings
 /// and has no trailing separator.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct BoundList<T> {
     /// The first element of the list.
     #[get = "pub"]
@@ -430,7 +429,7 @@ impl<T: SourceElement> SourceElement for BoundList<T> {
 ///     'const' 'type' Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ConstantTypeBound {
     #[get = "pub"]
     const_keyword: Keyword,
@@ -454,7 +453,7 @@ impl SourceElement for ConstantTypeBound {
 ///     | ForTupleBound
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum Constraint {
     TraitAssociation(TraitAssociationBound),
     Trait(TraitBound),
@@ -479,7 +478,7 @@ impl SourceElement for Constraint {
 ///     '{' Expression '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitAssociationConstantBoundArgument {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -500,7 +499,7 @@ impl SourceElement for TraitAssociationConstantBoundArgument {
 ///     | TraitConstAssociationBoundArgument
 ///     ;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum TraitAssociationBoundArgument {
     Type(ty::Type),
     Constant(TraitAssociationConstantBoundArgument),
@@ -521,7 +520,7 @@ impl SourceElement for TraitAssociationBoundArgument {
 ///     QualifiedIdentifier '=' TraitAssociationBoundArgument
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitAssociationBound {
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
@@ -546,7 +545,7 @@ impl SourceElement for TraitAssociationBound {
 ///     'for' '<' LifetimeParameter (',' LifetimeParameter)* ','? '>'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct HigherRankedLifetimeParameters {
     #[get = "pub"]
     for_keyword: Keyword,
@@ -573,7 +572,7 @@ impl SourceElement for HigherRankedLifetimeParameters {
 ///     HigherRankedLifetimeParameters? 'const'? QualifiedIdentifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitBound {
     #[get = "pub"]
     higher_ranked_lifetime_parameters: Option<HigherRankedLifetimeParameters>,
@@ -621,7 +620,7 @@ pub type ConstraintList = ConnectedList<Constraint, Punctuation>;
 ///     'where' ':' ConstraintList
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct WhereClause {
     #[get = "pub"]
     where_keyword: Keyword,
@@ -654,7 +653,7 @@ impl SourceElement for WhereClause {
 ///     'trait' Identifier GenericParameters? WhereClause?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitSignature {
     #[get = "pub"]
     trait_keyword: Keyword,
@@ -687,7 +686,7 @@ impl SourceElement for TraitSignature {
 ///     '{' TraitMember* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -715,7 +714,7 @@ impl SourceElement for TraitBody {
 ///     AccessModifier TraitSignature TraitBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Trait {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -743,7 +742,7 @@ impl SourceElement for Trait {
 ///     FunctionSignature ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitFunction {
     #[get = "pub"]
     signature: FunctionSignature,
@@ -767,7 +766,7 @@ impl SourceElement for TraitFunction {
 ///     TypeSignature WhereClause? ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitType {
     #[get = "pub"]
     signature: TypeSignature,
@@ -787,7 +786,7 @@ impl SourceElement for TraitType {
 ///     ConstantSignature ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitConstant {
     #[get = "pub"]
     signature: ConstantSignature,
@@ -806,7 +805,7 @@ impl SourceElement for TraitConstant {
 ///     | TraitType
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(clippy::large_enum_variant)]
 pub enum TraitMember {
     Function(TraitFunction),
@@ -830,7 +829,7 @@ impl SourceElement for TraitMember {
 ///     Irrefutable ':' Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Parameter {
     #[get = "pub"]
     irrefutable_pattern: pattern::Irrefutable,
@@ -863,7 +862,7 @@ pub type ParameterList = ConnectedList<Parameter, Punctuation>;
 ///     '(' ParameterList? ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Parameters {
     #[get = "pub"]
     left_paren: Punctuation,
@@ -893,7 +892,7 @@ impl SourceElement for Parameters {
 ///     ':' Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ReturnType {
     #[get = "pub"]
     colon: Punctuation,
@@ -911,7 +910,7 @@ impl SourceElement for ReturnType {
 ///     'function' 'const'? Identifier GenericParameters? Parameters ReturnType? WhereClause?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct FunctionSignature {
     #[get = "pub"]
     function_keyword: Keyword,
@@ -976,7 +975,7 @@ impl SourceElement for FunctionSignature {
 ///     '{' Statement* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct FunctionBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -996,7 +995,7 @@ impl SourceElement for FunctionBody {
 ///     AccessModifier FunctionSignature FunctionBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Function {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1024,7 +1023,7 @@ impl SourceElement for Function {
 ///     'type' Identifier GenericParameters?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TypeSignature {
     #[get = "pub"]
     type_keyword: Keyword,
@@ -1059,7 +1058,7 @@ impl SourceElement for TypeSignature {
 ///     '=' Type WhereClause?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TypeDefinition {
     #[get = "pub"]
     equals: Punctuation,
@@ -1089,7 +1088,7 @@ impl SourceElement for TypeDefinition {
 ///     AccessModifier TypeSignature TypeDefinition ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Type {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1116,7 +1115,7 @@ impl SourceElement for Type {
 ///     'struct' Identifier GenericParameters? WhereClause?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct StructSignature {
     #[get = "pub"]
     struct_keyword: Keyword,
@@ -1171,7 +1170,7 @@ pub type StructMemberList = ConnectedList<StructMember, Punctuation>;
 ///     '{' StructMember* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct StructBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -1199,7 +1198,7 @@ impl SourceElement for StructBody {
 ///     AccessModifier StructSignature StructBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Struct {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1227,7 +1226,7 @@ impl SourceElement for Struct {
 ///     AccessModifier Identifier ':' Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct StructField {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1249,7 +1248,7 @@ impl SourceElement for StructField {
 ///     StructField
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum StructMember {
     Field(StructField),
 }
@@ -1268,7 +1267,7 @@ impl SourceElement for StructMember {
 ///     'implements' GenericParameters? const? QualifiedIdentifier
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ImplementsSignature {
     #[get = "pub"]
     implements_keyword: Keyword,
@@ -1295,7 +1294,7 @@ impl SourceElement for ImplementsSignature {
 ///     FunctionSignature FunctionBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ImplementsFunction {
     #[get = "pub"]
     signature: FunctionSignature,
@@ -1319,7 +1318,7 @@ impl SourceElement for ImplementsFunction {
 ///     TypeSignature TypeDefinition ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ImplementsType {
     #[get = "pub"]
     signature: TypeSignature,
@@ -1339,7 +1338,7 @@ impl SourceElement for ImplementsType {
 ///     ConstantSignature ConstantDefinition
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ImplementsConstant {
     #[get = "pub"]
     signature: ConstantSignature,
@@ -1358,7 +1357,7 @@ impl SourceElement for ImplementsConstant {
 ///     | ImplementsType
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum ImplementsMember {
     Type(ImplementsType),
     Function(ImplementsFunction),
@@ -1381,7 +1380,7 @@ impl SourceElement for ImplementsMember {
 ///     '=' 'delete' ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct NegativeImplements {
     #[get = "pub"]
     equals: Punctuation,
@@ -1401,7 +1400,7 @@ impl SourceElement for NegativeImplements {
 ///     WhereClause? '{' ImplementsMember* '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ImplementsBody {
     #[get = "pub"]
     where_clause: Option<WhereClause>,
@@ -1451,7 +1450,7 @@ impl SourceElement for ImplementsBody {
 ///     | ImplementsBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum ImplementsKind {
     Negative(NegativeImplements),
     Positive(ImplementsBody),
@@ -1472,7 +1471,7 @@ impl SourceElement for ImplementsKind {
 ///     ImplementsSignature ImplementsKind
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Implements {
     #[get = "pub"]
     signature: ImplementsSignature,
@@ -1496,7 +1495,7 @@ impl SourceElement for Implements {
 ///     'enum' Identifier GenericParameters?
 ///     ;
 /// ``
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct EnumSignature {
     #[get = "pub"]
     enum_keyword: Keyword,
@@ -1516,7 +1515,7 @@ impl SourceElement for EnumSignature {
 ///     '(' TypeSpecifier ')'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct VariantAssociation {
     #[get = "pub"]
     left_paren: Punctuation,
@@ -1536,7 +1535,7 @@ impl SourceElement for VariantAssociation {
 ///     Identifier VariantAssociation?
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Variant {
     #[get = "pub"]
     identifier: Identifier,
@@ -1569,7 +1568,7 @@ pub type EnumVariantList = ConnectedList<Variant, Punctuation>;
 ///     '{' EnumVariantList? '}'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct EnumBody {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -1597,7 +1596,7 @@ impl SourceElement for EnumBody {
 ///     AccessModifier EnumSignature EnumBody
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Enum {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1625,7 +1624,7 @@ impl SourceElement for Enum {
 ///     'const' Identifier ':' Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ConstantSignature {
     #[get = "pub"]
     const_keyword: Keyword,
@@ -1647,7 +1646,7 @@ impl SourceElement for ConstantSignature {
 ///     '=' Expression ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ConstantDefinition {
     #[get = "pub"]
     equals: Punctuation,
@@ -1667,7 +1666,7 @@ impl SourceElement for ConstantDefinition {
 ///     '=' Expression ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Constant {
     #[get = "pub"]
     access_modifier: AccessModifier,
@@ -1699,7 +1698,7 @@ impl SourceElement for Constant {
 ///     | Const
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(clippy::large_enum_variant)]
 pub enum Item {
     Trait(Trait),
@@ -1745,7 +1744,8 @@ impl<'a> Parser<'a> {
                 Some(AccessModifier::Internal(k))
             }
             found => {
-                handler.receive(Error::AccessModifierExpected(AccessModifierExpected {
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::AccessModifier,
                     found: self.get_actual_found_token(found),
                 }));
                 None
@@ -1935,11 +1935,10 @@ impl<'a> Parser<'a> {
 
                     found => {
                         // error
-                        handler.receive(Error::HigherRankedBoundExpected(
-                            HigherRankedBoundExpected {
-                                found: self.get_actual_found_token(found),
-                            },
-                        ));
+                        handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                            expected: SyntaxKind::HigherRankedBound,
+                            found: self.get_actual_found_token(found),
+                        }));
                         None
                     }
                 }
@@ -2086,8 +2085,8 @@ impl<'a> Parser<'a> {
                             }
                         }
 
-                        handler.receive(Error::PunctuationExpected(PunctuationExpected {
-                            expected: ':',
+                        handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                            expected: SyntaxKind::Punctuation(':'),
                             found: self.get_actual_found_token(found),
                         }));
 
@@ -2302,11 +2301,10 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.receive(Error::ImplementsMemberExpected(
-                    crate::error::ImplementsMemberExpected {
-                        found: self.get_actual_found_token(found),
-                    },
-                ));
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    found: self.get_actual_found_token(found),
+                    expected: SyntaxKind::ImplementsMember,
+                }));
                 None
             }
         }
@@ -2449,11 +2447,10 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.receive(Error::TraitMemberExpected(
-                    crate::error::TraitMemberExpected {
-                        found: self.get_actual_found_token(found),
-                    },
-                ));
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::TraitMember,
+                    found: self.get_actual_found_token(found),
+                }));
                 None
             }
         }
@@ -2889,7 +2886,8 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.receive(Error::ItemExpected(ItemExpected {
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Item,
                     found: self.get_actual_found_token(found),
                 }));
                 None
@@ -2918,7 +2916,8 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.receive(Error::ItemExpected(ItemExpected {
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Item,
                     found: self.get_actual_found_token(found),
                 }));
                 None

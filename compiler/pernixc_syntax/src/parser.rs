@@ -8,9 +8,7 @@ use pernixc_lexical::{
 };
 use pernixc_system::diagnostic::Handler;
 
-use crate::error::{
-    Error as SyntacticError, IdentifierExpected, KeywordExpected, PunctuationExpected,
-};
+use crate::error::{Error as SyntacticError, SyntaxKind, UnexpectedSyntax};
 
 /// Represents a source where the parser can get tokens from.
 #[derive(Debug, Clone, Copy, EnumAsInner, From)]
@@ -248,8 +246,8 @@ impl<'a> Parser<'a> {
                     delimited_tree
                 }
                 found => {
-                    handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
-                        expected,
+                    handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+                        expected: SyntaxKind::Punctuation(expected),
                         found: Some(match found {
                             TokenTree::Token(token) => token.clone(),
                             TokenTree::Delimited(delimited_tree) => {
@@ -262,8 +260,8 @@ impl<'a> Parser<'a> {
                 }
             }
         } else {
-            handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
-                expected,
+            handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+                expected: SyntaxKind::Punctuation(expected),
                 found: self.get_actual_found_token(None),
             }));
 
@@ -307,8 +305,8 @@ impl<'a> Parser<'a> {
                 Delimiter::Bracket => ']',
             };
 
-            handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
-                expected,
+            handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+                expected: SyntaxKind::Punctuation(expected),
                 found: self.get_actual_found_token(self.peek()),
             }));
         }
@@ -364,7 +362,8 @@ impl<'a> Parser<'a> {
         match self.next_significant_token() {
             Some(Token::Identifier(ident)) => Some(ident),
             found => {
-                handler.receive(SyntacticError::IdentifierExpected(IdentifierExpected {
+                handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Identifier,
                     found: self.get_actual_found_token(found),
                 }));
                 None
@@ -386,8 +385,8 @@ impl<'a> Parser<'a> {
                 Some(keyword_token)
             }
             found => {
-                handler.receive(SyntacticError::KeywordExpected(KeywordExpected {
-                    expected,
+                handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Keyword(expected),
                     found: self.get_actual_found_token(found),
                 }));
                 None
@@ -416,8 +415,8 @@ impl<'a> Parser<'a> {
                 Some(punctuation_token)
             }
             found => {
-                handler.receive(SyntacticError::PunctuationExpected(PunctuationExpected {
-                    expected,
+                handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Punctuation(expected),
                     found: self.get_actual_found_token(found),
                 }));
                 None

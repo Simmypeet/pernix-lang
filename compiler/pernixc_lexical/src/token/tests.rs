@@ -433,7 +433,7 @@ impl Input for Token {
     }
 }
 
-fn tokenize(source: &str) -> Result<super::Token, proptest::test_runner::TestCaseError> {
+fn tokenize(source: String) -> Result<super::Token, proptest::test_runner::TestCaseError> {
     let source_file = SourceFile::temp(source)?;
     let mut iterator = source_file.iter();
 
@@ -452,7 +452,7 @@ proptest! {
         input in Token::arbitrary()
     ) {
         let source = input.to_string();
-        let token = tokenize(&source)?;
+        let token = tokenize(source)?;
 
         input.assert(&token)?;
     }

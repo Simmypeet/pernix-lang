@@ -139,7 +139,7 @@ impl SourceFile {
     ///
     /// # Errors
     /// - [`std::io::Error`] if the temporary file cannot be created, read, or write.
-    pub fn temp(source: &str) -> Result<Arc<Self>, std::io::Error> {
+    pub fn temp(source: String) -> Result<Arc<Self>, std::io::Error> {
         const TEMP_FILE_NAME: &str = "temp";
 
         let temp_dir = tempfile::tempdir()?;
@@ -153,11 +153,7 @@ impl SourceFile {
             temp_dir,
         };
 
-        Ok(Self::new(
-            temp_file_path,
-            source.to_owned(),
-            Some(Box::new(resource)),
-        ))
+        Ok(Self::new(temp_file_path, source, Some(Box::new(resource))))
     }
 
     /// Gets the line of the source file at the given line number.

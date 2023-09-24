@@ -4,7 +4,6 @@ use std::{collections::HashMap, hash::Hash, iter::Iterator, str::FromStr};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
 use pernixc_source::{ByteIndex, SourceElement, SourceFile, Span};
 use pernixc_system::diagnostic::Handler;
@@ -123,7 +122,7 @@ impl ToString for KeywordKind {
 
 /// Is an error that is returned when a string cannot be parsed into a [`Keyword`] in [`FromStr`]
 /// trait implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Error)]
 #[error("invalid string representation of keyword.")]
 pub struct KeywordParseError;
 
@@ -203,7 +202,7 @@ impl KeywordKind {
 }
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming language.
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Token {
     WhiteSpaces(WhiteSpaces),
@@ -243,7 +242,7 @@ impl SourceElement for Token {
 }
 
 /// Represents a contiguous sequence of whitespace characters.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WhiteSpaces {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -254,7 +253,7 @@ impl SourceElement for WhiteSpaces {
 }
 
 /// Represents a contiguous sequence of characters that are valid in an identifier.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -265,7 +264,7 @@ impl SourceElement for Identifier {
 }
 
 /// Represents a contiguous sequence of characters that are reserved for a keyword.
-#[derive(Debug, Clone, Getters, CopyGetters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Keyword {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -279,7 +278,7 @@ impl SourceElement for Keyword {
 }
 
 /// Represents a single ASCII punctuation character.
-#[derive(Debug, Clone, Getters, CopyGetters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Punctuation {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -293,7 +292,7 @@ impl SourceElement for Punctuation {
 }
 
 /// Represents a hardcoded numeric literal value in the source code.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -314,7 +313,7 @@ pub enum CommentKind {
 }
 
 /// Represents a portion of the source code that is ignored by the compiler.
-#[derive(Debug, Clone, Getters, CopyGetters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Comment {
     /// Is the span that makes up the token.
     pub span: Span,
@@ -327,8 +326,10 @@ impl SourceElement for Comment {
     fn span(&self) -> Span { self.span.clone() }
 }
 
-/// Is an error that can occur when invoking the [Token::tokenize()](Token::tokenize()) method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner, thiserror::Error, From)]
+/// Is an error that can occur when invoking the [`Token::lex`] method.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, thiserror::Error, From,
+)]
 #[allow(missing_docs)]
 pub enum Error {
     #[error("encountered a fatal lexical error that causes the process to stop.")]

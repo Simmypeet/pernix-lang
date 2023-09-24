@@ -18,7 +18,7 @@ use crate::{error::Error, parser::Parser};
 ///     VariableDeclaration
 ///     | Expressive
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Statement {
     VariableDeclaration(VariableDeclaration),
@@ -40,7 +40,7 @@ impl SourceElement for Statement {
 ///     ':' Type
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TypeAnnotation {
     #[get = "pub"]
     colon: Punctuation,
@@ -58,7 +58,7 @@ impl SourceElement for TypeAnnotation {
 ///     'let' Irrefutable TypeAnnotation? '=' Expression ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct VariableDeclaration {
     #[get = "pub"]
@@ -86,7 +86,7 @@ impl SourceElement for VariableDeclaration {
 ///     | Imperative
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Expressive {
     Semi(Semi),
@@ -109,7 +109,7 @@ impl SourceElement for Expressive {
 ///     | Terminator
 ///     ;
 /// ```
-#[derive(Debug, Clone, EnumAsInner, From)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum SemiExpression {
     Functional(Functional),
@@ -131,7 +131,7 @@ impl SourceElement for SemiExpression {
 ///     Functional ';'
 ///     ;
 /// ```
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct Semi {
     #[get = "pub"]

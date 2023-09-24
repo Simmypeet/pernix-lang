@@ -244,7 +244,7 @@ impl Arbitrary for ConstArgument {
 }
 
 impl Input for ConstArgument {
-    type Output = super::ConstArgument;
+    type Output = super::ConstantArgument;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.expression.assert(output.expression())?;
@@ -287,7 +287,7 @@ impl Input for GenericArgument {
         match (self, output) {
             (Self::Lifetime(i), super::GenericArgument::Lifetime(o)) => i.assert(o),
             (Self::Type(i), super::GenericArgument::Type(o)) => i.assert(o),
-            (Self::Const(i), super::GenericArgument::Const(o)) => i.assert(o),
+            (Self::Const(i), super::GenericArgument::Constant(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -542,7 +542,7 @@ pub fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
 where
     F: FnOnce(&mut Parser, &Storage<error::Error>) -> Option<T>,
 {
-    let source_file = SourceFile::temp(source)?;
+    let source_file = SourceFile::temp(source.to_string())?;
 
     let storage: Storage<pernixc_lexical::error::Error> = Storage::new();
 
