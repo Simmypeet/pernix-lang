@@ -629,19 +629,14 @@ impl Table {
                     resolved_implements,
                 })
             }
-            ty::Type::Parameter(ty_parameter) => substitution
-                .type_substitutions
-                .get(&ty_parameter)
-                .cloned()
-                .map_or_else(
-                    || {
-                        Ok(Transformed {
-                            transformed: ty::Type::Parameter(ty_parameter),
-                            resolved_implements: Vec::new(),
-                        })
-                    },
-                    |transformed| self.transform_type(transformed, substitution, associated_bounds),
-                ),
+            ty::Type::Parameter(ty_parameter) => Ok(Transformed {
+                transformed: substitution
+                    .type_substitutions
+                    .get(&ty_parameter)
+                    .cloned()
+                    .unwrap_or(ty::Type::Parameter(ty_parameter)),
+                resolved_implements: Vec::new(),
+            }),
             ty::Type::Primitive(primitive_type) => Ok(Transformed {
                 transformed: ty::Type::Primitive(primitive_type),
                 resolved_implements: Vec::new(),
@@ -915,21 +910,14 @@ impl Table {
                     resolved_implements,
                 })
             }
-            constant::Constant::Parameter(parameter) => substitution
-                .constant_substitutions
-                .get(&parameter)
-                .cloned()
-                .map_or_else(
-                    || {
-                        Ok(Transformed {
-                            transformed: constant::Constant::Parameter(parameter),
-                            resolved_implements: Vec::new(),
-                        })
-                    },
-                    |transformed| {
-                        self.transform_constant(transformed, substitution, associated_bounds)
-                    },
-                ),
+            constant::Constant::Parameter(parameter) => Ok(Transformed {
+                transformed: substitution
+                    .constant_substitutions
+                    .get(&parameter)
+                    .cloned()
+                    .unwrap_or(constant::Constant::Parameter(parameter)),
+                resolved_implements: Vec::new(),
+            }),
             constant::Constant::TraitAssociated(trait_associated_val) => {
                 // try to find the associated type bounds early
                 if let Some(transformed) = associated_bounds

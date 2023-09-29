@@ -774,7 +774,7 @@ impl Table {
             }
         }
 
-        match (candidates.get(0).cloned(), candidates.len()) {
+        match (candidates.get(0).copied(), candidates.len()) {
             (Some(single), 1) => Ok(Some(single)),
             (None, 0) => Ok(None),
             _ => {
