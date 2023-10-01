@@ -2,9 +2,11 @@ use std::fmt::Display;
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use pernixc_base::{
+    log::{Message, Severity, SourceCodeDisplay},
+    source_file::Span,
+};
 use pernixc_lexical::token::{KeywordKind, Token};
-use pernixc_print::{LogSeverity, MessageLog, SourceCodeDisplay};
-use pernixc_source::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum SyntaxKind {
@@ -65,7 +67,7 @@ impl Display for UnexpectedSyntax {
 
         let message = format!("expected {expected_binding}, but found {found_binding}");
 
-        write!(f, "{}", MessageLog::new(LogSeverity::Error, message))?;
+        write!(f, "{}", Message::new(Severity::Error, message))?;
 
         self.found.as_ref().map_or(Ok(()), |span| {
             write!(
@@ -89,8 +91,8 @@ impl Display for HigherRankedBoundParameterCannotBeEmpty {
         write!(
             f,
             "{}{}",
-            MessageLog::new(
-                LogSeverity::Error,
+            Message::new(
+                Severity::Error,
                 "a higher ranked bound parameter cannot be empty"
             ),
             SourceCodeDisplay::new(&self.span, Option::<i32>::None)
@@ -110,8 +112,8 @@ impl Display for GenericArgumentParameterListCannotBeEmpty {
         write!(
             f,
             "{}{}",
-            MessageLog::new(
-                LogSeverity::Error,
+            Message::new(
+                Severity::Error,
                 "a generic argument/parameter list cannot be empty"
             ),
             SourceCodeDisplay::new(&self.span, Option::<i32>::None)

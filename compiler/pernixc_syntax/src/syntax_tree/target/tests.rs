@@ -2,9 +2,8 @@ use std::{collections::HashMap, fmt::Display, path::Path, str::FromStr};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
 use pernixc_lexical::token::KeywordKind;
-use pernixc_source::SourceFile;
-use pernixc_system::diagnostic::Storage;
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary, prop_assert_eq, proptest, strategy::Strategy, test_runner::TestCaseError,
@@ -178,7 +177,9 @@ proptest! {
         target_module_tree.signature = None;
 
         let target_dir = target_module_tree.create_target()?;
-        let root_source_file = SourceFile::load(&target_dir.path().join("main.pnx"))?;
+        let file = std::fs::File::open(target_dir.path().join("main.pnx"))?;
+
+        let root_source_file = SourceFile::load(file, target_dir.path().join("main.pnx"))?;
         let storage = Storage::<Error>::new();
         let target = Target::parse(&root_source_file, "test".to_string(), &storage);
 

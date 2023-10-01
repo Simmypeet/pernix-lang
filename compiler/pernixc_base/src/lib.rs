@@ -1,4 +1,4 @@
-//! A crate containing the core functionality of the Pernix compiler.
+//! Contains the code related to the basic functionality of the Pernix compiler.
 
 #![deny(
     missing_docs,
@@ -13,3 +13,5 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
 pub mod diagnostic;
+pub mod log;
+pub mod source_file;

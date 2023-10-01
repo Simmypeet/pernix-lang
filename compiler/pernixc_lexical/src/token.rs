@@ -5,8 +5,10 @@ use std::{collections::HashMap, hash::Hash, iter::Iterator, str::FromStr};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use lazy_static::lazy_static;
-use pernixc_source::{ByteIndex, SourceElement, SourceFile, Span};
-use pernixc_system::diagnostic::Handler;
+use pernixc_base::{
+    diagnostic::Handler,
+    source_file::{self, ByteIndex, SourceElement, Span},
+};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -341,7 +343,7 @@ pub enum Error {
 
 impl Token {
     /// Increments the iterator until the predicate returns false.
-    fn walk_iter(iter: &mut pernixc_source::Iterator, predicate: impl Fn(char) -> bool) {
+    fn walk_iter(iter: &mut source_file::Iterator, predicate: impl Fn(char) -> bool) {
         while let Some((_, character)) = iter.peek() {
             if !predicate(character) {
                 break;
@@ -352,7 +354,7 @@ impl Token {
     }
 
     /// Creates a span from the given start location to the current location of the iterator.
-    fn create_span(start: ByteIndex, iter: &mut pernixc_source::Iterator) -> Span {
+    fn create_span(start: ByteIndex, iter: &mut source_file::Iterator) -> Span {
         iter.peek().map_or_else(
             || Span::to_end(iter.source_file().clone(), start).unwrap(),
             |(index, _)| Span::new(iter.source_file().clone(), start, index).unwrap(),
@@ -377,7 +379,7 @@ impl Token {
                 && !character.is_ascii_punctuation())
     }
 
-    fn handle_whitespace(iter: &mut pernixc_source::Iterator, start: ByteIndex) -> Self {
+    fn handle_whitespace(iter: &mut source_file::Iterator, start: ByteIndex) -> Self {
         Self::walk_iter(iter, char::is_whitespace);
 
         WhiteSpaces {
@@ -386,10 +388,7 @@ impl Token {
         .into()
     }
 
-    fn handle_identifier_and_keyword(
-        iter: &mut pernixc_source::Iterator,
-        start: ByteIndex,
-    ) -> Self {
+    fn handle_identifier_and_keyword(iter: &mut source_file::Iterator, start: ByteIndex) -> Self {
         Self::walk_iter(iter, Self::is_identifier_character);
 
         let span = Self::create_span(start, iter);
@@ -409,7 +408,7 @@ impl Token {
     }
 
     fn handle_comment(
-        iter: &mut pernixc_source::Iterator,
+        iter: &mut source_file::Iterator,
         start: ByteIndex,
         character: char,
         handler: &impl Handler<error::Error>,
@@ -418,9 +417,16 @@ impl Token {
         if let Some((_, '/')) = iter.peek() {
             iter.next();
 
-            Self::walk_iter(iter, |character| character != SourceFile::NEW_LINE);
+            Self::walk_iter(iter, |character| !(character == '\n' || character == '\r'));
 
-            iter.next();
+            let is_cr = iter
+                .peek()
+                .map_or(false, |(_, character)| character == '\r');
+
+            if let (true, Some((_, '\n'))) = (is_cr, iter.next()) {
+                // skips the crlf
+                iter.next();
+            }
 
             Ok(Comment {
                 span: Self::create_span(start, iter),
@@ -473,7 +479,7 @@ impl Token {
         }
     }
 
-    fn handle_numeric_literal(iter: &mut pernixc_source::Iterator, start: ByteIndex) -> Self {
+    fn handle_numeric_literal(iter: &mut source_file::Iterator, start: ByteIndex) -> Self {
         // Tokenizes the whole number part
         Self::walk_iter(iter, |character| character.is_ascii_digit());
 
@@ -494,7 +500,7 @@ impl Token {
     ///   source code.
     /// - [`Error::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn lex(
-        iter: &mut pernixc_source::Iterator,
+        iter: &mut source_file::Iterator,
         handler: &impl Handler<error::Error>,
     ) -> Result<Self, Error> {
         // Gets the first character

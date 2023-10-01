@@ -1,7 +1,7 @@
 //! Contains the definition of the semantic errors.
 
 use enum_as_inner::EnumAsInner;
-use pernixc_source::Span;
+use pernixc_base::source_file::Span;
 
 use crate::{
     symbol::{

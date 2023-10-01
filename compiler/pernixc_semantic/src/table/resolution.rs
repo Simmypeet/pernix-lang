@@ -1,10 +1,12 @@
 //! Contains all the logic related to symbol resolution.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_base::{
+    diagnostic::Handler,
+    source_file::{SourceElement, Span},
+};
 use pernixc_lexical::token::Identifier;
-use pernixc_source::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, GenericIdentifier, QualifiedIdentifier};
-use pernixc_system::diagnostic::Handler;
 
 use super::Table;
 use crate::{

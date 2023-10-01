@@ -1,8 +1,6 @@
 [workspace]
 members = [
-    "compiler/pernixc_system",
-    "compiler/pernixc_source",
-    "compiler/pernixc_print",
+    "compiler/pernixc_base",
     "compiler/pernixc_lexical",
     "compiler/pernixc_syntax",
     "compiler/pernixc_tests",
@@ -26,6 +24,8 @@ quickcheck = "1.0.3"
 itertools = "0.11.0"
 parking_lot = "0.12.1"
 derive-new = "0.5.9"
+memmap = "0.7.0"
+ouroboros = "0.18.0"
 
 [workspace.package]
 version = "0.1.0"

@@ -1,5 +1,6 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
+    convert::Into,
     path::{Path, PathBuf},
     sync::Arc,
     thread::ScopedJoinHandle,
@@ -8,9 +9,11 @@ use std::{
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
+use pernixc_base::{
+    diagnostic::Handler,
+    source_file::{self, SourceFile, Span},
+};
 use pernixc_lexical::token_stream::TokenStream;
-use pernixc_source::{SourceFile, Span};
-use pernixc_system::diagnostic::Handler;
 
 use super::{
     item::{Module, ModuleContent, ModuleSignature},
@@ -91,7 +94,7 @@ pub struct RootSubmoduleConflict {
 #[derive(Debug)]
 pub struct SourceFileLoadFail {
     /// The error that occurred while loading the source file.
-    pub io_error: std::io::Error,
+    pub source_error: source_file::Error,
 
     /// The submodule that submodule stems from.
     pub submodule: Module,
@@ -255,12 +258,16 @@ impl Target {
                                 source_file_path.set_extension("pnx");
 
                                 // load the source file
-                                let source_file = match SourceFile::load(&source_file_path) {
+                                let source_file = match std::fs::File::open(&source_file_path)
+                                    .map_err(Into::into)
+                                    .and_then(|file| {
+                                        SourceFile::load(file, source_file_path.clone())
+                                    }) {
                                     Ok(source_file) => source_file,
-                                    Err(io_error) => {
+                                    Err(source_error) => {
                                         handler.receive(Error::SourceFileLoadFail(
                                             SourceFileLoadFail {
-                                                io_error,
+                                                source_error,
                                                 submodule,
                                                 path: source_file_path,
                                             },

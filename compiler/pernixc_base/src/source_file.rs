@@ -1,22 +1,11 @@
-//! Contains the code related to project configuration and input of the compiler.
+#![allow(clippy::future_not_send)]
 
-#![deny(
-    missing_docs,
-    missing_debug_implementations,
-    missing_copy_implementations,
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    rustdoc::broken_intra_doc_links,
-    clippy::missing_errors_doc
-)]
-#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
+//! Contains the code related to the source code input.
 
 use std::{
     cmp::Ordering,
-    fmt::Debug,
+    fmt::{Debug, Display},
     fs::File,
-    io::{Read, Write},
     iter::Peekable,
     ops::Range,
     path::PathBuf,
@@ -25,21 +14,31 @@ use std::{
 };
 
 use getset::{CopyGetters, Getters};
-use tempfile::TempDir;
+use memmap::MmapOptions;
+use ouroboros::self_referencing;
+use thiserror::Error;
+
+/// Represents an error that occurs when loading/creating a source file.
+#[derive(Debug, Error)]
+#[allow(missing_docs)]
+pub enum Error {
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Utf8Error(#[from] std::str::Utf8Error),
+}
 
 /// Represents an source file input for the compiler.
 #[derive(Getters)]
 pub struct SourceFile {
-    #[allow(dead_code)]
-    source: Option<Box<dyn Source + Send + Sync + 'static>>,
+    source: MappedSource,
 
     /// Gets the full path to the source file.
     #[get = "pub"]
     full_path: PathBuf,
 
-    /// Gets the string source_code that the source file contains.
-    #[get = "pub"]
-    source_code: String,
+    /// Gets the string source.content that the source file contains.
     lines: Vec<Range<usize>>,
 }
 
@@ -47,114 +46,60 @@ impl Debug for SourceFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SourceFile")
             .field("full_path", &self.full_path)
-            .field("source_code", &self.source_code)
             .field("lines", &self.lines)
             .finish()
     }
 }
 
-/// A blanket trait for all types that can be used as a source for the compiler.
-trait Source {}
+#[self_referencing]
+struct MappedSource {
+    file: File,
+    mapped: Option<memmap::Mmap>,
 
-impl Source for File {}
-
-struct Temp {
-    #[allow(dead_code)]
-    temp_file: File,
-    #[allow(dead_code)]
-    temp_dir: TempDir,
+    #[borrows(mapped)]
+    mapped_str: &'this str,
 }
-impl Source for Temp {}
+
+impl MappedSource {
+    pub fn create(file: File) -> Result<Self, Error> {
+        let mapped = if file.metadata().unwrap().len() == 0 {
+            None
+        } else {
+            Some(unsafe { MmapOptions::new().map(&file)? })
+        };
+        MappedSourceTryBuilder {
+            file,
+            mapped,
+            mapped_str_builder: |mapped| {
+                #[allow(clippy::option_if_let_else)]
+                if let Some(mmaped) = mapped {
+                    std::str::from_utf8(mmaped).map_err(Error::from)
+                } else {
+                    Ok("")
+                }
+            },
+        }
+        .try_build()
+    }
+
+    /// Gets the string source.content that the source file contains.
+    #[must_use]
+    pub fn content(&self) -> &str { self.borrow_mapped_str() }
+}
 
 impl SourceFile {
-    /// Is the preferred new line character that the compiler uses.
-    ///
-    /// Since many operating systems use different new line characters, this is the one that the
-    /// compiler uses for the consistency and convenience.
-    pub const NEW_LINE: char = '\n';
-    /// Is the preferred new line string that the compiler uses.
-    pub const NEW_LINE_STR: &'static str = "\n";
-
-    fn new(
-        full_path: PathBuf,
-        mut source_code: String,
-        source: Option<Box<dyn Source + Send + Sync + 'static>>,
-    ) -> Arc<Self> {
-        fn replace_string_inplace(s: &mut String, from: &str, to: &str) {
-            let mut start = 0;
-            while let Some(i) = s[start..].find(from) {
-                s.replace_range(start + i..start + i + from.len(), to);
-                start += i + to.len();
-            }
-        }
-
-        let mut lines = Vec::new();
-        let mut start = 0;
-
-        replace_string_inplace(&mut source_code, "\r\n", Self::NEW_LINE_STR);
-        replace_string_inplace(&mut source_code, "\r", Self::NEW_LINE_STR);
-
-        // Constructs the line ranges
-        for (i, c) in source_code.char_indices() {
-            if c == Self::NEW_LINE {
-                let new_start = i + 1;
-                lines.push(start..new_start);
-                start = new_start;
-            }
-        }
-
-        lines.push(start..source_code.len());
-
+    fn new(full_path: PathBuf, source: MappedSource) -> Arc<Self> {
+        let lines = get_line_byte_positions(source.content());
         Arc::new(Self {
             source,
             full_path,
-            source_code,
             lines,
         })
     }
 
-    /// Loads a source file from the given path.
-    ///
-    /// The file is kept open so that it cannot be deleted or modified while the compiler is
-    /// using
-    ///
-    /// # Errors
-    /// - [`std::io::Error`] if the file cannot be read from the given path.
-    pub fn load(path: &PathBuf) -> Result<Arc<Self>, std::io::Error> {
-        // keep the file open so that it cannot be deleted or modified while the compiler is using
-        // it
-        let mut file = std::fs::File::open(path)?;
-
-        let mut source_code = String::new();
-        file.read_to_string(&mut source_code)?;
-        let full_path = path.canonicalize()?;
-
-        Ok(Self::new(full_path, source_code, Some(Box::new(file))))
-    }
-
-    /// Creates a temporary source file from the given source code.
-    ///
-    /// The function creates a temporary directory and a temporary file inside it. The source is
-    /// written to the file. The temporary file is deleted when the [`SourceFile`] is dropped.
-    ///
-    /// # Errors
-    /// - [`std::io::Error`] if the temporary file cannot be created, read, or write.
-    pub fn temp(source: String) -> Result<Arc<Self>, std::io::Error> {
-        const TEMP_FILE_NAME: &str = "temp";
-
-        let temp_dir = tempfile::tempdir()?;
-        let temp_file_path = temp_dir.path().join(format!("{TEMP_FILE_NAME}.pnx"));
-        let mut temp_file = std::fs::File::create(temp_file_path.clone())?;
-
-        write!(&mut temp_file, "{source}")?;
-
-        let resource = Temp {
-            temp_file,
-            temp_dir,
-        };
-
-        Ok(Self::new(temp_file_path, source, Some(Box::new(resource))))
-    }
+    /// Gets the content of the source file.
+    #[must_use]
+    pub fn content(&self) -> &str { self.source.content() }
 
     /// Gets the line of the source file at the given line number.
     ///
@@ -168,7 +113,7 @@ impl SourceFile {
         let line = line - 1;
         self.lines
             .get(line)
-            .map(|range| &self.source_code[range.clone()])
+            .map(|range| &self.source.content()[range.clone()])
     }
 
     /// Gets the [`Iterator`] for the source file.
@@ -176,7 +121,7 @@ impl SourceFile {
     pub fn iter<'a>(self: &'a Arc<Self>) -> Iterator<'a> {
         Iterator {
             source_file: self,
-            iterator: self.source_code.char_indices().peekable(),
+            iterator: self.source.content().char_indices().peekable(),
         }
     }
 
@@ -184,10 +129,40 @@ impl SourceFile {
     #[must_use]
     pub fn line_number(&self) -> usize { self.lines.len() }
 
+    /// Loads the source file from the given file path.
+    ///
+    /// # Errors
+    /// - [`Error::IoError`]: Error occurred when mapping the file to memory.
+    /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes to a string.
+    pub fn load(file: File, path: PathBuf) -> Result<Arc<Self>, Error> {
+        let source = MappedSource::create(file)?;
+        Ok(Self::new(path, source))
+    }
+
+    /// Creates a temporary source file and writes the given displayable object to it.
+    ///
+    /// # Errors
+    /// - [`Error::IoError`]: Error occurred when creating the temporary file, writing to, and
+    ///   mapping it to memory.
+    /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes to a string.
+    pub fn temp(display: impl Display) -> Result<Arc<Self>, Error> {
+        use std::io::Write;
+
+        let mut tempfile = tempfile::Builder::new()
+            .prefix("flux")
+            .suffix(".flux")
+            .tempfile()?;
+
+        write!(tempfile.as_file_mut(), "{display}")?;
+        let path = tempfile.path().to_owned();
+
+        Self::load(tempfile.into_file(), path)
+    }
+
     /// Gets the [`Location`] of the given byte index.
     #[must_use]
     pub fn get_location(&self, byte_index: ByteIndex) -> Option<Location> {
-        if !self.source_code().is_char_boundary(byte_index) {
+        if !self.source.content().is_char_boundary(byte_index) {
             return None;
         }
 
@@ -313,10 +288,10 @@ impl Span {
     #[must_use]
     pub fn new(source_file: Arc<SourceFile>, start: ByteIndex, end: ByteIndex) -> Option<Self> {
         if start > end
-            || !source_file.source_code.is_char_boundary(start)
-            || source_file.source_code().len() < end
-            || (source_file.source_code().len() + 1 != end
-                && !source_file.source_code().is_char_boundary(end))
+            || !source_file.source.content().is_char_boundary(start)
+            || source_file.source.content().len() < end
+            || (source_file.source.content().len() + 1 != end
+                && !source_file.source.content().is_char_boundary(end))
         {
             return None;
         }
@@ -331,19 +306,19 @@ impl Span {
     /// Creates a span from the given start byte index to the end of the source file.
     #[must_use]
     pub fn to_end(source_file: Arc<SourceFile>, start: ByteIndex) -> Option<Self> {
-        if !source_file.source_code().is_char_boundary(start) {
+        if !source_file.source.content().is_char_boundary(start) {
             return None;
         }
         Some(Self {
             start,
-            end: source_file.source_code().len(),
+            end: source_file.source.content().len(),
             source_file,
         })
     }
 
     /// Gets the string slice of the source code that the span represents.
     #[must_use]
-    pub fn str(&self) -> &str { &self.source_file.source_code()[self.start..self.end] }
+    pub fn str(&self) -> &str { &self.source_file.source.content()[self.start..self.end] }
 
     /// Gets the starting [`Location`] of the span.
     #[must_use]
@@ -398,6 +373,49 @@ impl<'a> std::iter::Iterator for Iterator<'a> {
     type Item = (ByteIndex, char);
 
     fn next(&mut self) -> Option<Self::Item> { self.iterator.next() }
+}
+
+fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
+    let mut current_position = 0;
+    let mut results = Vec::new();
+
+    let mut skip = false;
+
+    for (byte, char) in text.char_indices() {
+        if skip {
+            skip = false;
+            continue;
+        }
+
+        // ordinary lf
+        if char == '\n' {
+            #[allow(clippy::range_plus_one)]
+            results.push(current_position..byte + 1);
+
+            current_position = byte + 1;
+        }
+
+        // crlf
+        if char == '\r' {
+            if text.as_bytes().get(byte + 1) == Some(&b'\n') {
+                #[allow(clippy::range_plus_one)]
+                results.push(current_position..byte + 2);
+
+                current_position = byte + 2;
+
+                skip = true;
+            } else {
+                #[allow(clippy::range_plus_one)]
+                results.push(current_position..byte + 1);
+
+                current_position = byte + 1;
+            }
+        }
+    }
+
+    results.push(current_position..text.len());
+
+    results
 }
 
 #[cfg(test)]

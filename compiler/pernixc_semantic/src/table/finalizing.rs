@@ -1,5 +1,5 @@
+use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
-use pernixc_system::diagnostic::Handler;
 
 use super::{
     state::{DraftedSymbolRef, DraftedSymbolSyntax},

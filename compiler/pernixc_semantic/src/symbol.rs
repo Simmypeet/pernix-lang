@@ -22,7 +22,7 @@ use std::{
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_source::Span;
+use pernixc_base::source_file::Span;
 
 use crate::{
     constant, pattern,

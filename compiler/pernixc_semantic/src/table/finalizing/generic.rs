@@ -1,6 +1,8 @@
-use pernixc_source::{SourceElement, Span};
+use pernixc_base::{
+    diagnostic::{Handler, Storage},
+    source_file::{SourceElement, Span},
+};
 use pernixc_syntax::syntax_tree::{self};
-use pernixc_system::diagnostic::{Handler, Storage};
 
 use crate::{
     error::{

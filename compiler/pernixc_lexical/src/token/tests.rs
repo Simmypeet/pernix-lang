@@ -5,8 +5,7 @@ use std::{
 
 use derive_more::{Deref, DerefMut};
 use lazy_static::lazy_static;
-use pernixc_source::SourceFile;
-use pernixc_system::diagnostic::Storage;
+use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,
@@ -183,7 +182,7 @@ impl std::fmt::Display for LineComment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("//")?;
         f.write_str(&self.comment_body)?;
-        f.write_char(SourceFile::NEW_LINE)
+        f.write_char('\n')
     }
 }
 
@@ -347,7 +346,7 @@ impl WhiteSpaces {
             }
             Self::NewLines(i) => {
                 prop_assert_eq!(output.span.str().len(), i as usize);
-                prop_assert!(output.span.str().chars().all(|x| x == SourceFile::NEW_LINE));
+                prop_assert!(output.span.str().chars().all(|x| x == '\n'));
             }
         }
 

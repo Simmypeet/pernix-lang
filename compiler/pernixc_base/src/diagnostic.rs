@@ -1,15 +1,10 @@
-//! A module for handling compilation diagnostics in the compiler.
-//!
-//! This module provides a trait `Handler<T>` for handling compilation diagnostics in the compiler.
-//! The `Handler<T>` trait is responsible for receiving an error of type `T` and handling it in some
-//! way. The trait is implemented by several structs, including `Storage<T>`, which stores all
-//! errors in a vector.
+//! A module for handling diagnostics in the compiler.
 
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use derive_more::{Deref, DerefMut};
 
-/// Represents a trait responsible for handling compilation diagnostics in the compiler.
+/// Represents a trait responsible for handling diagnostics in the compiler.
 pub trait Handler<T> {
     /// Receives an error and handles it.
     fn receive(&self, error: T);

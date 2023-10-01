@@ -1,29 +1,18 @@
 //! Provides the functions related to logging/printing messages to the console.
 
-#![deny(
-    missing_debug_implementations,
-    missing_copy_implementations,
-    missing_docs,
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    rustdoc::broken_intra_doc_links,
-    clippy::missing_errors_doc
-)]
-#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
-
 use std::fmt::Display;
 
 use derive_new::new;
 use formatting::{Color, Style};
-use pernixc_source::Span;
+
+use crate::source_file::Span;
 
 pub mod formatting;
 
 /// Represents the severity of a log message to be printed to the console.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[allow(missing_docs)]
-pub enum LogSeverity {
+pub enum Severity {
     Error,
     Info,
     Warning,
@@ -31,20 +20,20 @@ pub enum LogSeverity {
 
 /// Is a struct implementing [`Display`] that represents a log message to be displayed to the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
-pub struct MessageLog<T> {
+pub struct Message<T> {
     /// The severity of the log message.
-    pub severity: LogSeverity,
+    pub severity: Severity,
 
     /// The message to be displayed.
     pub display: T,
 }
 
-impl<T: Display> Display for MessageLog<T> {
+impl<T: Display> Display for Message<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let log_header = Style::Bold.with(match self.severity {
-            LogSeverity::Error => Color::Red.with("[error]:"),
-            LogSeverity::Info => Color::Green.with("[info]:"),
-            LogSeverity::Warning => Color::Yellow.with("[warning]:"),
+            Severity::Error => Color::Red.with("[error]:"),
+            Severity::Info => Color::Green.with("[info]:"),
+            Severity::Warning => Color::Yellow.with("[warning]:"),
         });
 
         let message_part = Style::Bold.with(&self.display);

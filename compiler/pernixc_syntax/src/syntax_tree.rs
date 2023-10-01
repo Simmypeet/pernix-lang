@@ -3,12 +3,14 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
+use pernixc_base::{
+    diagnostic::{Dummy, Handler},
+    source_file::{SourceElement, Span},
+};
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::Delimiter,
 };
-use pernixc_source::{SourceElement, Span};
-use pernixc_system::diagnostic::{Dummy, Handler};
 
 use self::{expression::Expression, ty::Type};
 use crate::{
@@ -267,7 +269,7 @@ impl<Element: SourceElement, Separator: SourceElement> SourceElement
                     .last()
                     .map_or_else(|| self.first.span(), |(_, element)| element.span())
             },
-            pernixc_source::SourceElement::span,
+            SourceElement::span,
         );
 
         self.first.span().join(&end).unwrap()
@@ -453,10 +455,10 @@ pub struct GenericArguments {
 
 impl SourceElement for GenericArguments {
     fn span(&self) -> Span {
-        let start = self.colon.as_ref().map_or_else(
-            || self.left_angle.span(),
-            pernixc_source::SourceElement::span,
-        );
+        let start = self
+            .colon
+            .as_ref()
+            .map_or_else(|| self.left_angle.span(), SourceElement::span);
 
         start.join(&self.right_angle.span).unwrap()
     }
@@ -520,7 +522,7 @@ impl SourceElement for QualifiedIdentifier {
         let start = self
             .leading_scope_separator
             .as_ref()
-            .map_or_else(|| self.first.span(), pernixc_source::SourceElement::span);
+            .map_or_else(|| self.first.span(), SourceElement::span);
 
         let end = self
             .rest

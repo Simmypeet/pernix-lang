@@ -9,10 +9,8 @@ edition.workspace = true
 
 
 [dependencies]
-pernixc_system = { path = "../pernixc_system" }
-pernixc_print = { path = "../pernixc_print" }
+pernixc_base = { path = "../pernixc_base" }
 pernixc_lexical = { path = "../pernixc_lexical" }
-pernixc_source = { path = "../pernixc_source" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }

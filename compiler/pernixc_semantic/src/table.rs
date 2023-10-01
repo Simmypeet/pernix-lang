@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
+use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_system::diagnostic::Handler;
 use thiserror::Error;
 
 use crate::{

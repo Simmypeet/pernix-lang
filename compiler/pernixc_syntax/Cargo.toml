@@ -8,10 +8,8 @@ edition = { workspace = true }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pernixc_system = { path = "../pernixc_system" }
-pernixc_print = { path = "../pernixc_print" }
+pernixc_base = { path = "../pernixc_base" }
 pernixc_lexical = { path = "../pernixc_lexical" }
-pernixc_source = { path = "../pernixc_source" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 getset = { workspace = true }

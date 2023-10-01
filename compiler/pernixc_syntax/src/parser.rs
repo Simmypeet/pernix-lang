@@ -2,11 +2,11 @@
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
+use pernixc_base::diagnostic::Handler;
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::{Delimited, Delimiter, TokenStream, TokenTree},
 };
-use pernixc_system::diagnostic::Handler;
 
 use crate::error::{Error as SyntacticError, SyntaxKind, UnexpectedSyntax};
 

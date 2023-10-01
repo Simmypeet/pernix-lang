@@ -1,12 +1,14 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
+use pernixc_base::{
+    diagnostic::{Dummy, Handler},
+    source_file::{SourceElement, Span},
+};
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::Delimiter,
 };
-use pernixc_source::{SourceElement, Span};
-use pernixc_system::diagnostic::{Dummy, Handler};
 
 use super::{
     expression::{Expression, Functional},

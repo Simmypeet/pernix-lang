@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Display, Write};
 
-use pernixc_source::SourceFile;
-use pernixc_system::diagnostic::Storage;
+use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
 use pernixc_tests::input::Input;
 use proptest::{
     prelude::Arbitrary,

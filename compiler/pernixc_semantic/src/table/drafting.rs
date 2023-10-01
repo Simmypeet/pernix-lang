@@ -1,11 +1,10 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use pernixc_source::SourceElement;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{
     self,
     target::{ModuleTree, Target},
 };
-use pernixc_system::diagnostic::Handler;
 
 use super::{
     state::{DraftedSymbolRef, DraftedSymbolSyntax},

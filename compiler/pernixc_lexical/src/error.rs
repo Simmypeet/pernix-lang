@@ -5,8 +5,10 @@ use std::fmt::Display;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_print::{LogSeverity, MessageLog, SourceCodeDisplay};
-use pernixc_source::Span;
+use pernixc_base::{
+    log::{Message, Severity, SourceCodeDisplay},
+    source_file::Span,
+};
 
 use crate::token_stream::Delimiter;
 
@@ -22,7 +24,7 @@ impl Display for UnterminatedDelimitedComment {
         write!(
             f,
             "{}{}",
-            MessageLog::new(LogSeverity::Error, "found an unclosed `/*` comment"),
+            Message::new(Severity::Error, "found an unclosed `/*` comment"),
             SourceCodeDisplay::new(&self.span, Option::<i32>::None)
         )
     }
@@ -43,7 +45,7 @@ impl Display for UndelimitedDelimiter {
         write!(
             f,
             "{}{}",
-            MessageLog::new(LogSeverity::Error, "found an undelimited delimiter"),
+            Message::new(Severity::Error, "found an undelimited delimiter"),
             SourceCodeDisplay::new(
                 &self.opening_span,
                 Some("this delimiter is not closed by its corresponding closing pair")
