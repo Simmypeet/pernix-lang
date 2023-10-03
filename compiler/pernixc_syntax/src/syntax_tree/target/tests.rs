@@ -123,10 +123,10 @@ impl Display for ModuleTree {
 #[derive(Debug, thiserror::Error, From)]
 #[allow(missing_docs)]
 pub enum TargetCreateError {
-    #[error("{0}")]
+    #[error(transparent)]
     Io(std::io::Error),
 
-    #[error("{0}")]
+    #[error(transparent)]
     Fmt(std::fmt::Error),
 }
 

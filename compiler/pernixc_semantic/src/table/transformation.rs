@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    trait_resolution::{self, TraitSubstitution},
+    resolution::generic::{self, TraitInstantiation},
     Table,
 };
 use crate::{
@@ -82,10 +82,13 @@ pub struct Bounds {
 #[allow(missing_docs)]
 pub enum SubstitutionError {
     #[error("trait resolution occurs during transformation and failed to resolve the trait")]
-    FailedTraitResolution(trait_resolution::TraitSubstitution),
+    FailedTraitResolution(generic::TraitInstantiation),
 
     #[error("trait resolved into an implements that was incomplete")]
     IncompleteImplements,
+
+    #[error("the references passed to the function were invalid")]
+    InvalidReference,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
@@ -113,7 +116,7 @@ pub enum CombinationError {
         bound: constant::Constant,
     },
 
-    #[error("{0}")]
+    #[error(transparent)]
     Substitution(#[from] SubstitutionError),
 }
 
@@ -452,14 +455,21 @@ impl Table {
 
                         // if concrete, try to resolve the trait
                         if local_substitution.is_concrete() {
-                            let trait_substitution = TraitSubstitution {
+                            let trait_substitution = TraitInstantiation {
                                 trait_ref: source_trait_bound.trait_ref,
                                 substitution: local_substitution,
                             };
 
                             let Some(..) = self
                                 .resolve_trait_implements(&trait_substitution)
-                                .expect("should've been a valid substitution")
+                                .map_err(|x| match x {
+                                    generic::Error::NonConcreteSubstitutionError => {
+                                        unreachable!("should've been a valid concrete substitution")
+                                    }
+                                    generic::Error::InvalidInput => {
+                                        SubstitutionError::InvalidReference
+                                    }
+                                })?
                             else {
                                 return Err(SubstitutionError::FailedTraitResolution(
                                     trait_substitution,
@@ -698,13 +708,18 @@ impl Table {
                 }
 
                 // perform trait resolution
-                let trait_substitution = TraitSubstitution {
+                let trait_substitution = TraitInstantiation {
                     trait_ref: new_trait_associated_ty.trait_type_ref.trait_ref,
                     substitution: new_trait_associated_ty.trait_substitution,
                 };
-                let Some(implements) = self
-                    .resolve_trait_implements(&trait_substitution)
-                    .expect("already is a concrete substitution")
+                let Some(implements) =
+                    self.resolve_trait_implements(&trait_substitution)
+                        .map_err(|x| match x {
+                            generic::Error::NonConcreteSubstitutionError => {
+                                unreachable!("should've been a valid concrete substitution")
+                            }
+                            generic::Error::InvalidInput => SubstitutionError::InvalidReference,
+                        })?
                 // failed to resolve the trait
                 else {
                     return Err(SubstitutionError::FailedTraitResolution(trait_substitution));
@@ -758,6 +773,25 @@ impl Table {
                             associated_bounds,
                         )?
                         .extract(&mut resolved_implements),
+                    resolved_implements,
+                })
+            }
+            ty::Type::Array(arrayy_ty) => {
+                let mut resolved_implements = Vec::new();
+
+                let transformed_element_ty = self
+                    .transform_type(*arrayy_ty.element_ty, substitution, associated_bounds)?
+                    .extract(&mut resolved_implements);
+
+                let transformed_size = self
+                    .transform_constant(*arrayy_ty.size, substitution, associated_bounds)?
+                    .extract(&mut resolved_implements);
+
+                Ok(Transformed {
+                    transformed: ty::Type::Array(ty::Array {
+                        element_ty: Box::new(transformed_element_ty),
+                        size: Box::new(transformed_size),
+                    }),
                     resolved_implements,
                 })
             }
@@ -973,13 +1007,18 @@ impl Table {
                 }
 
                 // perform trait resolution
-                let trait_substitution = TraitSubstitution {
+                let trait_substitution = TraitInstantiation {
                     trait_ref: new_trait_associated_val.trait_constant_ref.trait_ref,
                     substitution: new_trait_associated_val.trait_substitution,
                 };
-                let Some(implements) = self
-                    .resolve_trait_implements(&trait_substitution)
-                    .expect("already is a concrete substitution")
+                let Some(implements) =
+                    self.resolve_trait_implements(&trait_substitution)
+                        .map_err(|x| match x {
+                            generic::Error::NonConcreteSubstitutionError => {
+                                unreachable!("should've been a valid concrete substitution")
+                            }
+                            generic::Error::InvalidInput => SubstitutionError::InvalidReference,
+                        })?
                 // failed to resolve the trait
                 else {
                     return Err(SubstitutionError::FailedTraitResolution(trait_substitution));

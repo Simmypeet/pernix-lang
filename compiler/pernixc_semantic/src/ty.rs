@@ -25,6 +25,8 @@ pub enum Primitive {
     Uint16,
     Uint32,
     Uint64,
+    Usize,
+    Isize,
 }
 
 /// Represents an `enum` type.
@@ -102,7 +104,7 @@ pub struct Struct {
 }
 
 /// Represents an **unpacked** element type in the tuple, denoted by `...type` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Unpacked {
     Parameter(TypeParameterRef),
@@ -110,7 +112,7 @@ pub enum Unpacked {
 }
 
 /// Represents an element type in the tuple.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum TupleElement {
     /// Represents a singular type in the tuple.
     Regular(Type),
@@ -151,7 +153,7 @@ pub struct Array {
     /// The constant defining the size of the array.
     ///
     /// The type of the constant must be `usize`
-    pub size: constant::Constant,
+    pub size: Box<constant::Constant>,
 }
 
 /// Represents a type of the language.
@@ -165,6 +167,7 @@ pub enum Type {
     Tuple(Tuple),
     Parameter(TypeParameterRef),
     Primitive(Primitive),
+    Array(Array),
     TraitAssociated(TraitAssociated),
 }
 
@@ -191,6 +194,9 @@ impl Type {
                 TupleElement::Regular(regular) => regular.is_concrete(),
                 TupleElement::Unpacked(_) => false,
             }),
+            Self::Array(array_ty) => {
+                array_ty.element_ty.is_concrete() && array_ty.size.is_concrete()
+            }
             Self::Primitive(_) => true,
 
             // even the substitution is concrete, the associated Self is always not a concrete type.

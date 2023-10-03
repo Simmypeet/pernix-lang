@@ -53,7 +53,7 @@ pub struct Array {
 }
 
 /// Represents an **unpacked** constant value in the tuple, denoted by `...value` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Unpacked {
     Parameter(ConstantParameterRef),
@@ -61,7 +61,7 @@ pub enum Unpacked {
 }
 
 /// Represents an element value in the tuple.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum TupleElement {
     Regular(Constant),
@@ -88,6 +88,8 @@ pub enum Primitive {
     Uint16(u16),
     Uint32(u32),
     Uint64(u64),
+    Usize(usize),
+    Isize(isize),
 }
 
 /// Represents a compile-time evaluated constant value.

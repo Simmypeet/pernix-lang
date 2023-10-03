@@ -74,6 +74,10 @@ pub enum KeywordKind {
     Float32,
     /// `float64` keyword.
     Float64,
+    /// `usize` keyword.
+    Usize,
+    /// `isize` keyword.
+    Isize,
     /// `this` keyword.
     This,
     /// `self` keyword.
@@ -183,6 +187,8 @@ impl KeywordKind {
             Self::Uint64 => "uint64",
             Self::Float32 => "float32",
             Self::Float64 => "float64",
+            Self::Usize => "usize",
+            Self::Isize => "isize",
             Self::This => "this",
             Self::SelfKeyword => "self",
             Self::And => "and",

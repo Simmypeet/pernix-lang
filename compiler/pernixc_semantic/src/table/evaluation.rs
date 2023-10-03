@@ -12,6 +12,6 @@ impl Table {
         _checking_behavior: CheckingBehavior,
         _handler: &impl Handler<error::Error>,
     ) -> Result<constant::Constant, super::Error> {
-        todo!()
+        todo!("implements constant evaluation")
     }
 }

@@ -45,6 +45,8 @@ pub enum Primitive {
     Uint16(Keyword),
     Uint32(Keyword),
     Uint64(Keyword),
+    Usize(Keyword),
+    Isize(Keyword),
 }
 
 impl SourceElement for Primitive {
@@ -60,7 +62,9 @@ impl SourceElement for Primitive {
             | Self::Uint8(token)
             | Self::Uint16(token)
             | Self::Uint32(token)
-            | Self::Uint64(token) => token.span.clone(),
+            | Self::Uint64(token)
+            | Self::Usize(token)
+            | Self::Isize(token) => token.span.clone(),
         }
     }
 }
@@ -427,6 +431,8 @@ impl<'a> Parser<'a> {
                         | KeywordKind::Uint16
                         | KeywordKind::Uint32
                         | KeywordKind::Uint64
+                        | KeywordKind::Usize
+                        | KeywordKind::Isize
                         | KeywordKind::Float32
                         | KeywordKind::Float64
                         | KeywordKind::Bool
@@ -447,6 +453,8 @@ impl<'a> Parser<'a> {
                     KeywordKind::Uint64 => Primitive::Uint64(keyword),
                     KeywordKind::Float32 => Primitive::Float32(keyword),
                     KeywordKind::Float64 => Primitive::Float64(keyword),
+                    KeywordKind::Usize => Primitive::Usize(keyword),
+                    KeywordKind::Isize => Primitive::Isize(keyword),
                     _ => unreachable!(),
                 };
 

@@ -9,20 +9,21 @@ use thiserror::Error;
 use crate::{
     constant, error,
     symbol::{
-        Accessibility, Bounds, Constant, Enum, Function, GenericItem, GenericItemRef, GlobalItem,
-        GlobalItemRef, LocalImplementsAssociatedRef, LocalTraitAssociatedRef, Module, ModuleRef,
-        Struct, Substitution, Trait, TraitRef, Type, WhereClause,
+        Accessibility, AssociatedBounds, Bounds, Constant, ConstantParameterRef, Enum, Function,
+        GenericItem, GenericItemRef, GlobalItem, GlobalItemRef, LocalImplementsAssociatedRef,
+        LocalTraitAssociatedRef, Module, ModuleRef, Struct, Substitution, Trait, TraitRef, Type,
+        WhereClause,
     },
     ty,
 };
 
+pub mod bound;
 mod core;
 mod drafting;
 mod evaluation;
 mod finalizing;
 pub mod resolution;
 mod state;
-mod trait_resolution;
 mod transformation;
 
 /// Contains all the symbols and information about the program.
@@ -419,9 +420,141 @@ impl Table {
         }
     }
 
+    fn get_constant_parameter_ty(&self, constant: &ConstantParameterRef) -> Option<ty::Type> {
+        let generic_item = self.get_generic_item(constant.generic_item_ref)?;
+        Some(
+            generic_item
+                .generic_parameters()
+                .constants
+                .get(constant.local_ref.0)?
+                .ty
+                .clone(),
+        )
+    }
+
+    fn get_trait_associated_constant_ty(
+        &self,
+        constant: &constant::TraitAssociated,
+    ) -> Option<ty::Type> {
+        let trait_item = self.traits.get(constant.trait_constant_ref.trait_ref.0)?;
+
+        let trait_constant = trait_item
+            .constants
+            .get(constant.trait_constant_ref.local_ref.0)?;
+
+        let constant_ty = trait_constant.ty.clone();
+
+        let transformed = self
+            .transform_type(
+                constant_ty,
+                &Substitution::from_local(
+                    &constant.trait_substitution,
+                    GenericItemRef::Trait(constant.trait_constant_ref.trait_ref),
+                ),
+                &AssociatedBounds::default(),
+            )
+            .ok()?;
+
+        // should we do something with `transform.resolved_implements`?
+        Some(transformed.transformed)
+    }
+
     /// Gets the type of the [`constant::Constant`] value.
     #[must_use]
-    pub fn get_constant_ty(&self, _constant: &constant::Constant) -> Option<ty::Type> { todo!() }
+    pub fn get_constant_ty(&self, constant: &constant::Constant) -> Option<ty::Type> {
+        match constant {
+            constant::Constant::Primitive(constant::Primitive::Bool(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Bool))
+            }
+            constant::Constant::Primitive(constant::Primitive::Int8(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Int8))
+            }
+            constant::Constant::Primitive(constant::Primitive::Int16(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Int16))
+            }
+            constant::Constant::Primitive(constant::Primitive::Int32(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Int32))
+            }
+            constant::Constant::Primitive(constant::Primitive::Int64(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Int64))
+            }
+            constant::Constant::Primitive(constant::Primitive::Uint8(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Uint8))
+            }
+            constant::Constant::Primitive(constant::Primitive::Uint16(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Uint16))
+            }
+            constant::Constant::Primitive(constant::Primitive::Uint32(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Uint32))
+            }
+            constant::Constant::Primitive(constant::Primitive::Uint64(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Uint64))
+            }
+            constant::Constant::Primitive(constant::Primitive::Usize(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Usize))
+            }
+            constant::Constant::Primitive(constant::Primitive::Isize(..)) => {
+                Some(ty::Type::Primitive(ty::Primitive::Isize))
+            }
+            constant::Constant::Struct(struct_val) => {
+                Some(ty::Type::Struct(struct_val.struct_ty.clone()))
+            }
+            constant::Constant::Enum(enum_val) => Some(ty::Type::Enum(enum_val.enum_ty.clone())),
+            constant::Constant::Array(array_val) => Some(ty::Type::Array(ty::Array {
+                element_ty: Box::new(array_val.element_ty.clone()),
+                size: Box::new(constant::Constant::Primitive(constant::Primitive::Uint64(
+                    array_val.elements.len() as u64,
+                ))),
+            })),
+            constant::Constant::Tuple(tuple_val) => {
+                let mut elements = Vec::new();
+
+                for element in &tuple_val.elements {
+                    match element {
+                        constant::TupleElement::Regular(regular) => {
+                            elements
+                                .push(ty::TupleElement::Regular(self.get_constant_ty(regular)?));
+                        }
+                        constant::TupleElement::Unpacked(unpacked) => {
+                            let ty = match unpacked {
+                                constant::Unpacked::Parameter(parameter) => {
+                                    self.get_constant_parameter_ty(parameter)
+                                }
+                                constant::Unpacked::TraitAssociated(trait_associated) => {
+                                    self.get_trait_associated_constant_ty(trait_associated)
+                                }
+                            }?;
+
+                            match ty {
+                                ty::Type::Tuple(tuple) => {
+                                    elements.extend(tuple.elements.into_iter());
+                                }
+                                ty::Type::Parameter(parameter) => elements.push(
+                                    ty::TupleElement::Unpacked(ty::Unpacked::Parameter(parameter)),
+                                ),
+                                ty::Type::TraitAssociated(trait_associated) => {
+                                    elements.push(ty::TupleElement::Unpacked(
+                                        ty::Unpacked::TraitAssociated(trait_associated),
+                                    ));
+                                }
+                                ty => {
+                                    elements.push(ty::TupleElement::Regular(ty));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Some(ty::Type::Tuple(ty::Tuple { elements }))
+            }
+            constant::Constant::Parameter(constant_parameter) => {
+                self.get_constant_parameter_ty(constant_parameter)
+            }
+            constant::Constant::TraitAssociated(trait_associated) => {
+                self.get_trait_associated_constant_ty(trait_associated)
+            }
+        }
+    }
 
     /// Combining where clause in the table here we assume that everything is in the correct state
     /// and thus, should be able to combine

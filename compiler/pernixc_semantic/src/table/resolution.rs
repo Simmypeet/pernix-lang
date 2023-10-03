@@ -8,7 +8,7 @@ use pernixc_base::{
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{self, GenericIdentifier, QualifiedIdentifier};
 
-use super::Table;
+use super::{bound::Bound, Table};
 use crate::{
     constant,
     error::{
@@ -24,11 +24,14 @@ use crate::{
         ImplementsAssociatedRef, ImplementsFunctionRef, ImplementsRef, LifetimeBoundOperand,
         LifetimeParameterRef, LocalImplementsAssociatedRef, LocalImplementsRef,
         LocalLifetimeParameterRef, LocalSubstitution, LocalTraitAssociatedRef,
-        LocalTraitConstantRef, LocalTraitFunctionRef, LocalTraitTypeRef, ModuleMemberRef,
-        ModuleRef, StructRef, Substitution, TraitAssociatedRef, TraitRef, VariantRef, WhereClause,
+        LocalTraitConstantRef, LocalTraitFunctionRef, LocalTraitTypeRef, LocalTypeParameterRef,
+        ModuleMemberRef, ModuleRef, StructRef, Substitution, TraitAssociatedRef, TraitRef,
+        TypeParameterRef, VariantRef, WhereClause,
     },
     ty::{self, ElidedLifetime, Lifetime},
 };
+
+pub mod generic;
 
 #[derive(Clone)]
 pub(super) struct ToCheckingWithSpanHandler<'a> {
@@ -36,8 +39,8 @@ pub(super) struct ToCheckingWithSpanHandler<'a> {
     pub(super) handler: &'a dyn Handler<CheckingWithSpan>,
 }
 
-impl<'a> Handler<Checking> for ToCheckingWithSpanHandler<'a> {
-    fn receive(&self, error: Checking) {
+impl<'a> Handler<Bound> for ToCheckingWithSpanHandler<'a> {
+    fn receive(&self, error: Bound) {
         self.handler.receive(CheckingWithSpan {
             checking: error,
             span: self.span.clone(),
@@ -88,31 +91,12 @@ pub struct TraitBound {
     pub is_const: bool,
 }
 
-/// Represents a type checking occurred when substituting a constant parameter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub struct ConstantTypeCheck {
-    pub value_type: ty::Type,
-    pub expected_type: ty::Type,
-}
-
-/// An enumeration containing all kinds of checking occurred when resolving a symbol.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum Checking {
-    LifetimeBound(LifetimeBound),
-    TraitAssociatedTypeBound(TraitAssociatedTypeBound),
-    TraitAssociatedConstant(TraitAssociatedConstant),
-    TraitBound(TraitBound),
-    ConstantTypeCheck(ConstantTypeCheck),
-}
-
 /// A structure containing both the checking required and the span to the source code where checking
 /// occurred.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CheckingWithSpan {
     /// The checking required.
-    pub checking: Checking,
+    pub checking: Bound,
 
     /// The span to the source code where checking occurred.
     pub span: Span,
@@ -347,11 +331,12 @@ impl Table {
         &mut self,
         generic_identifier: &GenericIdentifier,
         global_item_ref: GlobalItemRef,
-        _active_where_clause: &WhereClause,
+        active_where_clause: &WhereClause,
         config: &Config,
         handler: &impl Handler<error::Error>,
     ) -> Result<LocalSubstitution, super::Error> {
-        let mut local_substitution = LocalSubstitution::default();
+        let mut current_local_substitution = LocalSubstitution::default();
+        let mut current_substitution = Substitution::default();
 
         // check if the item requires generic arguments
         let Ok(generic_item_ref) = GenericItemRef::try_from(global_item_ref) else {
@@ -364,7 +349,7 @@ impl Table {
                 ));
             }
 
-            return Ok(local_substitution);
+            return Ok(current_local_substitution);
         };
 
         let (
@@ -394,23 +379,39 @@ impl Table {
 
             // either supplied or not at all
             (required @ 1.., 0, ExplicitLifetimeRequired::False(generic_item_ref)) => {
-                for _ in 0..required {
-                    local_substitution
-                        .lifetimes
-                        .push(Lifetime::Elided(ElidedLifetime { generic_item_ref }));
+                for index in 0..required {
+                    let lifetime = Lifetime::Elided(ElidedLifetime { generic_item_ref });
+                    current_local_substitution.lifetimes.push(lifetime);
+                    current_substitution.lifetime_substitutions.insert(
+                        LifetimeParameterRef {
+                            generic_item_ref,
+                            local_ref: LocalLifetimeParameterRef(index),
+                        },
+                        lifetime,
+                    );
                 }
             }
 
             // well formed lifetime arguments
             (required, supplied, _) if required == supplied => {
-                for lifetime_argument_syntax_tree in lifetime_argument_syntax_trees {
-                    local_substitution
-                        .lifetimes
-                        .push(self.resolve_lifetime_argument(
-                            global_item_ref,
-                            lifetime_argument_syntax_tree,
-                            handler,
-                        )?);
+                for (index, lifetime_argument_syntax_tree) in
+                    lifetime_argument_syntax_trees.into_iter().enumerate()
+                {
+                    let lifetime = self.resolve_lifetime_argument(
+                        global_item_ref,
+                        lifetime_argument_syntax_tree,
+                        handler,
+                    )?;
+
+                    current_local_substitution.lifetimes.push(lifetime);
+
+                    current_substitution.lifetime_substitutions.insert(
+                        LifetimeParameterRef {
+                            generic_item_ref,
+                            local_ref: LocalLifetimeParameterRef(index),
+                        },
+                        lifetime,
+                    );
                 }
             }
 
@@ -459,21 +460,23 @@ impl Table {
             }
         }
 
-        for type_argument_syntax_tree in type_argument_syntax_trees {
-            local_substitution
-                .types
-                .push(self.resolve_type_with_finalization(
-                    type_argument_syntax_tree,
-                    config,
-                    handler,
-                )?);
+        for (index, type_argument_syntax_tree) in type_argument_syntax_trees.into_iter().enumerate()
+        {
+            let resolved_ty =
+                self.resolve_type_with_finalization(type_argument_syntax_tree, config, handler)?;
+            current_local_substitution.types.push(resolved_ty.clone());
+            current_substitution.type_substitutions.insert(
+                TypeParameterRef {
+                    generic_item_ref,
+                    local_ref: LocalTypeParameterRef(index),
+                },
+                resolved_ty,
+            );
         }
 
         for (index, constant_argument_syntax_tree) in
             constant_argument_syntax_trees.into_iter().enumerate()
         {
-            let substitution = Substitution::from_local(&local_substitution, generic_item_ref);
-
             let constant = self.evaluate_constant(
                 constant_argument_syntax_tree.expression(),
                 global_item_ref,
@@ -481,10 +484,19 @@ impl Table {
                 handler,
             )?;
 
-            todo!("perform type checking")
+            let mut constant_ty = self.get_constant_ty(&constant).unwrap();
+            let mut parameter_ty = self
+                .get_generic_item(generic_item_ref)
+                .unwrap()
+                .generic_parameters()
+                .constants[index]
+                .ty
+                .clone();
+
+            todo!("type checking")
         }
 
-        Ok(local_substitution)
+        Ok(current_local_substitution)
     }
 
     /// Resolves for a [`Lifetime`] with tthe given [`syntax_tree::LifetimeArgument`].
@@ -558,7 +570,7 @@ impl Table {
         _config: &Config,
         _handler: &impl Handler<error::Error>,
     ) -> Result<ty::Type, super::Error> {
-        todo!()
+        todo!("implements type resolution with finalization")
     }
 
     pub(super) fn resolve_with_finalization(

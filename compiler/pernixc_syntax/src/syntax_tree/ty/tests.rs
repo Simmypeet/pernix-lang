@@ -125,6 +125,8 @@ pub enum Primitive {
     Uint16,
     Uint32,
     Uint64,
+    Usize,
+    Isize,
 }
 
 impl Arbitrary for Primitive {
@@ -144,6 +146,8 @@ impl Arbitrary for Primitive {
             Just(Self::Uint16),
             Just(Self::Uint32),
             Just(Self::Uint64),
+            Just(Self::Usize),
+            Just(Self::Isize),
         ]
         .boxed()
     }
@@ -164,7 +168,9 @@ impl Input for Primitive {
             | (Self::Uint8, super::Primitive::Uint8(..))
             | (Self::Uint16, super::Primitive::Uint16(..))
             | (Self::Uint32, super::Primitive::Uint32(..))
-            | (Self::Uint64, super::Primitive::Uint64(..)) => Ok(()),
+            | (Self::Uint64, super::Primitive::Uint64(..))
+            | (Self::Usize, super::Primitive::Usize(..))
+            | (Self::Isize, super::Primitive::Isize(..)) => Ok(()),
 
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
@@ -187,6 +193,8 @@ impl Display for Primitive {
             Self::Uint16 => write!(f, "uint16"),
             Self::Uint32 => write!(f, "uint32"),
             Self::Uint64 => write!(f, "uint64"),
+            Self::Usize => write!(f, "usize"),
+            Self::Isize => write!(f, "isize"),
         }
     }
 }
