@@ -1,13 +1,12 @@
-use super::Deduction;
 use crate::{
     constant,
+    generic::deduction::Error,
     symbol::{
         ConstantParameterRef, GenericItemRef, LifetimeParameterRef, LocalConstantParameterRef,
         LocalLifetimeParameterRef, LocalSubstitution, LocalTraitConstantRef, LocalTraitTypeRef,
         LocalTypeParameterRef, StructRef, TraitConstantRef, TraitRef, TraitTypeRef,
         TypeParameterRef,
     },
-    table::Table,
     ty::{self, Lifetime},
 };
 
@@ -21,11 +20,8 @@ fn basic_type_deduction() {
         });
 
         let trait_ty = ty::Type::Primitive(ty::Primitive::Int32);
-        let mut deduction = Deduction::default();
 
-        deduction = Table::dedcue_in_type(&implements_ty, &trait_ty, deduction)
-            .unwrap()
-            .unwrap();
+        let deduction = super::dedcue_in_type(&dynements_ty, &trait_ty).unwrap();
 
         assert_eq!(
             deduction
@@ -49,11 +45,8 @@ fn basic_type_deduction() {
         });
 
         let trait_ty = ty::Type::Primitive(ty::Primitive::Int32);
-        let mut deduction = Deduction::default();
 
-        deduction = Table::dedcue_in_type(&implements_ty, &trait_ty, deduction)
-            .unwrap()
-            .unwrap();
+        let deduction = super::dedcue_in_type(&dynements_ty, &trait_ty).unwrap();
 
         assert_eq!(
             deduction
@@ -77,10 +70,7 @@ fn basic_constant_deduction() {
         let implements_constant = constant::Constant::Parameter(constant_parameter_ref);
         let trait_constant = constant::Constant::Primitive(constant::Primitive::Int32(42));
 
-        let mut deduction = Deduction::default();
-        deduction = Table::deduce_in_constant(&implements_constant, &trait_constant, deduction)
-            .unwrap()
-            .unwrap();
+        let deduction = super::deduce_in_constant(&dynements_constant, &trait_constant).unwrap();
 
         assert_eq!(
             deduction
@@ -104,11 +94,7 @@ fn basic_constant_deduction() {
 
         let trait_constant = constant::Constant::Primitive(constant::Primitive::Int32(42));
 
-        let mut deduction = Deduction::default();
-
-        deduction = Table::deduce_in_constant(&implements_constant, &trait_constant, deduction)
-            .unwrap()
-            .unwrap();
+        let deduction = super::deduce_in_constant(&dynements_constant, &trait_constant).unwrap();
 
         assert_eq!(
             deduction
@@ -152,10 +138,7 @@ fn basic_unifying_type_deduction() {
             },
         });
 
-        let mut deduction = Deduction::default();
-        deduction = Table::dedcue_in_type(&implements_ty, &trait_ty, deduction)
-            .unwrap()
-            .unwrap();
+        let deduction = super::dedcue_in_type(&dynements_ty, &trait_ty).unwrap();
 
         assert_eq!(
             deduction
@@ -208,10 +191,9 @@ fn reject_unifying_type_deduction() {
             },
         });
 
-        assert!(
-            Table::dedcue_in_type(&implements_ty, &trait_ty, Deduction::default())
-                .unwrap()
-                .is_none()
+        assert_eq!(
+            super::dedcue_in_type(&dynements_ty, &trait_ty,).unwrap_err(),
+            Error::NonUnifiable
         );
     }
 }
@@ -245,10 +227,7 @@ fn basic_tuple_type_unification() {
             ],
         });
 
-        let mut deduction = Deduction::default();
-        deduction = Table::dedcue_in_type(&implements_ty, &trait_ty, deduction)
-            .unwrap()
-            .unwrap();
+        let deduction = super::dedcue_in_type(&dynements_ty, &trait_ty).unwrap();
 
         assert_eq!(
             deduction
@@ -297,11 +276,7 @@ fn unpacked_tuple_type_unification() {
             ],
         });
 
-        let mut deduction = Deduction::default();
-
-        deduction = Table::dedcue_in_type(&implements_ty, &trait_ty, deduction)
-            .unwrap()
-            .unwrap();
+        let deduction = super::dedcue_in_type(&dynements_ty, &trait_ty).unwrap();
 
         let expected_ty = ty::Type::Tuple(ty::Tuple {
             elements: vec![
@@ -340,10 +315,7 @@ fn unpacked_tuple_type_unification() {
             ))],
         });
 
-        let mut deduction = Deduction::default();
-        deduction = Table::dedcue_in_type(&implements_ty, &trait_ty, deduction)
-            .unwrap()
-            .unwrap();
+        let deduction = super::dedcue_in_type(&dynements_ty, &trait_ty).unwrap();
 
         let expected_ty = ty::Type::Tuple(ty::Tuple { elements: vec![] });
 

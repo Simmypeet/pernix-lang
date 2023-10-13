@@ -12,9 +12,9 @@ use proptest::{
 
 use crate::syntax_tree::{
     self, pattern,
+    r#type::tests::Type,
     statement::tests::Statement,
     tests::{ConnectedList, ConstantPunctuation, QualifiedIdentifier},
-    ty::tests::Type,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

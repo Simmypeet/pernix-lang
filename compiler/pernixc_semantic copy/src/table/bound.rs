@@ -1,12 +1,12 @@
 use super::{
-    transformation::{self, SubstitutionError, Transformed},
+    transformation::{SubstitutionError, Transformed},
     Table,
 };
 use crate::{
     constant,
     symbol::{
         AssociatedBounds, GenericItemRef, HigherRankedableLifetime, LifetimeBoundOperand,
-        LocalSubstitution, Substitution, TraitRef, WhereClause,
+        LocalSubstitution, Substitution, TraitRef,
     },
     ty::{self, ElidedLifetime},
 };

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use getset::Getters;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::target::Target;
 use thiserror::Error;
@@ -9,36 +10,42 @@ use thiserror::Error;
 use crate::{
     constant, error,
     symbol::{
-        Accessibility, AssociatedBounds, Bounds, Constant, ConstantParameterRef, Enum, Function,
-        GenericItem, GenericItemRef, GlobalItem, GlobalItemRef, LocalImplementsAssociatedRef,
-        LocalTraitAssociatedRef, Module, ModuleRef, Struct, Substitution, Trait, TraitRef, Type,
-        WhereClause,
+        Accessibility, Constant, ConstantParameterRef, Enum, Function, GenericItem, GenericItemRef,
+        GlobalItem, GlobalItemRef, LocalImplementsAssociatedRef, LocalTraitAssociatedRef, Module,
+        ModuleRef, Struct, Trait, TraitRef, Type,
     },
     ty,
 };
 
-pub mod bound;
+// pub mod bound;
 mod core;
-mod drafting;
-mod evaluation;
-mod finalizing;
-pub mod resolution;
+// mod drafting;
+// mod evaluation;
+// mod finalizing;
+// pub mod resolution;
 mod state;
-mod transformation;
+// mod transformation;
 
 /// Contains all the symbols and information about the program.
 ///
 /// [`Table`] is the most important data structure in the semantic analysis phase. Most operations
 /// in the semantic analysis phase will require access to the [`Table`] in order to perform their
 /// work.
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 pub struct Table {
+    #[get = "pub"]
     modules: Vec<Module>,
+    #[get = "pub"]
     types: Vec<Type>,
+    #[get = "pub"]
     functions: Vec<Function>,
+    #[get = "pub"]
     enums: Vec<Enum>,
+    #[get = "pub"]
     structs: Vec<Struct>,
+    #[get = "pub"]
     traits: Vec<Trait>,
+    #[get = "pub"]
     constants: Vec<Constant>,
 
     target_root_module_indices_by_name: HashMap<String, ModuleRef>,
@@ -102,16 +109,19 @@ impl Table {
     /// - [`BuildError::TargetNamedCore`]: if a target named `@core` was found.
     pub fn build(
         targets: impl Iterator<Item = Target>,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<Self, BuildError> {
         let mut table = Self::new();
 
+        /*
         table.create_core_module();
         table.draft_targets(targets, handler)?;
 
         while let Some(drafted_symbol) = table.state_mananger.next_drafted_symbol_ref() {
             let _ = table.finalize_symbol_if_required(drafted_symbol, handler);
         }
+
+        */
 
         Ok(table)
     }
@@ -436,27 +446,28 @@ impl Table {
         &self,
         constant: &constant::TraitAssociated,
     ) -> Option<ty::Type> {
-        let trait_item = self.traits.get(constant.trait_constant_ref.trait_ref.0)?;
+        // let trait_item = self.traits.get(constant.trait_constant_ref.trait_ref.0)?;
 
-        let trait_constant = trait_item
-            .constants
-            .get(constant.trait_constant_ref.local_ref.0)?;
+        // let trait_constant = trait_item
+        //     .constants
+        //     .get(constant.trait_constant_ref.local_ref.0)?;
 
-        let constant_ty = trait_constant.ty.clone();
+        // let constant_ty = trait_constant.ty.clone();
 
-        let transformed = self
-            .transform_type(
-                constant_ty,
-                &Substitution::from_local(
-                    &constant.trait_substitution,
-                    GenericItemRef::Trait(constant.trait_constant_ref.trait_ref),
-                ),
-                &AssociatedBounds::default(),
-            )
-            .ok()?;
+        // let transformed = self
+        //     .transform_type(
+        //         constant_ty,
+        //         &Substitution::from_local(
+        //             &constant.trait_substitution,
+        //             GenericItemRef::Trait(constant.trait_constant_ref.trait_ref),
+        //         ),
+        //         &AssociatedBounds::default(),
+        //     )
+        //     .ok()?;
 
-        // should we do something with `transform.resolved_implements`?
-        Some(transformed.transformed)
+        // // should we do something with `transform.resolved_implements`?
+        // Some(transformed.transformed)
+        todo!()
     }
 
     /// Gets the type of the [`constant::Constant`] value.
@@ -556,6 +567,7 @@ impl Table {
         }
     }
 
+    /*
     /// Combining where clause in the table here we assume that everything is in the correct state
     /// and thus, should be able to combine
     fn combine_where_clause(&self, first: &WhereClause, second: &WhereClause) -> WhereClause {
@@ -599,6 +611,7 @@ impl Table {
 
         Some(current_where_clause.unwrap_or_default())
     }
+    */
 
     /// Gets the qualified name of the given [`GlobalItemRef`].
     #[must_use]

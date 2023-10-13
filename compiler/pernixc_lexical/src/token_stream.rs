@@ -67,7 +67,7 @@ impl TokenStream {
     /// A tuple containing the stream of successfully tokenized tokens and a list of lexical errors
     /// encountered during tokenization.
     #[must_use]
-    pub fn tokenize(source_file: &Arc<SourceFile>, handler: &impl Handler<error::Error>) -> Self {
+    pub fn tokenize(source_file: &Arc<SourceFile>, handler: &dyn Handler<error::Error>) -> Self {
         // list of tokens to return
         let mut tokens = Vec::new();
         let mut source_file_iterator = source_file.iter();
@@ -97,7 +97,7 @@ impl TokenStream {
 
     fn handle_token(
         tokens: &mut Vec<Token>,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Option<TokenTree> {
         tokens
             .pop()
@@ -107,7 +107,7 @@ impl TokenStream {
     fn handle_popped_token(
         tokens: &mut Vec<Token>,
         popped_token: Token,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Option<TokenTree> {
         match popped_token {
             Token::Punctuation(punc) if punc.punctuation == '{' => {
@@ -130,7 +130,7 @@ impl TokenStream {
         tokens: &mut Vec<Token>,
         open: Punctuation,
         delimiter: Delimiter,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Option<Delimited> {
         let mut token_trees = Vec::new();
 

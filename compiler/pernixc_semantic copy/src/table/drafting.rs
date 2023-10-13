@@ -25,7 +25,7 @@ impl Table {
     pub(super) fn draft_targets(
         &mut self,
         targets: impl Iterator<Item = Target>,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<(), BuildError> {
         let mut implements_syntax_tree_vecs_by_module_index = HashMap::new();
 
@@ -69,7 +69,7 @@ impl Table {
             ModuleRef,
             Vec<syntax_tree::item::Implements>,
         >,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<(), BuildError> {
         // target name must not be core
         if target.name() == "@core" {
@@ -107,7 +107,7 @@ impl Table {
             ModuleRef,
             Vec<syntax_tree::item::Implements>,
         >,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) {
         // create a new module
         let current_module_ref = ModuleRef(self.modules.len());

@@ -12,7 +12,7 @@ use pernixc_lexical::{
 use super::{expression::Expression, ConnectedList, LifetimeArgument, QualifiedIdentifier};
 use crate::{
     error::{Error, SyntaxKind, UnexpectedSyntax},
-    parser::Parser,
+    parser::{Parser, Reading},
 };
 
 /// Syntax Synopsis:
@@ -248,10 +248,10 @@ impl SourceElement for Unpackable {
 }
 
 impl<'a> Parser<'a> {
-    fn parse_reference_type(&mut self, handler: &impl Handler<Error>) -> Option<Reference> {
+    fn parse_reference_type(&mut self, handler: &dyn Handler<Error>) -> Option<Reference> {
         let ampersand = self.parse_punctuation('&', true, handler)?;
         let lifetime_argument = match self.stop_at_significant() {
-            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+            Reading::Atomic(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat apostrophe
                 self.forward();
 
@@ -267,12 +267,12 @@ impl<'a> Parser<'a> {
             _ => None,
         };
         let reference_qualifier = match self.stop_at_significant() {
-            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
+            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
                 self.forward();
                 Some(ReferenceQualifier::Mutable(k))
             }
 
-            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
+            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
                 self.forward();
                 Some(ReferenceQualifier::Restrict(k))
             }
@@ -289,11 +289,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_pointer_type(&mut self, handler: &impl Handler<Error>) -> Option<Pointer> {
+    fn parse_pointer_type(&mut self, handler: &dyn Handler<Error>) -> Option<Pointer> {
         let asterisk = self.parse_punctuation('*', true, handler)?;
 
         let mutable_keyword = match self.stop_at_significant() {
-            Some(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
+            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
                 self.forward();
                 Some(k)
             }
@@ -309,7 +309,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_array_type(&mut self, handler: &impl Handler<Error>) -> Option<Array> {
+    fn parse_array_type(&mut self, handler: &dyn Handler<Error>) -> Option<Array> {
         let delimited_tree = self.step_into(
             Delimiter::Bracket,
             |parser| {
@@ -332,7 +332,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_tuple_type(&mut self, handler: &impl Handler<Error>) -> Option<Tuple> {
+    fn parse_tuple_type(&mut self, handler: &dyn Handler<Error>) -> Option<Tuple> {
         let type_specifiers = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
@@ -342,9 +342,9 @@ impl<'a> Parser<'a> {
 
                 let ellipsis = match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
                     (
-                        Some(Token::Punctuation(p1)),
-                        Some(Token::Punctuation(p2)),
-                        Some(Token::Punctuation(p3)),
+                        Reading::Atomic(Token::Punctuation(p1)),
+                        Some(Reading::Atomic(Token::Punctuation(p2))),
+                        Some(Reading::Atomic(Token::Punctuation(p3))),
                     ) if p1.punctuation == '.'
                         && p2.punctuation == '.'
                         && p3.punctuation == '.' =>
@@ -379,15 +379,17 @@ impl<'a> Parser<'a> {
 
     /// Parses a [`Type`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_type(&mut self, handler: &impl Handler<Error>) -> Option<Type> {
+    pub fn parse_type(&mut self, handler: &dyn Handler<Error>) -> Option<Type> {
         match self.stop_at_significant() {
             // parse qualified identifier
-            Some(Token::Punctuation(first_colon))
+            Reading::Atomic(Token::Punctuation(first_colon))
                 if first_colon.punctuation == ':'
-                    && self.peek_offset(1).map_or(
-                        false,
-                        |x| matches!(x, Token::Punctuation(p) if p.punctuation == ':'),
-                    ) =>
+                    && self.peek_offset(1).map_or(false, |x| {
+                        matches!(
+                            x,
+                            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ':'
+                        )
+                    }) =>
             {
                 Some(Type::QualifiedIdentifier(
                     self.parse_qualified_identifier(false, handler)?,
@@ -395,32 +397,32 @@ impl<'a> Parser<'a> {
             }
 
             // parse qualified identifier
-            Some(Token::Identifier(..)) => Some(Type::QualifiedIdentifier(
+            Reading::Atomic(Token::Identifier(..)) => Some(Type::QualifiedIdentifier(
                 self.parse_qualified_identifier(false, handler)?,
             )),
 
             // parse pointer type
-            Some(Token::Punctuation(p)) if p.punctuation == '*' => {
+            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '*' => {
                 self.parse_pointer_type(handler).map(Type::Pointer)
             }
 
             // parse reference
-            Some(Token::Punctuation(p)) if p.punctuation == '&' => {
+            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '&' => {
                 self.parse_reference_type(handler).map(Type::Reference)
             }
 
             // parse array type
-            Some(Token::Punctuation(p)) if p.punctuation == '[' => {
+            Reading::IntoDelimited(p) if p.punctuation == '[' => {
                 self.parse_array_type(handler).map(Type::Array)
             }
 
             // parse tuple type
-            Some(Token::Punctuation(p)) if p.punctuation == '(' => {
+            Reading::IntoDelimited(p) if p.punctuation == '(' => {
                 self.parse_tuple_type(handler).map(Type::Tuple)
             }
 
             // primitive type
-            Some(Token::Keyword(keyword))
+            Reading::Atomic(Token::Keyword(keyword))
                 if matches!(
                     keyword.keyword,
                     KeywordKind::Int8
@@ -467,7 +469,7 @@ impl<'a> Parser<'a> {
 
                 handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
                     expected: SyntaxKind::TypeSpecifier,
-                    found,
+                    found: found.into_token(),
                 }));
 
                 None

@@ -1,3 +1,4 @@
+
 //! The semantic analyzer of the Pernix compiler.
 //!
 //! The crate includes following features:
@@ -19,5 +20,11 @@
 )]
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
-pub mod arena;
+pub mod constant;
+pub mod error;
+pub mod generic;
+pub mod pattern;
+pub mod repr;
 pub mod symbol;
+pub mod table;
+pub mod ty;

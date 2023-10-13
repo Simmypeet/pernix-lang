@@ -17,7 +17,7 @@ use super::{
 };
 use crate::{
     error::{self, SyntaxKind, UnexpectedSyntax},
-    parser::Parser,
+    parser::{Parser, Reading},
 };
 
 /// Syntax Synopsis:
@@ -249,7 +249,7 @@ impl SourceElement for Irrefutable {
 }
 
 trait Pattern {
-    fn parse(parser: &mut Parser, handler: &impl Handler<error::Error>) -> Option<Self>
+    fn parse(parser: &mut Parser, handler: &dyn Handler<error::Error>) -> Option<Self>
     where
         Self: Sized;
 }
@@ -257,14 +257,16 @@ trait Pattern {
 impl<'a> Parser<'a> {
     fn parse_structural_pattern<T: Pattern + Debug>(
         &mut self,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Option<Structural<T>> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
             |parser| {
                 let mutable_keyword = match parser.stop_at_significant() {
-                    Some(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::Mutable => {
+                    Reading::Atomic(Token::Keyword(keyword))
+                        if keyword.keyword == KeywordKind::Mutable =>
+                    {
                         parser.forward();
                         Some(keyword)
                     }
@@ -274,7 +276,9 @@ impl<'a> Parser<'a> {
                 let identifier = parser.parse_identifier(handler)?;
 
                 match (mutable_keyword.is_none(), parser.stop_at_significant()) {
-                    (true, Some(Token::Punctuation(colon))) if colon.punctuation == ':' => {
+                    (true, Reading::Atomic(Token::Punctuation(colon)))
+                        if colon.punctuation == ':' =>
+                    {
                         // eat colon
                         parser.forward();
 
@@ -304,7 +308,7 @@ impl<'a> Parser<'a> {
 
     fn parse_tuple_pattern<T: Pattern + Debug>(
         &mut self,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Option<Tuple<T>> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Parenthesis,
@@ -314,21 +318,21 @@ impl<'a> Parser<'a> {
 
                 match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
                     (
-                        Some(Token::Punctuation(
+                        Reading::Atomic(Token::Punctuation(
                             p1 @ Punctuation {
                                 punctuation: '.', ..
                             },
                         )),
-                        Some(Token::Punctuation(
+                        Some(Reading::Atomic(Token::Punctuation(
                             p2 @ Punctuation {
                                 punctuation: '.', ..
                             },
-                        )),
-                        Some(Token::Punctuation(
+                        ))),
+                        Some(Reading::Atomic(Token::Punctuation(
                             p3 @ Punctuation {
                                 punctuation: '.', ..
                             },
-                        )),
+                        ))),
                     ) => {
                         let ellipsis = (p1, p2, p3);
 
@@ -336,8 +340,11 @@ impl<'a> Parser<'a> {
                         parser.forward();
                         parser.forward();
 
-                        let mutable_keyword =
-                            parser.stop_at_significant().and_then(|token| match token {
+                        let mutable_keyword = parser
+                            .stop_at_significant()
+                            .into_atomic()
+                            .ok()
+                            .and_then(|token| match token {
                                 Token::Keyword(keyword)
                                     if keyword.keyword == KeywordKind::Mutable =>
                                 {
@@ -370,7 +377,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_identifier_pattern<T>(&mut self, handler: &impl Handler<error::Error>) -> Option<T>
+    fn parse_identifier_pattern<T>(&mut self, handler: &dyn Handler<error::Error>) -> Option<T>
     where
         T: Pattern + From<Named> + From<Enum<T>>,
     {
@@ -378,7 +385,7 @@ impl<'a> Parser<'a> {
 
         match self.stop_at_significant() {
             // parse enum pattern
-            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
+            Reading::IntoDelimited(left_paren) if left_paren.punctuation == '(' => {
                 let delimited_tree = self.step_into(
                     Delimiter::Parenthesis,
                     |parser| T::parse(parser, handler).map(Box::new),
@@ -408,10 +415,10 @@ impl<'a> Parser<'a> {
 }
 
 impl Pattern for Irrefutable {
-    fn parse(parser: &mut Parser, handler: &impl Handler<error::Error>) -> Option<Self> {
+    fn parse(parser: &mut Parser, handler: &dyn Handler<error::Error>) -> Option<Self> {
         match parser.stop_at_significant() {
             // parse named pattern
-            Some(Token::Keyword(mutable_keyword))
+            Reading::Atomic(Token::Keyword(mutable_keyword))
                 if mutable_keyword.keyword == KeywordKind::Mutable =>
             {
                 // eat the mutable keyword
@@ -426,7 +433,7 @@ impl Pattern for Irrefutable {
             }
 
             // parse named pattern
-            Some(Token::Identifier(identifier)) => {
+            Reading::Atomic(Token::Identifier(identifier)) => {
                 // eat identifier
                 parser.forward();
 
@@ -437,19 +444,19 @@ impl Pattern for Irrefutable {
             }
 
             // parse tuple pattern
-            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
+            Reading::IntoDelimited(left_paren) if left_paren.punctuation == '(' => {
                 parser.parse_tuple_pattern(handler).map(Self::Tuple)
             }
 
             // parse structural pattern
-            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => parser
+            Reading::IntoDelimited(left_brace) if left_brace.punctuation == '{' => parser
                 .parse_structural_pattern(handler)
                 .map(Self::Structural),
 
             found => {
                 handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
                     expected: SyntaxKind::Pattern,
-                    found,
+                    found: found.into_token(),
                 }));
                 None
             }
@@ -458,10 +465,10 @@ impl Pattern for Irrefutable {
 }
 
 impl Pattern for Refutable {
-    fn parse(parser: &mut Parser, handler: &impl Handler<error::Error>) -> Option<Self> {
+    fn parse(parser: &mut Parser, handler: &dyn Handler<error::Error>) -> Option<Self> {
         match parser.stop_at_significant() {
             // parse named pattern
-            Some(Token::Keyword(mutable_keyword))
+            Reading::Atomic(Token::Keyword(mutable_keyword))
                 if mutable_keyword.keyword == KeywordKind::Mutable =>
             {
                 // eat the mutable keyword
@@ -476,23 +483,25 @@ impl Pattern for Refutable {
             }
 
             // parse named pattern
-            Some(Token::Identifier(..)) => parser.parse_identifier_pattern(handler),
+            Reading::Atomic(Token::Identifier(..)) => parser.parse_identifier_pattern(handler),
 
             // parse tuple pattern
-            Some(Token::Punctuation(left_paren)) if left_paren.punctuation == '(' => {
+            Reading::IntoDelimited(left_paren) if left_paren.punctuation == '(' => {
                 parser.parse_tuple_pattern(handler).map(Self::Tuple)
             }
 
             // parse structural pattern
-            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => parser
+            Reading::IntoDelimited(left_brace) if left_brace.punctuation == '{' => parser
                 .parse_structural_pattern(handler)
                 .map(Self::Structural),
 
             // parse numeric literal pattern
-            Some(Token::Numeric(_)) => Some(Self::NumericLiteral(parser.parse_numeric_literal()?)),
+            Reading::Atomic(Token::Numeric(_)) => {
+                Some(Self::NumericLiteral(parser.parse_numeric_literal()?))
+            }
 
             // parse boolean literal pattern
-            Some(Token::Keyword(boolean_keyword))
+            Reading::Atomic(Token::Keyword(boolean_keyword))
                 if matches!(
                     boolean_keyword.keyword,
                     KeywordKind::True | KeywordKind::False
@@ -510,7 +519,7 @@ impl Pattern for Refutable {
             found => {
                 handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
                     expected: SyntaxKind::Pattern,
-                    found,
+                    found: found.into_token(),
                 }));
                 None
             }
@@ -522,7 +531,7 @@ impl<'a> Parser<'a> {
     /// Parses an [`Irrefutable`] pattern.
     pub fn parse_irrefutable_pattern(
         &mut self,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Option<Irrefutable> {
         Irrefutable::parse(self, handler)
     }
@@ -530,7 +539,7 @@ impl<'a> Parser<'a> {
     /// Parses a [`Refutable`] pattern.
     pub fn parse_refutable_pattern(
         &mut self,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Option<Refutable> {
         Refutable::parse(self, handler)
     }

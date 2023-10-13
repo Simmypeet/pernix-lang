@@ -266,7 +266,7 @@ impl Table {
     #[allow(clippy::type_complexity)]
     fn retrieve_generic_argument_syntax_trees<'a>(
         generic_identifier: &'a GenericIdentifier,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<
         (
             Vec<&'a syntax_tree::LifetimeArgument>,
@@ -333,7 +333,7 @@ impl Table {
         global_item_ref: GlobalItemRef,
         active_where_clause: &WhereClause,
         config: &Config,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<LocalSubstitution, super::Error> {
         let mut current_local_substitution = LocalSubstitution::default();
         let mut current_substitution = Substitution::default();
@@ -510,7 +510,7 @@ impl Table {
         &self,
         referring_site: GlobalItemRef,
         lifetime_argument: &syntax_tree::LifetimeArgument,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<Lifetime, super::Error> {
         match lifetime_argument.identifier() {
             syntax_tree::LifetimeArgumentIdentifier::Identifier(identifier) => self
@@ -531,7 +531,7 @@ impl Table {
         &self,
         referring_site: GlobalItemRef,
         identifier: &Identifier,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<LifetimeParameterRef, super::Error> {
         let scope_walker = self
             .scope_walker(referring_site)
@@ -568,7 +568,7 @@ impl Table {
         &mut self,
         _ty: &syntax_tree::ty::Type,
         _config: &Config,
-        _handler: &impl Handler<error::Error>,
+        _handler: &dyn Handler<error::Error>,
     ) -> Result<ty::Type, super::Error> {
         todo!("implements type resolution with finalization")
     }
@@ -577,7 +577,7 @@ impl Table {
         &mut self,
         qualified_identifier: &QualifiedIdentifier,
         config: &Config,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<Resolution, super::Error> {
         let mut current_root = Root {
             referring_site: config.referring_site,
@@ -609,7 +609,7 @@ impl Table {
         identifier: &Identifier,
         root: &Root,
         search_from_root: bool,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<GlobalItemRef, super::Error> {
         let global_ref = if let Some(latest_resolution) = &root.latest_resolution {
             let resolution_as_global_ref = match latest_resolution {
@@ -710,7 +710,7 @@ impl Table {
         &self,
         identifier: &Identifier,
         mut referring_site: GlobalItemRef,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<GlobalItemRef, super::Error> {
         // NOTE: Accessibility is not checked here because the symbol searching is done within the
         // same module ancestor tree.
@@ -753,7 +753,7 @@ impl Table {
         &self,
         identifier: &Identifier,
         referring_site: GlobalItemRef,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<Option<GlobalItemRef>, super::Error> {
         let closest_module = self
             .get_closet_module_ref(referring_site)
@@ -808,7 +808,7 @@ impl Table {
         &self,
         identifier: &Identifier,
         referring_site: GlobalItemRef,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<GlobalItemRef, super::Error> {
         let found_symbol_id = if let Some(id) =
             self.resolve_root_relative_first_pass(identifier, referring_site, handler)?
@@ -826,7 +826,7 @@ impl Table {
         &self,
         qualified_identifier: &QualifiedIdentifier,
         module_ref: ModuleRef,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<TraitRef, super::Error> {
         let mut current_root = Root {
             referring_site: GlobalItemRef::Module(module_ref),
@@ -884,7 +884,7 @@ impl Table {
     pub fn resolve_module_path(
         &self,
         module_path: &syntax_tree::item::ModulePath,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Option<ModuleRef> {
         let mut current_module_ref: Option<ModuleRef> = None;
 

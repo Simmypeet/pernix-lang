@@ -10,9 +10,12 @@ use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation, Token};
 use super::{
     expression::{Expression, Functional, Imperative, Terminator},
     pattern::Irrefutable,
-    ty::Type,
+    r#type::Type,
 };
-use crate::{error::Error, parser::Parser};
+use crate::{
+    error::Error,
+    parser::{Parser, Reading},
+};
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -149,9 +152,11 @@ impl SourceElement for Semi {
 impl<'a> Parser<'a> {
     /// Parses a [`Statement`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_statement(&mut self, handler: &impl Handler<Error>) -> Option<Statement> {
-        if matches!(self.stop_at_significant(), Some(Token::Keyword(k)) if k.keyword == KeywordKind::Let)
-        {
+    pub fn parse_statement(&mut self, handler: &dyn Handler<Error>) -> Option<Statement> {
+        if matches!(
+            self.stop_at_significant(),
+            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Let
+        ) {
             self.parse_variable_declaration(handler)
                 .map(Statement::VariableDeclaration)
         } else {
@@ -175,7 +180,7 @@ impl<'a> Parser<'a> {
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_variable_declaration(
         &mut self,
-        handler: &impl Handler<Error>,
+        handler: &dyn Handler<Error>,
     ) -> Option<VariableDeclaration> {
         let let_keyword = self.parse_keyword(KeywordKind::Let, handler)?;
 
@@ -183,7 +188,7 @@ impl<'a> Parser<'a> {
 
         // parse optional type annotation
         let type_annotation = match self.stop_at_significant() {
-            Some(Token::Punctuation(colon)) if colon.punctuation == ':' => {
+            Reading::Atomic(Token::Punctuation(colon)) if colon.punctuation == ':' => {
                 self.forward();
                 let ty = self.parse_type(handler)?;
                 Some(TypeAnnotation { colon, ty })

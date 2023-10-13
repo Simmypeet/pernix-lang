@@ -1,7 +1,7 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{resolution::CheckingBehavior, Table};
+use super::Table;
 use crate::{constant, error, symbol::GlobalItemRef};
 
 impl Table {
@@ -10,7 +10,7 @@ impl Table {
         _expression_syntax: &syntax_tree::expression::Expression,
         _evaluation_site: GlobalItemRef,
         _checking_behavior: CheckingBehavior,
-        _handler: &impl Handler<error::Error>,
+        _handler: &dyn Handler<error::Error>,
     ) -> Result<constant::Constant, super::Error> {
         todo!("implements constant evaluation")
     }

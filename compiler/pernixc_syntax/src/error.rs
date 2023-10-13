@@ -22,6 +22,7 @@ pub enum SyntaxKind {
     Keyword(KeywordKind),
     TraitMember,
     ImplementsMember,
+    Numeric,
 }
 
 /// A syntax/token is expected but found an other invalid token.
@@ -49,6 +50,7 @@ impl Display for UnexpectedSyntax {
             SyntaxKind::TraitMember => "a trait member syntax".to_string(),
             SyntaxKind::ImplementsMember => "an implements member syntax".to_string(),
             SyntaxKind::Pattern => "a pattern syntax".to_string(),
+            SyntaxKind::Numeric => "a numeric token".to_string(),
         };
         let found_binding = match self.found.clone() {
             Some(Token::Comment(..)) => "a comment token".to_string(),

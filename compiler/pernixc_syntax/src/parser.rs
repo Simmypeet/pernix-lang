@@ -1,57 +1,79 @@
-//! Contaisn the definition of the [`Parser`].
+//! Contains the [`Parser`] logic.
 
-use derive_more::{Deref, DerefMut, From};
+use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
 use pernixc_base::diagnostic::Handler;
 use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Punctuation, Token},
+    token::{Identifier, Keyword, KeywordKind, Numeric, Punctuation, Token},
     token_stream::{Delimited, Delimiter, TokenStream, TokenTree},
 };
 
-use crate::error::{Error as SyntacticError, SyntaxKind, UnexpectedSyntax};
+use crate::error::{Error, SyntaxKind, UnexpectedSyntax};
 
-/// Represents a source where the parser can get tokens from.
-#[derive(Debug, Clone, Copy, EnumAsInner, From)]
+/// Provides a way to iterate over a token stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum TokenProvider<'a> {
-    /// Top-level [`TokenStream`], not enclosed in any delimiters.
+    /// Iterating at the top level of the token stream.
     TokenStream(&'a TokenStream),
 
-    /// Delimited [`TokenStream`], enclosed in a pair of delimiters.
+    /// Iterating inside a delimited token stream.
     Delimited(&'a Delimited),
 }
 
 impl<'a> TokenProvider<'a> {
-    /// Gets the [`TokenStream`] from the [`TokenProvider`].
+    /// Gets the token stream of the current token provider.
     #[must_use]
     pub fn token_stream(&self) -> &'a TokenStream {
         match self {
-            TokenProvider::TokenStream(stream) => stream,
+            TokenProvider::TokenStream(token_stream) => token_stream,
             TokenProvider::Delimited(delimited) => &delimited.token_stream,
         }
     }
 }
 
-/// Represents a subset of parsing logic that handles on a specific range of [`TokenTree`]s.
-#[derive(Debug, Clone)]
+/// Represents a single frame of the parser's stack, responsible for reading a token stream in
+/// that given token stream level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Frame<'a> {
-    /// The [`TokenProvider`] that provides the [`TokenStream`] to parse.
-    pub token_provider: TokenProvider<'a>,
+    token_provider: TokenProvider<'a>,
     current_index: usize,
 }
 
-impl<'a> Frame<'a> {
-    pub(crate) fn get_actual_found_token(&self, found: Option<Token>) -> Option<Token> {
-        match found {
-            None => match self.token_provider {
-                TokenProvider::TokenStream(..) => None,
-                TokenProvider::Delimited(delimited) => {
-                    Some(Token::Punctuation(delimited.close.clone()))
-                }
-            },
-            found => found,
+/// Represents the read value of the [`Frame`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum Reading {
+    /// A singular token.
+    Atomic(Token),
+
+    /// Found an openning delimiter token, which means that the parser can step into a new
+    /// delimited frame.
+    IntoDelimited(Punctuation),
+
+    /// Found a closing delimiter token, which means that the parser should step out of the current
+    /// delimited frame.
+    DelimitedEnd(Punctuation),
+
+    /// End of file.
+    Eof,
+}
+
+impl Reading {
+    /// Gets the read token inside the [`Reading`] as `Option<Token>`
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if the [`Reading`] is [`Reading::Eof`].
+    #[must_use]
+    pub fn into_token(self) -> Option<Token> {
+        match self {
+            Self::Atomic(token) => Some(token),
+            Self::IntoDelimited(punc) | Self::DelimitedEnd(punc) => Some(Token::Punctuation(punc)),
+            Self::Eof => None,
         }
     }
+}
 
+impl<'a> Frame<'a> {
     /// Checks if the current [`Frame`] doesn't have any more significant [`TokenTree`]s to
     /// parse.
     #[must_use]
@@ -74,55 +96,49 @@ impl<'a> Frame<'a> {
     #[must_use]
     pub fn is_end(&self) -> bool { self.current_index >= self.token_provider.token_stream().len() }
 
-    fn to_token_output(token: &'a TokenTree) -> Token {
-        match token {
-            TokenTree::Token(token) => token.clone(),
-            TokenTree::Delimited(token) => Token::Punctuation(token.open.clone()),
-        }
-    }
-
-    fn last_token_output(&self) -> Option<Token> {
-        match self.token_provider {
-            TokenProvider::TokenStream(..) => None,
-            TokenProvider::Delimited(delimited) => {
-                Some(Token::Punctuation(delimited.close.clone()))
-            }
-        }
+    fn get_reading(&self, token: Option<&TokenTree>) -> Reading {
+        token.map_or_else(
+            || match self.token_provider {
+                // end of file
+                TokenProvider::TokenStream(..) => Reading::Eof,
+                TokenProvider::Delimited(delimited) => {
+                    Reading::DelimitedEnd(delimited.close.clone())
+                }
+            },
+            |token| match token {
+                TokenTree::Token(token) => Reading::Atomic(token.clone()),
+                TokenTree::Delimited(delimited) => Reading::IntoDelimited(delimited.open.clone()),
+            },
+        )
     }
 
     /// Returns a [`Token`] pointing by the `current_index` of the [`Frame`].
     #[must_use]
-    pub fn peek(&self) -> Option<Token> {
-        self.token_provider
-            .token_stream()
-            .get(self.current_index)
-            .map_or_else(
-                || self.last_token_output(),
-                |token| Some(Self::to_token_output(token)),
-            )
+    pub fn peek(&self) -> Reading {
+        self.get_reading(self.token_provider.token_stream().get(self.current_index))
     }
 
     /// Returns a [`Token`] pointing by the `current_index` with the given index offset of the
     /// [`Frame`].
+    ///
+    /// # Returns
+    ///
+    /// `None` if `offset + current_index` is less than zero or greter than
+    /// `self.token_provider.token_stream().len() + 1`
     #[must_use]
-    pub fn peek_offset(&self, offset: isize) -> Option<Token> {
+    pub fn peek_offset(&self, offset: isize) -> Option<Reading> {
         let index = self.current_index.checked_add(offset.try_into().ok()?)?;
 
-        self.token_provider.token_stream().get(index).map_or_else(
-            || {
-                if index == self.current_index {
-                    self.last_token_output()
-                } else {
-                    None
-                }
-            },
-            |token| Some(Self::to_token_output(token)),
-        )
+        if index > self.token_provider.token_stream().len() + 1 {
+            return None;
+        }
+
+        Some(self.get_reading(self.token_provider.token_stream().get(index)))
     }
 
     /// Returns a [`Token`] pointing by the `current_index` of the [`Frame`] and increments the
     /// `current_index` by 1.
-    pub fn next_token(&mut self) -> Option<Token> {
+    pub fn next_token(&mut self) -> Reading {
         let token = self.peek();
 
         // increment the index
@@ -141,7 +157,7 @@ impl<'a> Frame<'a> {
 
     /// Skips any insignificant [`Token`]s, returns the next significant [`Token`] found, and
     /// increments the `current_index` afterward.
-    pub fn next_significant_token(&mut self) -> Option<Token> {
+    pub fn next_significant_token(&mut self) -> Reading {
         let token = self.stop_at_significant();
 
         // increment the index
@@ -154,50 +170,165 @@ impl<'a> Frame<'a> {
     ///
     /// # Returns
     /// The significant [`Token`] if found, otherwise `None`.
-    pub fn stop_at_significant(&mut self) -> Option<Token> {
+    pub fn stop_at_significant(&mut self) -> Reading {
         while !self.is_end() {
             let token = self.peek();
 
-            if !matches!(token, Some(Token::WhiteSpaces(..) | Token::Comment(..))) {
+            if !matches!(
+                token,
+                Reading::Atomic(Token::WhiteSpaces(..) | Token::Comment(..))
+            ) {
                 return token;
             }
 
             self.forward();
         }
 
-        None
+        match self.token_provider {
+            TokenProvider::TokenStream(..) => Reading::Eof,
+            TokenProvider::Delimited(delimited) => Reading::DelimitedEnd(delimited.close.clone()),
+        }
     }
 
     /// Makes the current position stops at the first token that satisfies the predicate.
-    pub fn stop_at(&mut self, predicate: impl Fn(&Token) -> bool) -> Option<Token> {
+    pub fn stop_at(&mut self, predicate: impl Fn(&Reading) -> bool) -> Reading {
         while !self.is_end() {
-            let token = self.peek()?;
+            let token = self.peek();
 
             if predicate(&token) {
-                return Some(token);
+                return token;
             }
 
             self.current_index += 1;
         }
 
-        None
+        match self.token_provider {
+            TokenProvider::TokenStream(..) => Reading::Eof,
+            TokenProvider::Delimited(delimited) => Reading::DelimitedEnd(delimited.close.clone()),
+        }
+    }
+
+    /// Expects the next [`Token`] to be an [`Identifier`], and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not an [`Identifier`].
+    pub fn parse_identifier(&mut self, handler: &dyn Handler<Error>) -> Option<Identifier> {
+        match self.next_significant_token() {
+            Reading::Atomic(Token::Identifier(ident)) => Some(ident),
+            found => {
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Identifier,
+                    found: found.into_token(),
+                }));
+                None
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be an [`Numeric`], and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not an [`Identifier`].
+    pub fn parse_numeric(&mut self, handler: &dyn Handler<Error>) -> Option<Numeric> {
+        match self.next_significant_token() {
+            Reading::Atomic(Token::Numeric(ident)) => Some(ident),
+            found => {
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Numeric,
+                    found: found.into_token(),
+                }));
+                None
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be a [`Keyword`] of specific kind, and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not a [`Keyword`] of specific kind.
+    pub fn parse_keyword(
+        &mut self,
+        expected: KeywordKind,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Keyword> {
+        match self.next_significant_token() {
+            Reading::Atomic(Token::Keyword(keyword_token)) if keyword_token.keyword == expected => {
+                Some(keyword_token)
+            }
+            found => {
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Keyword(expected),
+                    found: found.into_token(),
+                }));
+                None
+            }
+        }
+    }
+
+    /// Expects the next [`Token`] to be a [`Punctuation`] of specific kind, and returns it.
+    ///
+    /// # Errors
+    /// If the next [`Token`] is not a [`Punctuation`] of specific kind.
+    pub fn parse_punctuation(
+        &mut self,
+        expected: char,
+        skip_insignificant: bool,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Punctuation> {
+        match if skip_insignificant {
+            self.next_significant_token()
+        } else {
+            self.next_token()
+        } {
+            Reading::Atomic(Token::Punctuation(punctuation_token))
+                if punctuation_token.punctuation == expected =>
+            {
+                Some(punctuation_token)
+            }
+            found => {
+                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    expected: SyntaxKind::Punctuation(expected),
+                    found: found.into_token(),
+                }));
+                None
+            }
+        }
+    }
+
+    /// Tries to parse the given function, and if it fails, resets the current index to the
+    /// `current_index` before the function call.
+    pub fn try_parse<T>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+        let current_index = self.current_index;
+
+        let result = f(self);
+
+        if result.is_none() {
+            self.current_index = current_index;
+        }
+
+        result
     }
 }
 
 /// The parser of the compiler.
-#[derive(Debug, Clone, Deref, DerefMut)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deref, DerefMut)]
 pub struct Parser<'a> {
     #[deref]
     #[deref_mut]
     current_frame: Frame<'a>,
     stack: Vec<Frame<'a>>,
-    trying_stack: Vec<usize>,
 }
 
-#[derive(Debug, Clone)]
+/// Represents a result of [`Parser::step_into()`] function.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DelimitedTree<T> {
+    /// The opening delimiter.
     pub open: Punctuation,
+
+    /// The tree inside the delimiter.
     pub tree: Option<T>,
+
+    /// The closing delimiter.
     pub close: Punctuation,
 }
 
@@ -211,7 +342,6 @@ impl<'a> Parser<'a> {
                 current_index: 0,
             },
             stack: Vec::new(),
-            trying_stack: Vec::new(),
         }
     }
 
@@ -222,7 +352,7 @@ impl<'a> Parser<'a> {
         &mut self,
         delimiter: Delimiter,
         f: impl FnOnce(&mut Self) -> Option<T>,
-        handler: &impl Handler<SyntacticError>,
+        handler: &dyn Handler<Error>,
     ) -> Option<DelimitedTree<T>> {
         self.current_frame.stop_at_significant();
         let raw_token_tree = self
@@ -246,7 +376,7 @@ impl<'a> Parser<'a> {
                     delimited_tree
                 }
                 found => {
-                    handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+                    handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
                         expected: SyntaxKind::Punctuation(expected),
                         found: Some(match found {
                             TokenTree::Token(token) => token.clone(),
@@ -260,9 +390,9 @@ impl<'a> Parser<'a> {
                 }
             }
         } else {
-            handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+            handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
                 expected: SyntaxKind::Punctuation(expected),
-                found: self.get_actual_found_token(None),
+                found: self.get_reading(None).into_token(),
             }));
 
             return None;
@@ -281,10 +411,6 @@ impl<'a> Parser<'a> {
         let open = delimited_stream.open.clone();
 
         let tree = f(self);
-
-        if let Some(threshold) = self.trying_stack.last().copied() {
-            assert!(self.stack.len() > threshold);
-        }
 
         // pops the current frame off the stack
         let Some(new_frame) = self.stack.pop() else {
@@ -305,9 +431,9 @@ impl<'a> Parser<'a> {
                 Delimiter::Bracket => ']',
             };
 
-            handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
+            handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
                 expected: SyntaxKind::Punctuation(expected),
-                found: self.get_actual_found_token(self.peek()),
+                found: self.peek().into_token(),
             }));
         }
 
@@ -329,98 +455,17 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Performs a rollback if the parsing fails.
-    #[allow(clippy::missing_errors_doc)]
-    pub fn try_parse<T>(&mut self, parser: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
-        let current_frame_copy = self.current_frame.clone();
-        self.trying_stack.push(self.stack.len());
+    /// Tries to parse the given function, and if it fails, resets the current index to the
+    /// `current_index` before the function call.
+    pub fn try_parse<T>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+        let current_frame_index = self.current_frame.current_index;
 
-        if let Some(value) = parser(self) {
-            self.trying_stack.pop();
-            Some(value)
-        } else {
-            let stack_len = self.trying_stack.pop().unwrap();
+        let result = f(self);
 
-            // the stack must be the same as before the call
-            self.stack.truncate(stack_len);
-
-            // restore the current Frame
-            self.current_frame = current_frame_copy;
-
-            None
+        if result.is_none() {
+            self.current_frame.current_index = current_frame_index;
         }
-    }
 
-    /// Expects the next [`Token`] to be an [`Identifier`], and returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not an [`Identifier`].
-    pub fn parse_identifier(
-        &mut self,
-        handler: &impl Handler<SyntacticError>,
-    ) -> Option<Identifier> {
-        match self.next_significant_token() {
-            Some(Token::Identifier(ident)) => Some(ident),
-            found => {
-                handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
-                    expected: SyntaxKind::Identifier,
-                    found: self.get_actual_found_token(found),
-                }));
-                None
-            }
-        }
-    }
-
-    /// Expects the next [`Token`] to be a [`Keyword`] of specific kind, and returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not a [`Keyword`] of specific kind.
-    pub fn parse_keyword(
-        &mut self,
-        expected: KeywordKind,
-        handler: &impl Handler<SyntacticError>,
-    ) -> Option<Keyword> {
-        match self.next_significant_token() {
-            Some(Token::Keyword(keyword_token)) if keyword_token.keyword == expected => {
-                Some(keyword_token)
-            }
-            found => {
-                handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
-                    expected: SyntaxKind::Keyword(expected),
-                    found: self.get_actual_found_token(found),
-                }));
-                None
-            }
-        }
-    }
-
-    /// Expects the next [`Token`] to be a [`Punctuation`] of specific kind, and returns it.
-    ///
-    /// # Errors
-    /// If the next [`Token`] is not a [`Punctuation`] of specific kind.
-    pub fn parse_punctuation(
-        &mut self,
-        expected: char,
-        skip_insignificant: bool,
-        handler: &impl Handler<SyntacticError>,
-    ) -> Option<Punctuation> {
-        match if skip_insignificant {
-            self.next_significant_token()
-        } else {
-            self.next_token()
-        } {
-            Some(Token::Punctuation(punctuation_token))
-                if punctuation_token.punctuation == expected =>
-            {
-                Some(punctuation_token)
-            }
-            found => {
-                handler.receive(SyntacticError::UnexpectedSyntax(UnexpectedSyntax {
-                    expected: SyntaxKind::Punctuation(expected),
-                    found: self.get_actual_found_token(found),
-                }));
-                None
-            }
-        }
+        result
     }
 }

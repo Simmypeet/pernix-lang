@@ -417,7 +417,7 @@ impl Token {
         iter: &mut source_file::Iterator,
         start: ByteIndex,
         character: char,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<Self, Error> {
         // Single line comment
         if let Some((_, '/')) = iter.peek() {
@@ -507,7 +507,7 @@ impl Token {
     /// - [`Error::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn lex(
         iter: &mut source_file::Iterator,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> Result<Self, Error> {
         // Gets the first character
         let (start, character) = iter.next().ok_or(Error::EndOfSourceCodeIteratorArgument)?;

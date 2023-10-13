@@ -15,13 +15,12 @@ use crate::syntax_tree::{
         self,
         tests::{Expression, Functional},
     },
-    pattern,
+    pattern, r#type,
     statement::tests::Statement,
     tests::{
         AccessModifier, ConnectedList, ConstantPunctuation, Identifier, LifetimeArgument,
         QualifiedIdentifier,
     },
-    ty,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -310,7 +309,7 @@ impl Display for LifetimeParameter {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstParameter {
     pub identifier: Identifier,
-    pub ty: ty::tests::Type,
+    pub ty: r#type::tests::Type,
     pub default: Option<Functional>,
 }
 
@@ -337,7 +336,7 @@ impl Arbitrary for ConstParameter {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
-            ty::tests::Type::arbitrary(),
+            r#type::tests::Type::arbitrary(),
             proptest::option::of(Expression::arbitrary().prop_filter_map(
                 "allows only non-binary functional variant",
                 |x| match x {
@@ -371,7 +370,7 @@ impl Display for ConstParameter {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeParameter {
     pub identifier: Identifier,
-    pub default: Option<ty::tests::Type>,
+    pub default: Option<r#type::tests::Type>,
 }
 
 impl Input for TypeParameter {
@@ -396,7 +395,7 @@ impl Arbitrary for TypeParameter {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
-            proptest::option::of(ty::tests::Type::arbitrary()),
+            proptest::option::of(r#type::tests::Type::arbitrary()),
         )
             .prop_map(|(identifier, ty)| Self {
                 identifier,
@@ -632,7 +631,7 @@ impl<T: std::fmt::Debug> BoundList<T> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum LifetimeBoundOperand {
     LifetimeParameter(LifetimeParameter),
-    Type(ty::tests::Type),
+    QualifiedIdentifier(syntax_tree::tests::QualifiedIdentifier),
 }
 
 impl Input for LifetimeBoundOperand {
@@ -643,7 +642,9 @@ impl Input for LifetimeBoundOperand {
             (Self::LifetimeParameter(i), super::LifetimeBoundOperand::LifetimeParameter(o)) => {
                 i.assert(o)
             }
-            (Self::Type(i), super::LifetimeBoundOperand::Type(o)) => i.assert(o),
+            (Self::QualifiedIdentifier(i), super::LifetimeBoundOperand::QualifiedIdentifier(o)) => {
+                i.assert(o)
+            }
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -658,7 +659,8 @@ impl Arbitrary for LifetimeBoundOperand {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             LifetimeParameter::arbitrary().prop_map(Self::LifetimeParameter),
-            ty::tests::Type::arbitrary().prop_map(Self::Type),
+            syntax_tree::tests::QualifiedIdentifier::arbitrary_with((false, None))
+                .prop_map(Self::QualifiedIdentifier),
         ]
         .boxed()
     }
@@ -668,7 +670,7 @@ impl Display for LifetimeBoundOperand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::LifetimeParameter(lifetime_parameter) => Display::fmt(lifetime_parameter, f),
-            Self::Type(ty) => Display::fmt(ty, f),
+            Self::QualifiedIdentifier(ty) => Display::fmt(ty, f),
         }
     }
 }
@@ -716,7 +718,7 @@ impl Display for LifetimeBound {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TraitAssociationBoundArgument {
     Const(Expression),
-    Type(ty::tests::Type),
+    Type(r#type::tests::Type),
 }
 
 impl Input for TraitAssociationBoundArgument {
@@ -742,7 +744,7 @@ impl Arbitrary for TraitAssociationBoundArgument {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Expression::arbitrary().prop_map(Self::Const),
-            ty::tests::Type::arbitrary().prop_map(Self::Type),
+            r#type::tests::Type::arbitrary().prop_map(Self::Type),
         ]
         .boxed()
     }
@@ -877,7 +879,7 @@ impl Display for WhereClause {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameter {
     pub irrefutable_pattern: pattern::tests::Irrefutable,
-    pub ty: ty::tests::Type,
+    pub ty: r#type::tests::Type,
 }
 
 impl Input for Parameter {
@@ -897,7 +899,7 @@ impl Arbitrary for Parameter {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
             pattern::tests::Irrefutable::arbitrary(),
-            ty::tests::Type::arbitrary(),
+            r#type::tests::Type::arbitrary(),
         )
             .prop_map(|(irrefutable_pattern, ty)| Self {
                 irrefutable_pattern,
@@ -952,7 +954,7 @@ impl Display for Parameters {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReturnType {
-    pub ty: ty::tests::Type,
+    pub ty: r#type::tests::Type,
 }
 
 impl Input for ReturnType {
@@ -966,7 +968,7 @@ impl Arbitrary for ReturnType {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        ty::tests::Type::arbitrary()
+        r#type::tests::Type::arbitrary()
             .prop_map(|ty| Self { ty })
             .boxed()
     }
@@ -1155,7 +1157,7 @@ impl Display for Function {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstSignature {
     pub identifier: Identifier,
-    pub ty: ty::tests::Type,
+    pub ty: r#type::tests::Type,
 }
 
 impl Input for ConstSignature {
@@ -1172,7 +1174,7 @@ impl Arbitrary for ConstSignature {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (Identifier::arbitrary(), ty::tests::Type::arbitrary())
+        (Identifier::arbitrary(), r#type::tests::Type::arbitrary())
             .prop_map(|(identifier, ty)| Self { identifier, ty })
             .boxed()
     }
@@ -1509,7 +1511,7 @@ impl Display for TraitType {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitConstant {
     pub identifier: Identifier,
-    pub ty: ty::tests::Type,
+    pub ty: r#type::tests::Type,
 }
 
 impl Input for TraitConstant {
@@ -1526,7 +1528,7 @@ impl Arbitrary for TraitConstant {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (Identifier::arbitrary(), ty::tests::Type::arbitrary())
+        (Identifier::arbitrary(), r#type::tests::Type::arbitrary())
             .prop_map(|(identifier, ty)| Self { identifier, ty })
             .boxed()
     }
@@ -1674,7 +1676,7 @@ impl Display for Trait {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeDefinition {
-    pub ty: ty::tests::Type,
+    pub ty: r#type::tests::Type,
     pub where_clause: Option<WhereClause>,
 }
 
@@ -1693,7 +1695,7 @@ impl Arbitrary for TypeDefinition {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
-            ty::tests::Type::arbitrary(),
+            r#type::tests::Type::arbitrary(),
             proptest::option::of(WhereClause::arbitrary()),
         )
             .prop_map(|(ty, where_clause)| Self { ty, where_clause })
@@ -1763,7 +1765,7 @@ impl Display for Type {
 pub struct StructField {
     pub access_modifier: AccessModifier,
     pub identifier: Identifier,
-    pub ty: ty::tests::Type,
+    pub ty: r#type::tests::Type,
 }
 
 impl Input for StructField {
@@ -1784,7 +1786,7 @@ impl Arbitrary for StructField {
         (
             AccessModifier::arbitrary(),
             Identifier::arbitrary(),
-            ty::tests::Type::arbitrary(),
+            r#type::tests::Type::arbitrary(),
         )
             .prop_map(|(access_modifier, identifier, ty)| Self {
                 access_modifier,
@@ -2027,7 +2029,7 @@ impl Display for EnumSignature {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnumVariant {
     pub identifier: Identifier,
-    pub variant_association: Option<ty::tests::Type>,
+    pub variant_association: Option<r#type::tests::Type>,
 }
 
 impl Input for EnumVariant {
@@ -2055,7 +2057,7 @@ impl Arbitrary for EnumVariant {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
-            proptest::option::of(ty::tests::Type::arbitrary()),
+            proptest::option::of(r#type::tests::Type::arbitrary()),
         )
             .prop_map(|(identifier, variant_association)| Self {
                 identifier,
@@ -2230,7 +2232,7 @@ impl Display for ImplementsFunction {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementsConstant {
     pub identifier: Identifier,
-    pub ty: ty::tests::Type,
+    pub ty: r#type::tests::Type,
     pub expression: expression::tests::Expression,
 }
 

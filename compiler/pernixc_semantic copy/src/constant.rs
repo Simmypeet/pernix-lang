@@ -1,4 +1,4 @@
-//! Contains all the definitions of compile-time evaluated constant value.
+//! all the definitions of compile-time evaluated constant value.
 
 use enum_as_inner::EnumAsInner;
 
@@ -173,3 +173,4 @@ impl Constant {
         }
     }
 }
+ 

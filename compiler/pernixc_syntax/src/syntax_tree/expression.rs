@@ -13,12 +13,12 @@ use pernixc_lexical::{
 };
 
 use super::{
-    pattern, statement::Statement, ty::Type, ConnectedList, DelimitedList, Label,
+    pattern, r#type::Type, statement::Statement, ConnectedList, DelimitedList, Label,
     QualifiedIdentifier,
 };
 use crate::{
     error::{Error, SyntaxKind, UnexpectedSyntax},
-    parser::Parser,
+    parser::{Parser, Reading},
 };
 
 /// Syntax Synopsis:
@@ -1118,7 +1118,7 @@ impl SourceElement for Return {
 }
 
 impl<'a> Parser<'a> {
-    fn parse_binary_expression(&mut self, handler: &impl Handler<Error>) -> Option<Functional> {
+    fn parse_binary_expression(&mut self, handler: &dyn Handler<Error>) -> Option<Functional> {
         let mut first_functional = self.parse_primary_expression(handler)?;
         let mut expressions = Vec::new();
 
@@ -1189,9 +1189,9 @@ impl<'a> Parser<'a> {
         Some(first_functional)
     }
 
-    fn parse_block(&mut self, handler: &impl Handler<Error>) -> Option<Block> {
+    fn parse_block(&mut self, handler: &dyn Handler<Error>) -> Option<Block> {
         let label_specifier = match self.stop_at_significant() {
-            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+            Reading::Atomic(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat apostrophe
                 self.forward();
 
@@ -1210,7 +1210,7 @@ impl<'a> Parser<'a> {
         };
 
         let unsafe_keyword = match self.stop_at_significant() {
-            Some(Token::Keyword(unsafe_keyword))
+            Reading::Atomic(Token::Keyword(unsafe_keyword))
                 if unsafe_keyword.keyword == KeywordKind::Unsafe =>
             {
                 self.forward();
@@ -1228,12 +1228,16 @@ impl<'a> Parser<'a> {
         })
     }
 
+    pub fn try_parse_functional(&mut self) -> Option<Functional> {
+        self.try_parse(|parser| parser.parse_binary_expression(&Dummy))
+    }
+
     /// Parses an [`Expression`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_expression(&mut self, handler: &impl Handler<Error>) -> Option<Expression> {
+    pub fn parse_expression(&mut self, handler: &dyn Handler<Error>) -> Option<Expression> {
         match self.stop_at_significant() {
             // parse return expression
-            Some(Token::Keyword(return_keyword))
+            Reading::Atomic(Token::Keyword(return_keyword))
                 if return_keyword.keyword == KeywordKind::Return =>
             {
                 // eat return keyword
@@ -1248,7 +1252,7 @@ impl<'a> Parser<'a> {
             }
 
             // parse continue expression
-            Some(Token::Keyword(continue_keyword))
+            Reading::Atomic(Token::Keyword(continue_keyword))
                 if continue_keyword.keyword == KeywordKind::Continue =>
             {
                 // eat return keyword
@@ -1263,7 +1267,9 @@ impl<'a> Parser<'a> {
             }
 
             // parse break expression
-            Some(Token::Keyword(break_keyword)) if break_keyword.keyword == KeywordKind::Break => {
+            Reading::Atomic(Token::Keyword(break_keyword))
+                if break_keyword.keyword == KeywordKind::Break =>
+            {
                 // eat return keyword
                 self.next_token();
 
@@ -1278,7 +1284,7 @@ impl<'a> Parser<'a> {
             }
 
             // parse express expression
-            Some(Token::Keyword(express_keyword))
+            Reading::Atomic(Token::Keyword(express_keyword))
                 if express_keyword.keyword == KeywordKind::Express =>
             {
                 // eat return keyword
@@ -1295,29 +1301,37 @@ impl<'a> Parser<'a> {
             }
 
             // parse match expression
-            Some(Token::Keyword(match_keyword)) if match_keyword.keyword == KeywordKind::Match => {
+            Reading::Atomic(Token::Keyword(match_keyword))
+                if match_keyword.keyword == KeywordKind::Match =>
+            {
                 self.parse_match(handler)
                     .map(|x| Expression::Imperative(Imperative::Match(x)))
             }
 
             // parse if else expression
-            Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => self
-                .parse_if_else(handler)
-                .map(|x| Expression::Imperative(Imperative::IfElse(x))),
+            Reading::Atomic(Token::Keyword(if_keyword))
+                if if_keyword.keyword == KeywordKind::If =>
+            {
+                self.parse_if_else(handler)
+                    .map(|x| Expression::Imperative(Imperative::IfElse(x)))
+            }
 
-            Some(Token::Keyword(unsafe_keyword))
+            Reading::Atomic(Token::Keyword(unsafe_keyword))
                 if unsafe_keyword.keyword == KeywordKind::Unsafe =>
             {
                 self.parse_block(handler)
                     .map(|x| Expression::Imperative(Imperative::Block(x)))
             }
-            Some(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => self
+            Reading::Atomic(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                self.parse_block(handler)
+                    .map(|x| Expression::Imperative(Imperative::Block(x)))
+            }
+            Reading::IntoDelimited(left_brace) if left_brace.punctuation == '{' => self
                 .parse_block(handler)
                 .map(|x| Expression::Imperative(Imperative::Block(x))),
-            Some(Token::Punctuation(left_brace)) if left_brace.punctuation == '{' => self
-                .parse_block(handler)
-                .map(|x| Expression::Imperative(Imperative::Block(x))),
-            Some(Token::Keyword(loop_keyword)) if loop_keyword.keyword == KeywordKind::Loop => {
+            Reading::Atomic(Token::Keyword(loop_keyword))
+                if loop_keyword.keyword == KeywordKind::Loop =>
+            {
                 // eat loop
                 self.forward();
 
@@ -1335,7 +1349,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_label(&mut self, handler: &impl Handler<Error>) -> Option<Label> {
+    fn parse_label(&mut self, handler: &dyn Handler<Error>) -> Option<Label> {
         let apostrophe = self.parse_punctuation('\'', true, handler)?;
         let identifier = self.parse_identifier(handler)?;
 
@@ -1347,7 +1361,7 @@ impl<'a> Parser<'a> {
 
     fn try_parse_binary_operator(&mut self) -> Option<BinaryOperator> {
         let first_level = self.try_parse(|parser| match parser.next_significant_token() {
-            Some(Token::Punctuation(p)) => match p.punctuation {
+            Reading::Atomic(Token::Punctuation(p)) => match p.punctuation {
                 '+' => Some(BinaryOperator::Add(p)),
                 '-' => Some(BinaryOperator::Subtract(p)),
                 '*' => Some(BinaryOperator::Multiply(p)),
@@ -1366,7 +1380,7 @@ impl<'a> Parser<'a> {
                 '<' => Some(BinaryOperator::LessThan(p)),
                 _ => None,
             },
-            Some(Token::Keyword(k)) => match k.keyword {
+            Reading::Atomic(Token::Keyword(k)) => match k.keyword {
                 KeywordKind::And => Some(BinaryOperator::LogicalAnd(k)),
                 KeywordKind::Or => Some(BinaryOperator::LogicalOr(k)),
                 _ => None,
@@ -1376,25 +1390,31 @@ impl<'a> Parser<'a> {
 
         Some(
             self.try_parse(|parser| match (first_level.clone(), parser.next_token()) {
-                (first_level, Some(Token::Punctuation(n))) => match (first_level, n.punctuation) {
-                    (BinaryOperator::Add(p), '=') => Some(BinaryOperator::CompoundAdd(p, n)),
-                    (BinaryOperator::Subtract(p), '=') => {
-                        Some(BinaryOperator::CompoundSubtract(p, n))
+                (first_level, Reading::Atomic(Token::Punctuation(n))) => {
+                    match (first_level, n.punctuation) {
+                        (BinaryOperator::Add(p), '=') => Some(BinaryOperator::CompoundAdd(p, n)),
+                        (BinaryOperator::Subtract(p), '=') => {
+                            Some(BinaryOperator::CompoundSubtract(p, n))
+                        }
+                        (BinaryOperator::Multiply(p), '=') => {
+                            Some(BinaryOperator::CompoundMultiply(p, n))
+                        }
+                        (BinaryOperator::Divide(p), '=') => {
+                            Some(BinaryOperator::CompoundDivide(p, n))
+                        }
+                        (BinaryOperator::Modulo(p), '=') => {
+                            Some(BinaryOperator::CompoundModulo(p, n))
+                        }
+                        (BinaryOperator::Assign(p), '=') => Some(BinaryOperator::Equal(p, n)),
+                        (BinaryOperator::GreaterThan(p), '=') => {
+                            Some(BinaryOperator::GreaterThanOrEqual(p, n))
+                        }
+                        (BinaryOperator::LessThan(p), '=') => {
+                            Some(BinaryOperator::LessThanOrEqual(p, n))
+                        }
+                        _ => None,
                     }
-                    (BinaryOperator::Multiply(p), '=') => {
-                        Some(BinaryOperator::CompoundMultiply(p, n))
-                    }
-                    (BinaryOperator::Divide(p), '=') => Some(BinaryOperator::CompoundDivide(p, n)),
-                    (BinaryOperator::Modulo(p), '=') => Some(BinaryOperator::CompoundModulo(p, n)),
-                    (BinaryOperator::Assign(p), '=') => Some(BinaryOperator::Equal(p, n)),
-                    (BinaryOperator::GreaterThan(p), '=') => {
-                        Some(BinaryOperator::GreaterThanOrEqual(p, n))
-                    }
-                    (BinaryOperator::LessThan(p), '=') => {
-                        Some(BinaryOperator::LessThanOrEqual(p, n))
-                    }
-                    _ => None,
-                },
+                }
                 _ => None,
             })
             .unwrap_or(first_level),
@@ -1403,14 +1423,16 @@ impl<'a> Parser<'a> {
 
     fn try_parse_prefix_operator(&mut self) -> Option<PrefixOperator> {
         self.try_parse(|parser| match parser.next_significant_token() {
-            Some(Token::Punctuation(p)) if p.punctuation == '!' => {
+            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '!' => {
                 Some(PrefixOperator::LogicalNot(p))
             }
-            Some(Token::Punctuation(p)) if p.punctuation == '-' => Some(PrefixOperator::Negate(p)),
-            Some(Token::Punctuation(p)) if p.punctuation == '&' => {
+            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '-' => {
+                Some(PrefixOperator::Negate(p))
+            }
+            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '&' => {
                 Some(PrefixOperator::ReferenceOf(p))
             }
-            Some(Token::Punctuation(p)) if p.punctuation == '*' => {
+            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '*' => {
                 Some(PrefixOperator::Dereference(p))
             }
             _ => None,
@@ -1420,7 +1442,7 @@ impl<'a> Parser<'a> {
     fn handle_struct_literal(
         &mut self,
         qualified_identifier: QualifiedIdentifier,
-        handler: &impl Handler<Error>,
+        handler: &dyn Handler<Error>,
     ) -> Option<Functional> {
         let DelimitedList {
             open: left_brace,
@@ -1455,7 +1477,7 @@ impl<'a> Parser<'a> {
     fn handle_function_call(
         &mut self,
         qualified_identifier: QualifiedIdentifier,
-        handler: &impl Handler<Error>,
+        handler: &dyn Handler<Error>,
     ) -> Option<Functional> {
         let DelimitedList {
             open: left_paren,
@@ -1476,15 +1498,15 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_identifier_expression(&mut self, handler: &impl Handler<Error>) -> Option<Functional> {
+    fn parse_identifier_expression(&mut self, handler: &dyn Handler<Error>) -> Option<Functional> {
         let qualified_identifier = self.parse_qualified_identifier(true, handler)?;
 
         match self.stop_at_significant() {
-            Some(Token::Punctuation(p)) if p.punctuation == '(' => {
+            Reading::IntoDelimited(p) if p.punctuation == '(' => {
                 self.handle_function_call(qualified_identifier, handler)
             }
 
-            Some(Token::Punctuation(p)) if p.punctuation == '{' => {
+            Reading::IntoDelimited(p) if p.punctuation == '{' => {
                 self.handle_struct_literal(qualified_identifier, handler)
             }
 
@@ -1496,7 +1518,7 @@ impl<'a> Parser<'a> {
 
     fn parse_parenthesized_expression(
         &mut self,
-        handler: &impl Handler<Error>,
+        handler: &dyn Handler<Error>,
     ) -> Option<Functional> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Parenthesis,
@@ -1506,9 +1528,9 @@ impl<'a> Parser<'a> {
 
                 let ellipsis = match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
                     (
-                        Some(Token::Punctuation(p1)),
-                        Some(Token::Punctuation(p2)),
-                        Some(Token::Punctuation(p3)),
+                        Reading::Atomic(Token::Punctuation(p1)),
+                        Some(Reading::Atomic(Token::Punctuation(p2))),
+                        Some(Reading::Atomic(Token::Punctuation(p3))),
                     ) if matches!(
                         (p1.punctuation, p2.punctuation, p3.punctuation),
                         ('.', '.', '.')
@@ -1543,7 +1565,7 @@ impl<'a> Parser<'a> {
 
     fn parse_array_literal_expression(
         &mut self,
-        handler: &impl Handler<Error>,
+        handler: &dyn Handler<Error>,
     ) -> Option<Functional> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Bracket,
@@ -1559,11 +1581,12 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_statements(&mut self, handler: &impl Handler<Error>) -> Option<Statements> {
+    fn parse_statements(&mut self, handler: &dyn Handler<Error>) -> Option<Statements> {
         fn skip_to_next_statement(this: &mut Parser) {
-            this.stop_at(|token| matches!(token, Token::Punctuation(p) if p.punctuation == ';'));
+            this.stop_at(|token| matches!(token, Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ';'));
 
-            if matches!(this.peek(), Some(Token::Punctuation(p)) if p.punctuation == ';') {
+            if matches!(this.peek(), Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ';')
+            {
                 this.forward();
             }
         }
@@ -1595,10 +1618,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_else(&mut self, handler: &impl Handler<Error>) -> Option<Else> {
+    fn parse_else(&mut self, handler: &dyn Handler<Error>) -> Option<Else> {
         let else_keyword = self.parse_keyword(KeywordKind::Else, handler)?;
         let expression = Box::new(
-            if matches!(self.stop_at_significant(), Some(Token::Keyword(k)) if k.keyword == KeywordKind::If)
+            if matches!(self.stop_at_significant(), Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::If)
             {
                 BlockOrIfElse::IfElse(self.parse_if_else(handler)?)
             } else {
@@ -1612,11 +1635,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_match_arm(&mut self, handler: &impl Handler<Error>) -> Option<MatchArm> {
+    fn parse_match_arm(&mut self, handler: &dyn Handler<Error>) -> Option<MatchArm> {
         let refutable_pattern = self.parse_refutable_pattern(handler)?;
 
         let guard = match self.stop_at_significant() {
-            Some(Token::Keyword(if_keyword)) if if_keyword.keyword == KeywordKind::If => {
+            Reading::Atomic(Token::Keyword(if_keyword))
+                if if_keyword.keyword == KeywordKind::If =>
+            {
                 // eat if keyword
                 self.forward();
 
@@ -1647,7 +1672,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_match(&mut self, handler: &impl Handler<Error>) -> Option<Match> {
+    fn parse_match(&mut self, handler: &dyn Handler<Error>) -> Option<Match> {
         let match_keyword = self.parse_keyword(KeywordKind::Match, handler)?;
 
         let delimited_tree_expression = self.step_into(
@@ -1664,9 +1689,12 @@ impl<'a> Parser<'a> {
                 while !parser.is_exhausted() {
                     let Some(arm) = parser.parse_match_arm(handler) else {
                         // forward to the next {}
-                        parser.stop_at(
-                            |token| matches!(token, Token::Punctuation(p) if p.punctuation == '{'),
-                        );
+                        parser.stop_at(|token| {
+                            matches!(
+                                token, Reading::Atomic(Token::Punctuation(p))
+                                if p.punctuation == '{'
+                            )
+                        });
                         parser.forward();
 
                         continue;
@@ -1691,7 +1719,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_if_else(&mut self, handler: &impl Handler<Error>) -> Option<IfElse> {
+    fn parse_if_else(&mut self, handler: &dyn Handler<Error>) -> Option<IfElse> {
         let if_keyword = self.parse_keyword(KeywordKind::If, handler)?;
 
         let delimited_tree_condition = self.step_into(
@@ -1701,10 +1729,11 @@ impl<'a> Parser<'a> {
         )?;
 
         let then_expression = self.parse_block(handler)?;
-        let else_expression = if matches!(self.stop_at_significant(),
-                Some(Token::Keyword(else_keyword))
-                    if else_keyword.keyword == KeywordKind::Else)
-        {
+        let else_expression = if matches!(
+            self.stop_at_significant(),
+            Reading::Atomic(Token::Keyword(else_keyword))
+                if else_keyword.keyword == KeywordKind::Else
+        ) {
             Some(self.parse_else(handler)?)
         } else {
             None
@@ -1720,16 +1749,14 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn try_parse_functional(&mut self) -> Option<Functional> {
-        self.try_parse(|parser| parser.parse_binary_expression(&Dummy))
-    }
-
     #[allow(clippy::option_option)]
-    fn try_parse_label(&mut self, handler: &impl Handler<Error>) -> Option<Option<Label>> {
+    fn try_parse_label(&mut self, handler: &dyn Handler<Error>) -> Option<Option<Label>> {
         // parse optional label
         Some(
-            if matches!(self.stop_at_significant(), Some(Token::Punctuation(p)) if p.punctuation == '\'')
-            {
+            if matches!(
+                self.stop_at_significant(),
+                Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '\''
+            ) {
                 Some(self.parse_label(handler)?)
             } else {
                 None
@@ -1738,14 +1765,15 @@ impl<'a> Parser<'a> {
     }
 
     pub(super) fn parse_numeric_literal(&mut self) -> Option<NumericLiteral> {
-        let Some(Token::Numeric(numeric)) = self.next_significant_token() else {
+        let Reading::Atomic(Token::Numeric(numeric)) = self.next_significant_token() else {
             return None;
         };
 
         let decimal = match (self.peek(), self.peek_offset(1)) {
-            (Some(Token::Punctuation(dot)), Some(Token::Numeric(numeric)))
-                if dot.punctuation == '.' =>
-            {
+            (
+                Reading::Atomic(Token::Punctuation(dot)),
+                Some(Reading::Atomic(Token::Numeric(numeric))),
+            ) if dot.punctuation == '.' => {
                 self.forward();
                 self.forward();
                 Some(Decimal { dot, numeric })
@@ -1753,7 +1781,7 @@ impl<'a> Parser<'a> {
             _ => None,
         };
 
-        let suffix = if let Some(Token::Identifier(identifier)) = self.peek() {
+        let suffix = if let Reading::Atomic(Token::Identifier(identifier)) = self.peek() {
             self.forward();
             Some(identifier)
         } else {
@@ -1767,9 +1795,9 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_access(&mut self, handler: &impl Handler<Error>) -> Option<Access> {
+    fn parse_access(&mut self, handler: &dyn Handler<Error>) -> Option<Access> {
         match self.stop_at_significant() {
-            Some(Token::Numeric(numeric)) => {
+            Reading::Atomic(Token::Numeric(numeric)) => {
                 // eat numeric token
                 self.forward();
 
@@ -1781,10 +1809,7 @@ impl<'a> Parser<'a> {
 
     /// Parses a primary [`Expression`]
     #[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
-    pub fn parse_primary_expression(
-        &mut self,
-        handler: &impl Handler<Error>,
-    ) -> Option<Functional> {
+    pub fn parse_primary_expression(&mut self, handler: &dyn Handler<Error>) -> Option<Functional> {
         // early return for prefix expression
         if let Some(prefix_operator) = self.try_parse_prefix_operator() {
             return Some(Functional::Prefix(Prefix {
@@ -1795,10 +1820,12 @@ impl<'a> Parser<'a> {
 
         let mut expression = match self.stop_at_significant() {
             // parse numeric literal
-            Some(Token::Numeric(_)) => Functional::NumericLiteral(self.parse_numeric_literal()?),
+            Reading::Atomic(Token::Numeric(_)) => {
+                Functional::NumericLiteral(self.parse_numeric_literal()?)
+            }
 
             // parse boolean literal
-            Some(Token::Keyword(boolean))
+            Reading::Atomic(Token::Keyword(boolean))
                 if matches!(boolean.keyword, KeywordKind::True | KeywordKind::False) =>
             {
                 // eat token
@@ -1813,24 +1840,24 @@ impl<'a> Parser<'a> {
                 Functional::BooleanLiteral(boolean_literal(boolean))
             }
 
-            Some(Token::Punctuation(p)) if p.punctuation == '[' => {
+            Reading::IntoDelimited(p) if p.punctuation == '[' => {
                 self.parse_array_literal_expression(handler)?
             }
 
             // parse qualified identifier expression
-            Some(Token::Identifier(..)) => self.parse_identifier_expression(handler)?,
-            Some(Token::Punctuation(p))
+            Reading::Atomic(Token::Identifier(..)) => self.parse_identifier_expression(handler)?,
+            Reading::Atomic(Token::Punctuation(p))
                 if p.punctuation == ':'
                     && self.peek_offset(1).map_or(
                         false,
-                        |x| matches!(x, Token::Punctuation(p) if p.punctuation == ':'),
+                        |x| matches!(x, Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ':'),
                     ) =>
             {
                 self.parse_identifier_expression(handler)?
             }
 
             // parenthesized
-            Some(Token::Punctuation(p)) if p.punctuation == '(' => {
+            Reading::IntoDelimited(p) if p.punctuation == '(' => {
                 self.parse_parenthesized_expression(handler)?
             }
 
@@ -1839,7 +1866,7 @@ impl<'a> Parser<'a> {
                 self.forward();
                 handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
                     expected: SyntaxKind::Expression,
-                    found: self.get_actual_found_token(found),
+                    found: found.into_token(),
                 }));
                 return None;
             }
@@ -1848,7 +1875,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.stop_at_significant() {
                 // parse dot op
-                Some(Token::Punctuation(dot)) if dot.punctuation == '.' => {
+                Reading::Atomic(Token::Punctuation(dot)) if dot.punctuation == '.' => {
                     // eat token
                     self.forward();
                     let access = self.parse_access(handler)?;
@@ -1861,7 +1888,9 @@ impl<'a> Parser<'a> {
                 }
 
                 // parse copy
-                Some(Token::Punctuation(single_quote)) if single_quote.punctuation == '\'' => {
+                Reading::Atomic(Token::Punctuation(single_quote))
+                    if single_quote.punctuation == '\'' =>
+                {
                     // eat token
                     self.forward();
 
@@ -1872,11 +1901,11 @@ impl<'a> Parser<'a> {
                 }
 
                 // parse arrow op
-                Some(Token::Punctuation(hyphen))
+                Reading::Atomic(Token::Punctuation(hyphen))
                     if hyphen.punctuation == '-'
                         && matches!(
                             self.peek_offset(1),
-                            Some(Token::Punctuation(right_angle_bracket))
+                            Some(Reading::Atomic(Token::Punctuation(right_angle_bracket)))
                                 if right_angle_bracket.punctuation == '>'
                         ) =>
                 {
@@ -1897,7 +1926,7 @@ impl<'a> Parser<'a> {
                     });
                 }
 
-                Some(Token::Punctuation(p)) if p.punctuation == '[' => {
+                Reading::IntoDelimited(p) if p.punctuation == '[' => {
                     let delimited_tree = self.step_into(
                         Delimiter::Bracket,
                         |parser| parser.parse_expression(handler).map(Box::new),
@@ -1912,7 +1941,9 @@ impl<'a> Parser<'a> {
                         right_bracket: delimited_tree.close,
                     });
                 }
-                Some(Token::Keyword(as_keyword)) if as_keyword.keyword == KeywordKind::As => {
+                Reading::Atomic(Token::Keyword(as_keyword))
+                    if as_keyword.keyword == KeywordKind::As =>
+                {
                     // eat token
                     self.forward();
 

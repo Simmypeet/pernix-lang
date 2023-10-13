@@ -40,8 +40,8 @@ impl Table {
         _generic_item_ref: GenericItemRef,
         _constraint_list: &syntax_tree::item::ConstraintList,
         _where_clause_span: &Span,
-        _checking_handler: &impl Handler<CheckingWithSpan>,
-        _handler: &impl Handler<error::Error>,
+        _checking_handler: &dyn Handler<CheckingWithSpan>,
+        _handler: &dyn Handler<error::Error>,
     ) -> Option<AssociatedBounds> {
         todo!()
         /*
@@ -201,8 +201,8 @@ impl Table {
         &mut self,
         generic_item_ref: GenericItemRef,
         where_clause_syntax: syntax_tree::item::WhereClause,
-        checking_handler: &impl Handler<CheckingWithSpan>,
-        handler: &impl Handler<error::Error>,
+        checking_handler: &dyn Handler<CheckingWithSpan>,
+        handler: &dyn Handler<error::Error>,
     ) {
         let where_clause_span = where_clause_syntax.span();
         let (_where_clause_keyword, _colonn, constraint_list) = where_clause_syntax.dissolve();
@@ -221,8 +221,8 @@ impl Table {
         &mut self,
         generic_item_ref: GenericItemRef,
         generic_parameters_syntax: syntax_tree::item::GenericParameters,
-        checking_handler: &impl Handler<CheckingWithSpan>,
-        handler: &impl Handler<error::Error>,
+        checking_handler: &dyn Handler<CheckingWithSpan>,
+        handler: &dyn Handler<error::Error>,
     ) {
         let mut lifetime_parameter_syntaxes = Vec::new();
         let mut type_parameter_syntaxes = Vec::new();
@@ -373,7 +373,7 @@ impl Table {
         generic_item_ref: GenericItemRef,
         generic_parameters_syntax: Option<syntax_tree::item::GenericParameters>,
         where_clause_syntax: Option<syntax_tree::item::WhereClause>,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) {
         let checking_storage = Storage::<CheckingWithSpan>::new();
 

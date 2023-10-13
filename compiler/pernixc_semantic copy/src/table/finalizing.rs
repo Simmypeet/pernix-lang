@@ -17,7 +17,7 @@ impl Table {
     pub(super) fn finalize_symbol_if_required(
         &mut self,
         drafted_symbol_ref: DraftedSymbolRef,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> bool {
         if self
             .state_mananger
@@ -54,7 +54,7 @@ impl Table {
         &mut self,
         struct_ref: StructRef,
         syntax: syntax_tree::item::Struct,
-        handler: &impl Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) -> bool {
         let (.., signature, body) = syntax.dissolve();
         let (.., identifier, generic_parameters, where_clause) = signature.dissolve();

@@ -15,7 +15,7 @@ use crate::syntax_tree::{
         tests::{Expression, Functional, Imperative, Terminator},
     },
     pattern,
-    ty::tests::Type,
+    r#type::tests::Type,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -753,7 +753,7 @@ impl Table {
                             type_alias,
                             &Substitution::combine(
                                 &Substitution::from_local(
-                                    &implements.deduced_substituion,
+                                    &dynements.deduced_substituion,
                                     implements_generic_item_ref,
                                 ),
                                 &Substitution::from_local(
@@ -1050,7 +1050,7 @@ impl Table {
                         .transform_constant(
                             constant,
                             &Substitution::from_local(
-                                &implements.deduced_substituion,
+                                &dynements.deduced_substituion,
                                 implements_generic_item_ref,
                             ),
                             associated_bounds,

@@ -14,7 +14,7 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{expression::tests::Expression, ty::tests::Type};
+use super::{expression::tests::Expression, r#type::tests::Type};
 use crate::{
     error::{self},
     parser::Parser,
@@ -607,6 +607,10 @@ impl Display for Label {
 }
 
 proptest! {
+    #![proptest_config(proptest::test_runner::Config {
+        max_shrink_iters: 4096,
+        ..proptest::test_runner::Config::default()
+    })]
     #[test]
     fn qualified_identifier_test(
         qualified_identifier_input in QualifiedIdentifier::arbitrary_with((true, None)),
