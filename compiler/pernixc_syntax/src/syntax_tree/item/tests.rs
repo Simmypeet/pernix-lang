@@ -722,14 +722,14 @@ pub enum TraitAssociationBoundArgument {
 }
 
 impl Input for TraitAssociationBoundArgument {
-    type Output = super::TraitAssociationBoundArgument;
+    type Output = super::TraitMemberBoundArgument;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Const(i), super::TraitAssociationBoundArgument::Constant(o)) => {
+            (Self::Const(i), super::TraitMemberBoundArgument::Constant(o)) => {
                 i.assert(o.expression())
             }
-            (Self::Type(i), super::TraitAssociationBoundArgument::Type(o)) => i.assert(o),
+            (Self::Type(i), super::TraitMemberBoundArgument::Type(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -768,7 +768,7 @@ pub struct TraitAssociationBound {
 }
 
 impl Input for TraitAssociationBound {
-    type Output = super::TraitAssociationBound;
+    type Output = super::TraitMemberBound;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.qualified_identifier
@@ -808,13 +808,13 @@ pub enum Constraint {
 }
 
 impl Input for Constraint {
-    type Output = super::Constraint;
+    type Output = super::Predicate;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Trait(i), super::Constraint::Trait(o)) => i.assert(o),
-            (Self::Lifetime(i), super::Constraint::Lifetime(o)) => i.assert(o),
-            (Self::TraitAssociation(i), super::Constraint::TraitAssociation(o)) => i.assert(o),
+            (Self::Trait(i), super::Predicate::Trait(o)) => i.assert(o),
+            (Self::Lifetime(i), super::Predicate::Lifetime(o)) => i.assert(o),
+            (Self::TraitAssociation(i), super::Predicate::TraitMember(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),

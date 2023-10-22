@@ -190,6 +190,14 @@ impl<T, K: Hash + Eq> Map<T, K> {
         }
     }
 
+    /// Returns the number of items in the [`Map`].
+    #[must_use]
+    pub fn len(&self) -> usize { self.arena.len() }
+
+    /// Returns `true` if the [`Map`] contains no items.
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.arena.is_empty() }
+
     /// Inserts a new item into the [`Map`] with the given key
     ///
     /// # Errors
@@ -231,17 +239,25 @@ impl<T, K: Hash + Eq> Map<T, K> {
     pub fn get_mut(&mut self, id: ID<T>) -> Option<&mut Item<T>> { self.arena.get_mut(id) }
 
     /// Returns an iterator over the items in the [`Map`].
+    ///
+    /// The order of the items is **not** maintained.
     pub fn iter(&self) -> impl Iterator<Item = (&K, &Item<T>)> {
         self.items.iter().map(|(k, v)| (k, self.get(*v).unwrap()))
     }
 
     /// Returns an iterator over the keys in the [`Map`].
+    ///
+    /// The order of the keys is **not** maintained.
     pub fn keys(&self) -> impl Iterator<Item = &K> { self.items.keys() }
 
     /// Returns an iterator over the values in the [`Map`].
+    ///
+    /// The order of the values is maintained.
     pub fn values(&self) -> impl Iterator<Item = &Item<T>> { self.arena.iter() }
 
     /// Returns an mutable iterator over the items in the [`Map`].
+    ///
+    /// The order of the values is not maintained.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Item<T>> { self.arena.iter_mut() }
 }
 

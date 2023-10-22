@@ -18,4 +18,4 @@ getset = { workspace = true }
 lazy_static = { workspace = true }
 derive_more = { workspace = true }
 paste = { workspace = true }
-void = "1.0.2"
+take_mut = { workspace = true }

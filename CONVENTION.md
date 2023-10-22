@@ -3,8 +3,6 @@
 This coding convention serves as a guideline and reference for the Pernix Compiler. It's generally
 recommended to follow this convention when contributing to the compiler.
 
----
-
 ## Making Invalid States Unrepresentable
 
 ### Motivation
@@ -77,11 +75,9 @@ impl AverageNumber {
 }
 ```
 
-In this case, the caller can get the `numbers` vec by calling 
-`let (numbers, _) = average_number.deconstruct()`. If there's no `deconstruct` function, the caller 
+In this case, the caller can get the `numbers` vec by calling
+`let (numbers, _) = average_number.deconstruct()`. If there's no `deconstruct` function, the caller
 would have to call `average_number.numbers().to_vec()` which is more expensive.
-
----
 
 ## Avoid Borrowing in APIs
 

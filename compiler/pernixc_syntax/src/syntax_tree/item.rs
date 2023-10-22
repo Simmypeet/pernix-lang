@@ -14,7 +14,8 @@ use super::{
     expression::{Expression, Functional},
     pattern, r#type,
     statement::Statement,
-    AccessModifier, ConnectedList, LifetimeArgument, QualifiedIdentifier, ScopeSeparator,
+    AccessModifier, ConnectedList, ConstantArgument, LifetimeArgument, QualifiedIdentifier,
+    ScopeSeparator,
 };
 use crate::{
     error::{
@@ -452,7 +453,7 @@ impl SourceElement for ConstantTypeBound {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Constraint:
+/// Predicate:
 ///     TraitBound
 ///     | LifetimeBound
 ///     | ConstantTypeBound
@@ -461,17 +462,17 @@ impl SourceElement for ConstantTypeBound {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-pub enum Constraint {
-    TraitAssociation(TraitAssociationBound),
+pub enum Predicate {
+    TraitMember(TraitMemberBound),
     Trait(TraitBound),
     Lifetime(LifetimeBound),
     ConstantType(ConstantTypeBound),
 }
 
-impl SourceElement for Constraint {
+impl SourceElement for Predicate {
     fn span(&self) -> Span {
         match self {
-            Self::TraitAssociation(s) => s.span(),
+            Self::TraitMember(s) => s.span(),
             Self::Trait(s) => s.span(),
             Self::Lifetime(s) => s.span(),
             Self::ConstantType(s) => s.span(),
@@ -481,38 +482,18 @@ impl SourceElement for Constraint {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// TraitConstAssociationBoundArgument:
-///     '{' Expression '}'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct TraitAssociationConstantBoundArgument {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    expression: Expression,
-    #[get = "pub"]
-    right_brace: Punctuation,
-}
-
-impl SourceElement for TraitAssociationConstantBoundArgument {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// TraitAssociationBoundArgument:
+/// TraitMemberBoundArgument:
 ///     Type
 ///     | TraitConstAssociationBoundArgument
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum TraitAssociationBoundArgument {
+pub enum TraitMemberBoundArgument {
     Type(r#type::Type),
-    Constant(TraitAssociationConstantBoundArgument),
+    Constant(ConstantArgument),
 }
 
-impl SourceElement for TraitAssociationBoundArgument {
+impl SourceElement for TraitMemberBoundArgument {
     fn span(&self) -> Span {
         match self {
             Self::Type(ty) => ty.span(),
@@ -523,21 +504,21 @@ impl SourceElement for TraitAssociationBoundArgument {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// TraitAssociationBound:
-///     QualifiedIdentifier '=' TraitAssociationBoundArgument
+/// TraitMemberBound:
+///     QualifiedIdentifier '=' TraitMemberBoundArgument
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct TraitAssociationBound {
+pub struct TraitMemberBound {
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
     equals: Punctuation,
     #[get = "pub"]
-    argument: TraitAssociationBoundArgument,
+    argument: TraitMemberBoundArgument,
 }
 
-impl SourceElement for TraitAssociationBound {
+impl SourceElement for TraitMemberBound {
     fn span(&self) -> Span {
         self.qualified_identifier
             .span()
@@ -615,16 +596,16 @@ impl SourceElement for TraitBound {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ConstraintList:
-///     Constraint (',' Constraint)*
+/// PredicateList:
+///     Predicate (',' Predicate)*
 ///     ;
 /// ```
-pub type ConstraintList = ConnectedList<Constraint, Punctuation>;
+pub type PredicateList = ConnectedList<Predicate, Punctuation>;
 
 /// Syntax Synopsis:
 /// ``` txt
 /// WhereClause:
-///     'where' ':' ConstraintList
+///     'where' ':' PredicateList
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -634,13 +615,13 @@ pub struct WhereClause {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    constraint_list: ConstraintList,
+    constraint_list: PredicateList,
 }
 
 impl WhereClause {
     /// Dissolves the [`WhereClause`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Keyword, Punctuation, ConstraintList) {
+    pub fn dissolve(self) -> (Keyword, Punctuation, PredicateList) {
         (self.where_keyword, self.colon, self.constraint_list)
     }
 }
@@ -1887,7 +1868,7 @@ impl<'a> Parser<'a> {
     }
 
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    fn parse_constraint(&mut self, handler: &dyn Handler<Error>) -> Option<Constraint> {
+    fn parse_constraint(&mut self, handler: &dyn Handler<Error>) -> Option<Predicate> {
         match self.stop_at_significant() {
             // parse for higher ranked bounds
             Reading::Atomic(Token::Keyword(for_keyword))
@@ -1931,7 +1912,7 @@ impl<'a> Parser<'a> {
                         let qualified_identifier =
                             self.parse_qualified_identifier(false, handler)?;
 
-                        Some(Constraint::Trait(TraitBound {
+                        Some(Predicate::Trait(TraitBound {
                             higher_ranked_lifetime_parameters: Some(
                                 HigherRankedLifetimeParameters {
                                     for_keyword,
@@ -1989,7 +1970,7 @@ impl<'a> Parser<'a> {
                         let qualified_identifier =
                             self.parse_qualified_identifier(false, handler)?;
 
-                        Some(Constraint::ConstantType(ConstantTypeBound {
+                        Some(Predicate::ConstantType(ConstantTypeBound {
                             const_keyword,
                             type_keyword,
                             qualified_identifier,
@@ -1999,7 +1980,7 @@ impl<'a> Parser<'a> {
                         let qualified_identifier =
                             self.parse_qualified_identifier(false, handler)?;
 
-                        Some(Constraint::Trait(TraitBound {
+                        Some(Predicate::Trait(TraitBound {
                             higher_ranked_lifetime_parameters: None,
                             const_keyword: Some(const_keyword),
                             qualified_identifier,
@@ -2023,7 +2004,7 @@ impl<'a> Parser<'a> {
 
                 let arguments = self.parse_lifetime_bound_list(handler)?;
 
-                Some(Constraint::Lifetime(LifetimeBound {
+                Some(Predicate::Lifetime(LifetimeBound {
                     operand,
                     colon,
                     arguments,
@@ -2039,7 +2020,7 @@ impl<'a> Parser<'a> {
 
                         let arguments = self.parse_lifetime_bound_list(handler)?;
 
-                        Constraint::Lifetime(LifetimeBound {
+                        Predicate::Lifetime(LifetimeBound {
                             operand: LifetimeBoundOperand::QualifiedIdentifier(
                                 qualified_identifier,
                             ),
@@ -2059,24 +2040,22 @@ impl<'a> Parser<'a> {
                                     handler,
                                 )?;
 
-                                TraitAssociationBoundArgument::Constant(
-                                    TraitAssociationConstantBoundArgument {
-                                        left_brace: tree.open,
-                                        expression: tree.tree?,
-                                        right_brace: tree.close,
-                                    },
-                                )
+                                TraitMemberBoundArgument::Constant(ConstantArgument {
+                                    left_brace: tree.open,
+                                    expression: Box::new(tree.tree?),
+                                    right_brace: tree.close,
+                                })
                             }
-                            _ => TraitAssociationBoundArgument::Type(self.parse_type(handler)?),
+                            _ => TraitMemberBoundArgument::Type(self.parse_type(handler)?),
                         };
 
-                        Constraint::TraitAssociation(TraitAssociationBound {
+                        Predicate::TraitMember(TraitMemberBound {
                             qualified_identifier,
                             equals,
                             argument,
                         })
                     }
-                    _ => Constraint::Trait(TraitBound {
+                    _ => Predicate::Trait(TraitBound {
                         higher_ranked_lifetime_parameters: None,
                         const_keyword: None,
                         qualified_identifier,

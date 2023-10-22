@@ -26,6 +26,8 @@ parking_lot = "0.12.1"
 derive-new = "0.5.9"
 memmap = "0.7.0"
 ouroboros = "0.18.0"
+take_mut = "0.2.2"
+
 
 [workspace.package]
 version = "0.1.0"
