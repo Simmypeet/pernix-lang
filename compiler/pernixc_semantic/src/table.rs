@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// Contains all the symbols and information defined in the target.
-#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, Default)]
 pub struct Table {
     /// The modules defined in the target.
     #[get = "pub"]

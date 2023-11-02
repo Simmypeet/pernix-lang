@@ -68,7 +68,7 @@ pub struct TraitMember<S: Model> {
     pub trait_constant_id: TraitConstantID,
 
     /// The generic arguments supplied to the trait.
-    pub trait_substitution: GenericArguments<S>,
+    pub trait_arguments: GenericArguments<S>,
 }
 
 /// Represents an **unpacked** constant value in the tuple, denoted by `...value` syntax.
@@ -95,7 +95,7 @@ pub struct Tuple<S: Model> {
 }
 
 /// Represents a compile-time evaluated constant.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Constant<S: Model> {
     Primitive(Primitive),

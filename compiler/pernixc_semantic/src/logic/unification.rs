@@ -2,12 +2,15 @@
 
 use std::{borrow::Cow, collections::hash_map::Entry};
 
-use super::Substitution;
-use crate::entity::{
-    constant::{self, Constant},
-    r#type::{self, Type},
-    region::Region,
-    GenericArguments, Model,
+use super::{Mapping, QueryRecords, Substitution};
+use crate::{
+    entity::{
+        constant::{self, Constant},
+        r#type::{self, Type},
+        region::Region,
+        GenericArguments, Model,
+    },
+    table::Table,
 };
 
 /// The unifier has already mapped into a particular term but it has to unify with another non-equal
@@ -45,101 +48,46 @@ pub enum Error<'a, S: Model> {
 }
 
 /// Describes which types of terms can be unified.
-pub trait Config:
+pub trait Config<S: Model>:
     std::fmt::Debug + Clone + Copy + PartialEq + Eq + std::hash::Hash + Default + Send + Sync + 'static
 {
-    /// The system that the terms are in.
-    type Model: Model;
+    /// Determines whether a particular type can be mapped into another given type.
+    fn type_mappable(&self, unifier: &Type<S>, target: &Type<S>) -> bool;
 
-    /// Determine whether can [`r#type::Primitive`] can be mapped to another type.
-    const MAP_PRIMITIVE_TYPE: bool;
+    /// Determines whether a particular constant can be mapped into another given constant.
+    fn constant_mappable(&self, unifier: &Constant<S>, target: &Constant<S>) -> bool;
 
-    /// Determine whether can [`System::TypeInference`] can be mapped to another type.
-    const MAP_TYPE_INFERENCE: bool;
-
-    /// Determine whether can [`r#type::Algebraic`] can be mapped to another type.
-    const MAP_ALGRBRAICE_TYPE: bool;
-
-    /// Determine whether can [`r#type::Pointer`] can be mapped to another type.
-    const MAP_POINTER_TYPE: bool;
-
-    /// Determine whether can [`r#type::Reference`] can be mapped to another type.
-    const MAP_REFERENCE_TYPE: bool;
-
-    /// Determine whether can [`r#type::Array`] can be mapped to another type.
-    const MAP_ARRAY_TYPE: bool;
-
-    /// Determine whether can [`r#type::TraitMember`] can be mapped to another type.
-    const MAP_TRAIT_TYPE: bool;
-
-    /// Determine whether can [`TypeParameterID`] can be mapped to another type.
-    const MAP_TYPE_PARAMETER: bool;
-
-    /// Determine whether can [`r#type::Tuple`] can be mapped to another type.
-    const MAP_TUPLE_TYPE: bool;
-
-    /// Determine whether can [`constant::Primitive`] can be mapped to another constant.
-    const MAP_PRIMITIVE_CONSTANT: bool;
-
-    /// Determine whether can [`System::ConstantInference`] can be mapped to another constant.
-    const MAP_CONSTANT_INFERENCE: bool;
-
-    /// Determine whether can [`constant::Struct`] can be mapped to another constant.
-    const MAP_STRUCT_CONSTANT: bool;
-
-    /// Determine whether can [`constant::Enum`] can be mapped to another constant.
-    const MAP_ENUM_CONSTANT: bool;
-
-    /// Determine whether can [`constant::Array`] can be mapped to another constant.
-    const MAP_ARRAY_CONSTANT: bool;
-
-    /// Determine whether can [`ConstantParameterID`] can be mapped to another constant.
-    const MAP_CONSTANT_PARAMETER: bool;
-
-    /// Determine whether can [`constant::TraitMember`] can be mapped to another constant.
-    const MAP_TRAIT_CONSTANT: bool;
-
-    /// Determine whether can [`constant::Tuple`] can be mapped to another constant.
-    const MAP_TUPLE_CONSTANT: bool;
-
-    /// Determine whether can [`LifetimeParameterID`] can be mapped to another region.
-    const MAP_LIFETIME_PARAMETER: bool;
-
-    /// Determine whether can [`Region::Context`] can be mapped to another region.
-    const MAP_REGION_CONTEXT: bool;
-
-    /// Determine whether can [`Region::Static`] can be mapped to another region.
-    const MAP_STATIC_REGION: bool;
+    /// Determines whether a particular region can be mapped into another given region.
+    fn region_mappable(&self, unifier: &Region<S>, target: &Region<S>) -> bool;
 }
 
-/// Is a struct that implements [`Config`] which allows unification of term variables and
-/// trait member variables.
+/// Is a struct that implements [`Config`] which allows unification of all terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct VariableSubstitution<S>(std::marker::PhantomData<S>);
+pub struct All;
 
-impl<S: Model> Config for VariableSubstitution<S> {
-    type Model = S;
+impl<S: Model> Config<S> for All {
+    fn type_mappable(&self, _: &Type<S>, _: &Type<S>) -> bool { true }
 
-    const MAP_ALGRBRAICE_TYPE: bool = false;
-    const MAP_ARRAY_CONSTANT: bool = false;
-    const MAP_ARRAY_TYPE: bool = false;
-    const MAP_CONSTANT_INFERENCE: bool = false;
-    const MAP_CONSTANT_PARAMETER: bool = true;
-    const MAP_ENUM_CONSTANT: bool = false;
-    const MAP_LIFETIME_PARAMETER: bool = true;
-    const MAP_POINTER_TYPE: bool = false;
-    const MAP_PRIMITIVE_CONSTANT: bool = false;
-    const MAP_PRIMITIVE_TYPE: bool = false;
-    const MAP_REFERENCE_TYPE: bool = false;
-    const MAP_REGION_CONTEXT: bool = false;
-    const MAP_STATIC_REGION: bool = false;
-    const MAP_STRUCT_CONSTANT: bool = false;
-    const MAP_TRAIT_CONSTANT: bool = true;
-    const MAP_TRAIT_TYPE: bool = true;
-    const MAP_TUPLE_CONSTANT: bool = false;
-    const MAP_TUPLE_TYPE: bool = false;
-    const MAP_TYPE_INFERENCE: bool = false;
-    const MAP_TYPE_PARAMETER: bool = true;
+    fn constant_mappable(&self, _: &Constant<S>, _: &Constant<S>) -> bool { true }
+
+    fn region_mappable(&self, _: &Region<S>, _: &Region<S>) -> bool { true }
+}
+
+/// Is a struct that implements [`Config`] which allows unification of parameters and trait members
+/// terms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Indefinite;
+
+impl<S: Model> Config<S> for Indefinite {
+    fn type_mappable(&self, unifier: &Type<S>, _: &Type<S>) -> bool {
+        unifier.is_parameter() || unifier.is_trait_member()
+    }
+
+    fn constant_mappable(&self, unifier: &Constant<S>, _: &Constant<S>) -> bool {
+        unifier.is_parameter() || unifier.is_trait_member()
+    }
+
+    fn region_mappable(&self, unifier: &Region<S>, _: &Region<S>) -> bool { unifier.is_named() }
 }
 
 macro_rules! tuple_unifiable_function {
@@ -162,12 +110,14 @@ tuple_unifiable_function!(tuple_type_unifiable, r#type);
 tuple_unifiable_function!(tuple_constant_unifiable, constant);
 
 macro_rules! tuple_unify_function {
-    ($name:ident, $domain:ident, $kind:ident, $param_flag:ident, $trai_member_flag:ident, $map_name: ident, $err_name: ident) => {
-        fn $name<'a, T: Config>(
-            unifier: &'a $domain::Tuple<T::Model>,
-            target: &'a $domain::Tuple<T::Model>,
-            mut existing: Substitution<'a, T::Model>,
-        ) -> Result<Substitution<'a, T::Model>, Error<'a, T::Model>> {
+    ($name:ident, $domain:ident, $kind:ident, $map_name: ident, $err_name: ident, $mappable_func: ident) => {
+        #[allow(clippy::too_many_lines)]
+        fn $name<'a, S: Model, T: Config<S>>(
+            unifier: &'a $domain::Tuple<S>,
+            target: &'a $domain::Tuple<S>,
+            config: &T,
+            mut existing: Substitution<'a, S>,
+        ) -> Result<Substitution<'a, S>, Error<'a, S>> {
             let unpacked_count = unifier.elements.iter().filter(|x| x.is_unpacked()).count();
 
             match unpacked_count {
@@ -179,8 +129,12 @@ macro_rules! tuple_unify_function {
                         let unifier_element = unifier_element.as_regular().unwrap();
                         let target_element = target_element.as_regular().unwrap();
 
-                        existing =
-                            $kind::unify_internal::<T>(unifier_element, target_element, existing)?;
+                        existing = $kind::unify_internal::<T>(
+                            unifier_element,
+                            target_element,
+                            config,
+                            existing,
+                        )?;
                     }
 
                     Ok(existing)
@@ -209,8 +163,12 @@ macro_rules! tuple_unify_function {
                         let unifier_element = unifier_element.as_regular().unwrap();
                         let target_element = target_element.as_regular().unwrap();
 
-                        existing =
-                            $kind::unify_internal::<T>(unifier_element, target_element, existing)?;
+                        existing = $kind::unify_internal::<T>(
+                            unifier_element,
+                            target_element,
+                            config,
+                            existing,
+                        )?;
                     }
 
                     // unify tail
@@ -221,21 +179,26 @@ macro_rules! tuple_unify_function {
                         let unifier_element = unifier_element.as_regular().unwrap();
                         let target_element = target_element.as_regular().unwrap();
 
-                        existing =
-                            $kind::unify_internal::<T>(unifier_element, target_element, existing)?;
+                        existing = $kind::unify_internal::<T>(
+                            unifier_element,
+                            target_element,
+                            config,
+                            existing,
+                        )?;
                     }
 
-                    let target_unpack = Cow::Owned($kind::Tuple($domain::Tuple {
-                        elements: target.elements[target_unpack_range].to_vec(),
-                    }));
+                    let target_unpack: Cow<'a, $kind<S>> =
+                        Cow::Owned($kind::Tuple($domain::Tuple {
+                            elements: target.elements[target_unpack_range].to_vec(),
+                        }));
 
                     let unpacked = unifier.elements[unpacked_position].as_unpacked().unwrap();
                     match unpacked {
                         $domain::Unpacked::Parameter(parameter) => {
-                            let parameter: Cow<'a, $kind<T::Model>> =
+                            let parameter: Cow<'a, $kind<S>> =
                                 Cow::Owned($kind::Parameter(*parameter));
 
-                            if T::$param_flag {
+                            if config.$mappable_func(parameter.as_ref(), target_unpack.as_ref()) {
                                 match existing.$map_name.entry(parameter.clone()) {
                                     Entry::Occupied(entry) => {
                                         if **entry.get() != *target_unpack {
@@ -255,10 +218,11 @@ macro_rules! tuple_unify_function {
                             }
                         }
                         $domain::Unpacked::TraitMember(trait_member) => {
-                            let trait_member: Cow<'a, $kind<T::Model>> =
+                            let trait_member: Cow<'a, $kind<S>> =
                                 Cow::Owned($kind::TraitMember(trait_member.clone()));
 
-                            if T::$trai_member_flag {
+                            if config.$mappable_func(trait_member.as_ref(), target_unpack.as_ref())
+                            {
                                 match existing.$map_name.entry(trait_member.clone()) {
                                     Entry::Occupied(entry) => {
                                         if **entry.get() != *target_unpack {
@@ -292,19 +256,17 @@ tuple_unify_function!(
     unify_tuple_constant,
     constant,
     Constant,
-    MAP_CONSTANT_PARAMETER,
-    MAP_TRAIT_CONSTANT,
     constants,
-    ConstantConflict
+    ConstantConflict,
+    constant_mappable
 );
 tuple_unify_function!(
     unify_tuple_type,
     r#type,
     Type,
-    MAP_TYPE_PARAMETER,
-    MAP_TRAIT_CONSTANT,
     types,
-    TypeConflict
+    TypeConflict,
+    type_mappable
 );
 
 impl<S: Model> Type<S> {
@@ -313,32 +275,34 @@ impl<S: Model> Type<S> {
     /// # Errors
     ///
     /// Returns an error if the two terms can't be unified.
-    pub fn unify<'a, T: Config<Model = S>>(
+    pub fn unify<'a, T: Config<S>>(
         unifier: &'a Self,
         target: &'a Self,
+        config: &T,
     ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        Self::unify_internal::<T>(unifier, target, Substitution::default())
+        Self::unify_internal::<T>(unifier, target, config, Substitution::default())
     }
 
-    fn unify_internal<'a, T: Config<Model = S>>(
+    /// Sub-structurally unifies two type terms.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the two terms can't be sub-structurally unified.
+    pub fn sub_structural_unify<'a, T: Config<S>>(
         unifier: &'a Self,
         target: &'a Self,
+        config: &T,
+    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
+        Self::sub_structural_unify_internal::<T>(unifier, target, config, Substitution::default())
+    }
+
+    fn unify_internal<'a, T: Config<S>>(
+        unifier: &'a Self,
+        target: &'a Self,
+        config: &T,
         mut existing: Substitution<'a, S>,
     ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        // early unification
-        let early_unify = match unifier {
-            Self::Primitive(_) => T::MAP_PRIMITIVE_TYPE,
-            Self::Inference(_) => T::MAP_TYPE_INFERENCE,
-            Self::Algebraic(_) => T::MAP_ALGRBRAICE_TYPE,
-            Self::Pointer(_) => T::MAP_POINTER_TYPE,
-            Self::Reference(_) => T::MAP_REFERENCE_TYPE,
-            Self::Array(_) => T::MAP_ARRAY_TYPE,
-            Self::TraitMember(_) => T::MAP_TRAIT_TYPE,
-            Self::Parameter(_) => T::MAP_TYPE_PARAMETER,
-            Self::Tuple(_) => T::MAP_TUPLE_TYPE,
-        };
-
-        if early_unify {
+        if config.type_mappable(unifier, target) {
             match existing.types.entry(Cow::Borrowed(unifier)) {
                 Entry::Occupied(entry) => {
                     if **entry.get() != *target {
@@ -357,12 +321,13 @@ impl<S: Model> Type<S> {
             return Ok(existing);
         }
 
-        Self::sub_structural_unify_internal::<T>(unifier, target, existing)
+        Self::sub_structural_unify_internal::<T>(unifier, target, config, existing)
     }
 
-    fn sub_structural_unify_internal<'a, T: Config<Model = S>>(
+    fn sub_structural_unify_internal<'a, T: Config<S>>(
         unifier: &'a Self,
         target: &'a Self,
+        config: &T,
         mut existing: Substitution<'a, S>,
     ) -> Result<Substitution<'a, S>, Error<'a, S>> {
         // sub-structural unification
@@ -371,24 +336,30 @@ impl<S: Model> Type<S> {
                 GenericArguments::unify_internal::<T>(
                     &unifier.generic_arguments,
                     &target.generic_arguments,
+                    config,
                     existing,
                 )
             }
             (Self::Pointer(unifier), Self::Pointer(target))
                 if unifier.qualifier == target.qualifier =>
             {
-                Self::unify_internal::<T>(&unifier.pointee, &target.pointee, existing)
+                Self::unify_internal::<T>(&unifier.pointee, &target.pointee, config, existing)
             }
             (Self::Reference(unifier), Self::Reference(target))
                 if unifier.qualifier == target.qualifier =>
             {
-                existing = Region::unify_internal::<T>(&unifier.region, &target.region, existing)?;
-                Self::unify_internal::<T>(&unifier.pointee, &target.pointee, existing)
+                existing =
+                    Region::unify_internal::<T>(&unifier.region, &target.region, config, existing)?;
+                Self::unify_internal::<T>(&unifier.pointee, &target.pointee, config, existing)
             }
             (Self::Array(unifier), Self::Array(target)) => {
-                existing =
-                    Constant::unify_internal::<T>(&unifier.length, &target.length, existing)?;
-                Self::unify_internal::<T>(&unifier.element, &target.element, existing)
+                existing = Constant::unify_internal::<T>(
+                    &unifier.length,
+                    &target.length,
+                    config,
+                    existing,
+                )?;
+                Self::unify_internal::<T>(&unifier.element, &target.element, config, existing)
             }
             (Self::TraitMember(unifier), Self::TraitMember(target))
                 if unifier.trait_type_id == target.trait_type_id =>
@@ -396,18 +367,20 @@ impl<S: Model> Type<S> {
                 existing = GenericArguments::unify_internal::<T>(
                     &unifier.trait_generic_arguments,
                     &target.trait_generic_arguments,
+                    config,
                     existing,
                 )?;
                 GenericArguments::unify_internal::<T>(
                     &unifier.member_generic_arguments,
                     &target.member_generic_arguments,
+                    config,
                     existing,
                 )
             }
             (Self::Tuple(unifier), Self::Tuple(target))
                 if tuple_type_unifiable(unifier, target) =>
             {
-                unify_tuple_type::<T>(unifier, target, existing)
+                unify_tuple_type::<S, T>(unifier, target, config, existing)
             }
 
             (unifier, target) => {
@@ -427,31 +400,34 @@ impl<S: Model> Constant<S> {
     /// # Errors
     ///
     /// Returns an error if the two terms can't be unified.
-    pub fn unify<'a, T: Config<Model = S>>(
+    pub fn unify<'a, T: Config<S>>(
         unifier: &'a Self,
         target: &'a Self,
+        config: &T,
     ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        Self::unify_internal::<VariableSubstitution<S>>(unifier, target, Substitution::default())
+        Self::unify_internal::<T>(unifier, target, config, Substitution::default())
     }
 
-    fn unify_internal<'a, T: Config<Model = S>>(
+    /// Sub-structurally unifies two constant terms.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the two terms can't be sub-structurally unified.
+    pub fn sub_structural_unify<'a, T: Config<S>>(
         unifier: &'a Self,
         target: &'a Self,
+        config: &T,
+    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
+        Self::sub_structural_unify_internal::<T>(unifier, target, config, Substitution::default())
+    }
+
+    fn unify_internal<'a, T: Config<S>>(
+        unifier: &'a Self,
+        target: &'a Self,
+        config: &T,
         mut existing: Substitution<'a, S>,
     ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        let early_unify = match unifier {
-            Self::Primitive(_) if T::MAP_PRIMITIVE_CONSTANT => todo!(),
-            Self::Inference(_) if T::MAP_CONSTANT_INFERENCE => todo!(),
-            Self::Struct(_) if T::MAP_STRUCT_CONSTANT => todo!(),
-            Self::Enum(_) if T::MAP_ENUM_CONSTANT => todo!(),
-            Self::Array(_) if T::MAP_ARRAY_CONSTANT => todo!(),
-            Self::Parameter(_) if T::MAP_CONSTANT_PARAMETER => todo!(),
-            Self::TraitMember(_) if T::MAP_TRAIT_CONSTANT => todo!(),
-            Self::Tuple(_) if T::MAP_TUPLE_CONSTANT => todo!(),
-            _ => false,
-        };
-
-        if early_unify {
+        if config.constant_mappable(unifier, target) {
             match existing.constants.entry(Cow::Borrowed(unifier)) {
                 Entry::Occupied(entry) => {
                     if **entry.get() != *target {
@@ -470,12 +446,13 @@ impl<S: Model> Constant<S> {
             return Ok(existing);
         }
 
-        Self::sub_structural_unify_internal::<T>(unifier, target, existing)
+        Self::sub_structural_unify_internal::<T>(unifier, target, config, existing)
     }
 
-    fn sub_structural_unify_internal<'a, T: Config<Model = S>>(
+    fn sub_structural_unify_internal<'a, T: Config<S>>(
         unifier: &'a Self,
         target: &'a Self,
+        config: &T,
         mut existing: Substitution<'a, S>,
     ) -> Result<Substitution<'a, S>, Error<'a, S>> {
         match (unifier, target) {
@@ -486,11 +463,12 @@ impl<S: Model> Constant<S> {
                 existing = GenericArguments::unify_internal::<T>(
                     &unifier.generic_arguments,
                     &target.generic_arguments,
+                    config,
                     existing,
                 )?;
 
                 for (unifier, target) in unifier.fields.iter().zip(target.fields.iter()) {
-                    existing = Self::unify_internal::<T>(unifier, target, existing)?;
+                    existing = Self::unify_internal::<T>(unifier, target, config, existing)?;
                 }
 
                 Ok(existing)
@@ -503,13 +481,14 @@ impl<S: Model> Constant<S> {
                 existing = GenericArguments::unify_internal::<T>(
                     &unifier.generic_arguments,
                     &target.generic_arguments,
+                    config,
                     existing,
                 )?;
 
                 match (&unifier.associated_value, &target.associated_value) {
                     (None, None) => Ok(existing),
                     (Some(unifier), Some(target)) => {
-                        Self::unify_internal::<T>(unifier, target, existing)
+                        Self::unify_internal::<T>(unifier, target, config, existing)
                     }
                     (_, _) => unreachable!(),
                 }
@@ -518,11 +497,15 @@ impl<S: Model> Constant<S> {
             (Self::Array(unifier), Self::Array(target))
                 if unifier.elements.len() == target.elements.len() =>
             {
-                existing =
-                    Type::unify_internal::<T>(&unifier.element_ty, &target.element_ty, existing)?;
+                existing = Type::unify_internal::<T>(
+                    &unifier.element_ty,
+                    &target.element_ty,
+                    config,
+                    existing,
+                )?;
 
                 for (unifier, target) in unifier.elements.iter().zip(target.elements.iter()) {
-                    existing = Self::unify_internal::<T>(unifier, target, existing)?;
+                    existing = Self::unify_internal::<T>(unifier, target, config, existing)?;
                 }
 
                 Ok(existing)
@@ -532,8 +515,9 @@ impl<S: Model> Constant<S> {
                 if unifier.trait_constant_id == target.trait_constant_id =>
             {
                 existing = GenericArguments::unify_internal::<T>(
-                    &unifier.trait_substitution,
-                    &target.trait_substitution,
+                    &unifier.trait_arguments,
+                    &target.trait_arguments,
+                    config,
                     existing,
                 )?;
 
@@ -543,7 +527,7 @@ impl<S: Model> Constant<S> {
             (Self::Tuple(unifier), Self::Tuple(target))
                 if tuple_constant_unifiable(unifier, target) =>
             {
-                unify_tuple_constant::<T>(unifier, target, existing)
+                unify_tuple_constant::<S, T>(unifier, target, config, existing)
             }
 
             (unifier, target) => {
@@ -561,19 +545,13 @@ impl<S: Model> Constant<S> {
 }
 
 impl<S: Model> Region<S> {
-    fn unify_internal<'a, T: Config<Model = S>>(
+    fn unify_internal<'a, T: Config<S>>(
         unifier: &'a Self,
         target: &'a Self,
+        config: &T,
         mut existing: Substitution<'a, S>,
     ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        let unify = match unifier {
-            Self::Static if T::MAP_STATIC_REGION => true,
-            Self::Named(_) if T::MAP_LIFETIME_PARAMETER => true,
-            Self::Context(_) if T::MAP_REGION_CONTEXT => true,
-            _ => false,
-        };
-
-        if unify {
+        if config.region_mappable(unifier, target) {
             match existing.regions.entry(Cow::Borrowed(unifier)) {
                 Entry::Occupied(entry) => {
                     if **entry.get() != *target {
@@ -599,9 +577,10 @@ impl<S: Model> Region<S> {
 }
 
 impl<S: Model> GenericArguments<S> {
-    fn unify_internal<'a, T: Config<Model = S>>(
+    fn unify_internal<'a, T: Config<S>>(
         unifier: &'a Self,
         target: &'a Self,
+        config: &T,
         mut existing: Substitution<'a, S>,
     ) -> Result<Substitution<'a, S>, Error<'a, S>> {
         if unifier.types.len() != target.types.len()
@@ -612,18 +591,30 @@ impl<S: Model> GenericArguments<S> {
         }
 
         for (unifier, target) in unifier.types.iter().zip(target.types.iter()) {
-            existing = Type::unify_internal::<T>(unifier, target, existing)?;
+            existing = Type::unify_internal::<T>(unifier, target, config, existing)?;
         }
 
         for (unifier, target) in unifier.constants.iter().zip(target.constants.iter()) {
-            existing = Constant::unify_internal::<T>(unifier, target, existing)?;
+            existing = Constant::unify_internal::<T>(unifier, target, config, existing)?;
         }
 
         for (unifier, target) in unifier.regions.iter().zip(target.regions.iter()) {
-            existing = Region::unify_internal::<T>(unifier, target, existing)?;
+            existing = Region::unify_internal::<T>(unifier, target, config, existing)?;
         }
 
         Ok(existing)
+    }
+}
+
+impl<S: Model> Type<S> {
+    pub(super) fn unify_with_premise_mappings<'a, 'b>(
+        unifier: &'a Self,
+        target: &'a Self,
+        config: &impl Config<S>,
+        table: &Table,
+        premise_mappings: &Mapping<S>,
+        query_records: &mut QueryRecords<S>,
+    ) -> Mapping<'b, S> {
     }
 }
 

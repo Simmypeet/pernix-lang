@@ -26,8 +26,8 @@ pub struct Algebraic<S: Model> {
     pub generic_arguments: GenericArguments<S>,
 }
 
-/// A qualifier that can be applied to references/pointers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+/// A qualifier that can be applied to references/pointers.  
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Qualifier {
     Immutable,
@@ -129,7 +129,7 @@ pub struct Tuple<S: Model> {
 }
 
 /// Represents a type in the language.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Type<S: Model> {
     Primitive(Primitive),
