@@ -1,8 +1,10 @@
 //! Contains the code for unifying terms.
 
-use std::{borrow::Cow, collections::hash_map::Entry};
+use std::{cell::Cell, collections::hash_map::Entry};
 
-use super::{Mapping, QueryRecords, Substitution};
+use pernixc_base::extension::CellExt;
+
+use super::{Mapping, QueryRecords};
 use crate::{
     entity::{
         constant::{self, Constant},
@@ -10,6 +12,7 @@ use crate::{
         region::Region,
         GenericArguments, Model,
     },
+    logic::Substitution,
     table::Table,
 };
 
@@ -29,22 +32,22 @@ pub struct ConflictError<Substitution, Term> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Error<'a, S: Model> {
+pub enum Error<S: Model> {
     /// These two types can't be unified.
-    Type(Cow<'a, Type<S>>, Cow<'a, Type<S>>),
+    Type(Type<S>, Type<S>),
 
     /// These two constants can't be unified.
-    Constant(Cow<'a, Constant<S>>, Cow<'a, Constant<S>>),
+    Constant(Constant<S>, Constant<S>),
 
     /// These two regions can't be unified.
-    Region(&'a Region<S>, &'a Region<S>),
+    Region(Region<S>, Region<S>),
 
     /// These two generic arguments can't be unified.
-    GenericArguments(&'a GenericArguments<S>, &'a GenericArguments<S>),
+    GenericArguments(GenericArguments<S>, GenericArguments<S>),
 
-    TypeConflict(ConflictError<Cow<'a, Type<S>>, Cow<'a, Type<S>>>),
-    ConstantConflict(ConflictError<Cow<'a, Constant<S>>, Cow<'a, Constant<S>>>),
-    RegionConflict(ConflictError<Cow<'a, Region<S>>, Cow<'a, Region<S>>>),
+    TypeConflict(ConflictError<Type<S>, Type<S>>),
+    RegionConflict(ConflictError<Region<S>, Region<S>>),
+    ConstantConflict(ConflictError<Constant<S>, Constant<S>>),
 }
 
 /// Describes which types of terms can be unified.
@@ -90,9 +93,9 @@ impl<S: Model> Config<S> for Indefinite {
     fn region_mappable(&self, unifier: &Region<S>, _: &Region<S>) -> bool { unifier.is_named() }
 }
 
-macro_rules! tuple_unifiable_function {
-    ($name:ident, $domain:ident) => {
-        fn $name<S: Model>(unifier: &$domain::Tuple<S>, target: &$domain::Tuple<S>) -> bool {
+macro_rules! tuple_unifiable_body {
+    ($domain:ident) => {
+        fn tuple_unifiable(unifier: &$domain::Tuple<S>, target: &$domain::Tuple<S>) -> bool {
             if target.elements.iter().filter(|x| x.is_unpacked()).count() > 0 {
                 return false;
             }
@@ -106,32 +109,33 @@ macro_rules! tuple_unifiable_function {
     };
 }
 
-tuple_unifiable_function!(tuple_type_unifiable, r#type);
-tuple_unifiable_function!(tuple_constant_unifiable, constant);
-
-macro_rules! tuple_unify_function {
-    ($name:ident, $domain:ident, $kind:ident, $map_name: ident, $err_name: ident, $mappable_func: ident) => {
+macro_rules! tuple_unify_body {
+    ($domain:ident, $map_name: ident, $err_name: ident, $mappable_func: ident) => {
         #[allow(clippy::too_many_lines)]
-        fn $name<'a, S: Model, T: Config<S>>(
-            unifier: &'a $domain::Tuple<S>,
-            target: &'a $domain::Tuple<S>,
-            config: &T,
-            mut existing: Substitution<'a, S>,
-        ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-            let unpacked_count = unifier.elements.iter().filter(|x| x.is_unpacked()).count();
+        fn tuple_unify(
+            lhs: &$domain::Tuple<S>,
+            rhs: &$domain::Tuple<S>,
+            premise_mapping: &Mapping<S>,
+            table: &Table,
+            records: &Cell<QueryRecords<S>>,
+            config: &impl Config<S>,
+            mut existing: Substitution<S>,
+        ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
+            let unpacked_count = lhs.elements.iter().filter(|x| x.is_unpacked()).count();
 
             match unpacked_count {
                 // no unpacked elements case
                 0 => {
-                    for (unifier_element, target_element) in
-                        unifier.elements.iter().zip(target.elements.iter())
-                    {
-                        let unifier_element = unifier_element.as_regular().unwrap();
-                        let target_element = target_element.as_regular().unwrap();
+                    for (lhs_element, rhs_element) in lhs.elements.iter().zip(rhs.elements.iter()) {
+                        let lhs_element = lhs_element.as_regular().unwrap();
+                        let rhs_element = rhs_element.as_regular().unwrap();
 
-                        existing = $kind::unify_internal::<T>(
-                            unifier_element,
-                            target_element,
+                        existing = Self::unify_internal(
+                            lhs_element,
+                            rhs_element,
+                            premise_mapping,
+                            table,
+                            records,
                             config,
                             existing,
                         )?;
@@ -142,104 +146,87 @@ macro_rules! tuple_unify_function {
 
                 // one unpacked element case
                 1 => {
-                    let unpacked_position = unifier
+                    let unpacked_position = lhs
                         .elements
                         .iter()
                         .position($domain::TupleElement::is_unpacked)
                         .unwrap();
 
                     let head_range = 0..unpacked_position;
-                    let unifier_tail_range = (unpacked_position + 1)..unifier.elements.len();
-                    let target_tail_range = (target.elements.len()
-                        - unifier_tail_range.clone().count())
-                        ..target.elements.len();
-                    let target_unpack_range = unpacked_position..target_tail_range.start;
+                    let lhs_tail_range = (unpacked_position + 1)..lhs.elements.len();
+                    let rhs_tail_range =
+                        (rhs.elements.len() - lhs_tail_range.clone().count())..rhs.elements.len();
+                    let rhs_unpack_range = unpacked_position..rhs_tail_range.start;
 
                     // unify head
-                    for (unifier_element, target_element) in unifier.elements[head_range.clone()]
+                    for (lhs_element, rhs_element) in lhs.elements[head_range.clone()]
                         .iter()
-                        .zip(&target.elements[head_range])
+                        .zip(&rhs.elements[head_range])
                     {
-                        let unifier_element = unifier_element.as_regular().unwrap();
-                        let target_element = target_element.as_regular().unwrap();
+                        let lhs_element = lhs_element.as_regular().unwrap();
+                        let rhs_element = rhs_element.as_regular().unwrap();
 
-                        existing = $kind::unify_internal::<T>(
-                            unifier_element,
-                            target_element,
+                        existing = Self::unify_internal(
+                            lhs_element,
+                            rhs_element,
+                            premise_mapping,
+                            table,
+                            records,
                             config,
                             existing,
                         )?;
                     }
 
                     // unify tail
-                    for (unifier_element, target_element) in unifier.elements[unifier_tail_range]
+                    for (lhs_element, rhs_element) in lhs.elements[lhs_tail_range]
                         .iter()
-                        .zip(&target.elements[target_tail_range])
+                        .zip(&rhs.elements[rhs_tail_range])
                     {
-                        let unifier_element = unifier_element.as_regular().unwrap();
-                        let target_element = target_element.as_regular().unwrap();
+                        let lhs_element = lhs_element.as_regular().unwrap();
+                        let rhs_element = rhs_element.as_regular().unwrap();
 
-                        existing = $kind::unify_internal::<T>(
-                            unifier_element,
-                            target_element,
+                        existing = Self::unify_internal(
+                            lhs_element,
+                            rhs_element,
+                            premise_mapping,
+                            table,
+                            records,
                             config,
                             existing,
                         )?;
                     }
 
-                    let target_unpack: Cow<'a, $kind<S>> =
-                        Cow::Owned($kind::Tuple($domain::Tuple {
-                            elements: target.elements[target_unpack_range].to_vec(),
-                        }));
+                    let rhs_unpack = Self::Tuple($domain::Tuple {
+                        elements: rhs.elements[rhs_unpack_range].to_vec(),
+                    });
 
-                    let unpacked = unifier.elements[unpacked_position].as_unpacked().unwrap();
+                    let unpacked = lhs.elements[unpacked_position].as_unpacked().unwrap();
                     match unpacked {
                         $domain::Unpacked::Parameter(parameter) => {
-                            let parameter: Cow<'a, $kind<S>> =
-                                Cow::Owned($kind::Parameter(*parameter));
+                            let parameter = Self::Parameter(*parameter);
 
-                            if config.$mappable_func(parameter.as_ref(), target_unpack.as_ref()) {
-                                match existing.$map_name.entry(parameter.clone()) {
-                                    Entry::Occupied(entry) => {
-                                        if **entry.get() != *target_unpack {
-                                            return Err(Error::$err_name(ConflictError {
-                                                unifier: parameter,
-                                                existing: entry.remove(),
-                                                target: target_unpack,
-                                            }));
-                                        }
-                                    }
-                                    Entry::Vacant(entry) => {
-                                        entry.insert(target_unpack);
-                                    }
-                                }
-                            } else {
-                                return Err(Error::$kind(parameter, target_unpack));
-                            }
+                            existing = Self::unify_internal(
+                                &parameter,
+                                &rhs_unpack,
+                                premise_mapping,
+                                table,
+                                records,
+                                config,
+                                existing,
+                            )?;
                         }
                         $domain::Unpacked::TraitMember(trait_member) => {
-                            let trait_member: Cow<'a, $kind<S>> =
-                                Cow::Owned($kind::TraitMember(trait_member.clone()));
+                            let trait_member = Self::TraitMember(trait_member.clone());
 
-                            if config.$mappable_func(trait_member.as_ref(), target_unpack.as_ref())
-                            {
-                                match existing.$map_name.entry(trait_member.clone()) {
-                                    Entry::Occupied(entry) => {
-                                        if **entry.get() != *target_unpack {
-                                            return Err(Error::$err_name(ConflictError {
-                                                unifier: trait_member,
-                                                existing: entry.remove(),
-                                                target: target_unpack,
-                                            }));
-                                        }
-                                    }
-                                    Entry::Vacant(entry) => {
-                                        entry.insert(target_unpack);
-                                    }
-                                }
-                            } else {
-                                return Err(Error::$kind(trait_member, target_unpack));
-                            }
+                            existing = Self::unify_internal(
+                                &trait_member,
+                                &rhs_unpack,
+                                premise_mapping,
+                                table,
+                                records,
+                                config,
+                                existing,
+                            )?;
                         }
                     }
 
@@ -252,142 +239,265 @@ macro_rules! tuple_unify_function {
     };
 }
 
-tuple_unify_function!(
-    unify_tuple_constant,
-    constant,
-    Constant,
-    constants,
-    ConstantConflict,
-    constant_mappable
-);
-tuple_unify_function!(
-    unify_tuple_type,
-    r#type,
-    Type,
-    types,
-    TypeConflict,
-    type_mappable
-);
+macro_rules! unify_internal_body {
+    ($record_set:ident, $mappable_func:ident, $sub:ident, $err:ident) => {
+        pub(super) fn unify_internal(
+            lhs: &Self,
+            rhs: &Self,
+            premise_mapping: &Mapping<S>,
+            table: &Table,
+            records: &Cell<QueryRecords<S>>,
+            config: &impl Config<S>,
+            mut existing: Substitution<S>,
+        ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
+            let terms = (lhs.clone(), rhs.clone());
 
-impl<S: Model> Type<S> {
-    /// Unifies two type terms.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the two terms can't be unified.
-    pub fn unify<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        Self::unify_internal::<T>(unifier, target, config, Substitution::default())
-    }
+            // avoid recursion
+            if records.visit(|x| x.$record_set.contains(&terms)) {
+                return Ok(existing);
+            }
 
-    /// Sub-structurally unifies two type terms.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the two terms can't be sub-structurally unified.
-    pub fn sub_structural_unify<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        Self::sub_structural_unify_internal::<T>(unifier, target, config, Substitution::default())
-    }
+            records.visit_mut(|x| x.$record_set.insert(terms.clone()));
 
-    fn unify_internal<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-        mut existing: Substitution<'a, S>,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        if config.type_mappable(unifier, target) {
-            match existing.types.entry(Cow::Borrowed(unifier)) {
-                Entry::Occupied(entry) => {
-                    if **entry.get() != *target {
-                        return Err(Error::TypeConflict(ConflictError {
-                            unifier: Cow::Borrowed(unifier),
-                            existing: entry.remove(),
-                            target: Cow::Borrowed(target),
-                        }));
+            // try to unify
+            if config.$mappable_func(lhs, rhs) {
+                match existing.$sub.entry(lhs.clone()) {
+                    Entry::Occupied(entry) => {
+                        if !Self::equals_internal(entry.get(), rhs, premise_mapping, table, records)
+                        {
+                            records.visit_mut(|x| x.$record_set.remove(&terms));
+
+                            let existing_term = entry.remove();
+                            return Err((
+                                existing,
+                                Error::$err(ConflictError {
+                                    unifier: lhs.clone(),
+                                    target: rhs.clone(),
+                                    existing: existing_term,
+                                }),
+                            ));
+                        }
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(rhs.clone());
                     }
                 }
-                Entry::Vacant(entry) => {
-                    entry.insert(Cow::Borrowed(target));
+
+                records.visit_mut(|x| x.$record_set.remove(&terms));
+                return Ok(existing);
+            }
+
+            // total substitution count
+            let total_count =
+                existing.types.len() + existing.constants.len() + existing.regions.len();
+
+            let error = match Self::sub_structural_unify_internal(
+                lhs,
+                rhs,
+                premise_mapping,
+                table,
+                records,
+                config,
+                existing,
+            ) {
+                Ok(existing) => {
+                    records.visit_mut(|x| x.$record_set.remove(&terms));
+                    return Ok(existing);
+                }
+                Err((previous, error)) => {
+                    existing = previous;
+                    error
+                }
+            };
+
+            for (lhs_mapping, rhs_mappings) in &premise_mapping.$sub {
+                if !Self::equals_internal(rhs, lhs_mapping, premise_mapping, table, records) {
+                    continue;
+                }
+
+                for rhs_mapping in rhs_mappings {
+                    match Self::unify_internal(
+                        lhs,
+                        rhs_mapping,
+                        premise_mapping,
+                        table,
+                        records,
+                        config,
+                        existing,
+                    ) {
+                        Ok(ok) => {
+                            // no new substitutions, keep going
+                            if total_count < ok.types.len() + ok.constants.len() + ok.regions.len()
+                            {
+                                records.visit_mut(|x| x.$record_set.remove(&terms));
+                                return Ok(ok);
+                            }
+
+                            existing = ok;
+                        }
+                        Err((previous, _)) => {
+                            existing = previous;
+                        }
+                    }
                 }
             }
 
-            return Ok(existing);
+            records.visit_mut(|x| x.$record_set.remove(&terms));
+            Err((existing, error))
         }
+    };
+}
 
-        Self::sub_structural_unify_internal::<T>(unifier, target, config, existing)
+impl<S: Model> Type<S> {
+    unify_internal_body!(type_unifies, type_mappable, types, TypeConflict);
+
+    tuple_unify_body!(r#type, types, Type, type_mappable);
+
+    tuple_unifiable_body!(r#type);
+
+    /// Unifies two types.
+    ///
+    /// # Parameters
+    ///
+    /// - `lhs`: The source type to unify.
+    /// - `rhs`: The destination type to unify.
+    /// - `premise_mapping`: The mapping that is used as a premise.
+    /// - `table`: The table that is used for normalization.
+    /// - `config`: The configuration that determines which types of terms can be unified.
+    ///
+    /// # Returns
+    ///
+    /// Returns a [`Substitution`] that can be applied to the `lhs` type to make it equals to `rhs`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the two types can't be unified.
+    pub fn unify(
+        lhs: &Self,
+        rhs: &Self,
+        premise_mapping: &Mapping<S>,
+        table: &Table,
+        config: &impl Config<S>,
+    ) -> Result<Substitution<S>, Error<S>> {
+        Self::unify_internal(
+            lhs,
+            rhs,
+            premise_mapping,
+            table,
+            &Cell::new(QueryRecords::default()),
+            config,
+            Substitution::default(),
+        )
+        .map_err(|(_, error)| error)
     }
 
-    fn sub_structural_unify_internal<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-        mut existing: Substitution<'a, S>,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn sub_structural_unify_internal(
+        lhs: &Self,
+        rhs: &Self,
+        premise_mapping: &Mapping<S>,
+        table: &Table,
+        records: &Cell<QueryRecords<S>>,
+        config: &impl Config<S>,
+        mut existing: Substitution<S>,
+    ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
         // sub-structural unification
-        match (unifier, target) {
-            (Self::Algebraic(unifier), Self::Algebraic(target)) if unifier.kind == target.kind => {
-                GenericArguments::unify_internal::<T>(
-                    &unifier.generic_arguments,
-                    &target.generic_arguments,
+        match (lhs, rhs) {
+            (Self::Algebraic(lhs), Self::Algebraic(rhs)) if lhs.kind == rhs.kind => {
+                GenericArguments::unify_internal(
+                    &lhs.generic_arguments,
+                    &rhs.generic_arguments,
+                    premise_mapping,
+                    table,
+                    records,
                     config,
                     existing,
                 )
             }
-            (Self::Pointer(unifier), Self::Pointer(target))
-                if unifier.qualifier == target.qualifier =>
-            {
-                Self::unify_internal::<T>(&unifier.pointee, &target.pointee, config, existing)
-            }
-            (Self::Reference(unifier), Self::Reference(target))
-                if unifier.qualifier == target.qualifier =>
-            {
-                existing =
-                    Region::unify_internal::<T>(&unifier.region, &target.region, config, existing)?;
-                Self::unify_internal::<T>(&unifier.pointee, &target.pointee, config, existing)
-            }
-            (Self::Array(unifier), Self::Array(target)) => {
-                existing = Constant::unify_internal::<T>(
-                    &unifier.length,
-                    &target.length,
-                    config,
-                    existing,
-                )?;
-                Self::unify_internal::<T>(&unifier.element, &target.element, config, existing)
-            }
-            (Self::TraitMember(unifier), Self::TraitMember(target))
-                if unifier.trait_type_id == target.trait_type_id =>
-            {
-                existing = GenericArguments::unify_internal::<T>(
-                    &unifier.trait_generic_arguments,
-                    &target.trait_generic_arguments,
-                    config,
-                    existing,
-                )?;
-                GenericArguments::unify_internal::<T>(
-                    &unifier.member_generic_arguments,
-                    &target.member_generic_arguments,
+            (Self::Pointer(lhs), Self::Pointer(rhs)) if lhs.qualifier == rhs.qualifier => {
+                Self::unify_internal(
+                    &lhs.pointee,
+                    &rhs.pointee,
+                    premise_mapping,
+                    table,
+                    records,
                     config,
                     existing,
                 )
             }
-            (Self::Tuple(unifier), Self::Tuple(target))
-                if tuple_type_unifiable(unifier, target) =>
-            {
-                unify_tuple_type::<S, T>(unifier, target, config, existing)
-            }
+            (Self::Reference(lhs), Self::Reference(rhs)) if lhs.qualifier == rhs.qualifier => {
+                existing = Region::unify_internal(
+                    &lhs.region,
+                    &rhs.region,
+                    premise_mapping,
+                    table,
+                    records,
+                    config,
+                    existing,
+                )?;
 
-            (unifier, target) => {
-                if unifier == target {
+                Self::unify_internal(
+                    &lhs.pointee,
+                    &rhs.pointee,
+                    premise_mapping,
+                    table,
+                    records,
+                    config,
+                    existing,
+                )
+            }
+            (Self::Array(lhs), Self::Array(rhs)) => {
+                existing = Self::unify_internal(
+                    &lhs.element,
+                    &rhs.element,
+                    premise_mapping,
+                    table,
+                    records,
+                    config,
+                    existing,
+                )?;
+
+                Constant::unify_internal(
+                    &lhs.length,
+                    &rhs.length,
+                    premise_mapping,
+                    table,
+                    records,
+                    config,
+                    existing,
+                )
+            }
+            (Self::TraitMember(lhs), Self::TraitMember(rhs))
+                if lhs.trait_type_id == rhs.trait_type_id =>
+            {
+                existing = GenericArguments::unify_internal(
+                    &lhs.trait_generic_arguments,
+                    &rhs.trait_generic_arguments,
+                    premise_mapping,
+                    table,
+                    records,
+                    config,
+                    existing,
+                )?;
+
+                GenericArguments::unify_internal(
+                    &lhs.member_generic_arguments,
+                    &rhs.member_generic_arguments,
+                    premise_mapping,
+                    table,
+                    records,
+                    config,
+                    existing,
+                )
+            }
+            (Self::Tuple(lhs), Self::Tuple(rhs)) if Self::tuple_unifiable(lhs, rhs) => {
+                Self::tuple_unify(lhs, rhs, premise_mapping, table, records, config, existing)
+            }
+            (_, _) => {
+                if Self::equals_internal(lhs, rhs, premise_mapping, table, records) {
                     Ok(existing)
                 } else {
-                    Err(Error::Type(Cow::Borrowed(unifier), Cow::Borrowed(target)))
+                    Err((existing, Error::Type(lhs.clone(), rhs.clone())))
                 }
             }
         }
@@ -395,149 +505,133 @@ impl<S: Model> Type<S> {
 }
 
 impl<S: Model> Constant<S> {
-    /// Unifies two constant terms.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the two terms can't be unified.
-    pub fn unify<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        Self::unify_internal::<T>(unifier, target, config, Substitution::default())
-    }
+    unify_internal_body!(
+        constant_unifies,
+        constant_mappable,
+        constants,
+        ConstantConflict
+    );
 
-    /// Sub-structurally unifies two constant terms.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the two terms can't be sub-structurally unified.
-    pub fn sub_structural_unify<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        Self::sub_structural_unify_internal::<T>(unifier, target, config, Substitution::default())
-    }
+    tuple_unify_body!(constant, constants, Constant, constant_mappable);
 
-    fn unify_internal<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-        mut existing: Substitution<'a, S>,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        if config.constant_mappable(unifier, target) {
-            match existing.constants.entry(Cow::Borrowed(unifier)) {
-                Entry::Occupied(entry) => {
-                    if **entry.get() != *target {
-                        return Err(Error::ConstantConflict(ConflictError {
-                            unifier: Cow::Borrowed(unifier),
-                            existing: entry.remove(),
-                            target: Cow::Borrowed(target),
-                        }));
-                    }
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(Cow::Borrowed(target));
-                }
-            }
+    tuple_unifiable_body!(constant);
 
-            return Ok(existing);
-        }
-
-        Self::sub_structural_unify_internal::<T>(unifier, target, config, existing)
-    }
-
-    fn sub_structural_unify_internal<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-        mut existing: Substitution<'a, S>,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        match (unifier, target) {
-            (Self::Struct(unifier), Self::Struct(target))
-                if unifier.struct_id == target.struct_id
-                    && unifier.fields.len() == target.fields.len() =>
+    pub(super) fn sub_structural_unify_internal(
+        lhs: &Self,
+        rhs: &Self,
+        premise_mapping: &Mapping<S>,
+        table: &Table,
+        records: &Cell<QueryRecords<S>>,
+        config: &impl Config<S>,
+        mut existing: Substitution<S>,
+    ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
+        match (lhs, rhs) {
+            (Self::Struct(lhs), Self::Struct(rhs))
+                if lhs.struct_id == rhs.struct_id && lhs.fields.len() == rhs.fields.len() =>
             {
-                existing = GenericArguments::unify_internal::<T>(
-                    &unifier.generic_arguments,
-                    &target.generic_arguments,
+                existing = GenericArguments::unify_internal(
+                    &lhs.generic_arguments,
+                    &rhs.generic_arguments,
+                    premise_mapping,
+                    table,
+                    records,
                     config,
                     existing,
                 )?;
 
-                for (unifier, target) in unifier.fields.iter().zip(target.fields.iter()) {
-                    existing = Self::unify_internal::<T>(unifier, target, config, existing)?;
+                for (lhs_field, rhs_field) in lhs.fields.iter().zip(&rhs.fields) {
+                    existing = Self::unify_internal(
+                        lhs_field,
+                        rhs_field,
+                        premise_mapping,
+                        table,
+                        records,
+                        config,
+                        existing,
+                    )?;
                 }
 
                 Ok(existing)
             }
 
-            (Self::Enum(unifier), Self::Enum(target))
-                if unifier.variant_id == target.variant_id
-                    && unifier.associated_value.is_some() == target.associated_value.is_some() =>
+            (Self::Enum(lhs), Self::Enum(rhs))
+                if lhs.variant_id == rhs.variant_id
+                    && lhs.associated_value.is_some() == rhs.associated_value.is_some() =>
             {
-                existing = GenericArguments::unify_internal::<T>(
-                    &unifier.generic_arguments,
-                    &target.generic_arguments,
+                existing = GenericArguments::unify_internal(
+                    &lhs.generic_arguments,
+                    &rhs.generic_arguments,
+                    premise_mapping,
+                    table,
+                    records,
                     config,
                     existing,
                 )?;
 
-                match (&unifier.associated_value, &target.associated_value) {
+                match (&lhs.associated_value, &rhs.associated_value) {
+                    (Some(lhs), Some(rhs)) => Self::unify_internal(
+                        lhs,
+                        rhs,
+                        premise_mapping,
+                        table,
+                        records,
+                        config,
+                        existing,
+                    ),
                     (None, None) => Ok(existing),
-                    (Some(unifier), Some(target)) => {
-                        Self::unify_internal::<T>(unifier, target, config, existing)
-                    }
                     (_, _) => unreachable!(),
                 }
             }
 
-            (Self::Array(unifier), Self::Array(target))
-                if unifier.elements.len() == target.elements.len() =>
-            {
-                existing = Type::unify_internal::<T>(
-                    &unifier.element_ty,
-                    &target.element_ty,
+            (Self::Array(lhs), Self::Array(rhs)) if lhs.elements.len() == rhs.elements.len() => {
+                existing = Type::unify_internal(
+                    &lhs.element_ty,
+                    &rhs.element_ty,
+                    premise_mapping,
+                    table,
+                    records,
                     config,
                     existing,
                 )?;
 
-                for (unifier, target) in unifier.elements.iter().zip(target.elements.iter()) {
-                    existing = Self::unify_internal::<T>(unifier, target, config, existing)?;
+                for (lhs_element, rhs_element) in lhs.elements.iter().zip(&rhs.elements) {
+                    existing = Self::unify_internal(
+                        lhs_element,
+                        rhs_element,
+                        premise_mapping,
+                        table,
+                        records,
+                        config,
+                        existing,
+                    )?;
                 }
 
                 Ok(existing)
             }
 
-            (Self::TraitMember(unifier), Self::TraitMember(target))
-                if unifier.trait_constant_id == target.trait_constant_id =>
+            (Self::TraitMember(lhs), Self::TraitMember(rhs))
+                if lhs.trait_constant_id == rhs.trait_constant_id =>
             {
-                existing = GenericArguments::unify_internal::<T>(
-                    &unifier.trait_arguments,
-                    &target.trait_arguments,
+                GenericArguments::unify_internal(
+                    &lhs.trait_arguments,
+                    &rhs.trait_arguments,
+                    premise_mapping,
+                    table,
+                    records,
                     config,
                     existing,
-                )?;
-
-                Ok(existing)
+                )
             }
 
-            (Self::Tuple(unifier), Self::Tuple(target))
-                if tuple_constant_unifiable(unifier, target) =>
-            {
-                unify_tuple_constant::<S, T>(unifier, target, config, existing)
+            (Self::Tuple(lhs), Self::Tuple(rhs)) if Self::tuple_unifiable(lhs, rhs) => {
+                Self::tuple_unify(lhs, rhs, premise_mapping, table, records, config, existing)
             }
 
-            (unifier, target) => {
-                if unifier == target {
+            (_, _) => {
+                if Self::equals_internal(lhs, rhs, premise_mapping, table, records) {
                     Ok(existing)
                 } else {
-                    Err(Error::Constant(
-                        Cow::Borrowed(unifier),
-                        Cow::Borrowed(target),
-                    ))
+                    Err((existing, Error::Constant(lhs.clone(), rhs.clone())))
                 }
             }
         }
@@ -545,76 +639,91 @@ impl<S: Model> Constant<S> {
 }
 
 impl<S: Model> Region<S> {
-    fn unify_internal<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-        mut existing: Substitution<'a, S>,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        if config.region_mappable(unifier, target) {
-            match existing.regions.entry(Cow::Borrowed(unifier)) {
+    pub(super) fn unify_internal(
+        lhs: &Self,
+        rhs: &Self,
+        premise_mapping: &Mapping<S>,
+        table: &Table,
+        records: &Cell<QueryRecords<S>>,
+        config: &impl Config<S>,
+        mut existing: Substitution<S>,
+    ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
+        if config.region_mappable(lhs, rhs) {
+            match existing.regions.entry(lhs.clone()) {
                 Entry::Occupied(entry) => {
-                    if **entry.get() != *target {
-                        return Err(Error::RegionConflict(ConflictError {
-                            unifier: Cow::Borrowed(unifier),
-                            existing: entry.remove(),
-                            target: Cow::Borrowed(target),
-                        }));
+                    if !Self::equals_internal(entry.get(), rhs, premise_mapping, table, records) {
+                        let existing_term = entry.remove();
+                        return Err((
+                            existing,
+                            Error::RegionConflict(ConflictError {
+                                unifier: lhs.clone(),
+                                existing: existing_term,
+                                target: rhs.clone(),
+                            }),
+                        ));
                     }
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(Cow::Borrowed(target));
+                    entry.insert(rhs.clone());
                 }
             }
 
             Ok(existing)
-        } else if unifier == target {
+        } else if Self::equals_internal(lhs, rhs, premise_mapping, table, records) {
             Ok(existing)
         } else {
-            Err(Error::Region(unifier, target))
+            Err((existing, Error::Region(lhs.clone(), rhs.clone())))
         }
     }
 }
 
 impl<S: Model> GenericArguments<S> {
-    fn unify_internal<'a, T: Config<S>>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &T,
-        mut existing: Substitution<'a, S>,
-    ) -> Result<Substitution<'a, S>, Error<'a, S>> {
-        if unifier.types.len() != target.types.len()
-            || unifier.constants.len() != target.constants.len()
-            || unifier.regions.len() != target.regions.len()
+    pub(super) fn unify_internal(
+        lhs: &Self,
+        rhs: &Self,
+        premise_mapping: &Mapping<S>,
+        table: &Table,
+        records: &Cell<QueryRecords<S>>,
+        config: &impl Config<S>,
+        mut existing: Substitution<S>,
+    ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
+        if lhs.types.len() != rhs.types.len()
+            || lhs.constants.len() != rhs.constants.len()
+            || lhs.regions.len() != rhs.regions.len()
         {
-            return Err(Error::GenericArguments(unifier, target));
+            return Err((existing, Error::GenericArguments(lhs.clone(), rhs.clone())));
         }
 
-        for (unifier, target) in unifier.types.iter().zip(target.types.iter()) {
-            existing = Type::unify_internal::<T>(unifier, target, config, existing)?;
+        for (lhs, rhs) in lhs.types.iter().zip(&rhs.types) {
+            existing =
+                Type::unify_internal(lhs, rhs, premise_mapping, table, records, config, existing)?;
         }
 
-        for (unifier, target) in unifier.constants.iter().zip(target.constants.iter()) {
-            existing = Constant::unify_internal::<T>(unifier, target, config, existing)?;
+        for (lhs, rhs) in lhs.constants.iter().zip(&rhs.constants) {
+            existing = Constant::unify_internal(
+                lhs,
+                rhs,
+                premise_mapping,
+                table,
+                records,
+                config,
+                existing,
+            )?;
         }
 
-        for (unifier, target) in unifier.regions.iter().zip(target.regions.iter()) {
-            existing = Region::unify_internal::<T>(unifier, target, config, existing)?;
+        for (lhs, rhs) in lhs.regions.iter().zip(&rhs.regions) {
+            existing = Region::unify_internal(
+                lhs,
+                rhs,
+                premise_mapping,
+                table,
+                records,
+                config,
+                existing,
+            )?;
         }
 
         Ok(existing)
-    }
-}
-
-impl<S: Model> Type<S> {
-    pub(super) fn unify_with_premise_mappings<'a, 'b>(
-        unifier: &'a Self,
-        target: &'a Self,
-        config: &impl Config<S>,
-        table: &Table,
-        premise_mappings: &Mapping<S>,
-        query_records: &mut QueryRecords<S>,
-    ) -> Mapping<'b, S> {
     }
 }
 

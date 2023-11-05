@@ -7,7 +7,7 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 
-use super::{constant::Constant, r#type::Type, GenericArguments, Model, Never, Region};
+use super::{constant::Constant, r#type::Type, GenericArguments, Model, Region};
 use crate::{arena::ID, symbol};
 
 /// Represents a predicate in that will be used in the generic engine.
@@ -64,7 +64,7 @@ pub struct Trait<S: Model> {
     pub trait_id: ID<symbol::Trait>,
 
     /// The generic arguments supplied to the trait.
-    pub generic_arguments: GenericArguments<S>,
+    pub generic_arguments: GenericArguments<Quantified<S>>,
 }
 
 /// Represents a for-all quantified region, denoted by `for<'a>` syntax, used in higher-ranked trait
@@ -81,12 +81,12 @@ impl Forall {
     }
 }
 
-/// Represents a struct that implements [`System`] trait where the region context is assigned to
+/// Represents a struct that implements [`Model`] trait where the region context is assigned to
 /// [`Forall`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct QuantifiedSystem<S: Model<RegionContext = Never>>(PhantomData<S>);
+pub struct Quantified<S: Model>(PhantomData<S>);
 
-impl<S: Model<RegionContext = Never>> Model for QuantifiedSystem<S> {
+impl<S: Model> Model for Quantified<S> {
     type ConstantInference = S::ConstantInference;
     type RegionContext = Forall;
     type TypeInference = S::TypeInference;

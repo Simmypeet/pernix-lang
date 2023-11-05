@@ -15,16 +15,16 @@ use crate::{
 #[test]
 fn not_equal_test() {
     let pair = (
-        &Type::Parameter(TypeParameterID {
+        Type::Parameter(TypeParameterID {
             parent: GenericID::Enum(ID::new(0)),
             id: ID::new(0),
         }),
-        &Type::Parameter(TypeParameterID {
+        Type::Parameter(TypeParameterID {
             parent: GenericID::Enum(ID::new(0)),
             id: ID::new(1),
         }),
     );
-    let mapping: Mapping<'_, Symbolic> = Mapping::from_pairs(
+    let mapping: Mapping<Symbolic> = Mapping::from_pairs(
         std::iter::empty(),
         std::iter::once(pair),
         std::iter::empty(),
@@ -32,7 +32,10 @@ fn not_equal_test() {
 
     let table = Table::default();
 
-    let lhs: Type<Symbolic> = Type::Primitive(Primitive::Bool);
+    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
+        parent: GenericID::Enum(ID::new(0)),
+        id: ID::new(0),
+    });
     let rhs: Type<Symbolic> = Type::Primitive(Primitive::Float32);
 
     assert!(!lhs.equals(&rhs, &mapping, &table));
@@ -51,37 +54,37 @@ Then:
 fn transitivity_test() {
     let pairs = [
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(10),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(20),
             }),
         ),
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(1),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(10),
             }),
         ),
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(2),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(20),
             }),
         ),
     ];
-    let mapping: Mapping<'_, Symbolic> =
+    let mapping: Mapping<Symbolic> =
         Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty());
 
     let table = Table::default();
@@ -110,11 +113,11 @@ then:
 #[test]
 fn recursive_term_test() {
     let pair = (
-        &(Type::Parameter(TypeParameterID {
+        (Type::Parameter(TypeParameterID {
             parent: GenericID::Enum(ID::new(0)),
             id: ID::new(0),
         })),
-        &(Type::Algebraic(Algebraic {
+        (Type::Algebraic(Algebraic {
             kind: AlgebraicKind::Enum(ID::new(0)),
             generic_arguments: GenericArguments {
                 regions: Vec::new(),
@@ -133,7 +136,7 @@ fn recursive_term_test() {
         })),
     );
 
-    let mapping: Mapping<'_, Symbolic> = Mapping::from_pairs(
+    let mapping: Mapping<Symbolic> = Mapping::from_pairs(
         std::iter::empty(),
         std::iter::once(pair),
         std::iter::empty(),
@@ -196,48 +199,48 @@ Then:
 fn more_transitivity_test() {
     let pairs = [
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(0),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(1),
             }),
         ),
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(1),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(2),
             }),
         ),
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(1),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(4),
             }),
         ),
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(2),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(3),
             }),
         ),
     ];
 
-    let mapping: Mapping<'_, Symbolic> =
+    let mapping: Mapping<Symbolic> =
         Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty());
 
     let table = Table::default();
@@ -280,28 +283,28 @@ Enum(0?, 2?) = Enum(1?, 3?)
 fn by_unification_test() {
     let pairs = [
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(0),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(1),
             }),
         ),
         (
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(2),
             }),
-            &Type::Parameter(TypeParameterID {
+            Type::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(3),
             }),
         ),
     ];
 
-    let mapping: Mapping<'_, Symbolic> =
+    let mapping: Mapping<Symbolic> =
         Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty());
 
     let table = Table::default();
@@ -343,4 +346,97 @@ fn by_unification_test() {
     });
 
     assert!(lhs.equals(&rhs, &mapping, &table));
+}
+
+/*
+Suppose:
+0? = enum0(1?, 2?)
+0? = enum0(3?, 4?)
+
+Then:
+1? != 3?
+2? != 4?
+*/
+
+#[test]
+fn fallacy_test() {
+    let equalities = [
+        (
+            Type::Parameter(TypeParameterID {
+                parent: GenericID::Enum(ID::new(0)),
+                id: ID::new(0),
+            }),
+            Type::Algebraic(Algebraic {
+                kind: AlgebraicKind::Enum(ID::new(0)),
+                generic_arguments: GenericArguments {
+                    regions: vec![],
+                    types: vec![
+                        Type::Parameter(TypeParameterID {
+                            parent: GenericID::Enum(ID::new(0)),
+                            id: ID::new(1),
+                        }),
+                        Type::Parameter(TypeParameterID {
+                            parent: GenericID::Enum(ID::new(0)),
+                            id: ID::new(2),
+                        }),
+                    ],
+                    constants: vec![],
+                },
+            }),
+        ),
+        (
+            Type::Parameter(TypeParameterID {
+                parent: GenericID::Enum(ID::new(0)),
+                id: ID::new(0),
+            }),
+            Type::Algebraic(Algebraic {
+                kind: AlgebraicKind::Enum(ID::new(0)),
+                generic_arguments: GenericArguments {
+                    regions: vec![],
+                    types: vec![
+                        Type::Parameter(TypeParameterID {
+                            parent: GenericID::Enum(ID::new(0)),
+                            id: ID::new(3),
+                        }),
+                        Type::Parameter(TypeParameterID {
+                            parent: GenericID::Enum(ID::new(0)),
+                            id: ID::new(4),
+                        }),
+                    ],
+                    constants: vec![],
+                },
+            }),
+        ),
+    ];
+
+    let mapping: Mapping<Symbolic> = Mapping::from_pairs(
+        std::iter::empty(),
+        equalities.iter().cloned(),
+        std::iter::empty(),
+    );
+
+    let table = Table::default();
+
+    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
+        parent: GenericID::Enum(ID::new(0)),
+        id: ID::new(1),
+    });
+    let rhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
+        parent: GenericID::Enum(ID::new(0)),
+        id: ID::new(3),
+    });
+
+    assert!(!lhs.equals(&rhs, &mapping, &table));
+
+    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
+        parent: GenericID::Enum(ID::new(0)),
+        id: ID::new(2),
+    });
+
+    let rhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
+        parent: GenericID::Enum(ID::new(0)),
+        id: ID::new(4),
+    });
+
+    assert!(!lhs.equals(&rhs, &mapping, &table));
 }

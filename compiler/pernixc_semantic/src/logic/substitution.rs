@@ -73,7 +73,7 @@ impl<S: Model> Type<S> {
     /// Applies the substitution to the type.
     pub fn apply(&mut self, substitution: &Substitution<S>) {
         if let Some(ok) = substitution.types.get(self).cloned() {
-            *self = ok.into_owned();
+            *self = ok;
             return;
         };
 
@@ -104,7 +104,7 @@ impl<S: Model> Constant<S> {
     /// Applies the substitution to the constant.
     pub fn apply(&mut self, substitution: &Substitution<S>) {
         if let Some(ok) = substitution.constants.get(self).cloned() {
-            *self = ok.into_owned();
+            *self = ok;
             return;
         };
 
@@ -145,7 +145,7 @@ impl<S: Model> Region<S> {
     /// Applies the substitution to the region.
     pub fn apply(&mut self, substitution: &Substitution<S>) {
         if let Some(ok) = substitution.regions.get(self).cloned() {
-            *self = ok.into_owned();
+            *self = ok;
         };
     }
 }
