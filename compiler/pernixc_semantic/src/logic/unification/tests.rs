@@ -18,6 +18,7 @@ fn recursive_term_test() {
     ?0 = Enum0(?0)
     ?0 = bool
      */
+
     let equalities = [
         (
             (Type::Parameter(TypeParameterID {

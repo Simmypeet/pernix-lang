@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::{constant::Constant, region::Region, GenericArguments, Model};
+use super::{constant::Constant, region::Region, GenericArguments, Model, Never};
 use crate::{
     arena::ID,
     symbol::{Enum, Struct, TraitTypeID, TypeParameterID},
@@ -141,4 +141,68 @@ pub enum Type<S: Model> {
     TraitMember(TraitMember<S>),
     Parameter(TypeParameterID),
     Tuple(Tuple<S>),
+}
+
+impl<T> Type<T>
+where
+    T: Model<TypeInference = Never, ConstantInference = Never, RegionContext = Never>,
+{
+    /// Converts this type into another model.
+    #[must_use]
+    pub fn into_other_model<S: Model>(self) -> Type<S> {
+        match self {
+            Self::Primitive(primitive) => Type::Primitive(primitive),
+            Self::Inference(never) => match never {},
+            Self::Algebraic(algebraic) => Type::Algebraic(Algebraic {
+                kind: algebraic.kind,
+                generic_arguments: algebraic.generic_arguments.into_other_model(),
+            }),
+            Self::Pointer(pointer) => Type::Pointer(Pointer {
+                qualifier: pointer.qualifier,
+                pointee: Box::new(pointer.pointee.into_other_model()),
+            }),
+            Self::Reference(reference) => Type::Reference(Reference {
+                qualifier: reference.qualifier,
+                region: reference.region.into_other_model(),
+                pointee: Box::new(reference.pointee.into_other_model()),
+            }),
+            Self::Array(array) => Type::Array(Array {
+                length: array.length.into_other_model(),
+                element: Box::new(array.element.into_other_model()),
+            }),
+            Self::TraitMember(trait_member) => Type::TraitMember(TraitMember {
+                trait_type_id: trait_member.trait_type_id,
+                trait_generic_arguments: trait_member.trait_generic_arguments.into_other_model(),
+                member_generic_arguments: trait_member.member_generic_arguments.into_other_model(),
+            }),
+            Self::Parameter(parameter) => Type::Parameter(parameter),
+            Self::Tuple(tuple) => {
+                let mut elements = Vec::with_capacity(tuple.elements.len());
+                for element in tuple.elements {
+                    elements.push(match element {
+                        TupleElement::Regular(regular) => {
+                            TupleElement::Regular(regular.into_other_model())
+                        }
+                        TupleElement::Unpacked(unpacked) => {
+                            TupleElement::Unpacked(match unpacked {
+                                Unpacked::Parameter(parameter) => Unpacked::Parameter(parameter),
+                                Unpacked::TraitMember(trait_member) => {
+                                    Unpacked::TraitMember(TraitMember {
+                                        trait_type_id: trait_member.trait_type_id,
+                                        trait_generic_arguments: trait_member
+                                            .trait_generic_arguments
+                                            .into_other_model(),
+                                        member_generic_arguments: trait_member
+                                            .member_generic_arguments
+                                            .into_other_model(),
+                                    })
+                                }
+                            })
+                        }
+                    });
+                }
+                Type::Tuple(Tuple { elements })
+            }
+        }
+    }
 }

@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::Model;
+use super::{Model, Never};
 use crate::symbol::LifetimeParameterID;
 
 /// Represents a particular variable region
@@ -16,4 +16,19 @@ pub enum Region<S: Model> {
 
     /// The kind of region that depends on the particular context.
     Context(S::RegionContext),
+}
+
+impl<T> Region<T>
+where
+    T: Model<TypeInference = Never, ConstantInference = Never, RegionContext = Never>,
+{
+    /// Converts this region into another model.
+    #[must_use]
+    pub fn into_other_model<S: Model>(self) -> Region<S> {
+        match self {
+            Self::Static => Region::Static,
+            Self::Named(named) => Region::Named(named),
+            Self::Context(never) => match never {},
+        }
+    }
 }

@@ -70,3 +70,26 @@ pub struct GenericArguments<S: Model> {
 /// A type that can't never be instantiated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Never {}
+
+impl<T> GenericArguments<T>
+where
+    T: Model<TypeInference = Never, ConstantInference = Never, RegionContext = Never>,
+{
+    /// Converts this generic arguments into another model.
+    #[must_use]
+    pub fn into_other_model<S: Model>(self) -> GenericArguments<S> {
+        GenericArguments {
+            regions: self
+                .regions
+                .into_iter()
+                .map(Region::into_other_model)
+                .collect(),
+            types: self.types.into_iter().map(Type::into_other_model).collect(),
+            constants: self
+                .constants
+                .into_iter()
+                .map(Constant::into_other_model)
+                .collect(),
+        }
+    }
+}

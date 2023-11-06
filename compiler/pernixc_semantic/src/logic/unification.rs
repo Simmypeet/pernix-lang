@@ -51,9 +51,7 @@ pub enum Error<S: Model> {
 }
 
 /// Describes which types of terms can be unified.
-pub trait Config<S: Model>:
-    std::fmt::Debug + Clone + Copy + PartialEq + Eq + std::hash::Hash + Default + Send + Sync + 'static
-{
+pub trait Config<S: Model> {
     /// Determines whether a particular type can be mapped into another given type.
     fn type_mappable(&self, unifier: &Type<S>, target: &Type<S>) -> bool;
 
@@ -96,13 +94,40 @@ impl<S: Model> Config<S> for Indefinite {
 macro_rules! tuple_unifiable_body {
     ($domain:ident) => {
         fn tuple_unifiable(unifier: &$domain::Tuple<S>, target: &$domain::Tuple<S>) -> bool {
-            if target.elements.iter().filter(|x| x.is_unpacked()).count() > 0 {
-                return false;
-            }
-
             match unifier.elements.iter().filter(|x| x.is_unpacked()).count() {
-                0 => unifier.elements.len() == target.elements.len(),
-                1 => unifier.elements.len() <= target.elements.len() + 1,
+                0 => {
+                    unifier.elements.len() == target.elements.len()
+                        && !target.elements.iter().any(|x| x.is_unpacked())
+                }
+                1 => {
+                    if unifier.elements.len() > target.elements.len() + 1 {
+                        return false;
+                    }
+
+                    let unpacked_position = unifier
+                        .elements
+                        .iter()
+                        .position($domain::TupleElement::is_unpacked)
+                        .unwrap();
+
+                    let tail_to_unpack_count = unifier.elements.len() - unpacked_position - 1;
+
+                    if target.elements[..unpacked_position]
+                        .iter()
+                        .any(|x| x.is_unpacked())
+                    {
+                        return false;
+                    }
+
+                    if target.elements[target.elements.len() - tail_to_unpack_count..]
+                        .iter()
+                        .any(|x| x.is_unpacked())
+                    {
+                        return false;
+                    }
+
+                    true
+                }
                 _ => false,
             }
         }

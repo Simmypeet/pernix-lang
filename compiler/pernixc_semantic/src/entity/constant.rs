@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::{r#type::Type, GenericArguments, Model};
+use super::{r#type::Type, GenericArguments, Model, Never};
 use crate::{
     arena::ID,
     symbol::{self, ConstantParameterID, TraitConstantID, VariantID},
@@ -106,4 +106,71 @@ pub enum Constant<S: Model> {
     Parameter(ConstantParameterID),
     TraitMember(TraitMember<S>),
     Tuple(Tuple<S>),
+}
+
+impl<T> Constant<T>
+where
+    T: Model<TypeInference = Never, ConstantInference = Never, RegionContext = Never>,
+{
+    /// Converts this constant into another model.
+    #[must_use]
+    pub fn into_other_model<S: Model>(self) -> Constant<S> {
+        match self {
+            Self::Primitive(primitive) => Constant::Primitive(primitive),
+            Self::Inference(never) => match never {},
+            Self::Struct(struct_constant) => Constant::Struct(Struct {
+                struct_id: struct_constant.struct_id,
+                generic_arguments: struct_constant.generic_arguments.into_other_model(),
+                fields: struct_constant
+                    .fields
+                    .into_iter()
+                    .map(Self::into_other_model)
+                    .collect(),
+            }),
+            Self::Enum(enum_constant) => Constant::Enum(Enum {
+                variant_id: enum_constant.variant_id,
+                generic_arguments: enum_constant.generic_arguments.into_other_model(),
+                associated_value: enum_constant
+                    .associated_value
+                    .map(|v| Box::new(v.into_other_model())),
+            }),
+            Self::Array(array) => Constant::Array(Array {
+                element_ty: Box::new(array.element_ty.into_other_model()),
+                elements: array
+                    .elements
+                    .into_iter()
+                    .map(Self::into_other_model)
+                    .collect(),
+            }),
+            Self::Parameter(parameter) => Constant::Parameter(parameter),
+            Self::TraitMember(trait_member) => Constant::TraitMember(TraitMember {
+                trait_constant_id: trait_member.trait_constant_id,
+                trait_arguments: trait_member.trait_arguments.into_other_model(),
+            }),
+            Self::Tuple(tuple) => {
+                let mut elements = Vec::with_capacity(tuple.elements.len());
+                for element in tuple.elements {
+                    elements.push(match element {
+                        TupleElement::Regular(constant) => {
+                            TupleElement::Regular(constant.into_other_model())
+                        }
+                        TupleElement::Unpacked(unpacked) => match unpacked {
+                            Unpacked::Parameter(parameter) => {
+                                TupleElement::Unpacked(Unpacked::Parameter(parameter))
+                            }
+                            Unpacked::TraitMember(trait_member) => {
+                                TupleElement::Unpacked(Unpacked::TraitMember(TraitMember {
+                                    trait_constant_id: trait_member.trait_constant_id,
+                                    trait_arguments: trait_member
+                                        .trait_arguments
+                                        .into_other_model(),
+                                }))
+                            }
+                        },
+                    });
+                }
+                Constant::Tuple(Tuple { elements })
+            }
+        }
+    }
 }

@@ -81,7 +81,11 @@ macro_rules! equals_body {
                 return true;
             }
 
-            // TODO: check if the terms are equal by normalization
+            // equal by normalization
+            if Self::equals_by_normalization(&lhs, &rhs, premise_mapping, table, records) {
+                records.visit_mut(|x| x.$query_set.remove(&terms));
+                return true;
+            }
 
             records.visit_mut(|x| x.$query_set.remove(&terms));
 
@@ -90,9 +94,34 @@ macro_rules! equals_body {
     };
 }
 
+macro_rules! equals_by_normalization {
+    () => {
+        fn equals_by_normalization(
+            lhs: &Self,
+            rhs: &Self,
+            premise_mapping: &Mapping<S>,
+            table: &Table,
+            records: &Cell<QueryRecords<S>>,
+        ) -> bool {
+            let (normalizable, target) = match (lhs, rhs) {
+                (Self::TraitMember(lhs), rhs) => (lhs, rhs),
+                (lhs, Self::TraitMember(rhs)) => (rhs, lhs),
+                (_, _) => return false,
+            };
+
+            for normalized in normalizable.normalize(premise_mapping, table, records) {
+                if Self::equals_internal(&normalized, target, premise_mapping, table, records) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    };
+}
+
 macro_rules! equals_by_unification_body {
     () => {
-        #[allow(clippy::ptr_arg)]
         fn equals_by_unification(
             lhs: &Self,
             rhs: &Self,
@@ -142,6 +171,8 @@ impl<S: Model> Type<S> {
 
     equals_by_unification_body!();
 
+    equals_by_normalization!();
+
     /// Checks if the two type terms can be considered equal under the given mapping as a premise
     /// and normalization.
     ///
@@ -167,6 +198,8 @@ impl<S: Model> Constant<S> {
     equals_by_mapping_body!(constants);
 
     equals_by_unification_body!();
+
+    equals_by_normalization!();
 
     /// Checks if the two constant terms can be considered equal under the given mapping as a
     /// premise and normalization.

@@ -1,6 +1,6 @@
 //! Contains the definition of all symbol kinds in the language.
 
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use derive_more::{From, Index, IndexMut};
 use enum_as_inner::EnumAsInner;
@@ -994,7 +994,7 @@ pub struct Trait {
     pub generic_declaration: GenericDeclaration,
 
     /// Contains all the negative trait implementation defined in the trait.
-    pub negative_implements: Arena<NegativeImplementation>,
+    pub negative_implementations: Arena<NegativeImplementation>,
 
     /// Contains all the trait implementation defined in the trait.
     pub implementations: Arena<Implementation>,
