@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use pernixc_base::extension::{CellExt, SafeIndex};
+use pernixc_base::extension::CellExt;
 
 use crate::{
     arena::ID,
@@ -15,11 +15,8 @@ use crate::{
         region::Region,
         GenericArguments, Model, Never,
     },
-    symbol::{
-        ConstantParameterID, GenericID, ImplementationID, LifetimeParameterID, MemberID,
-        TypeParameterID,
-    },
-    table::Table,
+    symbol::{ConstantParameterID, GenericID, LifetimeParameterID, TypeParameterID},
+    table::{Index, Table},
 };
 
 pub mod equality;
@@ -170,40 +167,43 @@ impl<S: Model> Mapping<S> {
 }
 
 macro_rules! normalization_body {
-    ($obj:path, $kind:ident, $trait_field:ident, $term:ident, $arguments_field:ident,
+    ($obj:path, $kind:ident, $trait_field:ident, $term:ident, $table:ident, $arguments_field:ident,
         |
         $implementation:ident,
         $normalizable:ident,
         $implementation_symbol:ident
         | $substitution:expr) => {
+        #[allow(clippy::significant_drop_tightening)]
         fn normalize<'a>(
             &'a $normalizable,
             premise_mapping: &Mapping<S>,
-            table: &'a Table,
+            $table: &'a Table,
             records: &Cell<QueryRecords<S>>,
-        ) -> impl Iterator<Item = $obj> + 'a {
+        ) -> Option<impl Iterator<Item = $obj> + 'a> {
             // gets the implementation of the trait
-            let implementations = table.resolve_implementation_internal(
-                $normalizable.$trait_field.parent,
+            let Some(trait_id) = $table.get($normalizable.$trait_field).map(|x| x.parent_trait_id) else {
+                return None;
+            };
+
+            let implementations = $table.resolve_implementation_internal(
+                trait_id,
                 &$normalizable.$arguments_field,
                 premise_mapping,
                 records,
             );
 
-            implementations.into_iter().filter_map(|$implementation| {
-                let implementation_id = ImplementationID {
-                    parent: $normalizable.$trait_field.parent,
-                    id: $implementation.implementation_id,
-                };
+            Some(implementations.into_iter().filter_map(|$implementation| {
+                let implementation_id = $implementation.implementation_id;
 
-                let Some($implementation_symbol) = table.get(implementation_id) else {
+                let Some($implementation_symbol) = $table.get(implementation_id) else {
                     return None;
                 };
 
                 let Some(mut equivalent) = $implementation_symbol
                     .$term
-                    .get_id(&$normalizable.$trait_field.id)
-                    .and_then(|x| $implementation_symbol.$term.get(x))
+                    .get(&$normalizable.$trait_field)
+                    .copied()
+                    .and_then(|x| $table.get(x))
                     .map(|x| x.$kind.clone().into_other_model())
                 else {
                     return None;
@@ -213,7 +213,7 @@ macro_rules! normalization_body {
                 equivalent.apply(&substitution);
 
                 Some(equivalent)
-            })
+            }))
         }
     };
 }
@@ -223,11 +223,10 @@ impl<S: Model> constant::TraitMember<S> {
         Constant<S>,
         constant,
         trait_constant_id,
-        constants,
+        implementation_constant_ids_by_trait_constant_id,
+        table,
         trait_arguments,
-        |implementation, self, implementation_symbol| {
-            implementation.deduced_unification.into_other_model::<S>()
-        }
+        |implementation, self, implementation_symbol| { implementation.deduced_unification }
     );
 }
 
@@ -236,26 +235,22 @@ impl<S: Model> r#type::TraitMember<S> {
         Type<S>,
         r#type,
         trait_type_id,
-        types,
+        implementation_type_ids_by_trait_type_id,
+        table,
         trait_generic_arguments,
         |implementation, self, implementation_symbol| {
-            let implementation_id = ImplementationID {
-                parent: self.trait_type_id.parent,
-                id: implementation.implementation_id,
-            };
-
-            let substitution = implementation.deduced_unification.into_other_model::<S>();
-
-            substitution.append_from_generic_arguments(
-                self.member_generic_arguments.clone(),
-                crate::symbol::GenericID::ImplementationType(MemberID {
-                    parent: implementation_id,
-                    id: match implementation_symbol.types.get_id(&self.trait_type_id.id) {
-                        Some(id) => id,
-                        None => return None,
-                    },
-                }),
-            )?
+            implementation
+                .deduced_unification
+                .append_from_generic_arguments(
+                    self.member_generic_arguments.clone(),
+                    crate::symbol::GenericID::ImplementationType(
+                        implementation_symbol
+                            .implementation_type_ids_by_trait_type_id
+                            .get(&self.trait_type_id)
+                            .copied()
+                            .unwrap(),
+                    ),
+                )?
         }
     );
 }
@@ -323,7 +318,11 @@ impl<S: Model> Constant<S> {
             Self::TraitMember(constant) => {
                 let mut result = false;
 
-                for normalized in constant.normalize(premise_mapping, table, records) {
+                let Some(normalized) = constant.normalize(premise_mapping, table, records) else {
+                    return false;
+                };
+
+                for normalized in normalized {
                     if normalized.is_definite_internal(premise_mapping, table, records) {
                         result = true;
                         break;
@@ -404,7 +403,11 @@ impl<S: Model> Type<S> {
             Self::TraitMember(ty) => {
                 let mut result = false;
 
-                for normalized in ty.normalize(premise_mapping, table, records) {
+                let Some(normalized) = ty.normalize(premise_mapping, table, records) else {
+                    return false;
+                };
+
+                for normalized in normalized {
                     if normalized.is_definite_internal(premise_mapping, table, records) {
                         result = true;
                         break;

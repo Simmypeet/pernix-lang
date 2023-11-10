@@ -9,9 +9,6 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use derive_more::{Deref, DerefMut};
-use getset::CopyGetters;
-
 /// Represents an unique identifier to a particular entry in the [`Arena`] of type `T`.
 pub struct ID<T> {
     index: usize,
@@ -66,20 +63,6 @@ impl<T> std::hash::Hash for ID<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.index.hash(state) }
 }
 
-/// Represents an item in the [`Arena`] of type `T` with its [`ID`].
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut, CopyGetters,
-)]
-pub struct Item<T> {
-    /// Gets the [`ID`] of the item.
-    #[get_copy = "pub"]
-    id: ID<T>,
-
-    #[deref]
-    #[deref_mut]
-    item: T,
-}
-
 /// Represents a collection of items of type `T` that can be referenced by an [`ID`].
 ///
 /// Internally, all the items are stored in a [`Vec`], and the [`ID`] is just an index to the item
@@ -88,15 +71,21 @@ pub struct Item<T> {
 /// graph structures where the nodes are stored in an [`Arena`] and the edges are represented by
 /// [`ID`]s.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Arena<T> {
-    items: Vec<Item<T>>,
+pub struct Arena<T, Idx = T> {
+    _marker: PhantomData<Idx>,
+    items: Vec<T>,
 }
 
-impl<T> Default for Arena<T> {
-    fn default() -> Self { Self { items: Vec::new() } }
+impl<T, Idx> Default for Arena<T, Idx> {
+    fn default() -> Self {
+        Self {
+            _marker: PhantomData,
+            items: Vec::new(),
+        }
+    }
 }
 
-impl<T> Arena<T> {
+impl<T, Idx> Arena<T, Idx> {
     /// Creates a new empty [`Arena`].
     #[must_use]
     pub fn new() -> Self { Self::default() }
@@ -110,57 +99,54 @@ impl<T> Arena<T> {
     pub fn is_empty(&self) -> bool { self.items.is_empty() }
 
     /// Inserts a new item into the [`Arena`] and returns its [`ID`].
-    pub fn insert(&mut self, item: T) -> ID<T> {
+    pub fn insert(&mut self, item: T) -> ID<Idx> {
         let index = self.items.len();
-        self.items.push(Item {
-            id: ID::new(index),
-            item,
-        });
+        self.items.push(item);
         ID::new(index)
     }
 
     /// Returns a reference to the item in the [`Arena`] with the given [`ID`].
     #[must_use]
-    pub fn get(&self, id: ID<T>) -> Option<&Item<T>> { self.items.get(id.index) }
+    pub fn get(&self, id: ID<Idx>) -> Option<&T> { self.items.get(id.index) }
 
     /// Returns a mutable reference to the item in the [`Arena`] with the given [`ID`].
     #[must_use]
-    pub fn get_mut(&mut self, id: ID<T>) -> Option<&mut Item<T>> { self.items.get_mut(id.index) }
+    pub fn get_mut(&mut self, id: ID<Idx>) -> Option<&mut T> { self.items.get_mut(id.index) }
 
     /// Returns an iterator over the items in the [`Arena`].
-    pub fn iter(&self) -> impl Iterator<Item = &Item<T>> { self.items.iter() }
+    pub fn iter(&self) -> impl Iterator<Item = &T> { self.items.iter() }
 
     /// Returns an mutable iterator over the items in the [`Arena`].
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Item<T>> { self.items.iter_mut() }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> { self.items.iter_mut() }
 }
 
-impl<T> Index<ID<T>> for Arena<T> {
-    type Output = Item<T>;
+impl<T, Idx> Index<ID<Idx>> for Arena<T, Idx> {
+    type Output = T;
 
-    fn index(&self, id: ID<T>) -> &Self::Output { self.get(id).unwrap() }
+    fn index(&self, id: ID<Idx>) -> &Self::Output { self.get(id).unwrap() }
 }
 
-impl<T> IndexMut<ID<T>> for Arena<T> {
-    fn index_mut(&mut self, id: ID<T>) -> &mut Self::Output { self.get_mut(id).unwrap() }
+impl<T, Idx> IndexMut<ID<Idx>> for Arena<T, Idx> {
+    fn index_mut(&mut self, id: ID<Idx>) -> &mut Self::Output { self.get_mut(id).unwrap() }
 }
 
 impl<T> IntoIterator for Arena<T> {
-    type IntoIter = std::vec::IntoIter<Item<T>>;
-    type Item = Item<T>;
+    type IntoIter = std::vec::IntoIter<T>;
+    type Item = T;
 
     fn into_iter(self) -> Self::IntoIter { self.items.into_iter() }
 }
 
 impl<'a, T> IntoIterator for &'a Arena<T> {
-    type IntoIter = std::slice::Iter<'a, Item<T>>;
-    type Item = &'a Item<T>;
+    type IntoIter = std::slice::Iter<'a, T>;
+    type Item = &'a T;
 
     fn into_iter(self) -> Self::IntoIter { self.items.iter() }
 }
 
 impl<'a, T> IntoIterator for &'a mut Arena<T> {
-    type IntoIter = std::slice::IterMut<'a, Item<T>>;
-    type Item = &'a mut Item<T>;
+    type IntoIter = std::slice::IterMut<'a, T>;
+    type Item = &'a mut T;
 
     fn into_iter(self) -> Self::IntoIter { self.items.iter_mut() }
 }
@@ -171,16 +157,19 @@ impl<'a, T> IntoIterator for &'a mut Arena<T> {
 /// Accessing the items by their [`ID`] is more efficient than accessing them by their `K` key since
 /// the former is just an index to the item in the [`Arena`], while the latter requires a hash map
 /// lookup.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Map<T, K = String>
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Index, derive_more::IndexMut)]
+pub struct Map<T, K = String, Idx = T>
 where
     K: Hash + Eq,
 {
-    arena: Arena<T>,
-    items: HashMap<K, ID<T>>,
+    #[index]
+    #[index_mut]
+    arena: Arena<T, Idx>,
+
+    items: HashMap<K, ID<Idx>>,
 }
 
-impl<T, K: Hash + Eq> Map<T, K> {
+impl<T, K: Hash + Eq, Idx> Map<T, K, Idx> {
     /// Creates a new empty [`Map`].
     #[must_use]
     pub fn new() -> Self {
@@ -204,7 +193,7 @@ impl<T, K: Hash + Eq> Map<T, K> {
     ///
     /// Returns `Err` with a tuple of the [`ID`] of the existing item and the new item if the key
     /// already exists in the [`Map`].
-    pub fn insert(&mut self, key: K, item: T) -> Result<ID<T>, (ID<T>, T)> {
+    pub fn insert(&mut self, key: K, item: T) -> Result<ID<Idx>, (ID<Idx>, T)> {
         match self.items.entry(key) {
             Entry::Occupied(entry) => {
                 let id = *entry.get();
@@ -223,7 +212,7 @@ impl<T, K: Hash + Eq> Map<T, K> {
     /// # Errors
     ///
     /// Returns `Err` if the key doesn't exist in the [`Map`].
-    pub fn get_id<Q: ?Sized + Hash + Eq>(&self, key: &Q) -> Option<ID<T>>
+    pub fn get_id<Q: ?Sized + Hash + Eq>(&self, key: &Q) -> Option<ID<Idx>>
     where
         K: Borrow<Q>,
     {
@@ -232,16 +221,16 @@ impl<T, K: Hash + Eq> Map<T, K> {
 
     /// Returns a reference to the item in the [`Map`] with the given [`ID`].
     #[must_use]
-    pub fn get(&self, id: ID<T>) -> Option<&Item<T>> { self.arena.get(id) }
+    pub fn get(&self, id: ID<Idx>) -> Option<&T> { self.arena.get(id) }
 
     /// Returns a mutable reference to the item in the [`Map`] with the given [`ID`].
     #[must_use]
-    pub fn get_mut(&mut self, id: ID<T>) -> Option<&mut Item<T>> { self.arena.get_mut(id) }
+    pub fn get_mut(&mut self, id: ID<Idx>) -> Option<&mut T> { self.arena.get_mut(id) }
 
     /// Returns an iterator over the items in the [`Map`].
     ///
     /// The order of the items is **not** maintained.
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &Item<T>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &T)> {
         self.items.iter().map(|(k, v)| (k, self.get(*v).unwrap()))
     }
 
@@ -253,36 +242,14 @@ impl<T, K: Hash + Eq> Map<T, K> {
     /// Returns an iterator over the values in the [`Map`].
     ///
     /// The order of the values is maintained.
-    pub fn values(&self) -> impl Iterator<Item = &Item<T>> { self.arena.iter() }
+    pub fn values(&self) -> impl Iterator<Item = &T> { self.arena.iter() }
 
     /// Returns an mutable iterator over the items in the [`Map`].
     ///
     /// The order of the values is not maintained.
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Item<T>> { self.arena.iter_mut() }
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> { self.arena.iter_mut() }
 }
 
-impl<T, K: Eq + Hash> Default for Map<T, K> {
+impl<T, K: Eq + Hash, Idx> Default for Map<T, K, Idx> {
     fn default() -> Self { Self::new() }
-}
-
-impl<T, K: Eq + Hash> Index<ID<T>> for Map<T, K> {
-    type Output = Item<T>;
-
-    fn index(&self, id: ID<T>) -> &Self::Output { self.get(id).unwrap() }
-}
-
-impl<T, K: Eq + Hash> IndexMut<ID<T>> for Map<T, K> {
-    fn index_mut(&mut self, id: ID<T>) -> &mut Self::Output { self.get_mut(id).unwrap() }
-}
-
-impl<T, K: Eq + Hash + Borrow<Q>, Q: ?Sized + Hash + Eq> Index<&Q> for Map<T, K> {
-    type Output = Item<T>;
-
-    fn index(&self, key: &Q) -> &Self::Output { self.get(self.get_id(key).unwrap()).unwrap() }
-}
-
-impl<T, K: Eq + Hash + Borrow<Q>, Q: ?Sized + Hash + Eq> IndexMut<&Q> for Map<T, K> {
-    fn index_mut(&mut self, key: &Q) -> &mut Self::Output {
-        self.get_mut(self.get_id(key).unwrap()).unwrap()
-    }
 }

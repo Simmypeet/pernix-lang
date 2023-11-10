@@ -4,7 +4,7 @@ use enum_as_inner::EnumAsInner;
 
 use crate::{
     arena::ID,
-    symbol::{Struct, VariantID},
+    symbol::{Struct, Variant},
 };
 
 /// Represents a pattern that matches to any value of the given type.
@@ -36,7 +36,7 @@ pub enum NumericLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum<Pattern> {
     /// The ID to the variant.
-    pub variant_id: VariantID,
+    pub variant_id: ID<Variant>,
 
     /// The pattern that will match the associated value of the variant.
     pub pattern: Option<Box<Pattern>>,

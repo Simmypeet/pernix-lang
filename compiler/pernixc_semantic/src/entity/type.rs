@@ -5,7 +5,7 @@ use enum_as_inner::EnumAsInner;
 use super::{constant::Constant, region::Region, GenericArguments, Model, Never};
 use crate::{
     arena::ID,
-    symbol::{Enum, Struct, TraitTypeID, TypeParameterID},
+    symbol::{Enum, Struct, TraitType, TypeParameterID},
 };
 
 /// Either an ID of an enum or an ID of a struct.
@@ -73,7 +73,7 @@ pub struct Array<S: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitMember<S: Model> {
     /// The ID to the trait type.
-    pub trait_type_id: TraitTypeID,
+    pub trait_type_id: ID<TraitType>,
 
     /// The generic arguments supplied to the trait.
     pub trait_generic_arguments: GenericArguments<S>,

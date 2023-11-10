@@ -109,7 +109,11 @@ macro_rules! equals_by_normalization {
                 (_, _) => return false,
             };
 
-            for normalized in normalizable.normalize(premise_mapping, table, records) {
+            let Some(normalized) = normalizable.normalize(premise_mapping, table, records) else {
+                return false;
+            };
+
+            for normalized in normalized {
                 if Self::equals_internal(&normalized, target, premise_mapping, table, records) {
                     return true;
                 }

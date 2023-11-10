@@ -703,6 +703,30 @@ impl<S: Model> Region<S> {
 }
 
 impl<S: Model> GenericArguments<S> {
+    /// Unifies two generic arguments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the two generic arguments can't be unified.
+    pub fn unify(
+        lhs: &Self,
+        rhs: &Self,
+        premise_mapping: &Mapping<S>,
+        table: &Table,
+        config: &impl Config<S>,
+    ) -> Result<Substitution<S>, Error<S>> {
+        Self::unify_internal(
+            lhs,
+            rhs,
+            premise_mapping,
+            table,
+            &Cell::new(QueryRecords::default()),
+            config,
+            Substitution::default(),
+        )
+        .map_err(|(_, error)| error)
+    }
+
     pub(super) fn unify_internal(
         lhs: &Self,
         rhs: &Self,

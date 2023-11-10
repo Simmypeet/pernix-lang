@@ -5,7 +5,7 @@ use enum_as_inner::EnumAsInner;
 use super::{r#type::Type, GenericArguments, Model, Never};
 use crate::{
     arena::ID,
-    symbol::{self, ConstantParameterID, TraitConstantID, VariantID},
+    symbol::{self, ConstantParameterID, TraitConstant, Variant},
 };
 
 /// Represents a primitive constant.
@@ -42,7 +42,7 @@ pub struct Struct<S: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum<S: Model> {
     /// The variant that the enum constant value is.
-    pub variant_id: VariantID,
+    pub variant_id: ID<Variant>,
 
     /// The generic arguments supplied to the enum type.
     pub generic_arguments: GenericArguments<S>,
@@ -65,7 +65,7 @@ pub struct Array<S: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitMember<S: Model> {
     /// The reference of the trait constant symbol.
-    pub trait_constant_id: TraitConstantID,
+    pub trait_constant_id: ID<TraitConstant>,
 
     /// The generic arguments supplied to the trait.
     pub trait_arguments: GenericArguments<S>,

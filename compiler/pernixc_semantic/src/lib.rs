@@ -21,6 +21,7 @@
 
 pub mod arena;
 pub mod entity;
+pub mod error;
 pub mod logic;
 pub mod symbol;
 pub mod table;

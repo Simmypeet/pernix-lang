@@ -105,6 +105,14 @@ pub struct Module {
     pub(super) kind: ModuleKind,
 }
 
+impl Module {
+    /// Dissolves the [`Module`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (AccessModifier, ModuleSignature, ModuleKind) {
+        (self.access_modifier, self.signature, self.kind)
+    }
+}
+
 impl SourceElement for Module {
     fn span(&self) -> Span { self.access_modifier.span().join(&self.kind.span()).unwrap() }
 }
@@ -166,6 +174,14 @@ pub struct ModuleBody {
     pub(super) content: ModuleContent,
     #[get = "pub"]
     right_brace: Punctuation,
+}
+
+impl ModuleBody {
+    /// Dissolves the [`ModuleBody`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Punctuation, ModuleContent, Punctuation) {
+        (self.left_brace, self.content, self.right_brace)
+    }
 }
 
 impl SourceElement for ModuleBody {

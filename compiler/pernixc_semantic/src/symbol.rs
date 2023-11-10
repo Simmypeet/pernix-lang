@@ -2,12 +2,12 @@
 
 use std::collections::HashMap;
 
-use derive_more::{From, Index, IndexMut};
+use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 
 use crate::{
-    arena::{Arena, Item, Map, ID},
+    arena::{Map, ID},
     entity::{constant, pattern::Irrefutable, predicate, r#type, GenericArguments, Model, Never},
 };
 
@@ -46,11 +46,11 @@ pub enum GenericID {
     Enum(ID<Enum>),
     Type(ID<Type>),
     Function(ID<Function>),
-    TraitType(TraitTypeID),
-    TraitFunction(TraitFunctionID),
-    Implementation(ImplementationID),
-    ImplementationFunction(ImplementationFunctionID),
-    ImplementationType(ImplementationTypeID),
+    TraitType(ID<TraitType>),
+    TraitFunction(ID<TraitFunction>),
+    Implementation(ID<Implementation>),
+    ImplementationFunction(ID<ImplementationFunction>),
+    ImplementationType(ID<ImplementationType>),
 }
 
 /// Represents a kind of symbol that accepts generic arguments.
@@ -86,14 +86,14 @@ pub enum GlobalID {
     Type(ID<Type>),
     Constant(ID<Constant>),
     Function(ID<Function>),
-    Variant(VariantID),
-    TraitType(TraitTypeID),
-    TraitFunction(TraitFunctionID),
-    TraitConstant(TraitConstantID),
-    Implements(ImplementationID),
-    ImplementsFunction(ImplementationFunctionID),
-    ImplementsType(ImplementationTypeID),
-    ImplementsConstant(ImplementsConstantID),
+    Variant(ID<Variant>),
+    TraitType(ID<TraitType>),
+    TraitFunction(ID<TraitFunction>),
+    TraitConstant(ID<TraitConstant>),
+    Implementation(ID<Implementation>),
+    ImplementationFunction(ID<ImplementationFunction>),
+    ImplementationType(ID<ImplementationType>),
+    ImplementsConstant(ID<ImplementationConstant>),
 }
 
 /// Represents a kind of symbol that has a clear hierarchy/name and can be referenced globally by a
@@ -124,6 +124,8 @@ pub enum ModuleMemberID {
     Struct(ID<Struct>),
     Trait(ID<Trait>),
     Type(ID<Type>),
+    Function(ID<Function>),
+    Constant(ID<Constant>),
 }
 
 impl From<ModuleMemberID> for GlobalID {
@@ -134,13 +136,18 @@ impl From<ModuleMemberID> for GlobalID {
             ModuleMemberID::Struct(id) => Self::Struct(id),
             ModuleMemberID::Trait(id) => Self::Trait(id),
             ModuleMemberID::Type(id) => Self::Type(id),
+            ModuleMemberID::Function(id) => Self::Function(id),
+            ModuleMemberID::Constant(id) => Self::Constant(id),
         }
     }
 }
 
 /// Represents a module declaration.
-#[derive(Debug, Clone, PartialEq, Eq, Index, IndexMut)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
+    /// The ID of the module declaration.
+    pub id: ID<Module>,
+
     /// The name of the module declaration.
     pub name: String,
 
@@ -153,18 +160,16 @@ pub struct Module {
     pub parent_module_id: Option<ID<Module>>,
 
     /// Maps the name of the module child to its ID.
-    #[index]
-    #[index_mut]
     pub module_child_ids_by_name: HashMap<String, ModuleMemberID>,
 
     /// Location of where the module is declared.
     pub span: Option<Span>,
 }
 
-impl Global for Item<Module> {
+impl Global for Module {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::Module(self.id()) }
+    fn global_id(&self) -> GlobalID { GlobalID::Module(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { self.parent_module_id.map(GlobalID::Module) }
 
@@ -284,6 +289,9 @@ pub struct Field {
 /// Represents a struct declaration, denoted by `struct NAME { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
+    /// The ID of the struct.
+    pub id: ID<Struct>,
+
     /// The name of the struct.
     pub name: String,
 
@@ -303,8 +311,8 @@ pub struct Struct {
     pub span: Option<Span>,
 }
 
-impl Generic for Item<Struct> {
-    fn generic_id(&self) -> GenericID { GenericID::Struct(self.id()) }
+impl Generic for Struct {
+    fn generic_id(&self) -> GenericID { GenericID::Struct(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
 
@@ -313,10 +321,10 @@ impl Generic for Item<Struct> {
     }
 }
 
-impl Global for Item<Struct> {
+impl Global for Struct {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::Struct(self.id()) }
+    fn global_id(&self) -> GlobalID { GlobalID::Struct(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Module(self.parent_module_id)) }
 
@@ -328,6 +336,9 @@ impl Global for Item<Struct> {
 /// Represents an enum variant declaration, denoted by `NAME(ASSOC_TYPE)` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Variant {
+    /// The ID of the variant.
+    pub id: ID<Variant>,
+
     /// The name of the variant.
     pub name: String,
 
@@ -341,18 +352,10 @@ pub struct Variant {
     pub span: Option<Span>,
 }
 
-/// An ID to an enum variant.
-pub type VariantID = MemberID<ID<Variant>, ID<Enum>>;
-
-impl Global for Item<Variant> {
+impl Global for Variant {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID {
-        GlobalID::Variant(VariantID {
-            parent: self.parent_enum_id,
-            id: self.id(),
-        })
-    }
+    fn global_id(&self) -> GlobalID { GlobalID::Variant(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Enum(self.parent_enum_id)) }
 
@@ -364,6 +367,9 @@ impl Global for Item<Variant> {
 /// Represents an enum declaration, denoted by `enum NAME { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
+    /// The ID of the enum.
+    pub id: ID<Enum>,
+
     /// The name of the enum.
     pub name: String,
 
@@ -376,15 +382,15 @@ pub struct Enum {
     /// The generic declaration of the enum.
     pub generic_declaration: GenericDeclaration,
 
-    /// Contains all the variants defined in the enum.
-    pub variants: Map<Variant>,
+    /// Maps the name of variants defined in the enum to its ID.
+    pub variant_ids_by_name: HashMap<String, ID<Variant>>,
 
     /// Location of where the enum is declared.
     pub span: Option<Span>,
 }
 
-impl Generic for Item<Enum> {
-    fn generic_id(&self) -> GenericID { GenericID::Enum(self.id()) }
+impl Generic for Enum {
+    fn generic_id(&self) -> GenericID { GenericID::Enum(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
 
@@ -393,20 +399,18 @@ impl Generic for Item<Enum> {
     }
 }
 
-impl Global for Item<Enum> {
+impl Global for Enum {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::Enum(self.id()) }
+    fn global_id(&self) -> GlobalID { GlobalID::Enum(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Module(self.parent_module_id)) }
 
     fn get_member(&self, name: &str) -> Option<GlobalID> {
-        self.variants.get_id(name).map(|x| {
-            GlobalID::Variant(VariantID {
-                parent: self.id(),
-                id: x,
-            })
-        })
+        self.variant_ids_by_name
+            .get(name)
+            .copied()
+            .map(GlobalID::Variant)
     }
 
     fn span(&self) -> Option<Span> { self.span.clone() }
@@ -415,6 +419,9 @@ impl Global for Item<Enum> {
 /// Represents a type declaration, denoted by `type NAME = TYPE;` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Type {
+    /// The ID of the type.
+    pub id: ID<Type>,
+
     /// The generic declaration of the type.
     pub generic_declaration: GenericDeclaration,
 
@@ -434,10 +441,10 @@ pub struct Type {
     pub parent_module_id: ID<Module>,
 }
 
-impl Global for Item<Type> {
+impl Global for Type {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::Type(self.id()) }
+    fn global_id(&self) -> GlobalID { GlobalID::Type(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Module(self.parent_module_id)) }
 
@@ -446,8 +453,8 @@ impl Global for Item<Type> {
     fn span(&self) -> Option<Span> { self.span.clone() }
 }
 
-impl Generic for Item<Type> {
-    fn generic_id(&self) -> GenericID { GenericID::Type(self.id()) }
+impl Generic for Type {
+    fn generic_id(&self) -> GenericID { GenericID::Type(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
 
@@ -459,6 +466,9 @@ impl Generic for Item<Type> {
 /// Represents a constant declaration, denoted by `const NAME: TYPE = VALUE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Constant {
+    /// The ID of the constant.
+    pub id: ID<Constant>,
+
     /// The name of the constant.
     pub name: String,
 
@@ -478,10 +488,10 @@ pub struct Constant {
     pub parent_module_id: ID<Module>,
 }
 
-impl Global for Item<Constant> {
+impl Global for Constant {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::Constant(self.id()) }
+    fn global_id(&self) -> GlobalID { GlobalID::Constant(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Module(self.parent_module_id)) }
 
@@ -494,6 +504,9 @@ impl Global for Item<Constant> {
 /// `function NAME(...) {...}` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
+    /// The ID of the function.
+    pub id: ID<Function>,
+
     /// The parameters of the function.
     pub parameters: Map<Parameter<ID<ImplementationFunction>>>,
 
@@ -513,10 +526,10 @@ pub struct Function {
     pub generic_declaration: GenericDeclaration,
 }
 
-impl Global for Item<Function> {
+impl Global for Function {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::Function(self.id()) }
+    fn global_id(&self) -> GlobalID { GlobalID::Function(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Module(self.parent_module_id)) }
 
@@ -556,11 +569,14 @@ pub struct NegativeImplementation {
 /// `function NAME(...) {...}` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImplementationFunction {
+    /// The ID of the function.
+    pub id: ID<ImplementationFunction>,
+
     /// The parameters of the function.
     pub parameters: Map<Parameter<ID<ImplementationFunction>>>,
 
     /// The ID of the parent implements.
-    pub parent_implements_id: ImplementationID,
+    pub parent_implements_id: ID<Implementation>,
 
     /// Location of where the function is declared.
     pub span: Option<Span>,
@@ -575,16 +591,8 @@ pub struct ImplementationFunction {
     pub generic_declaration: GenericDeclaration,
 }
 
-/// An ID to an implements function.
-pub type ImplementationFunctionID = MemberID<ID<ImplementationFunction>, ImplementationID>;
-
-impl Generic for Item<ImplementationFunction> {
-    fn generic_id(&self) -> GenericID {
-        GenericID::ImplementationFunction(ImplementationFunctionID {
-            parent: self.parent_implements_id,
-            id: self.id(),
-        })
-    }
+impl Generic for ImplementationFunction {
+    fn generic_id(&self) -> GenericID { GenericID::ImplementationFunction(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
 
@@ -593,18 +601,13 @@ impl Generic for Item<ImplementationFunction> {
     }
 }
 
-impl Global for Item<ImplementationFunction> {
+impl Global for ImplementationFunction {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID {
-        GlobalID::ImplementsFunction(ImplementationFunctionID {
-            parent: self.parent_implements_id,
-            id: self.id(),
-        })
-    }
+    fn global_id(&self) -> GlobalID { GlobalID::ImplementationFunction(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
-        Some(GlobalID::Implements(self.parent_implements_id))
+        Some(GlobalID::Implementation(self.parent_implements_id))
     }
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
@@ -615,8 +618,11 @@ impl Global for Item<ImplementationFunction> {
 /// Represents a type declaration as an implements member, denoted by `type NAME = TYPE;` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImplementationType {
+    /// The ID of the type.
+    pub id: ID<ImplementationType>,
+
     /// The ID of the parent implements.
-    pub parent_implements_id: ImplementationID,
+    pub parent_implements_id: ID<Implementation>,
 
     /// The name of the type.
     pub name: String,
@@ -631,16 +637,8 @@ pub struct ImplementationType {
     pub span: Option<Span>,
 }
 
-/// An ID to an implements type.
-pub type ImplementationTypeID = MemberID<ID<ImplementationType>, ImplementationID>;
-
-impl Generic for Item<ImplementationType> {
-    fn generic_id(&self) -> GenericID {
-        GenericID::ImplementationType(ImplementationTypeID {
-            parent: self.parent_implements_id,
-            id: self.id(),
-        })
-    }
+impl Generic for ImplementationType {
+    fn generic_id(&self) -> GenericID { GenericID::ImplementationType(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
 
@@ -649,18 +647,13 @@ impl Generic for Item<ImplementationType> {
     }
 }
 
-impl Global for Item<ImplementationType> {
+impl Global for ImplementationType {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID {
-        GlobalID::ImplementsType(ImplementationTypeID {
-            parent: self.parent_implements_id,
-            id: self.id(),
-        })
-    }
+    fn global_id(&self) -> GlobalID { GlobalID::ImplementationType(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
-        Some(GlobalID::Implements(self.parent_implements_id))
+        Some(GlobalID::Implementation(self.parent_implements_id))
     }
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
@@ -671,8 +664,11 @@ impl Global for Item<ImplementationType> {
 /// Represents a constant declaration as an implements member, denoted by `const NAME: TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementationConstant {
+    /// The ID of the constant.
+    pub id: ID<ImplementationConstant>,
+
     /// The ID of the parent implements.
-    pub parent_implements_id: ImplementationID,
+    pub parent_implements_id: ID<Implementation>,
 
     /// The name of the constant.
     pub name: String,
@@ -687,21 +683,13 @@ pub struct ImplementationConstant {
     pub span: Option<Span>,
 }
 
-/// An ID to an implements constant.
-type ImplementsConstantID = MemberID<ID<ImplementationConstant>, ImplementationID>;
-
-impl Global for Item<ImplementationConstant> {
+impl Global for ImplementationConstant {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID {
-        GlobalID::ImplementsConstant(ImplementsConstantID {
-            parent: self.parent_implements_id,
-            id: self.id(),
-        })
-    }
+    fn global_id(&self) -> GlobalID { GlobalID::ImplementsConstant(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
-        Some(GlobalID::Implements(self.parent_implements_id))
+        Some(GlobalID::Implementation(self.parent_implements_id))
     }
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
@@ -722,38 +710,29 @@ pub enum LocalImplementationID {
 /// Represents a trait implementation, denoted by `implements<PARAM> TRAIT<PARAM> { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Implementation {
+    /// The ID of the trait implementation.
+    pub id: ID<Implementation>,
+
     /// The signature of the trait implementation.
     pub signature: ImplementationSignature,
 
     /// Maps the name of the trait member to its ID.
     pub local_implements_ids_by_name: HashMap<String, LocalImplementationID>,
 
-    /// Contains all the types declared in the implements.
-    ///
-    /// The key is the ID of the trait type that is being implemented by this implements.
-    pub types: Map<ImplementationType, ID<TraitType>>,
+    /// Maps the ID of the trait type to the ID of the implementation type.
+    pub implementation_type_ids_by_trait_type_id: HashMap<ID<TraitType>, ID<ImplementationType>>,
 
-    /// Contains all the functions declared in the implements.
-    ///
-    /// The key is the ID of the trait function that is being implemented by this implements.
-    pub functions: Map<ImplementationFunction, ID<TraitFunction>>,
+    /// Maps the ID of the trait function to the ID of the implementation function.
+    pub implementation_function_ids_by_trait_function_id:
+        HashMap<ID<TraitFunction>, ID<ImplementationFunction>>,
 
-    /// Contains all the constants declared in the implements.
-    ///
-    /// The key is the ID of the trait constant that is being implemented by this implements.
-    pub constants: Map<ImplementationConstant, ID<TraitConstant>>,
+    /// Maps the ID of the trait constant to the ID of the implementation constant.
+    pub implementation_constant_ids_by_trait_constant_id:
+        HashMap<ID<TraitConstant>, ID<ImplementationConstant>>,
 }
 
-/// An ID to a trait implementation.
-pub type ImplementationID = MemberID<ID<Implementation>, ID<Trait>>;
-
-impl Generic for Item<Implementation> {
-    fn generic_id(&self) -> GenericID {
-        GenericID::Implementation(ImplementationID {
-            parent: self.signature.trait_id,
-            id: self.id(),
-        })
-    }
+impl Generic for Implementation {
+    fn generic_id(&self) -> GenericID { GenericID::Implementation(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.signature.generic_declaration }
 
@@ -762,46 +741,23 @@ impl Generic for Item<Implementation> {
     }
 }
 
-impl Global for Item<Implementation> {
+impl Global for Implementation {
     fn name(&self) -> &str { &self.signature.trait_name }
 
-    fn global_id(&self) -> GlobalID {
-        GlobalID::Implements(ImplementationID {
-            parent: self.signature.trait_id,
-            id: self.id(),
-        })
-    }
+    fn global_id(&self) -> GlobalID { GlobalID::Implementation(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(GlobalID::Trait(self.signature.trait_id))
     }
 
     fn get_member(&self, name: &str) -> Option<GlobalID> {
-        let implements_id = ImplementationID {
-            parent: self.signature.trait_id,
-            id: self.id(),
-        };
-
         self.local_implements_ids_by_name
             .get(name)
             .copied()
             .map(|x| match x {
-                LocalImplementationID::Type(x) => GlobalID::ImplementsType(ImplementationTypeID {
-                    parent: implements_id,
-                    id: x,
-                }),
-                LocalImplementationID::Function(x) => {
-                    GlobalID::ImplementsFunction(ImplementationFunctionID {
-                        parent: implements_id,
-                        id: x,
-                    })
-                }
-                LocalImplementationID::Constant(x) => {
-                    GlobalID::ImplementsConstant(ImplementsConstantID {
-                        parent: implements_id,
-                        id: x,
-                    })
-                }
+                LocalImplementationID::Type(x) => GlobalID::ImplementationType(x),
+                LocalImplementationID::Function(x) => GlobalID::ImplementationFunction(x),
+                LocalImplementationID::Constant(x) => GlobalID::ImplementsConstant(x),
             })
     }
 
@@ -827,6 +783,9 @@ pub struct Parameter<ParentID> {
 /// Represents a type declaration as a trait member, denoted by `type NAME;` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitType {
+    /// The ID of the type.
+    pub id: ID<TraitType>,
+
     /// The trait ID where the type is declared.
     pub parent_trait_id: ID<Trait>,
 
@@ -840,16 +799,8 @@ pub struct TraitType {
     pub span: Option<Span>,
 }
 
-/// An ID to a trait type.
-pub type TraitTypeID = MemberID<ID<TraitType>, ID<Trait>>;
-
-impl Generic for Item<TraitType> {
-    fn generic_id(&self) -> GenericID {
-        GenericID::TraitType(TraitTypeID {
-            parent: self.parent_trait_id,
-            id: self.id(),
-        })
-    }
+impl Generic for TraitType {
+    fn generic_id(&self) -> GenericID { GenericID::TraitType(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
 
@@ -858,15 +809,10 @@ impl Generic for Item<TraitType> {
     }
 }
 
-impl Global for Item<TraitType> {
+impl Global for TraitType {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID {
-        GlobalID::TraitType(TraitTypeID {
-            parent: self.parent_trait_id,
-            id: self.id(),
-        })
-    }
+    fn global_id(&self) -> GlobalID { GlobalID::TraitType(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Trait(self.parent_trait_id)) }
 
@@ -879,6 +825,9 @@ impl Global for Item<TraitType> {
 /// syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitFunction {
+    /// The ID of the function.
+    pub id: ID<TraitFunction>,
+
     /// The trait ID where the function is declared.
     pub parent_trait_id: ID<Trait>,
 
@@ -898,16 +847,8 @@ pub struct TraitFunction {
     pub span: Option<Span>,
 }
 
-/// An ID to a trait function.
-pub type TraitFunctionID = MemberID<ID<TraitFunction>, ID<Trait>>;
-
-impl Generic for Item<TraitFunction> {
-    fn generic_id(&self) -> GenericID {
-        GenericID::TraitFunction(TraitFunctionID {
-            parent: self.parent_trait_id,
-            id: self.id(),
-        })
-    }
+impl Generic for TraitFunction {
+    fn generic_id(&self) -> GenericID { GenericID::TraitFunction(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
 
@@ -916,15 +857,10 @@ impl Generic for Item<TraitFunction> {
     }
 }
 
-impl Global for Item<TraitFunction> {
+impl Global for TraitFunction {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID {
-        GlobalID::TraitFunction(TraitFunctionID {
-            parent: self.parent_trait_id,
-            id: self.id(),
-        })
-    }
+    fn global_id(&self) -> GlobalID { GlobalID::TraitFunction(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Trait(self.parent_trait_id)) }
 
@@ -936,6 +872,9 @@ impl Global for Item<TraitFunction> {
 /// Represents a constant declaration as a trait member, denoted by `const NAME: TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitConstant {
+    /// The ID of the constant.xc
+    pub id: ID<TraitConstant>,
+
     /// The trait ID where the constant is declared.
     pub parent_trait_id: ID<Trait>,
 
@@ -949,18 +888,10 @@ pub struct TraitConstant {
     pub span: Option<Span>,
 }
 
-/// An ID to a trait constant.
-pub type TraitConstantID = MemberID<ID<TraitConstant>, ID<Trait>>;
-
-impl Global for Item<TraitConstant> {
+impl Global for TraitConstant {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID {
-        GlobalID::TraitConstant(TraitConstantID {
-            parent: self.parent_trait_id,
-            id: self.id(),
-        })
-    }
+    fn global_id(&self) -> GlobalID { GlobalID::TraitConstant(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Trait(self.parent_trait_id)) }
 
@@ -981,6 +912,9 @@ pub enum LocalTraitMemberID {
 /// Represents a trait declaration, denoted by `trait NAME { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trait {
+    /// The ID of the trait.
+    pub id: ID<Trait>,
+
     /// The name of the trait.
     pub name: String,
 
@@ -994,29 +928,20 @@ pub struct Trait {
     pub generic_declaration: GenericDeclaration,
 
     /// Contains all the negative trait implementation defined in the trait.
-    pub negative_implementations: Arena<NegativeImplementation>,
+    pub negative_implementations: Vec<ID<NegativeImplementation>>,
 
     /// Contains all the trait implementation defined in the trait.
-    pub implementations: Arena<Implementation>,
+    pub implementations: Vec<ID<Implementation>>,
 
     /// Contains all the types defined in the trait.
     pub span: Option<Span>,
 
     /// Map the name of the trait member to its ID.
     pub local_trait_member_ids_by_name: HashMap<String, LocalTraitMemberID>,
-
-    /// Contains all the functions defined in the trait.
-    pub functions: Arena<TraitFunction>,
-
-    /// Contains all the constants defined in the trait.
-    pub constants: Arena<TraitConstant>,
-
-    /// Contains all the types defined in the trait.
-    pub types: Arena<TraitType>,
 }
 
-impl Generic for Item<Trait> {
-    fn generic_id(&self) -> GenericID { GenericID::Trait(self.id()) }
+impl Generic for Trait {
+    fn generic_id(&self) -> GenericID { GenericID::Trait(self.id) }
 
     fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
 
@@ -1025,10 +950,10 @@ impl Generic for Item<Trait> {
     }
 }
 
-impl Global for Item<Trait> {
+impl Global for Trait {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::Trait(self.id()) }
+    fn global_id(&self) -> GlobalID { GlobalID::Trait(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Module(self.parent_module_id)) }
 
@@ -1037,18 +962,9 @@ impl Global for Item<Trait> {
             .get(name)
             .copied()
             .map(|x| match x {
-                LocalTraitMemberID::Type(x) => GlobalID::TraitType(TraitTypeID {
-                    parent: self.id(),
-                    id: x,
-                }),
-                LocalTraitMemberID::Function(x) => GlobalID::TraitFunction(TraitFunctionID {
-                    parent: self.id(),
-                    id: x,
-                }),
-                LocalTraitMemberID::Constant(x) => GlobalID::TraitConstant(TraitConstantID {
-                    parent: self.id(),
-                    id: x,
-                }),
+                LocalTraitMemberID::Type(x) => GlobalID::TraitType(x),
+                LocalTraitMemberID::Function(x) => GlobalID::TraitFunction(x),
+                LocalTraitMemberID::Constant(x) => GlobalID::TraitConstant(x),
             })
     }
 
