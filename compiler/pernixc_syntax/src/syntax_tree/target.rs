@@ -11,6 +11,7 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{
     diagnostic::Handler,
+    log::{Message, Severity, SourceCodeDisplay},
     source_file::{self, SourceFile, Span},
 };
 use pernixc_lexical::token_stream::TokenStream;
@@ -90,6 +91,23 @@ pub struct RootSubmoduleConflict {
     pub submodule_span: Span,
 }
 
+impl std::fmt::Display for RootSubmoduleConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the submodule of the root source file ends up pointing to the root source \
+                      file itself",
+        })?;
+        write!(
+            f,
+            "{}",
+            SourceCodeDisplay::new(&self.submodule_span, Some("submodule"))
+        )?;
+
+        Ok(())
+    }
+}
+
 /// Failed to load a source file for the submodule.
 #[derive(Debug)]
 pub struct SourceFileLoadFail {
@@ -103,6 +121,28 @@ pub struct SourceFileLoadFail {
     pub path: PathBuf,
 }
 
+impl std::fmt::Display for SourceFileLoadFail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "failed to load a source file for the submodule {}",
+                self.path.display()
+            )
+        })?;
+        writeln!(
+            f,
+            "{}",
+            SourceCodeDisplay::new(
+                &self.submodule.signature().identifier().span,
+                Some("module")
+            )
+        )?;
+
+        Ok(())
+    }
+}
+
 /// A module with the given name already exists.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModuleRedefinition {
@@ -113,12 +153,43 @@ pub struct ModuleRedefinition {
     pub redifinition_submodule_span: Span,
 }
 
+impl std::fmt::Display for ModuleRedefinition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "a module with the given name already exists",
+        })?;
+        writeln!(
+            f,
+            "{}",
+            SourceCodeDisplay::new(&self.existing_module_span, Some("existing module"))
+        )?;
+        write!(
+            f,
+            "{}",
+            SourceCodeDisplay::new(&self.redifinition_submodule_span, Some("redefinition"))
+        )?;
+
+        Ok(())
+    }
+}
+
 /// Contains all possible errors that can occur when parsing a module tree for the target program.
 #[derive(Debug, EnumAsInner, From)]
 pub enum Error {
     ModuleRedefinition(ModuleRedefinition),
     RootSubmoduleConflict(RootSubmoduleConflict),
     SourceFileLoadFail(SourceFileLoadFail),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ModuleRedefinition(error) => error.fmt(f),
+            Self::RootSubmoduleConflict(error) => error.fmt(f),
+            Self::SourceFileLoadFail(error) => error.fmt(f),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -8,13 +8,16 @@ use pernixc_base::{
 use pernixc_syntax::syntax_tree;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
-use super::Table;
+use super::{state::State, Table};
 use crate::{
-    arena::ID,
+    arena::{Map, ID},
+    entity::{constant, r#type},
     error::{self, ItemDuplication},
     symbol::{
-        Accessibility, Constant, Enum, Function, Module, ModuleMemberID, Struct, Trait, Type,
+        Accessibility, Constant, Enum, Function, GenericDeclaration, Module, ModuleMemberID,
+        Struct, Trait, Type,
     },
+    table::state,
 };
 
 pub(super) struct Context<'a, 'b> {
@@ -25,13 +28,51 @@ pub(super) struct Context<'a, 'b> {
         RwLock<HashMap<ID<Module>, Vec<syntax_tree::item::Implements>>>,
 }
 
+macro_rules! draft_symbol {
+    ($self:ident, $symbol:ident, $symbol_id:ident, $expr:expr, $parent_module_id:ident, $state_expr:expr, $state:ident) => {{
+        let symbol_id = {
+            let mut table = $self.table.write();
+
+            let $symbol_id = ID::new(table.$symbol.len());
+
+            table.$symbol.insert(RwLock::new($expr));
+
+            table
+                .state_manager
+                .write()
+                .$state
+                .insert($symbol_id, State::Drafted($state_expr));
+
+            $symbol_id
+        };
+
+        symbol_id
+    }};
+}
+
 impl<'a, 'b> Context<'a, 'b> {
     pub(super) fn draft_struct(
         &self,
         syntax_tree: syntax_tree::item::Struct,
         parent_module_id: ID<Module>,
     ) -> ID<Struct> {
-        todo!()
+        draft_symbol!(
+            self,
+            structs,
+            struct_id,
+            Struct {
+                id: struct_id,
+                name: syntax_tree.signature().identifier().span.str().to_owned(),
+                accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
+                parent_module_id,
+                generic_declaration: GenericDeclaration::default(),
+                fields: Map::new(),
+                span: Some(syntax_tree.signature().identifier().span.clone())
+            },
+            parent_module_id,
+            syntax_tree,
+            states_by_struct_id
+        )
     }
 
     pub(super) fn draft_enum(
@@ -39,7 +80,23 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Enum,
         parent_module_id: ID<Module>,
     ) -> ID<Enum> {
-        todo!()
+        draft_symbol!(
+            self,
+            enums,
+            enum_id,
+            Enum {
+                id: enum_id,
+                name: syntax_tree.signature().identifier().span.str().to_owned(),
+                accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
+                parent_module_id,
+                generic_declaration: GenericDeclaration::default(),
+                variant_ids_by_name: HashMap::new(),
+                span: Some(syntax_tree.signature().identifier().span.clone()),
+            },
+            parent_module_id,
+            syntax_tree,
+            states_by_enum_id
+        )
     }
 
     pub(super) fn draft_constant(
@@ -47,7 +104,23 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Constant,
         parent_module_id: ID<Module>,
     ) -> ID<Constant> {
-        todo!()
+        draft_symbol!(
+            self,
+            constants,
+            constant_id,
+            Constant {
+                id: constant_id,
+                name: syntax_tree.signature().identifier().span.str().to_owned(),
+                r#type: r#type::Type::Primitive(r#type::Primitive::Bool),
+                constant: constant::Constant::Primitive(constant::Primitive::Bool(false)),
+                span: Some(syntax_tree.signature().identifier().span.clone()),
+                accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
+                parent_module_id
+            },
+            parent_module_id,
+            syntax_tree,
+            states_by_constant_id
+        )
     }
 
     pub(super) fn draft_type(
@@ -55,7 +128,23 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Type,
         parent_module_id: ID<Module>,
     ) -> ID<Type> {
-        todo!()
+        draft_symbol!(
+            self,
+            types,
+            type_id,
+            Type {
+                id: type_id,
+                generic_declaration: GenericDeclaration::default(),
+                r#type: r#type::Type::Primitive(r#type::Primitive::Bool),
+                span: Some(syntax_tree.signature().identifier().span.clone()),
+                name: syntax_tree.signature().identifier().span.str().to_owned(),
+                accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
+                parent_module_id
+            },
+            parent_module_id,
+            syntax_tree,
+            states_by_type_id
+        )
     }
 
     pub(super) fn draft_trait(
@@ -63,7 +152,28 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Trait,
         parent_module_id: ID<Module>,
     ) -> ID<Trait> {
-        todo!()
+        draft_symbol!(
+            self,
+            traits,
+            trait_id,
+            Trait {
+                id: trait_id,
+                name: syntax_tree.signature().identifier().span.str().to_owned(),
+                accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
+                parent_module_id,
+                generic_declaration: GenericDeclaration::default(),
+                negative_implementations: Vec::new(),
+                implementations: Vec::new(),
+                span: Some(syntax_tree.signature().identifier().span.clone()),
+                local_trait_member_ids_by_name: HashMap::new(),
+            },
+            parent_module_id,
+            state::Trait {
+                syntax_tree,
+                implementations: Vec::new()
+            },
+            states_by_trait_id
+        )
     }
 
     pub(super) fn draft_function(
@@ -71,9 +181,26 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Function,
         parent_module_id: ID<Module>,
     ) -> ID<Function> {
-        todo!()
+        draft_symbol!(
+            self,
+            functions,
+            function_id,
+            Function {
+                id: function_id,
+                parameters: Map::default(),
+                parent_module_id,
+                span: Some(syntax_tree.signature().identifier().span.clone()),
+                name: syntax_tree.signature().identifier().span.str().to_owned(),
+                return_type: r#type::Type::Primitive(r#type::Primitive::Bool),
+                generic_declaration: GenericDeclaration::default(),
+            },
+            parent_module_id,
+            syntax_tree,
+            states_by_function_id
+        )
     }
 
+    #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     pub(super) fn draft_module(
         &self,
         syntax_tree: syntax_tree::item::ModuleContent,
@@ -152,18 +279,16 @@ impl<'a, 'b> Context<'a, 'b> {
                 }
             };
 
-            let name = self
-                .table
-                .read()
+            let mut table = self.table.write();
+
+            let name = table
                 .get_global(module_member_id.into())
                 .unwrap()
                 .name()
                 .to_owned();
 
             #[allow(clippy::significant_drop_in_scrutinee)]
-            match self
-                .table
-                .write()
+            let dup = match table
                 .modules
                 .get_mut(module_id)
                 .unwrap()
@@ -178,10 +303,19 @@ impl<'a, 'b> Context<'a, 'b> {
                             new_symbol: module_member_id,
                             scope: module_id,
                         }));
+                    true
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(module_member_id);
+                    false
                 }
+            };
+
+            if dup {
+                assert!(table
+                    .state_manager
+                    .write()
+                    .remove_state(module_member_id.into()));
             }
         });
 

@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_semantic"
+name = "pernixc_driver"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -7,18 +7,10 @@ edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-
 [dependencies]
-
+clap = { workspace = true }
 pernixc_base = { path = "../pernixc_base" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_syntax = { path = "../pernixc_syntax" }
-enum-as-inner = { workspace = true }
-thiserror = { workspace = true }
-getset = { workspace = true }
-lazy_static = { workspace = true }
-derive_more = { workspace = true }
-parking_lot = { workspace = true }
-paste = { workspace = true }
-take_mut = { workspace = true }
+pernixc_semantic = { path = "../pernixc_semantic" }
 rayon = { workspace = true }

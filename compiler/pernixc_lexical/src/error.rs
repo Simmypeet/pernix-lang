@@ -23,7 +23,7 @@ impl Display for UnterminatedDelimitedComment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}{}",
+            "{}\n{}",
             Message::new(Severity::Error, "found an unclosed `/*` comment"),
             SourceCodeDisplay::new(&self.span, Option::<i32>::None)
         )
@@ -44,7 +44,7 @@ impl Display for UndelimitedDelimiter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}{}",
+            "{}\n{}",
             Message::new(Severity::Error, "found an undelimited delimiter"),
             SourceCodeDisplay::new(
                 &self.opening_span,

@@ -74,7 +74,7 @@ impl Display for UnexpectedSyntax {
         self.found.as_ref().map_or(Ok(()), |span| {
             write!(
                 f,
-                "{}",
+                "\n{}",
                 SourceCodeDisplay::new(span.span(), Option::<i32>::None)
             )
         })
@@ -92,7 +92,7 @@ impl Display for HigherRankedBoundParameterCannotBeEmpty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}{}",
+            "{}\n{}",
             Message::new(
                 Severity::Error,
                 "a higher ranked bound parameter cannot be empty"
@@ -113,7 +113,7 @@ impl Display for GenericArgumentParameterListCannotBeEmpty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}{}",
+            "{}\n{}",
             Message::new(
                 Severity::Error,
                 "a generic argument/parameter list cannot be empty"

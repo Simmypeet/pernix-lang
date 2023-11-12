@@ -20,6 +20,10 @@ use crate::{
     },
 };
 
+mod drafting;
+pub mod resolution;
+mod state;
+
 /// A trait used to access the symbols defined in the table.
 pub trait Index<Idx: ?Sized> {
     /// The output type of the indexing operation.
@@ -136,6 +140,17 @@ pub enum BuildError {
     DuplicateTargetName(String),
 }
 
+/// The error type returned by most operations on [`Table`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[allow(missing_docs)]
+pub enum Error {
+    #[error("The given ID does not exist in the table")]
+    InvalidID,
+
+    #[error("Encountered a fatal semantic error that aborts the process")]
+    SemanticError,
+}
+
 impl Table {
     /// Builds a symbol table from the given targets.
     ///
@@ -184,6 +199,15 @@ impl Table {
         Ok(table.into_inner())
     }
 
+    /// Checks if the `referred` is accessible from the `referring_site`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if `referred` or `referring_site` is not a valid ID.
+    pub fn symbol_accessible(&self, referring_site: GlobalID, referred: GlobalID) -> Option<bool> {
+        todo!()
+    }
+
     /// Returns the [`Global`] symbol from the given [`GlobalID`].
     #[must_use]
     pub fn get_global(&self, global_id: GlobalID) -> Option<MappedRwLockReadGuard<dyn Global>> {
@@ -215,6 +239,3 @@ impl Table {
         )
     }
 }
-
-mod drafting;
-mod state;

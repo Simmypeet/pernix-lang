@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
+use pernixc_syntax::syntax_tree::AccessModifier;
 
 use crate::{
     arena::{Map, ID},
@@ -22,6 +23,18 @@ pub enum Accessibility {
 
     /// The symbol is accessible only from the same target.
     Internal,
+}
+
+impl Accessibility {
+    /// Converts the [`AccessModifier`] to [`Accessibility`].
+    #[must_use]
+    pub fn from_syntax_tree(syntax_tree: &AccessModifier) -> Self {
+        match syntax_tree {
+            AccessModifier::Public(..) => Self::Public,
+            AccessModifier::Private(..) => Self::Private,
+            AccessModifier::Internal(..) => Self::Internal,
+        }
+    }
 }
 
 /// Represents a predicate introduced by either a where clause or implication.
@@ -66,7 +79,7 @@ pub trait Generic {
 }
 
 /// Represents a generic declaration containing generic parameters and predicates.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GenericDeclaration {
     /// Generic parameters defined in the generic declaration.
     pub parameters: GenericParameters,
@@ -258,7 +271,7 @@ pub struct ConstantParameter {
 }
 
 /// Represents a list of generic parameters.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.
     pub lifetimes: Map<LifetimeParameter>,
