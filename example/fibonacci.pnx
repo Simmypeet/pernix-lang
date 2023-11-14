@@ -1,11 +1,5 @@
-public module Test {}
-
-public enum Option<T> {
-    Some(T),
-    None,
+public module inner {
+    public trait Test<T> {}
 }
 
-public enum Result<T, E> {
-    Ok(T),
-    Error(E),
-}
+implements inner::Test {}

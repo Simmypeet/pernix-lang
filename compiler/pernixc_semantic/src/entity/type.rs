@@ -2,7 +2,10 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::{constant::Constant, region::Region, GenericArguments, Model, Never};
+use super::{
+    constant::Constant, region::Region, substitute_tuple_term, Entity, GenericArguments, Model,
+    Substitution,
+};
 use crate::{
     arena::ID,
     symbol::{Enum, Struct, TraitType, TypeParameterID},
@@ -143,16 +146,19 @@ pub enum Type<S: Model> {
     Tuple(Tuple<S>),
 }
 
-impl<T> Type<T>
-where
-    T: Model<TypeInference = Never, ConstantInference = Never, RegionContext = Never>,
-{
-    /// Converts this type into another model.
-    #[must_use]
-    pub fn into_other_model<S: Model>(self) -> Type<S> {
+impl<S: Model> Entity<S> for Type<S> {
+    type This<A: Model> = Type<A>;
+
+    fn into_other_model<T: Model>(self) -> Self::This<T>
+    where
+        S::ConstantInference: Into<T::ConstantInference>,
+        S::TypeInference: Into<T::TypeInference>,
+        S::LocalRegion: Into<T::LocalRegion>,
+        S::ForallRegion: Into<T::ForallRegion>,
+    {
         match self {
             Self::Primitive(primitive) => Type::Primitive(primitive),
-            Self::Inference(never) => match never {},
+            Self::Inference(inference) => Type::Inference(inference.into()),
             Self::Algebraic(algebraic) => Type::Algebraic(Algebraic {
                 kind: algebraic.kind,
                 generic_arguments: algebraic.generic_arguments.into_other_model(),
@@ -203,6 +209,34 @@ where
                 }
                 Type::Tuple(Tuple { elements })
             }
+        }
+    }
+
+    fn apply(&mut self, substitution: &Substitution<S>) {
+        if let Some(ok) = substitution.types.get(self).cloned() {
+            *self = ok;
+            return;
+        };
+
+        match self {
+            Self::Algebraic(algebraic) => algebraic.generic_arguments.apply(substitution),
+            Self::Pointer(pointer) => pointer.pointee.apply(substitution),
+            Self::Reference(reference) => {
+                reference.region.apply(substitution);
+                reference.pointee.apply(substitution);
+            }
+            Self::Array(array) => {
+                array.length.apply(substitution);
+                array.element.apply(substitution);
+            }
+            Self::TraitMember(trait_member) => {
+                trait_member.trait_generic_arguments.apply(substitution);
+                trait_member.member_generic_arguments.apply(substitution);
+            }
+            Self::Tuple(tuple) => {
+                substitute_tuple_term!(self, self, tuple, substitution);
+            }
+            _ => {}
         }
     }
 }

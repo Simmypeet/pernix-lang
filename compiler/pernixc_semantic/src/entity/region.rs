@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::{Model, Never};
+use super::{Entity, Model, Substitution};
 use crate::symbol::LifetimeParameterID;
 
 /// Represents a particular variable region
@@ -15,20 +15,33 @@ pub enum Region<S: Model> {
     Named(LifetimeParameterID),
 
     /// The kind of region that depends on the particular context.
-    Context(S::RegionContext),
+    Local(S::LocalRegion),
+
+    /// Quantified region, denoted by `for<'a> 'a`.
+    Forall(S::ForallRegion),
 }
 
-impl<T> Region<T>
-where
-    T: Model<TypeInference = Never, ConstantInference = Never, RegionContext = Never>,
-{
-    /// Converts this region into another model.
-    #[must_use]
-    pub fn into_other_model<S: Model>(self) -> Region<S> {
+impl<S: Model> Entity<S> for Region<S> {
+    type This<A: Model> = Region<A>;
+
+    fn into_other_model<T: Model>(self) -> Self::This<T>
+    where
+        S::ConstantInference: Into<T::ConstantInference>,
+        S::TypeInference: Into<T::TypeInference>,
+        S::LocalRegion: Into<T::LocalRegion>,
+        S::ForallRegion: Into<T::ForallRegion>,
+    {
         match self {
             Self::Static => Region::Static,
-            Self::Named(named) => Region::Named(named),
-            Self::Context(never) => match never {},
+            Self::Named(id) => Region::Named(id),
+            Self::Local(local) => Region::Local(local.into()),
+            Self::Forall(forall) => Region::Forall(forall.into()),
+        }
+    }
+
+    fn apply(&mut self, substitution: &Substitution<S>) {
+        if let Some(new) = substitution.regions.get(self) {
+            *self = new.clone();
         }
     }
 }

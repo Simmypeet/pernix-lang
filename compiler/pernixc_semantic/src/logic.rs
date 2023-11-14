@@ -8,19 +8,16 @@ use std::{
 use pernixc_base::extension::CellExt;
 
 use crate::{
-    arena::ID,
     entity::{
         constant::{self, Constant},
         r#type::{self, Type},
         region::Region,
-        GenericArguments, Model, Never,
+        Entity, GenericArguments, Model, Never,
     },
-    symbol::{ConstantParameterID, GenericID, LifetimeParameterID, TypeParameterID},
     table::{Index, Table},
 };
 
 pub mod equality;
-pub mod substitution;
 pub mod r#trait;
 pub mod unification;
 
@@ -36,99 +33,6 @@ struct QueryRecords<S: Model> {
 
     type_is_definite: HashSet<Type<S>>,
     constant_is_definite: HashSet<Constant<S>>,
-}
-
-/// Represents a substitution of terms.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-#[allow(missing_docs)]
-pub struct Substitution<S: Model> {
-    pub types: HashMap<Type<S>, Type<S>>,
-    pub constants: HashMap<Constant<S>, Constant<S>>,
-    pub regions: HashMap<Region<S>, Region<S>>,
-}
-
-impl<S: Model> Substitution<S> {
-    /// Converts this substitution into another model.
-    #[must_use]
-    pub fn into_other_model<T: Model>(self) -> Substitution<T>
-    where
-        S: Model<TypeInference = Never, ConstantInference = Never, RegionContext = Never>,
-    {
-        todo!()
-    }
-
-    /// Appends the given generic arguments as a substitution.
-    ///
-    /// # Returns
-    ///
-    /// Returns `None` if the substitution already contains the given generic arguments.
-    #[must_use]
-    pub fn append_from_generic_arguments(
-        mut self,
-        generic_arguments: GenericArguments<S>,
-        generic_id: GenericID,
-    ) -> Option<Self> {
-        for (index, term) in generic_arguments.types.into_iter().enumerate() {
-            if self
-                .types
-                .insert(
-                    Type::Parameter(TypeParameterID {
-                        parent: generic_id,
-                        id: ID::new(index),
-                    }),
-                    term,
-                )
-                .is_some()
-            {
-                return None;
-            }
-        }
-
-        for (index, term) in generic_arguments.constants.into_iter().enumerate() {
-            if self
-                .constants
-                .insert(
-                    Constant::Parameter(ConstantParameterID {
-                        parent: generic_id,
-                        id: ID::new(index),
-                    }),
-                    term,
-                )
-                .is_some()
-            {
-                return None;
-            }
-        }
-
-        for (index, term) in generic_arguments.regions.into_iter().enumerate() {
-            if self
-                .regions
-                .insert(
-                    Region::Named(LifetimeParameterID {
-                        parent: generic_id,
-                        id: ID::new(index),
-                    }),
-                    term,
-                )
-                .is_some()
-            {
-                return None;
-            }
-        }
-
-        Some(self)
-    }
-
-    /// Converts the given generic arguments into a substitution.
-    #[must_use]
-    pub fn from_generic_arguments(
-        generic_arguments: GenericArguments<S>,
-        generic_id: GenericID,
-    ) -> Self {
-        Self::default()
-            .append_from_generic_arguments(generic_arguments, generic_id)
-            .unwrap()
-    }
 }
 
 /// Represents a mapping of terms.
@@ -179,7 +83,13 @@ macro_rules! normalization_body {
             premise_mapping: &Mapping<S>,
             $table: &'a Table,
             records: &Cell<QueryRecords<S>>,
-        ) -> Option<impl Iterator<Item = $obj> + 'a> {
+        ) -> Option<impl Iterator<Item = $obj> + 'a>
+            where
+                Never: Into<S::ConstantInference>
+                    + Into<S::ForallRegion>
+                    + Into<S::LocalRegion>
+                    + Into<S::TypeInference>,
+         {
             // gets the implementation of the trait
             let Some(trait_id) = $table.get($normalizable.$trait_field).map(|x| x.parent_trait_id) else {
                 return None;

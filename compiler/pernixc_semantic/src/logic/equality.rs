@@ -8,8 +8,8 @@ use pernixc_base::extension::CellExt;
 
 use super::{Mapping, QueryRecords};
 use crate::{
-    entity::{constant::Constant, r#type::Type, region::Region, Model},
-    logic::{unification::All, Substitution},
+    entity::{constant::Constant, r#type::Type, region::Region, Model, Substitution},
+    logic::unification::All,
     table::Table,
 };
 

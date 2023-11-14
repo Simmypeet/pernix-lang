@@ -1,14 +1,11 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use parking_lot::RwLock;
-use pernixc_base::{
-    diagnostic::Handler,
-    source_file::{SourceElement, Span},
-};
-use pernixc_syntax::syntax_tree;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
+use pernixc_syntax::syntax_tree::{self, target::ModuleTree};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
-use super::{state::State, Table};
+use super::{state::State, IndexMut, Table};
 use crate::{
     arena::{Map, ID},
     entity::{constant, r#type},
@@ -187,6 +184,7 @@ impl<'a, 'b> Context<'a, 'b> {
             function_id,
             Function {
                 id: function_id,
+                accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
                 parameters: Map::default(),
                 parent_module_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
@@ -203,11 +201,9 @@ impl<'a, 'b> Context<'a, 'b> {
     #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     pub(super) fn draft_module(
         &self,
-        syntax_tree: syntax_tree::item::ModuleContent,
-        accessibility: Accessibility,
+        syntax_tree: ModuleTree,
         name: String,
         parent_module_id: Option<ID<Module>>,
-        span: Option<Span>,
     ) -> ID<Module> {
         let module_id = {
             let mut table = self.table.write();
@@ -216,15 +212,40 @@ impl<'a, 'b> Context<'a, 'b> {
             table.modules.insert(RwLock::new(Module {
                 id: ID::new(len),
                 name,
-                accessibility,
+                accessibility: syntax_tree
+                    .signature()
+                    .as_ref()
+                    .map_or(Accessibility::Public, |x| {
+                        Accessibility::from_syntax_tree(&x.access_modifier)
+                    }),
                 parent_module_id,
                 module_child_ids_by_name: HashMap::new(),
-                span,
+                span: syntax_tree
+                    .signature()
+                    .as_ref()
+                    .map(|x| x.signature.identifier().span()),
+                usings: HashSet::new(),
             }))
         };
 
-        let (usings, items) = syntax_tree.dissolve();
+        let (_, content, submodule_by_name) = syntax_tree.dissolve();
+        let (usings, items) = content.dissolve();
+
         self.usings_by_module_id.write().insert(module_id, usings);
+
+        // draft submodules
+        submodule_by_name
+            .into_par_iter()
+            .for_each(|(name, submodule)| {
+                let submodule_id = self.draft_module(submodule, name.clone(), Some(module_id));
+
+                self.table
+                    .read()
+                    .get_mut(module_id)
+                    .unwrap()
+                    .module_child_ids_by_name
+                    .insert(name, ModuleMemberID::Module(submodule_id));
+            });
 
         // add each item to the module
         items.into_par_iter().for_each(|item| {
@@ -253,26 +274,8 @@ impl<'a, 'b> Context<'a, 'b> {
                 syntax_tree::item::Item::Enum(syn) => {
                     ModuleMemberID::Enum(self.draft_enum(syn, module_id))
                 }
-                syntax_tree::item::Item::Module(syn) => {
-                    let (access_modifier, identifier, content) = syn.dissolve();
-
-                    ModuleMemberID::Module(
-                        self.draft_module(
-                            content
-                                .into_inline()
-                                .expect("should've been inline")
-                                .dissolve()
-                                .1,
-                            match access_modifier {
-                                syntax_tree::AccessModifier::Public(_) => Accessibility::Public,
-                                syntax_tree::AccessModifier::Private(_) => Accessibility::Private,
-                                syntax_tree::AccessModifier::Internal(_) => Accessibility::Internal,
-                            },
-                            identifier.identifier().span.str().to_owned(),
-                            Some(module_id),
-                            Some(identifier.identifier().span()),
-                        ),
-                    )
+                syntax_tree::item::Item::Module(..) => {
+                    unreachable!("submodules should've been extracted out")
                 }
                 syntax_tree::item::Item::Constant(syn) => {
                     ModuleMemberID::Constant(self.draft_constant(syn, module_id))

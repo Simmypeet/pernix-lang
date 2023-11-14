@@ -1,0 +1,26 @@
+/// Using trait system to calculate the sum of numbers in the tuple at any arbitrary length
+
+public trait Sum<T, Output> {
+    function sum(obj: T): Output;
+}
+
+implements Sum<(), int32> {
+    function sum(obj: ()): int32 {
+        return 0;
+    }
+}
+
+implements<T, Ts> Sum<(int32, ...Ts), int32>
+where:
+    Sum<Ts, int32>
+{
+    function sum((first, ...rest): (int32, ...Ts)): int32 {
+        let restSum = Sum::sum(rest);
+        return first + restSum;
+    }
+}
+
+public function main() {
+    let sum = Sum::sum((1, 2, 3, 4, 5));
+}
+

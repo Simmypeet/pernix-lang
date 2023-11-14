@@ -2,10 +2,13 @@
 
 use std::{cell::Cell, collections::HashMap};
 
-use super::{unification::Config, Mapping, QueryRecords, Substitution};
+use super::{unification::Config, Mapping, QueryRecords};
 use crate::{
     arena::ID,
-    entity::{constant::Constant, r#type::Type, region::Region, GenericArguments, Model},
+    entity::{
+        constant::Constant, r#type::Type, region::Region, Entity, GenericArguments, Model,
+        Substitution,
+    },
     symbol::{self, Trait},
     table::{Index, Table},
 };

@@ -19,12 +19,12 @@ use crate::syntax_tree::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum ReferenceQualifier {
+pub enum Qualifier {
     Mutable,
     Restrict,
 }
 
-impl Arbitrary for ReferenceQualifier {
+impl Arbitrary for Qualifier {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -33,13 +33,13 @@ impl Arbitrary for ReferenceQualifier {
     }
 }
 
-impl Input for ReferenceQualifier {
-    type Output = super::ReferenceQualifier;
+impl Input for Qualifier {
+    type Output = super::Qualifier;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Mutable, super::ReferenceQualifier::Mutable(..))
-            | (Self::Restrict, super::ReferenceQualifier::Restrict(..)) => Ok(()),
+            (Self::Mutable, super::Qualifier::Mutable(..))
+            | (Self::Restrict, super::Qualifier::Restrict(..)) => Ok(()),
 
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
@@ -48,7 +48,7 @@ impl Input for ReferenceQualifier {
     }
 }
 
-impl Display for ReferenceQualifier {
+impl Display for Qualifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Mutable => f.write_str("mutable"),
@@ -60,7 +60,7 @@ impl Display for ReferenceQualifier {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reference {
     pub lifetime_argument: Option<LifetimeArgument>,
-    pub qualifier: Option<ReferenceQualifier>,
+    pub qualifier: Option<Qualifier>,
     pub operand_type: Box<Type>,
 }
 
@@ -71,7 +71,7 @@ impl Arbitrary for Reference {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(LifetimeArgument::arbitrary()),
-            proptest::option::of(ReferenceQualifier::arbitrary()),
+            proptest::option::of(Qualifier::arbitrary()),
             args.unwrap_or_else(Type::arbitrary),
         )
             .prop_map(|(lifetime_argument, qualifier, operand_type)| Self {
@@ -251,7 +251,7 @@ impl Display for Array {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pointer {
     pub operand: Box<Type>,
-    pub mutable: bool,
+    pub qualifier: Option<Qualifier>,
 }
 
 impl Input for Pointer {
@@ -259,7 +259,7 @@ impl Input for Pointer {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.operand.assert(output.operand())?;
-        prop_assert_eq!(self.mutable, output.mutable_keyword().is_some());
+        self.qualifier.assert(output.qualifier())?;
         Ok(())
     }
 }
@@ -269,10 +269,13 @@ impl Arbitrary for Pointer {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        (args.unwrap_or_else(Type::arbitrary), proptest::bool::ANY)
-            .prop_map(|(operand, mutable)| Self {
+        (
+            args.unwrap_or_else(Type::arbitrary),
+            proptest::option::of(Qualifier::arbitrary()),
+        )
+            .prop_map(|(operand, qualifier)| Self {
                 operand: Box::new(operand),
-                mutable,
+                qualifier,
             })
             .boxed()
     }
@@ -282,8 +285,9 @@ impl Display for Pointer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('*')?;
 
-        if self.mutable {
-            f.write_str("mutable ")?;
+        if let Some(qualifier) = &self.qualifier {
+            Display::fmt(qualifier, f)?;
+            f.write_char(' ')?;
         }
 
         Display::fmt(&self.operand, f)

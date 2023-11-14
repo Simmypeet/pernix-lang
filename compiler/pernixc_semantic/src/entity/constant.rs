@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::{r#type::Type, GenericArguments, Model, Never};
+use super::{r#type::Type, substitute_tuple_term, Entity, GenericArguments, Model};
 use crate::{
     arena::ID,
     symbol::{self, ConstantParameterID, TraitConstant, Variant},
@@ -108,16 +108,19 @@ pub enum Constant<S: Model> {
     Tuple(Tuple<S>),
 }
 
-impl<T> Constant<T>
-where
-    T: Model<TypeInference = Never, ConstantInference = Never, RegionContext = Never>,
-{
-    /// Converts this constant into another model.
-    #[must_use]
-    pub fn into_other_model<S: Model>(self) -> Constant<S> {
+impl<S: Model> Entity<S> for Constant<S> {
+    type This<A: Model> = Constant<A>;
+
+    fn into_other_model<T: Model>(self) -> Self::This<T>
+    where
+        S::ConstantInference: Into<T::ConstantInference>,
+        S::TypeInference: Into<T::TypeInference>,
+        S::LocalRegion: Into<T::LocalRegion>,
+        S::ForallRegion: Into<T::ForallRegion>,
+    {
         match self {
             Self::Primitive(primitive) => Constant::Primitive(primitive),
-            Self::Inference(never) => match never {},
+            Self::Inference(inference) => Constant::Inference(inference.into()),
             Self::Struct(struct_constant) => Constant::Struct(Struct {
                 struct_id: struct_constant.struct_id,
                 generic_arguments: struct_constant.generic_arguments.into_other_model(),
@@ -171,6 +174,44 @@ where
                 }
                 Constant::Tuple(Tuple { elements })
             }
+        }
+    }
+
+    fn apply(&mut self, substitution: &super::Substitution<S>) {
+        if let Some(ok) = substitution.constants.get(self).cloned() {
+            *self = ok;
+            return;
+        };
+
+        match self {
+            Self::Struct(structs) => {
+                structs.generic_arguments.apply(substitution);
+
+                for field in &mut structs.fields {
+                    field.apply(substitution);
+                }
+            }
+            Self::Enum(enums) => {
+                enums.generic_arguments.apply(substitution);
+
+                if let Some(associated_value) = &mut enums.associated_value {
+                    associated_value.apply(substitution);
+                }
+            }
+            Self::Array(array) => {
+                array.element_ty.apply(substitution);
+
+                for element in &mut array.elements {
+                    element.apply(substitution);
+                }
+            }
+            Self::TraitMember(trait_member) => {
+                trait_member.trait_arguments.apply(substitution);
+            }
+            Self::Tuple(tuple) => {
+                substitute_tuple_term!(self, self, tuple, substitution);
+            }
+            _ => {}
         }
     }
 }

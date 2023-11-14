@@ -1,6 +1,6 @@
 //! Contains the definition of all symbol kinds in the language.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
@@ -9,7 +9,10 @@ use pernixc_syntax::syntax_tree::AccessModifier;
 
 use crate::{
     arena::{Map, ID},
-    entity::{constant, pattern::Irrefutable, predicate, r#type, GenericArguments, Model, Never},
+    entity::{
+        constant, pattern::Irrefutable, predicate, r#type, region, GenericArguments, Model, Never,
+        Substitution,
+    },
 };
 
 /// Represents an accessibility of a symbol.
@@ -66,6 +69,40 @@ pub enum GenericID {
     ImplementationType(ID<ImplementationType>),
 }
 
+macro_rules! try_from_ids {
+    ($from:ident, $to:ident $(, $kind:ident)*) => {
+        impl TryFrom<$from> for $to {
+            type Error = $from;
+
+            #[allow(unreachable_patterns)]
+            fn try_from(value: $from) -> Result<Self, Self::Error> {
+                match value {
+                    $(
+                        $from::$kind(id) => Ok(Self::$kind(id)),
+                    )*
+                    _ => Err(value)
+                }
+            }
+        }
+    };
+}
+
+try_from_ids!(
+    GlobalID,
+    GenericID,
+    Struct,
+    Trait,
+    Enum,
+    Type,
+    Function,
+    Trait,
+    TraitType,
+    TraitFunction,
+    Implementation,
+    ImplementationType,
+    ImplementationFunction
+);
+
 /// Represents a kind of symbol that accepts generic arguments.
 pub trait Generic {
     /// The ID representing the symbol itself.
@@ -106,7 +143,7 @@ pub enum GlobalID {
     Implementation(ID<Implementation>),
     ImplementationFunction(ID<ImplementationFunction>),
     ImplementationType(ID<ImplementationType>),
-    ImplementsConstant(ID<ImplementationConstant>),
+    ImplementationConstant(ID<ImplementationConstant>),
 }
 
 /// Represents a kind of symbol that has a clear hierarchy/name and can be referenced globally by a
@@ -129,7 +166,7 @@ pub trait Global {
 }
 
 /// An ID to all kinds of symbols that can be defined in a module.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum ModuleMemberID {
     Module(ID<Module>),
@@ -177,6 +214,9 @@ pub struct Module {
 
     /// Location of where the module is declared.
     pub span: Option<Span>,
+
+    /// The modules that are used by `using` statements.
+    pub usings: HashSet<ID<Module>>,
 }
 
 impl Global for Module {
@@ -281,6 +321,88 @@ pub struct GenericParameters {
 
     /// List of defined constant parameters.
     pub constants: Map<ConstantParameter>,
+
+    /// List of default type parameters to be used when the generic parameters are not specified.
+    pub default_type_parameters: Vec<r#type::Type<Symbolic>>,
+
+    /// List of default constant parameters to be used when the generic parameters are not
+    pub default_constant_parameters: Vec<constant::Constant<Symbolic>>,
+}
+
+impl GenericParameters {
+    /// Creates a new [`GenericArguments`] that contains the generic parameters as its arguments.
+    #[must_use]
+    pub fn create_identity_generic_arguments<S: Model>(
+        &self,
+        parent_generic_id: GenericID,
+    ) -> GenericArguments<S> {
+        GenericArguments {
+            types: (0..self.types.len())
+                .map(|idx| {
+                    r#type::Type::Parameter(TypeParameterID {
+                        parent: parent_generic_id,
+                        id: ID::new(idx),
+                    })
+                })
+                .collect(),
+            regions: (0..self.lifetimes.len())
+                .map(|idx| {
+                    region::Region::Named(LifetimeParameterID {
+                        parent: parent_generic_id,
+                        id: ID::new(idx),
+                    })
+                })
+                .collect(),
+            constants: (0..self.constants.len())
+                .map(|idx| {
+                    constant::Constant::Parameter(ConstantParameterID {
+                        parent: parent_generic_id,
+                        id: ID::new(idx),
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    /// Creates a new [`Substitution`] that maps all the generic parameters to itself.
+    #[must_use]
+    pub fn create_identity_substitution<S: Model>(
+        &self,
+        parent_generic_id: GenericID,
+    ) -> Substitution<S> {
+        Substitution {
+            types: (0..self.types.len())
+                .map(|idx| {
+                    let type_parameter = r#type::Type::Parameter(TypeParameterID {
+                        parent: parent_generic_id,
+                        id: ID::new(idx),
+                    });
+
+                    (type_parameter.clone(), type_parameter)
+                })
+                .collect(),
+            constants: (0..self.constants.len())
+                .map(|idx| {
+                    let constant_parameter = constant::Constant::Parameter(ConstantParameterID {
+                        parent: parent_generic_id,
+                        id: ID::new(idx),
+                    });
+
+                    (constant_parameter.clone(), constant_parameter)
+                })
+                .collect(),
+            regions: (0..self.lifetimes.len())
+                .map(|idx| {
+                    let lifetime_parameter = region::Region::Named(LifetimeParameterID {
+                        parent: parent_generic_id,
+                        id: ID::new(idx),
+                    });
+
+                    (lifetime_parameter.clone(), lifetime_parameter)
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Represents a field declaration in the struct, denoted by `NAME: TYPE` syntax.
@@ -535,6 +657,9 @@ pub struct Function {
     /// The return type of the function.
     pub return_type: r#type::Type<Symbolic>,
 
+    /// The accessibility of the function.
+    pub accessibility: Accessibility,
+
     /// The generic declaration of the function.
     pub generic_declaration: GenericDeclaration,
 }
@@ -549,6 +674,16 @@ impl Global for Function {
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
     fn span(&self) -> Option<Span> { self.span.clone() }
+}
+
+impl Generic for Function {
+    fn generic_id(&self) -> GenericID { GenericID::Function(self.id) }
+
+    fn generic_declaration(&self) -> &GenericDeclaration { &self.generic_declaration }
+
+    fn generic_declaration_mut(&mut self) -> &mut GenericDeclaration {
+        &mut self.generic_declaration
+    }
 }
 
 /// Represents a signature of a trait implements
@@ -589,7 +724,7 @@ pub struct ImplementationFunction {
     pub parameters: Map<Parameter<ID<ImplementationFunction>>>,
 
     /// The ID of the parent implements.
-    pub parent_implements_id: ID<Implementation>,
+    pub parent_implementation_id: ID<Implementation>,
 
     /// Location of where the function is declared.
     pub span: Option<Span>,
@@ -620,7 +755,7 @@ impl Global for ImplementationFunction {
     fn global_id(&self) -> GlobalID { GlobalID::ImplementationFunction(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
-        Some(GlobalID::Implementation(self.parent_implements_id))
+        Some(GlobalID::Implementation(self.parent_implementation_id))
     }
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
@@ -635,7 +770,7 @@ pub struct ImplementationType {
     pub id: ID<ImplementationType>,
 
     /// The ID of the parent implements.
-    pub parent_implements_id: ID<Implementation>,
+    pub parent_implementation_id: ID<Implementation>,
 
     /// The name of the type.
     pub name: String,
@@ -666,7 +801,7 @@ impl Global for ImplementationType {
     fn global_id(&self) -> GlobalID { GlobalID::ImplementationType(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
-        Some(GlobalID::Implementation(self.parent_implements_id))
+        Some(GlobalID::Implementation(self.parent_implementation_id))
     }
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
@@ -681,7 +816,7 @@ pub struct ImplementationConstant {
     pub id: ID<ImplementationConstant>,
 
     /// The ID of the parent implements.
-    pub parent_implements_id: ID<Implementation>,
+    pub parent_implementation_id: ID<Implementation>,
 
     /// The name of the constant.
     pub name: String,
@@ -699,10 +834,10 @@ pub struct ImplementationConstant {
 impl Global for ImplementationConstant {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::ImplementsConstant(self.id) }
+    fn global_id(&self) -> GlobalID { GlobalID::ImplementationConstant(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
-        Some(GlobalID::Implementation(self.parent_implements_id))
+        Some(GlobalID::Implementation(self.parent_implementation_id))
     }
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
@@ -770,7 +905,7 @@ impl Global for Implementation {
             .map(|x| match x {
                 LocalImplementationID::Type(x) => GlobalID::ImplementationType(x),
                 LocalImplementationID::Function(x) => GlobalID::ImplementationFunction(x),
-                LocalImplementationID::Constant(x) => GlobalID::ImplementsConstant(x),
+                LocalImplementationID::Constant(x) => GlobalID::ImplementationConstant(x),
             })
     }
 
@@ -990,7 +1125,8 @@ pub struct Symbolic;
 
 impl Model for Symbolic {
     type ConstantInference = Never;
+    type ForallRegion = Never;
     // no extra context for region only 'static and lifetime parameter.
-    type RegionContext = Never;
+    type LocalRegion = Never;
     type TypeInference = Never;
 }

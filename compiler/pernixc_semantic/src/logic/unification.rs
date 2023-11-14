@@ -10,9 +10,8 @@ use crate::{
         constant::{self, Constant},
         r#type::{self, Type},
         region::Region,
-        GenericArguments, Model,
+        GenericArguments, Model, Substitution,
     },
-    logic::Substitution,
     table::Table,
 };
 

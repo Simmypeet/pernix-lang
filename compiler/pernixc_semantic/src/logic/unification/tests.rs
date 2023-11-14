@@ -3,14 +3,95 @@ use crate::{
     arena::ID,
     entity::{
         constant::Constant,
-        r#type::{self, Algebraic, AlgebraicKind, Type},
+        r#type::{self, Algebraic, AlgebraicKind, Tuple, TupleElement, Type},
         region::Region,
-        GenericArguments, Model,
+        Entity, GenericArguments, Model,
     },
     logic::Mapping,
     symbol::{GenericID, Symbolic, TypeParameterID},
     table::Table,
 };
+
+#[test]
+fn tuple_test() {
+    /*
+    0? = (int32, float32, float64)
+     */
+    let equalities = [(
+        Type::Parameter(TypeParameterID {
+            parent: GenericID::Enum(ID::new(0)),
+            id: ID::new(0),
+        }),
+        Type::Tuple(Tuple {
+            elements: vec![
+                TupleElement::Regular(Type::Primitive(r#type::Primitive::Int32)),
+                TupleElement::Regular(Type::Primitive(r#type::Primitive::Float32)),
+                TupleElement::Regular(Type::Primitive(r#type::Primitive::Float64)),
+            ],
+        }),
+    )];
+
+    let mapping: Mapping<Symbolic> =
+        Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty());
+
+    // unify( (1?, 2?...), (0?...) )
+    //
+    // expected:
+    // 1? -> int32
+    // 2? -> (float32, float64)
+
+    let lhs = Type::Tuple(Tuple {
+        elements: vec![
+            TupleElement::Regular(Type::Parameter(TypeParameterID {
+                parent: GenericID::Enum(ID::new(0)),
+                id: ID::new(1),
+            })),
+            TupleElement::Unpacked(r#type::Unpacked::Parameter(TypeParameterID {
+                parent: GenericID::Enum(ID::new(0)),
+                id: ID::new(2),
+            })),
+        ],
+    });
+    let rhs = Type::Tuple(Tuple {
+        elements: vec![TupleElement::Unpacked(r#type::Unpacked::Parameter(
+            TypeParameterID {
+                parent: GenericID::Enum(ID::new(0)),
+                id: ID::new(0),
+            },
+        ))],
+    });
+
+    let table = Table::default();
+
+    let sub = Type::unify(&lhs, &rhs, &mapping, &table, &VariableConfig).unwrap();
+
+    assert!(sub
+        .types
+        .get(&Type::Parameter(TypeParameterID {
+            parent: GenericID::Enum(ID::new(0)),
+            id: ID::new(1),
+        }))
+        .unwrap()
+        .equals(&Type::Primitive(r#type::Primitive::Int32), &mapping, &table,));
+
+    assert!(sub
+        .types
+        .get(&Type::Parameter(TypeParameterID {
+            parent: GenericID::Enum(ID::new(0)),
+            id: ID::new(2),
+        }))
+        .unwrap()
+        .equals(
+            &Type::Tuple(Tuple {
+                elements: vec![
+                    TupleElement::Regular(Type::Primitive(r#type::Primitive::Float32)),
+                    TupleElement::Regular(Type::Primitive(r#type::Primitive::Float64)),
+                ],
+            }),
+            &mapping,
+            &table,
+        ));
+}
 
 #[test]
 fn recursive_term_test() {

@@ -88,7 +88,7 @@ pub fn run(argument: Arguments) -> ExitCode {
 
     let printer = Printer::new();
 
-    // parser
+    // syntactic analysis
     let target = Target::parse(
         &source_file,
         match argument.target_name {

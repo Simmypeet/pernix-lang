@@ -71,19 +71,19 @@ impl SourceElement for Primitive {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ReferenceQualifier:
+/// Qualifier:
 ///     'mutable'
 ///     | 'restrict'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum ReferenceQualifier {
+pub enum Qualifier {
     Mutable(Keyword),
     Restrict(Keyword),
 }
 
-impl SourceElement for ReferenceQualifier {
+impl SourceElement for Qualifier {
     fn span(&self) -> Span {
         match self {
             Self::Mutable(token) | Self::Restrict(token) => token.span.clone(),
@@ -94,7 +94,7 @@ impl SourceElement for ReferenceQualifier {
 /// Syntax Synopsis:
 /// ``` txt
 /// Reference:
-///     '&' LifetimeArgument? ReferenceQualifier? Type
+///     '&' LifetimeArgument? Qualifier? Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -105,7 +105,7 @@ pub struct Reference {
     #[get = "pub"]
     lifetime_argument: Option<LifetimeArgument>,
     #[get = "pub"]
-    qualifier: Option<ReferenceQualifier>,
+    qualifier: Option<Qualifier>,
     #[get = "pub"]
     operand: Box<Type>,
 }
@@ -174,7 +174,7 @@ impl SourceElement for Array {
 /// Syntax Synopsis:
 /// ``` txt
 /// Pointer:
-///     '*' 'mutable'? Type
+///     '*' Qualifier? Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -182,7 +182,7 @@ pub struct Pointer {
     #[get = "pub"]
     asterisk: Punctuation,
     #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
+    qualifier: Option<Qualifier>,
     #[get = "pub"]
     operand: Box<Type>,
 }
@@ -269,12 +269,12 @@ impl<'a> Parser<'a> {
         let reference_qualifier = match self.stop_at_significant() {
             Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
                 self.forward();
-                Some(ReferenceQualifier::Mutable(k))
+                Some(Qualifier::Mutable(k))
             }
 
             Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
                 self.forward();
-                Some(ReferenceQualifier::Restrict(k))
+                Some(Qualifier::Restrict(k))
             }
 
             _ => None,
@@ -292,11 +292,17 @@ impl<'a> Parser<'a> {
     fn parse_pointer_type(&mut self, handler: &dyn Handler<Error>) -> Option<Pointer> {
         let asterisk = self.parse_punctuation('*', true, handler)?;
 
-        let mutable_keyword = match self.stop_at_significant() {
+        let qualifier = match self.stop_at_significant() {
             Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
                 self.forward();
-                Some(k)
+                Some(Qualifier::Mutable(k))
             }
+
+            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
+                self.forward();
+                Some(Qualifier::Restrict(k))
+            }
+
             _ => None,
         };
 
@@ -304,7 +310,7 @@ impl<'a> Parser<'a> {
 
         Some(Pointer {
             asterisk,
-            mutable_keyword,
+            qualifier,
             operand: operand_type,
         })
     }

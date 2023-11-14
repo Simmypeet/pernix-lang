@@ -1,0 +1,7 @@
+/// Type system should figure out that A, B, C are in a cycle
+
+public type A = E;
+public type B = A;
+public type C = B;
+public type D = C;
+public type E = D;
