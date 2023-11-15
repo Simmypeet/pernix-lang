@@ -102,15 +102,28 @@ pub struct CyclicDependency {
 
 /// The generic arguments were supplied in the wrong order.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MisorderedGenericArguments {
+pub struct MisorderedGenericArgument {
+    /// The kind of the misordered generic argument.
+    pub generic_kind: GenericKind,
+
     /// The span of the generic argument.
     pub generic_argument: Span,
+}
+
+/// The generic parameter was declared in the wrong order.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MisorderedGenericParameter {
+    /// The kind of the misordered generic parameter.
+    pub generic_kind: GenericKind,
+
+    /// The span of the generic parameter.
+    pub generic_parameter: Span,
 }
 
 /// Enumeration of all kinds of generic parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum GenericParameterKind {
+pub enum GenericKind {
     Type,
     Lifetime,
     Constant,
@@ -120,7 +133,7 @@ pub enum GenericParameterKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericArgumentCountMismatch {
     /// The kind of the generic parameter.
-    pub generic_parameter_kind: GenericParameterKind,
+    pub generic_kind: GenericKind,
 
     /// Span where mismatch occurred.
     pub generic_identifier_span: Span,
@@ -190,7 +203,7 @@ pub enum Error {
     NoGenericArgumentsRequired(NoGenericArgumentsRequired),
     TraitExpectedInImplemenation(TraitExpectedInImplemenation),
     CyclicDependency(CyclicDependency),
-    MisorderedGenericArguments(MisorderedGenericArguments),
+    MisorderedGenericArguments(MisorderedGenericArgument),
     GenericArgumentCountMismatch(GenericArgumentCountMismatch),
     LifetimeParameterNotFound(LifetimeParameterNotFound),
     LifetimeExpected(LifetimeExpected),
@@ -198,4 +211,5 @@ pub enum Error {
     TypeExpected(TypeExpected),
     MemberAccessOnType(MemberAccessOnType),
     MemberAccessOnExpression(MemberAccessOnExpression),
+    MisorderedGenericParameter(MisorderedGenericParameter),
 }

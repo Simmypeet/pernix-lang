@@ -8,43 +8,58 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use paste::paste;
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::Span};
 use pernixc_syntax::syntax_tree;
 
 use super::{
-    resolution::Config,
+    resolution::{Checking, Config},
     state::{self, Constructing, State},
     IndexMut, Table,
 };
 use crate::{
     arena::ID,
-    entity::{Model, Never},
+    entity::{constant, r#type, region::Region},
     error::{self, CyclicDependency},
-    symbol::{Constant, Enum, Function, GlobalID, Struct, Trait, Type},
+    symbol::{Constant, Enum, Function, GenericID, GlobalID, Struct, Symbolic, Trait, Type},
     table::state::ConstructingLock,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Dummy;
+/// A struct which composed of the required checking and the span where the checking occurs.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct CheckingWithSpan {
+    checking: Checking<Symbolic>,
+    span: Span,
+}
 
-impl<S: Model<ForallRegion = Never>> Config<S> for Dummy {
-    fn region_arguments_placeholder(&mut self) -> Option<crate::entity::region::Region<S>> { None }
+/// Is a struct implementing [`Config`] trait that stores the checking and the span where the
+/// checking occurs.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Storage<'a> {
+    checkings: &'a mut Vec<CheckingWithSpan>,
+}
 
-    fn type_arguments_placeholder(&mut self) -> Option<crate::entity::r#type::Type<S>> { None }
+impl Config<Symbolic> for Storage<'_> {
+    fn region_arguments_placeholder(&mut self) -> Option<Region<Symbolic>> { None }
 
-    fn constant_arguments_placeholder(&mut self) -> Option<crate::entity::constant::Constant<S>> {
-        None
-    }
+    fn type_arguments_placeholder(&mut self) -> Option<r#type::Type<Symbolic>> { None }
 
-    fn check(
-        &mut self,
-        checking: super::resolution::Checking<S>,
-        span: pernixc_base::source_file::Span,
-    ) {
+    fn constant_arguments_placeholder(&mut self) -> Option<constant::Constant<Symbolic>> { None }
+
+    fn check(&mut self, checking: Checking<Symbolic>, span: Span) {
+        self.checkings.push(CheckingWithSpan { checking, span })
     }
 }
 
 impl Table {
+    fn create_generic_parameter(
+        &self,
+        generic_symbol: GenericID,
+        syntax_tree: Option<syntax_tree::item::GenericParameters>,
+        config: &mut dyn Config<Symbolic>,
+        handler: &dyn Handler<error::Error>,
+    ) {
+    }
+
     fn finalize_struct(
         &self,
         struct_id: ID<Struct>,
@@ -79,10 +94,15 @@ impl Table {
         syntax_tree: syntax_tree::item::Type,
         handler: &dyn Handler<error::Error>,
     ) {
+        let mut checking_with_spans = Vec::new();
+        let mut storage = Storage {
+            checkings: &mut checking_with_spans,
+        };
+
         let Ok(ty) = self.resolve_type(
             syntax_tree.definition().ty(),
             type_id.into(),
-            &mut Dummy,
+            &mut storage,
             handler,
         ) else {
             return;

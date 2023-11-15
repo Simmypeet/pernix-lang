@@ -23,9 +23,9 @@ use crate::{
         Entity, GenericArguments, Model, Never, Substitution,
     },
     error::{
-        self, GenericArgumentCountMismatch, GenericParameterKind, LifetimeExpected,
+        self, GenericArgumentCountMismatch, GenericKind, LifetimeExpected,
         LifetimeParameterNotFound, MemberAccessOnExpression, MemberAccessOnType,
-        MisorderedGenericArguments, ModuleExpected, ModuleNotFound, MoreThanOneUnpackedInTupleType,
+        MisorderedGenericArgument, ModuleExpected, ModuleNotFound, MoreThanOneUnpackedInTupleType,
         NoGenericArgumentsRequired, ResolutionAmbiguity, SymbolIsNotAccessible, SymbolNotFound,
         TraitExpectedInImplemenation, TypeExpected,
     },
@@ -250,7 +250,7 @@ macro_rules! handle_generic_arguments_supplied {
                     let Some(placeholder) = $config.[<$kind:lower _arguments_placeholder>]() else {
                         $handler.receive(error::Error::GenericArgumentCountMismatch(
                             GenericArgumentCountMismatch {
-                                generic_parameter_kind: GenericParameterKind::$kind,
+                                generic_kind: GenericKind::$kind,
                                 $generic_identifier_span,
                                 expected_count,
                                 supplied_count: 0,
@@ -292,7 +292,7 @@ macro_rules! handle_generic_arguments_supplied {
                 // type arguments count mismatch
                 $handler.receive(error::Error::GenericArgumentCountMismatch(
                     GenericArgumentCountMismatch {
-                        generic_parameter_kind: GenericParameterKind::$kind,
+                        generic_kind: GenericKind::$kind,
                         $generic_identifier_span,
                         expected_count,
                         supplied_count: $argument_syns.len(),
@@ -876,7 +876,7 @@ impl Table {
                 let Some(placeholder) = config.region_arguments_placeholder() else {
                     handler.receive(error::Error::GenericArgumentCountMismatch(
                         GenericArgumentCountMismatch {
-                            generic_parameter_kind: GenericParameterKind::Lifetime,
+                            generic_kind: GenericKind::Lifetime,
                             generic_identifier_span,
                             expected_count: generic_symbol
                                 .generic_declaration()
@@ -902,7 +902,7 @@ impl Table {
             // lifetime arguments count mismatch
             handler.receive(error::Error::GenericArgumentCountMismatch(
                 GenericArgumentCountMismatch {
-                    generic_parameter_kind: GenericParameterKind::Lifetime,
+                    generic_kind: GenericKind::Lifetime,
                     generic_identifier_span,
                     expected_count,
                     supplied_count: lifetime_argument_syns.len(),
@@ -1025,11 +1025,19 @@ impl Table {
                 {
                     lifetime_argument_syns.push(arg);
                 }
-                arg => handler.receive(error::Error::MisorderedGenericArguments(
-                    MisorderedGenericArguments {
-                        generic_argument: arg.span(),
-                    },
-                )),
+                arg => {
+                    handler.receive(error::Error::MisorderedGenericArguments(
+                        MisorderedGenericArgument {
+                            generic_kind: match arg {
+                                syntax_tree::GenericArgument::Type(_) => GenericKind::Type,
+                                syntax_tree::GenericArgument::Constant(_) => GenericKind::Constant,
+                                syntax_tree::GenericArgument::Lifetime(_) => GenericKind::Lifetime,
+                            },
+                            generic_argument: arg.span(),
+                        },
+                    ));
+                    return Err(Error::SemanticError);
+                }
             }
         }
 

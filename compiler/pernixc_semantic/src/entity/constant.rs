@@ -108,6 +108,14 @@ pub enum Constant<S: Model> {
     Tuple(Tuple<S>),
 }
 
+impl<S: Model> Default for Constant<S> {
+    fn default() -> Self {
+        Self::Tuple(Tuple {
+            elements: Vec::new(),
+        })
+    }
+}
+
 impl<S: Model> Entity<S> for Constant<S> {
     type This<A: Model> = Constant<A>;
 

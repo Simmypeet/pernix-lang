@@ -146,6 +146,14 @@ pub enum Type<S: Model> {
     Tuple(Tuple<S>),
 }
 
+impl<S: Model> Default for Type<S> {
+    fn default() -> Self {
+        Self::Tuple(Tuple {
+            elements: Vec::new(),
+        })
+    }
+}
+
 impl<S: Model> Entity<S> for Type<S> {
     type This<A: Model> = Type<A>;
 

@@ -109,7 +109,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 id: constant_id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 r#type: r#type::Type::Primitive(r#type::Primitive::Bool),
-                constant: constant::Constant::Primitive(constant::Primitive::Bool(false)),
+                constant: constant::Constant::default(),
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
                 parent_module_id
@@ -132,7 +132,7 @@ impl<'a, 'b> Context<'a, 'b> {
             Type {
                 id: type_id,
                 generic_declaration: GenericDeclaration::default(),
-                r#type: r#type::Type::Primitive(r#type::Primitive::Bool),
+                r#type: r#type::Type::default(),
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
@@ -189,7 +189,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 parent_module_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
-                return_type: r#type::Type::Primitive(r#type::Primitive::Bool),
+                return_type: r#type::Type::default(),
                 generic_declaration: GenericDeclaration::default(),
             },
             parent_module_id,

@@ -7,7 +7,7 @@ use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGua
 use paste::paste;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::target::Target;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::ParallelIterator;
 use thiserror::Error;
 
 use crate::{
@@ -249,11 +249,14 @@ impl Table {
         }
 
         // finalize all symbols
-        while let Some(global_id) = {
-            let state_manager = table.state_manager.read();
-            state_manager.next_drafted_symbol()
-        } {
-            let _ = table.finalize(global_id, None, handler);
+        let drafted_symbol_ids = table
+            .state_manager
+            .read()
+            .all_drafted_symbols()
+            .collect::<Vec<_>>();
+
+        for symbol_id in drafted_symbol_ids {
+            let _ = table.finalize(symbol_id, None, handler);
         }
 
         Ok(table)
