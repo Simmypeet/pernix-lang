@@ -1,0 +1,13 @@
+public trait TupleLength<T> {
+    const LENGTH: usize;
+}
+
+implements TupleLength<()> {
+    const LENGTH: usize = 0;
+}
+
+implements<T, Ts> TupleLength<(T, ...Ts)>
+where: TupleLength<Ts>
+{
+    const LENGTH: usize = 1 + TupleLength<Ts>::LENGTH;
+}

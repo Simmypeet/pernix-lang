@@ -5,7 +5,7 @@ use pernixc_base::{
     log::{Message, Severity},
     source_file::{self, SourceFile},
 };
-use pernixc_semantic::table::Table;
+use pernixc_semantic::{error::WithTable, table::Table};
 use pernixc_syntax::syntax_tree::target::Target;
 
 /// The arguments to the program.
@@ -30,7 +30,6 @@ pub struct Arguments {
 struct Printer {
     printed: RwLock<bool>,
 }
-
 impl Printer {
     /// Creates a new [`Printer`].
     fn new() -> Self {
@@ -114,11 +113,16 @@ pub fn run(argument: Arguments) -> ExitCode {
     // semantic analysis
 
     let storage: Storage<pernixc_semantic::error::Error> = Storage::new();
-    let table = Table::build(rayon::iter::once(target), &storage);
-    dbg!(table);
+    let table = dbg!(Table::build(rayon::iter::once(target), &storage))
+        .expect("should not fail, at least must return a suboptimal table");
 
     if storage.as_vec().len() > 0 {
-        dbg!(storage.as_vec());
+        for error in storage.into_vec() {
+            eprintln!("{}", WithTable {
+                table: &table,
+                error: &error,
+            })
+        }
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS

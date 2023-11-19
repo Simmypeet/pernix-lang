@@ -42,6 +42,7 @@ pub struct SourceFile {
     lines: Vec<Range<usize>>,
 }
 
+#[allow(clippy::missing_fields_in_debug)]
 impl Debug for SourceFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SourceFile")
@@ -216,6 +217,7 @@ pub struct Span {
     source_file: Arc<SourceFile>,
 }
 
+#[allow(clippy::missing_fields_in_debug)]
 impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Span")
@@ -237,16 +239,7 @@ impl PartialEq for Span {
 impl Eq for Span {}
 
 impl PartialOrd for Span {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let self_ptr_value = Arc::as_ptr(&self.source_file) as usize;
-        let other_ptr_value = Arc::as_ptr(&other.source_file) as usize;
-
-        Some(self_ptr_value.cmp(&other_ptr_value).then_with(|| {
-            self.start
-                .cmp(&other.start)
-                .then_with(|| self.end.cmp(&other.end))
-        }))
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
 }
 
 impl Ord for Span {

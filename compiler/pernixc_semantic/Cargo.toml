@@ -22,3 +22,4 @@ parking_lot = { workspace = true }
 paste = { workspace = true }
 take_mut = { workspace = true }
 rayon = { workspace = true }
+bitflags = { workspace = true }

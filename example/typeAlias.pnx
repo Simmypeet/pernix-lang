@@ -1,7 +1,11 @@
-/// Type system should figure out that A, B, C are in a cycle
+public enum Option<T> {
+    Some(T),
+    None,
+}
 
-public type A = E;
-public type B = A;
-public type C = B;
-public type D = C;
-public type E = D;
+public trait Example<T, U> {}
+
+implements<T, U> Example<Option<T>, U> {}
+implements<T, U> Example<T, Option<U>> {}
+
+implements<T, U> Example<T, U> {}

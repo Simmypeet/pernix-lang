@@ -33,12 +33,7 @@ impl<T> ID<T> {
 }
 
 impl<T> Clone for ID<T> {
-    fn clone(&self) -> Self {
-        Self {
-            index: self.index,
-            _marker: PhantomData,
-        }
-    }
+    fn clone(&self) -> Self { *self }
 }
 
 impl<T> Copy for ID<T> {}
@@ -50,9 +45,7 @@ impl<T> PartialEq for ID<T> {
 impl<T> Eq for ID<T> {}
 
 impl<T> PartialOrd for ID<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.index.partial_cmp(&other.index)
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 impl<T> Ord for ID<T> {
@@ -188,6 +181,10 @@ impl<T, K: Hash + Eq, Idx> Map<T, K, Idx> {
     pub fn is_empty(&self) -> bool { self.arena.is_empty() }
 
     /// Inserts a new item into the [`Map`] with the given key
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok` with the [`ID`] of the new item if the key doesn't exist in the [`Map`].
     ///
     /// # Errors
     ///

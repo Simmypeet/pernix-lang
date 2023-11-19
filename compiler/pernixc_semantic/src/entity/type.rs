@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     arena::ID,
-    symbol::{Enum, Struct, TraitType, TypeParameterID},
+    symbol::{Enum, GlobalID, Struct, TraitType, TypeParameterID},
 };
 
 /// Either an ID of an enum or an ID of a struct.
@@ -17,6 +17,15 @@ use crate::{
 pub enum AlgebraicKind {
     Enum(ID<Enum>),
     Struct(ID<Struct>),
+}
+
+impl From<AlgebraicKind> for GlobalID {
+    fn from(value: AlgebraicKind) -> Self {
+        match value {
+            AlgebraicKind::Enum(id) => Self::Enum(id),
+            AlgebraicKind::Struct(id) => Self::Struct(id),
+        }
+    }
 }
 
 /// Represents an algebraic type, which is either an enum or a struct.

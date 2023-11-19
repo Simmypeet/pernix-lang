@@ -17,21 +17,21 @@ use crate::{
     arena::ID,
     entity::{
         constant,
-        predicate::Predicate,
+        predicate::{self, Predicate},
         r#type::{self, Qualifier},
         region::Region,
         Entity, GenericArguments, Model, Never, Substitution,
     },
     error::{
-        self, GenericArgumentCountMismatch, GenericKind, LifetimeExpected,
-        LifetimeParameterNotFound, MemberAccessOnExpression, MemberAccessOnType,
-        MisorderedGenericArgument, ModuleExpected, ModuleNotFound, MoreThanOneUnpackedInTupleType,
-        NoGenericArgumentsRequired, ResolutionAmbiguity, SymbolIsNotAccessible, SymbolNotFound,
-        TraitExpectedInImplemenation, TypeExpected,
+        self, GenericArgumentCountMismatch, LifetimeExpected, LifetimeParameterNotFound,
+        MemberAccessOnExpression, MemberAccessOnType, MisorderedGenericArgument, ModuleExpected,
+        MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired, ResolutionAmbiguity,
+        SymbolIsNotAccessible, SymbolNotFound, TraitExpectedInImplemenation, TypeExpected,
     },
     symbol::{
-        self, Enum, Function, Generic, GenericID, GlobalID, ImplementationFunction, MemberID,
-        Module, Struct, Symbolic, Trait, TraitConstant, TraitFunction, TraitType, TypeParameterID,
+        self, Enum, Function, Generic, GenericID, GenericKind, GlobalID, ImplementationFunction,
+        LifetimeParameterID, MemberID, Module, Struct, Symbolic, Trait, TraitConstant,
+        TraitFunction, TraitType, TypeParameterID,
     },
 };
 
@@ -346,9 +346,9 @@ impl Table {
 
             // if the next module ID is not found, emit an error.
             let Some(next) = next else {
-                handler.receive(error::Error::ModuleNotFound(ModuleNotFound {
-                    module_path: path.span.clone(),
-                    searched_module_id: current_module_id,
+                handler.receive(error::Error::SymbolNotFound(SymbolNotFound {
+                    searched_global_id: current_module_id.map(Into::into),
+                    resolution_span: path.span.clone(),
                 }));
                 return Err(Error::SemanticError);
             };
@@ -477,7 +477,18 @@ impl Table {
                 }));
                 Err(Error::SemanticError)
             },
-            Ok,
+            |global_id| {
+                if !self.symbol_accessible(referring_site, global_id).unwrap() {
+                    // non-fatal error, keep going
+                    handler.receive(error::Error::SymbolIsNotAccessible(SymbolIsNotAccessible {
+                        referring_site,
+                        referred: global_id,
+                        referred_span: identifier.span.clone(),
+                    }));
+                }
+
+                Ok(global_id)
+            },
         )
     }
 
@@ -491,15 +502,15 @@ impl Table {
         let closet_module_id = self
             .get_closet_module_id(referring_site)
             .ok_or(Error::InvalidID)?;
-
         let closet_module = self.get(closet_module_id).unwrap();
+
         let map = closet_module.usings.iter().copied().map(Into::into);
         let search_locations = map.chain(std::iter::once(referring_site));
 
         let mut candidates = search_locations
             .filter_map(|x| {
                 self.get_global(x)
-                    .expect("should've been all valid IDSJK")
+                    .expect("should've been all valid ID")
                     .get_member(identifier.span.str())
             })
             .filter(|x| {
@@ -575,13 +586,13 @@ impl Table {
                 };
 
                 if let Some(generic_arguments) = generic_identifier.generic_arguments() {
+                    // non-fatal error, keep going
                     handler.receive(error::Error::NoGenericArgumentsRequired(
                         NoGenericArgumentsRequired {
                             global_id: module_id.into(),
                             generic_argument_span: generic_arguments.span(),
                         },
                     ));
-                    return Err(Error::SemanticError);
                 }
 
                 latest_resolution = Some(Resolution::Module(module_id));
@@ -601,7 +612,13 @@ impl Table {
         unreachable!()
     }
 
-    fn resolve_qualified_identifier_type<S: Model<ForallRegion = Never>>(
+    /// Resolves a qualified identifier to a [`r#type::Type`].
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InvalidID`]: if the `referring_site` is not a valid ID.
+    /// - [`Error::SemanticError`]: if encountered a fatal semantic error e.g. symbol not found.
+    pub fn resolve_qualified_identifier_type<S: Model<ForallRegion = Never>>(
         &self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
         referring_site: GlobalID,
@@ -801,6 +818,47 @@ impl Table {
         }
     }
 
+    /// Resolves an [`Identifier`] as a [`LifetimeParameterID`].
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InvalidID`]: If the `referring_site` is not a valid ID.
+    /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
+    pub fn resolve_lifetime_parameter(
+        &self,
+        identifier: &Identifier,
+        referring_site: GlobalID,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<LifetimeParameterID, Error> {
+        for scope in self.scope_walker(referring_site).ok_or(Error::InvalidID)? {
+            let Ok(generic_id) = GenericID::try_from(scope) else {
+                continue;
+            };
+
+            let generic_symbol = self.get_generic(generic_id).expect("should've been valid");
+
+            if let Some(lifetime_id) = generic_symbol
+                .generic_declaration()
+                .parameters
+                .lifetimes
+                .get_id(identifier.span.str())
+            {
+                return Ok(MemberID {
+                    parent: generic_id,
+                    id: lifetime_id,
+                });
+            }
+        }
+
+        handler.receive(error::Error::LifetimeParameterNotFound(
+            LifetimeParameterNotFound {
+                referred_span: identifier.span(),
+                referring_site,
+            },
+        ));
+        Err(Error::SemanticError)
+    }
+
     /// Resolves a [`syntax_tree::LifetimeArgument`] to a [`Region`].
     ///
     /// # Errors
@@ -815,36 +873,9 @@ impl Table {
     ) -> Result<Region<S>, Error> {
         match lifetime_argument.identifier() {
             LifetimeArgumentIdentifier::Static(..) => Ok(Region::Static),
-            LifetimeArgumentIdentifier::Identifier(ident) => {
-                for scope in self.scope_walker(referring_site).ok_or(Error::InvalidID)? {
-                    let Ok(generic_id) = GenericID::try_from(scope) else {
-                        continue;
-                    };
-
-                    let generic_symbol =
-                        self.get_generic(generic_id).expect("should've been valid");
-
-                    if let Some(lifetime_id) = generic_symbol
-                        .generic_declaration()
-                        .parameters
-                        .lifetimes
-                        .get_id(ident.span.str())
-                    {
-                        return Ok(Region::Named(MemberID {
-                            parent: generic_id,
-                            id: lifetime_id,
-                        }));
-                    }
-                }
-
-                handler.receive(error::Error::LifetimeParameterNotFound(
-                    LifetimeParameterNotFound {
-                        referred_span: lifetime_argument.span(),
-                        referring_site,
-                    },
-                ));
-                Err(Error::SemanticError)
-            }
+            LifetimeArgumentIdentifier::Identifier(ident) => self
+                .resolve_lifetime_parameter(ident, referring_site, handler)
+                .map(Region::Named),
         }
     }
 
@@ -988,14 +1019,13 @@ impl Table {
     ) -> Result<Option<GenericArguments<S>>, Error> {
         let Ok(generic_id) = GenericID::try_from(resolved_id) else {
             if let Some(generic_arguments) = generic_identifier.generic_arguments() {
+                // non-fatal error, keep going
                 handler.receive(error::Error::NoGenericArgumentsRequired(
                     NoGenericArgumentsRequired {
                         global_id: resolved_id,
                         generic_argument_span: generic_arguments.span(),
                     },
                 ));
-
-                return Err(Error::SemanticError);
             }
 
             return Ok(None);
@@ -1080,6 +1110,20 @@ impl Table {
         span: &Span,
         config: &mut dyn Config<S>,
     ) -> Resolution<S> {
+        // if trait is resolved, add trait bound predicate
+        if let GlobalID::Trait(trait_id) = resolved_id {
+            let predicate = Predicate::Trait(predicate::Trait {
+                trait_id,
+                generic_arguments: generic_arguments
+                    .clone()
+                    .expect("should have generic arugmentsj")
+                    .into_other_model(),
+                const_trait: false, // true, unless explicitly specified in the where clause
+            });
+
+            config.check(Checking::Predicate(predicate), span.clone());
+        }
+
         // generic id, do where clause check
         if let Ok(generic_id) = GenericID::try_from(resolved_id) {
             let parent_arguments = latest_resolution.as_ref().and_then(|x| match x {
@@ -1252,9 +1296,11 @@ impl Table {
                 ),
                 member: trait_constant_id,
             }),
-            GlobalID::Implementation(_) => {
+
+            GlobalID::Implementation(_) | GlobalID::NegativeImplementation(_) => {
                 unreachable!("impossible to refer to the implementation")
             }
+
             GlobalID::ImplementationFunction(implementation_function_id) => {
                 assert!(latest_resolution.is_none());
 

@@ -225,7 +225,7 @@ impl Display for Semi {
 
 proptest! {
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls)]
+    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn statement_test(
         statement_input in Statement::arbitrary()
     ) {

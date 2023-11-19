@@ -19,7 +19,7 @@ pub enum Predicate<S: Model> {
     TypeEquals(TypeEquals<S>),
     ConstantEquals(ConstantEquals<S>),
     Trait(Trait<S>),
-    TypeConstant(TypeConstant<S>),
+    ConstantType(ConstantType<S>),
 }
 
 impl<S: Model<ForallRegion = Never>> Entity<S> for Predicate<S> {
@@ -34,12 +34,12 @@ impl<S: Model<ForallRegion = Never>> Entity<S> for Predicate<S> {
     {
         match self {
             Self::RegionOutlive(region) => Predicate::RegionOutlive(RegionOutlives {
+                operand: region.operand.into_other_model(),
                 argument: region.argument.into_other_model(),
-                target: region.target.into_other_model(),
             }),
             Self::TypeOutlive(outlive) => Predicate::TypeOutlive(TypeOutlives {
+                operand: outlive.operand.into_other_model(),
                 argument: outlive.argument.into_other_model(),
-                target: outlive.target.into_other_model(),
             }),
             Self::TypeEquals(equals) => Predicate::TypeEquals(TypeEquals {
                 lhs: equals.lhs.into_other_model(),
@@ -52,8 +52,9 @@ impl<S: Model<ForallRegion = Never>> Entity<S> for Predicate<S> {
             Self::Trait(predicate) => Predicate::Trait(Trait {
                 trait_id: predicate.trait_id,
                 generic_arguments: predicate.generic_arguments.into_other_model(),
+                const_trait: predicate.const_trait,
             }),
-            Self::TypeConstant(predicate) => Predicate::TypeConstant(TypeConstant {
+            Self::ConstantType(predicate) => Predicate::ConstantType(ConstantType {
                 r#type: predicate.r#type.into_other_model(),
             }),
         }
@@ -62,12 +63,12 @@ impl<S: Model<ForallRegion = Never>> Entity<S> for Predicate<S> {
     fn apply(&mut self, substitution: &super::Substitution<S>) {
         match self {
             Self::RegionOutlive(region) => {
+                region.operand.apply(substitution);
                 region.argument.apply(substitution);
-                region.target.apply(substitution);
             }
             Self::TypeOutlive(outlive) => {
+                outlive.operand.apply(substitution);
                 outlive.argument.apply(substitution);
-                outlive.target.apply(substitution);
             }
             Self::TypeEquals(equals) => {
                 equals.lhs.apply(substitution);
@@ -80,7 +81,7 @@ impl<S: Model<ForallRegion = Never>> Entity<S> for Predicate<S> {
             Self::Trait(predicate) => predicate
                 .generic_arguments
                 .apply(&substitution.clone().into_other_model()),
-            Self::TypeConstant(predicate) => predicate.r#type.apply(substitution),
+            Self::ConstantType(predicate) => predicate.r#type.apply(substitution),
         }
     }
 }
@@ -89,7 +90,7 @@ impl<S: Model<ForallRegion = Never>> Entity<S> for Predicate<S> {
 ///
 /// This predicate allows the type to be used as a type of constant parameters.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeConstant<S: Model> {
+pub struct ConstantType<S: Model> {
     /// The type that is used as a constant type.
     pub r#type: Type<S>,
 }
@@ -97,21 +98,21 @@ pub struct TypeConstant<S: Model> {
 /// Represents a region outlive predicate, defnoted by `'argument: 'target` syntax.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RegionOutlives<S: Model> {
-    /// The region that lives as long or longer than the [`Self::target`] lifetime.
-    pub argument: Region<S>,
+    /// The region that lives as long or longer than the [`Self::argument`] lifetime.
+    pub operand: Region<S>,
 
-    /// The region that the [`Self::argument`] lives as long or longer than.
-    pub target: Region<S>,
+    /// The region that the [`Self::operand`] lives as long or longer than.
+    pub argument: Region<S>,
 }
 
 /// Represents a type outlive predicate, denoted by `TYPE: 'target` syntax.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeOutlives<S: Model> {
-    /// The type that lives as long or longer than the [`Self::target`] lifetime.
-    pub argument: Type<S>,
+    /// The type that lives as long or longer than the [`Self::argument`] lifetime.
+    pub operand: Type<S>,
 
-    /// The region that the [`Self::argument`] lives as long or longer than.
-    pub target: Region<S>,
+    /// The region that the [`Self::operand`] lives as long or longer than.
+    pub argument: Region<S>,
 }
 
 /// Represents an entity equality predicate, denoted by `ENTITY = ENTITY` syntax.
@@ -135,6 +136,9 @@ pub type ConstantEquals<S> = Equals<Constant<S>>;
 pub struct Trait<S: Model> {
     /// The trait that is implemented.
     pub trait_id: ID<symbol::Trait>,
+
+    /// Determines whether the trait must be implemented in `const` context or not.
+    pub const_trait: bool,
 
     /// The generic arguments supplied to the trait.
     pub generic_arguments: GenericArguments<Quantified<S>>,

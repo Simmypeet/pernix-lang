@@ -28,7 +28,7 @@ impl Arbitrary for Qualifier {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![Just(Self::Mutable), Just(Self::Restrict),].boxed()
     }
 }
@@ -133,7 +133,7 @@ impl Arbitrary for Primitive {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self::Bool),
             Just(Self::Float32),
@@ -476,7 +476,7 @@ impl Display for Type {
 
 proptest! {
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls)]
+    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn type_specifier_test(
         type_specifier_input in Type::arbitrary(),
     ) {

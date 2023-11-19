@@ -94,7 +94,7 @@ impl Arbitrary for ModulePath {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
             proptest::collection::vec(Identifier::arbitrary(), 0..=6),
@@ -133,7 +133,7 @@ impl Arbitrary for Using {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         ModulePath::arbitrary()
             .prop_map(|module_path| Self { module_path })
             .boxed()
@@ -163,7 +163,7 @@ impl Arbitrary for ModuleSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         Identifier::arbitrary()
             .prop_map(|identifier| Self { identifier })
             .boxed()
@@ -696,7 +696,7 @@ impl Arbitrary for LifetimeBound {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             LifetimeBoundOperand::arbitrary(),
             BoundList::arbitrary_with(LifetimeArgument::arbitrary()),
@@ -741,7 +741,7 @@ impl Arbitrary for TraitAssociationBoundArgument {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Expression::arbitrary().prop_map(Self::Const),
             r#type::tests::Type::arbitrary().prop_map(Self::Type),
@@ -781,7 +781,7 @@ impl Arbitrary for TraitAssociationBound {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             QualifiedIdentifier::arbitrary_with((false, None)),
             TraitAssociationBoundArgument::arbitrary(),
@@ -826,7 +826,7 @@ impl Arbitrary for Constraint {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             TraitBound::arbitrary().prop_map(Self::Trait),
             LifetimeBound::arbitrary().prop_map(Self::Lifetime),
@@ -863,7 +863,7 @@ impl Arbitrary for WhereClause {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         ConnectedList::arbitrary_with(Constraint::arbitrary(), ConstantPunctuation::arbitrary())
             .prop_map(|constraint_list| Self { constraint_list })
             .boxed()
@@ -896,7 +896,7 @@ impl Arbitrary for Parameter {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             pattern::tests::Irrefutable::arbitrary(),
             r#type::tests::Type::arbitrary(),
@@ -932,7 +932,7 @@ impl Arbitrary for Parameters {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::option::of(ConnectedList::arbitrary_with(
             Parameter::arbitrary(),
             ConstantPunctuation::arbitrary(),
@@ -967,7 +967,7 @@ impl Arbitrary for ReturnType {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         r#type::tests::Type::arbitrary()
             .prop_map(|ty| Self { ty })
             .boxed()
@@ -1006,7 +1006,7 @@ impl Arbitrary for FunctionSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             proptest::bool::ANY,
             Identifier::arbitrary(),
@@ -1087,7 +1087,7 @@ impl Arbitrary for FunctionBody {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::collection::vec(Statement::arbitrary(), 0..=6)
             .prop_map(|statements| Self { statements })
             .boxed()
@@ -1129,7 +1129,7 @@ impl Arbitrary for Function {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
             FunctionSignature::arbitrary(),
@@ -1173,7 +1173,7 @@ impl Arbitrary for ConstSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (Identifier::arbitrary(), r#type::tests::Type::arbitrary())
             .prop_map(|(identifier, ty)| Self { identifier, ty })
             .boxed()
@@ -1203,7 +1203,7 @@ impl Arbitrary for ConstDefinition {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         Expression::arbitrary()
             .prop_map(|expression| Self { expression })
             .boxed()
@@ -1237,7 +1237,7 @@ impl Arbitrary for Const {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
             ConstSignature::arbitrary(),
@@ -1270,7 +1270,7 @@ pub enum Item {
     Struct(Struct),
     Module(Module),
     Enum(Enum),
-    Implements(Implements),
+    Implementation(Implementation),
     Const(Const),
 }
 
@@ -1284,7 +1284,7 @@ impl Input for Item {
             (Self::Type(i), super::Item::Type(o)) => i.assert(o),
             (Self::Struct(i), super::Item::Struct(o)) => i.assert(o),
             (Self::Enum(i), super::Item::Enum(o)) => i.assert(o),
-            (Self::Implements(i), super::Item::Implements(o)) => i.assert(o),
+            (Self::Implementation(i), super::Item::Implementation(o)) => i.assert(o),
             (Self::Module(i), super::Item::Module(o)) => i.assert(o),
             (Self::Const(i), super::Item::Constant(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
@@ -1305,7 +1305,7 @@ impl Arbitrary for Item {
             Type::arbitrary().prop_map(Self::Type),
             Struct::arbitrary().prop_map(Self::Struct),
             Enum::arbitrary().prop_map(Self::Enum),
-            Implements::arbitrary().prop_map(Self::Implements),
+            Implementation::arbitrary().prop_map(Self::Implementation),
             Const::arbitrary().prop_map(Self::Const),
         ];
 
@@ -1328,7 +1328,7 @@ impl Display for Item {
             Self::Type(t) => Display::fmt(t, formatter),
             Self::Struct(s) => Display::fmt(s, formatter),
             Self::Enum(e) => Display::fmt(e, formatter),
-            Self::Implements(i) => Display::fmt(i, formatter),
+            Self::Implementation(i) => Display::fmt(i, formatter),
             Self::Module(m) => Display::fmt(m, formatter),
             Self::Const(c) => Display::fmt(c, formatter),
         }
@@ -1357,7 +1357,7 @@ impl Arbitrary for TraitSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
             proptest::option::of(GenericParameters::arbitrary()),
@@ -1407,7 +1407,7 @@ impl Arbitrary for TypeSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
             proptest::option::of(GenericParameters::arbitrary()),
@@ -1449,7 +1449,7 @@ impl Arbitrary for TraitFunction {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         FunctionSignature::arbitrary()
             .prop_map(|function_signature| Self { function_signature })
             .boxed()
@@ -1481,7 +1481,7 @@ impl Arbitrary for TraitType {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             TypeSignature::arbitrary(),
             proptest::option::of(WhereClause::arbitrary()),
@@ -1527,7 +1527,7 @@ impl Arbitrary for TraitConstant {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (Identifier::arbitrary(), r#type::tests::Type::arbitrary())
             .prop_map(|(identifier, ty)| Self { identifier, ty })
             .boxed()
@@ -1566,7 +1566,7 @@ impl Arbitrary for TraitMember {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             TraitFunction::arbitrary().prop_map(Self::Function),
             TraitType::arbitrary().prop_map(Self::Type),
@@ -1609,7 +1609,7 @@ impl Arbitrary for TraitBody {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::collection::vec(TraitMember::arbitrary(), 0..=6)
             .prop_map(|members| Self { members })
             .boxed()
@@ -1649,7 +1649,7 @@ impl Arbitrary for Trait {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
             TraitSignature::arbitrary(),
@@ -1693,7 +1693,7 @@ impl Arbitrary for TypeDefinition {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             r#type::tests::Type::arbitrary(),
             proptest::option::of(WhereClause::arbitrary()),
@@ -1736,7 +1736,7 @@ impl Arbitrary for Type {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
             TypeSignature::arbitrary(),
@@ -1782,7 +1782,7 @@ impl Arbitrary for StructField {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
             Identifier::arbitrary(),
@@ -1826,7 +1826,7 @@ impl Arbitrary for StructMember {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![StructField::arbitrary().prop_map(Self::Field),].boxed()
     }
 }
@@ -1859,7 +1859,7 @@ impl Arbitrary for StructBody {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::option::of(ConnectedList::arbitrary_with(
             StructMember::arbitrary(),
             ConstantPunctuation::<','>::arbitrary(),
@@ -1905,7 +1905,7 @@ impl Arbitrary for StructSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
             proptest::option::of(GenericParameters::arbitrary()),
@@ -1957,7 +1957,7 @@ impl Arbitrary for Struct {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
             StructSignature::arbitrary(),
@@ -1986,6 +1986,7 @@ impl Display for Struct {
 pub struct EnumSignature {
     pub identifier: Identifier,
     pub generic_parameters: Option<GenericParameters>,
+    pub where_clause: Option<WhereClause>,
 }
 
 impl Input for EnumSignature {
@@ -1993,7 +1994,9 @@ impl Input for EnumSignature {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
-        self.generic_parameters.assert(output.generic_parameters())
+        self.generic_parameters
+            .assert(output.generic_parameters())?;
+        self.where_clause.assert(output.where_clause())
     }
 }
 
@@ -2001,14 +2004,16 @@ impl Arbitrary for EnumSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
             proptest::option::of(GenericParameters::arbitrary()),
+            proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(|(identifier, generic_parameters)| Self {
+            .prop_map(|(identifier, generic_parameters, where_clause)| Self {
                 identifier,
                 generic_parameters,
+                where_clause,
             })
             .boxed()
     }
@@ -2022,6 +2027,10 @@ impl Display for EnumSignature {
             Display::fmt(generic_parameters, f)?;
         }
 
+        if let Some(where_clause) = self.where_clause.as_ref() {
+            write!(f, " {where_clause}")?;
+        }
+
         Ok(())
     }
 }
@@ -2029,7 +2038,7 @@ impl Display for EnumSignature {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnumVariant {
     pub identifier: Identifier,
-    pub variant_association: Option<r#type::tests::Type>,
+    pub association: Option<r#type::tests::Type>,
 }
 
 impl Input for EnumVariant {
@@ -2037,10 +2046,7 @@ impl Input for EnumVariant {
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
-        match (
-            self.variant_association.as_ref(),
-            output.variant_association().as_ref(),
-        ) {
+        match (self.association.as_ref(), output.association().as_ref()) {
             (None, None) => Ok(()),
             (Some(expected), Some(output)) => expected.assert(&output.ty),
             (expected, output) => Err(TestCaseError::fail(format!(
@@ -2054,14 +2060,14 @@ impl Arbitrary for EnumVariant {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
             proptest::option::of(r#type::tests::Type::arbitrary()),
         )
             .prop_map(|(identifier, variant_association)| Self {
                 identifier,
-                variant_association,
+                association: variant_association,
             })
             .boxed()
     }
@@ -2071,7 +2077,7 @@ impl Display for EnumVariant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.identifier)?;
 
-        if let Some(variant_association) = self.variant_association.as_ref() {
+        if let Some(variant_association) = self.association.as_ref() {
             write!(f, "({variant_association})")?;
         }
 
@@ -2096,7 +2102,7 @@ impl Arbitrary for EnumBody {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::option::of(ConnectedList::arbitrary_with(
             EnumVariant::arbitrary(),
             ConstantPunctuation::arbitrary(),
@@ -2137,7 +2143,7 @@ impl Arbitrary for Enum {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
             EnumSignature::arbitrary(),
@@ -2163,13 +2169,13 @@ impl Display for Enum {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementsType {
+pub struct ImplementationType {
     pub signature: TypeSignature,
     pub definition: TypeDefinition,
 }
 
-impl Input for ImplementsType {
-    type Output = super::ImplementsType;
+impl Input for ImplementationType {
+    type Output = super::ImplementationType;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.signature.assert(output.signature())?;
@@ -2177,11 +2183,11 @@ impl Input for ImplementsType {
     }
 }
 
-impl Arbitrary for ImplementsType {
+impl Arbitrary for ImplementationType {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (TypeSignature::arbitrary(), TypeDefinition::arbitrary())
             .prop_map(|(signature, definition)| Self {
                 signature,
@@ -2191,20 +2197,20 @@ impl Arbitrary for ImplementsType {
     }
 }
 
-impl Display for ImplementsType {
+impl Display for ImplementationType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {};", self.signature, self.definition)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementsFunction {
+pub struct ImplementationFunction {
     pub signature: FunctionSignature,
     pub body: FunctionBody,
 }
 
-impl Input for ImplementsFunction {
-    type Output = super::ImplementsFunction;
+impl Input for ImplementationFunction {
+    type Output = super::ImplementationFunction;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.signature.assert(output.signature())?;
@@ -2212,43 +2218,43 @@ impl Input for ImplementsFunction {
     }
 }
 
-impl Arbitrary for ImplementsFunction {
+impl Arbitrary for ImplementationFunction {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (FunctionSignature::arbitrary(), FunctionBody::arbitrary())
             .prop_map(|(signature, body)| Self { signature, body })
             .boxed()
     }
 }
 
-impl Display for ImplementsFunction {
+impl Display for ImplementationFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.signature, self.body)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementsConstant {
+pub struct ImplementationConstant {
     pub identifier: Identifier,
     pub ty: r#type::tests::Type,
     pub expression: expression::tests::Expression,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ImplementsMember {
-    Type(ImplementsType),
-    Function(ImplementsFunction),
+pub enum ImplementationMember {
+    Type(ImplementationType),
+    Function(ImplementationFunction),
 }
 
-impl Input for ImplementsMember {
-    type Output = super::ImplementsMember;
+impl Input for ImplementationMember {
+    type Output = super::ImplementationMember;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Type(input), super::ImplementsMember::Type(output)) => input.assert(output),
-            (Self::Function(input), super::ImplementsMember::Function(output)) => {
+            (Self::Type(input), super::ImplementationMember::Type(output)) => input.assert(output),
+            (Self::Function(input), super::ImplementationMember::Function(output)) => {
                 input.assert(output)
             }
             _ => Err(TestCaseError::fail(format!(
@@ -2258,20 +2264,20 @@ impl Input for ImplementsMember {
     }
 }
 
-impl Arbitrary for ImplementsMember {
+impl Arbitrary for ImplementationMember {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            ImplementsType::arbitrary().prop_map(Self::Type),
-            ImplementsFunction::arbitrary().prop_map(Self::Function),
+            ImplementationType::arbitrary().prop_map(Self::Type),
+            ImplementationFunction::arbitrary().prop_map(Self::Function),
         ]
         .boxed()
     }
 }
 
-impl Display for ImplementsMember {
+impl Display for ImplementationMember {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Type(t) => Display::fmt(t, f),
@@ -2281,13 +2287,13 @@ impl Display for ImplementsMember {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementsBody {
+pub struct ImplementationBody {
     pub where_clause: Option<WhereClause>,
-    pub members: Vec<ImplementsMember>,
+    pub members: Vec<ImplementationMember>,
 }
 
-impl Input for ImplementsBody {
-    type Output = super::ImplementsBody;
+impl Input for ImplementationBody {
+    type Output = super::ImplementationBody;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.where_clause.assert(output.where_clause())?;
@@ -2301,14 +2307,14 @@ impl Input for ImplementsBody {
     }
 }
 
-impl Arbitrary for ImplementsBody {
+impl Arbitrary for ImplementationBody {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(WhereClause::arbitrary()),
-            proptest::collection::vec(ImplementsMember::arbitrary(), 0..=6),
+            proptest::collection::vec(ImplementationMember::arbitrary(), 0..=6),
         )
             .prop_map(|(where_clause, members)| Self {
                 where_clause,
@@ -2318,7 +2324,7 @@ impl Arbitrary for ImplementsBody {
     }
 }
 
-impl Display for ImplementsBody {
+impl Display for ImplementationBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(where_clause) = &self.where_clause {
             write!(f, " {where_clause}")?;
@@ -2333,14 +2339,14 @@ impl Display for ImplementsBody {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementsSignature {
+pub struct ImplementationSignature {
     pub generic_parameters: Option<GenericParameters>,
     pub is_const: bool,
     pub qualified_identifier: QualifiedIdentifier,
 }
 
-impl Input for ImplementsSignature {
-    type Output = super::ImplementsSignature;
+impl Input for ImplementationSignature {
+    type Output = super::ImplementationSignature;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.generic_parameters
@@ -2353,11 +2359,11 @@ impl Input for ImplementsSignature {
     }
 }
 
-impl Arbitrary for ImplementsSignature {
+impl Arbitrary for ImplementationSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(GenericParameters::arbitrary()),
             QualifiedIdentifier::arbitrary_with((false, None)),
@@ -2374,7 +2380,7 @@ impl Arbitrary for ImplementsSignature {
     }
 }
 
-impl Display for ImplementsSignature {
+impl Display for ImplementationSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "implements")?;
 
@@ -2393,18 +2399,18 @@ impl Display for ImplementsSignature {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ImplementsKind {
+pub enum ImplementationKind {
     Negative,
-    Positive(ImplementsBody),
+    Positive(ImplementationBody),
 }
 
-impl Input for ImplementsKind {
-    type Output = super::ImplementsKind;
+impl Input for ImplementationKind {
+    type Output = super::ImplementationKind;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         match (self, output) {
-            (Self::Negative, super::ImplementsKind::Negative(..)) => Ok(()),
-            (Self::Positive(input), super::ImplementsKind::Positive(output)) => {
+            (Self::Negative, super::ImplementationKind::Negative(..)) => Ok(()),
+            (Self::Positive(input), super::ImplementationKind::Positive(output)) => {
                 input.assert(output)
             }
             _ => Err(TestCaseError::fail(format!(
@@ -2414,20 +2420,20 @@ impl Input for ImplementsKind {
     }
 }
 
-impl Arbitrary for ImplementsKind {
+impl Arbitrary for ImplementationKind {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self::Negative),
-            ImplementsBody::arbitrary().prop_map(Self::Positive),
+            ImplementationBody::arbitrary().prop_map(Self::Positive),
         ]
         .boxed()
     }
 }
 
-impl Display for ImplementsKind {
+impl Display for ImplementationKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Negative => write!(f, "= delete;"),
@@ -2437,13 +2443,13 @@ impl Display for ImplementsKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Implements {
-    pub signature: ImplementsSignature,
-    pub kind: ImplementsKind,
+pub struct Implementation {
+    pub signature: ImplementationSignature,
+    pub kind: ImplementationKind,
 }
 
-impl Input for Implements {
-    type Output = super::Implements;
+impl Input for Implementation {
+    type Output = super::Implementation;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
         self.signature.assert(output.signature())?;
@@ -2451,21 +2457,21 @@ impl Input for Implements {
     }
 }
 
-impl Arbitrary for Implements {
+impl Arbitrary for Implementation {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            ImplementsSignature::arbitrary(),
-            ImplementsKind::arbitrary(),
+            ImplementationSignature::arbitrary(),
+            ImplementationKind::arbitrary(),
         )
             .prop_map(|(signature, kind)| Self { signature, kind })
             .boxed()
     }
 }
 
-impl Display for Implements {
+impl Display for Implementation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.signature, self.kind)
     }
@@ -2473,7 +2479,7 @@ impl Display for Implements {
 
 proptest! {
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls)]
+    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn item_test(
         item_input in Item::arbitrary()
     ) {

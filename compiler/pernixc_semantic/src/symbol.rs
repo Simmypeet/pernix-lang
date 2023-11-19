@@ -16,16 +16,28 @@ use crate::{
 };
 
 /// Represents an accessibility of a symbol.
+///
+/// ```
+/// use pernixc_semantic::symbol::Accessibility;
+///
+/// let private = Accessibility::Private;
+/// let internal = Accessibility::Internal;
+/// let public = Accessibility::Public;
+///
+/// assert!(private < internal);
+/// assert!(internal < public);
+/// assert!(private < public);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Accessibility {
-    /// The symbol is accessible from anywhere.
-    Public,
-
     /// The symbol is accessible only from the same module and its submodules.
     Private,
 
     /// The symbol is accessible only from the same target.
     Internal,
+
+    /// The symbol is accessible from anywhere.
+    Public,
 }
 
 impl Accessibility {
@@ -36,6 +48,18 @@ impl Accessibility {
             AccessModifier::Public(..) => Self::Public,
             AccessModifier::Private(..) => Self::Private,
             AccessModifier::Internal(..) => Self::Internal,
+        }
+    }
+
+    /// Gets the rank of the accessibility.
+    ///
+    /// The higher the number, the more accessible the accessibility is.
+    #[must_use]
+    pub fn rank(&self) -> usize {
+        match self {
+            Self::Private => 0,
+            Self::Internal => 1,
+            Self::Public => 2,
         }
     }
 }
@@ -64,9 +88,25 @@ pub enum GenericID {
     Function(ID<Function>),
     TraitType(ID<TraitType>),
     TraitFunction(ID<TraitFunction>),
+    NegativeImplementation(ID<NegativeImplementation>),
     Implementation(ID<Implementation>),
     ImplementationFunction(ID<ImplementationFunction>),
     ImplementationType(ID<ImplementationType>),
+}
+
+#[allow(unused_macros)]
+macro_rules! from_ids {
+    ($from:ident, $to:ident $(, $kind:ident)*) => {
+        impl From<$from> for $to {
+            fn from(value: $from) -> Self {
+                match value {
+                    $(
+                        $from::$kind(id) => Self::$kind(id),
+                    )*
+                }
+            }
+        }
+    };
 }
 
 macro_rules! try_from_ids {
@@ -86,6 +126,24 @@ macro_rules! try_from_ids {
         }
     };
 }
+
+pub(crate) use try_from_ids;
+
+from_ids!(
+    GenericID,
+    GlobalID,
+    Struct,
+    Trait,
+    Enum,
+    Type,
+    Function,
+    TraitFunction,
+    TraitType,
+    Implementation,
+    ImplementationFunction,
+    ImplementationType,
+    NegativeImplementation
+);
 
 try_from_ids!(
     GlobalID,
@@ -141,6 +199,7 @@ pub enum GlobalID {
     TraitFunction(ID<TraitFunction>),
     TraitConstant(ID<TraitConstant>),
     Implementation(ID<Implementation>),
+    NegativeImplementation(ID<NegativeImplementation>),
     ImplementationFunction(ID<ImplementationFunction>),
     ImplementationType(ID<ImplementationType>),
     ImplementationConstant(ID<ImplementationConstant>),
@@ -703,6 +762,9 @@ pub struct ImplementationSignature {
 
     /// The name of the trait that is being implemented.
     pub trait_name: String,
+
+    /// The ID module where the implementation is declared.
+    pub declared_in: ID<Module>,
 }
 
 /// Represents a negative trait implementation, denoted by
@@ -711,6 +773,31 @@ pub struct ImplementationSignature {
 pub struct NegativeImplementation {
     /// The signature of the negative trait implementation.
     pub signature: ImplementationSignature,
+
+    /// The ID of the negative trait implementation.
+    pub id: ID<NegativeImplementation>,
+}
+
+impl Global for NegativeImplementation {
+    fn name(&self) -> &str { &self.signature.trait_name }
+
+    fn global_id(&self) -> GlobalID { GlobalID::NegativeImplementation(self.id) }
+
+    fn parent_global_id(&self) -> Option<GlobalID> { Some(self.signature.declared_in.into()) }
+
+    fn get_member(&self, _: &str) -> Option<GlobalID> { None }
+
+    fn span(&self) -> Option<Span> { self.signature.span.clone() }
+}
+
+impl Generic for NegativeImplementation {
+    fn generic_id(&self) -> GenericID { GenericID::NegativeImplementation(self.id) }
+
+    fn generic_declaration(&self) -> &GenericDeclaration { &self.signature.generic_declaration }
+
+    fn generic_declaration_mut(&mut self) -> &mut GenericDeclaration {
+        &mut self.signature.generic_declaration
+    }
 }
 
 /// Represents a function declaration as an implements member, denoted by
@@ -849,10 +936,20 @@ impl Global for ImplementationConstant {
 /// implements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum LocalImplementationID {
+pub enum ImplementationMemberID {
     Type(ID<ImplementationType>),
     Function(ID<ImplementationFunction>),
     Constant(ID<ImplementationConstant>),
+}
+
+impl From<ImplementationMemberID> for GlobalID {
+    fn from(id: ImplementationMemberID) -> Self {
+        match id {
+            ImplementationMemberID::Type(id) => Self::ImplementationType(id),
+            ImplementationMemberID::Function(id) => Self::ImplementationFunction(id),
+            ImplementationMemberID::Constant(id) => Self::ImplementationConstant(id),
+        }
+    }
 }
 
 /// Represents a trait implementation, denoted by `implements<PARAM> TRAIT<PARAM> { ... }` syntax.
@@ -864,8 +961,11 @@ pub struct Implementation {
     /// The signature of the trait implementation.
     pub signature: ImplementationSignature,
 
+    /// Indicates whether the trait implementation is a constant implementation.
+    pub is_const: bool,
+
     /// Maps the name of the trait member to its ID.
-    pub local_implements_ids_by_name: HashMap<String, LocalImplementationID>,
+    pub implementation_member_ids_by_name: HashMap<String, ImplementationMemberID>,
 
     /// Maps the ID of the trait type to the ID of the implementation type.
     pub implementation_type_ids_by_trait_type_id: HashMap<ID<TraitType>, ID<ImplementationType>>,
@@ -899,13 +999,13 @@ impl Global for Implementation {
     }
 
     fn get_member(&self, name: &str) -> Option<GlobalID> {
-        self.local_implements_ids_by_name
+        self.implementation_member_ids_by_name
             .get(name)
             .copied()
             .map(|x| match x {
-                LocalImplementationID::Type(x) => GlobalID::ImplementationType(x),
-                LocalImplementationID::Function(x) => GlobalID::ImplementationFunction(x),
-                LocalImplementationID::Constant(x) => GlobalID::ImplementationConstant(x),
+                ImplementationMemberID::Type(x) => GlobalID::ImplementationType(x),
+                ImplementationMemberID::Function(x) => GlobalID::ImplementationFunction(x),
+                ImplementationMemberID::Constant(x) => GlobalID::ImplementationConstant(x),
             })
     }
 
@@ -1051,10 +1151,20 @@ impl Global for TraitConstant {
 /// An enumeration containing all an ID to all kinds of symbols that can be defined in a trait.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum LocalTraitMemberID {
+pub enum TraitMemberID {
     Type(ID<TraitType>),
     Function(ID<TraitFunction>),
     Constant(ID<TraitConstant>),
+}
+
+impl From<TraitMemberID> for GlobalID {
+    fn from(id: TraitMemberID) -> Self {
+        match id {
+            TraitMemberID::Type(id) => Self::TraitType(id),
+            TraitMemberID::Function(id) => Self::TraitFunction(id),
+            TraitMemberID::Constant(id) => Self::TraitConstant(id),
+        }
+    }
 }
 
 /// Represents a trait declaration, denoted by `trait NAME { ... }` syntax.
@@ -1085,7 +1195,7 @@ pub struct Trait {
     pub span: Option<Span>,
 
     /// Map the name of the trait member to its ID.
-    pub local_trait_member_ids_by_name: HashMap<String, LocalTraitMemberID>,
+    pub trait_member_ids_by_name: HashMap<String, TraitMemberID>,
 }
 
 impl Generic for Trait {
@@ -1106,13 +1216,13 @@ impl Global for Trait {
     fn parent_global_id(&self) -> Option<GlobalID> { Some(GlobalID::Module(self.parent_module_id)) }
 
     fn get_member(&self, name: &str) -> Option<GlobalID> {
-        self.local_trait_member_ids_by_name
+        self.trait_member_ids_by_name
             .get(name)
             .copied()
             .map(|x| match x {
-                LocalTraitMemberID::Type(x) => GlobalID::TraitType(x),
-                LocalTraitMemberID::Function(x) => GlobalID::TraitFunction(x),
-                LocalTraitMemberID::Constant(x) => GlobalID::TraitConstant(x),
+                TraitMemberID::Type(x) => GlobalID::TraitType(x),
+                TraitMemberID::Function(x) => GlobalID::TraitFunction(x),
+                TraitMemberID::Constant(x) => GlobalID::TraitConstant(x),
             })
     }
 
@@ -1129,4 +1239,50 @@ impl Model for Symbolic {
     // no extra context for region only 'static and lifetime parameter.
     type LocalRegion = Never;
     type TypeInference = Never;
+}
+
+/// Enumeration of all kinds of generic parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum LocalGenericParameterID {
+    Lifetime(ID<LifetimeParameter>),
+    Type(ID<TypeParameter>),
+    Constant(ID<ConstantParameter>),
+}
+
+/// Enumeration of either positive or negative implementation.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum ImplementationKindID {
+    Positive(ID<Implementation>),
+    Negative(ID<NegativeImplementation>),
+}
+
+impl From<ImplementationKindID> for GlobalID {
+    fn from(implementation_kind_id: ImplementationKindID) -> Self {
+        match implementation_kind_id {
+            ImplementationKindID::Positive(positive_id) => positive_id.into(),
+            ImplementationKindID::Negative(negative_id) => negative_id.into(),
+        }
+    }
+}
+
+impl From<ImplementationKindID> for GenericID {
+    fn from(implementation_kind_id: ImplementationKindID) -> Self {
+        match implementation_kind_id {
+            ImplementationKindID::Positive(positive_id) => positive_id.into(),
+            ImplementationKindID::Negative(negative_id) => negative_id.into(),
+        }
+    }
+}
+
+/// Enumeration of all kinds of generic parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum GenericKind {
+    Type,
+    Lifetime,
+    Constant,
 }

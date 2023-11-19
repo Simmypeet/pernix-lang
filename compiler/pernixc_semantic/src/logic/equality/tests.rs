@@ -39,6 +39,7 @@ fn not_equal_test() {
     let rhs: Type<Symbolic> = Type::Primitive(Primitive::Float32);
 
     assert!(!lhs.equals(&rhs, &mapping, &table));
+    assert!(!rhs.equals(&lhs, &mapping, &table)); // symmetric
 }
 
 /*
@@ -99,6 +100,7 @@ fn transitivity_test() {
     });
 
     assert!(lhs.equals(&rhs, &mapping, &table));
+    assert!(rhs.equals(&lhs, &mapping, &table)); // symmetric
 }
 
 /*
@@ -184,6 +186,7 @@ fn recursive_term_test() {
     });
 
     assert!(lhs.equals(&rhs, &mapping, &table));
+    assert!(rhs.equals(&lhs, &mapping, &table)); // symmetric
 }
 
 /*
@@ -268,6 +271,7 @@ fn more_transitivity_test() {
     });
 
     assert!(lhs.equals(&rhs, &mapping, &table));
+    assert!(rhs.equals(&lhs, &mapping, &table)); // symmetric
 }
 
 /*
@@ -346,6 +350,7 @@ fn by_unification_test() {
     });
 
     assert!(lhs.equals(&rhs, &mapping, &table));
+    assert!(rhs.equals(&lhs, &mapping, &table)); // symmetric
 }
 
 /*
@@ -427,6 +432,7 @@ fn fallacy_test() {
     });
 
     assert!(!lhs.equals(&rhs, &mapping, &table));
+    assert!(!rhs.equals(&lhs, &mapping, &table)); // symmetric
 
     let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
         parent: GenericID::Enum(ID::new(0)),
@@ -439,4 +445,5 @@ fn fallacy_test() {
     });
 
     assert!(!lhs.equals(&rhs, &mapping, &table));
+    assert!(!rhs.equals(&lhs, &mapping, &table)); // symmetric
 }

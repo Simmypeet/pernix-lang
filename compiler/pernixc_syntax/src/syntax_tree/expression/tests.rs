@@ -28,7 +28,7 @@ impl Arbitrary for NumericLiteral {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             "[0-9]+",
             proptest::option::of("[0-9]+"),
@@ -102,7 +102,7 @@ impl Arbitrary for BooleanLiteral {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::bool::ANY
             .prop_map(|x| Self { boolean_value: x })
             .boxed()
@@ -229,7 +229,7 @@ impl Arbitrary for PrefixOperator {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self::LogicalNot),
             Just(Self::Negate),
@@ -348,7 +348,7 @@ impl Arbitrary for Access {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             syntax_tree::tests::Identifier::arbitrary().prop_map(Access::Struct),
             usize::arbitrary().prop_map(Access::Tuple),
@@ -1648,7 +1648,7 @@ impl Arbitrary for Continue {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::option::of(syntax_tree::tests::Label::arbitrary())
             .prop_map(|label| Self { label })
             .boxed()
@@ -1948,7 +1948,7 @@ impl Arbitrary for Expression {
 
 proptest! {
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls)]
+    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn expression_test(
         expression_input in Expression::arbitrary()
     ) {

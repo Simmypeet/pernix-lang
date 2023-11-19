@@ -1,8 +1,6 @@
 //! Contains the code for unifying terms.
 
-use std::{cell::Cell, collections::hash_map::Entry};
-
-use pernixc_base::extension::CellExt;
+use std::collections::hash_map::Entry;
 
 use super::{Mapping, QueryRecords};
 use crate::{
@@ -141,7 +139,7 @@ macro_rules! tuple_unify_body {
             rhs: &$domain::Tuple<S>,
             premise_mapping: &Mapping<S>,
             table: &Table,
-            records: &Cell<QueryRecords<S>>,
+            records: &mut QueryRecords<S>,
             config: &impl Config<S>,
             mut existing: Substitution<S>,
         ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
@@ -265,23 +263,24 @@ macro_rules! tuple_unify_body {
 
 macro_rules! unify_internal_body {
     ($record_set:ident, $mappable_func:ident, $sub:ident, $err:ident) => {
+        #[allow(clippy::too_many_lines)]
         pub(super) fn unify_internal(
             lhs: &Self,
             rhs: &Self,
             premise_mapping: &Mapping<S>,
             table: &Table,
-            records: &Cell<QueryRecords<S>>,
+            records: &mut QueryRecords<S>,
             config: &impl Config<S>,
             mut existing: Substitution<S>,
         ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
             let terms = (lhs.clone(), rhs.clone());
 
             // avoid recursion
-            if records.visit(|x| x.$record_set.contains(&terms)) {
+            if records.$record_set.contains(&terms) {
                 return Ok(existing);
             }
 
-            records.visit_mut(|x| x.$record_set.insert(terms.clone()));
+            records.$record_set.insert(terms.clone());
 
             // try to unify
             if config.$mappable_func(lhs, rhs) {
@@ -289,7 +288,7 @@ macro_rules! unify_internal_body {
                     Entry::Occupied(entry) => {
                         if !Self::equals_internal(entry.get(), rhs, premise_mapping, table, records)
                         {
-                            records.visit_mut(|x| x.$record_set.remove(&terms));
+                            records.$record_set.remove(&terms);
 
                             let existing_term = entry.remove();
                             return Err((
@@ -307,7 +306,7 @@ macro_rules! unify_internal_body {
                     }
                 }
 
-                records.visit_mut(|x| x.$record_set.remove(&terms));
+                records.$record_set.remove(&terms);
                 return Ok(existing);
             }
 
@@ -325,7 +324,7 @@ macro_rules! unify_internal_body {
                 existing,
             ) {
                 Ok(existing) => {
-                    records.visit_mut(|x| x.$record_set.remove(&terms));
+                    records.$record_set.remove(&terms);
                     return Ok(existing);
                 }
                 Err((previous, error)) => {
@@ -334,6 +333,7 @@ macro_rules! unify_internal_body {
                 }
             };
 
+            // try to unify by looking for equvialences
             for (lhs_mapping, rhs_mappings) in &premise_mapping.$sub {
                 if !Self::equals_internal(rhs, lhs_mapping, premise_mapping, table, records) {
                     continue;
@@ -353,7 +353,7 @@ macro_rules! unify_internal_body {
                             // no new substitutions, keep going
                             if total_count < ok.types.len() + ok.constants.len() + ok.regions.len()
                             {
-                                records.visit_mut(|x| x.$record_set.remove(&terms));
+                                records.$record_set.remove(&terms);
                                 return Ok(ok);
                             }
 
@@ -366,8 +366,49 @@ macro_rules! unify_internal_body {
                 }
             }
 
-            records.visit_mut(|x| x.$record_set.remove(&terms));
-            Err((existing, error))
+            // try to unify by looking for normalizations
+            //
+            let (normalizable, target, swapped) = match (lhs, rhs) {
+                (Self::TraitMember(lhs), rhs) => (lhs, rhs, false),
+                (lhs, Self::TraitMember(rhs)) => (rhs, lhs, true),
+                (_, _) => {
+                    records.$record_set.remove(&terms);
+                    return Err((existing, error));
+                }
+            };
+
+            let Some(normalized) = normalizable.normalize(premise_mapping, table, records) else {
+                records.$record_set.remove(&terms);
+                return Err((existing, error));
+            };
+
+            for normalized in normalized {
+                match Self::unify_internal(
+                    if swapped { target } else { &normalized },
+                    if swapped { &normalized } else { target },
+                    premise_mapping,
+                    table,
+                    records,
+                    config,
+                    existing,
+                ) {
+                    Ok(ok) => {
+                        // no new substitutions, keep going
+                        if total_count < ok.types.len() + ok.constants.len() + ok.regions.len() {
+                            records.$record_set.remove(&terms);
+                            return Ok(ok);
+                        }
+
+                        existing = ok;
+                    }
+                    Err((previous, _)) => {
+                        existing = previous;
+                    }
+                }
+            }
+
+            records.$record_set.remove(&terms);
+            return Err((existing, error));
         }
     };
 }
@@ -408,7 +449,7 @@ impl<S: Model> Type<S> {
             rhs,
             premise_mapping,
             table,
-            &Cell::new(QueryRecords::default()),
+            &mut QueryRecords::default(),
             config,
             Substitution::default(),
         )
@@ -421,7 +462,7 @@ impl<S: Model> Type<S> {
         rhs: &Self,
         premise_mapping: &Mapping<S>,
         table: &Table,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
         config: &impl Config<S>,
         mut existing: Substitution<S>,
     ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
@@ -545,7 +586,7 @@ impl<S: Model> Constant<S> {
         rhs: &Self,
         premise_mapping: &Mapping<S>,
         table: &Table,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
         config: &impl Config<S>,
         mut existing: Substitution<S>,
     ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
@@ -668,7 +709,7 @@ impl<S: Model> Region<S> {
         rhs: &Self,
         premise_mapping: &Mapping<S>,
         table: &Table,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
         config: &impl Config<S>,
         mut existing: Substitution<S>,
     ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
@@ -719,7 +760,7 @@ impl<S: Model> GenericArguments<S> {
             rhs,
             premise_mapping,
             table,
-            &Cell::new(QueryRecords::default()),
+            &mut QueryRecords::default(),
             config,
             Substitution::default(),
         )
@@ -731,7 +772,7 @@ impl<S: Model> GenericArguments<S> {
         rhs: &Self,
         premise_mapping: &Mapping<S>,
         table: &Table,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
         config: &impl Config<S>,
         mut existing: Substitution<S>,
     ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {

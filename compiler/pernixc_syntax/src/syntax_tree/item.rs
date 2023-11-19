@@ -249,6 +249,14 @@ pub struct TypeParameter {
     default: Option<DefaultTypeParameter>,
 }
 
+impl TypeParameter {
+    /// Dissolves the [`TypeParameter`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Identifier, Option<DefaultTypeParameter>) {
+        (self.identifier, self.default)
+    }
+}
+
 impl SourceElement for TypeParameter {
     fn span(&self) -> Span {
         self.identifier
@@ -279,6 +287,21 @@ pub struct ConstantParameter {
     ty: r#type::Type,
     #[get = "pub"]
     default: Option<DefaultConstantParameter>,
+}
+
+impl ConstantParameter {
+    /// Dissolves the [`ConstantParameter`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Identifier,
+        Punctuation,
+        r#type::Type,
+        Option<DefaultConstantParameter>,
+    ) {
+        (self.identifier, self.colon, self.ty, self.default)
+    }
 }
 
 impl SourceElement for ConstantParameter {
@@ -381,6 +404,20 @@ pub struct LifetimeBound {
     arguments: BoundList<LifetimeArgument>,
 }
 
+impl LifetimeBound {
+    /// Dissolves the [`LifetimeBound`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        LifetimeBoundOperand,
+        Punctuation,
+        BoundList<LifetimeArgument>,
+    ) {
+        (self.operand, self.colon, self.arguments)
+    }
+}
+
 impl SourceElement for LifetimeBound {
     fn span(&self) -> Span { self.operand.span().join(&self.arguments.span()).unwrap() }
 }
@@ -470,11 +507,10 @@ impl SourceElement for ConstantTypeBound {
 /// Syntax Synopsis:
 /// ``` txt
 /// Predicate:
-///     TraitBound
-///     | LifetimeBound
+///     TraitMemberBound
+///     | TraitBound
+///     | LifetimeBoundOperand
 ///     | ConstantTypeBound
-///     | TupleBound
-///     | ForTupleBound
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
@@ -532,6 +568,14 @@ pub struct TraitMemberBound {
     equals: Punctuation,
     #[get = "pub"]
     argument: TraitMemberBoundArgument,
+}
+
+impl TraitMemberBound {
+    /// Dissolves the [`TraitMemberBound`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (QualifiedIdentifier, Punctuation, TraitMemberBoundArgument) {
+        (self.qualified_identifier, self.equals, self.argument)
+    }
 }
 
 impl SourceElement for TraitMemberBound {
@@ -667,6 +711,27 @@ pub struct TraitSignature {
     generic_parameters: Option<GenericParameters>,
     #[get = "pub"]
     where_clause: Option<WhereClause>,
+}
+
+impl TraitSignature {
+    /// Dissolves the [`TraitSignature`] into a tuple of its fields.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Keyword,
+        Identifier,
+        Option<GenericParameters>,
+        Option<WhereClause>,
+    ) {
+        (
+            self.trait_keyword,
+            self.identifier,
+            self.generic_parameters,
+            self.where_clause,
+        )
+    }
 }
 
 impl SourceElement for TraitSignature {
@@ -1037,6 +1102,14 @@ pub struct TypeSignature {
     generic_parameters: Option<GenericParameters>,
 }
 
+impl TypeSignature {
+    /// Dissolves the [`TypeSignature`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Keyword, Identifier, Option<GenericParameters>) {
+        (self.type_keyword, self.identifier, self.generic_parameters)
+    }
+}
+
 impl SourceElement for TypeSignature {
     fn span(&self) -> Span {
         self.generic_parameters.as_ref().map_or_else(
@@ -1072,6 +1145,14 @@ pub struct TypeDefinition {
     where_clause: Option<WhereClause>,
 }
 
+impl TypeDefinition {
+    /// Dissolves the [`TypeDefinition`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Punctuation, r#type::Type, Option<WhereClause>) {
+        (self.equals, self.ty, self.where_clause)
+    }
+}
+
 impl SourceElement for TypeDefinition {
     fn span(&self) -> Span {
         self.equals
@@ -1102,6 +1183,19 @@ pub struct Type {
     definition: TypeDefinition,
     #[get = "pub"]
     semicolon: Punctuation,
+}
+
+impl Type {
+    /// Dissolves the [`Type`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (AccessModifier, TypeSignature, TypeDefinition, Punctuation) {
+        (
+            self.access_modifier,
+            self.signature,
+            self.definition,
+            self.semicolon,
+        )
+    }
 }
 
 impl SourceElement for Type {
@@ -1267,12 +1361,12 @@ impl SourceElement for StructMember {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ImplementsSignature:
+/// ImplementationSignature:
 ///     'implements' GenericParameters? const? QualifiedIdentifier
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementsSignature {
+pub struct ImplementationSignature {
     #[get = "pub"]
     implements_keyword: Keyword,
     #[get = "pub"]
@@ -1283,7 +1377,27 @@ pub struct ImplementsSignature {
     qualified_identifier: QualifiedIdentifier,
 }
 
-impl SourceElement for ImplementsSignature {
+impl ImplementationSignature {
+    /// Dissolves the [`ImplementationSignature`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Keyword,
+        Option<GenericParameters>,
+        Option<Keyword>,
+        QualifiedIdentifier,
+    ) {
+        (
+            self.implements_keyword,
+            self.generic_parameters,
+            self.const_keyword,
+            self.qualified_identifier,
+        )
+    }
+}
+
+impl SourceElement for ImplementationSignature {
     fn span(&self) -> Span {
         self.implements_keyword
             .span
@@ -1294,36 +1408,36 @@ impl SourceElement for ImplementsSignature {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ImplementsFunction:
+/// ImplementationFunction:
 ///     FunctionSignature FunctionBody
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementsFunction {
+pub struct ImplementationFunction {
     #[get = "pub"]
     signature: FunctionSignature,
     #[get = "pub"]
     body: FunctionBody,
 }
 
-impl ImplementsFunction {
-    /// Dissolves the [`ImplementsFunction`] into a tuple of its fields.
+impl ImplementationFunction {
+    /// Dissolves the [`ImplementationFunction`] into a tuple of its fields.
     #[must_use]
     pub fn dissolve(self) -> (FunctionSignature, FunctionBody) { (self.signature, self.body) }
 }
 
-impl SourceElement for ImplementsFunction {
+impl SourceElement for ImplementationFunction {
     fn span(&self) -> Span { self.signature.span().join(&self.body.span()).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ImplementsType:
+/// ImplementationType:
 ///     TypeSignature TypeDefinition ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementsType {
+pub struct ImplementationType {
     #[get = "pub"]
     signature: TypeSignature,
     #[get = "pub"]
@@ -1332,43 +1446,43 @@ pub struct ImplementsType {
     semicolon: Punctuation,
 }
 
-impl SourceElement for ImplementsType {
+impl SourceElement for ImplementationType {
     fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span()).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ImplementsConstant:
+/// ImplementationConstant:
 ///     ConstantSignature ConstantDefinition
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementsConstant {
+pub struct ImplementationConstant {
     #[get = "pub"]
     signature: ConstantSignature,
     #[get = "pub"]
     definition: ConstantDefinition,
 }
 
-impl SourceElement for ImplementsConstant {
+impl SourceElement for ImplementationConstant {
     fn span(&self) -> Span { self.signature.span().join(&self.definition.span()).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ImplementsMember:
-///     ImplementsFunction
-///     | ImplementsType
+/// ImplementationMember:
+///     ImplementationFunction
+///     | ImplementationType
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-pub enum ImplementsMember {
-    Type(ImplementsType),
-    Function(ImplementsFunction),
-    Constant(ImplementsConstant),
+pub enum ImplementationMember {
+    Type(ImplementationType),
+    Function(ImplementationFunction),
+    Constant(ImplementationConstant),
 }
 
-impl SourceElement for ImplementsMember {
+impl SourceElement for ImplementationMember {
     fn span(&self) -> Span {
         match self {
             Self::Constant(constant) => constant.span(),
@@ -1380,12 +1494,12 @@ impl SourceElement for ImplementsMember {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// NegativeImplements:
+/// NegativeImplementation:
 ///     '=' 'delete' ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct NegativeImplements {
+pub struct NegativeImplementation {
     #[get = "pub"]
     equals: Punctuation,
     #[get = "pub"]
@@ -1394,37 +1508,37 @@ pub struct NegativeImplements {
     semicolon: Punctuation,
 }
 
-impl SourceElement for NegativeImplements {
+impl SourceElement for NegativeImplementation {
     fn span(&self) -> Span { self.equals.span.join(&self.semicolon.span).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ImplementsBody:
-///     WhereClause? '{' ImplementsMember* '}'
+/// ImplementationBody:
+///     WhereClause? '{' ImplementationMember* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementsBody {
+pub struct ImplementationBody {
     #[get = "pub"]
     where_clause: Option<WhereClause>,
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
-    members: Vec<ImplementsMember>,
+    members: Vec<ImplementationMember>,
     #[get = "pub"]
     right_brace: Punctuation,
 }
 
-impl ImplementsBody {
-    /// Dissolves the [`ImplementsBody`] into a tuple of its fields.
+impl ImplementationBody {
+    /// Dissolves the [`ImplementationBody`] into a tuple of its fields.
     #[must_use]
     pub fn dissolve(
         self,
     ) -> (
         Option<WhereClause>,
         Punctuation,
-        Vec<ImplementsMember>,
+        Vec<ImplementationMember>,
         Punctuation,
     ) {
         (
@@ -1436,7 +1550,7 @@ impl ImplementsBody {
     }
 }
 
-impl SourceElement for ImplementsBody {
+impl SourceElement for ImplementationBody {
     fn span(&self) -> Span {
         let start = self
             .where_clause
@@ -1449,18 +1563,18 @@ impl SourceElement for ImplementsBody {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// ImplementsKind:
-///     NegativeImplements
-///     | ImplementsBody
+/// ImplementationKind:
+///     NegativeImplementation
+///     | ImplementationBody
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum ImplementsKind {
-    Negative(NegativeImplements),
-    Positive(ImplementsBody),
+pub enum ImplementationKind {
+    Negative(NegativeImplementation),
+    Positive(ImplementationBody),
 }
 
-impl SourceElement for ImplementsKind {
+impl SourceElement for ImplementationKind {
     fn span(&self) -> Span {
         match self {
             Self::Negative(negative) => negative.span(),
@@ -1471,32 +1585,34 @@ impl SourceElement for ImplementsKind {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Implements:
-///     ImplementsSignature ImplementsKind
+/// Implementation:
+///     ImplementationSignature ImplementationKind
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Implements {
+pub struct Implementation {
     #[get = "pub"]
-    signature: ImplementsSignature,
+    signature: ImplementationSignature,
     #[get = "pub"]
-    kind: ImplementsKind,
+    kind: ImplementationKind,
 }
 
-impl Implements {
-    /// Dissolves the [`Implements`] into a tuple of its fields.
+impl Implementation {
+    /// Dissolves the [`Implementation`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (ImplementsSignature, ImplementsKind) { (self.signature, self.kind) }
+    pub fn dissolve(self) -> (ImplementationSignature, ImplementationKind) {
+        (self.signature, self.kind)
+    }
 }
 
-impl SourceElement for Implements {
+impl SourceElement for Implementation {
     fn span(&self) -> Span { self.signature.span().join(&self.kind.span()).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
 /// EnumSignature:
-///     'enum' Identifier GenericParameters?
+///     'enum' Identifier GenericParameters? WhereClause?
 ///     ;
 /// ``
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1507,6 +1623,28 @@ pub struct EnumSignature {
     identifier: Identifier,
     #[get = "pub"]
     generic_parameters: Option<GenericParameters>,
+    #[get = "pub"]
+    where_clause: Option<WhereClause>,
+}
+
+impl EnumSignature {
+    /// Dissolves the [`EnumSignature`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(
+        self,
+    ) -> (
+        Keyword,
+        Identifier,
+        Option<GenericParameters>,
+        Option<WhereClause>,
+    ) {
+        (
+            self.enum_keyword,
+            self.identifier,
+            self.generic_parameters,
+            self.where_clause,
+        )
+    }
 }
 
 impl SourceElement for EnumSignature {
@@ -1529,6 +1667,14 @@ pub struct VariantAssociation {
     right_paren: Punctuation,
 }
 
+impl VariantAssociation {
+    /// Dissolves the [`VariantAssociation`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Punctuation, r#type::Type, Punctuation) {
+        (self.left_paren, self.ty, self.right_paren)
+    }
+}
+
 impl SourceElement for VariantAssociation {
     fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
 }
@@ -1544,13 +1690,21 @@ pub struct Variant {
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
-    variant_association: Option<VariantAssociation>,
+    association: Option<VariantAssociation>,
+}
+
+impl Variant {
+    /// Dissolves the [`Variant`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Identifier, Option<VariantAssociation>) {
+        (self.identifier, self.association)
+    }
 }
 
 impl SourceElement for Variant {
     fn span(&self) -> Span {
         let end = self
-            .variant_association
+            .association
             .as_ref()
             .map_or_else(|| self.identifier.span.clone(), SourceElement::span);
 
@@ -1696,7 +1850,7 @@ impl SourceElement for Constant {
 ///     | Function
 ///     | Type
 ///     | Struct
-///     | Implements
+///     | Implementation
 ///     | Enum
 ///     | Module
 ///     | Const
@@ -1709,7 +1863,7 @@ pub enum Item {
     Function(Function),
     Type(Type),
     Struct(Struct),
-    Implements(Implements),
+    Implementation(Implementation),
     Enum(Enum),
     Module(Module),
     Constant(Constant),
@@ -1723,7 +1877,7 @@ impl SourceElement for Item {
             Self::Function(f) => f.span(),
             Self::Type(t) => t.span(),
             Self::Struct(s) => s.span(),
-            Self::Implements(i) => i.span(),
+            Self::Implementation(i) => i.span(),
             Self::Enum(e) => e.span(),
             Self::Constant(c) => c.span(),
         }
@@ -2252,7 +2406,7 @@ impl<'a> Parser<'a> {
     fn parse_implements_member(
         &mut self,
         handler: &dyn Handler<Error>,
-    ) -> Option<ImplementsMember> {
+    ) -> Option<ImplementationMember> {
         match self.stop_at_significant() {
             Reading::Atomic(Token::Keyword(function_keyword))
                 if function_keyword.keyword == KeywordKind::Function =>
@@ -2260,7 +2414,7 @@ impl<'a> Parser<'a> {
                 let function_signature = self.parse_function_signature(handler)?;
                 let function_body = self.parse_function_body(handler)?;
 
-                Some(ImplementsMember::Function(ImplementsFunction {
+                Some(ImplementationMember::Function(ImplementationFunction {
                     signature: function_signature,
                     body: function_body,
                 }))
@@ -2277,7 +2431,7 @@ impl<'a> Parser<'a> {
                 let expression = self.parse_expression(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                Some(ImplementsMember::Constant(ImplementsConstant {
+                Some(ImplementationMember::Constant(ImplementationConstant {
                     signature: ConstantSignature {
                         const_keyword,
                         identifier,
@@ -2299,7 +2453,7 @@ impl<'a> Parser<'a> {
                 let type_definition = self.parse_type_definition(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                Some(ImplementsMember::Type(ImplementsType {
+                Some(ImplementationMember::Type(ImplementationType {
                     signature: type_signature,
                     definition: type_definition,
                     semicolon,
@@ -2310,14 +2464,17 @@ impl<'a> Parser<'a> {
                 self.forward();
                 handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
                     found: found.into_token(),
-                    expected: SyntaxKind::ImplementsMember,
+                    expected: SyntaxKind::ImplementationMember,
                 }));
                 None
             }
         }
     }
 
-    fn parse_implements_body(&mut self, handler: &dyn Handler<Error>) -> Option<ImplementsBody> {
+    fn parse_implements_body(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<ImplementationBody> {
         let where_clause = self.try_parse_where_clause(handler)?;
 
         let delimited_tree = self.step_into(
@@ -2346,7 +2503,7 @@ impl<'a> Parser<'a> {
             handler,
         )?;
 
-        Some(ImplementsBody {
+        Some(ImplementationBody {
             where_clause,
             left_brace: delimited_tree.open,
             members: delimited_tree.tree?,
@@ -2354,7 +2511,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_implements(&mut self, handler: &dyn Handler<Error>) -> Option<Implements> {
+    fn parse_implements(&mut self, handler: &dyn Handler<Error>) -> Option<Implementation> {
         let implements_keyword = self.parse_keyword(KeywordKind::Implements, handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let const_keyword = match self.stop_at_significant() {
@@ -2379,17 +2536,17 @@ impl<'a> Parser<'a> {
                 let delete_keyword = self.parse_keyword(KeywordKind::Delete, handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
-                ImplementsKind::Negative(NegativeImplements {
+                ImplementationKind::Negative(NegativeImplementation {
                     equals,
                     delete_keyword,
                     semicolon,
                 })
             }
-            _ => ImplementsKind::Positive(self.parse_implements_body(handler)?),
+            _ => ImplementationKind::Positive(self.parse_implements_body(handler)?),
         };
 
-        Some(Implements {
-            signature: ImplementsSignature {
+        Some(Implementation {
+            signature: ImplementationSignature {
                 implements_keyword,
                 generic_parameters,
                 const_keyword,
@@ -2576,11 +2733,13 @@ impl<'a> Parser<'a> {
         let enum_keyword = self.parse_keyword(KeywordKind::Enum, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
 
         Some(EnumSignature {
             enum_keyword,
             identifier,
             generic_parameters,
+            where_clause,
         })
     }
 
@@ -2613,7 +2772,7 @@ impl<'a> Parser<'a> {
 
                 Some(Variant {
                     identifier,
-                    variant_association: associated_value,
+                    association: associated_value,
                 })
             },
             handler,
@@ -2927,7 +3086,7 @@ impl<'a> Parser<'a> {
 
             // parses an implements
             Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Implements => {
-                self.parse_implements(handler).map(Item::Implements)
+                self.parse_implements(handler).map(Item::Implementation)
             }
 
             found => {

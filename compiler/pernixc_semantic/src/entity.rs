@@ -297,8 +297,36 @@ impl<S: Model> Entity<S> for GenericArguments<S> {
         S::LocalRegion: Into<T::LocalRegion>,
         S::ForallRegion: Into<T::ForallRegion>,
     {
-        todo!()
+        GenericArguments {
+            regions: self
+                .regions
+                .into_iter()
+                .map(Entity::into_other_model)
+                .collect(),
+            types: self
+                .types
+                .into_iter()
+                .map(Entity::into_other_model)
+                .collect(),
+            constants: self
+                .constants
+                .into_iter()
+                .map(Entity::into_other_model)
+                .collect(),
+        }
     }
 
-    fn apply(&mut self, _substitution: &Substitution<S>) { todo!() }
+    fn apply(&mut self, substitution: &Substitution<S>) {
+        for region in &mut self.regions {
+            region.apply(substitution);
+        }
+
+        for constant in &mut self.constants {
+            constant.apply(substitution);
+        }
+
+        for ty in &mut self.types {
+            ty.apply(substitution);
+        }
+    }
 }

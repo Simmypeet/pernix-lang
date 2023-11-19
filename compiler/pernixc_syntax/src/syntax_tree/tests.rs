@@ -29,7 +29,7 @@ impl Arbitrary for Identifier {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         "[a-zA-Z_][a-zA-Z0-9_]*"
             .prop_map(|string| Self { string })
             .prop_filter_map("filter out keywords", |x| {
@@ -67,7 +67,7 @@ impl Arbitrary for LifetimeArgumentIdentifier {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self::Static),
             Identifier::arbitrary().prop_map(Self::Identifier)
@@ -107,7 +107,7 @@ impl Arbitrary for LifetimeArgument {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         LifetimeArgumentIdentifier::arbitrary()
             .prop_map(|identifier| Self {
                 lifetime_argument_identifier: identifier,
@@ -140,7 +140,7 @@ impl<const CHAR: char> Arbitrary for ConstantPunctuation<CHAR> {
     type Parameters = ();
     type Strategy = Just<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy { Just(Self) }
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy { Just(Self) }
 }
 
 impl<const CHAR: char> Input for ConstantPunctuation<CHAR> {
@@ -611,6 +611,7 @@ proptest! {
         max_shrink_iters: 4096,
         ..proptest::test_runner::Config::default()
     })]
+    #[allow(clippy::ignored_unit_patterns)]
     #[test]
     fn qualified_identifier_test(
         qualified_identifier_input in QualifiedIdentifier::arbitrary_with((true, None)),

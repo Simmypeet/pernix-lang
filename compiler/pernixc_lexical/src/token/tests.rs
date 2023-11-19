@@ -32,7 +32,7 @@ impl Arbitrary for Identifier {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         "[A-Za-z_@][A-Za-z0-9_]*"
             .prop_filter_map(
                 "filter out identifiers that can be used as a keyword",
@@ -74,7 +74,7 @@ impl Arbitrary for Keyword {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         lazy_static! {
             static ref KEYWORDS: Vec<KeywordKind> = KeywordKind::iter().collect();
         }
@@ -112,7 +112,7 @@ impl Arbitrary for Numeric {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (proptest::num::u64::ANY.prop_map(|x| x.to_string()))
             .prop_map(|value| Self { value })
             .boxed()
@@ -139,7 +139,7 @@ impl Arbitrary for DelimitedComment {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         "[^\r]*"
             .prop_filter_map("must not contain */", |x| {
                 if x.contains("*/") {
@@ -171,7 +171,7 @@ impl Arbitrary for LineComment {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         "[^\\n\\r]*"
             .prop_map(|body| Self { comment_body: body })
             .boxed()
@@ -198,7 +198,7 @@ impl Arbitrary for Comment {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             LineComment::arbitrary().prop_map(Comment::Line),
             DelimitedComment::arbitrary().prop_map(Comment::Delimited)
@@ -252,7 +252,7 @@ impl Arbitrary for Punctuation {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::char::any()
             .prop_filter_map("allows only ascii puncutation", |x| {
                 if x.is_ascii_punctuation() && x != '_' && x != '@' {
@@ -295,7 +295,7 @@ impl Arbitrary for WhiteSpaces {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (1u8..4)
             .prop_flat_map(|x| {
                 prop_oneof![
@@ -370,7 +370,7 @@ impl Arbitrary for Token {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Identifier::arbitrary().prop_map(Self::Identifier),
             Comment::arbitrary().prop_map(Self::Comment),
@@ -447,6 +447,7 @@ fn tokenize(source: String) -> Result<super::Token, proptest::test_runner::TestC
 
 proptest! {
     #[test]
+    #[allow(clippy::ignored_unit_patterns)]
     fn token_test(
         input in Token::arbitrary()
     ) {

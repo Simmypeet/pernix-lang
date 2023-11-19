@@ -260,11 +260,12 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
             for _ in 0..=largest_line_number_digits {
                 write!(f, " ")?;
             }
-            writeln!(f, "{}", Style::Bold.with(Color::Cyan.with("┃")))?;
+            write!(f, "{}", Style::Bold.with(Color::Cyan.with("┃")))?;
         }
 
         if let Some(help_display) = &self.help_display {
             if is_multiline {
+                writeln!(f)?;
                 {
                     for _ in 0..=largest_line_number_digits {
                         write!(f, " ")?;
@@ -273,7 +274,7 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                 }
 
                 // prints the message
-                writeln!(f, "{}: {help_display}", Style::Bold.with("help"))?;
+                write!(f, "{}: {help_display}", Style::Bold.with("help"))?;
             }
         }
 

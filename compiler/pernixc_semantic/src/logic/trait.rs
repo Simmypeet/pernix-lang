@@ -1,6 +1,8 @@
 //! Contains logic related to trait resolution.
 
-use std::{cell::Cell, collections::HashMap};
+use std::collections::HashMap;
+
+use lazy_static::lazy_static;
 
 use super::{unification::Config, Mapping, QueryRecords};
 use crate::{
@@ -9,7 +11,7 @@ use crate::{
         constant::Constant, r#type::Type, region::Region, Entity, GenericArguments, Model,
         Substitution,
     },
-    symbol::{self, Trait},
+    symbol::{self, ImplementationKindID, Trait},
     table::{Index, Table},
 };
 
@@ -26,25 +28,38 @@ pub struct Implementation<S: Model> {
     pub implementation_id: ID<symbol::Implementation>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum ImplementationKey {
-    Positive(ID<symbol::Implementation>),
-    Negative(ID<symbol::NegativeImplementation>),
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct TraitResolvingUnifingConfig {
+    symetric: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct TraitResolvingUnifingConfig;
-
 impl<S: Model> Config<S> for TraitResolvingUnifingConfig {
-    fn type_mappable(&self, unifier: &Type<S>, _: &Type<S>) -> bool {
-        unifier.is_parameter() || unifier.is_trait_member()
+    fn type_mappable(&self, unifier: &Type<S>, target: &Type<S>) -> bool {
+        (unifier.is_parameter() || unifier.is_trait_member())
+            || if self.symetric {
+                target.is_trait_member() || target.is_parameter()
+            } else {
+                false
+            }
     }
 
-    fn constant_mappable(&self, unifier: &Constant<S>, _: &Constant<S>) -> bool {
-        unifier.is_parameter() || unifier.is_trait_member()
+    fn constant_mappable(&self, unifier: &Constant<S>, target: &Constant<S>) -> bool {
+        (unifier.is_parameter() || unifier.is_trait_member())
+            || if self.symetric {
+                target.is_trait_member() || target.is_parameter()
+            } else {
+                false
+            }
     }
 
-    fn region_mappable(&self, unifier: &Region<S>, _: &Region<S>) -> bool { unifier.is_named() }
+    fn region_mappable(&self, unifier: &Region<S>, target: &Region<S>) -> bool {
+        unifier.is_named()
+            || if self.symetric {
+                target.is_named()
+            } else {
+                false
+            }
+    }
 }
 
 impl Table {
@@ -72,7 +87,7 @@ impl Table {
             trait_id,
             generic_arguments,
             mapping,
-            &Cell::new(QueryRecords::default()),
+            &mut QueryRecords::default(),
         )
     }
 
@@ -82,7 +97,7 @@ impl Table {
         trait_id: ID<Trait>,
         generic_arguments: &GenericArguments<S>,
         premise_mapping: &Mapping<S>,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
     ) -> Vec<Implementation<S>> {
         let Some(traits) = self.get(trait_id) else {
             return Vec::new();
@@ -92,7 +107,7 @@ impl Table {
             return Vec::new();
         }
 
-        let mut candidates: Vec<(ImplementationKey, GenericArguments<S>, Substitution<S>)> =
+        let mut candidates: Vec<(ImplementationKindID, GenericArguments<S>, Substitution<S>)> =
             Vec::new();
 
         'outer: for (key, arguments) in traits
@@ -101,7 +116,7 @@ impl Table {
             .enumerate()
             .map(|(k, v)| {
                 (
-                    ImplementationKey::Positive(ID::new(k)),
+                    ImplementationKindID::Positive(ID::new(k)),
                     self.get(*v)
                         .unwrap()
                         .signature
@@ -117,7 +132,7 @@ impl Table {
                     .enumerate()
                     .map(|(k, v)| {
                         (
-                            ImplementationKey::Negative(ID::new(k)),
+                            ImplementationKindID::Negative(ID::new(k)),
                             self.get(*v)
                                 .unwrap()
                                 .signature
@@ -135,7 +150,7 @@ impl Table {
                 premise_mapping,
                 self,
                 records,
-                &TraitResolvingUnifingConfig,
+                &TraitResolvingUnifingConfig { symetric: false },
                 Substitution::default(),
             ) else {
                 continue;
@@ -193,13 +208,14 @@ impl Table {
 
             for candidate in &mut candidates {
                 let order = candidate.1.order(&arguments);
+
                 match order {
                     Order::Incompatible => continue,
-                    Order::MoreGeneral => continue 'outer,
-                    Order::MoreSpecific => {
-                        *candidate = (candidate.0, arguments, unification);
+                    Order::MoreGeneral => {
+                        *candidate = (key, arguments, unification);
                         continue 'outer;
                     }
+                    Order::MoreSpecific => continue 'outer,
                     Order::Ambiguous => unreachable!("Ambiguous order"),
                 }
             }
@@ -210,18 +226,20 @@ impl Table {
         candidates
             .into_iter()
             .filter_map(|(implementation, _, deduced)| match implementation {
-                ImplementationKey::Positive(id) => Some(Implementation {
+                ImplementationKindID::Positive(id) => Some(Implementation {
                     deduced_unification: deduced,
                     implementation_id: id,
                 }),
-                ImplementationKey::Negative(_) => None,
+                ImplementationKindID::Negative(_) => None,
             })
             .collect()
     }
 }
 
+/// The order in terms of speciality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum Order {
+#[allow(missing_docs)]
+pub enum Order {
     Incompatible,
     MoreGeneral,
     MoreSpecific,
@@ -229,30 +247,62 @@ enum Order {
 }
 
 impl<S: Model> GenericArguments<S> {
-    fn order(&self, other: &Self) -> Order {
+    /// In terms of speciality, compares the given generic arguments with the current one and
+    /// returns the order.
+    #[must_use]
+    pub fn order(&self, other: &Self) -> Order {
+        lazy_static! {
+            static ref DEFAULT_TABLE: Table = Table::default();
+        }
+
         let self_to_other = Self::unify(
             self,
             other,
             &Mapping::default(),
-            &Table::default(),
-            &TraitResolvingUnifingConfig,
+            &DEFAULT_TABLE,
+            &TraitResolvingUnifingConfig { symetric: true },
         );
         let other_to_self = Self::unify(
             other,
             self,
             &Mapping::default(),
-            &Table::default(),
-            &TraitResolvingUnifingConfig,
+            &DEFAULT_TABLE,
+            &TraitResolvingUnifingConfig { symetric: true },
         );
 
         match (self_to_other, other_to_self) {
             (Ok(self_to_other), Ok(other_to_self)) => {
-                let self_to_other_map_count = self_to_other.types.len()
-                    + self_to_other.constants.len()
-                    + self_to_other.regions.len();
-                let other_to_self_map_count = other_to_self.types.len()
-                    + other_to_self.constants.len()
-                    + other_to_self.regions.len();
+                let self_to_other_map_count = self_to_other
+                    .types
+                    .keys()
+                    .filter(|x| x.is_parameter() || x.is_trait_member())
+                    .count()
+                    + self_to_other
+                        .constants
+                        .keys()
+                        .filter(|x| x.is_parameter() || x.is_trait_member())
+                        .count()
+                    + self_to_other
+                        .regions
+                        .keys()
+                        .filter(|x| x.is_named())
+                        .count();
+
+                let other_to_self_map_count = other_to_self
+                    .types
+                    .keys()
+                    .filter(|x| x.is_parameter() || x.is_trait_member())
+                    .count()
+                    + other_to_self
+                        .constants
+                        .keys()
+                        .filter(|x| x.is_parameter() || x.is_trait_member())
+                        .count()
+                    + other_to_self
+                        .regions
+                        .keys()
+                        .filter(|x| x.is_named())
+                        .count();
 
                 match self_to_other_map_count.cmp(&other_to_self_map_count) {
                     std::cmp::Ordering::Less => Order::MoreSpecific,
@@ -266,3 +316,6 @@ impl<S: Model> GenericArguments<S> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

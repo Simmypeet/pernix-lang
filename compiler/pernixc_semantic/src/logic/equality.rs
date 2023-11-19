@@ -2,13 +2,11 @@
 
 // Is this algorithm sound? I DON'T KNOW! HELP ME!
 
-use std::cell::Cell;
-
-use pernixc_base::extension::CellExt;
-
 use super::{Mapping, QueryRecords};
 use crate::{
-    entity::{constant::Constant, r#type::Type, region::Region, Model, Substitution},
+    entity::{
+        constant::Constant, r#type::Type, region::Region, GenericArguments, Model, Substitution,
+    },
     logic::unification::All,
     table::Table,
 };
@@ -21,7 +19,7 @@ macro_rules! equals_by_mapping_body {
             rhs: &Self,
             premise_mapping: &Mapping<S>,
             table: &Table,
-            records: &Cell<QueryRecords<S>>,
+            records: &mut QueryRecords<S>,
         ) -> bool {
             for (source, targets) in &premise_mapping.$kind {
                 for target in targets {
@@ -52,7 +50,7 @@ macro_rules! equals_body {
             rhs: &Self,
             premise_mapping: &Mapping<S>,
             table: &Table,
-            records: &Cell<QueryRecords<S>>,
+            records: &mut QueryRecords<S>,
         ) -> bool {
             // trivial case
             if lhs == rhs {
@@ -63,31 +61,31 @@ macro_rules! equals_body {
             let terms = (lhs.clone(), rhs.clone());
 
             // check if the terms are already being checked (recursion)
-            if records.visit(|x| x.$query_set.contains(&terms)) {
+            if records.$query_set.contains(&terms) {
                 return false;
             }
 
-            records.visit_mut(|x| x.$query_set.insert(terms.clone()));
+            records.$query_set.insert(terms.clone());
 
             // check if the terms are equal by mapping
             if Self::equals_by_mapping(&lhs, &rhs, premise_mapping, table, records) {
-                records.visit_mut(|x| x.$query_set.remove(&terms));
+                records.$query_set.remove(&terms);
                 return true;
             }
 
             // check if the terms are equal by unification
             if Self::equals_by_unification(&lhs, &rhs, premise_mapping, table, records) {
-                records.visit_mut(|x| x.$query_set.remove(&terms));
+                records.$query_set.remove(&terms);
                 return true;
             }
 
             // equal by normalization
             if Self::equals_by_normalization(&lhs, &rhs, premise_mapping, table, records) {
-                records.visit_mut(|x| x.$query_set.remove(&terms));
+                records.$query_set.remove(&terms);
                 return true;
             }
 
-            records.visit_mut(|x| x.$query_set.remove(&terms));
+            records.$query_set.remove(&terms);
 
             return false;
         }
@@ -101,7 +99,7 @@ macro_rules! equals_by_normalization {
             rhs: &Self,
             premise_mapping: &Mapping<S>,
             table: &Table,
-            records: &Cell<QueryRecords<S>>,
+            records: &mut QueryRecords<S>,
         ) -> bool {
             let (normalizable, target) = match (lhs, rhs) {
                 (Self::TraitMember(lhs), rhs) => (lhs, rhs),
@@ -131,7 +129,7 @@ macro_rules! equals_by_unification_body {
             rhs: &Self,
             premise_mapping: &Mapping<S>,
             table: &Table,
-            records: &Cell<QueryRecords<S>>,
+            records: &mut QueryRecords<S>,
         ) -> bool {
             let Ok(unifier) = Self::sub_structural_unify_internal(
                 lhs,
@@ -191,7 +189,7 @@ impl<S: Model> Type<S> {
             rhs,
             premise_mapping,
             table,
-            &Cell::new(QueryRecords::default()),
+            &mut QueryRecords::default(),
         )
     }
 }
@@ -219,7 +217,7 @@ impl<S: Model> Constant<S> {
             rhs,
             premise_mapping,
             table,
-            &Cell::new(QueryRecords::default()),
+            &mut QueryRecords::default(),
         )
     }
 }
@@ -241,7 +239,7 @@ impl<S: Model> Region<S> {
             rhs,
             premise_mapping,
             table,
-            &Cell::new(QueryRecords::default()),
+            &mut QueryRecords::default(),
         )
     }
 
@@ -251,7 +249,7 @@ impl<S: Model> Region<S> {
         rhs: &Self,
         premise_mapping: &Mapping<S>,
         table: &Table,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
     ) -> bool {
         if lhs == rhs {
             return true;
@@ -260,19 +258,58 @@ impl<S: Model> Region<S> {
         let terms = (lhs.clone(), rhs.clone());
 
         // check if the terms are already being checked (recursion)
-        if records.visit(|x| x.region_equals.contains(&terms)) {
+        if records.region_equals.contains(&terms) {
             return false;
         }
 
-        records.visit_mut(|x| x.region_equals.insert(terms.clone()));
+        records.region_equals.insert(terms.clone());
 
         if Self::equals_by_mapping(lhs, rhs, premise_mapping, table, records) {
-            records.visit_mut(|x| x.region_equals.remove(&terms));
+            records.region_equals.remove(&terms);
             return true;
         }
 
-        records.visit_mut(|x| x.region_equals.remove(&terms));
+        records.region_equals.remove(&terms);
         false
+    }
+}
+
+impl<S: Model> GenericArguments<S> {
+    /// Checks if the two generic arguments terms can be considered equal under the given mapping as
+    /// a premise and normalization.
+    ///
+    /// # Parameters
+    ///
+    /// * `rhs`: The rhs type term to compare with.
+    /// * `premise_mapping`: The mapping that is used as a premise.
+    /// * `table`: The table that is used for normalization.
+    pub fn equals(&self, rhs: &Self, premise_mapping: &Mapping<S>, table: &Table) -> bool {
+        if self.types.len() != rhs.types.len()
+            || self.constants.len() != rhs.constants.len()
+            || self.regions.len() != rhs.regions.len()
+        {
+            return false;
+        }
+
+        for (lhs, rhs) in self.types.iter().zip(rhs.types.iter()) {
+            if !Type::equals(lhs, rhs, premise_mapping, table) {
+                return false;
+            }
+        }
+
+        for (lhs, rhs) in self.constants.iter().zip(rhs.constants.iter()) {
+            if !Constant::equals(lhs, rhs, premise_mapping, table) {
+                return false;
+            }
+        }
+
+        for (lhs, rhs) in self.regions.iter().zip(rhs.regions.iter()) {
+            if !Region::equals(lhs, rhs, premise_mapping, table) {
+                return false;
+            }
+        }
+
+        true
     }
 }
 

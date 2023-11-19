@@ -13,6 +13,5 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
 pub mod diagnostic;
-pub mod extension;
 pub mod log;
 pub mod source_file;

@@ -34,7 +34,7 @@ impl Arbitrary for Named {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (proptest::bool::ANY, Identifier::arbitrary())
             .prop_map(|(is_mutable, identifier)| Self {
                 is_mutable,
@@ -197,7 +197,7 @@ impl Arbitrary for Unpack {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (proptest::bool::ANY, Identifier::arbitrary())
             .prop_map(|(is_mutable, identifier)| Self {
                 is_mutable,
@@ -471,7 +471,7 @@ impl Display for Refutable {
 
 proptest! {
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls)]
+    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn irrefutable_test(
         irrefutable_input in Irrefutable::arbitrary()
     ) {
@@ -487,7 +487,7 @@ proptest! {
 
 
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls)]
+    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn refutable_test(
         refutable_input in Refutable::arbitrary()
     ) {

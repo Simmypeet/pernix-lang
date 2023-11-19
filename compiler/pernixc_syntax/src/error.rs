@@ -21,7 +21,7 @@ pub enum SyntaxKind {
     Punctuation(char),
     Keyword(KeywordKind),
     TraitMember,
-    ImplementsMember,
+    ImplementationMember,
     Numeric,
 }
 
@@ -48,7 +48,7 @@ impl Display for UnexpectedSyntax {
             SyntaxKind::Punctuation(char) => format!("a punctuation token `{char}`"),
             SyntaxKind::Keyword(keyword) => format!("a keyword token `{}`", keyword.as_str()),
             SyntaxKind::TraitMember => "a trait member syntax".to_string(),
-            SyntaxKind::ImplementsMember => "an implements member syntax".to_string(),
+            SyntaxKind::ImplementationMember => "an implements member syntax".to_string(),
             SyntaxKind::Pattern => "a pattern syntax".to_string(),
             SyntaxKind::Numeric => "a numeric token".to_string(),
         };

@@ -1,11 +1,6 @@
 //! Contains code related to logic applied to the entities.
 
-use std::{
-    cell::Cell,
-    collections::{HashMap, HashSet},
-};
-
-use pernixc_base::extension::CellExt;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     entity::{
@@ -82,7 +77,7 @@ macro_rules! normalization_body {
             &'a $normalizable,
             premise_mapping: &Mapping<S>,
             $table: &'a Table,
-            records: &Cell<QueryRecords<S>>,
+            records: &mut QueryRecords<S>,
         ) -> Option<impl Iterator<Item = $obj> + 'a>
             where
                 Never: Into<S::ConstantInference>
@@ -170,7 +165,7 @@ impl<S: Model> GenericArguments<S> {
         &self,
         premise_mapping: &Mapping<S>,
         table: &Table,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
     ) -> bool {
         self.types
             .iter()
@@ -187,14 +182,14 @@ impl<S: Model> Constant<S> {
         &self,
         premise_mapping: &Mapping<S>,
         table: &Table,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
     ) -> bool {
         // checks if the constant is already in the records
-        if records.visit(|x| x.constant_is_definite.contains(self)) {
+        if records.constant_is_definite.contains(self) {
             return false;
         }
 
-        records.visit_mut(|x| x.constant_is_definite.insert(self.clone()));
+        records.constant_is_definite.insert(self.clone());
 
         let mut result = match self {
             Self::Primitive(_) => true,
@@ -271,7 +266,7 @@ impl<S: Model> Constant<S> {
             }
         }
 
-        records.visit_mut(|x| x.constant_is_definite.remove(self));
+        records.constant_is_definite.remove(self);
         result
     }
 }
@@ -281,14 +276,14 @@ impl<S: Model> Type<S> {
         &self,
         premise_mapping: &Mapping<S>,
         table: &Table,
-        records: &Cell<QueryRecords<S>>,
+        records: &mut QueryRecords<S>,
     ) -> bool {
         // checks if the type is already in the records
-        if records.visit(|x| x.type_is_definite.contains(self)) {
+        if records.type_is_definite.contains(self) {
             return false;
         }
 
-        records.visit_mut(|x| x.type_is_definite.insert(self.clone()));
+        records.type_is_definite.insert(self.clone());
 
         let mut result = match self {
             Self::Primitive(_) => true,
@@ -356,7 +351,7 @@ impl<S: Model> Type<S> {
             }
         }
 
-        records.visit_mut(|x| x.type_is_definite.remove(self));
+        records.type_is_definite.remove(self);
         result
     }
 }

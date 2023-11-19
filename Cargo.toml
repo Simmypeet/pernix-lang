@@ -31,6 +31,7 @@ ouroboros = "0.18.0"
 take_mut = "0.2.2"
 rayon = "1.8.0"
 clap = { version = "4.4.0", features = ["derive"] }
+bitflags = "2.4.1"
 
 [workspace.package]
 version = "0.1.0"

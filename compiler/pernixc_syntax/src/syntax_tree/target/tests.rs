@@ -60,7 +60,7 @@ impl Arbitrary for ModuleTree {
     type Parameters = ();
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let module_content = item::tests::ModuleContent::arbitrary_with(Some(
             item::tests::Item::arbitrary_with(true),
         ));
@@ -168,9 +168,8 @@ impl ModuleTree {
 }
 
 proptest! {
-
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls)]
+    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn target_test(
         mut target_module_tree in ModuleTree::arbitrary()
     ) {

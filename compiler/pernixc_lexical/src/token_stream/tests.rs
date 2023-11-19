@@ -21,7 +21,7 @@ impl Arbitrary for Delimiter {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self {
                 delimiter: super::Delimiter::Parenthesis
@@ -166,7 +166,7 @@ impl Arbitrary for InsignificantToken {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             token::tests::Comment::arbitrary().prop_map(Self::Comment),
             token::tests::WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
@@ -207,7 +207,7 @@ impl Arbitrary for SignificantToken {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             token::tests::Identifier::arbitrary().prop_map(Self::Identifier),
             token::tests::Keyword::arbitrary().prop_map(Self::Keyword),
@@ -244,7 +244,7 @@ impl Arbitrary for TokenStream {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let leaf = Just(Self {
             token_trees: vec![],
         });
@@ -320,6 +320,7 @@ impl Input for TokenStream {
 
 proptest! {
     #[test]
+    #[allow(clippy::ignored_unit_patterns)]
     fn token_stream_test(
         input in TokenStream::arbitrary()
     ) {
