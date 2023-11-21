@@ -845,6 +845,14 @@ pub struct TraitType {
     semicolon: Punctuation,
 }
 
+impl TraitType {
+    /// Dissolves the [`TraitType`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (TypeSignature, Option<WhereClause>, Punctuation) {
+        (self.signature, self.where_clause, self.semicolon)
+    }
+}
+
 impl SourceElement for TraitType {
     fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
 }
@@ -1444,6 +1452,14 @@ pub struct ImplementationType {
     definition: TypeDefinition,
     #[get = "pub"]
     semicolon: Punctuation,
+}
+
+impl ImplementationType {
+    /// Dissolves the [`ImplementationType`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (TypeSignature, TypeDefinition, Punctuation) {
+        (self.signature, self.definition, self.semicolon)
+    }
 }
 
 impl SourceElement for ImplementationType {

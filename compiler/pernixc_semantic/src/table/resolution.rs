@@ -17,10 +17,10 @@ use crate::{
     arena::ID,
     entity::{
         constant,
-        predicate::{self, Predicate},
+        predicate::{self, Forall, Predicate},
         r#type::{self, Qualifier},
         region::Region,
-        Entity, GenericArguments, Model, Never, Substitution,
+        Entity, GenericArguments, Model, Substitution,
     },
     error::{
         self, GenericArgumentCountMismatch, LifetimeExpected, LifetimeParameterNotFound,
@@ -179,7 +179,7 @@ impl<S: Model> From<r#type::Type<S>> for Resolution<S> {
 /// Represents a semantic check occurred during the resolution. This check must be validated
 /// in order to make sure that the program is semantically correct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Checking<S: Model<ForallRegion = Never>> {
+pub enum Checking<S: Model> {
     /// The given predicate must be satisfied.
     Predicate(Predicate<S>),
 
@@ -188,7 +188,7 @@ pub enum Checking<S: Model<ForallRegion = Never>> {
 }
 
 /// A configuration for the resolution.
-pub trait Config<S: Model<ForallRegion = Never>> {
+pub trait Config<S: Model> {
     /// Obtains the region where the region arguments aren't supplied.
     ///
     /// Returns `None` if the region arguments are **explicitly** required.
@@ -213,6 +213,12 @@ pub trait Config<S: Model<ForallRegion = Never>> {
     /// - `checking`: The semantic check occurred during the resolution.
     /// - `span`: The span where the semantic check occurred; useful for emitting diagnostics.
     fn check(&mut self, checking: Checking<S>, span: Span);
+
+    /// Will be called every resolution to a lifetime. Allows the user to provide an extra source
+    /// of lifetime.
+    ///
+    /// This is primarily used for the higher-ranked lifetimes.
+    fn extra_lifetime_provider(&self, _: &str) -> Option<Region<S>> { None }
 }
 
 macro_rules! handle_generic_arguments_supplied {
@@ -618,13 +624,16 @@ impl Table {
     ///
     /// - [`Error::InvalidID`]: if the `referring_site` is not a valid ID.
     /// - [`Error::SemanticError`]: if encountered a fatal semantic error e.g. symbol not found.
-    pub fn resolve_qualified_identifier_type<S: Model<ForallRegion = Never>>(
+    pub fn resolve_qualified_identifier_type<S: Model>(
         &self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<r#type::Type<S>, Error> {
+    ) -> Result<r#type::Type<S>, Error>
+    where
+        Forall: From<S::ForallRegion>,
+    {
         let is_simple_identifier = syntax_tree.rest().is_empty()
             && syntax_tree.leading_scope_separator().is_none()
             && syntax_tree.first().generic_arguments().is_none();
@@ -672,13 +681,16 @@ impl Table {
     /// - [`Error::InvalidID`]: If the `referring_site` is not a valid ID.
     /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
     #[allow(clippy::too_many_lines)]
-    pub fn resolve_type<S: Model<ForallRegion = Never>>(
+    pub fn resolve_type<S: Model>(
         &self,
         syntax_tree: &syntax_tree::r#type::Type,
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<r#type::Type<S>, Error> {
+    ) -> Result<r#type::Type<S>, Error>
+    where
+        Forall: From<S::ForallRegion>,
+    {
         match syntax_tree {
             syntax_tree::r#type::Type::Primitive(primitive) => {
                 Ok(r#type::Type::Primitive(match primitive {
@@ -708,7 +720,7 @@ impl Table {
                 let region = reference
                     .lifetime_argument()
                     .as_ref()
-                    .map(|x| self.resolve_lifetime_argument(x, referring_site, handler))
+                    .map(|x| self.resolve_region(x, referring_site, config, handler))
                     .transpose()?
                     .map_or_else(
                         || {
@@ -739,6 +751,15 @@ impl Table {
                     config,
                     handler,
                 )?);
+
+                // the pointee must live as long as the region
+                config.check(
+                    Checking::Predicate(Predicate::TypeOutlive(predicate::TypeOutlives {
+                        operand: (*pointee).clone(),
+                        argument: region.clone(),
+                    })),
+                    reference.span(),
+                );
 
                 Ok(r#type::Type::Reference(r#type::Reference {
                     qualifier,
@@ -865,21 +886,27 @@ impl Table {
     ///
     /// - [`Error::InvalidID`]: If the `referring_site` is not a valid ID.
     /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
-    pub fn resolve_lifetime_argument<S: Model>(
+    pub fn resolve_region<S: Model>(
         &self,
         lifetime_argument: &syntax_tree::LifetimeArgument,
         referring_site: GlobalID,
+        config: &dyn Config<S>,
         handler: &dyn Handler<error::Error>,
     ) -> Result<Region<S>, Error> {
         match lifetime_argument.identifier() {
             LifetimeArgumentIdentifier::Static(..) => Ok(Region::Static),
-            LifetimeArgumentIdentifier::Identifier(ident) => self
-                .resolve_lifetime_parameter(ident, referring_site, handler)
-                .map(Region::Named),
+            LifetimeArgumentIdentifier::Identifier(ident) => {
+                if let Some(region) = config.extra_lifetime_provider(ident.span.str()) {
+                    return Ok(region);
+                }
+
+                self.resolve_lifetime_parameter(ident, referring_site, handler)
+                    .map(Region::Named)
+            }
         }
     }
 
-    fn handle_lifetime_arguments_supplied<S: Model<ForallRegion = Never>>(
+    fn handle_lifetime_arguments_supplied<S: Model>(
         &self,
         generic_identifier_span: Span,
         referring_site: GlobalID,
@@ -927,7 +954,7 @@ impl Table {
         } else if lifetime_argument_syns.len() == expected_count {
             Ok(lifetime_argument_syns
                 .into_iter()
-                .map(|x| self.resolve_lifetime_argument(x, referring_site, handler))
+                .map(|x| self.resolve_region(x, referring_site, config, handler))
                 .collect::<Result<Vec<_>, _>>()?)
         } else {
             // lifetime arguments count mismatch
@@ -943,7 +970,7 @@ impl Table {
         }
     }
 
-    fn handle_constant_arguments_supplied<S: Model<ForallRegion = Never>>(
+    fn handle_constant_arguments_supplied<S: Model>(
         &self,
         generic_identifier_span: Span,
         referring_site: GlobalID,
@@ -982,7 +1009,7 @@ impl Table {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn handle_type_arguments_supplied<S: Model<ForallRegion = Never>>(
+    fn handle_type_arguments_supplied<S: Model>(
         &self,
         generic_identifier_span: Span,
         referring_site: GlobalID,
@@ -991,7 +1018,10 @@ impl Table {
         constant_arguments_is_empty: bool,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<Vec<r#type::Type<S>>, Error> {
+    ) -> Result<Vec<r#type::Type<S>>, Error>
+    where
+        Forall: From<S::ForallRegion>,
+    {
         handle_generic_arguments_supplied!(
             self,
             generic_identifier_span,
@@ -1009,14 +1039,17 @@ impl Table {
     }
 
     // resolve the generic arguments required for `resolved_id`.
-    pub(super) fn resolve_generic_arguments<S: Model<ForallRegion = Never>>(
+    pub(super) fn resolve_generic_arguments<S: Model>(
         &self,
         generic_identifier: &GenericIdentifier,
         referring_site: GlobalID,
         resolved_id: GlobalID,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<Option<GenericArguments<S>>, Error> {
+    ) -> Result<Option<GenericArguments<S>>, Error>
+    where
+        Forall: From<S::ForallRegion>,
+    {
         let Ok(generic_id) = GenericID::try_from(resolved_id) else {
             if let Some(generic_arguments) = generic_identifier.generic_arguments() {
                 // non-fatal error, keep going
@@ -1102,21 +1135,24 @@ impl Table {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn final_pass<S: Model<ForallRegion = Never>>(
+    fn final_pass<S: Model>(
         &self,
         resolved_id: GlobalID,
         generic_arguments: Option<GenericArguments<S>>,
         latest_resolution: Option<Resolution<S>>,
         span: &Span,
         config: &mut dyn Config<S>,
-    ) -> Resolution<S> {
+    ) -> Resolution<S>
+    where
+        Forall: From<S::ForallRegion>,
+    {
         // if trait is resolved, add trait bound predicate
         if let GlobalID::Trait(trait_id) = resolved_id {
             let predicate = Predicate::Trait(predicate::Trait {
                 trait_id,
                 generic_arguments: generic_arguments
                     .clone()
-                    .expect("should have generic arugmentsj")
+                    .expect("should have generic arugments")
                     .into_other_model(),
                 const_trait: false, // true, unless explicitly specified in the where clause
             });
@@ -1349,13 +1385,16 @@ impl Table {
     ///
     /// - [`Error::InvalidID`]: If the `referring_site` is not a valid ID.
     /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
-    pub fn resolve<S: Model<ForallRegion = Never>>(
+    pub fn resolve<S: Model>(
         &self,
         qualified_identifier: &QualifiedIdentifier,
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<Resolution<S>, Error> {
+    ) -> Result<Resolution<S>, Error>
+    where
+        Forall: From<S::ForallRegion>,
+    {
         // Checks if the given `referring_site` is a valid ID.
         drop(self.get_global(referring_site).ok_or(Error::InvalidID)?);
 

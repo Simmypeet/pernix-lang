@@ -4,7 +4,10 @@
 //! must be finalized before it can be used in order to to make it semantically valid. We must
 //! also check for cyclic dependency while finalizing the symbol.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{hash_map::Entry, HashMap, HashSet},
+    sync::Arc,
+};
 
 use bitflags::bitflags;
 use parking_lot::{Mutex, RwLockReadGuard};
@@ -27,7 +30,10 @@ use crate::{
     arena::ID,
     entity::{
         constant,
-        predicate::{self, ConstantType, Equals, Predicate, RegionOutlives, TypeOutlives},
+        predicate::{
+            self, ConstantType, Equals, Forall, Predicate, Premises, Quantified, RegionOutlives,
+            TypeOutlives,
+        },
         r#type,
         region::Region,
         Entity, GenericArguments, Model, Substitution,
@@ -35,16 +41,17 @@ use crate::{
     error::{
         self, AmbiguousImplementation, CyclicDependency, GenericParameterDuplication,
         InvalidTypeInConstantTypePredicate, InvalidTypeInOutlivesPredicate,
-        MisorderedGenericParameter, PrivateEntityLeakedToPublicInterface,
-        TraitMemberBoundArgumentMismatched, TraitMemberExpected,
-        UnusedGenericParameterInImplementation,
+        MismatchedGenericParameterCountInImplementation,
+        MismatchedImplementationConstantTypeParameter, MisorderedGenericParameter,
+        PrivateEntityLeakedToPublicInterface, TraitMemberBoundArgumentMismatched,
+        TraitMemberExpected, UnusedGenericParameterInImplementation,
     },
     logic::unification,
     symbol::{
         self, Constant, ConstantParameter, ConstantParameterID, Enum, Function, Generic, GenericID,
-        GenericKind, GlobalID, ImplementationKindID, ImplementationSignature, LifetimeParameter,
-        LifetimeParameterID, LocalGenericParameterID, Struct, Symbolic, Trait, Type, TypeParameter,
-        TypeParameterID,
+        GenericKind, GlobalID, ImplementationKindID, ImplementationMemberID,
+        ImplementationSignature, LifetimeParameter, LifetimeParameterID, LocalGenericParameterID,
+        Struct, Symbolic, Trait, TraitMemberID, Type, TypeParameter, TypeParameterID,
     },
     table::state::{Constructing, ConstructingLock, State},
 };
@@ -102,14 +109,81 @@ bitflags! {
     }
 }
 
+struct TraitResolverConfigAdapter<'a, 'b> {
+    forall_lifetimes_by_name: HashMap<&'b str, Region<Quantified<Symbolic>>>,
+    inner: &'a mut dyn Config<Symbolic>,
+}
+
+impl Config<Quantified<Symbolic>> for TraitResolverConfigAdapter<'_, '_> {
+    fn region_arguments_placeholder(&mut self) -> Option<Region<Quantified<Symbolic>>> { None }
+
+    fn type_arguments_placeholder(&mut self) -> Option<r#type::Type<Quantified<Symbolic>>> { None }
+
+    fn constant_arguments_placeholder(
+        &mut self,
+    ) -> Option<constant::Constant<Quantified<Symbolic>>> {
+        None
+    }
+
+    fn check(&mut self, checking: Checking<Quantified<Symbolic>>, span: Span) {
+        // anythin with forall region will be ruled out
+        match checking {
+            Checking::Predicate(checking) => {
+                let Some(checking) = checking.try_into_other_model() else {
+                    return;
+                };
+
+                self.inner.check(Checking::Predicate(checking), span);
+            }
+            Checking::TypeCheck(constant, ty) => {
+                let (Some(constant), Some(ty)) = (
+                    constant.try_into_other_model::<Symbolic>(),
+                    ty.try_into_other_model::<Symbolic>(),
+                ) else {
+                    return;
+                };
+
+                self.inner.check(Checking::TypeCheck(constant, ty), span);
+            }
+        }
+    }
+
+    fn extra_lifetime_provider(&self, lifetime: &str) -> Option<Region<Quantified<Symbolic>>> {
+        self.forall_lifetimes_by_name.get(lifetime).copied()
+    }
+}
+
 impl Table {
     // check all the required checking and report to the handler
     fn check(
         &self,
-        mut _checkings: impl Iterator<Item = CheckingWithSpan>,
+        global_id: GlobalID,
+        mut checkings: impl Iterator<Item = CheckingWithSpan>,
         option: CheckingFlag,
-        _handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<error::Error>,
     ) {
+        let premises = self.get_premise_predicates(global_id).unwrap();
+        let premises = Premises::from_predicates(premises.into_iter().map(|x| x.predicate));
+
+        for checking in checkings {
+            match checking.checking {
+                Checking::Predicate(predicate) => match predicate {
+                    Predicate::RegionOutlive(_) => todo!(),
+                    Predicate::TypeOutlive(_) => todo!(),
+                    Predicate::TypeEquals(_) => todo!(),
+                    Predicate::ConstantEquals(constant_type) => todo!(),
+                    Predicate::Trait(_) => todo!(),
+                    Predicate::ConstantType(constant_type)
+                        if option.contains(CheckingFlag::NON_REGION_PREDICATE_CHECK) =>
+                    {
+                        if constant_type.satisfies(&premises, self) {}
+                    }
+                    _ => {}
+                },
+                Checking::TypeCheck(_, _) => todo!(),
+            }
+        }
+
         // TlODO: implement this
     }
 
@@ -219,7 +293,7 @@ impl Table {
 
         for argument_syn in argument_syns.into_elements() {
             let Ok(argument) =
-                self.resolve_lifetime_argument(&argument_syn, generic_id.into(), handler)
+                self.resolve_region(&argument_syn, generic_id.into(), config, handler)
             else {
                 continue;
             };
@@ -335,6 +409,95 @@ impl Table {
             });
     }
 
+    // create a trait predicate
+    #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
+    fn create_trait_predicate<T: Into<GenericID> + Into<GlobalID> + Copy>(
+        &self,
+        generic_id: T,
+        trait_bound: &syntax_tree::item::TraitBound,
+        config: &mut dyn Config<Symbolic>,
+        handler: &dyn Handler<error::Error>,
+    ) where
+        Self: IndexRaw<T> + IndexMut<T>,
+        <Self as Index<T>>::Output: Generic,
+    {
+        if self
+            .resolve_trait_path(
+                trait_bound.qualified_identifier(),
+                generic_id.into(),
+                handler,
+            )
+            .is_err()
+        {
+            return;
+        }
+
+        // creates higher-ranked lifetime maps
+        let higher_ranked_lifetimes = {
+            let mut higher_ranked_lifetimes = HashMap::new();
+
+            if let Some(higher_ranked_lifetimes_syns) =
+                trait_bound.higher_ranked_lifetime_parameters().as_ref()
+            {
+                for higher_ranked_lifetime_syn in higher_ranked_lifetimes_syns
+                    .lifetime_parameter_list()
+                    .elements()
+                {
+                    match higher_ranked_lifetimes
+                        .entry(higher_ranked_lifetime_syn.identifier().span.str())
+                    {
+                        Entry::Occupied(_) => {
+                            handler.receive(error::Error::HigherRankedLifetimeRedeclaration(
+                                error::HigherRankedLifetimeRedeclaration {
+                                    redeclaration_span: higher_ranked_lifetime_syn.span(),
+                                },
+                            ));
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(Region::Forall(Forall::generate()));
+                        }
+                    }
+                }
+            };
+
+            higher_ranked_lifetimes
+        };
+
+        let mut adapter = TraitResolverConfigAdapter {
+            forall_lifetimes_by_name: higher_ranked_lifetimes,
+            inner: config,
+        };
+
+        let Ok(resolution) = self
+            .resolve(
+                trait_bound.qualified_identifier(),
+                generic_id.into(),
+                &mut adapter,
+                handler,
+            )
+            .map(|x| {
+                x.into_trait()
+                    .expect("should be a trait as we've resolved ealier")
+            })
+        else {
+            return;
+        };
+
+        self.get_mut(generic_id)
+            .unwrap()
+            .generic_declaration_mut()
+            .predicates
+            .push(symbol::Predicate {
+                predicate: Predicate::Trait(predicate::Trait {
+                    trait_id: resolution.id,
+                    const_trait: trait_bound.const_keyword().is_some(),
+                    generic_arguments: resolution.generic_arguments.into_other_model(),
+                }),
+                span: Some(trait_bound.span()),
+                explicit: true,
+            });
+    }
+
     // create a list of predicates for the where clause
     #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     fn create_where_clause_predicates<T: Into<GenericID> + Into<GlobalID> + Copy>(
@@ -361,7 +524,9 @@ impl Table {
                         handler,
                     );
                 }
-                syntax_tree::item::Predicate::Trait(_) => {}
+                syntax_tree::item::Predicate::Trait(trait_bound) => {
+                    self.create_trait_predicate(generic_id, &trait_bound, config, handler);
+                }
                 syntax_tree::item::Predicate::Lifetime(lifetime_bound) => self
                     .create_reigon_outlives_predicate(generic_id, lifetime_bound, config, handler),
                 syntax_tree::item::Predicate::ConstantType(constant_type) => {
@@ -686,6 +851,7 @@ impl Table {
         self.create_where_clause_predicates(enum_id, where_clause, &mut storage, handler);
 
         self.check(
+            enum_id.into(),
             checking_with_spans.into_iter(),
             CheckingFlag::all(),
             handler,
@@ -751,6 +917,7 @@ impl Table {
 
         // do checking and report to the handler
         self.check(
+            type_id.into(),
             checking_with_spans.into_iter(),
             CheckingFlag::TYPE_CHECK,
             handler,
@@ -932,6 +1099,7 @@ impl Table {
 
         // do checking and report to the handler
         self.check(
+            trait_id.into(),
             checking_with_spans.into_iter(),
             CheckingFlag::all(),
             handler,
@@ -1012,6 +1180,7 @@ impl Table {
         }
 
         self.check(
+            implementation_id.into(),
             checking_with_spans.into_iter(),
             CheckingFlag::TYPE_CHECK | CheckingFlag::REGION_PREDICATE_CHECK,
             handler,
@@ -1160,6 +1329,7 @@ impl Table {
             .arguments = generic_argumnent;
 
         self.check(
+            negative_implementation_id.into(),
             checking_with_spans.into_iter(),
             CheckingFlag::TYPE_CHECK,
             handler,
@@ -1194,6 +1364,163 @@ impl Table {
     ) {
     }
 
+    fn check_implementation_type_compatibility(
+        &self,
+        parent_implementation_id: ID<symbol::Implementation>,
+        implementation_type_id: ID<symbol::ImplementationType>,
+        trait_type_id: ID<symbol::TraitType>,
+        handler: &dyn Handler<error::Error>,
+    ) -> bool {
+        self.check_implementation_member_generic_parameters(
+            parent_implementation_id,
+            implementation_type_id,
+            trait_type_id,
+            handler,
+        )
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn check_implementation_member_generic_parameters<
+        T: Copy + Into<GlobalID> + Into<GenericID> + Into<ImplementationMemberID>,
+        U: Copy + Into<GlobalID> + Into<GenericID> + Into<TraitMemberID>,
+    >(
+        &self,
+        parent_implementation_id: ID<symbol::Implementation>,
+        implementation_member_id: T,
+        trait_member_id: U,
+        handler: &dyn Handler<error::Error>,
+    ) -> bool
+    where
+        Self: Index<T> + Index<U>,
+        <Self as Index<T>>::Output: Generic,
+        <Self as Index<U>>::Output: Generic,
+    {
+        let trait_member = self.get(trait_member_id).unwrap();
+        let implementation_member = self.get(implementation_member_id).unwrap();
+
+        let parent_generic_parameters = &trait_member.generic_declaration().parameters;
+        let implementation_generic_parameters =
+            &implementation_member.generic_declaration().parameters;
+
+        let mut is_error = false;
+
+        macro_rules! count_check {
+            ($kind:ident) => {
+                paste! {
+                if parent_generic_parameters.[<$kind:lower s>].len()
+                    != implementation_generic_parameters.[<$kind:lower s>].len()
+                {
+                    is_error = true;
+                    handler.receive(
+                        error::Error::MismatchedGenericParameterCountInImplementation(
+                            MismatchedGenericParameterCountInImplementation {
+                                implementation_member_id: implementation_member_id.into(),
+                                trait_member_id: trait_member_id.into(),
+                                expected_count: parent_generic_parameters.[<$kind:lower s>].len(),
+                                declared_count: implementation_generic_parameters.[<$kind:lower s>].len(),
+                                generic_kind: GenericKind::$kind,
+                            },
+                        ),
+                    );
+                }
+                }
+            };
+        }
+
+        count_check!(Lifetime);
+        count_check!(Type);
+        count_check!(Constant);
+
+        if is_error {
+            return false;
+        }
+
+        let mapping = self
+            .get_premise_mapping::<Symbolic>(implementation_member_id.into())
+            .unwrap();
+
+        let mut substitution = Substitution::from_generic_arguments(
+            self.get(parent_implementation_id)
+                .unwrap()
+                .signature
+                .arguments
+                .clone(),
+            self.get(parent_implementation_id)
+                .unwrap()
+                .signature
+                .trait_id
+                .into(),
+        );
+
+        macro_rules! trait_to_implementation_generic_parameter {
+            ($kind:ident, $kind2:path, $kind3:ident, $map:ident) => {
+                paste! {
+                for idx in 0..implementation_member
+                    .generic_declaration()
+                    .parameters
+                    .[<$kind:lower s>]
+                    .len()
+                {
+                    substitution.$map.insert(
+                        $kind2::$kind3([<$kind ParameterID>] {
+                            parent: trait_member_id.into(),
+                            id: ID::new(idx),
+                        }),
+                        $kind2::$kind3([<$kind ParameterID>] {
+                            parent: implementation_member_id.into(),
+                            id: ID::new(idx),
+                        }),
+                    );
+                }
+                }
+            };
+        }
+
+        trait_to_implementation_generic_parameter!(Lifetime, Region, Named, regions);
+        trait_to_implementation_generic_parameter!(Type, r#type::Type, Parameter, types);
+        trait_to_implementation_generic_parameter!(
+            Constant,
+            constant::Constant,
+            Parameter,
+            constants
+        );
+
+        #[allow(clippy::significant_drop_in_scrutinee)]
+        for (idx, (trait_constant_parameter, implementation_constant_parameter)) in trait_member
+            .generic_declaration()
+            .parameters
+            .constants
+            .values()
+            .zip(
+                implementation_member
+                    .generic_declaration()
+                    .parameters
+                    .constants
+                    .values(),
+            )
+            .enumerate()
+        {
+            let mut ty_copied = trait_constant_parameter.r#type.clone();
+            ty_copied.apply(&substitution);
+
+            if !ty_copied.equals(&implementation_constant_parameter.r#type, &mapping, self) {
+                handler.receive(error::Error::MismatchedImplementationConstantTypeParameter(
+                    MismatchedImplementationConstantTypeParameter {
+                        implementation_member_id: implementation_member_id.into(),
+                        trait_member_id: trait_member_id.into(),
+                        constant_parameter_index: idx,
+                    },
+                ));
+                is_error = true;
+            }
+        }
+
+        drop(trait_member);
+        drop(implementation_member);
+
+        !is_error
+    }
+
     fn finalize_trait_type(
         &self,
         trait_type_id: ID<symbol::TraitType>,
@@ -1201,6 +1528,68 @@ impl Table {
         syntax_tree: syntax_tree::item::TraitType,
         handler: &dyn Handler<error::Error>,
     ) {
+        // parent trait must be finalized before
+        let parent_trait_id = self.get(trait_type_id).unwrap().parent_trait_id;
+        let _ = self.finalize(parent_trait_id.into(), Some(trait_type_id.into()), handler);
+
+        let mut checking_with_spans = Vec::new();
+        let mut storage = Storage {
+            checkings: &mut checking_with_spans,
+        };
+
+        let (signature, where_clause_syn, _) = syntax_tree.dissolve();
+        let (_, _, generic_parameters_syn) = signature.dissolve();
+
+        // create generic parameters and where clause predicates
+        self.create_generic_parameters(
+            trait_type_id,
+            generic_parameters_syn,
+            &mut storage,
+            handler,
+        );
+        self.create_where_clause_predicates(trait_type_id, where_clause_syn, &mut storage, handler);
+
+        self.check(
+            trait_type_id.into(),
+            checking_with_spans.into_iter(),
+            CheckingFlag::all(),
+            handler,
+        );
+
+        let parent_trait = self.get(parent_trait_id).unwrap();
+        for &implementation in &parent_trait.implementations {
+            let Some(implementation_eq_id) = self
+                .get(implementation)
+                .unwrap()
+                .implementation_type_ids_by_trait_type_id
+                .get(&trait_type_id)
+                .copied()
+            else {
+                continue;
+            };
+
+            let _ = self.finalize(
+                implementation_eq_id.into(),
+                Some(trait_type_id.into()),
+                handler,
+            );
+
+            // if not compatible, remove the implementation
+            if !self.check_implementation_type_compatibility(
+                implementation,
+                implementation_eq_id,
+                trait_type_id,
+                handler,
+            ) {
+                self.get_mut(implementation)
+                    .unwrap()
+                    .implementation_type_ids_by_trait_type_id
+                    .remove(&trait_type_id);
+            }
+        }
+
+        drop(parent_trait);
+        drop(constructing_lock);
     }
 
     fn finalize_implementation_function(
@@ -1228,6 +1617,81 @@ impl Table {
         syntax_tree: syntax_tree::item::ImplementationType,
         handler: &dyn Handler<error::Error>,
     ) {
+        let parent_trait_id = self
+            .get(
+                self.get(implementation_type_id)
+                    .unwrap()
+                    .parent_implementation_id,
+            )
+            .unwrap()
+            .signature
+            .trait_id;
+
+        let _ = self.finalize(
+            parent_trait_id.into(),
+            Some(implementation_type_id.into()),
+            handler,
+        );
+
+        let mut checking_with_spans = Vec::new();
+        let mut storage = Storage {
+            checkings: &mut checking_with_spans,
+        };
+
+        let (signature, type_definition, _) = syntax_tree.dissolve();
+        let (_, _, generic_parameters_syn) = signature.dissolve();
+        let (_, ty_syn, where_clause_syn) = type_definition.dissolve();
+
+        // create generic parameters and where clause predicates
+        self.create_generic_parameters(
+            implementation_type_id,
+            generic_parameters_syn,
+            &mut storage,
+            handler,
+        );
+        self.create_where_clause_predicates(
+            implementation_type_id,
+            where_clause_syn,
+            &mut storage,
+            handler,
+        );
+
+        let ty = self
+            .resolve_type(
+                &ty_syn,
+                implementation_type_id.into(),
+                &mut storage,
+                handler,
+            )
+            .unwrap_or_default();
+
+        // no private type in public interface
+        if self
+            .get_accessibility(implementation_type_id.into())
+            .expect("should be valid")
+            > self
+                .get_type_overall_accessibility(&ty)
+                .expect("should be valid")
+        {
+            handler.receive(error::Error::PrivateTypeLeakedToPublicInterface(
+                PrivateEntityLeakedToPublicInterface {
+                    entity: ty.clone(),
+                    leaked_span: ty_syn.span(),
+                    public_interface_id: implementation_type_id.into(),
+                },
+            ));
+        }
+
+        self.get_mut(implementation_type_id).unwrap().r#type = ty;
+
+        self.check(
+            implementation_type_id.into(),
+            checking_with_spans.into_iter(),
+            CheckingFlag::all(),
+            handler,
+        );
+
+        drop(constructing_lock);
     }
 
     fn finalize_variant(

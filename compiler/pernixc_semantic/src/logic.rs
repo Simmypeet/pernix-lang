@@ -7,7 +7,7 @@ use crate::{
         constant::{self, Constant},
         r#type::{self, Type},
         region::Region,
-        Entity, GenericArguments, Model, Never,
+        Entity, GenericArguments, Model,
     },
     table::{Index, Table},
 };
@@ -63,6 +63,24 @@ impl<S: Model> Mapping<S> {
 
         mappings
     }
+
+    /// Creates a new mapping from the given equality pairs.
+    pub fn insert_type(&mut self, lhs: Type<S>, rhs: Type<S>) {
+        self.types
+            .entry(lhs.clone())
+            .or_default()
+            .insert(rhs.clone());
+        self.types.entry(rhs).or_default().insert(lhs);
+    }
+
+    /// Creates a new mapping from the given equality pairs.
+    pub fn insert_constant(&mut self, lhs: Constant<S>, rhs: Constant<S>) {
+        self.constants
+            .entry(lhs.clone())
+            .or_default()
+            .insert(rhs.clone());
+        self.constants.entry(rhs).or_default().insert(lhs);
+    }
 }
 
 macro_rules! normalization_body {
@@ -73,20 +91,15 @@ macro_rules! normalization_body {
         $implementation_symbol:ident
         | $substitution:expr) => {
         #[allow(clippy::significant_drop_tightening)]
-        fn normalize<'a>(
+        fn normalize_internal<'a>(
             &'a $normalizable,
             premise_mapping: &Mapping<S>,
             $table: &'a Table,
             records: &mut QueryRecords<S>,
-        ) -> Option<impl Iterator<Item = $obj> + 'a>
-            where
-                Never: Into<S::ConstantInference>
-                    + Into<S::ForallRegion>
-                    + Into<S::LocalRegion>
-                    + Into<S::TypeInference>,
-         {
+        ) -> Option<impl Iterator<Item = $obj> + 'a> {
             // gets the implementation of the trait
-            let Some(trait_id) = $table.get($normalizable.$trait_field).map(|x| x.parent_trait_id) else {
+            let Some(trait_id) = $table.get($normalizable.$trait_field).map(|x| x.parent_trait_id)
+            else {
                 return None;
             };
 
@@ -158,6 +171,16 @@ impl<S: Model> r#type::TraitMember<S> {
                 )?
         }
     );
+
+    /// Normalizes the trait member into concrete types.
+    #[must_use]
+    pub fn normalize<'a>(
+        &'a self,
+        premise_mapping: &Mapping<S>,
+        table: &'a Table,
+    ) -> Option<impl Iterator<Item = r#type::Type<S>> + 'a> {
+        self.normalize_internal(premise_mapping, table, &mut QueryRecords::default())
+    }
 }
 
 impl<S: Model> GenericArguments<S> {
@@ -223,7 +246,8 @@ impl<S: Model> Constant<S> {
             Self::TraitMember(constant) => {
                 let mut result = false;
 
-                let Some(normalized) = constant.normalize(premise_mapping, table, records) else {
+                let Some(normalized) = constant.normalize_internal(premise_mapping, table, records)
+                else {
                     return false;
                 };
 
@@ -308,7 +332,8 @@ impl<S: Model> Type<S> {
             Self::TraitMember(ty) => {
                 let mut result = false;
 
-                let Some(normalized) = ty.normalize(premise_mapping, table, records) else {
+                let Some(normalized) = ty.normalize_internal(premise_mapping, table, records)
+                else {
                     return false;
                 };
 

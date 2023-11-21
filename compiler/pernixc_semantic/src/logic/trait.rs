@@ -113,11 +113,10 @@ impl Table {
         'outer: for (key, arguments) in traits
             .implementations
             .iter()
-            .enumerate()
-            .map(|(k, v)| {
+            .map(|k| {
                 (
-                    ImplementationKindID::Positive(ID::new(k)),
-                    self.get(*v)
+                    ImplementationKindID::Positive(*k),
+                    self.get(*k)
                         .unwrap()
                         .signature
                         .arguments
@@ -125,23 +124,17 @@ impl Table {
                         .into_other_model::<S>(),
                 )
             })
-            .chain(
-                traits
-                    .negative_implementations
-                    .iter()
-                    .enumerate()
-                    .map(|(k, v)| {
-                        (
-                            ImplementationKindID::Negative(ID::new(k)),
-                            self.get(*v)
-                                .unwrap()
-                                .signature
-                                .arguments
-                                .clone()
-                                .into_other_model::<S>(),
-                        )
-                    }),
-            )
+            .chain(traits.negative_implementations.iter().map(|k| {
+                (
+                    ImplementationKindID::Negative(*k),
+                    self.get(*k)
+                        .unwrap()
+                        .signature
+                        .arguments
+                        .clone()
+                        .into_other_model::<S>(),
+                )
+            }))
         {
             // gets the deduced generic arguments
             let Ok(mut unification) = GenericArguments::unify_internal(

@@ -256,4 +256,91 @@ impl<S: Model> Entity<S> for Type<S> {
             _ => {}
         }
     }
+
+    fn try_into_other_model<T: Model>(self) -> Option<Self::This<T>>
+    where
+        <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
+        <S as Model>::TypeInference: TryInto<T::TypeInference>,
+        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
+    {
+        match self {
+            Self::Primitive(primitive) => Some(Type::Primitive(primitive)),
+            Self::Inference(inference) => inference.try_into().ok().map(Type::Inference),
+            Self::Algebraic(algebraic) => {
+                algebraic
+                    .generic_arguments
+                    .try_into_other_model()
+                    .map(|generic_arguments| {
+                        Type::Algebraic(Algebraic {
+                            kind: algebraic.kind,
+                            generic_arguments,
+                        })
+                    })
+            }
+            Self::Pointer(pointer) => pointer.pointee.try_into_other_model().map(|pointee| {
+                Type::Pointer(Pointer {
+                    qualifier: pointer.qualifier,
+                    pointee: Box::new(pointee),
+                })
+            }),
+            Self::Reference(reference) => {
+                let region = reference.region.try_into_other_model()?;
+                let pointee = reference.pointee.try_into_other_model()?;
+                Some(Type::Reference(Reference {
+                    qualifier: reference.qualifier,
+                    region,
+                    pointee: Box::new(pointee),
+                }))
+            }
+            Self::Array(array) => {
+                let length = array.length.try_into_other_model()?;
+                let element = array.element.try_into_other_model()?;
+                Some(Type::Array(Array {
+                    length,
+                    element: Box::new(element),
+                }))
+            }
+            Self::TraitMember(trait_member) => {
+                let trait_generic_arguments = trait_member
+                    .trait_generic_arguments
+                    .try_into_other_model()?;
+                let member_generic_arguments = trait_member
+                    .member_generic_arguments
+                    .try_into_other_model()?;
+
+                Some(Type::TraitMember(TraitMember {
+                    trait_type_id: trait_member.trait_type_id,
+                    trait_generic_arguments,
+                    member_generic_arguments,
+                }))
+            }
+            Self::Parameter(parameter) => Some(Type::Parameter(parameter)),
+            Self::Tuple(tuple) => Some(Type::Tuple(Tuple {
+                elements: tuple
+                    .elements
+                    .into_iter()
+                    .map(|x| match x {
+                        TupleElement::Regular(regular) => {
+                            regular.try_into_other_model().map(TupleElement::Regular)
+                        }
+                        TupleElement::Unpacked(Unpacked::Parameter(parameter)) => {
+                            Some(TupleElement::Unpacked(Unpacked::Parameter(parameter)))
+                        }
+                        TupleElement::Unpacked(Unpacked::TraitMember(trait_member)) => {
+                            Some(TupleElement::Unpacked(Unpacked::TraitMember(TraitMember {
+                                trait_type_id: trait_member.trait_type_id,
+                                trait_generic_arguments: trait_member
+                                    .trait_generic_arguments
+                                    .try_into_other_model()?,
+                                member_generic_arguments: trait_member
+                                    .member_generic_arguments
+                                    .try_into_other_model()?,
+                            })))
+                        }
+                    })
+                    .collect::<Option<_>>()?,
+            })),
+        }
+    }
 }

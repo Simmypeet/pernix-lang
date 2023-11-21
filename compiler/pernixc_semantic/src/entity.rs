@@ -144,8 +144,7 @@ pub trait Entity<S: Model> {
     /// Used for model conversion.
     type This<A: Model>;
 
-    /// Converts this entity into another model if and only if the entity is not dependent on any of
-    /// the model's dependent entities.
+    /// Converts this entity into another model.
     #[must_use]
     fn into_other_model<T: Model>(self) -> Self::This<T>
     where
@@ -153,6 +152,15 @@ pub trait Entity<S: Model> {
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
         S::ForallRegion: Into<T::ForallRegion>;
+
+    /// Tries to convert this entity into another model.
+    #[must_use]
+    fn try_into_other_model<T: Model>(self) -> Option<Self::This<T>>
+    where
+        S::ConstantInference: TryInto<T::ConstantInference>,
+        S::TypeInference: TryInto<T::TypeInference>,
+        S::LocalRegion: TryInto<T::LocalRegion>,
+        S::ForallRegion: TryInto<T::ForallRegion>;
 
     /// Applies the given substitution to the entity.
     fn apply(&mut self, substitution: &Substitution<S>);
@@ -328,5 +336,35 @@ impl<S: Model> Entity<S> for GenericArguments<S> {
         for ty in &mut self.types {
             ty.apply(substitution);
         }
+    }
+
+    fn try_into_other_model<T: Model>(self) -> Option<Self::This<T>>
+    where
+        <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
+        <S as Model>::TypeInference: TryInto<T::TypeInference>,
+        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
+    {
+        let mut regions = Vec::with_capacity(self.regions.len());
+        let mut types = Vec::with_capacity(self.types.len());
+        let mut constants = Vec::with_capacity(self.constants.len());
+
+        for region in self.regions {
+            regions.push(region.try_into_other_model()?);
+        }
+
+        for ty in self.types {
+            types.push(ty.try_into_other_model()?);
+        }
+
+        for constant in self.constants {
+            constants.push(constant.try_into_other_model()?);
+        }
+
+        Some(GenericArguments {
+            regions,
+            types,
+            constants,
+        })
     }
 }

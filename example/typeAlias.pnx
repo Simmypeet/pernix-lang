@@ -1,11 +1,25 @@
 public enum Option<T> {
     Some(T),
-    None,
+    None
 }
 
-public trait Example<T, U> {}
+public trait Pair<T> {
+    type Output<V: T>;
+}
 
-implements<T, U> Example<Option<T>, U> {}
-implements<T, U> Example<T, Option<U>> {}
+implements Pair<int32>
+{
+    type Output<V: Test<Option<int32>>::A> = float32;
+}
 
-implements<T, U> Example<T, U> {}
+public trait Test<T> {
+    type A;
+}
+
+implements<T> Test<T> {
+    type A = T;
+}
+
+implements<T> Test<Option<T>> {
+    type A = T;
+}

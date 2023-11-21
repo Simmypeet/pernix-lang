@@ -44,4 +44,19 @@ impl<S: Model> Entity<S> for Region<S> {
             *self = new.clone();
         }
     }
+
+    fn try_into_other_model<T: Model>(self) -> Option<Self::This<T>>
+    where
+        <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
+        <S as Model>::TypeInference: TryInto<T::TypeInference>,
+        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
+    {
+        match self {
+            Self::Static => Some(Region::Static),
+            Self::Named(id) => Some(Region::Named(id)),
+            Self::Local(local) => local.try_into().ok().map(Region::Local),
+            Self::Forall(forall) => forall.try_into().ok().map(Region::Forall),
+        }
+    }
 }

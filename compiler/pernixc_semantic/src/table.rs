@@ -12,13 +12,14 @@ use thiserror::Error;
 
 use crate::{
     arena::{Arena, ID},
-    entity::{constant, r#type, region::Region, GenericArguments, Model, Never},
+    entity::{constant, predicate, r#type, region::Region, Entity, GenericArguments, Model, Never},
     error,
+    logic::Mapping,
     symbol::{
         Accessibility, Constant, Enum, Function, Generic, GenericID, Global, GlobalID,
         Implementation, ImplementationConstant, ImplementationFunction, ImplementationType, Module,
-        NegativeImplementation, Struct, Trait, TraitConstant, TraitFunction, TraitType, Type,
-        Variant,
+        NegativeImplementation, Predicate, Struct, Trait, TraitConstant, TraitFunction, TraitType,
+        Type, Variant,
     },
 };
 
@@ -655,6 +656,66 @@ impl Table {
         }
 
         Some(current_min)
+    }
+
+    /// Gets the premise [`Mapping`] of the given [`GlobalID`].
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if the given [`GlobalID`] is not valid.
+    pub fn get_premise_mapping<S: Model>(&self, global_id: GlobalID) -> Option<Mapping<S>> {
+        let walker = self.scope_walker(global_id).unwrap();
+        let mut mapping = Mapping::default();
+
+        for id in walker.filter_map(|x| GenericID::try_from(x).ok()) {
+            for predicate in &self
+                .get_generic(id)
+                .unwrap()
+                .generic_declaration()
+                .predicates
+            {
+                match &predicate.predicate {
+                    predicate::Predicate::TypeEquals(equals) => {
+                        mapping.insert_type(
+                            equals.lhs.clone().into_other_model(),
+                            equals.rhs.clone().into_other_model(),
+                        );
+                    }
+                    predicate::Predicate::ConstantEquals(equals) => {
+                        mapping.insert_constant(
+                            equals.lhs.clone().into_other_model(),
+                            equals.rhs.clone().into_other_model(),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Some(mapping)
+    }
+
+    /// Gets all the [`Predicate`]s that are defined in the given [`GlobalID`].
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if the given [`GlobalID`] is not valid.
+    pub fn get_premise_predicates(&self, global_id: GlobalID) -> Option<Vec<Predicate>> {
+        let walker = self.scope_walker(global_id).unwrap();
+        let mut predicates = Vec::new();
+
+        for id in walker.filter_map(|x| GenericID::try_from(x).ok()) {
+            predicates.extend(
+                self.get_generic(id)
+                    .unwrap()
+                    .generic_declaration()
+                    .predicates
+                    .iter()
+                    .cloned(),
+            );
+        }
+
+        Some(predicates)
     }
 
     /// Gets the [`ScopeWalker`] that walks through the scope hierarchy of the given [`GlobalID`].

@@ -12,13 +12,13 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    entity::{constant, r#type},
+    entity::{constant, predicate::Predicate, r#type},
     symbol::{
-        ConstantParameterID, GenericKind, GlobalID, Implementation, ImplementationKindID,
-        ImplementationMemberID, LifetimeParameterID, LocalGenericParameterID, Symbolic,
-        TraitMemberID, TypeParameterID,
+        ConstantParameterID, GenericID, GenericKind, GlobalID, Implementation,
+        ImplementationKindID, ImplementationMemberID, LifetimeParameterID, LocalGenericParameterID,
+        Symbolic, TraitMemberID, TypeParameterID,
     },
-    table::{resolution::Resolution, Table},
+    table::{resolution::Resolution, Index, Table},
 };
 
 /// Contains both error and the table in which the error occurred.
@@ -661,6 +661,46 @@ pub struct TraitMemberNotImplemented {
     pub implementation_id: ID<Implementation>,
 }
 
+impl Display for WithTable<'_, TraitMemberNotImplemented> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let trait_name = self
+            .table
+            .get_qualified_name(self.error.trait_member_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!("The trait member `{trait_name}` is not implemented"),
+        })?;
+
+        if let Some(trait_member_span) = self
+            .table
+            .get_global(self.error.trait_member_id.into())
+            .ok_or(fmt::Error)?
+            .span()
+        {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: &trait_member_span,
+                help_display: Some("is required to be implemented")
+            })?;
+        }
+
+        if let Some(implementation_span) = self
+            .table
+            .get_global(self.error.implementation_id.into())
+            .ok_or(fmt::Error)?
+            .span()
+        {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: &implementation_span,
+                help_display: Some("doesn't implement the above trait member")
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
 /// The trait member and the implementation member have different types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitMemberAndImplementationMemberMismatched {
@@ -681,6 +721,64 @@ pub struct UnusedGenericParameterInImplementation {
     pub implementation_kind_id: ImplementationKindID,
 }
 
+impl Display for WithTable<'_, UnusedGenericParameterInImplementation> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let generic_id: GenericID = self.error.implementation_kind_id.into();
+        let generic_symbol = self.table.get_generic(generic_id).ok_or(fmt::Error)?;
+
+        let (span, name, kind) = {
+            match self.error.generic_parameter_id {
+                LocalGenericParameterID::Lifetime(id) => {
+                    let param = generic_symbol
+                        .generic_declaration()
+                        .parameters
+                        .lifetimes
+                        .get(id)
+                        .ok_or(fmt::Error)?;
+
+                    (param.span.as_ref(), &param.name, "lifetime parameter")
+                }
+                LocalGenericParameterID::Type(id) => {
+                    let param = generic_symbol
+                        .generic_declaration()
+                        .parameters
+                        .types
+                        .get(id)
+                        .ok_or(fmt::Error)?;
+
+                    (param.span.as_ref(), &param.name, "type parameter")
+                }
+                LocalGenericParameterID::Constant(id) => {
+                    let param = generic_symbol
+                        .generic_declaration()
+                        .parameters
+                        .constants
+                        .get(id)
+                        .ok_or(fmt::Error)?;
+
+                    (param.span.as_ref(), &param.name, "constant parameter")
+                }
+            }
+        };
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!("The {kind} `{name}` is unused in the implementation",),
+        })?;
+
+        if let Some(span) = span {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("consider removing it")
+            })?;
+        }
+
+        drop(generic_symbol);
+
+        Ok(())
+    }
+}
+
 /// Two implementations have the same speciality order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmbiguousImplementation {
@@ -690,7 +788,6 @@ pub struct AmbiguousImplementation {
     /// The ID of the second implementation.
     pub second_implementation_id: ImplementationKindID,
 }
-
 impl Display for WithTable<'_, AmbiguousImplementation> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let trait_name = self
@@ -729,6 +826,193 @@ impl Display for WithTable<'_, AmbiguousImplementation> {
 
         Ok(())
     }
+}
+
+/// The higher-ranked lifetime with the same name already exists in the given scope.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HigherRankedLifetimeRedeclaration {
+    /// The span of the redeclaration.
+    pub redeclaration_span: Span,
+}
+
+impl Display for WithTable<'_, HigherRankedLifetimeRedeclaration> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "The higher-ranked lifetime with the same name already exists in the given \
+                      scope",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.error.redeclaration_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The trait member and the implementation member have different number of generic parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedGenericParameterCountInImplementation {
+    /// The ID of the implementation member
+    pub implementation_member_id: ImplementationMemberID,
+
+    /// The ID of the trait member
+    pub trait_member_id: TraitMemberID,
+
+    /// Expected count of generic parameters
+    pub expected_count: usize,
+
+    /// Number of generic parameters declared in the implementation
+    pub declared_count: usize,
+
+    /// The kind of the generic parameter that has mismatched count
+    pub generic_kind: GenericKind,
+}
+
+impl Display for WithTable<'_, MismatchedGenericParameterCountInImplementation> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let generic_kind = match self.error.generic_kind {
+            GenericKind::Type => "type",
+            GenericKind::Lifetime => "lifetime",
+            GenericKind::Constant => "constant",
+        };
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "The implementation member has {} {generic_kind} parameters, but the trait member \
+                 has {}",
+                self.error.declared_count, self.error.expected_count
+            ),
+        })?;
+
+        if let Some(implementation_member_span) = self
+            .table
+            .get_global(self.error.implementation_member_id.into())
+            .ok_or(fmt::Error)?
+            .span()
+        {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: &implementation_member_span,
+                help_display: Some("implemented here")
+            })?;
+        }
+
+        if let Some(trait_member_span) = self
+            .table
+            .get_global(self.error.trait_member_id.into())
+            .ok_or(fmt::Error)?
+            .span()
+        {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: &trait_member_span,
+                help_display: Some("trait member declared here")
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The type of the constant parameter in the implementation doesn't match the type of the constant
+/// parameter in the trait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedImplementationConstantTypeParameter {
+    /// The ID of the implementation member
+    pub implementation_member_id: ImplementationMemberID,
+
+    /// The ID of the trait member
+    pub trait_member_id: TraitMemberID,
+
+    /// In which generic parameter the mismatch occurred
+    pub constant_parameter_index: usize,
+}
+
+impl Display for WithTable<'_, MismatchedImplementationConstantTypeParameter> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "The type of the constant parameter in the implementation doesn't match the \
+                      type of the constant parameter in the trait",
+        })?;
+
+        let trait_member_span = match self.error.trait_member_id {
+            TraitMemberID::Type(trait_type_id) => self
+                .table
+                .get(trait_type_id)
+                .ok_or(fmt::Error)?
+                .generic_declaration
+                .parameters
+                .constants
+                .get(ID::new(self.error.constant_parameter_index))
+                .ok_or(fmt::Error)?
+                .span
+                .clone(),
+            TraitMemberID::Function(trait_function_id) => self
+                .table
+                .get(trait_function_id)
+                .ok_or(fmt::Error)?
+                .generic_declaration
+                .parameters
+                .constants
+                .get(ID::new(self.error.constant_parameter_index))
+                .ok_or(fmt::Error)?
+                .span
+                .clone(),
+            TraitMemberID::Constant(_) => return Err(fmt::Error),
+        };
+
+        let implementation_member_span = match self.error.implementation_member_id {
+            ImplementationMemberID::Type(implementation_type_id) => self
+                .table
+                .get(implementation_type_id)
+                .ok_or(fmt::Error)?
+                .generic_declaration
+                .parameters
+                .constants
+                .get(ID::new(self.error.constant_parameter_index))
+                .ok_or(fmt::Error)?
+                .span
+                .clone(),
+            ImplementationMemberID::Function(implementation_function_id) => self
+                .table
+                .get(implementation_function_id)
+                .ok_or(fmt::Error)?
+                .generic_declaration
+                .parameters
+                .constants
+                .get(ID::new(self.error.constant_parameter_index))
+                .ok_or(fmt::Error)?
+                .span
+                .clone(),
+            ImplementationMemberID::Constant(_) => return Err(fmt::Error),
+        };
+
+        if let Some(span) = implementation_member_span {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: &span,
+                help_display: Option::<i32>::None
+            })?;
+        }
+
+        if let Some(span) = trait_member_span {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: &span,
+                help_display: Option::<i32>::None
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The where clause predicate is not satisfied.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct WhereClausePredicateNotSatisfied {
+    pub predicate: Predicate<Symbolic>,
+    pub span: Span,
 }
 
 /// An enumeration containing all kinds of errors that can be emitted by the semantic analyzer.
@@ -770,6 +1054,11 @@ pub enum Error {
     TraitMemberAndImplementationMemberMismatched(TraitMemberAndImplementationMemberMismatched),
     UnusedGenericParameterInImplementation(UnusedGenericParameterInImplementation),
     AmbiguousImplementation(AmbiguousImplementation),
+    HigherRankedLifetimeRedeclaration(HigherRankedLifetimeRedeclaration),
+    MismatchedGenericParameterCountInImplementation(
+        MismatchedGenericParameterCountInImplementation,
+    ),
+    MismatchedImplementationConstantTypeParameter(MismatchedImplementationConstantTypeParameter),
 }
 
 macro_rules! impl_display {
@@ -804,5 +1093,10 @@ impl_display!(
     LifetimeParameterNotFound,
     LifetimeExpected,
     MoreThanOneUnpackedInTupleType,
-    AmbiguousImplementation
+    AmbiguousImplementation,
+    HigherRankedLifetimeRedeclaration,
+    TraitMemberNotImplemented,
+    UnusedGenericParameterInImplementation,
+    MismatchedGenericParameterCountInImplementation,
+    MismatchedImplementationConstantTypeParameter
 );

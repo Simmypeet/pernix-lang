@@ -934,7 +934,7 @@ impl Global for ImplementationConstant {
 
 /// An enumeration containing all an ID to all kinds of symbols that can be defined in an
 /// implements.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
 #[allow(missing_docs)]
 pub enum ImplementationMemberID {
     Type(ID<ImplementationType>),
@@ -1149,7 +1149,7 @@ impl Global for TraitConstant {
 }
 
 /// An enumeration containing all an ID to all kinds of symbols that can be defined in a trait.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
 #[allow(missing_docs)]
 pub enum TraitMemberID {
     Type(ID<TraitType>),

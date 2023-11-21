@@ -222,4 +222,70 @@ impl<S: Model> Entity<S> for Constant<S> {
             _ => {}
         }
     }
+
+    fn try_into_other_model<T: Model>(self) -> Option<Self::This<T>>
+    where
+        <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
+        <S as Model>::TypeInference: TryInto<T::TypeInference>,
+        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
+    {
+        match self {
+            Self::Primitive(primitive) => Some(Constant::Primitive(primitive)),
+            Self::Inference(inference) => inference.try_into().ok().map(Constant::Inference),
+            Self::Struct(struct_constant) => Some(Constant::Struct(Struct {
+                struct_id: struct_constant.struct_id,
+                generic_arguments: struct_constant.generic_arguments.try_into_other_model()?,
+                fields: struct_constant
+                    .fields
+                    .into_iter()
+                    .map(Self::try_into_other_model)
+                    .collect::<Option<_>>()?,
+            })),
+            Self::Enum(enum_constant) => Some(Constant::Enum(Enum {
+                variant_id: enum_constant.variant_id,
+                generic_arguments: enum_constant.generic_arguments.try_into_other_model()?,
+                associated_value: if let Some(variant) = enum_constant.associated_value {
+                    Some(Box::new(variant.try_into_other_model()?))
+                } else {
+                    None
+                },
+            })),
+            Self::Array(array) => Some(Constant::Array(Array {
+                element_ty: Box::new(array.element_ty.try_into_other_model()?),
+                elements: array
+                    .elements
+                    .into_iter()
+                    .map(Self::try_into_other_model)
+                    .collect::<Option<_>>()?,
+            })),
+            Self::Parameter(parameter) => Some(Constant::Parameter(parameter)),
+            Self::TraitMember(trait_member) => Some(Constant::TraitMember(TraitMember {
+                trait_constant_id: trait_member.trait_constant_id,
+                trait_arguments: trait_member.trait_arguments.try_into_other_model()?,
+            })),
+            Self::Tuple(tuple) => Some(Constant::Tuple(Tuple {
+                elements: tuple
+                    .elements
+                    .into_iter()
+                    .map(|x| match x {
+                        TupleElement::Regular(regular) => {
+                            regular.try_into_other_model().map(TupleElement::Regular)
+                        }
+                        TupleElement::Unpacked(Unpacked::Parameter(parameter)) => {
+                            Some(TupleElement::Unpacked(Unpacked::Parameter(parameter)))
+                        }
+                        TupleElement::Unpacked(Unpacked::TraitMember(trait_member)) => {
+                            Some(TupleElement::Unpacked(Unpacked::TraitMember(TraitMember {
+                                trait_constant_id: trait_member.trait_constant_id,
+                                trait_arguments: trait_member
+                                    .trait_arguments
+                                    .try_into_other_model()?,
+                            })))
+                        }
+                    })
+                    .collect::<Option<_>>()?,
+            })),
+        }
+    }
 }
