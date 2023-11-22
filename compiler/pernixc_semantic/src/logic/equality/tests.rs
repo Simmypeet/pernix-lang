@@ -1,6 +1,7 @@
 use crate::{
     arena::ID,
     entity::{
+        predicate::Premises,
         r#type::{Algebraic, AlgebraicKind, Primitive, Type},
         GenericArguments,
     },
@@ -24,11 +25,14 @@ fn not_equal_test() {
             id: ID::new(1),
         }),
     );
-    let mapping: Mapping<Symbolic> = Mapping::from_pairs(
-        std::iter::empty(),
-        std::iter::once(pair),
-        std::iter::empty(),
-    );
+    let premises = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(
+            std::iter::empty(),
+            std::iter::once(pair),
+            std::iter::empty(),
+        ),
+    };
 
     let table = Table::default();
 
@@ -38,8 +42,8 @@ fn not_equal_test() {
     });
     let rhs: Type<Symbolic> = Type::Primitive(Primitive::Float32);
 
-    assert!(!lhs.equals(&rhs, &mapping, &table));
-    assert!(!rhs.equals(&lhs, &mapping, &table)); // symmetric
+    assert!(!lhs.equals(&rhs, &premises, &table));
+    assert!(!rhs.equals(&lhs, &premises, &table)); // symmetric
 }
 
 /*
@@ -85,8 +89,10 @@ fn transitivity_test() {
             }),
         ),
     ];
-    let mapping: Mapping<Symbolic> =
-        Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty());
+    let premises: Premises<Symbolic> = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty()),
+    };
 
     let table = Table::default();
 
@@ -99,8 +105,8 @@ fn transitivity_test() {
         id: ID::new(2),
     });
 
-    assert!(lhs.equals(&rhs, &mapping, &table));
-    assert!(rhs.equals(&lhs, &mapping, &table)); // symmetric
+    assert!(lhs.equals(&rhs, &premises, &table));
+    assert!(rhs.equals(&lhs, &premises, &table)); // symmetric
 }
 
 /*
@@ -138,11 +144,14 @@ fn recursive_term_test() {
         })),
     );
 
-    let mapping: Mapping<Symbolic> = Mapping::from_pairs(
-        std::iter::empty(),
-        std::iter::once(pair),
-        std::iter::empty(),
-    );
+    let premises: Premises<Symbolic> = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(
+            std::iter::empty(),
+            std::iter::once(pair),
+            std::iter::empty(),
+        ),
+    };
 
     // ?0 = Enum0(?0, ?1)
 
@@ -185,8 +194,8 @@ fn recursive_term_test() {
         },
     });
 
-    assert!(lhs.equals(&rhs, &mapping, &table));
-    assert!(rhs.equals(&lhs, &mapping, &table)); // symmetric
+    assert!(lhs.equals(&rhs, &premises, &table));
+    assert!(rhs.equals(&lhs, &premises, &table)); // symmetric
 }
 
 /*
@@ -243,8 +252,10 @@ fn more_transitivity_test() {
         ),
     ];
 
-    let mapping: Mapping<Symbolic> =
-        Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty());
+    let premises: Premises<Symbolic> = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty()),
+    };
 
     let table = Table::default();
 
@@ -258,7 +269,7 @@ fn more_transitivity_test() {
         id: ID::new(3),
     });
 
-    assert!(lhs.equals(&rhs, &mapping, &table));
+    assert!(lhs.equals(&rhs, &premises, &table));
 
     let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
         parent: GenericID::Enum(ID::new(0)),
@@ -270,8 +281,8 @@ fn more_transitivity_test() {
         id: ID::new(3),
     });
 
-    assert!(lhs.equals(&rhs, &mapping, &table));
-    assert!(rhs.equals(&lhs, &mapping, &table)); // symmetric
+    assert!(lhs.equals(&rhs, &premises, &table));
+    assert!(rhs.equals(&lhs, &premises, &table)); // symmetric
 }
 
 /*
@@ -308,8 +319,10 @@ fn by_unification_test() {
         ),
     ];
 
-    let mapping: Mapping<Symbolic> =
-        Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty());
+    let premises: Premises<Symbolic> = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty()),
+    };
 
     let table = Table::default();
 
@@ -349,8 +362,8 @@ fn by_unification_test() {
         },
     });
 
-    assert!(lhs.equals(&rhs, &mapping, &table));
-    assert!(rhs.equals(&lhs, &mapping, &table)); // symmetric
+    assert!(lhs.equals(&rhs, &premises, &table));
+    assert!(rhs.equals(&lhs, &premises, &table)); // symmetric
 }
 
 /*
@@ -414,11 +427,14 @@ fn fallacy_test() {
         ),
     ];
 
-    let mapping: Mapping<Symbolic> = Mapping::from_pairs(
-        std::iter::empty(),
-        equalities.iter().cloned(),
-        std::iter::empty(),
-    );
+    let premises: Premises<Symbolic> = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(
+            std::iter::empty(),
+            equalities.iter().cloned(),
+            std::iter::empty(),
+        ),
+    };
 
     let table = Table::default();
 
@@ -431,8 +447,8 @@ fn fallacy_test() {
         id: ID::new(3),
     });
 
-    assert!(!lhs.equals(&rhs, &mapping, &table));
-    assert!(!rhs.equals(&lhs, &mapping, &table)); // symmetric
+    assert!(!lhs.equals(&rhs, &premises, &table));
+    assert!(!rhs.equals(&lhs, &premises, &table)); // symmetric
 
     let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
         parent: GenericID::Enum(ID::new(0)),
@@ -444,6 +460,6 @@ fn fallacy_test() {
         id: ID::new(4),
     });
 
-    assert!(!lhs.equals(&rhs, &mapping, &table));
-    assert!(!rhs.equals(&lhs, &mapping, &table)); // symmetric
+    assert!(!lhs.equals(&rhs, &premises, &table));
+    assert!(!rhs.equals(&lhs, &premises, &table)); // symmetric
 }

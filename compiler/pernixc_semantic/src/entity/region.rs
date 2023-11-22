@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::{Entity, Model, Substitution};
+use super::{Entity, Model, Substitution, predicate::Forall};
 use crate::symbol::LifetimeParameterID;
 
 /// Represents a particular variable region
@@ -18,7 +18,7 @@ pub enum Region<S: Model> {
     Local(S::LocalRegion),
 
     /// Quantified region, denoted by `for<'a> 'a`.
-    Forall(S::ForallRegion),
+    Forall(Forall),
 }
 
 impl<S: Model> Entity<S> for Region<S> {
@@ -29,7 +29,6 @@ impl<S: Model> Entity<S> for Region<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         match self {
             Self::Static => Region::Static,
@@ -50,7 +49,6 @@ impl<S: Model> Entity<S> for Region<S> {
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         match self {
             Self::Static => Some(Region::Static),

@@ -2,7 +2,7 @@
 
 use std::collections::hash_map::Entry;
 
-use super::{Mapping, QueryRecords};
+use super::QueryRecords;
 use crate::{
     entity::{
         constant::{self, Constant},
@@ -10,6 +10,7 @@ use crate::{
         region::Region,
         GenericArguments, Model, Substitution,
     },
+    logic::Premises,
     table::Table,
 };
 
@@ -137,7 +138,7 @@ macro_rules! tuple_unify_body {
         fn tuple_unify(
             lhs: &$domain::Tuple<S>,
             rhs: &$domain::Tuple<S>,
-            premise_mapping: &Mapping<S>,
+            premises: &Premises<S>,
             table: &Table,
             records: &mut QueryRecords<S>,
             config: &impl Config<S>,
@@ -155,7 +156,7 @@ macro_rules! tuple_unify_body {
                         existing = Self::unify_internal(
                             lhs_element,
                             rhs_element,
-                            premise_mapping,
+                            premises,
                             table,
                             records,
                             config,
@@ -191,7 +192,7 @@ macro_rules! tuple_unify_body {
                         existing = Self::unify_internal(
                             lhs_element,
                             rhs_element,
-                            premise_mapping,
+                            premises,
                             table,
                             records,
                             config,
@@ -210,7 +211,7 @@ macro_rules! tuple_unify_body {
                         existing = Self::unify_internal(
                             lhs_element,
                             rhs_element,
-                            premise_mapping,
+                            premises,
                             table,
                             records,
                             config,
@@ -230,7 +231,7 @@ macro_rules! tuple_unify_body {
                             existing = Self::unify_internal(
                                 &parameter,
                                 &rhs_unpack,
-                                premise_mapping,
+                                premises,
                                 table,
                                 records,
                                 config,
@@ -243,7 +244,7 @@ macro_rules! tuple_unify_body {
                             existing = Self::unify_internal(
                                 &trait_member,
                                 &rhs_unpack,
-                                premise_mapping,
+                                premises,
                                 table,
                                 records,
                                 config,
@@ -267,7 +268,7 @@ macro_rules! unify_internal_body {
         pub(super) fn unify_internal(
             lhs: &Self,
             rhs: &Self,
-            premise_mapping: &Mapping<S>,
+            premises: &Premises<S>,
             table: &Table,
             records: &mut QueryRecords<S>,
             config: &impl Config<S>,
@@ -286,8 +287,7 @@ macro_rules! unify_internal_body {
             if config.$mappable_func(lhs, rhs) {
                 match existing.$sub.entry(lhs.clone()) {
                     Entry::Occupied(entry) => {
-                        if !Self::equals_internal(entry.get(), rhs, premise_mapping, table, records)
-                        {
+                        if !Self::equals_internal(entry.get(), rhs, premises, table, records) {
                             records.$record_set.remove(&terms);
 
                             let existing_term = entry.remove();
@@ -315,13 +315,7 @@ macro_rules! unify_internal_body {
                 existing.types.len() + existing.constants.len() + existing.regions.len();
 
             let error = match Self::sub_structural_unify_internal(
-                lhs,
-                rhs,
-                premise_mapping,
-                table,
-                records,
-                config,
-                existing,
+                lhs, rhs, premises, table, records, config, existing,
             ) {
                 Ok(existing) => {
                     records.$record_set.remove(&terms);
@@ -334,8 +328,8 @@ macro_rules! unify_internal_body {
             };
 
             // try to unify by looking for equvialences
-            for (lhs_mapping, rhs_mappings) in &premise_mapping.$sub {
-                if !Self::equals_internal(rhs, lhs_mapping, premise_mapping, table, records) {
+            for (lhs_mapping, rhs_mappings) in &premises.mapping.$sub {
+                if !Self::equals_internal(rhs, lhs_mapping, premises, table, records) {
                     continue;
                 }
 
@@ -343,7 +337,7 @@ macro_rules! unify_internal_body {
                     match Self::unify_internal(
                         lhs,
                         rhs_mapping,
-                        premise_mapping,
+                        premises,
                         table,
                         records,
                         config,
@@ -377,7 +371,7 @@ macro_rules! unify_internal_body {
                 }
             };
 
-            let Some(normalized) = normalizable.normalize(premise_mapping, table, records) else {
+            let Some(normalized) = normalizable.normalize_internal(premises, table, records) else {
                 records.$record_set.remove(&terms);
                 return Err((existing, error));
             };
@@ -386,7 +380,7 @@ macro_rules! unify_internal_body {
                 match Self::unify_internal(
                     if swapped { target } else { &normalized },
                     if swapped { &normalized } else { target },
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -422,14 +416,6 @@ impl<S: Model> Type<S> {
 
     /// Unifies two types.
     ///
-    /// # Parameters
-    ///
-    /// - `lhs`: The source type to unify.
-    /// - `rhs`: The destination type to unify.
-    /// - `premise_mapping`: The mapping that is used as a premise.
-    /// - `table`: The table that is used for normalization.
-    /// - `config`: The configuration that determines which types of terms can be unified.
-    ///
     /// # Returns
     ///
     /// Returns a [`Substitution`] that can be applied to the `lhs` type to make it equals to `rhs`.
@@ -440,14 +426,14 @@ impl<S: Model> Type<S> {
     pub fn unify(
         lhs: &Self,
         rhs: &Self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         config: &impl Config<S>,
     ) -> Result<Substitution<S>, Error<S>> {
         Self::unify_internal(
             lhs,
             rhs,
-            premise_mapping,
+            premises,
             table,
             &mut QueryRecords::default(),
             config,
@@ -460,7 +446,7 @@ impl<S: Model> Type<S> {
     pub(super) fn sub_structural_unify_internal(
         lhs: &Self,
         rhs: &Self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         records: &mut QueryRecords<S>,
         config: &impl Config<S>,
@@ -472,7 +458,7 @@ impl<S: Model> Type<S> {
                 GenericArguments::unify_internal(
                     &lhs.generic_arguments,
                     &rhs.generic_arguments,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -483,7 +469,7 @@ impl<S: Model> Type<S> {
                 Self::unify_internal(
                     &lhs.pointee,
                     &rhs.pointee,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -494,7 +480,7 @@ impl<S: Model> Type<S> {
                 existing = Region::unify_internal(
                     &lhs.region,
                     &rhs.region,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -504,7 +490,7 @@ impl<S: Model> Type<S> {
                 Self::unify_internal(
                     &lhs.pointee,
                     &rhs.pointee,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -515,7 +501,7 @@ impl<S: Model> Type<S> {
                 existing = Self::unify_internal(
                     &lhs.element,
                     &rhs.element,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -525,7 +511,7 @@ impl<S: Model> Type<S> {
                 Constant::unify_internal(
                     &lhs.length,
                     &rhs.length,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -538,7 +524,7 @@ impl<S: Model> Type<S> {
                 existing = GenericArguments::unify_internal(
                     &lhs.trait_generic_arguments,
                     &rhs.trait_generic_arguments,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -548,7 +534,7 @@ impl<S: Model> Type<S> {
                 GenericArguments::unify_internal(
                     &lhs.member_generic_arguments,
                     &rhs.member_generic_arguments,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -556,10 +542,10 @@ impl<S: Model> Type<S> {
                 )
             }
             (Self::Tuple(lhs), Self::Tuple(rhs)) if Self::tuple_unifiable(lhs, rhs) => {
-                Self::tuple_unify(lhs, rhs, premise_mapping, table, records, config, existing)
+                Self::tuple_unify(lhs, rhs, premises, table, records, config, existing)
             }
             (_, _) => {
-                if Self::equals_internal(lhs, rhs, premise_mapping, table, records) {
+                if Self::equals_internal(lhs, rhs, premises, table, records) {
                     Ok(existing)
                 } else {
                     Err((existing, Error::Type(lhs.clone(), rhs.clone())))
@@ -584,7 +570,7 @@ impl<S: Model> Constant<S> {
     pub(super) fn sub_structural_unify_internal(
         lhs: &Self,
         rhs: &Self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         records: &mut QueryRecords<S>,
         config: &impl Config<S>,
@@ -597,7 +583,7 @@ impl<S: Model> Constant<S> {
                 existing = GenericArguments::unify_internal(
                     &lhs.generic_arguments,
                     &rhs.generic_arguments,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -606,13 +592,7 @@ impl<S: Model> Constant<S> {
 
                 for (lhs_field, rhs_field) in lhs.fields.iter().zip(&rhs.fields) {
                     existing = Self::unify_internal(
-                        lhs_field,
-                        rhs_field,
-                        premise_mapping,
-                        table,
-                        records,
-                        config,
-                        existing,
+                        lhs_field, rhs_field, premises, table, records, config, existing,
                     )?;
                 }
 
@@ -626,7 +606,7 @@ impl<S: Model> Constant<S> {
                 existing = GenericArguments::unify_internal(
                     &lhs.generic_arguments,
                     &rhs.generic_arguments,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -634,15 +614,9 @@ impl<S: Model> Constant<S> {
                 )?;
 
                 match (&lhs.associated_value, &rhs.associated_value) {
-                    (Some(lhs), Some(rhs)) => Self::unify_internal(
-                        lhs,
-                        rhs,
-                        premise_mapping,
-                        table,
-                        records,
-                        config,
-                        existing,
-                    ),
+                    (Some(lhs), Some(rhs)) => {
+                        Self::unify_internal(lhs, rhs, premises, table, records, config, existing)
+                    }
                     (None, None) => Ok(existing),
                     (_, _) => unreachable!(),
                 }
@@ -652,7 +626,7 @@ impl<S: Model> Constant<S> {
                 existing = Type::unify_internal(
                     &lhs.element_ty,
                     &rhs.element_ty,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -663,7 +637,7 @@ impl<S: Model> Constant<S> {
                     existing = Self::unify_internal(
                         lhs_element,
                         rhs_element,
-                        premise_mapping,
+                        premises,
                         table,
                         records,
                         config,
@@ -680,7 +654,7 @@ impl<S: Model> Constant<S> {
                 GenericArguments::unify_internal(
                     &lhs.trait_arguments,
                     &rhs.trait_arguments,
-                    premise_mapping,
+                    premises,
                     table,
                     records,
                     config,
@@ -689,11 +663,11 @@ impl<S: Model> Constant<S> {
             }
 
             (Self::Tuple(lhs), Self::Tuple(rhs)) if Self::tuple_unifiable(lhs, rhs) => {
-                Self::tuple_unify(lhs, rhs, premise_mapping, table, records, config, existing)
+                Self::tuple_unify(lhs, rhs, premises, table, records, config, existing)
             }
 
             (_, _) => {
-                if Self::equals_internal(lhs, rhs, premise_mapping, table, records) {
+                if Self::equals_internal(lhs, rhs, premises, table, records) {
                     Ok(existing)
                 } else {
                     Err((existing, Error::Constant(lhs.clone(), rhs.clone())))
@@ -707,7 +681,7 @@ impl<S: Model> Region<S> {
     pub(super) fn unify_internal(
         lhs: &Self,
         rhs: &Self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         records: &mut QueryRecords<S>,
         config: &impl Config<S>,
@@ -716,7 +690,7 @@ impl<S: Model> Region<S> {
         if config.region_mappable(lhs, rhs) {
             match existing.regions.entry(lhs.clone()) {
                 Entry::Occupied(entry) => {
-                    if !Self::equals_internal(entry.get(), rhs, premise_mapping, table, records) {
+                    if !Self::equals_internal(entry.get(), rhs, premises, table, records) {
                         let existing_term = entry.remove();
                         return Err((
                             existing,
@@ -734,7 +708,7 @@ impl<S: Model> Region<S> {
             }
 
             Ok(existing)
-        } else if Self::equals_internal(lhs, rhs, premise_mapping, table, records) {
+        } else if Self::equals_internal(lhs, rhs, premises, table, records) {
             Ok(existing)
         } else {
             Err((existing, Error::Region(lhs.clone(), rhs.clone())))
@@ -751,14 +725,14 @@ impl<S: Model> GenericArguments<S> {
     pub fn unify(
         lhs: &Self,
         rhs: &Self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         config: &impl Config<S>,
     ) -> Result<Substitution<S>, Error<S>> {
         Self::unify_internal(
             lhs,
             rhs,
-            premise_mapping,
+            premises,
             table,
             &mut QueryRecords::default(),
             config,
@@ -770,7 +744,7 @@ impl<S: Model> GenericArguments<S> {
     pub(super) fn unify_internal(
         lhs: &Self,
         rhs: &Self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         records: &mut QueryRecords<S>,
         config: &impl Config<S>,
@@ -784,32 +758,17 @@ impl<S: Model> GenericArguments<S> {
         }
 
         for (lhs, rhs) in lhs.types.iter().zip(&rhs.types) {
-            existing =
-                Type::unify_internal(lhs, rhs, premise_mapping, table, records, config, existing)?;
+            existing = Type::unify_internal(lhs, rhs, premises, table, records, config, existing)?;
         }
 
         for (lhs, rhs) in lhs.constants.iter().zip(&rhs.constants) {
-            existing = Constant::unify_internal(
-                lhs,
-                rhs,
-                premise_mapping,
-                table,
-                records,
-                config,
-                existing,
-            )?;
+            existing =
+                Constant::unify_internal(lhs, rhs, premises, table, records, config, existing)?;
         }
 
         for (lhs, rhs) in lhs.regions.iter().zip(&rhs.regions) {
-            existing = Region::unify_internal(
-                lhs,
-                rhs,
-                premise_mapping,
-                table,
-                records,
-                config,
-                existing,
-            )?;
+            existing =
+                Region::unify_internal(lhs, rhs, premises, table, records, config, existing)?;
         }
 
         Ok(existing)

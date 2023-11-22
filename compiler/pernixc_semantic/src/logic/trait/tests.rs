@@ -9,6 +9,7 @@ use pernixc_syntax::syntax_tree::target::Target;
 use crate::{
     arena::ID,
     entity::{
+        predicate::Premises,
         r#type::{AlgebraicKind, Primitive, Type},
         GenericArguments,
     },
@@ -90,23 +91,22 @@ fn trivial_trait_resolution() {
     #[allow(clippy::redundant_clone)]
     let mut generic_arguments: GenericArguments<Symbolic> = target_implementation_arguments.clone();
 
-    let implementations =
-        table.resolve_implementation(trait_id, &generic_arguments, &Mapping::default());
+    let implementations = table
+        .resolve_implementation(trait_id, &generic_arguments, &Premises::default())
+        .unwrap();
 
-    assert_eq!(implementations.len(), 1);
-
-    assert_eq!(implementations[0].deduced_unification.types.len(), 0);
-    assert_eq!(implementations[0].deduced_unification.regions.len(), 0);
-    assert_eq!(implementations[0].deduced_unification.constants.len(), 0);
+    assert_eq!(implementations.deduced_unification.types.len(), 0);
+    assert_eq!(implementations.deduced_unification.regions.len(), 0);
+    assert_eq!(implementations.deduced_unification.constants.len(), 0);
 
     assert!(table
-        .get(implementations[0].implementation_id)
+        .get(implementations.implementation_id)
         .unwrap()
         .signature
         .arguments
         .equals(
             &target_implementation_arguments,
-            &Mapping::default(),
+            &Premises::default(),
             &table
         ));
 
@@ -122,35 +122,33 @@ fn trivial_trait_resolution() {
         constants: Vec::new(),
     };
 
-    let implementations =
-        table.resolve_implementation(trait_id, &generic_arguments, &Mapping::default());
+    assert!(table
+        .resolve_implementation(trait_id, &generic_arguments, &Premises::default())
+        .is_err());
 
-    assert_eq!(implementations.len(), 0);
+    let implementations = table
+        .resolve_implementation(trait_id, &generic_arguments, &Premises {
+            non_equality_predicates: Vec::new(),
+            mapping: Mapping::from_pairs(
+                std::iter::empty(),
+                std::iter::once((parameter, float32)),
+                std::iter::empty(),
+            ),
+        })
+        .unwrap();
 
-    let implementations = table.resolve_implementation(
-        trait_id,
-        &generic_arguments,
-        &Mapping::from_pairs(
-            std::iter::empty(),
-            std::iter::once((parameter, float32)),
-            std::iter::empty(),
-        ),
-    );
-
-    assert_eq!(implementations.len(), 1);
-
-    assert_eq!(implementations[0].deduced_unification.types.len(), 0);
-    assert_eq!(implementations[0].deduced_unification.regions.len(), 0);
-    assert_eq!(implementations[0].deduced_unification.constants.len(), 0);
+    assert_eq!(implementations.deduced_unification.types.len(), 0);
+    assert_eq!(implementations.deduced_unification.regions.len(), 0);
+    assert_eq!(implementations.deduced_unification.constants.len(), 0);
 
     assert!(table
-        .get(implementations[0].implementation_id)
+        .get(implementations.implementation_id)
         .unwrap()
         .signature
         .arguments
         .equals(
             &target_implementation_arguments,
-            &Mapping::default(),
+            &Premises::default(),
             &table
         ));
 }
@@ -260,27 +258,21 @@ fn trait_resolution_with_specialization_implementation_one() {
         constants: Vec::new(),
     };
 
-    let implementations =
-        table.resolve_implementation(trait_symbol.id, &generic_arguments, &Mapping::default());
+    let implementations = table
+        .resolve_implementation(trait_symbol.id, &generic_arguments, &Premises::default())
+        .unwrap();
 
-    // no type variance
-    assert_eq!(implementations.len(), 1);
-
-    assert_eq!(
-        implementations[0].implementation_id,
-        first_implementation_id
-    );
-
-    assert_eq!(implementations[0].deduced_unification.types.len(), 2);
+    assert_eq!(implementations.implementation_id, first_implementation_id);
+    assert_eq!(implementations.deduced_unification.types.len(), 2);
 
     // T => uint32
     assert_eq!(
-        implementations[0].deduced_unification.types[&t_type_parameter],
+        implementations.deduced_unification.types[&t_type_parameter],
         Type::Primitive(Primitive::Uint32)
     );
     // U => uint64
     assert_eq!(
-        implementations[0].deduced_unification.types[&u_type_parameter],
+        implementations.deduced_unification.types[&u_type_parameter],
         Type::Primitive(Primitive::Uint64)
     );
 }
@@ -351,28 +343,22 @@ fn trait_resolution_with_specialization_implementation_second() {
         constants: Vec::new(),
     };
 
-    let implementations =
-        table.resolve_implementation(trait_symbol.id, &generic_arguments, &Mapping::default());
+    let implementations = table
+        .resolve_implementation(trait_symbol.id, &generic_arguments, &Premises::default())
+        .unwrap();
 
-    // no type variance
-    assert_eq!(implementations.len(), 1);
-
-    assert_eq!(
-        implementations[0].implementation_id,
-        second_implementation_id
-    );
-
-    assert_eq!(implementations[0].deduced_unification.types.len(), 2);
+    assert_eq!(implementations.implementation_id, second_implementation_id);
+    assert_eq!(implementations.deduced_unification.types.len(), 2);
 
     // T => int32
     assert_eq!(
-        implementations[0].deduced_unification.types[&t_type_parameter],
+        implementations.deduced_unification.types[&t_type_parameter],
         Type::Primitive(Primitive::Int32)
     );
 
     // U => Option<uint64>
     assert_eq!(
-        implementations[0].deduced_unification.types[&u_type_parameter],
+        implementations.deduced_unification.types[&u_type_parameter],
         Type::Algebraic(crate::entity::r#type::Algebraic {
             kind: AlgebraicKind::Enum(enum_symbol.id),
             generic_arguments: GenericArguments {
@@ -393,28 +379,23 @@ fn trait_resolution_with_specialization_implementation_second() {
         constants: Vec::new(),
     };
 
-    let implementations =
-        table.resolve_implementation(trait_symbol.id, &generic_arguments, &Mapping::default());
+    let implementations = table
+        .resolve_implementation(trait_symbol.id, &generic_arguments, &Premises::default())
+        .unwrap();
 
-    // no type variance
-    assert_eq!(implementations.len(), 1);
+    assert_eq!(implementations.implementation_id, second_implementation_id);
 
-    assert_eq!(
-        implementations[0].implementation_id,
-        second_implementation_id
-    );
-
-    assert_eq!(implementations[0].deduced_unification.types.len(), 2);
+    assert_eq!(implementations.deduced_unification.types.len(), 2);
 
     // T => int32
     assert_eq!(
-        implementations[0].deduced_unification.types[&t_type_parameter],
+        implementations.deduced_unification.types[&t_type_parameter],
         Type::Primitive(Primitive::Int32)
     );
 
     // U => uint64
     assert_eq!(
-        implementations[0].deduced_unification.types[&u_type_parameter],
+        implementations.deduced_unification.types[&u_type_parameter],
         Type::Primitive(Primitive::Uint64)
     );
 }
@@ -495,28 +476,23 @@ fn trait_resolution_with_specialization_implementation_three() {
         constants: Vec::new(),
     };
 
-    let implementations =
-        table.resolve_implementation(trait_symbol.id, &generic_arguments, &Mapping::default());
+    let implementations = table
+        .resolve_implementation(trait_symbol.id, &generic_arguments, &Premises::default())
+        .unwrap();
 
-    // no type variance
-    assert_eq!(implementations.len(), 1);
+    assert_eq!(implementations.implementation_id, third_implementation_id);
 
-    assert_eq!(
-        implementations[0].implementation_id,
-        third_implementation_id
-    );
-
-    assert_eq!(implementations[0].deduced_unification.types.len(), 2);
+    assert_eq!(implementations.deduced_unification.types.len(), 2);
 
     // T => uint32
     assert_eq!(
-        implementations[0].deduced_unification.types[&t_type_parameter],
+        implementations.deduced_unification.types[&t_type_parameter],
         Type::Primitive(Primitive::Uint32)
     );
 
     // U => uint32
     assert_eq!(
-        implementations[0].deduced_unification.types[&u_type_parameter],
+        implementations.deduced_unification.types[&u_type_parameter],
         Type::Primitive(Primitive::Uint32)
     );
 }
@@ -578,19 +554,19 @@ fn trait_resolution_with_specialization_implementation_four() {
         panic!("Implementation not found")
     };
 
-    let implementation = table.resolve_implementation(
-        trait_symbol.id,
-        &expected_generic_arguments,
-        &Mapping::default(),
-    );
+    let implementation = table
+        .resolve_implementation(
+            trait_symbol.id,
+            &expected_generic_arguments,
+            &Premises::default(),
+        )
+        .unwrap();
 
-    assert_eq!(implementation.len(), 1);
+    assert_eq!(implementation.implementation_id, fourth_implementation);
 
-    assert_eq!(implementation[0].implementation_id, fourth_implementation);
-
-    assert_eq!(implementation[0].deduced_unification.types.len(), 0);
-    assert_eq!(implementation[0].deduced_unification.regions.len(), 0);
-    assert_eq!(implementation[0].deduced_unification.constants.len(), 0);
+    assert_eq!(implementation.deduced_unification.types.len(), 0);
+    assert_eq!(implementation.deduced_unification.regions.len(), 0);
+    assert_eq!(implementation.deduced_unification.constants.len(), 0);
 }
 
 #[test]
@@ -639,19 +615,17 @@ fn trait_resolution_with_specialization_implementation_five() {
         constants: Vec::new(),
     };
 
-    let implementations =
-        table.resolve_implementation(trait_symbol.id, &generic_arguments, &Mapping::default());
+    let implementations = table
+        .resolve_implementation(trait_symbol.id, &generic_arguments, &Premises::default())
+        .unwrap();
 
-    // no type variance
-    assert_eq!(implementations.len(), 1);
+    assert_eq!(implementations.implementation_id, fifth_implementation);
 
-    assert_eq!(implementations[0].implementation_id, fifth_implementation);
-
-    assert_eq!(implementations[0].deduced_unification.types.len(), 1);
+    assert_eq!(implementations.deduced_unification.types.len(), 1);
 
     // T => int32
     assert_eq!(
-        implementations[0].deduced_unification.types[&t_type_parameter],
+        implementations.deduced_unification.types[&t_type_parameter],
         Type::Primitive(Primitive::Int32)
     );
 }

@@ -17,9 +17,9 @@ use crate::{
     logic::Mapping,
     symbol::{
         Accessibility, Constant, Enum, Function, Generic, GenericID, Global, GlobalID,
-        Implementation, ImplementationConstant, ImplementationFunction, ImplementationType, Module,
-        NegativeImplementation, Predicate, Struct, Trait, TraitConstant, TraitFunction, TraitType,
-        Type, Variant,
+        Implementation, ImplementationConstant, ImplementationFunction, ImplementationKindID,
+        ImplementationSignature, ImplementationType, Module, NegativeImplementation, Predicate,
+        Struct, Trait, TraitConstant, TraitFunction, TraitType, Type, Variant,
     },
 };
 
@@ -486,12 +486,7 @@ impl Table {
     #[must_use]
     pub fn get_type_overall_accessibility<S>(&self, ty: &r#type::Type<S>) -> Option<Accessibility>
     where
-        S: Model<
-            TypeInference = Never,
-            ConstantInference = Never,
-            LocalRegion = Never,
-            ForallRegion = Never,
-        >,
+        S: Model<TypeInference = Never, ConstantInference = Never, LocalRegion = Never>,
     {
         match ty {
             r#type::Type::Primitive(_) => Some(Accessibility::Public),
@@ -566,12 +561,7 @@ impl Table {
         constant: &constant::Constant<S>,
     ) -> Option<Accessibility>
     where
-        S: Model<
-            TypeInference = Never,
-            ConstantInference = Never,
-            LocalRegion = Never,
-            ForallRegion = Never,
-        >,
+        S: Model<TypeInference = Never, ConstantInference = Never, LocalRegion = Never>,
     {
         match constant {
             constant::Constant::Primitive(_) => Some(Accessibility::Public),
@@ -603,19 +593,14 @@ impl Table {
     #[must_use]
     pub fn get_region_overall_accessibility<S>(&self, region: &Region<S>) -> Option<Accessibility>
     where
-        S: Model<
-            TypeInference = Never,
-            ConstantInference = Never,
-            LocalRegion = Never,
-            ForallRegion = Never,
-        >,
+        S: Model<TypeInference = Never, ConstantInference = Never, LocalRegion = Never>,
     {
         match region {
-            Region::Static => Some(Accessibility::Public),
+            Region::Static | Region::Forall(_) => Some(Accessibility::Public),
             Region::Named(lifetime_parameter_id) => {
                 self.get_accessibility(lifetime_parameter_id.parent.into())
             }
-            Region::Local(never) | Region::Forall(never) => match *never {},
+            Region::Local(never) => match *never {},
         }
     }
 
@@ -634,12 +619,7 @@ impl Table {
         generic_arguments: &GenericArguments<S>,
     ) -> Option<Accessibility>
     where
-        S: Model<
-            TypeInference = Never,
-            ConstantInference = Never,
-            LocalRegion = Never,
-            ForallRegion = Never,
-        >,
+        S: Model<TypeInference = Never, ConstantInference = Never, LocalRegion = Never>,
     {
         let mut current_min = Accessibility::Public;
 
@@ -828,6 +808,30 @@ impl Table {
             ImplementationFunction,
             NegativeImplementation
         )
+    }
+
+    /// Gets the [`ImplementationSignature`] of the given [`ImplementationKindID`].
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if the given [`ImplementationKindID`] is not valid.
+    #[must_use]
+    pub fn get_implementation_signature(
+        &self,
+        implementation_kind: ImplementationKindID,
+    ) -> Option<MappedRwLockReadGuard<ImplementationSignature>> {
+        match implementation_kind {
+            ImplementationKindID::Positive(positive) => {
+                let implementation = self.get(positive)?;
+                Some(RwLockReadGuard::map(implementation, |x| &x.signature))
+            }
+            ImplementationKindID::Negative(negative) => {
+                let negative_implementation = self.get(negative)?;
+                Some(RwLockReadGuard::map(negative_implementation, |x| {
+                    &x.signature
+                }))
+            }
+        }
     }
 
     /// Returns the [`Global`] symbol from the given [`GlobalID`].

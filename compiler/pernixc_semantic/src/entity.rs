@@ -59,19 +59,6 @@ pub trait Model:
         + Send
         + Sync
         + From<Never>;
-
-    /// The type used to represents a higher-ranked (forall quantified) region.
-    type ForallRegion: Debug
-        + Clone
-        + PartialEq
-        + Eq
-        + PartialOrd
-        + Ord
-        + Hash
-        + 'static
-        + Send
-        + Sync
-        + From<Never>;
 }
 
 macro_rules! substitute_tuple_term {
@@ -150,8 +137,7 @@ pub trait Entity<S: Model> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>;
+        S::LocalRegion: Into<T::LocalRegion>;
 
     /// Tries to convert this entity into another model.
     #[must_use]
@@ -159,8 +145,7 @@ pub trait Entity<S: Model> {
     where
         S::ConstantInference: TryInto<T::ConstantInference>,
         S::TypeInference: TryInto<T::TypeInference>,
-        S::LocalRegion: TryInto<T::LocalRegion>,
-        S::ForallRegion: TryInto<T::ForallRegion>;
+        S::LocalRegion: TryInto<T::LocalRegion>;
 
     /// Applies the given substitution to the entity.
     fn apply(&mut self, substitution: &Substitution<S>);
@@ -181,7 +166,6 @@ impl<S: Model> Substitution<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         Substitution {
             types: self
@@ -303,7 +287,6 @@ impl<S: Model> Entity<S> for GenericArguments<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         GenericArguments {
             regions: self
@@ -343,7 +326,6 @@ impl<S: Model> Entity<S> for GenericArguments<S> {
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         let mut regions = Vec::with_capacity(self.regions.len());
         let mut types = Vec::with_capacity(self.types.len());

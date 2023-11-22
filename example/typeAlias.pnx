@@ -1,25 +1,20 @@
-public enum Option<T> {
-    Some(T),
-    None
-}
+public trait Clone<T> {}
 
-public trait Pair<T> {
-    type Output<V: T>;
-}
+public trait Test<'a, T, U> {}
 
-implements Pair<int32>
-{
-    type Output<V: Test<Option<int32>>::A> = float32;
-}
+implements<'a, T> Test<'a, T, T> 
+where:
+    Clone<T> {}
 
-public trait Test<T> {
-    type A;
-}
+implements<'a, T, U> Test<'a, T, U> 
+where:
+    'a: 'static
+{}
 
-implements<T> Test<T> {
-    type A = T;
-}
+public type Alias<'a,T> = T
+where:
+    Test<'a, T, T>;
 
-implements<T> Test<Option<T>> {
-    type A = T;
-}
+public type Inst<'a> = Alias<'a, int32>;
+
+

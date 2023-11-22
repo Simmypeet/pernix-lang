@@ -17,7 +17,7 @@ use crate::{
     arena::ID,
     entity::{
         constant,
-        predicate::{self, Forall, Predicate},
+        predicate::{self, Predicate},
         r#type::{self, Qualifier},
         region::Region,
         Entity, GenericArguments, Model, Substitution,
@@ -630,10 +630,7 @@ impl Table {
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<r#type::Type<S>, Error>
-    where
-        Forall: From<S::ForallRegion>,
-    {
+    ) -> Result<r#type::Type<S>, Error> {
         let is_simple_identifier = syntax_tree.rest().is_empty()
             && syntax_tree.leading_scope_separator().is_none()
             && syntax_tree.first().generic_arguments().is_none();
@@ -687,10 +684,7 @@ impl Table {
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<r#type::Type<S>, Error>
-    where
-        Forall: From<S::ForallRegion>,
-    {
+    ) -> Result<r#type::Type<S>, Error> {
         match syntax_tree {
             syntax_tree::r#type::Type::Primitive(primitive) => {
                 Ok(r#type::Type::Primitive(match primitive {
@@ -754,7 +748,7 @@ impl Table {
 
                 // the pointee must live as long as the region
                 config.check(
-                    Checking::Predicate(Predicate::TypeOutlive(predicate::TypeOutlives {
+                    Checking::Predicate(Predicate::TypeOutlives(predicate::TypeOutlives {
                         operand: (*pointee).clone(),
                         argument: region.clone(),
                     })),
@@ -1018,10 +1012,7 @@ impl Table {
         constant_arguments_is_empty: bool,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<Vec<r#type::Type<S>>, Error>
-    where
-        Forall: From<S::ForallRegion>,
-    {
+    ) -> Result<Vec<r#type::Type<S>>, Error> {
         handle_generic_arguments_supplied!(
             self,
             generic_identifier_span,
@@ -1046,10 +1037,7 @@ impl Table {
         resolved_id: GlobalID,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<Option<GenericArguments<S>>, Error>
-    where
-        Forall: From<S::ForallRegion>,
-    {
+    ) -> Result<Option<GenericArguments<S>>, Error> {
         let Ok(generic_id) = GenericID::try_from(resolved_id) else {
             if let Some(generic_arguments) = generic_identifier.generic_arguments() {
                 // non-fatal error, keep going
@@ -1084,7 +1072,7 @@ impl Table {
                     type_argument_syns.push(&**arg);
                 }
                 syntax_tree::GenericArgument::Lifetime(arg)
-                    if lifetime_argument_syns.is_empty() && type_argument_syns.is_empty() =>
+                    if constant_argument_syns.is_empty() && type_argument_syns.is_empty() =>
                 {
                     lifetime_argument_syns.push(arg);
                 }
@@ -1142,10 +1130,7 @@ impl Table {
         latest_resolution: Option<Resolution<S>>,
         span: &Span,
         config: &mut dyn Config<S>,
-    ) -> Resolution<S>
-    where
-        Forall: From<S::ForallRegion>,
-    {
+    ) -> Resolution<S> {
         // if trait is resolved, add trait bound predicate
         if let GlobalID::Trait(trait_id) = resolved_id {
             let predicate = Predicate::Trait(predicate::Trait {
@@ -1391,10 +1376,7 @@ impl Table {
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<Resolution<S>, Error>
-    where
-        Forall: From<S::ForallRegion>,
-    {
+    ) -> Result<Resolution<S>, Error> {
         // Checks if the given `referring_site` is a valid ID.
         drop(self.get_global(referring_site).ok_or(Error::InvalidID)?);
 

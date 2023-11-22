@@ -2288,7 +2288,6 @@ impl Display for ImplementationMember {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImplementationBody {
-    pub where_clause: Option<WhereClause>,
     pub members: Vec<ImplementationMember>,
 }
 
@@ -2296,7 +2295,6 @@ impl Input for ImplementationBody {
     type Output = super::ImplementationBody;
 
     fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.where_clause.assert(output.where_clause())?;
         prop_assert_eq!(self.members.len(), output.members().len());
 
         for (input, output) in self.members.iter().zip(output.members().iter()) {
@@ -2312,24 +2310,14 @@ impl Arbitrary for ImplementationBody {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            proptest::option::of(WhereClause::arbitrary()),
-            proptest::collection::vec(ImplementationMember::arbitrary(), 0..=6),
-        )
-            .prop_map(|(where_clause, members)| Self {
-                where_clause,
-                members,
-            })
+        (proptest::collection::vec(ImplementationMember::arbitrary(), 0..=6))
+            .prop_map(|members| Self { members })
             .boxed()
     }
 }
 
 impl Display for ImplementationBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(where_clause) = &self.where_clause {
-            write!(f, " {where_clause}")?;
-        }
-
         f.write_char('{')?;
         for member in &self.members {
             Display::fmt(member, f)?;
@@ -2343,6 +2331,7 @@ pub struct ImplementationSignature {
     pub generic_parameters: Option<GenericParameters>,
     pub is_const: bool,
     pub qualified_identifier: QualifiedIdentifier,
+    pub where_clause: Option<WhereClause>,
 }
 
 impl Input for ImplementationSignature {
@@ -2354,8 +2343,7 @@ impl Input for ImplementationSignature {
         self.qualified_identifier
             .assert(output.qualified_identifier())?;
         prop_assert_eq!(self.is_const, output.const_keyword.is_some());
-
-        Ok(())
+        self.where_clause.assert(output.where_clause())
     }
 }
 
@@ -2368,12 +2356,14 @@ impl Arbitrary for ImplementationSignature {
             proptest::option::of(GenericParameters::arbitrary()),
             QualifiedIdentifier::arbitrary_with((false, None)),
             proptest::bool::ANY,
+            proptest::option::of(WhereClause::arbitrary()),
         )
             .prop_map(
-                |(generic_parameters, qualified_identifier, is_const)| Self {
+                |(generic_parameters, qualified_identifier, is_const, where_clause)| Self {
                     generic_parameters,
                     is_const,
                     qualified_identifier,
+                    where_clause,
                 },
             )
             .boxed()
@@ -2393,6 +2383,10 @@ impl Display for ImplementationSignature {
         }
 
         write!(f, " {}", self.qualified_identifier)?;
+
+        if let Some(where_clause) = self.where_clause.as_ref() {
+            write!(f, " {where_clause}")?;
+        }
 
         Ok(())
     }
@@ -2436,7 +2430,7 @@ impl Arbitrary for ImplementationKind {
 impl Display for ImplementationKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Negative => write!(f, "= delete;"),
+            Self::Negative => write!(f, " delete;"),
             Self::Positive(body) => Display::fmt(body, f),
         }
     }

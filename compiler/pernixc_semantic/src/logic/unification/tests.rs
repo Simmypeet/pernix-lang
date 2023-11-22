@@ -3,6 +3,7 @@ use crate::{
     arena::ID,
     entity::{
         constant::Constant,
+        predicate::Premises,
         r#type::{self, Algebraic, AlgebraicKind, Tuple, TupleElement, Type},
         region::Region,
         Entity, GenericArguments, Model,
@@ -31,8 +32,10 @@ fn tuple_test() {
         }),
     )];
 
-    let mapping: Mapping<Symbolic> =
-        Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty());
+    let premises: Premises<Symbolic> = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty()),
+    };
 
     // unify( (1?, 2?...), (0?...) )
     //
@@ -63,7 +66,7 @@ fn tuple_test() {
 
     let table = Table::default();
 
-    let sub = Type::unify(&lhs, &rhs, &mapping, &table, &VariableConfig).unwrap();
+    let sub = Type::unify(&lhs, &rhs, &premises, &table, &VariableConfig).unwrap();
 
     assert!(sub
         .types
@@ -72,7 +75,11 @@ fn tuple_test() {
             id: ID::new(1),
         }))
         .unwrap()
-        .equals(&Type::Primitive(r#type::Primitive::Int32), &mapping, &table,));
+        .equals(
+            &Type::Primitive(r#type::Primitive::Int32),
+            &premises,
+            &table,
+        ));
 
     assert!(sub
         .types
@@ -88,7 +95,7 @@ fn tuple_test() {
                     TupleElement::Regular(Type::Primitive(r#type::Primitive::Float64)),
                 ],
             }),
-            &mapping,
+            &premises,
             &table,
         ));
 }
@@ -127,8 +134,10 @@ fn recursive_term_test() {
         ),
     ];
 
-    let mapping: Mapping<Symbolic> =
-        Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty());
+    let premises: Premises<Symbolic> = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty()),
+    };
 
     let table = Table::default();
 
@@ -156,7 +165,7 @@ fn recursive_term_test() {
         id: ID::new(0),
     });
 
-    let sub = Type::unify(&lhs, &rhs, &mapping, &table, &VariableConfig).unwrap();
+    let sub = Type::unify(&lhs, &rhs, &premises, &table, &VariableConfig).unwrap();
 
     let mapped = sub
         .types
@@ -166,14 +175,14 @@ fn recursive_term_test() {
         }))
         .unwrap();
 
-    assert!(mapped.equals(&Type::Primitive(r#type::Primitive::Bool), &mapping, &table));
+    assert!(mapped.equals(&Type::Primitive(r#type::Primitive::Bool), &premises, &table));
 
-    assert!(!lhs.equals(&rhs, &mapping, &table));
+    assert!(!lhs.equals(&rhs, &premises, &table));
 
     // after applying the substitution, the lhs should be equal to the rhs
     lhs.apply(&sub);
 
-    assert!(lhs.equals(&rhs, &mapping, &table));
+    assert!(lhs.equals(&rhs, &premises, &table));
 }
 
 #[test]
@@ -202,7 +211,11 @@ fn unification_conflict() {
         }),
     )];
 
-    let premise_mapping = Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty());
+    let premises = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty()),
+    };
+
     let table = Table::default();
 
     let lhs = Type::Algebraic(Algebraic {
@@ -227,7 +240,7 @@ fn unification_conflict() {
         id: ID::new(0),
     });
 
-    assert!(Type::unify(&lhs, &rhs, &premise_mapping, &table, &VariableConfig).is_err());
+    assert!(Type::unify(&lhs, &rhs, &premises, &table, &VariableConfig).is_err());
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

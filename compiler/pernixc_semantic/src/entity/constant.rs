@@ -124,7 +124,6 @@ impl<S: Model> Entity<S> for Constant<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         match self {
             Self::Primitive(primitive) => Constant::Primitive(primitive),
@@ -228,7 +227,6 @@ impl<S: Model> Entity<S> for Constant<S> {
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         match self {
             Self::Primitive(primitive) => Some(Constant::Primitive(primitive)),

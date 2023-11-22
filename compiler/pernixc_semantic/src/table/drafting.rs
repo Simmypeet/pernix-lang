@@ -194,7 +194,7 @@ impl Table {
                     .push(negative_implementation_id);
             }
             syntax_tree::item::ImplementationKind::Positive(body) => {
-                let (where_clause, _, members, _) = body.dissolve();
+                let (_, members, _) = body.dissolve();
 
                 let implementation_id = draft_symbol!(
                     self,
@@ -216,7 +216,7 @@ impl Table {
                         implementation_function_ids_by_trait_function_id: HashMap::new(),
                         implementation_constant_ids_by_trait_constant_id: HashMap::new()
                     },
-                    (signature, where_clause),
+                    signature,
                     states_by_implementation_id
                 );
 

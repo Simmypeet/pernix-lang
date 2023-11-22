@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     entity::{
         constant::{self, Constant},
+        predicate::Premises,
         r#type::{self, Type},
         region::Region,
         Entity, GenericArguments, Model,
@@ -13,8 +14,11 @@ use crate::{
 };
 
 pub mod equality;
+mod predicate;
 pub mod r#trait;
 pub mod unification;
+
+pub use predicate::TraitSatisfiability;
 
 /// Is used to store the requested queries to prevent infinite recursion.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -28,6 +32,8 @@ struct QueryRecords<S: Model> {
 
     type_is_definite: HashSet<Type<S>>,
     constant_is_definite: HashSet<Constant<S>>,
+
+    constant_type_satisfies: HashSet<Type<S>>,
 }
 
 /// Represents a mapping of terms.
@@ -93,7 +99,7 @@ macro_rules! normalization_body {
         #[allow(clippy::significant_drop_tightening)]
         fn normalize_internal<'a>(
             &'a $normalizable,
-            premise_mapping: &Mapping<S>,
+            premises: &Premises<S>,
             $table: &'a Table,
             records: &mut QueryRecords<S>,
         ) -> Option<impl Iterator<Item = $obj> + 'a> {
@@ -103,10 +109,10 @@ macro_rules! normalization_body {
                 return None;
             };
 
-            let implementations = $table.resolve_implementation_internal(
+             let implementations = $table.resolve_implementation_internal(
                 trait_id,
                 &$normalizable.$arguments_field,
-                premise_mapping,
+                premises,
                 records,
             );
 
@@ -176,34 +182,40 @@ impl<S: Model> r#type::TraitMember<S> {
     #[must_use]
     pub fn normalize<'a>(
         &'a self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &'a Table,
     ) -> Option<impl Iterator<Item = r#type::Type<S>> + 'a> {
-        self.normalize_internal(premise_mapping, table, &mut QueryRecords::default())
+        self.normalize_internal(premises, table, &mut QueryRecords::default())
     }
 }
 
 impl<S: Model> GenericArguments<S> {
     fn is_definite_internal(
         &self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         records: &mut QueryRecords<S>,
     ) -> bool {
         self.types
             .iter()
-            .all(|x| x.is_definite_internal(premise_mapping, table, records))
+            .all(|x| x.is_definite_internal(premises, table, records))
             && self
                 .constants
                 .iter()
-                .all(|x| x.is_definite_internal(premise_mapping, table, records))
+                .all(|x| x.is_definite_internal(premises, table, records))
+    }
+
+    /// Checks if the given generic arguments are definite.
+    #[must_use]
+    pub fn is_definite(&self, premises: &Premises<S>, table: &Table) -> bool {
+        self.is_definite_internal(premises, table, &mut QueryRecords::default())
     }
 }
 
 impl<S: Model> Constant<S> {
     fn is_definite_internal(
         &self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         records: &mut QueryRecords<S>,
     ) -> bool {
@@ -220,39 +232,39 @@ impl<S: Model> Constant<S> {
             Self::Struct(constant) => {
                 constant
                     .generic_arguments
-                    .is_definite_internal(premise_mapping, table, records)
+                    .is_definite_internal(premises, table, records)
                     && constant
                         .fields
                         .iter()
-                        .all(|x| x.is_definite_internal(premise_mapping, table, records))
+                        .all(|x| x.is_definite_internal(premises, table, records))
             }
             Self::Enum(constant) => {
                 constant
                     .generic_arguments
-                    .is_definite_internal(premise_mapping, table, records)
-                    && constant.associated_value.as_ref().map_or(true, |x| {
-                        x.is_definite_internal(premise_mapping, table, records)
-                    })
+                    .is_definite_internal(premises, table, records)
+                    && constant
+                        .associated_value
+                        .as_ref()
+                        .map_or(true, |x| x.is_definite_internal(premises, table, records))
             }
             Self::Array(constant) => {
                 constant
                     .element_ty
-                    .is_definite_internal(premise_mapping, table, records)
+                    .is_definite_internal(premises, table, records)
                     && constant
                         .elements
                         .iter()
-                        .all(|x| x.is_definite_internal(premise_mapping, table, records))
+                        .all(|x| x.is_definite_internal(premises, table, records))
             }
             Self::TraitMember(constant) => {
                 let mut result = false;
 
-                let Some(normalized) = constant.normalize_internal(premise_mapping, table, records)
-                else {
+                let Some(normalized) = constant.normalize_internal(premises, table, records) else {
                     return false;
                 };
 
                 for normalized in normalized {
-                    if normalized.is_definite_internal(premise_mapping, table, records) {
+                    if normalized.is_definite_internal(premises, table, records) {
                         result = true;
                         break;
                     }
@@ -262,26 +274,23 @@ impl<S: Model> Constant<S> {
             }
             Self::Tuple(constant) => constant.elements.iter().all(|x| match x {
                 constant::TupleElement::Regular(regular) => {
-                    regular.is_definite_internal(premise_mapping, table, records)
+                    regular.is_definite_internal(premises, table, records)
                 }
                 constant::TupleElement::Unpacked(constant::Unpacked::Parameter(param)) => {
-                    Self::Parameter(*param).is_definite_internal(premise_mapping, table, records)
+                    Self::Parameter(*param).is_definite_internal(premises, table, records)
                 }
                 constant::TupleElement::Unpacked(constant::Unpacked::TraitMember(trait_member)) => {
-                    Self::TraitMember(trait_member.clone()).is_definite_internal(
-                        premise_mapping,
-                        table,
-                        records,
-                    )
+                    Self::TraitMember(trait_member.clone())
+                        .is_definite_internal(premises, table, records)
                 }
             }),
         };
 
         if !result {
-            'outer: for (lhs, rhss) in &premise_mapping.constants {
-                if Self::equals_internal(self, lhs, premise_mapping, table, records) {
+            'outer: for (lhs, rhss) in &premises.mapping.constants {
+                if Self::equals_internal(self, lhs, premises, table, records) {
                     for rhs in rhss {
-                        if rhs.is_definite_internal(premise_mapping, table, records) {
+                        if rhs.is_definite_internal(premises, table, records) {
                             result = true;
                             break 'outer;
                         }
@@ -298,7 +307,7 @@ impl<S: Model> Constant<S> {
 impl<S: Model> Type<S> {
     fn is_definite_internal(
         &self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         records: &mut QueryRecords<S>,
     ) -> bool {
@@ -312,33 +321,24 @@ impl<S: Model> Type<S> {
         let mut result = match self {
             Self::Primitive(_) => true,
             Self::Inference(_) | Self::Parameter(_) => false,
-            Self::Algebraic(ty) => {
-                ty.generic_arguments
-                    .is_definite_internal(premise_mapping, table, records)
-            }
-            Self::Pointer(ty) => ty
-                .pointee
-                .is_definite_internal(premise_mapping, table, records),
-            Self::Reference(ty) => ty
-                .pointee
-                .is_definite_internal(premise_mapping, table, records),
+            Self::Algebraic(ty) => ty
+                .generic_arguments
+                .is_definite_internal(premises, table, records),
+            Self::Pointer(ty) => ty.pointee.is_definite_internal(premises, table, records),
+            Self::Reference(ty) => ty.pointee.is_definite_internal(premises, table, records),
             Self::Array(ty) => {
-                ty.length
-                    .is_definite_internal(premise_mapping, table, records)
-                    && ty
-                        .element
-                        .is_definite_internal(premise_mapping, table, records)
+                ty.length.is_definite_internal(premises, table, records)
+                    && ty.element.is_definite_internal(premises, table, records)
             }
             Self::TraitMember(ty) => {
                 let mut result = false;
 
-                let Some(normalized) = ty.normalize_internal(premise_mapping, table, records)
-                else {
+                let Some(normalized) = ty.normalize_internal(premises, table, records) else {
                     return false;
                 };
 
                 for normalized in normalized {
-                    if normalized.is_definite_internal(premise_mapping, table, records) {
+                    if normalized.is_definite_internal(premises, table, records) {
                         result = true;
                         break;
                     }
@@ -348,26 +348,23 @@ impl<S: Model> Type<S> {
             }
             Self::Tuple(param) => param.elements.iter().all(|x| match x {
                 r#type::TupleElement::Regular(regular) => {
-                    regular.is_definite_internal(premise_mapping, table, records)
+                    regular.is_definite_internal(premises, table, records)
                 }
                 r#type::TupleElement::Unpacked(r#type::Unpacked::Parameter(param)) => {
-                    Self::Parameter(*param).is_definite_internal(premise_mapping, table, records)
+                    Self::Parameter(*param).is_definite_internal(premises, table, records)
                 }
                 r#type::TupleElement::Unpacked(r#type::Unpacked::TraitMember(trait_member)) => {
-                    Self::TraitMember(trait_member.clone()).is_definite_internal(
-                        premise_mapping,
-                        table,
-                        records,
-                    )
+                    Self::TraitMember(trait_member.clone())
+                        .is_definite_internal(premises, table, records)
                 }
             }),
         };
 
         if !result {
-            'outer: for (lhs, rhss) in &premise_mapping.types {
-                if Self::equals_internal(self, lhs, premise_mapping, table, records) {
+            'outer: for (lhs, rhss) in &premises.mapping.types {
+                if Self::equals_internal(self, lhs, premises, table, records) {
                     for rhs in rhss {
-                        if rhs.is_definite_internal(premise_mapping, table, records) {
+                        if rhs.is_definite_internal(premises, table, records) {
                             result = true;
                             break 'outer;
                         }

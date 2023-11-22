@@ -84,14 +84,9 @@ pub(super) struct Manager {
         ID<symbol::NegativeImplementation>,
         State<syntax_tree::item::ImplementationSignature>,
     >,
+    pub(super) states_by_implementation_id:
+        HashMap<ID<symbol::Implementation>, State<syntax_tree::item::ImplementationSignature>>,
 
-    pub(super) states_by_implementation_id: HashMap<
-        ID<symbol::Implementation>,
-        State<(
-            syntax_tree::item::ImplementationSignature,
-            Option<syntax_tree::item::WhereClause>,
-        )>,
-    >,
     pub(super) states_by_implementation_function_id: HashMap<
         ID<symbol::ImplementationFunction>,
         State<syntax_tree::item::ImplementationFunction>,

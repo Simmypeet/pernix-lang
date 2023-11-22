@@ -1370,7 +1370,7 @@ impl SourceElement for StructMember {
 /// Syntax Synopsis:
 /// ``` txt
 /// ImplementationSignature:
-///     'implements' GenericParameters? const? QualifiedIdentifier
+///     'implements' GenericParameters? const? QualifiedIdentifier WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1383,6 +1383,8 @@ pub struct ImplementationSignature {
     const_keyword: Option<Keyword>,
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
+    #[get = "pub"]
+    where_clause: Option<WhereClause>,
 }
 
 impl ImplementationSignature {
@@ -1395,12 +1397,14 @@ impl ImplementationSignature {
         Option<GenericParameters>,
         Option<Keyword>,
         QualifiedIdentifier,
+        Option<WhereClause>,
     ) {
         (
             self.implements_keyword,
             self.generic_parameters,
             self.const_keyword,
             self.qualified_identifier,
+            self.where_clause,
         )
     }
 }
@@ -1511,13 +1515,11 @@ impl SourceElement for ImplementationMember {
 /// Syntax Synopsis:
 /// ``` txt
 /// NegativeImplementation:
-///     '=' 'delete' ';'
+///     'delete' ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct NegativeImplementation {
-    #[get = "pub"]
-    equals: Punctuation,
     #[get = "pub"]
     delete_keyword: Keyword,
     #[get = "pub"]
@@ -1525,19 +1527,17 @@ pub struct NegativeImplementation {
 }
 
 impl SourceElement for NegativeImplementation {
-    fn span(&self) -> Span { self.equals.span.join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span { self.delete_keyword.span.join(&self.semicolon.span).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
 /// ImplementationBody:
-///     WhereClause? '{' ImplementationMember* '}'
+///     '{' ImplementationMember* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ImplementationBody {
-    #[get = "pub"]
-    where_clause: Option<WhereClause>,
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
@@ -1549,32 +1549,13 @@ pub struct ImplementationBody {
 impl ImplementationBody {
     /// Dissolves the [`ImplementationBody`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (
-        Option<WhereClause>,
-        Punctuation,
-        Vec<ImplementationMember>,
-        Punctuation,
-    ) {
-        (
-            self.where_clause,
-            self.left_brace,
-            self.members,
-            self.right_brace,
-        )
+    pub fn dissolve(self) -> (Punctuation, Vec<ImplementationMember>, Punctuation) {
+        (self.left_brace, self.members, self.right_brace)
     }
 }
 
 impl SourceElement for ImplementationBody {
-    fn span(&self) -> Span {
-        let start = self
-            .where_clause
-            .as_ref()
-            .map_or_else(|| self.left_brace.span.clone(), SourceElement::span);
-
-        start.join(&self.right_brace.span).unwrap()
-    }
+    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
 }
 
 /// Syntax Synopsis:
@@ -2267,6 +2248,9 @@ impl<'a> Parser<'a> {
             ) || matches!(
                 self.stop_at_significant(),
                 Reading::IntoDelimited(p) if p.punctuation == '{'
+            ) || matches!(
+                self.stop_at_significant(),
+                Reading::Atomic(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::Delete
             ) {
                 trailing_separator = Some(comma);
                 break;
@@ -2491,8 +2475,6 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<ImplementationBody> {
-        let where_clause = self.try_parse_where_clause(handler)?;
-
         let delimited_tree = self.step_into(
             Delimiter::Brace,
             |parser| {
@@ -2520,7 +2502,6 @@ impl<'a> Parser<'a> {
         )?;
 
         Some(ImplementationBody {
-            where_clause,
             left_brace: delimited_tree.open,
             members: delimited_tree.tree?,
             right_brace: delimited_tree.close,
@@ -2542,18 +2523,18 @@ impl<'a> Parser<'a> {
             _ => None,
         };
         let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
 
         let kind = match self.stop_at_significant() {
-            Reading::Atomic(Token::Punctuation(equals)) if equals.punctuation == '=' => {
-                // eat equals
+            Reading::Atomic(Token::Keyword(delete_keyword))
+                if delete_keyword.keyword == KeywordKind::Delete =>
+            {
+                // eat delete
                 self.forward();
 
-                // eat delete keyword
-                let delete_keyword = self.parse_keyword(KeywordKind::Delete, handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 ImplementationKind::Negative(NegativeImplementation {
-                    equals,
                     delete_keyword,
                     semicolon,
                 })
@@ -2567,6 +2548,7 @@ impl<'a> Parser<'a> {
                 generic_parameters,
                 const_keyword,
                 qualified_identifier,
+                where_clause,
             },
             kind,
         })

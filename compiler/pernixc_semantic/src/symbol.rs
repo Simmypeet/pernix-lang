@@ -1235,8 +1235,6 @@ pub struct Symbolic;
 
 impl Model for Symbolic {
     type ConstantInference = Never;
-    type ForallRegion = Never;
-    // no extra context for region only 'static and lifetime parameter.
     type LocalRegion = Never;
     type TypeInference = Never;
 }

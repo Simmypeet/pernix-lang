@@ -2,11 +2,8 @@
 
 use std::{
     collections::HashSet,
-    marker::PhantomData,
     sync::atomic::{AtomicUsize, Ordering},
 };
-
-mod constant_type;
 
 use enum_as_inner::EnumAsInner;
 
@@ -19,17 +16,15 @@ use crate::{arena::ID, logic::Mapping, symbol};
 
 /// Represents a subset of [`Predicate`] that does not contain equality predicates.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum NonEquality<S: Model> {
-    RegionOutlive(RegionOutlives<S>),
-    TypeOutlive(TypeOutlives<S>),
+    RegionOutlives(RegionOutlives<S>),
+    TypeOutlives(TypeOutlives<S>),
     Trait(Trait<S>),
     ConstantType(ConstantType<S>),
 }
 
-impl<S: Model> Entity<S> for NonEquality<S>
-where
-    Forall: From<S::ForallRegion>,
-{
+impl<S: Model> Entity<S> for NonEquality<S> {
     type This<A: Model> = NonEquality<A>;
 
     fn into_other_model<T: Model>(self) -> Self::This<T>
@@ -37,14 +32,13 @@ where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         match self {
-            Self::RegionOutlive(region_outlives) => {
-                Self::This::RegionOutlive(region_outlives.into_other_model())
+            Self::RegionOutlives(region_outlives) => {
+                Self::This::RegionOutlives(region_outlives.into_other_model())
             }
-            Self::TypeOutlive(type_outlives) => {
-                Self::This::TypeOutlive(type_outlives.into_other_model())
+            Self::TypeOutlives(type_outlives) => {
+                Self::This::TypeOutlives(type_outlives.into_other_model())
             }
             Self::Trait(trait_) => Self::This::Trait(trait_.into_other_model()),
             Self::ConstantType(constant_type) => {
@@ -58,14 +52,13 @@ where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         Some(match self {
-            Self::RegionOutlive(region_outlives) => {
-                Self::This::RegionOutlive(region_outlives.try_into_other_model()?)
+            Self::RegionOutlives(region_outlives) => {
+                Self::This::RegionOutlives(region_outlives.try_into_other_model()?)
             }
-            Self::TypeOutlive(type_outlives) => {
-                Self::This::TypeOutlive(type_outlives.try_into_other_model()?)
+            Self::TypeOutlives(type_outlives) => {
+                Self::This::TypeOutlives(type_outlives.try_into_other_model()?)
             }
             Self::Trait(trait_) => Self::This::Trait(trait_.try_into_other_model()?),
             Self::ConstantType(constant_type) => {
@@ -76,8 +69,8 @@ where
 
     fn apply(&mut self, substitution: &super::Substitution<S>) {
         match self {
-            Self::RegionOutlive(region_outlives) => region_outlives.apply(substitution),
-            Self::TypeOutlive(type_outlives) => type_outlives.apply(substitution),
+            Self::RegionOutlives(region_outlives) => region_outlives.apply(substitution),
+            Self::TypeOutlives(type_outlives) => type_outlives.apply(substitution),
             Self::Trait(trait_) => trait_.apply(substitution),
             Self::ConstantType(constant_type) => constant_type.apply(substitution),
         }
@@ -88,18 +81,15 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Predicate<S: Model> {
-    RegionOutlive(RegionOutlives<S>),
-    TypeOutlive(TypeOutlives<S>),
+    RegionOutlives(RegionOutlives<S>),
+    TypeOutlives(TypeOutlives<S>),
     TypeEquals(TypeEquals<S>),
     ConstantEquals(ConstantEquals<S>),
     Trait(Trait<S>),
     ConstantType(ConstantType<S>),
 }
 
-impl<S: Model> Entity<S> for Predicate<S>
-where
-    Forall: From<S::ForallRegion>,
-{
+impl<S: Model> Entity<S> for Predicate<S> {
     type This<A: Model> = Predicate<A>;
 
     fn into_other_model<T: Model>(self) -> Self::This<T>
@@ -107,14 +97,13 @@ where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         match self {
-            Self::RegionOutlive(region_outlives) => {
-                Self::This::RegionOutlive(region_outlives.into_other_model())
+            Self::RegionOutlives(region_outlives) => {
+                Self::This::RegionOutlives(region_outlives.into_other_model())
             }
-            Self::TypeOutlive(type_outlives) => {
-                Self::This::TypeOutlive(type_outlives.into_other_model())
+            Self::TypeOutlives(type_outlives) => {
+                Self::This::TypeOutlives(type_outlives.into_other_model())
             }
             Self::TypeEquals(type_equals) => Self::This::TypeEquals(type_equals.into_other_model()),
             Self::ConstantEquals(constant_equals) => {
@@ -132,14 +121,13 @@ where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         Some(match self {
-            Self::RegionOutlive(region_outlives) => {
-                Self::This::RegionOutlive(region_outlives.try_into_other_model()?)
+            Self::RegionOutlives(region_outlives) => {
+                Self::This::RegionOutlives(region_outlives.try_into_other_model()?)
             }
-            Self::TypeOutlive(type_outlives) => {
-                Self::This::TypeOutlive(type_outlives.try_into_other_model()?)
+            Self::TypeOutlives(type_outlives) => {
+                Self::This::TypeOutlives(type_outlives.try_into_other_model()?)
             }
             Self::TypeEquals(type_equals) => {
                 Self::This::TypeEquals(type_equals.try_into_other_model()?)
@@ -156,8 +144,8 @@ where
 
     fn apply(&mut self, substitution: &super::Substitution<S>) {
         match self {
-            Self::RegionOutlive(region_outlives) => region_outlives.apply(substitution),
-            Self::TypeOutlive(type_outlives) => type_outlives.apply(substitution),
+            Self::RegionOutlives(region_outlives) => region_outlives.apply(substitution),
+            Self::TypeOutlives(type_outlives) => type_outlives.apply(substitution),
             Self::TypeEquals(type_equals) => type_equals.apply(substitution),
             Self::ConstantEquals(constant_equals) => constant_equals.apply(substitution),
             Self::Trait(trait_) => trait_.apply(substitution),
@@ -183,7 +171,6 @@ impl<S: Model> Entity<S> for ConstantType<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         Self::This {
             r#type: self.r#type.into_other_model(),
@@ -195,7 +182,6 @@ impl<S: Model> Entity<S> for ConstantType<S> {
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         Some(Self::This {
             r#type: self.r#type.try_into_other_model()?,
@@ -205,7 +191,7 @@ impl<S: Model> Entity<S> for ConstantType<S> {
     fn apply(&mut self, substitution: &super::Substitution<S>) { self.r#type.apply(substitution); }
 }
 
-/// Represents a region outlive predicate, defnoted by `'argument: 'target` syntax.
+/// Represents a region outlive predicate, defnoted by `'operand: 'argument` syntax.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RegionOutlives<S: Model> {
     /// The region that lives as long or longer than the [`Self::argument`] lifetime.
@@ -223,7 +209,6 @@ impl<S: Model> Entity<S> for RegionOutlives<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         Self::This {
             operand: self.operand.into_other_model(),
@@ -236,7 +221,6 @@ impl<S: Model> Entity<S> for RegionOutlives<S> {
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         Some(Self::This {
             operand: self.operand.try_into_other_model()?,
@@ -250,7 +234,7 @@ impl<S: Model> Entity<S> for RegionOutlives<S> {
     }
 }
 
-/// Represents a type outlive predicate, denoted by `TYPE: 'target` syntax.
+/// Represents a type outlive predicate, denoted by `TYPE: 'argument` syntax.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeOutlives<S: Model> {
     /// The type that lives as long or longer than the [`Self::argument`] lifetime.
@@ -268,7 +252,6 @@ impl<S: Model> Entity<S> for TypeOutlives<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         Self::This {
             operand: self.operand.into_other_model(),
@@ -281,7 +264,6 @@ impl<S: Model> Entity<S> for TypeOutlives<S> {
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         Some(Self::This {
             operand: self.operand.try_into_other_model()?,
@@ -316,7 +298,6 @@ impl<S: Model> Entity<S> for TypeEquals<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         Self::This {
             lhs: self.lhs.into_other_model(),
@@ -329,7 +310,6 @@ impl<S: Model> Entity<S> for TypeEquals<S> {
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         Some(Self::This {
             lhs: self.lhs.try_into_other_model()?,
@@ -354,7 +334,6 @@ impl<S: Model> Entity<S> for ConstantEquals<S> {
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         Self::This {
             lhs: self.lhs.into_other_model(),
@@ -367,7 +346,6 @@ impl<S: Model> Entity<S> for ConstantEquals<S> {
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         Some(Self::This {
             lhs: self.lhs.try_into_other_model()?,
@@ -391,13 +369,10 @@ pub struct Trait<S: Model> {
     pub const_trait: bool,
 
     /// The generic arguments supplied to the trait.
-    pub generic_arguments: GenericArguments<Quantified<S>>,
+    pub generic_arguments: GenericArguments<S>,
 }
 
-impl<S: Model> Entity<S> for Trait<S>
-where
-    Forall: From<S::ForallRegion>,
-{
+impl<S: Model> Entity<S> for Trait<S> {
     type This<A: Model> = Trait<A>;
 
     fn into_other_model<T: Model>(self) -> Self::This<T>
@@ -405,7 +380,6 @@ where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
         S::LocalRegion: Into<T::LocalRegion>,
-        S::ForallRegion: Into<T::ForallRegion>,
     {
         Self::This {
             trait_id: self.trait_id,
@@ -419,7 +393,6 @@ where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
         <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
-        <S as Model>::ForallRegion: TryInto<T::ForallRegion>,
     {
         Some(Self::This {
             trait_id: self.trait_id,
@@ -458,25 +431,13 @@ impl TryInto<Never> for Forall {
     fn try_into(self) -> Result<Never, Self::Error> { Err(self) }
 }
 
-/// Represents a struct that implements [`Model`] trait where the region context is assigned to
-/// [`Forall`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Quantified<S: Model>(PhantomData<S>);
-
-impl<S: Model> Model for Quantified<S> {
-    type ConstantInference = S::ConstantInference;
-    type ForallRegion = Forall;
-    type LocalRegion = S::LocalRegion;
-    type TypeInference = S::TypeInference;
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct QueryReocrds<S: Model> {
     constant_types: HashSet<r#type::Type<S>>,
 }
 
 /// Containing a list of non-equality predicates and a [`Mapping`] representing equality of terms.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Premises<S: Model> {
     /// A list of non-equality predicates.
     pub non_equality_predicates: Vec<NonEquality<S>>,
@@ -495,11 +456,11 @@ impl<S: Model> Premises<S> {
 
         for predicate in predicates {
             match predicate {
-                Predicate::RegionOutlive(outlives) => {
-                    non_equality_predicates.push(NonEquality::RegionOutlive(outlives));
+                Predicate::RegionOutlives(outlives) => {
+                    non_equality_predicates.push(NonEquality::RegionOutlives(outlives));
                 }
-                Predicate::TypeOutlive(outlives) => {
-                    non_equality_predicates.push(NonEquality::TypeOutlive(outlives));
+                Predicate::TypeOutlives(outlives) => {
+                    non_equality_predicates.push(NonEquality::TypeOutlives(outlives));
                 }
                 Predicate::TypeEquals(type_equals) => {
                     mapping.insert_type(type_equals.lhs, type_equals.rhs);

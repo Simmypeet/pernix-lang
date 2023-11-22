@@ -1,13 +1,11 @@
 //! Contains the code related to checking equality of entities.
 
-// Is this algorithm sound? I DON'T KNOW! HELP ME!
-
-use super::{Mapping, QueryRecords};
+use super::QueryRecords;
 use crate::{
     entity::{
         constant::Constant, r#type::Type, region::Region, GenericArguments, Model, Substitution,
     },
-    logic::unification::All,
+    logic::{unification::All, Premises},
     table::Table,
 };
 
@@ -17,11 +15,11 @@ macro_rules! equals_by_mapping_body {
         fn equals_by_mapping(
             lhs: &Self,
             rhs: &Self,
-            premise_mapping: &Mapping<S>,
+            premises: &Premises<S>,
             table: &Table,
             records: &mut QueryRecords<S>,
         ) -> bool {
-            for (source, targets) in &premise_mapping.$kind {
+            for (source, targets) in &premises.mapping.$kind {
                 for target in targets {
                     // avoid recursion
                     if source == rhs || (rhs == lhs && target == rhs) {
@@ -29,8 +27,8 @@ macro_rules! equals_by_mapping_body {
                     }
 
                     // check if the source and target are equal
-                    if Self::equals_internal(lhs, source, premise_mapping, table, records)
-                        && Self::equals_internal(rhs, target, premise_mapping, table, records)
+                    if Self::equals_internal(lhs, source, premises, table, records)
+                        && Self::equals_internal(rhs, target, premises, table, records)
                     {
                         return true;
                     }
@@ -46,19 +44,18 @@ macro_rules! equals_body {
     ($kind:ident, $query_set:ident) => {
         #[allow(clippy::ptr_arg)]
         pub(super) fn equals_internal(
-            lhs: &Self,
+            &self,
             rhs: &Self,
-            premise_mapping: &Mapping<S>,
+            premises: &Premises<S>,
             table: &Table,
             records: &mut QueryRecords<S>,
         ) -> bool {
             // trivial case
-            if lhs == rhs {
+            if self == rhs {
                 return true;
             }
 
-            // mostly it should be just reference copying
-            let terms = (lhs.clone(), rhs.clone());
+            let terms = (self.clone(), rhs.clone());
 
             // check if the terms are already being checked (recursion)
             if records.$query_set.contains(&terms) {
@@ -68,19 +65,19 @@ macro_rules! equals_body {
             records.$query_set.insert(terms.clone());
 
             // check if the terms are equal by mapping
-            if Self::equals_by_mapping(&lhs, &rhs, premise_mapping, table, records) {
+            if Self::equals_by_mapping(&self, &rhs, premises, table, records) {
                 records.$query_set.remove(&terms);
                 return true;
             }
 
             // check if the terms are equal by unification
-            if Self::equals_by_unification(&lhs, &rhs, premise_mapping, table, records) {
+            if Self::equals_by_unification(&self, &rhs, premises, table, records) {
                 records.$query_set.remove(&terms);
                 return true;
             }
 
             // equal by normalization
-            if Self::equals_by_normalization(&lhs, &rhs, premise_mapping, table, records) {
+            if Self::equals_by_normalization(&self, &rhs, premises, table, records) {
                 records.$query_set.remove(&terms);
                 return true;
             }
@@ -97,7 +94,7 @@ macro_rules! equals_by_normalization {
         fn equals_by_normalization(
             lhs: &Self,
             rhs: &Self,
-            premise_mapping: &Mapping<S>,
+            premises: &Premises<S>,
             table: &Table,
             records: &mut QueryRecords<S>,
         ) -> bool {
@@ -107,12 +104,12 @@ macro_rules! equals_by_normalization {
                 (_, _) => return false,
             };
 
-            let Some(normalized) = normalizable.normalize(premise_mapping, table, records) else {
+            let Some(normalized) = normalizable.normalize_internal(premises, table, records) else {
                 return false;
             };
 
             for normalized in normalized {
-                if Self::equals_internal(&normalized, target, premise_mapping, table, records) {
+                if Self::equals_internal(&normalized, target, premises, table, records) {
                     return true;
                 }
             }
@@ -127,14 +124,14 @@ macro_rules! equals_by_unification_body {
         fn equals_by_unification(
             lhs: &Self,
             rhs: &Self,
-            premise_mapping: &Mapping<S>,
+            premises: &Premises<S>,
             table: &Table,
             records: &mut QueryRecords<S>,
         ) -> bool {
             let Ok(unifier) = Self::sub_structural_unify_internal(
                 lhs,
                 rhs,
-                premise_mapping,
+                premises,
                 table,
                 records,
                 &All,
@@ -144,19 +141,19 @@ macro_rules! equals_by_unification_body {
             };
 
             for (source, target) in &unifier.types {
-                if !Type::equals_internal(source, target, premise_mapping, table, records) {
+                if !Type::equals_internal(source, target, premises, table, records) {
                     return false;
                 }
             }
 
             for (source, target) in &unifier.constants {
-                if !Constant::equals_internal(source, target, premise_mapping, table, records) {
+                if !Constant::equals_internal(source, target, premises, table, records) {
                     return false;
                 }
             }
 
             for (source, target) in &unifier.regions {
-                if !Region::equals_internal(source, target, premise_mapping, table, records) {
+                if !Region::equals_internal(source, target, premises, table, records) {
                     return false;
                 }
             }
@@ -181,16 +178,10 @@ impl<S: Model> Type<S> {
     /// # Parameters
     ///
     /// * `rhs`: The rhs type term to compare with.
-    /// * `premise_mapping`: The mapping that is used as a premise.
+    /// * `premises`: The mapping that is used as a premise.
     /// * `table`: The table that is used for normalization.
-    pub fn equals(&self, rhs: &Self, premise_mapping: &Mapping<S>, table: &Table) -> bool {
-        Self::equals_internal(
-            self,
-            rhs,
-            premise_mapping,
-            table,
-            &mut QueryRecords::default(),
-        )
+    pub fn equals(&self, rhs: &Self, premises: &Premises<S>, table: &Table) -> bool {
+        Self::equals_internal(self, rhs, premises, table, &mut QueryRecords::default())
     }
 }
 
@@ -209,16 +200,10 @@ impl<S: Model> Constant<S> {
     /// # Parameters
     ///
     /// * `rhs`: The rhs constant term to compare with.
-    /// * `premise_mapping`: The mapping that is used as a premise.
+    /// * `premises`: The mapping that is used as a premise.
     /// * `table`: The table that is used for normalization.
-    pub fn equals(&self, rhs: &Self, premise_mapping: &Mapping<S>, table: &Table) -> bool {
-        Self::equals_internal(
-            self,
-            rhs,
-            premise_mapping,
-            table,
-            &mut QueryRecords::default(),
-        )
+    pub fn equals(&self, rhs: &Self, premises: &Premises<S>, table: &Table) -> bool {
+        Self::equals_internal(self, rhs, premises, table, &mut QueryRecords::default())
     }
 }
 
@@ -231,31 +216,24 @@ impl<S: Model> Region<S> {
     /// # Parameters
     ///
     /// * `rhs`: The rhs type term to compare with.
-    /// * `premise_mapping`: The mapping that is used as a premise.
+    /// * `premises`: The mapping that is used as a premise.
     /// * `table`: The table that is used for normalization.
-    pub fn equals(&self, rhs: &Self, premise_mapping: &Mapping<S>, table: &Table) -> bool {
-        Self::equals_internal(
-            self,
-            rhs,
-            premise_mapping,
-            table,
-            &mut QueryRecords::default(),
-        )
+    pub fn equals(&self, rhs: &Self, premises: &Premises<S>, table: &Table) -> bool {
+        Self::equals_internal(self, rhs, premises, table, &mut QueryRecords::default())
     }
 
-    #[allow(clippy::ptr_arg)]
     pub(super) fn equals_internal(
-        lhs: &Self,
+        &self,
         rhs: &Self,
-        premise_mapping: &Mapping<S>,
+        premises: &Premises<S>,
         table: &Table,
         records: &mut QueryRecords<S>,
     ) -> bool {
-        if lhs == rhs {
+        if self == rhs {
             return true;
         }
 
-        let terms = (lhs.clone(), rhs.clone());
+        let terms = (self.clone(), rhs.clone());
 
         // check if the terms are already being checked (recursion)
         if records.region_equals.contains(&terms) {
@@ -264,7 +242,7 @@ impl<S: Model> Region<S> {
 
         records.region_equals.insert(terms.clone());
 
-        if Self::equals_by_mapping(lhs, rhs, premise_mapping, table, records) {
+        if Self::equals_by_mapping(self, rhs, premises, table, records) {
             records.region_equals.remove(&terms);
             return true;
         }
@@ -277,13 +255,7 @@ impl<S: Model> Region<S> {
 impl<S: Model> GenericArguments<S> {
     /// Checks if the two generic arguments terms can be considered equal under the given mapping as
     /// a premise and normalization.
-    ///
-    /// # Parameters
-    ///
-    /// * `rhs`: The rhs type term to compare with.
-    /// * `premise_mapping`: The mapping that is used as a premise.
-    /// * `table`: The table that is used for normalization.
-    pub fn equals(&self, rhs: &Self, premise_mapping: &Mapping<S>, table: &Table) -> bool {
+    pub fn equals(&self, rhs: &Self, premises: &Premises<S>, table: &Table) -> bool {
         if self.types.len() != rhs.types.len()
             || self.constants.len() != rhs.constants.len()
             || self.regions.len() != rhs.regions.len()
@@ -292,19 +264,19 @@ impl<S: Model> GenericArguments<S> {
         }
 
         for (lhs, rhs) in self.types.iter().zip(rhs.types.iter()) {
-            if !Type::equals(lhs, rhs, premise_mapping, table) {
+            if !Type::equals(lhs, rhs, premises, table) {
                 return false;
             }
         }
 
         for (lhs, rhs) in self.constants.iter().zip(rhs.constants.iter()) {
-            if !Constant::equals(lhs, rhs, premise_mapping, table) {
+            if !Constant::equals(lhs, rhs, premises, table) {
                 return false;
             }
         }
 
         for (lhs, rhs) in self.regions.iter().zip(rhs.regions.iter()) {
-            if !Region::equals(lhs, rhs, premise_mapping, table) {
+            if !Region::equals(lhs, rhs, premises, table) {
                 return false;
             }
         }

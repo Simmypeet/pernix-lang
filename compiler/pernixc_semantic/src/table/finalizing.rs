@@ -9,7 +9,6 @@ use std::{
     sync::Arc,
 };
 
-use bitflags::bitflags;
 use parking_lot::{Mutex, RwLockReadGuard};
 use paste::paste;
 use pernixc_base::{
@@ -31,8 +30,7 @@ use crate::{
     entity::{
         constant,
         predicate::{
-            self, ConstantType, Equals, Forall, Predicate, Premises, Quantified, RegionOutlives,
-            TypeOutlives,
+            self, ConstantType, Equals, Forall, Predicate, Premises, RegionOutlives, TypeOutlives,
         },
         r#type,
         region::Region,
@@ -45,8 +43,9 @@ use crate::{
         MismatchedImplementationConstantTypeParameter, MisorderedGenericParameter,
         PrivateEntityLeakedToPublicInterface, TraitMemberBoundArgumentMismatched,
         TraitMemberExpected, UnusedGenericParameterInImplementation,
+        WhereClausePredicateNotSatisfied,
     },
-    logic::unification,
+    logic::{r#trait::RegionConstraint, unification, TraitSatisfiability},
     symbol::{
         self, Constant, ConstantParameter, ConstantParameterID, Enum, Function, Generic, GenericID,
         GenericKind, GlobalID, ImplementationKindID, ImplementationMemberID,
@@ -101,84 +100,141 @@ impl Config<Symbolic> for Storage<'_> {
     }
 }
 
-bitflags! {
-    pub struct CheckingFlag: u32 {
-        const TYPE_CHECK = 0b0000_0001;
-        const NON_REGION_PREDICATE_CHECK = 0b0000_0010;
-        const REGION_PREDICATE_CHECK = 0b0000_0100;
-    }
-}
-
 struct TraitResolverConfigAdapter<'a, 'b> {
-    forall_lifetimes_by_name: HashMap<&'b str, Region<Quantified<Symbolic>>>,
+    forall_lifetimes_by_name: HashMap<&'b str, Region<Symbolic>>,
     inner: &'a mut dyn Config<Symbolic>,
 }
 
-impl Config<Quantified<Symbolic>> for TraitResolverConfigAdapter<'_, '_> {
-    fn region_arguments_placeholder(&mut self) -> Option<Region<Quantified<Symbolic>>> { None }
+impl Config<Symbolic> for TraitResolverConfigAdapter<'_, '_> {
+    fn region_arguments_placeholder(&mut self) -> Option<Region<Symbolic>> { None }
 
-    fn type_arguments_placeholder(&mut self) -> Option<r#type::Type<Quantified<Symbolic>>> { None }
+    fn type_arguments_placeholder(&mut self) -> Option<r#type::Type<Symbolic>> { None }
 
-    fn constant_arguments_placeholder(
-        &mut self,
-    ) -> Option<constant::Constant<Quantified<Symbolic>>> {
-        None
+    fn constant_arguments_placeholder(&mut self) -> Option<constant::Constant<Symbolic>> { None }
+
+    fn check(&mut self, checking: Checking<Symbolic>, span: Span) {
+        self.inner.check(checking, span);
     }
 
-    fn check(&mut self, checking: Checking<Quantified<Symbolic>>, span: Span) {
-        // anythin with forall region will be ruled out
-        match checking {
-            Checking::Predicate(checking) => {
-                let Some(checking) = checking.try_into_other_model() else {
-                    return;
-                };
-
-                self.inner.check(Checking::Predicate(checking), span);
-            }
-            Checking::TypeCheck(constant, ty) => {
-                let (Some(constant), Some(ty)) = (
-                    constant.try_into_other_model::<Symbolic>(),
-                    ty.try_into_other_model::<Symbolic>(),
-                ) else {
-                    return;
-                };
-
-                self.inner.check(Checking::TypeCheck(constant, ty), span);
-            }
-        }
-    }
-
-    fn extra_lifetime_provider(&self, lifetime: &str) -> Option<Region<Quantified<Symbolic>>> {
+    fn extra_lifetime_provider(&self, lifetime: &str) -> Option<Region<Symbolic>> {
         self.forall_lifetimes_by_name.get(lifetime).copied()
     }
 }
 
 impl Table {
     // check all the required checking and report to the handler
+    #[allow(clippy::too_many_lines)]
     fn check(
         &self,
         global_id: GlobalID,
-        mut checkings: impl Iterator<Item = CheckingWithSpan>,
-        option: CheckingFlag,
+        checkings: impl Iterator<Item = CheckingWithSpan>,
         handler: &dyn Handler<error::Error>,
     ) {
+        let checkings = checkings.collect::<Vec<_>>();
+
+        println!(
+            "{} required {checkings:#?}",
+            self.get_qualified_name(global_id).unwrap()
+        );
+
         let premises = self.get_premise_predicates(global_id).unwrap();
         let premises = Premises::from_predicates(premises.into_iter().map(|x| x.predicate));
 
         for checking in checkings {
             match checking.checking {
                 Checking::Predicate(predicate) => match predicate {
-                    Predicate::RegionOutlive(_) => todo!(),
-                    Predicate::TypeOutlive(_) => todo!(),
-                    Predicate::TypeEquals(_) => todo!(),
-                    Predicate::ConstantEquals(constant_type) => todo!(),
-                    Predicate::Trait(_) => todo!(),
-                    Predicate::ConstantType(constant_type)
-                        if option.contains(CheckingFlag::NON_REGION_PREDICATE_CHECK) =>
-                    {
-                        if constant_type.satisfies(&premises, self) {}
+                    Predicate::RegionOutlives(x) => {
+                        if !x.satisfies(&premises, self) {
+                            handler.receive(error::Error::WhereClausePredicateNotSatisfied(
+                                WhereClausePredicateNotSatisfied {
+                                    predicate: Predicate::RegionOutlives(x),
+                                    span: checking.span,
+                                },
+                            ));
+                        }
                     }
-                    _ => {}
+                    Predicate::TypeOutlives(x) => {
+                        if !x.satisfies(&premises, self) {
+                            handler.receive(error::Error::WhereClausePredicateNotSatisfied(
+                                WhereClausePredicateNotSatisfied {
+                                    predicate: Predicate::TypeOutlives(x),
+                                    span: checking.span,
+                                },
+                            ));
+                        }
+                    }
+                    Predicate::TypeEquals(type_equals) => {
+                        if !type_equals.satisfies(&premises, self) {
+                            handler.receive(error::Error::WhereClausePredicateNotSatisfied(
+                                WhereClausePredicateNotSatisfied {
+                                    predicate: Predicate::TypeEquals(type_equals),
+                                    span: checking.span,
+                                },
+                            ));
+                        }
+                    }
+                    Predicate::ConstantEquals(constant_type) => {
+                        if !constant_type.satisfies(&premises, self) {
+                            handler.receive(error::Error::WhereClausePredicateNotSatisfied(
+                                WhereClausePredicateNotSatisfied {
+                                    predicate: Predicate::ConstantEquals(constant_type),
+                                    span: checking.span,
+                                },
+                            ));
+                        }
+                    }
+                    Predicate::Trait(trait_bound) => {
+                        if let TraitSatisfiability::Satisfiable(x) =
+                            trait_bound.satisfies(&premises, self)
+                        {
+                            println!("satisfiable with {x:#?}");
+                            for constraint in x {
+                                match constraint {
+                                    RegionConstraint::RegionOutlives(x) => {
+                                        if !x.satisfies(&premises, self) {
+                                            handler.receive(
+                                                error::Error::WhereClausePredicateNotSatisfied(
+                                                    WhereClausePredicateNotSatisfied {
+                                                        predicate: Predicate::RegionOutlives(x),
+                                                        span: checking.span.clone(),
+                                                    },
+                                                ),
+                                            );
+                                        }
+                                    }
+                                    RegionConstraint::TypeOutlives(x) => {
+                                        if !x.satisfies(&premises, self) {
+                                            handler.receive(
+                                                error::Error::WhereClausePredicateNotSatisfied(
+                                                    WhereClausePredicateNotSatisfied {
+                                                        predicate: Predicate::TypeOutlives(x),
+                                                        span: checking.span.clone(),
+                                                    },
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            handler.receive(error::Error::WhereClausePredicateNotSatisfied(
+                                WhereClausePredicateNotSatisfied {
+                                    predicate: Predicate::Trait(trait_bound),
+                                    span: checking.span,
+                                },
+                            ));
+                        }
+                    }
+                    Predicate::ConstantType(constant_type) => {
+                        if !constant_type.satisfies(&premises, self) {
+                            handler.receive(error::Error::WhereClausePredicateNotSatisfied(
+                                WhereClausePredicateNotSatisfied {
+                                    predicate: Predicate::ConstantType(constant_type),
+                                    span: checking.span,
+                                },
+                            ));
+                        }
+                    }
                 },
                 Checking::TypeCheck(_, _) => todo!(),
             }
@@ -318,9 +374,9 @@ impl Table {
                         .generic_declaration_mut()
                         .predicates
                         .push(symbol::Predicate {
-                            predicate: predicate::Predicate::RegionOutlive(RegionOutlives {
-                                operand: argument,
-                                argument: Region::Named(lifetime_parameter_id),
+                            predicate: predicate::Predicate::RegionOutlives(RegionOutlives {
+                                operand: Region::Named(lifetime_parameter_id),
+                                argument,
                             }),
                             span: Some(span.clone()),
                             explicit: true,
@@ -354,7 +410,7 @@ impl Table {
                         .generic_declaration_mut()
                         .predicates
                         .push(symbol::Predicate {
-                            predicate: predicate::Predicate::TypeOutlive(TypeOutlives {
+                            predicate: predicate::Predicate::TypeOutlives(TypeOutlives {
                                 operand: ty.clone(),
                                 argument,
                             }),
@@ -850,12 +906,7 @@ impl Table {
         self.create_generic_parameters(enum_id, geeneric_arguments, &mut storage, handler);
         self.create_where_clause_predicates(enum_id, where_clause, &mut storage, handler);
 
-        self.check(
-            enum_id.into(),
-            checking_with_spans.into_iter(),
-            CheckingFlag::all(),
-            handler,
-        );
+        self.check(enum_id.into(), checking_with_spans.into_iter(), handler);
 
         drop(constructing_lock);
     }
@@ -916,12 +967,7 @@ impl Table {
         drop(constructing_lock);
 
         // do checking and report to the handler
-        self.check(
-            type_id.into(),
-            checking_with_spans.into_iter(),
-            CheckingFlag::TYPE_CHECK,
-            handler,
-        );
+        self.check(type_id.into(), checking_with_spans.into_iter(), handler);
     }
 
     fn finalize_function(
@@ -1059,8 +1105,10 @@ impl Table {
                             })
                         }
                     };
+                    let order = existing_generic_argument.order(&candidate_generic_argument);
+                    drop((existing_generic_argument, candidate_generic_argument));
 
-                    match existing_generic_argument.order(&candidate_generic_argument) {
+                    match order {
                         crate::logic::r#trait::Order::Incompatible
                         | crate::logic::r#trait::Order::MoreGeneral
                         | crate::logic::r#trait::Order::MoreSpecific => {}
@@ -1098,26 +1146,19 @@ impl Table {
         drop(constructing_lock);
 
         // do checking and report to the handler
-        self.check(
-            trait_id.into(),
-            checking_with_spans.into_iter(),
-            CheckingFlag::all(),
-            handler,
-        );
+        self.check(trait_id.into(), checking_with_spans.into_iter(), handler);
     }
 
     #[allow(clippy::significant_drop_tightening)]
     fn finalize_implementation(
         &self,
         implementation_id: ID<symbol::Implementation>,
-        (signature_syn, where_clause_syn): (
-            syntax_tree::item::ImplementationSignature,
-            Option<syntax_tree::item::WhereClause>,
-        ),
+        signature_syn: syntax_tree::item::ImplementationSignature,
         handler: &dyn Handler<error::Error>,
     ) {
         let parent_trait_id = self.get(implementation_id).unwrap().signature.trait_id;
-        let (_, generic_arguments_syn, _, qualified_identifier_syn) = signature_syn.dissolve();
+        let (_, generic_arguments_syn, _, qualified_identifier_syn, where_clause_syn) =
+            signature_syn.dissolve();
 
         let mut checking_with_spans = Vec::new();
         let mut storage = Storage {
@@ -1182,7 +1223,6 @@ impl Table {
         self.check(
             implementation_id.into(),
             checking_with_spans.into_iter(),
-            CheckingFlag::TYPE_CHECK | CheckingFlag::REGION_PREDICATE_CHECK,
             handler,
         );
         self.check_implementation_exlusitivity(
@@ -1289,7 +1329,8 @@ impl Table {
             .signature
             .trait_id;
 
-        let (_, generic_arguments_syn, _, qualified_identifier_syn) = syntax_tree.dissolve();
+        let (_, generic_arguments_syn, _, qualified_identifier_syn, where_clause_syn) =
+            syntax_tree.dissolve();
 
         let mut checking_with_spans = Vec::new();
         let mut storage = Storage {
@@ -1300,6 +1341,12 @@ impl Table {
         self.create_generic_parameters(
             negative_implementation_id,
             generic_arguments_syn,
+            &mut storage,
+            handler,
+        );
+        self.create_where_clause_predicates(
+            negative_implementation_id,
+            where_clause_syn,
             &mut storage,
             handler,
         );
@@ -1326,12 +1373,31 @@ impl Table {
         self.get_mut(negative_implementation_id)
             .unwrap()
             .signature
-            .arguments = generic_argumnent;
+            .arguments = generic_argumnent.clone();
+
+        let substitution =
+            Substitution::from_generic_arguments(generic_argumnent, parent_trait_id.into());
+
+        let predicates = self
+            .get(parent_trait_id)
+            .unwrap()
+            .generic_declaration
+            .predicates
+            .iter()
+            .map(|x| x.predicate.clone())
+            .collect::<Vec<_>>();
+
+        // add additional required predicate to the storage
+        for predicate in predicates {
+            let mut predicate = predicate.into_other_model();
+            predicate.apply(&substitution);
+
+            storage.check(Checking::Predicate(predicate), generic_identifier.span());
+        }
 
         self.check(
             negative_implementation_id.into(),
             checking_with_spans.into_iter(),
-            CheckingFlag::TYPE_CHECK,
             handler,
         );
         self.check_implementation_exlusitivity(
@@ -1435,9 +1501,12 @@ impl Table {
             return false;
         }
 
-        let mapping = self
-            .get_premise_mapping::<Symbolic>(implementation_member_id.into())
-            .unwrap();
+        let premises = Premises::from_predicates(
+            self.get_premise_predicates(implementation_member_id.into())
+                .unwrap()
+                .into_iter()
+                .map(|x| x.predicate),
+        );
 
         let mut substitution = Substitution::from_generic_arguments(
             self.get(parent_implementation_id)
@@ -1503,7 +1572,7 @@ impl Table {
             let mut ty_copied = trait_constant_parameter.r#type.clone();
             ty_copied.apply(&substitution);
 
-            if !ty_copied.equals(&implementation_constant_parameter.r#type, &mapping, self) {
+            if !ty_copied.equals(&implementation_constant_parameter.r#type, &premises, self) {
                 handler.receive(error::Error::MismatchedImplementationConstantTypeParameter(
                     MismatchedImplementationConstantTypeParameter {
                         implementation_member_id: implementation_member_id.into(),
@@ -1549,13 +1618,6 @@ impl Table {
         );
         self.create_where_clause_predicates(trait_type_id, where_clause_syn, &mut storage, handler);
 
-        self.check(
-            trait_type_id.into(),
-            checking_with_spans.into_iter(),
-            CheckingFlag::all(),
-            handler,
-        );
-
         let parent_trait = self.get(parent_trait_id).unwrap();
         for &implementation in &parent_trait.implementations {
             let Some(implementation_eq_id) = self
@@ -1590,6 +1652,12 @@ impl Table {
 
         drop(parent_trait);
         drop(constructing_lock);
+
+        self.check(
+            trait_type_id.into(),
+            checking_with_spans.into_iter(),
+            handler,
+        );
     }
 
     fn finalize_implementation_function(
@@ -1684,14 +1752,13 @@ impl Table {
 
         self.get_mut(implementation_type_id).unwrap().r#type = ty;
 
+        drop(constructing_lock);
+
         self.check(
             implementation_type_id.into(),
             checking_with_spans.into_iter(),
-            CheckingFlag::all(),
             handler,
         );
-
-        drop(constructing_lock);
     }
 
     fn finalize_variant(

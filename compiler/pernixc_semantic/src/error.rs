@@ -1011,8 +1011,29 @@ impl Display for WithTable<'_, MismatchedImplementationConstantTypeParameter> {
 /// The where clause predicate is not satisfied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WhereClausePredicateNotSatisfied {
+    /// The predicate that is not satisfied.
     pub predicate: Predicate<Symbolic>,
+
+    /// The span where the predicate check occurred.
     pub span: Span,
+}
+
+impl Display for WithTable<'_, WhereClausePredicateNotSatisfied> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let predicate = &self.error.predicate;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!("The where clause predicate `{predicate:#?}` is not satisfied",),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.error.span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
 }
 
 /// An enumeration containing all kinds of errors that can be emitted by the semantic analyzer.
@@ -1059,6 +1080,7 @@ pub enum Error {
         MismatchedGenericParameterCountInImplementation,
     ),
     MismatchedImplementationConstantTypeParameter(MismatchedImplementationConstantTypeParameter),
+    WhereClausePredicateNotSatisfied(WhereClausePredicateNotSatisfied),
 }
 
 macro_rules! impl_display {
@@ -1098,5 +1120,6 @@ impl_display!(
     TraitMemberNotImplemented,
     UnusedGenericParameterInImplementation,
     MismatchedGenericParameterCountInImplementation,
-    MismatchedImplementationConstantTypeParameter
+    MismatchedImplementationConstantTypeParameter,
+    WhereClausePredicateNotSatisfied
 );
