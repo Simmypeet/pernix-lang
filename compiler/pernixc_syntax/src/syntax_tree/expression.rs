@@ -14,7 +14,7 @@ use pernixc_lexical::{
 
 use super::{
     pattern, r#type::Type, statement::Statement, ConnectedList, DelimitedList, Label,
-    QualifiedIdentifier,
+    QualifiedIdentifier, Qualifier,
 };
 use crate::{
     error::{Error, SyntaxKind, UnexpectedSyntax},
@@ -170,8 +170,8 @@ impl SourceElement for Copy {
 ///     | StructLiteral
 ///     | ArrayLiteral
 ///     | Subscript
-///     | Cast
 ///     | Dot
+///     | Cast
 ///     | Copy
 ///     | Arrow
 /// ```
@@ -188,8 +188,8 @@ pub enum Functional {
     StructLiteral(StructLiteral),
     Subscript(Subscript),
     ArrayLiteral(ArrayLiteral),
-    Cast(Cast),
     Copy(Copy),
+    Cast(Cast),
     Dot(Dot),
     Arrow(Arrow),
 }
@@ -246,6 +246,7 @@ impl SourceElement for Functional {
         match self {
             Self::NumericLiteral(numeric_literal) => numeric_literal.numeric.span.clone(),
             Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
+            Self::Cast(cast) => cast.span(),
             Self::Binary(binary_expression) => binary_expression.span(),
             Self::Prefix(prefix_expression) => prefix_expression.span(),
             Self::Named(identifier_expression) => identifier_expression.span(),
@@ -254,7 +255,6 @@ impl SourceElement for Functional {
             Self::Subscript(subscript_expression) => subscript_expression.span(),
             Self::StructLiteral(struct_literal) => struct_literal.span(),
             Self::ArrayLiteral(array_literal) => array_literal.span(),
-            Self::Cast(cast) => cast.span(),
             Self::Copy(copy) => copy.span(),
             Self::Dot(dot) => dot.span(),
             Self::Arrow(arrow) => arrow.span(),
@@ -502,13 +502,61 @@ impl SourceElement for BinaryOperator {
     }
 }
 
+/// Syntax Synopsis:    
+///
+/// ``` txt
+/// ReferenceOfKind:
+///     '&'
+///     | '@'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ReferenceOfKind {
+    Local(Punctuation),
+    Regular(Punctuation),
+}
+
+impl SourceElement for ReferenceOfKind {
+    fn span(&self) -> Span {
+        match self {
+            Self::Local(p) | Self::Regular(p) => p.span.clone(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
+///
+/// ``` txt
+/// ReferenceOf:
+///     ReferenceOfKind Qualifier?
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct ReferenceOf {
+    #[get = "pub"]
+    kind: ReferenceOfKind,
+    #[get = "pub"]
+    qualifier: Option<Qualifier>,
+}
+
+impl SourceElement for ReferenceOf {
+    fn span(&self) -> Span {
+        self.qualifier.as_ref().map_or_else(
+            || self.kind.span(),
+            |qualifier| self.kind.span().join(&qualifier.span()).unwrap(),
+        )
+    }
+}
+
 /// Syntax Synopsis:
 /// ``` txt
 /// PrefixOperator:
 ///     '!'
 ///     | '-'
-///     | '&'
+///     | ReferenceOf
 ///     | '*'
+///     | 'local'
+///     | 'unlocal'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -516,17 +564,18 @@ impl SourceElement for BinaryOperator {
 pub enum PrefixOperator {
     LogicalNot(Punctuation),
     Negate(Punctuation),
-    ReferenceOf(Punctuation),
+    ReferenceOf(ReferenceOf),
     Dereference(Punctuation),
+    Local(Keyword),
+    Unlocal(Keyword),
 }
 
 impl SourceElement for PrefixOperator {
     fn span(&self) -> Span {
         match self {
-            Self::LogicalNot(token)
-            | Self::Negate(token)
-            | Self::ReferenceOf(token)
-            | Self::Dereference(token) => token.span.clone(),
+            Self::LogicalNot(p) | Self::Negate(p) | Self::Dereference(p) => p.span.clone(),
+            Self::ReferenceOf(p) => p.span(),
+            Self::Local(k) | Self::Unlocal(k) => k.span(),
         }
     }
 }
@@ -1422,19 +1471,61 @@ impl<'a> Parser<'a> {
     }
 
     fn try_parse_prefix_operator(&mut self) -> Option<PrefixOperator> {
-        self.try_parse(|parser| match parser.next_significant_token() {
+        self.try_parse(|parser| match parser.stop_at_significant() {
             Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '!' => {
+                parser.forward();
                 Some(PrefixOperator::LogicalNot(p))
             }
             Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '-' => {
+                parser.forward();
                 Some(PrefixOperator::Negate(p))
             }
-            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '&' => {
-                Some(PrefixOperator::ReferenceOf(p))
+            Reading::Atomic(Token::Punctuation(p))
+                if p.punctuation == '&' || p.punctuation == '@' =>
+            {
+                parser.forward();
+                let kind = match p.punctuation {
+                    '&' => ReferenceOfKind::Regular(p),
+                    '@' => ReferenceOfKind::Local(p),
+                    _ => unreachable!(),
+                };
+
+                let qualifier = match parser.stop_at_significant() {
+                    Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
+                        // eat mutable keyword
+                        parser.forward();
+
+                        Some(Qualifier::Mutable(k))
+                    }
+
+                    Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
+                        // eat immutable keyword
+                        parser.forward();
+
+                        Some(Qualifier::Restrict(k))
+                    }
+
+                    _ => None,
+                };
+
+                Some(PrefixOperator::ReferenceOf(ReferenceOf { kind, qualifier }))
             }
+
+            Reading::Atomic(Token::Keyword(p)) if p.keyword == KeywordKind::Local => {
+                parser.forward();
+                Some(PrefixOperator::Local(p))
+            }
+
+            Reading::Atomic(Token::Keyword(p)) if p.keyword == KeywordKind::Unlocal => {
+                parser.forward();
+                Some(PrefixOperator::Unlocal(p))
+            }
+
             Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '*' => {
+                parser.forward();
                 Some(PrefixOperator::Dereference(p))
             }
+
             _ => None,
         })
     }

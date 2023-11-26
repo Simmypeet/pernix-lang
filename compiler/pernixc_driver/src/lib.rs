@@ -43,7 +43,7 @@ impl Printer {
 
 impl<E: Display> Handler<E> for Printer {
     fn receive(&self, error: E) {
-        eprintln!("{}", error);
+        eprintln!("{}\n", error);
         *self.printed.write().unwrap() = true;
     }
 }
@@ -118,7 +118,7 @@ pub fn run(argument: Arguments) -> ExitCode {
 
     if storage.as_vec().len() > 0 {
         for error in storage.into_vec() {
-            eprintln!("{}", WithTable {
+            eprintln!("{}\n", WithTable {
                 table: &table,
                 error: &error,
             })

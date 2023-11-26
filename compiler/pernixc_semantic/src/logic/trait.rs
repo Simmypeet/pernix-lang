@@ -13,23 +13,23 @@ use crate::{
     arena::ID,
     entity::{
         constant::Constant,
+        lifetime::Lifetime,
         predicate::{
-            ConstantEquals, ConstantType, Predicate, Premises, RegionOutlives, TypeEquals,
+            ConstantEquals, ConstantType, LifetimeOutlives, Predicate, Premises, TypeEquals,
             TypeOutlives,
         },
         r#type::Type,
-        region::Region,
         Entity, GenericArguments, Model, Substitution,
     },
     symbol::{self, ImplementationKindID, Trait},
     table::{Index, Table},
 };
 
-/// Enumeration containing the predicates related to region constraints.
+/// Enumeration containing the predicates related to lifetime constraints.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum RegionConstraint<S: Model> {
-    RegionOutlives(RegionOutlives<S>),
+pub enum LifetimeConstraint<S: Model> {
+    LifetimeOutlives(LifetimeOutlives<S>),
     TypeOutlives(TypeOutlives<S>),
 }
 
@@ -45,8 +45,8 @@ pub struct Implementation<S: Model> {
     /// The resolved implements id.
     pub implementation_id: ID<symbol::Implementation>,
 
-    /// List of region constraints that are introduced by the implements.
-    pub region_constraints: Vec<RegionConstraint<S>>,
+    /// List of lifetime constraints that are introduced by the implements.
+    pub lifetime_constraints: Vec<LifetimeConstraint<S>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -73,10 +73,10 @@ impl<S: Model> Config<S> for TraitResolvingUnifingConfig {
             }
     }
 
-    fn region_mappable(&self, unifier: &Region<S>, target: &Region<S>) -> bool {
-        unifier.is_named()
+    fn lifetime_mappable(&self, unifier: &Lifetime<S>, target: &Lifetime<S>) -> bool {
+        unifier.is_parameter()
             || if self.symetric {
-                target.is_named()
+                target.is_parameter()
             } else {
                 false
             }
@@ -268,8 +268,8 @@ impl Table {
 
         'candidate: for candidate in candidates.into_iter().rev() {
             let deduced_substitution = candidate.1;
-            let mut region_constraints = Vec::new();
-            let mut existing_region_constraints = HashSet::new();
+            let mut lifetime_constraints = Vec::new();
+            let mut existing_lifetime_constraints = HashSet::new();
 
             let parent_trait_id = self
                 .get_implementation_signature(candidate.0)
@@ -291,22 +291,23 @@ impl Table {
                 .predicates
             {
                 match parent_predicate.predicate.clone().into_other_model() {
-                    Predicate::RegionOutlives(mut x) => {
+                    Predicate::LifetimeOutlives(mut x) => {
                         x.apply(&trait_substitution);
                         x.apply(&deduced_substitution);
 
-                        existing_region_constraints.insert(RegionConstraint::RegionOutlives(x));
+                        existing_lifetime_constraints
+                            .insert(LifetimeConstraint::LifetimeOutlives(x));
                     }
                     Predicate::TypeOutlives(mut x) => {
                         x.apply(&trait_substitution);
                         x.apply(&deduced_substitution);
 
-                        existing_region_constraints.insert(RegionConstraint::TypeOutlives(x));
+                        existing_lifetime_constraints.insert(LifetimeConstraint::TypeOutlives(x));
                     }
                     Predicate::TypeEquals(_)
                     | Predicate::ConstantEquals(_)
                     | Predicate::Trait(_)
-                    | Predicate::ConstantType(_) => todo!(),
+                    | Predicate::ConstantType(_) => {}
                 }
             }
 
@@ -323,20 +324,21 @@ impl Table {
                 if !match predicate {
                     // outlives predicates are not checked, serves as a hint for the borrow
                     // checker
-                    Predicate::RegionOutlives(x) => {
-                        let new_region_constraint = RegionConstraint::RegionOutlives(x.clone());
+                    Predicate::LifetimeOutlives(x) => {
+                        let new_lifetime_constraint =
+                            LifetimeConstraint::LifetimeOutlives(x.clone());
 
-                        if !existing_region_constraints.contains(&new_region_constraint) {
-                            region_constraints.push(RegionConstraint::RegionOutlives(x));
+                        if !existing_lifetime_constraints.contains(&new_lifetime_constraint) {
+                            lifetime_constraints.push(LifetimeConstraint::LifetimeOutlives(x));
                         }
 
                         true
                     }
                     Predicate::TypeOutlives(x) => {
-                        let new_region_constraint = RegionConstraint::TypeOutlives(x.clone());
+                        let new_lifetime_constraint = LifetimeConstraint::TypeOutlives(x.clone());
 
-                        if !existing_region_constraints.contains(&new_region_constraint) {
-                            region_constraints.push(RegionConstraint::TypeOutlives(x));
+                        if !existing_lifetime_constraints.contains(&new_lifetime_constraint) {
+                            lifetime_constraints.push(LifetimeConstraint::TypeOutlives(x));
                         }
 
                         true
@@ -351,7 +353,7 @@ impl Table {
 
                     Predicate::Trait(x) => {
                         if let TraitSatisfiability::Satisfiable(sat) = x.satisfies(premises, self) {
-                            region_constraints.extend(sat);
+                            lifetime_constraints.extend(sat);
                             true
                         } else {
                             false
@@ -371,7 +373,7 @@ impl Table {
                     return Ok(Implementation {
                         deduced_unification: deduced_substitution,
                         implementation_id: positive,
-                        region_constraints,
+                        lifetime_constraints,
                     });
                 }
                 ImplementationKindID::Negative(_) => return Err(Error::NegativeImplementation),

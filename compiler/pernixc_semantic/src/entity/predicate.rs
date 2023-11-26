@@ -10,7 +10,7 @@ use enum_as_inner::EnumAsInner;
 use super::{
     constant::Constant,
     r#type::{self, Type},
-    Entity, GenericArguments, Model, Never, Region,
+    Entity, GenericArguments, Lifetime, Model, Never,
 };
 use crate::{arena::ID, logic::Mapping, symbol};
 
@@ -18,7 +18,7 @@ use crate::{arena::ID, logic::Mapping, symbol};
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum NonEquality<S: Model> {
-    RegionOutlives(RegionOutlives<S>),
+    LifetimeOutlives(LifetimeOutlives<S>),
     TypeOutlives(TypeOutlives<S>),
     Trait(Trait<S>),
     ConstantType(ConstantType<S>),
@@ -31,11 +31,11 @@ impl<S: Model> Entity<S> for NonEquality<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         match self {
-            Self::RegionOutlives(region_outlives) => {
-                Self::This::RegionOutlives(region_outlives.into_other_model())
+            Self::LifetimeOutlives(lifetime_outlives) => {
+                Self::This::LifetimeOutlives(lifetime_outlives.into_other_model())
             }
             Self::TypeOutlives(type_outlives) => {
                 Self::This::TypeOutlives(type_outlives.into_other_model())
@@ -51,11 +51,11 @@ impl<S: Model> Entity<S> for NonEquality<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         Some(match self {
-            Self::RegionOutlives(region_outlives) => {
-                Self::This::RegionOutlives(region_outlives.try_into_other_model()?)
+            Self::LifetimeOutlives(lifetime_outlives) => {
+                Self::This::LifetimeOutlives(lifetime_outlives.try_into_other_model()?)
             }
             Self::TypeOutlives(type_outlives) => {
                 Self::This::TypeOutlives(type_outlives.try_into_other_model()?)
@@ -69,7 +69,7 @@ impl<S: Model> Entity<S> for NonEquality<S> {
 
     fn apply(&mut self, substitution: &super::Substitution<S>) {
         match self {
-            Self::RegionOutlives(region_outlives) => region_outlives.apply(substitution),
+            Self::LifetimeOutlives(lifetime_outlives) => lifetime_outlives.apply(substitution),
             Self::TypeOutlives(type_outlives) => type_outlives.apply(substitution),
             Self::Trait(trait_) => trait_.apply(substitution),
             Self::ConstantType(constant_type) => constant_type.apply(substitution),
@@ -81,7 +81,7 @@ impl<S: Model> Entity<S> for NonEquality<S> {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Predicate<S: Model> {
-    RegionOutlives(RegionOutlives<S>),
+    LifetimeOutlives(LifetimeOutlives<S>),
     TypeOutlives(TypeOutlives<S>),
     TypeEquals(TypeEquals<S>),
     ConstantEquals(ConstantEquals<S>),
@@ -96,11 +96,11 @@ impl<S: Model> Entity<S> for Predicate<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         match self {
-            Self::RegionOutlives(region_outlives) => {
-                Self::This::RegionOutlives(region_outlives.into_other_model())
+            Self::LifetimeOutlives(lifetime_outlives) => {
+                Self::This::LifetimeOutlives(lifetime_outlives.into_other_model())
             }
             Self::TypeOutlives(type_outlives) => {
                 Self::This::TypeOutlives(type_outlives.into_other_model())
@@ -120,11 +120,11 @@ impl<S: Model> Entity<S> for Predicate<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         Some(match self {
-            Self::RegionOutlives(region_outlives) => {
-                Self::This::RegionOutlives(region_outlives.try_into_other_model()?)
+            Self::LifetimeOutlives(lifetime_outlives) => {
+                Self::This::LifetimeOutlives(lifetime_outlives.try_into_other_model()?)
             }
             Self::TypeOutlives(type_outlives) => {
                 Self::This::TypeOutlives(type_outlives.try_into_other_model()?)
@@ -144,7 +144,7 @@ impl<S: Model> Entity<S> for Predicate<S> {
 
     fn apply(&mut self, substitution: &super::Substitution<S>) {
         match self {
-            Self::RegionOutlives(region_outlives) => region_outlives.apply(substitution),
+            Self::LifetimeOutlives(lifetime_outlives) => lifetime_outlives.apply(substitution),
             Self::TypeOutlives(type_outlives) => type_outlives.apply(substitution),
             Self::TypeEquals(type_equals) => type_equals.apply(substitution),
             Self::ConstantEquals(constant_equals) => constant_equals.apply(substitution),
@@ -170,7 +170,7 @@ impl<S: Model> Entity<S> for ConstantType<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         Self::This {
             r#type: self.r#type.into_other_model(),
@@ -181,7 +181,7 @@ impl<S: Model> Entity<S> for ConstantType<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         Some(Self::This {
             r#type: self.r#type.try_into_other_model()?,
@@ -191,24 +191,24 @@ impl<S: Model> Entity<S> for ConstantType<S> {
     fn apply(&mut self, substitution: &super::Substitution<S>) { self.r#type.apply(substitution); }
 }
 
-/// Represents a region outlive predicate, defnoted by `'operand: 'argument` syntax.
+/// Represents a lifetime outlive predicate, defnoted by `'operand: 'argument` syntax.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RegionOutlives<S: Model> {
-    /// The region that lives as long or longer than the [`Self::argument`] lifetime.
-    pub operand: Region<S>,
+pub struct LifetimeOutlives<S: Model> {
+    /// The lifetime that lives as long or longer than the [`Self::argument`] lifetime.
+    pub operand: Lifetime<S>,
 
-    /// The region that the [`Self::operand`] lives as long or longer than.
-    pub argument: Region<S>,
+    /// The lifetime that the [`Self::operand`] lives as long or longer than.
+    pub argument: Lifetime<S>,
 }
 
-impl<S: Model> Entity<S> for RegionOutlives<S> {
-    type This<A: Model> = RegionOutlives<A>;
+impl<S: Model> Entity<S> for LifetimeOutlives<S> {
+    type This<A: Model> = LifetimeOutlives<A>;
 
     fn into_other_model<T: Model>(self) -> Self::This<T>
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         Self::This {
             operand: self.operand.into_other_model(),
@@ -220,7 +220,7 @@ impl<S: Model> Entity<S> for RegionOutlives<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         Some(Self::This {
             operand: self.operand.try_into_other_model()?,
@@ -240,8 +240,8 @@ pub struct TypeOutlives<S: Model> {
     /// The type that lives as long or longer than the [`Self::argument`] lifetime.
     pub operand: Type<S>,
 
-    /// The region that the [`Self::operand`] lives as long or longer than.
-    pub argument: Region<S>,
+    /// The lifetime that the [`Self::operand`] lives as long or longer than.
+    pub argument: Lifetime<S>,
 }
 
 impl<S: Model> Entity<S> for TypeOutlives<S> {
@@ -251,7 +251,7 @@ impl<S: Model> Entity<S> for TypeOutlives<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         Self::This {
             operand: self.operand.into_other_model(),
@@ -263,7 +263,7 @@ impl<S: Model> Entity<S> for TypeOutlives<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         Some(Self::This {
             operand: self.operand.try_into_other_model()?,
@@ -297,7 +297,7 @@ impl<S: Model> Entity<S> for TypeEquals<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         Self::This {
             lhs: self.lhs.into_other_model(),
@@ -309,7 +309,7 @@ impl<S: Model> Entity<S> for TypeEquals<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         Some(Self::This {
             lhs: self.lhs.try_into_other_model()?,
@@ -333,7 +333,7 @@ impl<S: Model> Entity<S> for ConstantEquals<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         Self::This {
             lhs: self.lhs.into_other_model(),
@@ -345,7 +345,7 @@ impl<S: Model> Entity<S> for ConstantEquals<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         Some(Self::This {
             lhs: self.lhs.try_into_other_model()?,
@@ -379,7 +379,7 @@ impl<S: Model> Entity<S> for Trait<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         Self::This {
             trait_id: self.trait_id,
@@ -392,7 +392,7 @@ impl<S: Model> Entity<S> for Trait<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         Some(Self::This {
             trait_id: self.trait_id,
@@ -407,8 +407,8 @@ impl<S: Model> Entity<S> for Trait<S> {
     }
 }
 
-/// Represents a for-all quantified region, denoted by `for<'a>` syntax, used in higher-ranked trait
-/// bounds.
+/// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used in higher-ranked
+/// trait bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Forall(usize);
 
@@ -456,8 +456,8 @@ impl<S: Model> Premises<S> {
 
         for predicate in predicates {
             match predicate {
-                Predicate::RegionOutlives(outlives) => {
-                    non_equality_predicates.push(NonEquality::RegionOutlives(outlives));
+                Predicate::LifetimeOutlives(outlives) => {
+                    non_equality_predicates.push(NonEquality::LifetimeOutlives(outlives));
                 }
                 Predicate::TypeOutlives(outlives) => {
                     non_equality_predicates.push(NonEquality::TypeOutlives(outlives));

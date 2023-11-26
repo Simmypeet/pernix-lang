@@ -94,6 +94,10 @@ pub struct Tuple<S: Model> {
     pub elements: Vec<TupleElement<S>>,
 }
 
+/// Represents a local constant value, denoted by `local CONSTANT` syntax.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Local<S: Model>(pub Box<Constant<S>>);
+
 /// Represents a compile-time evaluated constant.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
@@ -105,6 +109,7 @@ pub enum Constant<S: Model> {
     Array(Array<S>),
     Parameter(ConstantParameterID),
     TraitMember(TraitMember<S>),
+    Local(Local<S>),
     Tuple(Tuple<S>),
 }
 
@@ -123,10 +128,11 @@ impl<S: Model> Entity<S> for Constant<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Constant::Primitive(primitive),
+            Self::Local(local) => Constant::Local(Local(Box::new(local.0.into_other_model()))),
             Self::Inference(inference) => Constant::Inference(inference.into()),
             Self::Struct(struct_constant) => Constant::Struct(Struct {
                 struct_id: struct_constant.struct_id,
@@ -226,11 +232,14 @@ impl<S: Model> Entity<S> for Constant<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Some(Constant::Primitive(primitive)),
             Self::Inference(inference) => inference.try_into().ok().map(Constant::Inference),
+            Self::Local(loca) => Some(Constant::Local(Local(Box::new(
+                loca.0.try_into_other_model()?,
+            )))),
             Self::Struct(struct_constant) => Some(Constant::Struct(Struct {
                 struct_id: struct_constant.struct_id,
                 generic_arguments: struct_constant.generic_arguments.try_into_other_model()?,

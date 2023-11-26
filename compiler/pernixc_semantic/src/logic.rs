@@ -4,10 +4,11 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     entity::{
+        self,
         constant::{self, Constant},
+        lifetime::Lifetime,
         predicate::Premises,
         r#type::{self, Type},
-        region::Region,
         Entity, GenericArguments, Model,
     },
     table::{Index, Table},
@@ -25,7 +26,7 @@ pub use predicate::TraitSatisfiability;
 struct QueryRecords<S: Model> {
     type_equals: HashSet<(Type<S>, Type<S>)>,
     constant_equals: HashSet<(Constant<S>, Constant<S>)>,
-    region_equals: HashSet<(Region<S>, Region<S>)>,
+    lifetime_equals: HashSet<(Lifetime<S>, Lifetime<S>)>,
 
     type_unifies: HashSet<(Type<S>, Type<S>)>,
     constant_unifies: HashSet<(Constant<S>, Constant<S>)>,
@@ -34,13 +35,16 @@ struct QueryRecords<S: Model> {
     constant_is_definite: HashSet<Constant<S>>,
 
     constant_type_satisfies: HashSet<Type<S>>,
+    type_outlives: HashSet<(Type<S>, Lifetime<S>)>,
+
+    trait_satisfies: HashSet<entity::predicate::Trait<S>>,
 }
 
 /// Represents a mapping of terms.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
 pub struct Mapping<S: Model> {
-    regions: HashMap<Region<S>, HashSet<Region<S>>>,
+    lifetimes: HashMap<Lifetime<S>, HashSet<Lifetime<S>>>,
     types: HashMap<Type<S>, HashSet<Type<S>>>,
     constants: HashMap<Constant<S>, HashSet<Constant<S>>>,
 }
@@ -57,13 +61,13 @@ macro_rules! insert_item {
 impl<S: Model> Mapping<S> {
     /// Creates a new mapping from the given equality pairs.
     pub fn from_pairs(
-        regions: impl IntoIterator<Item = (Region<S>, Region<S>)>,
+        lifetimes: impl IntoIterator<Item = (Lifetime<S>, Lifetime<S>)>,
         types: impl IntoIterator<Item = (Type<S>, Type<S>)>,
         constants: impl IntoIterator<Item = (Constant<S>, Constant<S>)>,
     ) -> Self {
         let mut mappings = Self::default();
 
-        insert_item!(mappings.regions, regions);
+        insert_item!(mappings.lifetimes, lifetimes);
         insert_item!(mappings.types, types);
         insert_item!(mappings.constants, constants);
 
@@ -102,42 +106,40 @@ macro_rules! normalization_body {
             premises: &Premises<S>,
             $table: &'a Table,
             records: &mut QueryRecords<S>,
-        ) -> Option<impl Iterator<Item = $obj> + 'a> {
+        ) -> Option<$obj> {
             // gets the implementation of the trait
             let Some(trait_id) = $table.get($normalizable.$trait_field).map(|x| x.parent_trait_id)
             else {
                 return None;
             };
 
-             let implementations = $table.resolve_implementation_internal(
+             let $implementation = $table.resolve_implementation_internal(
                 trait_id,
                 &$normalizable.$arguments_field,
                 premises,
                 records,
-            );
+            ).ok()?;
 
-            Some(implementations.into_iter().filter_map(|$implementation| {
-                let implementation_id = $implementation.implementation_id;
+            let implementation_id = $implementation.implementation_id;
 
-                let Some($implementation_symbol) = $table.get(implementation_id) else {
-                    return None;
-                };
+            let Some($implementation_symbol) = $table.get(implementation_id) else {
+                return None;
+            };
 
-                let Some(mut equivalent) = $implementation_symbol
-                    .$term
-                    .get(&$normalizable.$trait_field)
-                    .copied()
-                    .and_then(|x| $table.get(x))
-                    .map(|x| x.$kind.clone().into_other_model())
-                else {
-                    return None;
-                };
+            let Some(mut equivalent) = $implementation_symbol
+                .$term
+                .get(&$normalizable.$trait_field)
+                .copied()
+                .and_then(|x| $table.get(x))
+                .map(|x| x.$kind.clone().into_other_model())
+            else {
+                return None;
+            };
 
-                let substitution = $substitution;
-                equivalent.apply(&substitution);
+            let substitution = $substitution;
+            equivalent.apply(&substitution);
 
-                Some(equivalent)
-            }))
+            Some(equivalent)
         }
     };
 }
@@ -184,7 +186,7 @@ impl<S: Model> r#type::TraitMember<S> {
         &'a self,
         premises: &Premises<S>,
         table: &'a Table,
-    ) -> Option<impl Iterator<Item = r#type::Type<S>> + 'a> {
+    ) -> Option<r#type::Type<S>> {
         self.normalize_internal(premises, table, &mut QueryRecords::default())
     }
 }
@@ -229,6 +231,7 @@ impl<S: Model> Constant<S> {
         let mut result = match self {
             Self::Primitive(_) => true,
             Self::Inference(_) | Self::Parameter(_) => false,
+            Self::Local(local) => local.0.is_definite_internal(premises, table, records),
             Self::Struct(constant) => {
                 constant
                     .generic_arguments
@@ -257,20 +260,11 @@ impl<S: Model> Constant<S> {
                         .all(|x| x.is_definite_internal(premises, table, records))
             }
             Self::TraitMember(constant) => {
-                let mut result = false;
-
                 let Some(normalized) = constant.normalize_internal(premises, table, records) else {
                     return false;
                 };
 
-                for normalized in normalized {
-                    if normalized.is_definite_internal(premises, table, records) {
-                        result = true;
-                        break;
-                    }
-                }
-
-                result
+                normalized.is_definite_internal(premises, table, records)
             }
             Self::Tuple(constant) => constant.elements.iter().all(|x| match x {
                 constant::TupleElement::Regular(regular) => {
@@ -331,21 +325,13 @@ impl<S: Model> Type<S> {
                     && ty.element.is_definite_internal(premises, table, records)
             }
             Self::TraitMember(ty) => {
-                let mut result = false;
-
                 let Some(normalized) = ty.normalize_internal(premises, table, records) else {
                     return false;
                 };
 
-                for normalized in normalized {
-                    if normalized.is_definite_internal(premises, table, records) {
-                        result = true;
-                        break;
-                    }
-                }
-
-                result
+                normalized.is_definite_internal(premises, table, records)
             }
+            Self::Local(local) => local.0.is_definite_internal(premises, table, records),
             Self::Tuple(param) => param.elements.iter().all(|x| match x {
                 r#type::TupleElement::Regular(regular) => {
                     regular.is_definite_internal(premises, table, records)

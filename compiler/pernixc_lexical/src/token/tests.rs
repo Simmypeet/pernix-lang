@@ -33,7 +33,7 @@ impl Arbitrary for Identifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        "[A-Za-z_@][A-Za-z0-9_]*"
+        "[A-Za-z_][A-Za-z0-9_]*"
             .prop_filter_map(
                 "filter out identifiers that can be used as a keyword",
                 |x| {

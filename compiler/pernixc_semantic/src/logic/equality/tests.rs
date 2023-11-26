@@ -128,7 +128,7 @@ fn recursive_term_test() {
         (Type::Algebraic(Algebraic {
             kind: AlgebraicKind::Enum(ID::new(0)),
             generic_arguments: GenericArguments {
-                regions: Vec::new(),
+                lifetimes: Vec::new(),
                 types: vec![
                     Type::Parameter(TypeParameterID {
                         parent: GenericID::Enum(ID::new(0)),
@@ -166,12 +166,12 @@ fn recursive_term_test() {
     let rhs: Type<Symbolic> = Type::Algebraic(Algebraic {
         kind: AlgebraicKind::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
-            regions: Vec::new(),
+            lifetimes: Vec::new(),
             types: vec![
                 Type::Algebraic(Algebraic {
                     kind: AlgebraicKind::Enum(ID::new(0)),
                     generic_arguments: GenericArguments {
-                        regions: Vec::new(),
+                        lifetimes: Vec::new(),
                         types: vec![
                             Type::Parameter(TypeParameterID {
                                 parent: GenericID::Enum(ID::new(0)),
@@ -329,7 +329,7 @@ fn by_unification_test() {
     let lhs: Type<Symbolic> = Type::Algebraic(Algebraic {
         kind: AlgebraicKind::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
-            regions: Vec::new(),
+            lifetimes: Vec::new(),
             types: vec![
                 Type::Parameter(TypeParameterID {
                     parent: GenericID::Enum(ID::new(0)),
@@ -347,7 +347,7 @@ fn by_unification_test() {
     let rhs: Type<Symbolic> = Type::Algebraic(Algebraic {
         kind: AlgebraicKind::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
-            regions: Vec::new(),
+            lifetimes: Vec::new(),
             types: vec![
                 Type::Parameter(TypeParameterID {
                     parent: GenericID::Enum(ID::new(0)),
@@ -387,7 +387,7 @@ fn fallacy_test() {
             Type::Algebraic(Algebraic {
                 kind: AlgebraicKind::Enum(ID::new(0)),
                 generic_arguments: GenericArguments {
-                    regions: vec![],
+                    lifetimes: vec![],
                     types: vec![
                         Type::Parameter(TypeParameterID {
                             parent: GenericID::Enum(ID::new(0)),
@@ -410,7 +410,7 @@ fn fallacy_test() {
             Type::Algebraic(Algebraic {
                 kind: AlgebraicKind::Enum(ID::new(0)),
                 generic_arguments: GenericArguments {
-                    regions: vec![],
+                    lifetimes: vec![],
                     types: vec![
                         Type::Parameter(TypeParameterID {
                             parent: GenericID::Enum(ID::new(0)),

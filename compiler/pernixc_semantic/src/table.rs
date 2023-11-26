@@ -10,9 +10,12 @@ use pernixc_syntax::syntax_tree::target::Target;
 use rayon::iter::ParallelIterator;
 use thiserror::Error;
 
+use self::state::Manager;
 use crate::{
     arena::{Arena, ID},
-    entity::{constant, predicate, r#type, region::Region, Entity, GenericArguments, Model, Never},
+    entity::{
+        constant, lifetime::Lifetime, predicate, r#type, Entity, GenericArguments, Model, Never,
+    },
     error,
     logic::Mapping,
     symbol::{
@@ -26,6 +29,7 @@ use crate::{
 mod drafting;
 pub mod evaluate;
 mod finalizing;
+// mod finalizing;
 pub mod resolution;
 mod state;
 
@@ -72,8 +76,6 @@ pub struct Table {
     implementation_constants: Arena<RwLock<ImplementationConstant>, ImplementationConstant>,
 
     root_module_ids_by_name: HashMap<String, ID<Module>>,
-
-    state_manager: RwLock<state::Manager>,
 }
 
 impl Table {
@@ -96,7 +98,6 @@ impl Table {
             trait_types: Arena::default(),
             negative_implementations: Arena::default(),
             root_module_ids_by_name: HashMap::new(),
-            state_manager: RwLock::new(state::Manager::default()),
         }
     }
 }
@@ -213,6 +214,7 @@ impl Table {
             handler,
             usings_by_module_id: RwLock::new(HashMap::new()),
             implementations_by_module_id: RwLock::new(HashMap::new()),
+            state_manger: RwLock::new(Manager::default()),
         };
 
         // Collect all the targets.
@@ -234,6 +236,7 @@ impl Table {
         let drafting::Context {
             usings_by_module_id,
             implementations_by_module_id,
+            state_manger,
             ..
         } = drafting_context;
 
@@ -267,20 +270,17 @@ impl Table {
                     continue;
                 };
 
-                table.draft_implementation(implementation, module_id, trait_id, handler);
+                table.draft_implementation(
+                    implementation,
+                    module_id,
+                    trait_id,
+                    &state_manger,
+                    handler,
+                );
             }
         }
 
-        // finalize all symbols
-        let drafted_symbol_ids = table
-            .state_manager
-            .read()
-            .all_drafted_symbols()
-            .collect::<Vec<_>>();
-
-        for symbol_id in drafted_symbol_ids {
-            let _ = table.finalize(symbol_id, None, handler);
-        }
+        table.finalize(&state_manger, handler);
 
         Ok(table)
     }
@@ -290,6 +290,7 @@ impl Table {
     /// # Returns
     ///
     /// Returns `None` if `referred` or `referring_site` is not a valid ID.
+    #[must_use]
     pub fn symbol_accessible(&self, referring_site: GlobalID, referred: GlobalID) -> Option<bool> {
         match self.get_accessibility(referred)? {
             Accessibility::Public => {
@@ -321,6 +322,7 @@ impl Table {
     }
 
     /// Returns the root [`Module`] ID that contains the given [`GlobalID`] (including itself).
+    #[must_use]
     pub fn get_root_module_id(&self, mut global_id: GlobalID) -> Option<ID<Module>> {
         while let Some(parent_id) = self.get_global(global_id)?.parent_global_id() {
             global_id = parent_id;
@@ -334,6 +336,7 @@ impl Table {
     }
 
     /// Returns the [`Module`] ID that is the closest to the given [`GlobalID`] (including itself).
+    #[must_use]
     pub fn get_closet_module_id(&self, mut global_id: GlobalID) -> Option<ID<Module>> {
         // including itself
         loop {
@@ -486,9 +489,10 @@ impl Table {
     #[must_use]
     pub fn get_type_overall_accessibility<S>(&self, ty: &r#type::Type<S>) -> Option<Accessibility>
     where
-        S: Model<TypeInference = Never, ConstantInference = Never, LocalRegion = Never>,
+        S: Model<TypeInference = Never, ConstantInference = Never, ScopedLifetime = Never>,
     {
         match ty {
+            r#type::Type::Local(local) => self.get_type_overall_accessibility(&local.0),
             r#type::Type::Primitive(_) => Some(Accessibility::Public),
             r#type::Type::Inference(never) => match *never {},
             r#type::Type::Algebraic(adt) => Some(
@@ -499,7 +503,7 @@ impl Table {
                 self.get_type_overall_accessibility(&*pointer.pointee)
             }
             r#type::Type::Reference(reference) => Some(
-                self.get_region_overall_accessibility(&reference.region)?
+                self.get_lifetime_overall_accessibility(&reference.lifetime)?
                     .min(self.get_type_overall_accessibility(&*reference.pointee)?),
             ),
             r#type::Type::Array(array) => Some(
@@ -561,10 +565,11 @@ impl Table {
         constant: &constant::Constant<S>,
     ) -> Option<Accessibility>
     where
-        S: Model<TypeInference = Never, ConstantInference = Never, LocalRegion = Never>,
+        S: Model<TypeInference = Never, ConstantInference = Never, ScopedLifetime = Never>,
     {
         match constant {
             constant::Constant::Primitive(_) => Some(Accessibility::Public),
+            constant::Constant::Local(local) => self.get_constant_overall_accessibility(&local.0),
             constant::Constant::Inference(never) => match *never {},
             constant::Constant::Struct(constant) => {
                 let mut current_min = self.get_accessibility(constant.struct_id.into())?.min(
@@ -585,22 +590,25 @@ impl Table {
         }
     }
 
-    /// Gets overall accessibility of the given [`Region`].
+    /// Gets overall accessibility of the given [`Lifetime`].
     ///
     /// # Returns
     ///
-    /// `None` if the region contains an invalid id as its component.
+    /// `None` if the lifetime contains an invalid id as its component.
     #[must_use]
-    pub fn get_region_overall_accessibility<S>(&self, region: &Region<S>) -> Option<Accessibility>
+    pub fn get_lifetime_overall_accessibility<S>(
+        &self,
+        lifetime: &Lifetime<S>,
+    ) -> Option<Accessibility>
     where
-        S: Model<TypeInference = Never, ConstantInference = Never, LocalRegion = Never>,
+        S: Model<TypeInference = Never, ConstantInference = Never, ScopedLifetime = Never>,
     {
-        match region {
-            Region::Static | Region::Forall(_) => Some(Accessibility::Public),
-            Region::Named(lifetime_parameter_id) => {
+        match lifetime {
+            Lifetime::Static | Lifetime::Forall(_) => Some(Accessibility::Public),
+            Lifetime::Parameter(lifetime_parameter_id) => {
                 self.get_accessibility(lifetime_parameter_id.parent.into())
             }
-            Region::Local(never) => match *never {},
+            Lifetime::Scoped(never) => match *never {},
         }
     }
 
@@ -619,12 +627,12 @@ impl Table {
         generic_arguments: &GenericArguments<S>,
     ) -> Option<Accessibility>
     where
-        S: Model<TypeInference = Never, ConstantInference = Never, LocalRegion = Never>,
+        S: Model<TypeInference = Never, ConstantInference = Never, ScopedLifetime = Never>,
     {
         let mut current_min = Accessibility::Public;
 
-        for region in &generic_arguments.regions {
-            current_min = current_min.min(self.get_region_overall_accessibility(region)?);
+        for lifetime in &generic_arguments.lifetimes {
+            current_min = current_min.min(self.get_lifetime_overall_accessibility(lifetime)?);
         }
 
         for ty in &generic_arguments.types {
@@ -643,6 +651,7 @@ impl Table {
     /// # Returns
     ///
     /// Returns `None` if the given [`GlobalID`] is not valid.
+    #[must_use]
     pub fn get_premise_mapping<S: Model>(&self, global_id: GlobalID) -> Option<Mapping<S>> {
         let walker = self.scope_walker(global_id).unwrap();
         let mut mapping = Mapping::default();
@@ -680,6 +689,7 @@ impl Table {
     /// # Returns
     ///
     /// Returns `None` if the given [`GlobalID`] is not valid.
+    #[must_use]
     pub fn get_premise_predicates(&self, global_id: GlobalID) -> Option<Vec<Predicate>> {
         let walker = self.scope_walker(global_id).unwrap();
         let mut predicates = Vec::new();
@@ -716,6 +726,7 @@ impl Table {
     /// # Returns
     ///
     /// Returns `None` if the given [`GlobalID`] is not a valid ID.
+    #[must_use]
     pub fn get_accessibility(&self, global_id: GlobalID) -> Option<Accessibility> {
         macro_rules! arm_expression {
             ($table:ident, $id:ident, $kind:ident) => {
@@ -791,6 +802,7 @@ impl Table {
     }
 
     /// Returns the [`Generic`] symbol from the given [`GenericID`]
+    #[must_use]
     pub fn get_generic(&self, generic_id: GenericID) -> Option<MappedRwLockReadGuard<dyn Generic>> {
         get!(
             self,

@@ -2,16 +2,16 @@
 
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
-use self::{constant::Constant, r#type::Type, region::Region};
+use self::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use crate::{
     arena::ID,
     symbol::{ConstantParameterID, GenericID, LifetimeParameterID, TypeParameterID},
 };
 
 pub mod constant;
+pub mod lifetime;
 pub mod pattern;
 pub mod predicate;
-pub mod region;
 pub mod r#type;
 
 /// Represents a model of entities
@@ -47,8 +47,8 @@ pub trait Model:
         + Sync
         + From<Never>;
 
-    /// The type used to represent local region variable.
-    type LocalRegion: Debug
+    /// The type used to represent local lifetime variable.
+    type ScopedLifetime: Debug
         + Clone
         + PartialEq
         + Eq
@@ -137,7 +137,7 @@ pub trait Entity<S: Model> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>;
+        S::ScopedLifetime: Into<T::ScopedLifetime>;
 
     /// Tries to convert this entity into another model.
     #[must_use]
@@ -145,7 +145,7 @@ pub trait Entity<S: Model> {
     where
         S::ConstantInference: TryInto<T::ConstantInference>,
         S::TypeInference: TryInto<T::TypeInference>,
-        S::LocalRegion: TryInto<T::LocalRegion>;
+        S::ScopedLifetime: TryInto<T::ScopedLifetime>;
 
     /// Applies the given substitution to the entity.
     fn apply(&mut self, substitution: &Substitution<S>);
@@ -157,7 +157,7 @@ pub trait Entity<S: Model> {
 pub struct Substitution<S: Model> {
     pub types: HashMap<Type<S>, Type<S>>,
     pub constants: HashMap<Constant<S>, Constant<S>>,
-    pub regions: HashMap<Region<S>, Region<S>>,
+    pub lifetimes: HashMap<Lifetime<S>, Lifetime<S>>,
 }
 
 impl<S: Model> Substitution<S> {
@@ -165,7 +165,7 @@ impl<S: Model> Substitution<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         Substitution {
             types: self
@@ -178,8 +178,8 @@ impl<S: Model> Substitution<S> {
                 .into_iter()
                 .map(|(key, value)| (key.into_other_model(), value.into_other_model()))
                 .collect(),
-            regions: self
-                .regions
+            lifetimes: self
+                .lifetimes
                 .into_iter()
                 .map(|(key, value)| (key.into_other_model(), value.into_other_model()))
                 .collect(),
@@ -231,11 +231,11 @@ impl<S: Model> Substitution<S> {
             }
         }
 
-        for (index, term) in generic_arguments.regions.into_iter().enumerate() {
+        for (index, term) in generic_arguments.lifetimes.into_iter().enumerate() {
             if self
-                .regions
+                .lifetimes
                 .insert(
-                    Region::Named(LifetimeParameterID {
+                    Lifetime::Parameter(LifetimeParameterID {
                         parent: generic_id,
                         id: ID::new(index),
                     }),
@@ -265,8 +265,8 @@ impl<S: Model> Substitution<S> {
 /// Represents a list of generic arguments supplied to a particular generic symbol.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct GenericArguments<S: Model> {
-    /// List of region arguments.
-    pub regions: Vec<Region<S>>,
+    /// List of lifetime arguments.
+    pub lifetimes: Vec<Lifetime<S>>,
 
     /// List of type arguments.
     pub types: Vec<Type<S>>,
@@ -286,11 +286,11 @@ impl<S: Model> Entity<S> for GenericArguments<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         GenericArguments {
-            regions: self
-                .regions
+            lifetimes: self
+                .lifetimes
                 .into_iter()
                 .map(Entity::into_other_model)
                 .collect(),
@@ -308,8 +308,8 @@ impl<S: Model> Entity<S> for GenericArguments<S> {
     }
 
     fn apply(&mut self, substitution: &Substitution<S>) {
-        for region in &mut self.regions {
-            region.apply(substitution);
+        for lifetime in &mut self.lifetimes {
+            lifetime.apply(substitution);
         }
 
         for constant in &mut self.constants {
@@ -325,14 +325,14 @@ impl<S: Model> Entity<S> for GenericArguments<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
-        let mut regions = Vec::with_capacity(self.regions.len());
+        let mut lifetimes = Vec::with_capacity(self.lifetimes.len());
         let mut types = Vec::with_capacity(self.types.len());
         let mut constants = Vec::with_capacity(self.constants.len());
 
-        for region in self.regions {
-            regions.push(region.try_into_other_model()?);
+        for lifetime in self.lifetimes {
+            lifetimes.push(lifetime.try_into_other_model()?);
         }
 
         for ty in self.types {
@@ -344,7 +344,7 @@ impl<S: Model> Entity<S> for GenericArguments<S> {
         }
 
         Some(GenericArguments {
-            regions,
+            lifetimes,
             types,
             constants,
         })

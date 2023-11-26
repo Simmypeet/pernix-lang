@@ -17,9 +17,9 @@ use crate::{
     arena::ID,
     entity::{
         constant,
+        lifetime::Lifetime,
         predicate::{self, Predicate},
-        r#type::{self, Qualifier},
-        region::Region,
+        r#type::{self, Local, Qualifier},
         Entity, GenericArguments, Model, Substitution,
     },
     error::{
@@ -93,12 +93,14 @@ pub enum NonGlobalIDType<S: Model> {
     Reference(r#type::Reference<S>),
     Array(r#type::Array<S>),
     Parameter(TypeParameterID),
+    Local(r#type::Local<S>),
     Tuple(r#type::Tuple<S>),
 }
 
 impl<S: Model> From<NonGlobalIDType<S>> for r#type::Type<S> {
     fn from(value: NonGlobalIDType<S>) -> Self {
         match value {
+            NonGlobalIDType::Local(local) => Self::Local(local),
             NonGlobalIDType::Primitive(primitive) => Self::Primitive(primitive),
             NonGlobalIDType::Inference(inference) => Self::Inference(inference),
             NonGlobalIDType::Pointer(pointer) => Self::Pointer(pointer),
@@ -172,6 +174,7 @@ impl<S: Model> From<r#type::Type<S>> for Resolution<S> {
                     generic_arguments: trait_member.member_generic_arguments,
                 },
             }),
+            r#type::Type::Local(local) => Self::NonGlobalIDType(NonGlobalIDType::Local(local)),
         }
     }
 }
@@ -189,10 +192,10 @@ pub enum Checking<S: Model> {
 
 /// A configuration for the resolution.
 pub trait Config<S: Model> {
-    /// Obtains the region where the region arguments aren't supplied.
+    /// Obtains the lifetime where the lifetime arguments aren't supplied.
     ///
-    /// Returns `None` if the region arguments are **explicitly** required.
-    fn region_arguments_placeholder(&mut self) -> Option<Region<S>>;
+    /// Returns `None` if the lifetime arguments are **explicitly** required.
+    fn lifetime_arguments_placeholder(&mut self) -> Option<Lifetime<S>>;
 
     /// Obtains the type where the type arguments aren't supplied.
     ///
@@ -204,7 +207,16 @@ pub trait Config<S: Model> {
     /// Returns `None` if the constant arguments are **explicitly** required.
     fn constant_arguments_placeholder(&mut self) -> Option<constant::Constant<S>>;
 
-    /// Recieves a semantic check occurred during the resolution.
+    /// Gets notified when a global ID is resolved.
+    fn on_global_id_resolved(&mut self, _: GlobalID) {}
+
+    /// Gets notified if the symbol is [`Generic`] and the generic arguments are resolved.
+    fn on_generic_arguments_resolved(&mut self, _: GenericID, _: &GenericArguments<S>) {}
+
+    /// Gets notified when a single generic identifier is resolved.
+    fn on_resolved(&mut self, _: &Resolution<S>) {}
+
+    /// Receives a semantic check occurred during the resolution.
     ///
     /// See [`Checking`] for more information.
     ///
@@ -218,7 +230,7 @@ pub trait Config<S: Model> {
     /// of lifetime.
     ///
     /// This is primarily used for the higher-ranked lifetimes.
-    fn extra_lifetime_provider(&self, _: &str) -> Option<Region<S>> { None }
+    fn extra_lifetime_provider(&self, _: &str) -> Option<Lifetime<S>> { None }
 }
 
 macro_rules! handle_generic_arguments_supplied {
@@ -283,7 +295,7 @@ macro_rules! handle_generic_arguments_supplied {
 
                 $argument_syns
                     .into_iter()
-                    .zip($generic_symbol.generic_declaration().parameters.[<$kind:lower s>].values())
+                    .zip($generic_symbol.generic_declaration().parameters.[<$kind:lower s>].iter())
                     .map(|($syntax_tree, $param)| $resolve_function)
                     .chain(
                         $generic_symbol
@@ -647,8 +659,9 @@ impl Table {
                 if let Some(type_parameter_id) = generic_symbol
                     .generic_declaration()
                     .parameters
-                    .types
-                    .get_id(syntax_tree.first().identifier().span.str())
+                    .type_parameter_ids_by_name
+                    .get(syntax_tree.first().identifier().span.str())
+                    .copied()
                 {
                     return Ok(r#type::Type::Parameter(TypeParameterID {
                         parent: generic_id,
@@ -703,6 +716,9 @@ impl Table {
                     syntax_tree::r#type::Primitive::Isize(_) => r#type::Primitive::Isize,
                 }))
             }
+            syntax_tree::r#type::Type::Local(local) => Ok(r#type::Type::Local(Local(Box::new(
+                self.resolve_type(local.ty(), referring_site, config, handler)?,
+            )))),
             syntax_tree::r#type::Type::QualifiedIdentifier(qualified_identifier) => self
                 .resolve_qualified_identifier_type(
                     qualified_identifier,
@@ -711,14 +727,14 @@ impl Table {
                     handler,
                 ),
             syntax_tree::r#type::Type::Reference(reference) => {
-                let region = reference
+                let lifetime = reference
                     .lifetime_argument()
                     .as_ref()
-                    .map(|x| self.resolve_region(x, referring_site, config, handler))
+                    .map(|x| self.resolve_lifetime(x, referring_site, config, handler))
                     .transpose()?
                     .map_or_else(
                         || {
-                            config.region_arguments_placeholder().map_or_else(
+                            config.lifetime_arguments_placeholder().map_or_else(
                                 || {
                                     handler.receive(error::Error::LifetimeExpected(
                                         LifetimeExpected {
@@ -734,8 +750,8 @@ impl Table {
                     )?;
 
                 let qualifier = match reference.qualifier() {
-                    Some(syntax_tree::r#type::Qualifier::Mutable(..)) => Qualifier::Mutable,
-                    Some(syntax_tree::r#type::Qualifier::Restrict(..)) => Qualifier::Restrict,
+                    Some(syntax_tree::Qualifier::Mutable(..)) => Qualifier::Mutable,
+                    Some(syntax_tree::Qualifier::Restrict(..)) => Qualifier::Restrict,
                     None => Qualifier::Immutable,
                 };
 
@@ -746,25 +762,25 @@ impl Table {
                     handler,
                 )?);
 
-                // the pointee must live as long as the region
+                // the pointee must live as long as the lifetime
                 config.check(
                     Checking::Predicate(Predicate::TypeOutlives(predicate::TypeOutlives {
                         operand: (*pointee).clone(),
-                        argument: region.clone(),
+                        argument: lifetime.clone(),
                     })),
                     reference.span(),
                 );
 
                 Ok(r#type::Type::Reference(r#type::Reference {
                     qualifier,
-                    region,
+                    lifetime,
                     pointee,
                 }))
             }
             syntax_tree::r#type::Type::Pointer(pointer_ty) => {
                 let qualifier = match pointer_ty.qualifier() {
-                    Some(syntax_tree::r#type::Qualifier::Mutable(..)) => Qualifier::Mutable,
-                    Some(syntax_tree::r#type::Qualifier::Restrict(..)) => Qualifier::Restrict,
+                    Some(syntax_tree::Qualifier::Mutable(..)) => Qualifier::Mutable,
+                    Some(syntax_tree::Qualifier::Restrict(..)) => Qualifier::Restrict,
                     None => Qualifier::Immutable,
                 };
 
@@ -855,8 +871,9 @@ impl Table {
             if let Some(lifetime_id) = generic_symbol
                 .generic_declaration()
                 .parameters
-                .lifetimes
-                .get_id(identifier.span.str())
+                .lifetime_parameter_ids_by_name
+                .get(identifier.span.str())
+                .copied()
             {
                 return Ok(MemberID {
                     parent: generic_id,
@@ -874,28 +891,28 @@ impl Table {
         Err(Error::SemanticError)
     }
 
-    /// Resolves a [`syntax_tree::LifetimeArgument`] to a [`Region`].
+    /// Resolves a [`syntax_tree::LifetimeArgument`] to a [`Lifetime`].
     ///
     /// # Errors
     ///
     /// - [`Error::InvalidID`]: If the `referring_site` is not a valid ID.
     /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
-    pub fn resolve_region<S: Model>(
+    pub fn resolve_lifetime<S: Model>(
         &self,
         lifetime_argument: &syntax_tree::LifetimeArgument,
         referring_site: GlobalID,
         config: &dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<Region<S>, Error> {
+    ) -> Result<Lifetime<S>, Error> {
         match lifetime_argument.identifier() {
-            LifetimeArgumentIdentifier::Static(..) => Ok(Region::Static),
+            LifetimeArgumentIdentifier::Static(..) => Ok(Lifetime::Static),
             LifetimeArgumentIdentifier::Identifier(ident) => {
-                if let Some(region) = config.extra_lifetime_provider(ident.span.str()) {
-                    return Ok(region);
+                if let Some(lifetime) = config.extra_lifetime_provider(ident.span.str()) {
+                    return Ok(lifetime);
                 }
 
                 self.resolve_lifetime_parameter(ident, referring_site, handler)
-                    .map(Region::Named)
+                    .map(Lifetime::Parameter)
             }
         }
     }
@@ -908,7 +925,7 @@ impl Table {
         lifetime_argument_syns: Vec<&syntax_tree::LifetimeArgument>,
         config: &mut dyn Config<S>,
         handler: &dyn Handler<error::Error>,
-    ) -> Result<Vec<Region<S>>, Error> {
+    ) -> Result<Vec<Lifetime<S>>, Error> {
         let expected_count = generic_symbol
             .generic_declaration()
             .parameters
@@ -925,7 +942,7 @@ impl Table {
                 .lifetimes
                 .len()
             {
-                let Some(placeholder) = config.region_arguments_placeholder() else {
+                let Some(placeholder) = config.lifetime_arguments_placeholder() else {
                     handler.receive(error::Error::GenericArgumentCountMismatch(
                         GenericArgumentCountMismatch {
                             generic_kind: GenericKind::Lifetime,
@@ -948,7 +965,7 @@ impl Table {
         } else if lifetime_argument_syns.len() == expected_count {
             Ok(lifetime_argument_syns
                 .into_iter()
-                .map(|x| self.resolve_region(x, referring_site, config, handler))
+                .map(|x| self.resolve_lifetime(x, referring_site, config, handler))
                 .collect::<Result<Vec<_>, _>>()?)
         } else {
             // lifetime arguments count mismatch
@@ -1094,7 +1111,7 @@ impl Table {
 
         // extract the arguments syntax
         Ok(Some(GenericArguments {
-            regions: self.handle_lifetime_arguments_supplied(
+            lifetimes: self.handle_lifetime_arguments_supplied(
                 generic_identifier.span(),
                 referring_site,
                 &*generic_symbol,
@@ -1395,7 +1412,7 @@ impl Table {
             )?;
 
             // checks if the symbol is finalized
-            let _ = self.finalize(global_id, Some(referring_site), handler);
+            config.on_global_id_resolved(global_id);
 
             // generic arguments
             let generic_arguments = self.resolve_generic_arguments(
@@ -1406,13 +1423,25 @@ impl Table {
                 handler,
             )?;
 
-            latest_resolution = Some(self.final_pass(
+            if let Some(generic_arguments) = generic_arguments.as_ref() {
+                // check if the generic arguments are valid
+                config.on_generic_arguments_resolved(
+                    global_id.try_into().unwrap(),
+                    generic_arguments,
+                );
+            }
+
+            let resolved = self.final_pass(
                 global_id,
                 generic_arguments,
                 latest_resolution,
                 &generic_identifier.span(),
                 config,
-            ));
+            );
+
+            config.on_resolved(&resolved);
+
+            latest_resolution = Some(resolved);
         }
 
         Ok(latest_resolution.expect("should at least have one resolution"))

@@ -73,7 +73,7 @@ implements Example<int32, float32> {}
 fn trivial_trait_resolution() {
     let table = parse_table(TRIVIAL_TRAIT);
     let target_implementation_arguments: GenericArguments<Symbolic> = GenericArguments {
-        regions: Vec::new(),
+        lifetimes: Vec::new(),
         types: vec![
             Type::Primitive(Primitive::Int32),
             Type::Primitive(Primitive::Float32),
@@ -96,7 +96,7 @@ fn trivial_trait_resolution() {
         .unwrap();
 
     assert_eq!(implementations.deduced_unification.types.len(), 0);
-    assert_eq!(implementations.deduced_unification.regions.len(), 0);
+    assert_eq!(implementations.deduced_unification.lifetimes.len(), 0);
     assert_eq!(implementations.deduced_unification.constants.len(), 0);
 
     assert!(table
@@ -117,7 +117,7 @@ fn trivial_trait_resolution() {
     let float32 = Type::Primitive(Primitive::Float32);
 
     generic_arguments = GenericArguments {
-        regions: Vec::new(),
+        lifetimes: Vec::new(),
         types: vec![Type::Primitive(Primitive::Int32), parameter.clone()],
         constants: Vec::new(),
     };
@@ -138,7 +138,7 @@ fn trivial_trait_resolution() {
         .unwrap();
 
     assert_eq!(implementations.deduced_unification.types.len(), 0);
-    assert_eq!(implementations.deduced_unification.regions.len(), 0);
+    assert_eq!(implementations.deduced_unification.lifetimes.len(), 0);
     assert_eq!(implementations.deduced_unification.constants.len(), 0);
 
     assert!(table
@@ -203,12 +203,12 @@ fn trait_resolution_with_specialization_implementation_one() {
             });
 
             let expected_generic_arguments = GenericArguments {
-                regions: Vec::new(),
+                lifetimes: Vec::new(),
                 types: vec![
                     Type::Algebraic(crate::entity::r#type::Algebraic {
                         kind: AlgebraicKind::Enum(enum_symbol.id),
                         generic_arguments: GenericArguments {
-                            regions: Vec::new(),
+                            lifetimes: Vec::new(),
                             types: vec![t_type_parameter.clone()],
                             constants: Vec::new(),
                         },
@@ -216,7 +216,7 @@ fn trait_resolution_with_specialization_implementation_one() {
                     Type::Algebraic(crate::entity::r#type::Algebraic {
                         kind: AlgebraicKind::Enum(enum_symbol.id),
                         generic_arguments: GenericArguments {
-                            regions: Vec::new(),
+                            lifetimes: Vec::new(),
                             types: vec![u_type_parameter.clone()],
                             constants: Vec::new(),
                         },
@@ -236,12 +236,12 @@ fn trait_resolution_with_specialization_implementation_one() {
 
     // Example<Option<uint32>, Option<uint64>> should resolve to one
     let generic_arguments: GenericArguments<Symbolic> = GenericArguments {
-        regions: Vec::new(),
+        lifetimes: Vec::new(),
         types: vec![
             Type::Algebraic(crate::entity::r#type::Algebraic {
                 kind: AlgebraicKind::Enum(enum_symbol.id),
                 generic_arguments: GenericArguments {
-                    regions: Vec::new(),
+                    lifetimes: Vec::new(),
                     types: vec![Type::Primitive(Primitive::Uint32)],
                     constants: Vec::new(),
                 },
@@ -249,7 +249,7 @@ fn trait_resolution_with_specialization_implementation_one() {
             Type::Algebraic(crate::entity::r#type::Algebraic {
                 kind: AlgebraicKind::Enum(enum_symbol.id),
                 generic_arguments: GenericArguments {
-                    regions: Vec::new(),
+                    lifetimes: Vec::new(),
                     types: vec![Type::Primitive(Primitive::Uint64)],
                     constants: Vec::new(),
                 },
@@ -312,7 +312,7 @@ fn trait_resolution_with_specialization_implementation_second() {
             });
 
             let expected_generic_arguments = GenericArguments {
-                regions: Vec::new(),
+                lifetimes: Vec::new(),
                 types: vec![t_type_parameter.clone(), u_type_parameter.clone()],
                 constants: Vec::new(),
             };
@@ -328,13 +328,13 @@ fn trait_resolution_with_specialization_implementation_second() {
 
     // Example<int32, Option<uint64>> should resolve to two
     let generic_arguments: GenericArguments<Symbolic> = GenericArguments {
-        regions: Vec::new(),
+        lifetimes: Vec::new(),
         types: vec![
             Type::Primitive(Primitive::Int32),
             Type::Algebraic(crate::entity::r#type::Algebraic {
                 kind: AlgebraicKind::Enum(enum_symbol.id),
                 generic_arguments: GenericArguments {
-                    regions: Vec::new(),
+                    lifetimes: Vec::new(),
                     types: vec![Type::Primitive(Primitive::Uint64)],
                     constants: Vec::new(),
                 },
@@ -362,7 +362,7 @@ fn trait_resolution_with_specialization_implementation_second() {
         Type::Algebraic(crate::entity::r#type::Algebraic {
             kind: AlgebraicKind::Enum(enum_symbol.id),
             generic_arguments: GenericArguments {
-                regions: Vec::new(),
+                lifetimes: Vec::new(),
                 types: vec![Type::Primitive(Primitive::Uint64)],
                 constants: Vec::new(),
             },
@@ -371,7 +371,7 @@ fn trait_resolution_with_specialization_implementation_second() {
 
     // Example<int32, uint64> should resolve to two
     let generic_arguments: GenericArguments<Symbolic> = GenericArguments {
-        regions: Vec::new(),
+        lifetimes: Vec::new(),
         types: vec![
             Type::Primitive(Primitive::Int32),
             Type::Primitive(Primitive::Uint64),
@@ -435,12 +435,12 @@ fn trait_resolution_with_specialization_implementation_three() {
             });
 
             let expected_generic_arguments = GenericArguments {
-                regions: Vec::new(),
+                lifetimes: Vec::new(),
                 types: vec![
                     Type::Algebraic(crate::entity::r#type::Algebraic {
                         kind: AlgebraicKind::Enum(enum_symbol.id),
                         generic_arguments: GenericArguments {
-                            regions: Vec::new(),
+                            lifetimes: Vec::new(),
                             types: vec![t_type_parameter.clone()],
                             constants: Vec::new(),
                         },
@@ -461,12 +461,12 @@ fn trait_resolution_with_specialization_implementation_three() {
 
     // Example<Option<uint32>, uint32> should resolve to three
     let generic_arguments: GenericArguments<Symbolic> = GenericArguments {
-        regions: Vec::new(),
+        lifetimes: Vec::new(),
         types: vec![
             Type::Algebraic(crate::entity::r#type::Algebraic {
                 kind: AlgebraicKind::Enum(enum_symbol.id),
                 generic_arguments: GenericArguments {
-                    regions: Vec::new(),
+                    lifetimes: Vec::new(),
                     types: vec![Type::Primitive(Primitive::Uint32)],
                     constants: Vec::new(),
                 },
@@ -523,12 +523,12 @@ fn trait_resolution_with_specialization_implementation_four() {
     let (fourth_implementation, expected_generic_arguments) = 'a: {
         for &implementation in &trait_symbol.implementations {
             let expected_generic_arguments = GenericArguments {
-                regions: Vec::new(),
+                lifetimes: Vec::new(),
                 types: vec![
                     Type::Algebraic(crate::entity::r#type::Algebraic {
                         kind: AlgebraicKind::Enum(enum_symbol.id),
                         generic_arguments: GenericArguments {
-                            regions: Vec::new(),
+                            lifetimes: Vec::new(),
                             types: vec![Type::Primitive(Primitive::Int32)],
                             constants: Vec::new(),
                         },
@@ -536,7 +536,7 @@ fn trait_resolution_with_specialization_implementation_four() {
                     Type::Algebraic(crate::entity::r#type::Algebraic {
                         kind: AlgebraicKind::Enum(enum_symbol.id),
                         generic_arguments: GenericArguments {
-                            regions: Vec::new(),
+                            lifetimes: Vec::new(),
                             types: vec![Type::Primitive(Primitive::Float32)],
                             constants: Vec::new(),
                         },
@@ -565,7 +565,7 @@ fn trait_resolution_with_specialization_implementation_four() {
     assert_eq!(implementation.implementation_id, fourth_implementation);
 
     assert_eq!(implementation.deduced_unification.types.len(), 0);
-    assert_eq!(implementation.deduced_unification.regions.len(), 0);
+    assert_eq!(implementation.deduced_unification.lifetimes.len(), 0);
     assert_eq!(implementation.deduced_unification.constants.len(), 0);
 }
 
@@ -591,7 +591,7 @@ fn trait_resolution_with_specialization_implementation_five() {
             });
 
             let expected_generic_arguments = GenericArguments {
-                regions: Vec::new(),
+                lifetimes: Vec::new(),
                 types: vec![t_type_parameter.clone(), t_type_parameter.clone()],
                 constants: Vec::new(),
             };
@@ -607,7 +607,7 @@ fn trait_resolution_with_specialization_implementation_five() {
 
     // Example<int32, int32> should resolve to five
     let generic_arguments: GenericArguments<Symbolic> = GenericArguments {
-        regions: Vec::new(),
+        lifetimes: Vec::new(),
         types: vec![
             Type::Primitive(Primitive::Int32),
             Type::Primitive(Primitive::Int32),

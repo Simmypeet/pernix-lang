@@ -399,6 +399,46 @@ impl Display for GenericIdentifier {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Qualifier {
+    Mutable,
+    Restrict,
+}
+
+impl Arbitrary for Qualifier {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![Just(Self::Mutable), Just(Self::Restrict),].boxed()
+    }
+}
+
+impl Input for Qualifier {
+    type Output = super::Qualifier;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::Mutable, super::Qualifier::Mutable(..))
+            | (Self::Restrict, super::Qualifier::Restrict(..)) => Ok(()),
+
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?} but got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Display for Qualifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Mutable => f.write_str("mutable"),
+            Self::Restrict => f.write_str("restrict"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct QualifiedIdentifier {
     pub leading_scope_separator: bool,

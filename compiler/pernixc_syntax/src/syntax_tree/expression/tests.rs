@@ -14,7 +14,7 @@ use crate::syntax_tree::{
     self, pattern,
     r#type::tests::Type,
     statement::tests::Statement,
-    tests::{ConnectedList, ConstantPunctuation, QualifiedIdentifier},
+    tests::{ConnectedList, ConstantPunctuation, QualifiedIdentifier, Qualifier},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -217,12 +217,101 @@ impl Arbitrary for Named {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ReferenceOfKind {
+    Local,
+    Regular,
+}
+
+impl Input for ReferenceOfKind {
+    type Output = super::ReferenceOfKind;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        match (self, output) {
+            (Self::Local, super::ReferenceOfKind::Local(k)) => {
+                prop_assert_eq!(k.punctuation, '@');
+            }
+            (Self::Regular, super::ReferenceOfKind::Regular(k)) => {
+                prop_assert_eq!(k.punctuation, '&');
+            }
+            _ => {
+                return Err(TestCaseError::fail(format!(
+                    "expected reference of kind to be {self:?}, found {output:?}",
+                )))
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Arbitrary for ReferenceOfKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![Just(Self::Local), Just(Self::Regular),].boxed()
+    }
+}
+
+impl Display for ReferenceOfKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local => f.write_char('@'),
+            Self::Regular => f.write_char('&'),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReferenceOf {
+    pub kind: ReferenceOfKind,
+    pub qualifier: Option<Qualifier>,
+}
+
+impl Input for ReferenceOf {
+    type Output = super::ReferenceOf;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+        self.kind.assert(output.kind())?;
+        self.qualifier.assert(output.qualifier())
+    }
+}
+
+impl Display for ReferenceOf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.kind, f)?;
+
+        if let Some(qualifier) = &self.qualifier {
+            Display::fmt(qualifier, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Arbitrary for ReferenceOf {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            ReferenceOfKind::arbitrary(),
+            proptest::option::of(Qualifier::arbitrary()),
+        )
+            .prop_map(|(kind, qualifier)| Self { kind, qualifier })
+            .boxed()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum PrefixOperator {
     LogicalNot,
     Negate,
-    ReferenceOf,
+    ReferenceOf(ReferenceOf),
     Dereference,
+    Local,
+    Unlocal,
 }
 
 impl Arbitrary for PrefixOperator {
@@ -233,8 +322,10 @@ impl Arbitrary for PrefixOperator {
         prop_oneof![
             Just(Self::LogicalNot),
             Just(Self::Negate),
-            Just(Self::ReferenceOf),
+            ReferenceOf::arbitrary().prop_map(Self::ReferenceOf),
             Just(Self::Dereference),
+            Just(Self::Local),
+            Just(Self::Unlocal),
         ]
         .boxed()
     }
@@ -251,11 +342,15 @@ impl Input for PrefixOperator {
             (Self::Negate, super::PrefixOperator::Negate(k)) => {
                 prop_assert_eq!(k.punctuation, '-');
             }
-            (Self::ReferenceOf, super::PrefixOperator::ReferenceOf(k)) => {
-                prop_assert_eq!(k.punctuation, '&');
-            }
+            (Self::ReferenceOf(i), super::PrefixOperator::ReferenceOf(o)) => i.assert(o)?,
             (Self::Dereference, super::PrefixOperator::Dereference(k)) => {
                 prop_assert_eq!(k.punctuation, '*');
+            }
+            (Self::Local, super::PrefixOperator::Local(k)) => {
+                prop_assert_eq!(k.keyword, KeywordKind::Local);
+            }
+            (Self::Unlocal, super::PrefixOperator::Unlocal(k)) => {
+                prop_assert_eq!(k.keyword, KeywordKind::Unlocal);
             }
             _ => {
                 return Err(TestCaseError::fail(format!(
@@ -273,8 +368,10 @@ impl Display for PrefixOperator {
         match self {
             Self::LogicalNot => f.write_char('!'),
             Self::Negate => f.write_char('-'),
-            Self::ReferenceOf => f.write_char('&'),
+            Self::ReferenceOf(i) => Display::fmt(i, f),
             Self::Dereference => f.write_char('*'),
+            Self::Local => f.write_str("local"),
+            Self::Unlocal => f.write_str("unlocal"),
         }
     }
 }
@@ -296,8 +393,7 @@ impl Input for Prefix {
 
 impl Display for Prefix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.operator, f)?;
-        Display::fmt(&self.operand, f)
+        write!(f, "{} {}", self.operator, self.operand)
     }
 }
 
@@ -1896,6 +1992,7 @@ impl Arbitrary for Expression {
             BooleanLiteral::arbitrary()
                 .prop_map(|x| Self::Functional(Functional::BooleanLiteral(x))),
         ];
+
         leaf.prop_recursive(4, 24, 6, move |inner| {
             prop_oneof![
                 Named::arbitrary_with(Some(inner.clone()))

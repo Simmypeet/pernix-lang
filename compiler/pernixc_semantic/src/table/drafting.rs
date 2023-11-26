@@ -5,7 +5,10 @@ use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, target::ModuleTree, ConnectedList};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
-use super::{state::State, IndexMut, Table};
+use super::{
+    state::{self},
+    IndexMut, Table,
+};
 use crate::{
     arena::{Map, ID},
     entity::{constant, r#type, GenericArguments},
@@ -35,20 +38,19 @@ pub(super) struct Context<'a, 'b> {
     pub(super) usings_by_module_id: RwLock<HashMap<ID<Module>, Vec<syntax_tree::item::Using>>>,
     pub(super) implementations_by_module_id:
         RwLock<HashMap<ID<Module>, Vec<syntax_tree::item::Implementation>>>,
+    pub(super) state_manger: RwLock<state::Manager>,
 }
 
 macro_rules! draft_symbol {
-    ($table:expr, $symbol:ident, $symbol_id:ident, $expr:expr, $state_expr:expr, $state:ident) => {{
+    ($table:expr, $symbol:ident, $symbol_id:ident, $expr:expr, $state_expr:expr, $state_manger:expr) => {{
         let symbol_id = {
             let $symbol_id = ID::new($table.$symbol.len());
 
             $table.$symbol.insert(RwLock::new($expr));
 
-            $table
-                .state_manager
-                .write()
-                .$state
-                .insert($symbol_id, State::Drafted($state_expr));
+            $state_manger
+                .draft_symbol($symbol_id, $state_expr)
+                .expect("failed to draft symbol");
 
             $symbol_id
         };
@@ -62,6 +64,7 @@ impl Table {
         &mut self,
         syntax_tree: syntax_tree::item::ImplementationFunction,
         parent_implementation_id: ID<symbol::Implementation>,
+        state_manger: &RwLock<state::Manager>,
     ) -> ID<ImplementationFunction> {
         draft_symbol!(
             self,
@@ -77,7 +80,7 @@ impl Table {
                 return_type: r#type::Type::default(),
             },
             syntax_tree,
-            states_by_implementation_function_id
+            state_manger.write()
         )
     }
 
@@ -85,6 +88,7 @@ impl Table {
         &mut self,
         syntax_tree: syntax_tree::item::ImplementationType,
         parent_implementation_id: ID<symbol::Implementation>,
+        state_manger: &RwLock<state::Manager>,
     ) -> ID<ImplementationType> {
         draft_symbol!(
             self,
@@ -99,7 +103,7 @@ impl Table {
                 r#type: r#type::Type::default(),
             },
             syntax_tree,
-            states_by_implementation_type_id
+            state_manger.write()
         )
     }
 
@@ -138,6 +142,7 @@ impl Table {
         &mut self,
         syntax_tree: syntax_tree::item::ImplementationConstant,
         parent_implementation_id: ID<symbol::Implementation>,
+        state_manger: &RwLock<state::Manager>,
     ) -> ID<ImplementationConstant> {
         draft_symbol!(
             self,
@@ -152,7 +157,7 @@ impl Table {
                 span: Some(syntax_tree.signature().identifier().span()),
             },
             syntax_tree,
-            states_by_implementation_constant_id
+            state_manger.write()
         )
     }
 
@@ -162,6 +167,7 @@ impl Table {
         implementation_syntax_tree: syntax_tree::item::Implementation,
         declared_in_module_id: ID<Module>,
         parent_trait_id: ID<Trait>,
+        state_manger: &RwLock<state::Manager>,
         handler: &dyn Handler<error::Error>,
     ) {
         let (signature, kind) = implementation_syntax_tree.dissolve();
@@ -185,7 +191,7 @@ impl Table {
                         }
                     },
                     signature,
-                    states_by_negative_implementation_id
+                    state_manger.write()
                 );
 
                 self.get_mut(parent_trait_id)
@@ -217,7 +223,7 @@ impl Table {
                         implementation_constant_ids_by_trait_constant_id: HashMap::new()
                     },
                     signature,
-                    states_by_implementation_id
+                    state_manger.write()
                 );
 
                 self.get_mut(parent_trait_id)
@@ -228,19 +234,25 @@ impl Table {
                 for member in members {
                     let member_id = match member {
                         syntax_tree::item::ImplementationMember::Type(syn) => {
-                            ImplementationMemberID::Type(
-                                self.draft_implementation_type(syn, implementation_id),
-                            )
+                            ImplementationMemberID::Type(self.draft_implementation_type(
+                                syn,
+                                implementation_id,
+                                state_manger,
+                            ))
                         }
                         syntax_tree::item::ImplementationMember::Function(syn) => {
-                            ImplementationMemberID::Function(
-                                self.draft_implementation_function(syn, implementation_id),
-                            )
+                            ImplementationMemberID::Function(self.draft_implementation_function(
+                                syn,
+                                implementation_id,
+                                state_manger,
+                            ))
                         }
                         syntax_tree::item::ImplementationMember::Constant(syn) => {
-                            ImplementationMemberID::Constant(
-                                self.draft_implementation_constant(syn, implementation_id),
-                            )
+                            ImplementationMemberID::Constant(self.draft_implementation_constant(
+                                syn,
+                                implementation_id,
+                                state_manger,
+                            ))
                         }
                     };
 
@@ -339,7 +351,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 span: Some(syntax_tree.signature().identifier().span()),
             },
             syntax_tree,
-            states_by_trait_type_id
+            self.state_manger.write()
         )
     }
 
@@ -364,7 +376,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 return_type: r#type::Type::default(),
             },
             syntax_tree,
-            states_by_trait_function_id
+            self.state_manger.write()
         )
     }
 
@@ -387,7 +399,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 span: Some(syntax_tree.signature().identifier().span()),
             },
             syntax_tree,
-            states_by_trait_constant_id
+            self.state_manger.write()
         )
     }
 
@@ -412,7 +424,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 span: Some(syntax_tree.signature().identifier().span.clone())
             },
             syntax_tree,
-            states_by_struct_id
+            self.state_manger.write()
         )
     }
 
@@ -435,7 +447,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 span: Some(syntax_tree.identifier().span.clone())
             },
             syntax_tree,
-            states_by_variant_id
+            self.state_manger.write()
         )
     }
 
@@ -463,7 +475,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     span: Some(signature.identifier().span.clone()),
                 },
                 signature,
-                states_by_enum_id
+                self.state_manger.write()
             )
         };
 
@@ -508,7 +520,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 parent_module_id
             },
             syntax_tree,
-            states_by_constant_id
+            self.state_manger.write()
         )
     }
 
@@ -533,7 +545,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 parent_module_id
             },
             syntax_tree,
-            states_by_type_id
+            self.state_manger.write()
         )
     }
 
@@ -565,7 +577,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     trait_member_ids_by_name: HashMap::new(),
                 },
                 signature,
-                states_by_trait_id
+                self.state_manger.write()
             )
         };
 
@@ -616,7 +628,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 generic_declaration: GenericDeclaration::default(),
             },
             syntax_tree,
-            states_by_function_id
+            self.state_manger.write()
         )
     }
 

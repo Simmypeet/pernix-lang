@@ -564,6 +564,28 @@ impl<'a> Frame<'a> {
     }
 }
 
+/// Syntax Synopsis:
+/// ``` txt
+/// Qualifier:
+///     'mutable'
+///     | 'restrict'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum Qualifier {
+    Mutable(Keyword),
+    Restrict(Keyword),
+}
+
+impl SourceElement for Qualifier {
+    fn span(&self) -> Span {
+        match self {
+            Self::Mutable(token) | Self::Restrict(token) => token.span.clone(),
+        }
+    }
+}
+
 impl<'a> Parser<'a> {
     /// Parses a [`GenericIdentifier`]
     #[allow(clippy::missing_errors_doc)]

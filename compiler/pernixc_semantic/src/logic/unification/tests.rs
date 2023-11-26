@@ -3,9 +3,9 @@ use crate::{
     arena::ID,
     entity::{
         constant::Constant,
+        lifetime::Lifetime,
         predicate::Premises,
         r#type::{self, Algebraic, AlgebraicKind, Tuple, TupleElement, Type},
-        region::Region,
         Entity, GenericArguments, Model,
     },
     logic::Mapping,
@@ -116,7 +116,7 @@ fn recursive_term_test() {
             (Type::Algebraic(Algebraic {
                 kind: AlgebraicKind::Enum(ID::new(0)),
                 generic_arguments: GenericArguments {
-                    regions: Vec::new(),
+                    lifetimes: Vec::new(),
                     types: vec![Type::Parameter(TypeParameterID {
                         parent: GenericID::Enum(ID::new(0)),
                         id: ID::new(0),
@@ -144,11 +144,11 @@ fn recursive_term_test() {
     let mut lhs = Type::Algebraic(Algebraic {
         kind: AlgebraicKind::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
-            regions: Vec::new(),
+            lifetimes: Vec::new(),
             types: vec![Type::Algebraic(Algebraic {
                 kind: AlgebraicKind::Enum(ID::new(0)),
                 generic_arguments: GenericArguments {
-                    regions: Vec::new(),
+                    lifetimes: Vec::new(),
                     types: vec![Type::Parameter(TypeParameterID {
                         parent: GenericID::Enum(ID::new(0)),
                         id: ID::new(1),
@@ -195,7 +195,7 @@ fn unification_conflict() {
         Type::Algebraic(Algebraic {
             kind: AlgebraicKind::Enum(ID::new(0)),
             generic_arguments: GenericArguments {
-                regions: Vec::new(),
+                lifetimes: Vec::new(),
                 types: vec![
                     Type::Parameter(TypeParameterID {
                         parent: GenericID::Enum(ID::new(0)),
@@ -221,7 +221,7 @@ fn unification_conflict() {
     let lhs = Type::Algebraic(Algebraic {
         kind: AlgebraicKind::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
-            regions: Vec::new(),
+            lifetimes: Vec::new(),
             types: vec![
                 Type::Parameter(TypeParameterID {
                     parent: GenericID::Enum(ID::new(1)),
@@ -253,5 +253,7 @@ impl<S: Model> Config<S> for VariableConfig {
         unifier.is_parameter()
     }
 
-    fn region_mappable(&self, unifier: &Region<S>, _: &Region<S>) -> bool { unifier.is_named() }
+    fn lifetime_mappable(&self, unifier: &Lifetime<S>, _: &Lifetime<S>) -> bool {
+        unifier.is_parameter()
+    }
 }

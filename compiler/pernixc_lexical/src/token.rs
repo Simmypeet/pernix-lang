@@ -120,6 +120,10 @@ pub enum KeywordKind {
     For,
     /// `delete` keyword
     Delete,
+    /// `local` keyword
+    Local,
+    /// `unlocal` keyword
+    Unlocal,
 }
 
 impl ToString for KeywordKind {
@@ -204,7 +208,9 @@ impl KeywordKind {
             Self::Trait => "trait",
             Self::Using => "using",
             Self::Unsafe => "unsafe",
+            Self::Local => "local",
             Self::Match => "match",
+            Self::Unlocal => "unlocal",
         }
     }
 }
@@ -370,7 +376,6 @@ impl Token {
     /// Checks if the given character is a valid first character of an identifier.
     fn is_first_identifier_character(character: char) -> bool {
         character == '_'
-            || character == '@'
             || (!character.is_control()
                 && !character.is_whitespace()
                 && !character.is_ascii_punctuation()

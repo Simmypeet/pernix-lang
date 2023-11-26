@@ -14,48 +14,9 @@ use crate::syntax_tree::{
     expression::tests::Expression,
     tests::{
         ConnectedList, ConstantPunctuation, GenericArgument, LifetimeArgument, QualifiedIdentifier,
+        Qualifier,
     },
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum Qualifier {
-    Mutable,
-    Restrict,
-}
-
-impl Arbitrary for Qualifier {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![Just(Self::Mutable), Just(Self::Restrict),].boxed()
-    }
-}
-
-impl Input for Qualifier {
-    type Output = super::Qualifier;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::Mutable, super::Qualifier::Mutable(..))
-            | (Self::Restrict, super::Qualifier::Restrict(..)) => Ok(()),
-
-            _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?} but got {output:?}",
-            ))),
-        }
-    }
-}
-
-impl Display for Qualifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Mutable => f.write_str("mutable"),
-            Self::Restrict => f.write_str("restrict"),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reference {
@@ -373,6 +334,34 @@ impl Display for Tuple {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Local {
+    pub ty: Box<Type>,
+}
+
+impl Input for Local {
+    type Output = super::Local;
+
+    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.ty.assert(output.ty()) }
+}
+
+impl Arbitrary for Local {
+    type Parameters = Option<BoxedStrategy<Type>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        args.unwrap_or_else(Type::arbitrary)
+            .prop_map(|ty| Self { ty: Box::new(ty) })
+            .boxed()
+    }
+}
+
+impl Display for Local {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "local {}", &self.ty)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
 #[allow(missing_docs)]
 pub enum Type {
@@ -382,6 +371,7 @@ pub enum Type {
     Array(Array),
     Pointer(Pointer),
     Tuple(Tuple),
+    Local(Local),
 }
 
 impl Input for Type {
@@ -391,6 +381,7 @@ impl Input for Type {
         match (self, output) {
             (Self::Primitive(i), super::Type::Primitive(o)) => i.assert(o),
             (Self::Reference(i), super::Type::Reference(o)) => i.assert(o),
+            (Self::Local(i), super::Type::Local(o)) => i.assert(o),
             (Self::QualifiedIdentifier(i), super::Type::QualifiedIdentifier(o)) => i.assert(o),
             (Self::Array(i), super::Type::Array(o)) => i.assert(o),
             (Self::Pointer(i), super::Type::Pointer(o)) => i.assert(o),
@@ -452,6 +443,7 @@ impl Arbitrary for Type {
                         remove_turbo_fish(&mut x);
                         Self::QualifiedIdentifier(x)
                     }),
+                Local::arbitrary_with(Some(inner.clone())).prop_map(Type::Local),
                 Array::arbitrary_with((Some(inner.clone()), args.1.clone())).prop_map(Type::Array),
                 Pointer::arbitrary_with(Some(inner.clone())).prop_map(Type::Pointer),
                 Tuple::arbitrary_with(Some(inner)).prop_map(Type::Tuple),
@@ -470,6 +462,7 @@ impl Display for Type {
             Self::Array(i) => Display::fmt(i, f),
             Self::Pointer(i) => Display::fmt(i, f),
             Self::Tuple(i) => Display::fmt(i, f),
+            Self::Local(i) => Display::fmt(i, f),
         }
     }
 }

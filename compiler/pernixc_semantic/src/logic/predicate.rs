@@ -1,14 +1,13 @@
-use super::{r#trait::RegionConstraint, unification, QueryRecords};
+use super::{r#trait::LifetimeConstraint, unification, QueryRecords};
 use crate::{
     entity::{
         constant,
+        lifetime::Lifetime,
         predicate::{
-            ConstantEquals, ConstantType, NonEquality, Premises, RegionOutlives, Trait, TypeEquals,
-            TypeOutlives,
+            ConstantEquals, ConstantType, LifetimeOutlives, NonEquality, Premises, Trait,
+            TypeEquals, TypeOutlives,
         },
-        r#type,
-        region::Region,
-        GenericArguments, Model, Never,
+        r#type, GenericArguments, Model, Never,
     },
     table::Table,
 };
@@ -23,29 +22,169 @@ impl<S: Model> unification::Config<S> for HigherRankedLifetimeUnificationConfig 
         false
     }
 
-    fn region_mappable(&self, _: &Region<S>, rhs: &Region<S>) -> bool { rhs.is_forall() }
+    fn lifetime_mappable(&self, _: &Lifetime<S>, rhs: &Lifetime<S>) -> bool { rhs.is_forall() }
 }
 
-impl<S: Model<LocalRegion = Never>> TypeOutlives<S> {
+impl<S: Model<ScopedLifetime = Never, TypeInference = Never>> TypeOutlives<S> {
     /// Returns `true` if the predicate is satisfied based on the given premises.
     #[must_use]
-    pub fn satisfies(&self, premises: &Premises<S>, table: &Table) -> bool { true }
+    pub fn satisfies(&self, premises: &Premises<S>, table: &Table) -> bool {
+        Self::satisfies_internal(
+            &self.operand,
+            &self.argument,
+            premises,
+            table,
+            &mut QueryRecords::default(),
+        )
+    }
+
+    pub(super) fn generic_arguments_satisfies_intrernal(
+        generic_arguments: &GenericArguments<S>,
+        argument: &Lifetime<S>,
+        premises: &Premises<S>,
+        table: &Table,
+        query_records: &mut QueryRecords<S>,
+    ) -> bool {
+        generic_arguments.lifetimes.iter().all(|lifetime| {
+            LifetimeOutlives {
+                operand: *lifetime,
+                argument: *argument,
+            }
+            .satisfies(premises, table)
+        }) && generic_arguments
+            .types
+            .iter()
+            .all(|ty| Self::satisfies_internal(ty, argument, premises, table, query_records))
+    }
+
+    pub(super) fn satisfies_internal(
+        operand: &r#type::Type<S>,
+        argument: &Lifetime<S>,
+        premises: &Premises<S>,
+        table: &Table,
+        query_records: &mut QueryRecords<S>,
+    ) -> bool {
+        let term = (operand.clone(), *argument);
+
+        if query_records.type_outlives.contains(&term) {
+            return false;
+        }
+
+        query_records.type_outlives.insert(term.clone());
+
+        // search in the premises
+        for predicate in &premises.non_equality_predicates {
+            let NonEquality::TypeOutlives(type_outlives) = predicate else {
+                continue;
+            };
+
+            if type_outlives
+                .operand
+                .equals_internal(operand, premises, table, query_records)
+                && type_outlives
+                    .argument
+                    .equals_internal(argument, premises, table, query_records)
+            {
+                query_records.type_outlives.remove(&term);
+                return true;
+            }
+        }
+
+        let result = match operand {
+            r#type::Type::Primitive(_) => true,
+            r#type::Type::Inference(never) => match *never {},
+            r#type::Type::Local(local) => {
+                Self::satisfies_internal(&local.0, argument, premises, table, query_records)
+            }
+            r#type::Type::Algebraic(adt) => Self::generic_arguments_satisfies_intrernal(
+                &adt.generic_arguments,
+                argument,
+                premises,
+                table,
+                query_records,
+            ),
+            r#type::Type::Pointer(pointer) => {
+                Self::satisfies_internal(&pointer.pointee, argument, premises, table, query_records)
+            }
+            r#type::Type::Reference(reference) => {
+                LifetimeOutlives {
+                    operand: reference.lifetime,
+                    argument: *argument,
+                }
+                .satisfies(premises, table)
+                    && Self::satisfies_internal(
+                        &reference.pointee,
+                        argument,
+                        premises,
+                        table,
+                        query_records,
+                    )
+            }
+            r#type::Type::Array(array) => {
+                Self::satisfies_internal(&array.element, argument, premises, table, query_records)
+            }
+            r#type::Type::TraitMember(_) | r#type::Type::Parameter(_) => false,
+            r#type::Type::Tuple(tuple) => tuple.elements.iter().all(|x| match x {
+                r#type::TupleElement::Regular(x) => {
+                    Self::satisfies_internal(x, argument, premises, table, query_records)
+                }
+                r#type::TupleElement::Unpacked(r#type::Unpacked::Parameter(x)) => {
+                    Self::satisfies_internal(
+                        &r#type::Type::Parameter(*x),
+                        argument,
+                        premises,
+                        table,
+                        query_records,
+                    )
+                }
+                r#type::TupleElement::Unpacked(r#type::Unpacked::TraitMember(x)) => {
+                    Self::satisfies_internal(
+                        &r#type::Type::TraitMember(x.clone()),
+                        argument,
+                        premises,
+                        table,
+                        query_records,
+                    )
+                }
+            }),
+        };
+
+        if result {
+            query_records.type_outlives.remove(&term);
+            return result;
+        }
+
+        let r#type::Type::TraitMember(trait_member) = operand else {
+            query_records.type_outlives.remove(&term);
+            return false;
+        };
+
+        let Some(tys) = trait_member.normalize_internal(premises, table, query_records) else {
+            query_records.type_outlives.remove(&term);
+            return false;
+        };
+
+        let result = Self::satisfies_internal(&tys, argument, premises, table, query_records);
+        query_records.type_outlives.remove(&term);
+
+        result
+    }
 }
 
-impl<S: Model<LocalRegion = Never>> RegionOutlives<S> {
+impl<S: Model<ScopedLifetime = Never>> LifetimeOutlives<S> {
     /// Returns `true` if the predicate is satisfied based on the given premises.
     #[must_use]
     pub fn satisfies(&self, premises: &Premises<S>, table: &Table) -> bool {
         // search in the premises
         for predicate in &premises.non_equality_predicates {
-            let NonEquality::RegionOutlives(region_outlives) = predicate else {
+            let NonEquality::LifetimeOutlives(lifetime_outlives) = predicate else {
                 continue;
             };
 
-            if region_outlives
+            if lifetime_outlives
                 .operand
                 .equals(&self.operand, premises, table)
-                && region_outlives
+                && lifetime_outlives
                     .argument
                     .equals(&self.argument, premises, table)
             {
@@ -55,13 +194,13 @@ impl<S: Model<LocalRegion = Never>> RegionOutlives<S> {
 
         match (&self.operand, &self.argument) {
             // impossible
-            (Region::Local(never), _) | (_, Region::Local(never)) => match *never {},
+            (Lifetime::Scoped(never), _) | (_, Lifetime::Scoped(never)) => match *never {},
 
             // always unsatisfied
-            (Region::Forall(_), _) | (_, Region::Forall(_)) => false,
+            (Lifetime::Forall(_), _) | (_, Lifetime::Forall(_)) => false,
 
             // if operand is 'static, then it is satisfied
-            (operand, _) => operand.equals(&Region::Static, premises, table),
+            (operand, _) => operand.equals(&Lifetime::Static, premises, table),
         }
     }
 }
@@ -69,8 +208,8 @@ impl<S: Model<LocalRegion = Never>> RegionOutlives<S> {
 /// Results of checking whether a trait bound is satifiable or not.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TraitSatisfiability<S: Model> {
-    /// The trait bound is satisfiable if and only if the given region constraints are satisfied.
-    Satisfiable(Vec<RegionConstraint<S>>),
+    /// The trait bound is satisfiable if and only if the given lifetime constraints are satisfied.
+    Satisfiable(Vec<LifetimeConstraint<S>>),
 
     /// The trait bound is not satisfiable.
     Unsatisfiable,
@@ -80,6 +219,22 @@ impl<S: Model> Trait<S> {
     /// Returns `true` if the predicate is satisfied based on the given premises.
     #[must_use]
     pub fn satisfies(&self, premises: &Premises<S>, table: &Table) -> TraitSatisfiability<S> {
+        self.satisfies_internal(premises, table, &mut QueryRecords::default())
+    }
+
+    pub(super) fn satisfies_internal(
+        &self,
+        premises: &Premises<S>,
+        table: &Table,
+        query_records: &mut QueryRecords<S>,
+    ) -> TraitSatisfiability<S> {
+        // coinductive
+        if query_records.trait_satisfies.contains(self) {
+            return TraitSatisfiability::Satisfiable(Vec::new());
+        }
+
+        query_records.trait_satisfies.insert(self.clone());
+
         for premise in &premises.non_equality_predicates {
             let NonEquality::Trait(trait_predicate) = premise else {
                 continue;
@@ -106,10 +261,13 @@ impl<S: Model> Trait<S> {
             }
         }
 
-        if let Ok(ok) =
-            table.resolve_implementation(self.trait_id, &self.generic_arguments, premises)
-        {
-            TraitSatisfiability::Satisfiable(ok.region_constraints)
+        if let Ok(ok) = table.resolve_implementation_internal(
+            self.trait_id,
+            &self.generic_arguments,
+            premises,
+            query_records,
+        ) {
+            TraitSatisfiability::Satisfiable(ok.lifetime_constraints)
         } else {
             TraitSatisfiability::Unsatisfiable
         }
@@ -212,10 +370,14 @@ impl<S: Model> ConstantType<S> {
 
             r#type::Type::Primitive(_) => true,
 
+            r#type::Type::Local(local) => {
+                Self::satisfies_internal(&local.0, premises, table, query_records)
+            }
+
             // don't have to decide that
             r#type::Type::Algebraic(algebraic) => 'a: {
                 // no borrowing in constant type context
-                if !algebraic.generic_arguments.regions.is_empty() {
+                if !algebraic.generic_arguments.lifetimes.is_empty() {
                     break 'a false;
                 };
 
@@ -268,14 +430,8 @@ impl<S: Model> ConstantType<S> {
             return false;
         };
 
-        for ty in tys {
-            if Self::satisfies_internal(&ty, premises, table, query_records) {
-                query_records.constant_type_satisfies.remove(required_type);
-                return true;
-            }
-        }
-
+        let result = Self::satisfies_internal(&tys, premises, table, query_records);
         query_records.constant_type_satisfies.remove(required_type);
-        false
+        result
     }
 }

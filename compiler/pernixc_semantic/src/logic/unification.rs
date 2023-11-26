@@ -6,8 +6,8 @@ use super::QueryRecords;
 use crate::{
     entity::{
         constant::{self, Constant},
+        lifetime::Lifetime,
         r#type::{self, Type},
-        region::Region,
         GenericArguments, Model, Substitution,
     },
     logic::Premises,
@@ -37,14 +37,14 @@ pub enum Error<S: Model> {
     /// These two constants can't be unified.
     Constant(Constant<S>, Constant<S>),
 
-    /// These two regions can't be unified.
-    Region(Region<S>, Region<S>),
+    /// These two lifetimes can't be unified.
+    Lifetime(Lifetime<S>, Lifetime<S>),
 
     /// These two generic arguments can't be unified.
     GenericArguments(GenericArguments<S>, GenericArguments<S>),
 
     TypeConflict(ConflictError<Type<S>, Type<S>>),
-    RegionConflict(ConflictError<Region<S>, Region<S>>),
+    LifetimeConflict(ConflictError<Lifetime<S>, Lifetime<S>>),
     ConstantConflict(ConflictError<Constant<S>, Constant<S>>),
 }
 
@@ -56,8 +56,8 @@ pub trait Config<S: Model> {
     /// Determines whether a particular constant can be mapped into another given constant.
     fn constant_mappable(&self, unifier: &Constant<S>, target: &Constant<S>) -> bool;
 
-    /// Determines whether a particular region can be mapped into another given region.
-    fn region_mappable(&self, unifier: &Region<S>, target: &Region<S>) -> bool;
+    /// Determines whether a particular lifetime can be mapped into another given lifetime.
+    fn lifetime_mappable(&self, unifier: &Lifetime<S>, target: &Lifetime<S>) -> bool;
 }
 
 /// Is a struct that implements [`Config`] which allows unification of all terms.
@@ -69,7 +69,7 @@ impl<S: Model> Config<S> for All {
 
     fn constant_mappable(&self, _: &Constant<S>, _: &Constant<S>) -> bool { true }
 
-    fn region_mappable(&self, _: &Region<S>, _: &Region<S>) -> bool { true }
+    fn lifetime_mappable(&self, _: &Lifetime<S>, _: &Lifetime<S>) -> bool { true }
 }
 
 /// Is a struct that implements [`Config`] which allows unification of parameters and trait members
@@ -86,7 +86,9 @@ impl<S: Model> Config<S> for Indefinite {
         unifier.is_parameter() || unifier.is_trait_member()
     }
 
-    fn region_mappable(&self, unifier: &Region<S>, _: &Region<S>) -> bool { unifier.is_named() }
+    fn lifetime_mappable(&self, unifier: &Lifetime<S>, _: &Lifetime<S>) -> bool {
+        unifier.is_parameter()
+    }
 }
 
 macro_rules! tuple_unifiable_body {
@@ -312,7 +314,7 @@ macro_rules! unify_internal_body {
 
             // total substitution count
             let total_count =
-                existing.types.len() + existing.constants.len() + existing.regions.len();
+                existing.types.len() + existing.constants.len() + existing.lifetimes.len();
 
             let error = match Self::sub_structural_unify_internal(
                 lhs, rhs, premises, table, records, config, existing,
@@ -345,7 +347,8 @@ macro_rules! unify_internal_body {
                     ) {
                         Ok(ok) => {
                             // no new substitutions, keep going
-                            if total_count < ok.types.len() + ok.constants.len() + ok.regions.len()
+                            if total_count
+                                < ok.types.len() + ok.constants.len() + ok.lifetimes.len()
                             {
                                 records.$record_set.remove(&terms);
                                 return Ok(ok);
@@ -376,28 +379,26 @@ macro_rules! unify_internal_body {
                 return Err((existing, error));
             };
 
-            for normalized in normalized {
-                match Self::unify_internal(
-                    if swapped { target } else { &normalized },
-                    if swapped { &normalized } else { target },
-                    premises,
-                    table,
-                    records,
-                    config,
-                    existing,
-                ) {
-                    Ok(ok) => {
-                        // no new substitutions, keep going
-                        if total_count < ok.types.len() + ok.constants.len() + ok.regions.len() {
-                            records.$record_set.remove(&terms);
-                            return Ok(ok);
-                        }
+            match Self::unify_internal(
+                if swapped { target } else { &normalized },
+                if swapped { &normalized } else { target },
+                premises,
+                table,
+                records,
+                config,
+                existing,
+            ) {
+                Ok(ok) => {
+                    // no new substitutions, keep going
+                    if total_count < ok.types.len() + ok.constants.len() + ok.lifetimes.len() {
+                        records.$record_set.remove(&terms);
+                        return Ok(ok);
+                    }
 
-                        existing = ok;
-                    }
-                    Err((previous, _)) => {
-                        existing = previous;
-                    }
+                    existing = ok;
+                }
+                Err((previous, _)) => {
+                    existing = previous;
                 }
             }
 
@@ -454,6 +455,7 @@ impl<S: Model> Type<S> {
     ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
         // sub-structural unification
         match (lhs, rhs) {
+            (Self::Local(local), Self::Local(other)) if local == other => Ok(existing),
             (Self::Algebraic(lhs), Self::Algebraic(rhs)) if lhs.kind == rhs.kind => {
                 GenericArguments::unify_internal(
                     &lhs.generic_arguments,
@@ -477,9 +479,9 @@ impl<S: Model> Type<S> {
                 )
             }
             (Self::Reference(lhs), Self::Reference(rhs)) if lhs.qualifier == rhs.qualifier => {
-                existing = Region::unify_internal(
-                    &lhs.region,
-                    &rhs.region,
+                existing = Lifetime::unify_internal(
+                    &lhs.lifetime,
+                    &rhs.lifetime,
                     premises,
                     table,
                     records,
@@ -677,7 +679,7 @@ impl<S: Model> Constant<S> {
     }
 }
 
-impl<S: Model> Region<S> {
+impl<S: Model> Lifetime<S> {
     pub(super) fn unify_internal(
         lhs: &Self,
         rhs: &Self,
@@ -687,14 +689,14 @@ impl<S: Model> Region<S> {
         config: &impl Config<S>,
         mut existing: Substitution<S>,
     ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
-        if config.region_mappable(lhs, rhs) {
-            match existing.regions.entry(lhs.clone()) {
+        if config.lifetime_mappable(lhs, rhs) {
+            match existing.lifetimes.entry(lhs.clone()) {
                 Entry::Occupied(entry) => {
                     if !Self::equals_internal(entry.get(), rhs, premises, table, records) {
                         let existing_term = entry.remove();
                         return Err((
                             existing,
-                            Error::RegionConflict(ConflictError {
+                            Error::LifetimeConflict(ConflictError {
                                 unifier: lhs.clone(),
                                 existing: existing_term,
                                 target: rhs.clone(),
@@ -711,7 +713,7 @@ impl<S: Model> Region<S> {
         } else if Self::equals_internal(lhs, rhs, premises, table, records) {
             Ok(existing)
         } else {
-            Err((existing, Error::Region(lhs.clone(), rhs.clone())))
+            Err((existing, Error::Lifetime(lhs.clone(), rhs.clone())))
         }
     }
 }
@@ -752,7 +754,7 @@ impl<S: Model> GenericArguments<S> {
     ) -> Result<Substitution<S>, (Substitution<S>, Error<S>)> {
         if lhs.types.len() != rhs.types.len()
             || lhs.constants.len() != rhs.constants.len()
-            || lhs.regions.len() != rhs.regions.len()
+            || lhs.lifetimes.len() != rhs.lifetimes.len()
         {
             return Err((existing, Error::GenericArguments(lhs.clone(), rhs.clone())));
         }
@@ -766,9 +768,9 @@ impl<S: Model> GenericArguments<S> {
                 Constant::unify_internal(lhs, rhs, premises, table, records, config, existing)?;
         }
 
-        for (lhs, rhs) in lhs.regions.iter().zip(&rhs.regions) {
+        for (lhs, rhs) in lhs.lifetimes.iter().zip(&rhs.lifetimes) {
             existing =
-                Region::unify_internal(lhs, rhs, premises, table, records, config, existing)?;
+                Lifetime::unify_internal(lhs, rhs, premises, table, records, config, existing)?;
         }
 
         Ok(existing)

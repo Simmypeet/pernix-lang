@@ -9,7 +9,9 @@ use pernixc_lexical::{
     token_stream::Delimiter,
 };
 
-use super::{expression::Expression, ConnectedList, LifetimeArgument, QualifiedIdentifier};
+use super::{
+    expression::Expression, ConnectedList, LifetimeArgument, QualifiedIdentifier, Qualifier,
+};
 use crate::{
     error::{Error, SyntaxKind, UnexpectedSyntax},
     parser::{Parser, Reading},
@@ -65,28 +67,6 @@ impl SourceElement for Primitive {
             | Self::Uint64(token)
             | Self::Usize(token)
             | Self::Isize(token) => token.span.clone(),
-        }
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Qualifier:
-///     'mutable'
-///     | 'restrict'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Qualifier {
-    Mutable(Keyword),
-    Restrict(Keyword),
-}
-
-impl SourceElement for Qualifier {
-    fn span(&self) -> Span {
-        match self {
-            Self::Mutable(token) | Self::Restrict(token) => token.span.clone(),
         }
     }
 }
@@ -192,6 +172,25 @@ impl SourceElement for Pointer {
 }
 
 /// Syntax Synopsis:
+///
+/// ``` txt
+/// Local:
+///     'local' Type
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Local {
+    #[get = "pub"]
+    local_keyword: Keyword,
+    #[get = "pub"]
+    ty: Box<Type>,
+}
+
+impl SourceElement for Local {
+    fn span(&self) -> Span { self.local_keyword.span.join(&self.ty.span()).unwrap() }
+}
+
+/// Syntax Synopsis:
 /// ``` txt
 /// Type:
 ///     Primitive
@@ -208,6 +207,7 @@ pub enum Type {
     Reference(Reference),
     Pointer(Pointer),
     Tuple(Tuple),
+    Local(Local),
     Array(Array),
 }
 
@@ -216,6 +216,7 @@ impl SourceElement for Type {
         match self {
             Self::Primitive(primitive) => primitive.span(),
             Self::QualifiedIdentifier(qualified) => qualified.span(),
+            Self::Local(local) => local.span(),
             Self::Reference(reference) => reference.span(),
             Self::Pointer(pointer) => pointer.span(),
             Self::Tuple(tuple) => tuple.span(),
@@ -400,6 +401,19 @@ impl<'a> Parser<'a> {
                 Some(Type::QualifiedIdentifier(
                     self.parse_qualified_identifier(false, handler)?,
                 ))
+            }
+
+            // parse local type
+            Reading::Atomic(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::Local => {
+                // eat local keyword
+                self.next_token();
+
+                let identifier = self.parse_type(handler)?;
+
+                Some(Type::Local(Local {
+                    local_keyword: keyword,
+                    ty: Box::new(identifier),
+                }))
             }
 
             // parse qualified identifier

@@ -342,22 +342,24 @@ pub struct CyclicDependency {
 
 impl Display for WithTable<'_, CyclicDependency> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let symbol_list = self
+            .error
+            .participants
+            .iter()
+            .map(|&symbol| {
+                let qualified_name = self.table.get_qualified_name(symbol).ok_or(fmt::Error)?;
+
+                Ok(format!("`{qualified_name}`"))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .join(", ");
+
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "The cyclic dependency was found in the given set of symbols",
+            display: format!(
+                "The cyclic dependency was found in the given set of symbols: {symbol_list}"
+            ),
         })?;
-
-        for participant in &self.error.participants {
-            let participant_qualified_name = self
-                .table
-                .get_qualified_name(*participant)
-                .ok_or(fmt::Error)?;
-
-            write!(f, "\n  - {}", WithStyle {
-                style: Style::Bold,
-                display: participant_qualified_name,
-            })?;
-        }
 
         for participant in &self.error.participants {
             if let Some(participant_span) = self
@@ -728,35 +730,47 @@ impl Display for WithTable<'_, UnusedGenericParameterInImplementation> {
 
         let (span, name, kind) = {
             match self.error.generic_parameter_id {
-                LocalGenericParameterID::Lifetime(id) => {
-                    let param = generic_symbol
+                LocalGenericParameterID::Lifetime(lifetime_parameter_id) => {
+                    let lifetime_param = generic_symbol
                         .generic_declaration()
                         .parameters
                         .lifetimes
-                        .get(id)
+                        .get(lifetime_parameter_id)
                         .ok_or(fmt::Error)?;
 
-                    (param.span.as_ref(), &param.name, "lifetime parameter")
+                    (
+                        lifetime_param.span.as_ref(),
+                        lifetime_param.name.as_deref().unwrap_or("`{unknown}"),
+                        "lifetime parameter",
+                    )
                 }
-                LocalGenericParameterID::Type(id) => {
-                    let param = generic_symbol
+                LocalGenericParameterID::Type(type_parameter_id) => {
+                    let type_param = generic_symbol
                         .generic_declaration()
                         .parameters
                         .types
-                        .get(id)
+                        .get(type_parameter_id)
                         .ok_or(fmt::Error)?;
 
-                    (param.span.as_ref(), &param.name, "type parameter")
+                    (
+                        type_param.span.as_ref(),
+                        type_param.name.as_str(),
+                        "type parameter",
+                    )
                 }
-                LocalGenericParameterID::Constant(id) => {
-                    let param = generic_symbol
+                LocalGenericParameterID::Constant(constant_parameter_id) => {
+                    let constant_param = generic_symbol
                         .generic_declaration()
                         .parameters
                         .constants
-                        .get(id)
+                        .get(constant_parameter_id)
                         .ok_or(fmt::Error)?;
 
-                    (param.span.as_ref(), &param.name, "constant parameter")
+                    (
+                        constant_param.span.as_ref(),
+                        constant_param.name.as_str(),
+                        "constant parameter",
+                    )
                 }
             }
         };

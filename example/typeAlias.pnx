@@ -1,20 +1,40 @@
-public trait Clone<T> {}
+public trait RemoveReference<T> {
+    type Output;
+}
 
-public trait Test<'a, T, U> {}
+implements<T> RemoveReference<&T> {
+    type Output = T;
+}
 
-implements<'a, T> Test<'a, T, T> 
+implements<T> RemoveReference<&mutable T> {
+    type Output = T;
+}
+
+implements<T> RemoveReference<&restrict T> {
+    type Output = T;
+}
+
+implements<T> RemoveReference<T> {
+    type Output = T;
+}
+
+public trait Ident<T> {
+    type Output;
+}
+
+implements<T, U> Ident<(T, U)> 
 where:
-    Clone<T> {}
+    Ident<T>, Ident<U>
+{
+    type Output = (Ident<T>::Output, Ident<U>::Output);
+}
 
-implements<'a, T, U> Test<'a, T, U> 
-where:
-    'a: 'static
-{}
+private function appendLonger(
+    first: &mutable local String, 
+    second: &mutable local String
+) {
+}
 
-public type Alias<'a,T> = T
-where:
-    Test<'a, T, T>;
-
-public type Inst<'a> = Alias<'a, int32>;
-
-
+private function test() {
+    appendLonger(firstRef, secondRef);
+}

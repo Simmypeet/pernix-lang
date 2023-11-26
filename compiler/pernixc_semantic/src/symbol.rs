@@ -8,10 +8,10 @@ use pernixc_base::source_file::Span;
 use pernixc_syntax::syntax_tree::AccessModifier;
 
 use crate::{
-    arena::{Map, ID},
+    arena::{Arena, Map, ID},
     entity::{
-        constant, pattern::Irrefutable, predicate, r#type, region, GenericArguments, Model, Never,
-        Substitution,
+        constant, lifetime, pattern::Irrefutable, predicate, r#type, GenericArguments, Model,
+        Never, Substitution,
     },
 };
 
@@ -295,24 +295,11 @@ impl Global for Module {
     fn span(&self) -> Option<Span> { self.span.clone() }
 }
 
-/// Describes when a lifetime parameter is bounded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BoundKind {
-    /// The lifetime can be later bounded at the use site.
-    Late,
-
-    /// The lifetime must be known immediately at resolution.   
-    Early,
-}
-
 /// Represents a lifetime parameter, denoted by `'a` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeParameter {
-    /// The name of the lifetime parameter.
-    pub name: String,
-
-    /// The kind of the lifetime parameter.
-    pub bound_kind: BoundKind,
+    /// The name of the lifetime parameter (if none, then it is anonymous lifetime parameter )
+    pub name: Option<String>,
 
     /// The ID where the lifetime parameter is declared.
     pub parent_generic_id: GenericID,
@@ -373,13 +360,22 @@ pub struct ConstantParameter {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.
-    pub lifetimes: Map<LifetimeParameter>,
+    pub lifetimes: Arena<LifetimeParameter>,
 
     /// List of defined type parameters.
-    pub types: Map<TypeParameter>,
+    pub types: Arena<TypeParameter>,
 
     /// List of defined constant parameters.
-    pub constants: Map<ConstantParameter>,
+    pub constants: Arena<ConstantParameter>,
+
+    /// Maps the name of the lifetime parameter to its ID.
+    pub lifetime_parameter_ids_by_name: HashMap<String, ID<LifetimeParameter>>,
+
+    /// Maps the name of the type parameter to its ID.
+    pub type_parameter_ids_by_name: HashMap<String, ID<TypeParameter>>,
+
+    /// Maps the name of the constant parameter to its ID.
+    pub constant_parameter_ids_by_name: HashMap<String, ID<ConstantParameter>>,
 
     /// List of default type parameters to be used when the generic parameters are not specified.
     pub default_type_parameters: Vec<r#type::Type<Symbolic>>,
@@ -404,9 +400,9 @@ impl GenericParameters {
                     })
                 })
                 .collect(),
-            regions: (0..self.lifetimes.len())
+            lifetimes: (0..self.lifetimes.len())
                 .map(|idx| {
-                    region::Region::Named(LifetimeParameterID {
+                    lifetime::Lifetime::Parameter(LifetimeParameterID {
                         parent: parent_generic_id,
                         id: ID::new(idx),
                     })
@@ -450,9 +446,9 @@ impl GenericParameters {
                     (constant_parameter.clone(), constant_parameter)
                 })
                 .collect(),
-            regions: (0..self.lifetimes.len())
+            lifetimes: (0..self.lifetimes.len())
                 .map(|idx| {
-                    let lifetime_parameter = region::Region::Named(LifetimeParameterID {
+                    let lifetime_parameter = lifetime::Lifetime::Parameter(LifetimeParameterID {
                         parent: parent_generic_id,
                         id: ID::new(idx),
                     });
@@ -1235,7 +1231,7 @@ pub struct Symbolic;
 
 impl Model for Symbolic {
     type ConstantInference = Never;
-    type LocalRegion = Never;
+    type ScopedLifetime = Never;
     type TypeInference = Never;
 }
 

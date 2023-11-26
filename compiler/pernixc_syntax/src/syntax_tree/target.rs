@@ -1,20 +1,22 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::HashMap,
     convert::Into,
     path::{Path, PathBuf},
     sync::Arc,
-    thread::ScopedJoinHandle,
 };
 
 use derive_more::From;
+use drain_filter_polyfill::VecExt;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
+use parking_lot::RwLock;
 use pernixc_base::{
     diagnostic::Handler,
     log::{Message, Severity, SourceCodeDisplay},
     source_file::{self, SourceFile, Span},
 };
 use pernixc_lexical::token_stream::TokenStream;
+use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use super::{
     item::{Module, ModuleContent, ModuleSignature},
@@ -22,6 +24,7 @@ use super::{
 };
 use crate::{error, parser::Parser, syntax_tree::item::ModuleKind};
 
+/// Contains both the access modifier and the module signature.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ModuleSignatureWithAccessModifier {
     pub access_modifier: AccessModifier,
@@ -208,11 +211,7 @@ enum Input {
 impl Target {
     #[allow(clippy::too_many_lines)]
     fn parse_input<
-        T: Handler<error::Error>
-            + Handler<pernixc_lexical::error::Error>
-            + Handler<Error>
-            + Send
-            + Sync,
+        T: Handler<error::Error> + Handler<pernixc_lexical::error::Error> + Handler<Error>,
     >(
         input: Input,
         current_directory: &Path,
@@ -245,154 +244,128 @@ impl Target {
                 )
             }
         };
-        let mut index = 0;
         let submodule_current_directory = if source_file.as_ref().map_or(false, |x| x.0) {
             current_directory.to_path_buf()
         } else {
             current_directory.join(&current_module_name)
         };
 
-        let submodules_by_name = std::thread::scope(|scope| {
-            let mut module_contents_by_name =
-                HashMap::<String, (ScopedJoinHandle<ModuleTree>, Span)>::new();
+        let module_contents_by_name = RwLock::new(HashMap::<String, ModuleTree>::new());
 
-            while index < module_content.items.len() {
-                if module_content.items[index].is_module() {
-                    let submodule = module_content.items.remove(index).into_module().unwrap();
+        module_content
+            .items
+            .drain_filter(|x| x.is_module())
+            .par_bridge()
+            .for_each(|item| {
+                let submodule = item.into_module().unwrap();
 
-                    // check for redifinitions
-                    let entry = match module_contents_by_name
-                        .entry(submodule.signature().identifier().span.str().to_string())
-                    {
-                        Entry::Occupied(entry) => {
-                            handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
-                                existing_module_span: entry.get().1.clone(),
-                                redifinition_submodule_span: submodule
-                                    .signature()
-                                    .identifier()
-                                    .span
-                                    .clone(),
-                            }));
-                            index += 1;
-                            continue;
-                        }
-                        Entry::Vacant(entry) => entry,
-                    };
-
-                    if let ModuleKind::Inline(inline_module_content) = submodule.kind {
-                        let signature_wtih_access_modifier = ModuleSignatureWithAccessModifier {
-                            access_modifier: submodule.access_modifier,
-                            signature: submodule.signature,
-                        };
-                        let identifier_span = signature_wtih_access_modifier
+                // check for redifinitions
+                if let Some(existing) = module_contents_by_name
+                    .read()
+                    .get(submodule.signature().identifier().span.str())
+                {
+                    handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
+                        existing_module_span: existing
+                            .signature()
+                            .as_ref()
+                            .unwrap()
                             .signature
                             .identifier()
                             .span
-                            .clone();
-                        let identifier_span_closure = identifier_span.clone();
-                        let submodule_current_directory = &submodule_current_directory;
+                            .clone(),
+                        redifinition_submodule_span: submodule
+                            .signature()
+                            .identifier()
+                            .span
+                            .clone(),
+                    }));
+                    return;
+                }
 
-                        entry.insert((
-                            scope.spawn(move || {
-                                Self::parse_input(
-                                    Input::Inline {
-                                        module_content: inline_module_content.content,
-                                        module_name: identifier_span_closure.str().to_string(),
-                                        signature: signature_wtih_access_modifier,
-                                    },
-                                    submodule_current_directory,
-                                    handler,
-                                )
-                            }),
-                            identifier_span,
-                        ));
-                    } else {
-                        match &source_file {
-                            Some((true, source_file))
-                                if current_module_name
-                                    == submodule.signature.identifier().span.str() =>
+                let moduel_name = submodule.signature().identifier().span.str().to_owned();
+                let module_tree = if let ModuleKind::Inline(inline_module_content) = submodule.kind
+                {
+                    let signature_wtih_access_modifier = ModuleSignatureWithAccessModifier {
+                        access_modifier: submodule.access_modifier,
+                        signature: submodule.signature,
+                    };
+                    Self::parse_input(
+                        Input::Inline {
+                            module_content: inline_module_content.content,
+                            module_name: signature_wtih_access_modifier
+                                .signature
+                                .identifier()
+                                .span
+                                .str()
+                                .to_string(),
+                            signature: signature_wtih_access_modifier,
+                        },
+                        &submodule_current_directory,
+                        handler,
+                    )
+                } else {
+                    match &source_file {
+                        Some((true, source_file))
+                            if current_module_name
+                                == submodule.signature.identifier().span.str() =>
+                        {
+                            handler.receive(Error::RootSubmoduleConflict(RootSubmoduleConflict {
+                                root: source_file.clone(),
+                                submodule_span: submodule.signature.identifier().span.clone(),
+                            }));
+                            return;
+                        }
+                        _ => {
+                            let mut source_file_path = submodule_current_directory
+                                .join(submodule.signature.identifier().span.str());
+                            source_file_path.set_extension("pnx");
+
+                            // load the source file
+                            let source_file = match std::fs::File::open(&source_file_path)
+                                .map_err(Into::into)
+                                .and_then(|file| SourceFile::load(file, source_file_path.clone()))
                             {
-                                handler.receive(Error::RootSubmoduleConflict(
-                                    RootSubmoduleConflict {
-                                        root: source_file.clone(),
-                                        submodule_span: submodule
-                                            .signature
-                                            .identifier()
-                                            .span
-                                            .clone(),
-                                    },
-                                ));
-                            }
-                            _ => {
-                                let mut source_file_path = submodule_current_directory
-                                    .join(submodule.signature.identifier().span.str());
-                                source_file_path.set_extension("pnx");
+                                Ok(source_file) => source_file,
+                                Err(source_error) => {
+                                    handler.receive(Error::SourceFileLoadFail(
+                                        SourceFileLoadFail {
+                                            source_error,
+                                            submodule,
+                                            path: source_file_path,
+                                        },
+                                    ));
+                                    return;
+                                }
+                            };
 
-                                // load the source file
-                                let source_file = match std::fs::File::open(&source_file_path)
-                                    .map_err(Into::into)
-                                    .and_then(|file| {
-                                        SourceFile::load(file, source_file_path.clone())
-                                    }) {
-                                    Ok(source_file) => source_file,
-                                    Err(source_error) => {
-                                        handler.receive(Error::SourceFileLoadFail(
-                                            SourceFileLoadFail {
-                                                source_error,
-                                                submodule,
-                                                path: source_file_path,
-                                            },
-                                        ));
-                                        index += 1;
-                                        continue;
-                                    }
+                            let submodule_signature_with_access_modifier =
+                                ModuleSignatureWithAccessModifier {
+                                    access_modifier: submodule.access_modifier,
+                                    signature: submodule.signature,
                                 };
+                            let submodule_current_directory = &submodule_current_directory;
 
-                                let submodule_signature_with_access_modifier =
-                                    ModuleSignatureWithAccessModifier {
-                                        access_modifier: submodule.access_modifier,
-                                        signature: submodule.signature,
-                                    };
-                                let identifier_span = submodule_signature_with_access_modifier
-                                    .signature
-                                    .identifier()
-                                    .span
-                                    .clone();
-                                let submodule_current_directory = &submodule_current_directory;
-
-                                entry.insert((
-                                    scope.spawn(move || {
-                                        Self::parse_input(
-                                            Input::File {
-                                                source_file,
-                                                signature: Some(
-                                                    submodule_signature_with_access_modifier,
-                                                ),
-                                            },
-                                            submodule_current_directory,
-                                            handler,
-                                        )
-                                    }),
-                                    identifier_span,
-                                ));
-                            }
+                            Self::parse_input(
+                                Input::File {
+                                    source_file,
+                                    signature: Some(submodule_signature_with_access_modifier),
+                                },
+                                submodule_current_directory,
+                                handler,
+                            )
                         }
                     }
-                } else {
-                    index += 1;
-                }
-            }
+                };
 
-            module_contents_by_name
-                .into_iter()
-                .map(|(name, (join_handle, _))| (name, join_handle.join().unwrap()))
-                .collect()
-        });
+                module_contents_by_name
+                    .write()
+                    .insert(moduel_name, module_tree);
+            });
 
         ModuleTree {
             signature,
             module_content,
-            submodules_by_name,
+            submodules_by_name: module_contents_by_name.into_inner(),
         }
     }
 

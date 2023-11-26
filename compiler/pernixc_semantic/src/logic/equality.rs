@@ -3,7 +3,7 @@
 use super::QueryRecords;
 use crate::{
     entity::{
-        constant::Constant, r#type::Type, region::Region, GenericArguments, Model, Substitution,
+        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Model, Substitution,
     },
     logic::{unification::All, Premises},
     table::Table,
@@ -108,13 +108,7 @@ macro_rules! equals_by_normalization {
                 return false;
             };
 
-            for normalized in normalized {
-                if Self::equals_internal(&normalized, target, premises, table, records) {
-                    return true;
-                }
-            }
-
-            return false;
+            Self::equals_internal(&normalized, target, premises, table, records)
         }
     };
 }
@@ -152,8 +146,8 @@ macro_rules! equals_by_unification_body {
                 }
             }
 
-            for (source, target) in &unifier.regions {
-                if !Region::equals_internal(source, target, premises, table, records) {
+            for (source, target) in &unifier.lifetimes {
+                if !Lifetime::equals_internal(source, target, premises, table, records) {
                     return false;
                 }
             }
@@ -207,8 +201,8 @@ impl<S: Model> Constant<S> {
     }
 }
 
-impl<S: Model> Region<S> {
-    equals_by_mapping_body!(regions);
+impl<S: Model> Lifetime<S> {
+    equals_by_mapping_body!(lifetimes);
 
     /// Checks if the two type terms can be considered equal under the given mapping as a premise
     /// and normalization.
@@ -236,18 +230,18 @@ impl<S: Model> Region<S> {
         let terms = (self.clone(), rhs.clone());
 
         // check if the terms are already being checked (recursion)
-        if records.region_equals.contains(&terms) {
+        if records.lifetime_equals.contains(&terms) {
             return false;
         }
 
-        records.region_equals.insert(terms.clone());
+        records.lifetime_equals.insert(terms.clone());
 
         if Self::equals_by_mapping(self, rhs, premises, table, records) {
-            records.region_equals.remove(&terms);
+            records.lifetime_equals.remove(&terms);
             return true;
         }
 
-        records.region_equals.remove(&terms);
+        records.lifetime_equals.remove(&terms);
         false
     }
 }
@@ -255,10 +249,11 @@ impl<S: Model> Region<S> {
 impl<S: Model> GenericArguments<S> {
     /// Checks if the two generic arguments terms can be considered equal under the given mapping as
     /// a premise and normalization.
+    #[must_use]
     pub fn equals(&self, rhs: &Self, premises: &Premises<S>, table: &Table) -> bool {
         if self.types.len() != rhs.types.len()
             || self.constants.len() != rhs.constants.len()
-            || self.regions.len() != rhs.regions.len()
+            || self.lifetimes.len() != rhs.lifetimes.len()
         {
             return false;
         }
@@ -275,8 +270,8 @@ impl<S: Model> GenericArguments<S> {
             }
         }
 
-        for (lhs, rhs) in self.regions.iter().zip(rhs.regions.iter()) {
-            if !Region::equals(lhs, rhs, premises, table) {
+        for (lhs, rhs) in self.lifetimes.iter().zip(rhs.lifetimes.iter()) {
+            if !Lifetime::equals(lhs, rhs, premises, table) {
                 return false;
             }
         }

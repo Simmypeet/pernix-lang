@@ -3,7 +3,7 @@
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, region::Region, substitute_tuple_term, Entity, GenericArguments, Model,
+    constant::Constant, lifetime::Lifetime, substitute_tuple_term, Entity, GenericArguments, Model,
     Substitution,
 };
 use crate::{
@@ -63,8 +63,8 @@ pub struct Reference<S: Model> {
     /// The qualifier applied to the reference.
     pub qualifier: Qualifier,
 
-    /// The region that the reference lives in.
-    pub region: Region<S>,
+    /// The lifetime that the reference lives in.
+    pub lifetime: Lifetime<S>,
 
     /// The type that the reference points to.
     pub pointee: Box<Type<S>>,
@@ -140,6 +140,10 @@ pub struct Tuple<S: Model> {
     pub elements: Vec<TupleElement<S>>,
 }
 
+/// Represents a local type, denoted by `local TYPE` syntax.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Local<S: Model>(pub Box<Type<S>>);
+
 /// Represents a type in the language.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
@@ -153,6 +157,7 @@ pub enum Type<S: Model> {
     TraitMember(TraitMember<S>),
     Parameter(TypeParameterID),
     Tuple(Tuple<S>),
+    Local(Local<S>),
 }
 
 impl<S: Model> Default for Type<S> {
@@ -170,7 +175,7 @@ impl<S: Model> Entity<S> for Type<S> {
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
-        S::LocalRegion: Into<T::LocalRegion>,
+        S::ScopedLifetime: Into<T::ScopedLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Type::Primitive(primitive),
@@ -185,7 +190,7 @@ impl<S: Model> Entity<S> for Type<S> {
             }),
             Self::Reference(reference) => Type::Reference(Reference {
                 qualifier: reference.qualifier,
-                region: reference.region.into_other_model(),
+                lifetime: reference.lifetime.into_other_model(),
                 pointee: Box::new(reference.pointee.into_other_model()),
             }),
             Self::Array(array) => Type::Array(Array {
@@ -225,6 +230,7 @@ impl<S: Model> Entity<S> for Type<S> {
                 }
                 Type::Tuple(Tuple { elements })
             }
+            Self::Local(local) => Type::Local(Local(Box::new(local.0.into_other_model()))),
         }
     }
 
@@ -238,7 +244,7 @@ impl<S: Model> Entity<S> for Type<S> {
             Self::Algebraic(algebraic) => algebraic.generic_arguments.apply(substitution),
             Self::Pointer(pointer) => pointer.pointee.apply(substitution),
             Self::Reference(reference) => {
-                reference.region.apply(substitution);
+                reference.lifetime.apply(substitution);
                 reference.pointee.apply(substitution);
             }
             Self::Array(array) => {
@@ -249,6 +255,7 @@ impl<S: Model> Entity<S> for Type<S> {
                 trait_member.trait_generic_arguments.apply(substitution);
                 trait_member.member_generic_arguments.apply(substitution);
             }
+            Self::Local(r#type) => r#type.0.apply(substitution),
             Self::Tuple(tuple) => {
                 substitute_tuple_term!(self, self, tuple, substitution);
             }
@@ -260,7 +267,7 @@ impl<S: Model> Entity<S> for Type<S> {
     where
         <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::LocalRegion: TryInto<T::LocalRegion>,
+        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Some(Type::Primitive(primitive)),
@@ -283,11 +290,11 @@ impl<S: Model> Entity<S> for Type<S> {
                 })
             }),
             Self::Reference(reference) => {
-                let region = reference.region.try_into_other_model()?;
+                let lifetime = reference.lifetime.try_into_other_model()?;
                 let pointee = reference.pointee.try_into_other_model()?;
                 Some(Type::Reference(Reference {
                     qualifier: reference.qualifier,
-                    region,
+                    lifetime,
                     pointee: Box::new(pointee),
                 }))
             }
@@ -339,6 +346,10 @@ impl<S: Model> Entity<S> for Type<S> {
                     })
                     .collect::<Option<_>>()?,
             })),
+            Self::Local(local) => local
+                .0
+                .try_into_other_model()
+                .map(|r#type| Type::Local(Local(Box::new(r#type)))),
         }
     }
 }
