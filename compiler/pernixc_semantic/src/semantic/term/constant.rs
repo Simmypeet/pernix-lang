@@ -2,9 +2,10 @@
 
 use enum_as_inner::EnumAsInner;
 
-use super::{r#type::Type, substitute_tuple_term, Entity, GenericArguments, Model};
+use super::{r#type::Type, GenericArguments, Model, Term, TupleElement, Unpacked};
 use crate::{
     arena::ID,
+    semantic::model::Entity,
     symbol::{self, ConstantParameterID, TraitConstant, Variant},
 };
 
@@ -71,28 +72,8 @@ pub struct TraitMember<S: Model> {
     pub trait_arguments: GenericArguments<S>,
 }
 
-/// Represents an **unpacked** constant value in the tuple, denoted by `...value` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Unpacked<S: Model> {
-    Parameter(ConstantParameterID),
-    TraitMember(TraitMember<S>),
-}
-
-/// Represents an element value in the tuple.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum TupleElement<S: Model> {
-    Regular(Constant<S>),
-    Unpacked(Unpacked<S>),
-}
-
 /// Represents a tuple constant value, denoted by `(value, value, ...value)` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple<S: Model> {
-    /// The elements of the tuple.
-    pub elements: Vec<TupleElement<S>>,
-}
+pub type Tuple<S> = super::Tuple<Constant<S>, ConstantParameterID, TraitMember<S>>;
 
 /// Represents a local constant value, denoted by `local CONSTANT` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -113,6 +94,32 @@ pub enum Constant<S: Model> {
     Tuple(Tuple<S>),
 }
 
+impl<M: Model> Term for Constant<M> {
+    type Model = M;
+}
+
+impl<S: Model> From<Tuple<S>> for Constant<S> {
+    fn from(value: Tuple<S>) -> Self { Self::Tuple(value) }
+}
+
+impl<S: Model> TryFrom<Constant<S>> for Tuple<S> {
+    type Error = Constant<S>;
+
+    fn try_from(value: Constant<S>) -> Result<Self, Self::Error> { value.into_tuple() }
+}
+
+impl<S: Model> TryFrom<Constant<S>> for TraitMember<S> {
+    type Error = Constant<S>;
+
+    fn try_from(value: Constant<S>) -> Result<Self, Self::Error> { value.into_trait_member() }
+}
+
+impl<S: Model> TryFrom<Constant<S>> for ConstantParameterID {
+    type Error = Constant<S>;
+
+    fn try_from(value: Constant<S>) -> Result<Self, Self::Error> { value.into_parameter() }
+}
+
 impl<S: Model> Default for Constant<S> {
     fn default() -> Self {
         Self::Tuple(Tuple {
@@ -121,14 +128,25 @@ impl<S: Model> Default for Constant<S> {
     }
 }
 
-impl<S: Model> Entity<S> for Constant<S> {
-    type This<A: Model> = Constant<A>;
+impl<S: Model> From<ConstantParameterID> for Constant<S> {
+    fn from(value: ConstantParameterID) -> Self { Self::Parameter(value) }
+}
 
-    fn into_other_model<T: Model>(self) -> Self::This<T>
+impl<S: Model> From<TraitMember<S>> for Constant<S> {
+    fn from(value: TraitMember<S>) -> Self { Self::TraitMember(value) }
+}
+
+impl<S: Model> Entity for Constant<S> {
+    type Model = S;
+    type Rebind<A: Model> = Constant<A>;
+
+    fn into_other_model<T: Model>(self) -> Self::Rebind<T>
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
+        S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
+        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Constant::Primitive(primitive),
@@ -190,49 +208,13 @@ impl<S: Model> Entity<S> for Constant<S> {
         }
     }
 
-    fn apply(&mut self, substitution: &super::Substitution<S>) {
-        if let Some(ok) = substitution.constants.get(self).cloned() {
-            *self = ok;
-            return;
-        };
-
-        match self {
-            Self::Struct(structs) => {
-                structs.generic_arguments.apply(substitution);
-
-                for field in &mut structs.fields {
-                    field.apply(substitution);
-                }
-            }
-            Self::Enum(enums) => {
-                enums.generic_arguments.apply(substitution);
-
-                if let Some(associated_value) = &mut enums.associated_value {
-                    associated_value.apply(substitution);
-                }
-            }
-            Self::Array(array) => {
-                array.element_ty.apply(substitution);
-
-                for element in &mut array.elements {
-                    element.apply(substitution);
-                }
-            }
-            Self::TraitMember(trait_member) => {
-                trait_member.trait_arguments.apply(substitution);
-            }
-            Self::Tuple(tuple) => {
-                substitute_tuple_term!(self, self, tuple, substitution);
-            }
-            _ => {}
-        }
-    }
-
-    fn try_into_other_model<T: Model>(self) -> Option<Self::This<T>>
+    fn try_into_other_model<T: Model>(self) -> Option<Self::Rebind<T>>
     where
-        <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
-        <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
+        S::ConstantInference: TryInto<T::ConstantInference>,
+        S::TypeInference: TryInto<T::TypeInference>,
+        S::LifetimeInference: TryInto<T::LifetimeInference>,
+        S::ScopedLifetime: TryInto<T::ScopedLifetime>,
+        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Some(Constant::Primitive(primitive)),

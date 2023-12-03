@@ -1,6 +1,6 @@
 //! Contains the definition of [`Table`]
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 
 use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -10,26 +10,29 @@ use pernixc_syntax::syntax_tree::target::Target;
 use rayon::iter::ParallelIterator;
 use thiserror::Error;
 
-use self::state::Manager;
 use crate::{
     arena::{Arena, ID},
-    entity::{
-        constant, lifetime::Lifetime, predicate, r#type, Entity, GenericArguments, Model, Never,
-    },
     error,
-    logic::Mapping,
+    semantic::{
+        map::Mapping,
+        model::Model,
+        predicate,
+        term::{
+            constant, lifetime::Lifetime, r#type, GenericArguments, Never, TupleElement, Unpacked,
+        },
+    },
     symbol::{
-        Accessibility, Constant, Enum, Function, Generic, GenericID, Global, GlobalID,
-        Implementation, ImplementationConstant, ImplementationFunction, ImplementationKindID,
-        ImplementationSignature, ImplementationType, Module, NegativeImplementation, Predicate,
-        Struct, Trait, TraitConstant, TraitFunction, TraitType, Type, Variant,
+        semantic::Symbolic, Accessibility, Constant, Enum, Function, Generic, GenericID, Global,
+        GlobalID, Implementation, ImplementationConstant, ImplementationFunction,
+        ImplementationKindID, ImplementationSignature, ImplementationType, Module,
+        NegativeImplementation, Predicate, Struct, Trait, TraitConstant, TraitFunction, TraitType,
+        Type, Variant,
     },
 };
 
-mod drafting;
+//mod drafting;
 pub mod evaluate;
-mod finalizing;
-// mod finalizing;
+//mod finalizing;
 pub mod resolution;
 mod state;
 
@@ -42,11 +45,6 @@ pub trait Index<Idx: ?Sized> {
     fn get(&self, index: Idx) -> Option<RwLockReadGuard<Self::Output>>;
 }
 
-trait IndexRaw<Idx: ?Sized>: Index<Idx> {
-    /// Returns the output of the indexing operation if the index is valid.
-    fn get_raw(&self, index: Idx) -> Option<&RwLock<Self::Output>>;
-}
-
 trait IndexMut<Idx: ?Sized>: Index<Idx> {
     /// Returns the output of the indexing operation if the index is valid.
     fn get_mut(&self, index: Idx) -> Option<RwLockWriteGuard<Self::Output>>;
@@ -55,25 +53,25 @@ trait IndexMut<Idx: ?Sized>: Index<Idx> {
 /// Contains all the symbols and information defined in the target.
 #[derive(Debug, Getters)]
 pub struct Table {
-    modules: Arena<RwLock<Module>, Module>,
-    structs: Arena<RwLock<Struct>, Struct>,
-    enums: Arena<RwLock<Enum>, Enum>,
-    variants: Arena<RwLock<Variant>, Variant>,
-    types: Arena<RwLock<Type>, Type>,
-    functions: Arena<RwLock<Function>, Function>,
-    constants: Arena<RwLock<Constant>, Constant>,
+    modules: Arena<RwLock<Module>, ID<Module>>,
+    structs: Arena<RwLock<Struct>, ID<Struct>>,
+    enums: Arena<RwLock<Enum>, ID<Enum>>,
+    variants: Arena<RwLock<Variant>, ID<Variant>>,
+    types: Arena<RwLock<Type>, ID<Type>>,
+    functions: Arena<RwLock<Function>, ID<Function>>,
+    constants: Arena<RwLock<Constant>, ID<Constant>>,
 
-    traits: Arena<RwLock<Trait>, Trait>,
-    trait_types: Arena<RwLock<TraitType>, TraitType>,
-    trait_functions: Arena<RwLock<TraitFunction>, TraitFunction>,
-    trait_constants: Arena<RwLock<TraitConstant>, TraitConstant>,
+    traits: Arena<RwLock<Trait>, ID<Trait>>,
+    trait_types: Arena<RwLock<TraitType>, ID<TraitType>>,
+    trait_functions: Arena<RwLock<TraitFunction>, ID<TraitFunction>>,
+    trait_constants: Arena<RwLock<TraitConstant>, ID<TraitConstant>>,
 
-    implementations: Arena<RwLock<Implementation>, Implementation>,
-    negative_implementations: Arena<RwLock<NegativeImplementation>, NegativeImplementation>,
+    implementations: Arena<RwLock<Implementation>, ID<Implementation>>,
+    negative_implementations: Arena<RwLock<NegativeImplementation>, ID<NegativeImplementation>>,
 
-    implementation_types: Arena<RwLock<ImplementationType>, ImplementationType>,
-    implementation_functions: Arena<RwLock<ImplementationFunction>, ImplementationFunction>,
-    implementation_constants: Arena<RwLock<ImplementationConstant>, ImplementationConstant>,
+    implementation_types: Arena<RwLock<ImplementationType>, ID<ImplementationType>>,
+    implementation_functions: Arena<RwLock<ImplementationFunction>, ID<ImplementationFunction>>,
+    implementation_constants: Arena<RwLock<ImplementationConstant>, ID<ImplementationConstant>>,
 
     root_module_ids_by_name: HashMap<String, ID<Module>>,
 }
@@ -112,12 +110,6 @@ macro_rules! index {
                 id: crate::arena::ID<$struct_name>,
             ) -> Option<RwLockReadGuard<Self::Output>> {
                 self.$field.get(id).map(|x| x.read())
-            }
-        }
-
-        impl IndexRaw<crate::arena::ID<$struct_name>> for Table {
-            fn get_raw(&self, id: crate::arena::ID<$struct_name>) -> Option<&RwLock<Self::Output>> {
-                self.$field.get(id)
             }
         }
 
@@ -207,6 +199,8 @@ impl Table {
         targets: impl ParallelIterator<Item = Target>,
         handler: &dyn Handler<error::Error>,
     ) -> Result<Self, BuildError> {
+        todo!()
+        /*
         let table = RwLock::new(Self::default());
 
         let drafting_context = drafting::Context {
@@ -283,6 +277,7 @@ impl Table {
         table.finalize(&state_manger, handler);
 
         Ok(table)
+        */
     }
 
     /// Checks if the `referred` is accessible from the `referring_site`.
@@ -489,7 +484,13 @@ impl Table {
     #[must_use]
     pub fn get_type_overall_accessibility<S>(&self, ty: &r#type::Type<S>) -> Option<Accessibility>
     where
-        S: Model<TypeInference = Never, ConstantInference = Never, ScopedLifetime = Never>,
+        S: Model<
+            TypeInference = Never,
+            ConstantInference = Never,
+            ScopedLifetime = Never,
+            LifetimeInference = Never,
+            ForallLifetime = Never,
+        >,
     {
         match ty {
             r#type::Type::Local(local) => self.get_type_overall_accessibility(&local.0),
@@ -525,15 +526,11 @@ impl Table {
 
                 for element in &tuple.elements {
                     let candidate = match element {
-                        r#type::TupleElement::Regular(reg) => {
-                            self.get_type_overall_accessibility(reg)?
-                        }
-                        r#type::TupleElement::Unpacked(r#type::Unpacked::Parameter(param)) => {
+                        TupleElement::Regular(reg) => self.get_type_overall_accessibility(reg)?,
+                        TupleElement::Unpacked(Unpacked::Parameter(param)) => {
                             self.get_accessibility(param.parent.into())?
                         }
-                        r#type::TupleElement::Unpacked(r#type::Unpacked::TraitMember(
-                            trait_member,
-                        )) => self
+                        TupleElement::Unpacked(Unpacked::TraitMember(trait_member)) => self
                             .get_accessibility(trait_member.trait_type_id.into())?
                             .min(self.get_generic_arguments_overall_accessibility(
                                 &trait_member.trait_generic_arguments,
@@ -565,7 +562,13 @@ impl Table {
         constant: &constant::Constant<S>,
     ) -> Option<Accessibility>
     where
-        S: Model<TypeInference = Never, ConstantInference = Never, ScopedLifetime = Never>,
+        S: Model<
+            TypeInference = Never,
+            ConstantInference = Never,
+            ScopedLifetime = Never,
+            LifetimeInference = Never,
+            ForallLifetime = Never,
+        >,
     {
         match constant {
             constant::Constant::Primitive(_) => Some(Accessibility::Public),
@@ -601,14 +604,22 @@ impl Table {
         lifetime: &Lifetime<S>,
     ) -> Option<Accessibility>
     where
-        S: Model<TypeInference = Never, ConstantInference = Never, ScopedLifetime = Never>,
+        S: Model<
+            TypeInference = Never,
+            ConstantInference = Never,
+            ScopedLifetime = Never,
+            LifetimeInference = Never,
+            ForallLifetime = Never,
+        >,
     {
         match lifetime {
-            Lifetime::Static | Lifetime::Forall(_) => Some(Accessibility::Public),
+            Lifetime::Static => Some(Accessibility::Public),
             Lifetime::Parameter(lifetime_parameter_id) => {
                 self.get_accessibility(lifetime_parameter_id.parent.into())
             }
-            Lifetime::Scoped(never) => match *never {},
+            Lifetime::Forall(never) | Lifetime::Scoped(never) | Lifetime::Inference(never) => {
+                match *never {}
+            }
         }
     }
 
@@ -627,7 +638,13 @@ impl Table {
         generic_arguments: &GenericArguments<S>,
     ) -> Option<Accessibility>
     where
-        S: Model<TypeInference = Never, ConstantInference = Never, ScopedLifetime = Never>,
+        S: Model<
+            TypeInference = Never,
+            ConstantInference = Never,
+            ScopedLifetime = Never,
+            LifetimeInference = Never,
+            ForallLifetime = Never,
+        >,
     {
         let mut current_min = Accessibility::Public;
 
@@ -652,7 +669,7 @@ impl Table {
     ///
     /// Returns `None` if the given [`GlobalID`] is not valid.
     #[must_use]
-    pub fn get_premise_mapping<S: Model>(&self, global_id: GlobalID) -> Option<Mapping<S>> {
+    pub fn get_premise_mapping(&self, global_id: GlobalID) -> Option<Mapping<Symbolic>> {
         let walker = self.scope_walker(global_id).unwrap();
         let mut mapping = Mapping::default();
 
@@ -665,16 +682,10 @@ impl Table {
             {
                 match &predicate.predicate {
                     predicate::Predicate::TypeEquals(equals) => {
-                        mapping.insert_type(
-                            equals.lhs.clone().into_other_model(),
-                            equals.rhs.clone().into_other_model(),
-                        );
+                        mapping.insert_type(equals.lhs.clone(), equals.rhs.clone());
                     }
                     predicate::Predicate::ConstantEquals(equals) => {
-                        mapping.insert_constant(
-                            equals.lhs.clone().into_other_model(),
-                            equals.rhs.clone().into_other_model(),
-                        );
+                        mapping.insert_constant(equals.lhs.clone(), equals.rhs.clone());
                     }
                     _ => {}
                 }

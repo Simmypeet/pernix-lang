@@ -11,11 +11,11 @@ use super::{
 };
 use crate::{
     arena::{Map, ID},
-    entity::{constant, r#type, GenericArguments},
     error::{
         self, GlobalRedefinition, TraitMemberAndImplementationMemberMismatched,
         TraitMemberNotImplemented,
     },
+    semantic::term::{constant, r#type, GenericArguments},
     symbol::{
         self, Accessibility, Constant, Enum, Function, GenericDeclaration, GlobalID,
         ImplementationConstant, ImplementationFunction, ImplementationMemberID,

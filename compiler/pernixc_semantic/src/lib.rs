@@ -20,8 +20,7 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
 
 pub mod arena;
-pub mod entity;
 pub mod error;
-pub mod logic;
+pub mod semantic;
 pub mod symbol;
 pub mod table;

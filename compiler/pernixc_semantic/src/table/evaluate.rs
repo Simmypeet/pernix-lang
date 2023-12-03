@@ -5,8 +5,8 @@ use pernixc_syntax::syntax_tree;
 
 use super::Table;
 use crate::{
-    entity::{constant::Constant, Model},
     error,
+    semantic::{model::Model, term::constant::Constant},
     symbol::GlobalID,
 };
 

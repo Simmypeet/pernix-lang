@@ -3,11 +3,11 @@
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, substitute_tuple_term, Entity, GenericArguments, Model,
-    Substitution,
+    constant::Constant, lifetime::Lifetime, GenericArguments, Model, Term, TupleElement, Unpacked,
 };
 use crate::{
     arena::ID,
+    semantic::model::Entity,
     symbol::{Enum, GlobalID, Struct, TraitType, TypeParameterID},
 };
 
@@ -113,32 +113,8 @@ pub enum Primitive {
     Isize,
 }
 
-/// Represents an **unpacked** element type in the tuple, denoted by `...type` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Unpacked<S: Model> {
-    Parameter(TypeParameterID),
-    TraitMember(TraitMember<S>),
-}
-
-/// Represents an element type in the tuple.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum TupleElement<S: Model> {
-    /// Represents a singular type in the tuple.
-    Regular(Type<S>),
-
-    /// Represents a type that might be expanded into multiple types in the tuple later on.
-    Unpacked(Unpacked<S>),
-}
-
 /// Represents a tuple type, denoted by `(type, type, ...type)` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple<S: Model> {
-    /// The elements of the tuple.
-    ///
-    /// At most only one [`TupleElement::Unpacked`] can be present in the tuple.
-    pub elements: Vec<TupleElement<S>>,
-}
+pub type Tuple<S> = super::Tuple<Type<S>, TypeParameterID, TraitMember<S>>;
 
 /// Represents a local type, denoted by `local TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -147,7 +123,10 @@ pub struct Local<S: Model>(pub Box<Type<S>>);
 /// Represents a type in the language.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum Type<S: Model> {
+pub enum Type<S: Model>
+where
+    Tuple<S>: Into<Self>,
+{
     Primitive(Primitive),
     Inference(S::TypeInference),
     Algebraic(Algebraic<S>),
@@ -160,6 +139,40 @@ pub enum Type<S: Model> {
     Local(Local<S>),
 }
 
+impl<M: Model> Term for Type<M> {
+    type Model = M;
+}
+
+impl<S: Model> From<Tuple<S>> for Type<S> {
+    fn from(value: Tuple<S>) -> Self { Self::Tuple(value) }
+}
+
+impl<S: Model> TryFrom<Type<S>> for Tuple<S> {
+    type Error = Type<S>;
+
+    fn try_from(value: Type<S>) -> Result<Self, Self::Error> { value.into_tuple() }
+}
+
+impl<S: Model> TryFrom<Type<S>> for TraitMember<S> {
+    type Error = Type<S>;
+
+    fn try_from(value: Type<S>) -> Result<Self, Self::Error> { value.into_trait_member() }
+}
+
+impl<S: Model> TryFrom<Type<S>> for TypeParameterID {
+    type Error = Type<S>;
+
+    fn try_from(value: Type<S>) -> Result<Self, Self::Error> { value.into_parameter() }
+}
+
+impl<S: Model> From<TypeParameterID> for Type<S> {
+    fn from(value: TypeParameterID) -> Self { Self::Parameter(value) }
+}
+
+impl<S: Model> From<TraitMember<S>> for Type<S> {
+    fn from(value: TraitMember<S>) -> Self { Self::TraitMember(value) }
+}
+
 impl<S: Model> Default for Type<S> {
     fn default() -> Self {
         Self::Tuple(Tuple {
@@ -168,14 +181,17 @@ impl<S: Model> Default for Type<S> {
     }
 }
 
-impl<S: Model> Entity<S> for Type<S> {
-    type This<A: Model> = Type<A>;
+impl<S: Model> Entity for Type<S> {
+    type Model = S;
+    type Rebind<A: Model> = Type<A>;
 
-    fn into_other_model<T: Model>(self) -> Self::This<T>
+    fn into_other_model<T: Model>(self) -> Self::Rebind<T>
     where
         S::ConstantInference: Into<T::ConstantInference>,
         S::TypeInference: Into<T::TypeInference>,
+        S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
+        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Type::Primitive(primitive),
@@ -207,25 +223,25 @@ impl<S: Model> Entity<S> for Type<S> {
                 let mut elements = Vec::with_capacity(tuple.elements.len());
                 for element in tuple.elements {
                     elements.push(match element {
-                        TupleElement::Regular(regular) => {
-                            TupleElement::Regular(regular.into_other_model())
+                        TupleElement::Regular(constant) => {
+                            TupleElement::Regular(constant.into_other_model())
                         }
-                        TupleElement::Unpacked(unpacked) => {
-                            TupleElement::Unpacked(match unpacked {
-                                Unpacked::Parameter(parameter) => Unpacked::Parameter(parameter),
-                                Unpacked::TraitMember(trait_member) => {
-                                    Unpacked::TraitMember(TraitMember {
-                                        trait_type_id: trait_member.trait_type_id,
-                                        trait_generic_arguments: trait_member
-                                            .trait_generic_arguments
-                                            .into_other_model(),
-                                        member_generic_arguments: trait_member
-                                            .member_generic_arguments
-                                            .into_other_model(),
-                                    })
-                                }
-                            })
-                        }
+                        TupleElement::Unpacked(unpacked) => match unpacked {
+                            Unpacked::Parameter(parameter) => {
+                                TupleElement::Unpacked(Unpacked::Parameter(parameter))
+                            }
+                            Unpacked::TraitMember(trait_member) => {
+                                TupleElement::Unpacked(Unpacked::TraitMember(TraitMember {
+                                    trait_type_id: trait_member.trait_type_id,
+                                    trait_generic_arguments: trait_member
+                                        .trait_generic_arguments
+                                        .into_other_model(),
+                                    member_generic_arguments: trait_member
+                                        .member_generic_arguments
+                                        .into_other_model(),
+                                }))
+                            }
+                        },
                     });
                 }
                 Type::Tuple(Tuple { elements })
@@ -234,40 +250,13 @@ impl<S: Model> Entity<S> for Type<S> {
         }
     }
 
-    fn apply(&mut self, substitution: &Substitution<S>) {
-        if let Some(ok) = substitution.types.get(self).cloned() {
-            *self = ok;
-            return;
-        };
-
-        match self {
-            Self::Algebraic(algebraic) => algebraic.generic_arguments.apply(substitution),
-            Self::Pointer(pointer) => pointer.pointee.apply(substitution),
-            Self::Reference(reference) => {
-                reference.lifetime.apply(substitution);
-                reference.pointee.apply(substitution);
-            }
-            Self::Array(array) => {
-                array.length.apply(substitution);
-                array.element.apply(substitution);
-            }
-            Self::TraitMember(trait_member) => {
-                trait_member.trait_generic_arguments.apply(substitution);
-                trait_member.member_generic_arguments.apply(substitution);
-            }
-            Self::Local(r#type) => r#type.0.apply(substitution),
-            Self::Tuple(tuple) => {
-                substitute_tuple_term!(self, self, tuple, substitution);
-            }
-            _ => {}
-        }
-    }
-
-    fn try_into_other_model<T: Model>(self) -> Option<Self::This<T>>
+    fn try_into_other_model<T: Model>(self) -> Option<Self::Rebind<T>>
     where
-        <S as Model>::ConstantInference: TryInto<T::ConstantInference>,
-        <S as Model>::TypeInference: TryInto<T::TypeInference>,
-        <S as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
+        S::ConstantInference: TryInto<T::ConstantInference>,
+        S::TypeInference: TryInto<T::TypeInference>,
+        S::LifetimeInference: TryInto<T::LifetimeInference>,
+        S::ScopedLifetime: TryInto<T::ScopedLifetime>,
+        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Some(Type::Primitive(primitive)),

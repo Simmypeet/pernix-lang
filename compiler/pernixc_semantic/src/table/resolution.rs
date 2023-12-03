@@ -15,23 +15,26 @@ use pernixc_syntax::syntax_tree::{
 use super::{Error, Index, Table};
 use crate::{
     arena::ID,
-    entity::{
-        constant,
-        lifetime::Lifetime,
-        predicate::{self, Predicate},
-        r#type::{self, Local, Qualifier},
-        Entity, GenericArguments, Model, Substitution,
-    },
     error::{
         self, GenericArgumentCountMismatch, LifetimeExpected, LifetimeParameterNotFound,
         MemberAccessOnExpression, MemberAccessOnType, MisorderedGenericArgument, ModuleExpected,
         MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired, ResolutionAmbiguity,
         SymbolIsNotAccessible, SymbolNotFound, TraitExpectedInImplemenation, TypeExpected,
     },
+    semantic::{
+        model::{Entity, Model},
+        substitution::{Substitute, Substitution},
+        term::{
+            constant,
+            lifetime::Lifetime,
+            r#type::{self, Local, Qualifier},
+            GenericArguments, TupleElement, Unpacked,
+        },
+    },
     symbol::{
-        self, Enum, Function, Generic, GenericID, GenericKind, GlobalID, ImplementationFunction,
-        LifetimeParameterID, MemberID, Module, Struct, Symbolic, Trait, TraitConstant,
-        TraitFunction, TraitType, TypeParameterID,
+        self, semantic::Symbolic, Enum, Function, Generic, GenericID, GenericKind, GlobalID,
+        ImplementationFunction, LifetimeParameterID, MemberID, Module, Struct, Trait,
+        TraitConstant, TraitFunction, TraitType, TypeParameterID,
     },
 };
 
@@ -179,17 +182,6 @@ impl<S: Model> From<r#type::Type<S>> for Resolution<S> {
     }
 }
 
-/// Represents a semantic check occurred during the resolution. This check must be validated
-/// in order to make sure that the program is semantically correct.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Checking<S: Model> {
-    /// The given predicate must be satisfied.
-    Predicate(Predicate<S>),
-
-    /// The given two types must be equal.
-    TypeCheck(constant::Constant<S>, r#type::Type<S>),
-}
-
 /// A configuration for the resolution.
 pub trait Config<S: Model> {
     /// Obtains the lifetime where the lifetime arguments aren't supplied.
@@ -208,23 +200,26 @@ pub trait Config<S: Model> {
     fn constant_arguments_placeholder(&mut self) -> Option<constant::Constant<S>>;
 
     /// Gets notified when a global ID is resolved.
-    fn on_global_id_resolved(&mut self, _: GlobalID) {}
+    fn on_global_id_resolved(&mut self, global_id: GlobalID, identifier_span: &Span);
 
     /// Gets notified if the symbol is [`Generic`] and the generic arguments are resolved.
-    fn on_generic_arguments_resolved(&mut self, _: GenericID, _: &GenericArguments<S>) {}
+    fn on_generic_arguments_resolved(
+        &mut self,
+        global_id: GlobalID,
+        generic_arguments: Option<&GenericArguments<S>>,
+        generic_identifier_span: &Span,
+    );
 
     /// Gets notified when a single generic identifier is resolved.
-    fn on_resolved(&mut self, _: &Resolution<S>) {}
+    fn on_resolved(&mut self, resolution: &Resolution<S>, generic_identifier_span: &Span);
 
-    /// Receives a semantic check occurred during the resolution.
-    ///
-    /// See [`Checking`] for more information.
-    ///
-    /// # Parameters
-    ///
-    /// - `checking`: The semantic check occurred during the resolution.
-    /// - `span`: The span where the semantic check occurred; useful for emitting diagnostics.
-    fn check(&mut self, checking: Checking<S>, span: Span);
+    /// Gets notified when a constant is on generic arguments.
+    fn on_constant_resolved(
+        &mut self,
+        constant: &constant::Constant<S>,
+        expected_type: &r#type::Type<S>,
+        constant_expression_span: &Span,
+    );
 
     /// Will be called every resolution to a lifetime. Allows the user to provide an extra source
     /// of lifetime.
@@ -762,15 +757,6 @@ impl Table {
                     handler,
                 )?);
 
-                // the pointee must live as long as the lifetime
-                config.check(
-                    Checking::Predicate(Predicate::TypeOutlives(predicate::TypeOutlives {
-                        operand: (*pointee).clone(),
-                        argument: lifetime.clone(),
-                    })),
-                    reference.span(),
-                );
-
                 Ok(r#type::Type::Reference(r#type::Reference {
                     qualifier,
                     lifetime,
@@ -808,19 +794,19 @@ impl Table {
 
                     if element.ellipsis().is_some() {
                         match ty {
-                            r#type::Type::TraitMember(ty) => elements.push(
-                                r#type::TupleElement::Unpacked(r#type::Unpacked::TraitMember(ty)),
-                            ),
-                            r#type::Type::Parameter(ty) => elements.push(
-                                r#type::TupleElement::Unpacked(r#type::Unpacked::Parameter(ty)),
-                            ),
+                            r#type::Type::TraitMember(ty) => {
+                                elements.push(TupleElement::Unpacked(Unpacked::TraitMember(ty)));
+                            }
+                            r#type::Type::Parameter(ty) => {
+                                elements.push(TupleElement::Unpacked(Unpacked::Parameter(ty)));
+                            }
                             r#type::Type::Tuple(tuple) => {
                                 elements.extend(tuple.elements.into_iter());
                             }
-                            ty => elements.push(r#type::TupleElement::Regular(ty)),
+                            ty => elements.push(TupleElement::Regular(ty)),
                         }
                     } else {
-                        elements.push(r#type::TupleElement::Regular(ty));
+                        elements.push(TupleElement::Regular(ty));
                     }
                 }
 
@@ -1005,12 +991,10 @@ impl Table {
             {
                 self.evaluate(syntax_tree, referring_site, handler)
                     .map(|val| {
-                        config.check(
-                            Checking::TypeCheck(
-                                val.clone(),
-                                param.r#type.clone().into_other_model(),
-                            ),
-                            generic_identifier_span.clone(),
+                        config.on_constant_resolved(
+                            &val,
+                            &param.r#type.clone().into_other_model(),
+                            &generic_identifier_span,
                         );
 
                         val
@@ -1145,72 +1129,7 @@ impl Table {
         resolved_id: GlobalID,
         generic_arguments: Option<GenericArguments<S>>,
         latest_resolution: Option<Resolution<S>>,
-        span: &Span,
-        config: &mut dyn Config<S>,
     ) -> Resolution<S> {
-        // if trait is resolved, add trait bound predicate
-        if let GlobalID::Trait(trait_id) = resolved_id {
-            let predicate = Predicate::Trait(predicate::Trait {
-                trait_id,
-                generic_arguments: generic_arguments
-                    .clone()
-                    .expect("should have generic arugments")
-                    .into_other_model(),
-                const_trait: false, // true, unless explicitly specified in the where clause
-            });
-
-            config.check(Checking::Predicate(predicate), span.clone());
-        }
-
-        // generic id, do where clause check
-        if let Ok(generic_id) = GenericID::try_from(resolved_id) {
-            let parent_arguments = latest_resolution.as_ref().and_then(|x| match x {
-                // its generic argumnets don't matter
-                Resolution::Enum(_)
-                | Resolution::Struct(_)
-                | Resolution::Module(_)
-                | Resolution::Function(_) => None,
-
-                Resolution::Trait(res) => Some((&res.generic_arguments, res.id.into())),
-
-                // impossible, these resolution can't be resolved any further
-                Resolution::TraitFunction(_)
-                | Resolution::TraitType(_)
-                | Resolution::TraitConstant(_)
-                | Resolution::NonGlobalIDType(_)
-                | Resolution::Constant(_)
-                | Resolution::ImplementationFunction(_)
-                | Resolution::Variant(_) => unreachable!(),
-            });
-
-            let mut substitution = Substitution::from_generic_arguments(
-                generic_arguments.clone().unwrap(),
-                generic_id,
-            );
-            if let Some((parent_arguments, parent_generic_id)) = parent_arguments {
-                substitution = substitution
-                    .append_from_generic_arguments(parent_arguments.clone(), parent_generic_id)
-                    .expect("should've been a valid substitution");
-            }
-
-            let predicates = self
-                .get_generic(generic_id)
-                .expect("should've been valid")
-                .generic_declaration()
-                .predicates
-                .iter()
-                .map(|x| &x.predicate)
-                .cloned()
-                .collect::<Vec<_>>();
-
-            for predicate in predicates {
-                let mut predicate = predicate.into_other_model::<S>();
-                predicate.apply(&substitution);
-
-                config.check(Checking::Predicate(predicate), span.clone());
-            }
-        }
-
         match resolved_id {
             GlobalID::Module(module_id) => Resolution::Module(module_id),
             GlobalID::Struct(struct_id) => Resolution::Struct(WithGenerics {
@@ -1412,7 +1331,7 @@ impl Table {
             )?;
 
             // checks if the symbol is finalized
-            config.on_global_id_resolved(global_id);
+            config.on_global_id_resolved(global_id, &generic_identifier.identifier().span);
 
             // generic arguments
             let generic_arguments = self.resolve_generic_arguments(
@@ -1423,23 +1342,15 @@ impl Table {
                 handler,
             )?;
 
-            if let Some(generic_arguments) = generic_arguments.as_ref() {
-                // check if the generic arguments are valid
-                config.on_generic_arguments_resolved(
-                    global_id.try_into().unwrap(),
-                    generic_arguments,
-                );
-            }
-
-            let resolved = self.final_pass(
+            config.on_generic_arguments_resolved(
                 global_id,
-                generic_arguments,
-                latest_resolution,
+                generic_arguments.as_ref(),
                 &generic_identifier.span(),
-                config,
             );
 
-            config.on_resolved(&resolved);
+            let resolved = self.final_pass(global_id, generic_arguments, latest_resolution);
+
+            config.on_resolved(&resolved, &generic_identifier.span());
 
             latest_resolution = Some(resolved);
         }

@@ -1,13 +1,23 @@
 public trait TupleLength<T> {
-    const LENGTH: usize;
+    function length(): usize;
 }
 
 implements TupleLength<()> {
-    const LENGTH: usize = 0;
+    function legnth(): usize {
+        return 0;
+    }
 }
 
-implements<T, Ts> TupleLength<(T, ...Ts)>
-where: TupleLength<Ts>
+const implements<T, Ts> TupleLength<(T, ...Ts)>
+where: 
+    const TupleLength<Ts>
 {
-    const LENGTH: usize = 1 + TupleLength<Ts>::LENGTH;
+    function length(): usize {
+        return 1 + TupleLength:<Ts>::length();
+    }
+}
+
+function main() {
+    let a = TupleLength:<(int32, uint32)>::length(); // 2
+    let b = TupleLength:<(int32, uint32, int32)>::length(); // 3
 }

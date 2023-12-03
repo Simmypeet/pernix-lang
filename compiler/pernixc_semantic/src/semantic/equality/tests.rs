@@ -1,12 +1,16 @@
 use crate::{
     arena::ID,
-    entity::{
+    semantic::{
+        self,
+        map::Mapping,
         predicate::Premises,
-        r#type::{Algebraic, AlgebraicKind, Primitive, Type},
-        GenericArguments,
+        session,
+        term::{
+            r#type::{Algebraic, AlgebraicKind, Primitive, Type},
+            GenericArguments, Term,
+        },
     },
-    logic::Mapping,
-    symbol::{GenericID, Symbolic, TypeParameterID},
+    symbol::{semantic::Symbolic, GenericID, TypeParameterID},
     table::Table,
 };
 
@@ -42,8 +46,20 @@ fn not_equal_test() {
     });
     let rhs: Type<Symbolic> = Type::Primitive(Primitive::Float32);
 
-    assert!(!lhs.equals(&rhs, &premises, &table));
-    assert!(!rhs.equals(&lhs, &premises, &table)); // symmetric
+    assert!(!lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    assert!(!rhs.equals(
+        &lhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    )); // symmetric
 }
 
 /*
@@ -105,8 +121,20 @@ fn transitivity_test() {
         id: ID::new(2),
     });
 
-    assert!(lhs.equals(&rhs, &premises, &table));
-    assert!(rhs.equals(&lhs, &premises, &table)); // symmetric
+    assert!(lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    assert!(rhs.equals(
+        &lhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    )); // symmetric
 }
 
 /*
@@ -194,8 +222,20 @@ fn recursive_term_test() {
         },
     });
 
-    assert!(lhs.equals(&rhs, &premises, &table));
-    assert!(rhs.equals(&lhs, &premises, &table)); // symmetric
+    assert!(lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    assert!(rhs.equals(
+        &lhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    )); // symmetric
 }
 
 /*
@@ -269,7 +309,20 @@ fn more_transitivity_test() {
         id: ID::new(3),
     });
 
-    assert!(lhs.equals(&rhs, &premises, &table));
+    assert!(lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    assert!(rhs.equals(
+        &lhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    )); // symmetric
 
     let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
         parent: GenericID::Enum(ID::new(0)),
@@ -281,8 +334,20 @@ fn more_transitivity_test() {
         id: ID::new(3),
     });
 
-    assert!(lhs.equals(&rhs, &premises, &table));
-    assert!(rhs.equals(&lhs, &premises, &table)); // symmetric
+    assert!(lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    assert!(rhs.equals(
+        &lhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    )); // symmetric
 }
 
 /*
@@ -362,8 +427,20 @@ fn by_unification_test() {
         },
     });
 
-    assert!(lhs.equals(&rhs, &premises, &table));
-    assert!(rhs.equals(&lhs, &premises, &table)); // symmetric
+    assert!(lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    assert!(rhs.equals(
+        &lhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    )); // symmetric
 }
 
 /*
@@ -377,6 +454,7 @@ Then:
 */
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn fallacy_test() {
     let equalities = [
         (
@@ -447,8 +525,20 @@ fn fallacy_test() {
         id: ID::new(3),
     });
 
-    assert!(!lhs.equals(&rhs, &premises, &table));
-    assert!(!rhs.equals(&lhs, &premises, &table)); // symmetric
+    assert!(!lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    assert!(!rhs.equals(
+        &lhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    )); // symmetric
 
     let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
         parent: GenericID::Enum(ID::new(0)),
@@ -460,6 +550,18 @@ fn fallacy_test() {
         id: ID::new(4),
     });
 
-    assert!(!lhs.equals(&rhs, &premises, &table));
-    assert!(!rhs.equals(&lhs, &premises, &table)); // symmetric
+    assert!(!lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    assert!(!rhs.equals(
+        &lhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    )); // symmetric
 }

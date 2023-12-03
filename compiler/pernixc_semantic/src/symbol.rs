@@ -7,13 +7,19 @@ use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 use pernixc_syntax::syntax_tree::AccessModifier;
 
+use self::semantic::Symbolic;
 use crate::{
     arena::{Arena, Map, ID},
-    entity::{
-        constant, lifetime, pattern::Irrefutable, predicate, r#type, GenericArguments, Model,
-        Never, Substitution,
+    semantic::{
+        model::Model,
+        pattern::Irrefutable,
+        predicate,
+        substitution::Substitution,
+        term::{constant, lifetime, r#type, GenericArguments},
     },
 };
+
+pub mod semantic;
 
 /// Represents an accessibility of a symbol.
 ///
@@ -94,23 +100,38 @@ pub enum GenericID {
     ImplementationType(ID<ImplementationType>),
 }
 
-#[allow(unused_macros)]
 macro_rules! from_ids {
-    ($from:ident, $to:ident $(, $kind:ident)*) => {
+    ($from:ident, $to:ident $(, ($from_kind:ident, $to_kind:ident))*) => {
         impl From<$from> for $to {
             fn from(value: $from) -> Self {
                 match value {
                     $(
-                        $from::$kind(id) => Self::$kind(id),
+                        $from::$from_kind(id) => Self::$to_kind(id),
                     )*
                 }
             }
         }
-    };
+    }
 }
 
+from_ids!(
+    GenericID,
+    GlobalID,
+    (Struct, Struct),
+    (Trait, Trait),
+    (Enum, Enum),
+    (Type, Type),
+    (Function, Function),
+    (TraitType, TraitType),
+    (TraitFunction, TraitFunction),
+    (NegativeImplementation, NegativeImplementation),
+    (Implementation, Implementation),
+    (ImplementationFunction, ImplementationFunction),
+    (ImplementationType, ImplementationType)
+);
+
 macro_rules! try_from_ids {
-    ($from:ident, $to:ident $(, $kind:ident)*) => {
+    ($from:ident, $to:ident $(, ($from_kind:ident, $to_kind:ident))*) => {
         impl TryFrom<$from> for $to {
             type Error = $from;
 
@@ -118,7 +139,7 @@ macro_rules! try_from_ids {
             fn try_from(value: $from) -> Result<Self, Self::Error> {
                 match value {
                     $(
-                        $from::$kind(id) => Ok(Self::$kind(id)),
+                        $from::$from_kind(id) => Ok(Self::$to_kind(id)),
                     )*
                     _ => Err(value)
                 }
@@ -127,38 +148,21 @@ macro_rules! try_from_ids {
     };
 }
 
-pub(crate) use try_from_ids;
-
-from_ids!(
-    GenericID,
-    GlobalID,
-    Struct,
-    Trait,
-    Enum,
-    Type,
-    Function,
-    TraitFunction,
-    TraitType,
-    Implementation,
-    ImplementationFunction,
-    ImplementationType,
-    NegativeImplementation
-);
-
 try_from_ids!(
     GlobalID,
     GenericID,
-    Struct,
-    Trait,
-    Enum,
-    Type,
-    Function,
-    Trait,
-    TraitType,
-    TraitFunction,
-    Implementation,
-    ImplementationType,
-    ImplementationFunction
+    (Struct, Struct),
+    (Trait, Trait),
+    (Enum, Enum),
+    (Type, Type),
+    (Function, Function),
+    (Trait, Trait),
+    (TraitType, TraitType),
+    (TraitFunction, TraitFunction),
+    (Implementation, Implementation),
+    (NegativeImplementation, NegativeImplementation),
+    (ImplementationType, ImplementationType),
+    (ImplementationFunction, ImplementationFunction)
 );
 
 /// Represents a kind of symbol that accepts generic arguments.
@@ -237,19 +241,17 @@ pub enum ModuleMemberID {
     Constant(ID<Constant>),
 }
 
-impl From<ModuleMemberID> for GlobalID {
-    fn from(id: ModuleMemberID) -> Self {
-        match id {
-            ModuleMemberID::Module(id) => Self::Module(id),
-            ModuleMemberID::Enum(id) => Self::Enum(id),
-            ModuleMemberID::Struct(id) => Self::Struct(id),
-            ModuleMemberID::Trait(id) => Self::Trait(id),
-            ModuleMemberID::Type(id) => Self::Type(id),
-            ModuleMemberID::Function(id) => Self::Function(id),
-            ModuleMemberID::Constant(id) => Self::Constant(id),
-        }
-    }
-}
+from_ids!(
+    ModuleMemberID,
+    GlobalID,
+    (Module, Module),
+    (Enum, Enum),
+    (Struct, Struct),
+    (Trait, Trait),
+    (Type, Type),
+    (Function, Function),
+    (Constant, Constant)
+);
 
 /// Represents a module declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -938,15 +940,13 @@ pub enum ImplementationMemberID {
     Constant(ID<ImplementationConstant>),
 }
 
-impl From<ImplementationMemberID> for GlobalID {
-    fn from(id: ImplementationMemberID) -> Self {
-        match id {
-            ImplementationMemberID::Type(id) => Self::ImplementationType(id),
-            ImplementationMemberID::Function(id) => Self::ImplementationFunction(id),
-            ImplementationMemberID::Constant(id) => Self::ImplementationConstant(id),
-        }
-    }
-}
+from_ids!(
+    ImplementationMemberID,
+    GlobalID,
+    (Type, ImplementationType),
+    (Function, ImplementationFunction),
+    (Constant, ImplementationConstant)
+);
 
 /// Represents a trait implementation, denoted by `implements<PARAM> TRAIT<PARAM> { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1153,15 +1153,13 @@ pub enum TraitMemberID {
     Constant(ID<TraitConstant>),
 }
 
-impl From<TraitMemberID> for GlobalID {
-    fn from(id: TraitMemberID) -> Self {
-        match id {
-            TraitMemberID::Type(id) => Self::TraitType(id),
-            TraitMemberID::Function(id) => Self::TraitFunction(id),
-            TraitMemberID::Constant(id) => Self::TraitConstant(id),
-        }
-    }
-}
+from_ids!(
+    TraitMemberID,
+    GlobalID,
+    (Type, TraitType),
+    (Function, TraitFunction),
+    (Constant, TraitConstant)
+);
 
 /// Represents a trait declaration, denoted by `trait NAME { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1225,16 +1223,6 @@ impl Global for Trait {
     fn span(&self) -> Option<Span> { self.span.clone() }
 }
 
-/// A struct that implements [`System`] which describes the system of the symbolic model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Symbolic;
-
-impl Model for Symbolic {
-    type ConstantInference = Never;
-    type ScopedLifetime = Never;
-    type TypeInference = Never;
-}
-
 /// Enumeration of all kinds of generic parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -1254,23 +1242,19 @@ pub enum ImplementationKindID {
     Negative(ID<NegativeImplementation>),
 }
 
-impl From<ImplementationKindID> for GlobalID {
-    fn from(implementation_kind_id: ImplementationKindID) -> Self {
-        match implementation_kind_id {
-            ImplementationKindID::Positive(positive_id) => positive_id.into(),
-            ImplementationKindID::Negative(negative_id) => negative_id.into(),
-        }
-    }
-}
+from_ids!(
+    ImplementationKindID,
+    GlobalID,
+    (Positive, Implementation),
+    (Negative, NegativeImplementation)
+);
 
-impl From<ImplementationKindID> for GenericID {
-    fn from(implementation_kind_id: ImplementationKindID) -> Self {
-        match implementation_kind_id {
-            ImplementationKindID::Positive(positive_id) => positive_id.into(),
-            ImplementationKindID::Negative(negative_id) => negative_id.into(),
-        }
-    }
-}
+from_ids!(
+    ImplementationKindID,
+    GenericID,
+    (Positive, Implementation),
+    (Negative, NegativeImplementation)
+);
 
 /// Enumeration of all kinds of generic parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

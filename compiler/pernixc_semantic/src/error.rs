@@ -12,13 +12,16 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    entity::{constant, predicate::Predicate, r#type},
-    symbol::{
-        ConstantParameterID, GenericID, GenericKind, GlobalID, Implementation,
-        ImplementationKindID, ImplementationMemberID, LifetimeParameterID, LocalGenericParameterID,
-        Symbolic, TraitMemberID, TypeParameterID,
+    semantic::{
+        predicate::Predicate,
+        term::{constant, r#type},
     },
-    table::{resolution::Resolution, Index, Table},
+    symbol::{
+        semantic::Symbolic, ConstantParameterID, GenericID, GenericKind, GlobalID, Implementation,
+        ImplementationKindID, ImplementationMemberID, LifetimeParameterID, LocalGenericParameterID,
+        TraitMemberID, TypeParameterID,
+    },
+    table::{Index, Table},
 };
 
 /// Contains both error and the table in which the error occurred.
@@ -641,9 +644,6 @@ pub struct InvalidTypeInConstantTypePredicate {
 pub struct TraitMemberExpected {
     /// The span where the non-trait member was found.
     pub non_trait_member_span: Span,
-
-    /// The span where the trait member was expected.
-    pub resolved: Resolution<Symbolic>,
 }
 
 /// Trait member bound argument mismatched.

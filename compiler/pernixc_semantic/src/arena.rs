@@ -1,4 +1,8 @@
 //! Contains the definition of [`Arena`] and [`ID`].
+//!
+//! [`Arena`] is a data structure that allows storing items of type `T` and referencing them by
+//! your own custom index type. This is useful for providing more type safety when working with
+//! various containers of different types.
 
 use std::{
     borrow::Borrow,
@@ -9,15 +13,43 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+/// Represents a key type that can be used to index items in the [`Arena`].
+pub trait Key:
+    Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Hash + 'static + Send + Sync
+{
+    /// Creates a new [`Key`] from the given index.
+    fn from_index(index: usize) -> Self;
+
+    /// Returns the index of the [`Key`].
+    fn into_index(self) -> usize;
+}
+
 /// Represents an unique identifier to a particular entry in the [`Arena`] of type `T`.
 pub struct ID<T> {
     index: usize,
     _marker: PhantomData<T>,
 }
 
+impl<T: 'static> Key for ID<T> {
+    fn from_index(index: usize) -> Self {
+        Self {
+            index,
+            _marker: PhantomData,
+        }
+    }
+
+    fn into_index(self) -> usize { self.index }
+}
+
+unsafe impl<T> Send for ID<T> {}
+unsafe impl<T> Sync for ID<T> {}
+
 impl<T> Debug for ID<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("ID").field(&self.index).finish()
+        let ty_name = std::any::type_name::<T>();
+        f.debug_tuple(format!("ID<{ty_name}>").as_str())
+            .field(&self.index)
+            .finish()
     }
 }
 
@@ -64,12 +96,12 @@ impl<T> std::hash::Hash for ID<T> {
 /// graph structures where the nodes are stored in an [`Arena`] and the edges are represented by
 /// [`ID`]s.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Arena<T, Idx = T> {
+pub struct Arena<T, Idx: Key = ID<T>> {
     _marker: PhantomData<Idx>,
     items: Vec<T>,
 }
 
-impl<T, Idx> Default for Arena<T, Idx> {
+impl<T, Idx: Key> Default for Arena<T, Idx> {
     fn default() -> Self {
         Self {
             _marker: PhantomData,
@@ -78,7 +110,7 @@ impl<T, Idx> Default for Arena<T, Idx> {
     }
 }
 
-impl<T, Idx> Arena<T, Idx> {
+impl<T, Idx: Key> Arena<T, Idx> {
     /// Creates a new empty [`Arena`].
     #[must_use]
     pub fn new() -> Self { Self::default() }
@@ -91,53 +123,58 @@ impl<T, Idx> Arena<T, Idx> {
     #[must_use]
     pub fn is_empty(&self) -> bool { self.items.is_empty() }
 
-    /// Inserts a new item into the [`Arena`] and returns its [`ID`].
-    pub fn insert(&mut self, item: T) -> ID<Idx> {
+    /// Inserts a new item into the [`Arena`] and returns its `Idx`.
+    pub fn insert(&mut self, item: T) -> Idx {
         let index = self.items.len();
         self.items.push(item);
-        ID::new(index)
+        Idx::from_index(index)
     }
 
-    /// Returns a reference to the item in the [`Arena`] with the given [`ID`].
+    /// Returns a reference to the item in the [`Arena`] with the given `Idx`.
     #[must_use]
-    pub fn get(&self, id: ID<Idx>) -> Option<&T> { self.items.get(id.index) }
+    pub fn get(&self, id: Idx) -> Option<&T> { self.items.get(id.into_index()) }
 
-    /// Returns a mutable reference to the item in the [`Arena`] with the given [`ID`].
+    /// Returns a mutable reference to the item in the [`Arena`] with the given `Idx`.
     #[must_use]
-    pub fn get_mut(&mut self, id: ID<Idx>) -> Option<&mut T> { self.items.get_mut(id.index) }
+    pub fn get_mut(&mut self, id: Idx) -> Option<&mut T> { self.items.get_mut(id.into_index()) }
 
     /// Returns an iterator over the items in the [`Arena`].
     pub fn iter(&self) -> impl Iterator<Item = &T> { self.items.iter() }
 
     /// Returns an mutable iterator over the items in the [`Arena`].
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> { self.items.iter_mut() }
+
+    /// Returns an iterator over the `Idx`s of the items in the [`Arena`].
+    pub fn keys(&self) -> impl Iterator<Item = Idx> {
+        (0..self.items.len()).map(|i| Idx::from_index(i))
+    }
 }
 
-impl<T, Idx> Index<ID<Idx>> for Arena<T, Idx> {
+impl<T, Idx: Key> Index<Idx> for Arena<T, Idx> {
     type Output = T;
 
-    fn index(&self, id: ID<Idx>) -> &Self::Output { self.get(id).unwrap() }
+    fn index(&self, id: Idx) -> &Self::Output { self.get(id).unwrap() }
 }
 
-impl<T, Idx> IndexMut<ID<Idx>> for Arena<T, Idx> {
-    fn index_mut(&mut self, id: ID<Idx>) -> &mut Self::Output { self.get_mut(id).unwrap() }
+impl<T, Idx: Key> IndexMut<Idx> for Arena<T, Idx> {
+    fn index_mut(&mut self, id: Idx) -> &mut Self::Output { self.get_mut(id).unwrap() }
 }
 
-impl<T> IntoIterator for Arena<T> {
+impl<T, Idx: Key> IntoIterator for Arena<T, Idx> {
     type IntoIter = std::vec::IntoIter<T>;
     type Item = T;
 
     fn into_iter(self) -> Self::IntoIter { self.items.into_iter() }
 }
 
-impl<'a, T> IntoIterator for &'a Arena<T> {
+impl<'a, T, Idx: Key> IntoIterator for &'a Arena<T, Idx> {
     type IntoIter = std::slice::Iter<'a, T>;
     type Item = &'a T;
 
     fn into_iter(self) -> Self::IntoIter { self.items.iter() }
 }
 
-impl<'a, T> IntoIterator for &'a mut Arena<T> {
+impl<'a, T, Idx: Key> IntoIterator for &'a mut Arena<T, Idx> {
     type IntoIter = std::slice::IterMut<'a, T>;
     type Item = &'a mut T;
 
@@ -151,18 +188,15 @@ impl<'a, T> IntoIterator for &'a mut Arena<T> {
 /// the former is just an index to the item in the [`Arena`], while the latter requires a hash map
 /// lookup.
 #[derive(Debug, Clone, PartialEq, Eq, derive_more::Index, derive_more::IndexMut)]
-pub struct Map<T, K = String, Idx = T>
-where
-    K: Hash + Eq,
-{
+pub struct Map<T, Secondary: Hash + Eq = String, Primary: Key = ID<T>> {
     #[index]
     #[index_mut]
-    arena: Arena<T, Idx>,
+    arena: Arena<T, Primary>,
 
-    items: HashMap<K, ID<Idx>>,
+    items: HashMap<Secondary, Primary>,
 }
 
-impl<T, K: Hash + Eq, Idx> Map<T, K, Idx> {
+impl<T, Secondary: Hash + Eq, Primary: Key> Map<T, Secondary, Primary> {
     /// Creates a new empty [`Map`].
     #[must_use]
     pub fn new() -> Self {
@@ -190,7 +224,7 @@ impl<T, K: Hash + Eq, Idx> Map<T, K, Idx> {
     ///
     /// Returns `Err` with a tuple of the [`ID`] of the existing item and the new item if the key
     /// already exists in the [`Map`].
-    pub fn insert(&mut self, key: K, item: T) -> Result<ID<Idx>, (ID<Idx>, T)> {
+    pub fn insert(&mut self, key: Secondary, item: T) -> Result<Primary, (Primary, T)> {
         match self.items.entry(key) {
             Entry::Occupied(entry) => {
                 let id = *entry.get();
@@ -209,32 +243,32 @@ impl<T, K: Hash + Eq, Idx> Map<T, K, Idx> {
     /// # Errors
     ///
     /// Returns `Err` if the key doesn't exist in the [`Map`].
-    pub fn get_id<Q: ?Sized + Hash + Eq>(&self, key: &Q) -> Option<ID<Idx>>
+    pub fn get_id<Q: ?Sized + Hash + Eq>(&self, key: &Q) -> Option<Primary>
     where
-        K: Borrow<Q>,
+        Secondary: Borrow<Q>,
     {
         self.items.get(key).copied()
     }
 
     /// Returns a reference to the item in the [`Map`] with the given [`ID`].
     #[must_use]
-    pub fn get(&self, id: ID<Idx>) -> Option<&T> { self.arena.get(id) }
+    pub fn get(&self, id: Primary) -> Option<&T> { self.arena.get(id) }
 
     /// Returns a mutable reference to the item in the [`Map`] with the given [`ID`].
     #[must_use]
-    pub fn get_mut(&mut self, id: ID<Idx>) -> Option<&mut T> { self.arena.get_mut(id) }
+    pub fn get_mut(&mut self, id: Primary) -> Option<&mut T> { self.arena.get_mut(id) }
 
     /// Returns an iterator over the items in the [`Map`].
     ///
     /// The order of the items is **not** maintained.
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &T)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Secondary, &T)> {
         self.items.iter().map(|(k, v)| (k, self.get(*v).unwrap()))
     }
 
     /// Returns an iterator over the keys in the [`Map`].
     ///
     /// The order of the keys is **not** maintained.
-    pub fn keys(&self) -> impl Iterator<Item = &K> { self.items.keys() }
+    pub fn keys(&self) -> impl Iterator<Item = &Secondary> { self.items.keys() }
 
     /// Returns an iterator over the values in the [`Map`].
     ///
@@ -247,6 +281,6 @@ impl<T, K: Hash + Eq, Idx> Map<T, K, Idx> {
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> { self.arena.iter_mut() }
 }
 
-impl<T, K: Eq + Hash, Idx> Default for Map<T, K, Idx> {
+impl<T, K: Eq + Hash, Idx: Key> Default for Map<T, K, Idx> {
     fn default() -> Self { Self::new() }
 }

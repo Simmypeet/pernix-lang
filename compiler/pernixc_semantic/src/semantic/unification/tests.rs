@@ -1,15 +1,21 @@
 use super::Config;
 use crate::{
     arena::ID,
-    entity::{
-        constant::Constant,
-        lifetime::Lifetime,
+    semantic::{
+        self,
+        map::Mapping,
+        model::Model,
         predicate::Premises,
-        r#type::{self, Algebraic, AlgebraicKind, Tuple, TupleElement, Type},
-        Entity, GenericArguments, Model,
+        session,
+        substitution::Substitute,
+        term::{
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{Algebraic, AlgebraicKind, Primitive, Tuple, Type},
+            GenericArguments, Term, TupleElement, Unpacked,
+        },
     },
-    logic::Mapping,
-    symbol::{GenericID, Symbolic, TypeParameterID},
+    symbol::{semantic::Symbolic, GenericID, TypeParameterID},
     table::Table,
 };
 
@@ -25,9 +31,9 @@ fn tuple_test() {
         }),
         Type::Tuple(Tuple {
             elements: vec![
-                TupleElement::Regular(Type::Primitive(r#type::Primitive::Int32)),
-                TupleElement::Regular(Type::Primitive(r#type::Primitive::Float32)),
-                TupleElement::Regular(Type::Primitive(r#type::Primitive::Float64)),
+                TupleElement::Regular(Type::Primitive(Primitive::Int32)),
+                TupleElement::Regular(Type::Primitive(Primitive::Float32)),
+                TupleElement::Regular(Type::Primitive(Primitive::Float64)),
             ],
         }),
     )];
@@ -49,14 +55,14 @@ fn tuple_test() {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(1),
             })),
-            TupleElement::Unpacked(r#type::Unpacked::Parameter(TypeParameterID {
+            TupleElement::Unpacked(Unpacked::Parameter(TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(2),
             })),
         ],
     });
     let rhs = Type::Tuple(Tuple {
-        elements: vec![TupleElement::Unpacked(r#type::Unpacked::Parameter(
+        elements: vec![TupleElement::Unpacked(Unpacked::Parameter(
             TypeParameterID {
                 parent: GenericID::Enum(ID::new(0)),
                 id: ID::new(0),
@@ -66,7 +72,16 @@ fn tuple_test() {
 
     let table = Table::default();
 
-    let sub = Type::unify(&lhs, &rhs, &premises, &table, &VariableConfig).unwrap();
+    let sub = lhs
+        .unify(
+            &rhs,
+            &premises,
+            &table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
+            &mut VariableConfig,
+        )
+        .unwrap();
 
     assert!(sub
         .types
@@ -76,9 +91,11 @@ fn tuple_test() {
         }))
         .unwrap()
         .equals(
-            &Type::Primitive(r#type::Primitive::Int32),
+            &Type::Primitive(Primitive::Int32),
             &premises,
             &table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
         ));
 
     assert!(sub
@@ -91,12 +108,14 @@ fn tuple_test() {
         .equals(
             &Type::Tuple(Tuple {
                 elements: vec![
-                    TupleElement::Regular(Type::Primitive(r#type::Primitive::Float32)),
-                    TupleElement::Regular(Type::Primitive(r#type::Primitive::Float64)),
+                    TupleElement::Regular(Type::Primitive(Primitive::Float32)),
+                    TupleElement::Regular(Type::Primitive(Primitive::Float64)),
                 ],
             }),
             &premises,
             &table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
         ));
 }
 
@@ -107,32 +126,23 @@ fn recursive_term_test() {
     ?0 = bool
      */
 
-    let equalities = [
-        (
-            (Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(0),
-            })),
-            (Type::Algebraic(Algebraic {
-                kind: AlgebraicKind::Enum(ID::new(0)),
-                generic_arguments: GenericArguments {
-                    lifetimes: Vec::new(),
-                    types: vec![Type::Parameter(TypeParameterID {
-                        parent: GenericID::Enum(ID::new(0)),
-                        id: ID::new(0),
-                    })],
-                    constants: Vec::new(),
-                },
-            })),
-        ),
-        (
-            (Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(0),
-            })),
-            (Type::Primitive(r#type::Primitive::Bool)),
-        ),
-    ];
+    let equalities = [(
+        (Type::Parameter(TypeParameterID {
+            parent: GenericID::Enum(ID::new(0)),
+            id: ID::new(0),
+        })),
+        (Type::Algebraic(Algebraic {
+            kind: AlgebraicKind::Enum(ID::new(0)),
+            generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![Type::Parameter(TypeParameterID {
+                    parent: GenericID::Enum(ID::new(0)),
+                    id: ID::new(0),
+                })],
+                constants: Vec::new(),
+            },
+        })),
+    )];
 
     let premises: Premises<Symbolic> = Premises {
         non_equality_predicates: Vec::new(),
@@ -165,7 +175,16 @@ fn recursive_term_test() {
         id: ID::new(0),
     });
 
-    let sub = Type::unify(&lhs, &rhs, &premises, &table, &VariableConfig).unwrap();
+    let sub = lhs
+        .unify(
+            &rhs,
+            &premises,
+            &table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
+            &mut VariableConfig,
+        )
+        .unwrap();
 
     let mapped = sub
         .types
@@ -175,19 +194,40 @@ fn recursive_term_test() {
         }))
         .unwrap();
 
-    assert!(mapped.equals(&Type::Primitive(r#type::Primitive::Bool), &premises, &table));
+    assert!(mapped.equals(
+        &Type::Parameter(TypeParameterID {
+            parent: GenericID::Enum(ID::new(0)),
+            id: ID::new(0),
+        }),
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default(),
+    ));
 
-    assert!(!lhs.equals(&rhs, &premises, &table));
+    assert!(!lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default(),
+    ));
 
     // after applying the substitution, the lhs should be equal to the rhs
     lhs.apply(&sub);
 
-    assert!(lhs.equals(&rhs, &premises, &table));
+    assert!(lhs.equals(
+        &rhs,
+        &premises,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default(),
+    ));
 }
 
 #[test]
 fn unification_conflict() {
-    let equalities: [(r#type::Type<Symbolic>, r#type::Type<Symbolic>); 1] = [(
+    let equalities: [(Type<Symbolic>, Type<Symbolic>); 1] = [(
         Type::Parameter(TypeParameterID {
             parent: GenericID::Enum(ID::new(0)),
             id: ID::new(0),
@@ -224,12 +264,12 @@ fn unification_conflict() {
             lifetimes: Vec::new(),
             types: vec![
                 Type::Parameter(TypeParameterID {
-                    parent: GenericID::Enum(ID::new(1)),
-                    id: ID::new(1),
+                    parent: GenericID::Enum(ID::new(0)),
+                    id: ID::new(3),
                 }),
                 Type::Parameter(TypeParameterID {
-                    parent: GenericID::Enum(ID::new(1)),
-                    id: ID::new(1),
+                    parent: GenericID::Enum(ID::new(0)),
+                    id: ID::new(3),
                 }),
             ],
             constants: Vec::new(),
@@ -240,20 +280,29 @@ fn unification_conflict() {
         id: ID::new(0),
     });
 
-    assert!(Type::unify(&lhs, &rhs, &premises, &table, &VariableConfig).is_err());
+    assert!(lhs
+        .unify(
+            &rhs,
+            &premises,
+            &table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
+            &mut VariableConfig
+        )
+        .is_none());
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct VariableConfig;
 
-impl<S: Model> Config<S> for VariableConfig {
-    fn type_mappable(&self, unifier: &Type<S>, _: &Type<S>) -> bool { unifier.is_parameter() }
+impl<S: Model> Config<Type<S>> for VariableConfig {
+    fn unifiable(&mut self, lhs: &Type<S>, _: &Type<S>) -> bool { lhs.is_parameter() }
+}
 
-    fn constant_mappable(&self, unifier: &Constant<S>, _: &Constant<S>) -> bool {
-        unifier.is_parameter()
-    }
+impl<S: Model> Config<Constant<S>> for VariableConfig {
+    fn unifiable(&mut self, lhs: &Constant<S>, _: &Constant<S>) -> bool { lhs.is_parameter() }
+}
 
-    fn lifetime_mappable(&self, unifier: &Lifetime<S>, _: &Lifetime<S>) -> bool {
-        unifier.is_parameter()
-    }
+impl<S: Model> Config<Lifetime<S>> for VariableConfig {
+    fn unifiable(&mut self, _: &Lifetime<S>, _: &Lifetime<S>) -> bool { false }
 }
