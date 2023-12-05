@@ -1,6 +1,6 @@
 //! Contains the definition of [`Table`]
 
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -10,6 +10,7 @@ use pernixc_syntax::syntax_tree::target::Target;
 use rayon::iter::ParallelIterator;
 use thiserror::Error;
 
+use self::state::Builder;
 use crate::{
     arena::{Arena, ID},
     error,
@@ -30,9 +31,10 @@ use crate::{
     },
 };
 
-//mod drafting;
+mod drafting;
 pub mod evaluate;
 //mod finalizing;
+mod build;
 pub mod resolution;
 mod state;
 
@@ -199,8 +201,6 @@ impl Table {
         targets: impl ParallelIterator<Item = Target>,
         handler: &dyn Handler<error::Error>,
     ) -> Result<Self, BuildError> {
-        todo!()
-        /*
         let table = RwLock::new(Self::default());
 
         let drafting_context = drafting::Context {
@@ -208,7 +208,7 @@ impl Table {
             handler,
             usings_by_module_id: RwLock::new(HashMap::new()),
             implementations_by_module_id: RwLock::new(HashMap::new()),
-            state_manger: RwLock::new(Manager::default()),
+            builder: RwLock::new(Builder::default()),
         };
 
         // Collect all the targets.
@@ -230,7 +230,7 @@ impl Table {
         let drafting::Context {
             usings_by_module_id,
             implementations_by_module_id,
-            state_manger,
+            builder: state_manger,
             ..
         } = drafting_context;
 
@@ -274,10 +274,9 @@ impl Table {
             }
         }
 
-        table.finalize(&state_manger, handler);
+        // TODO: finalize the table
 
         Ok(table)
-        */
     }
 
     /// Checks if the `referred` is accessible from the `referring_site`.

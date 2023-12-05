@@ -1,15 +1,19 @@
+use std::collections::HashMap;
+
 use parking_lot::RwLock;
 use pernixc_syntax::syntax_tree;
 
-use super::Symbol;
 use crate::{
     arena::{Arena, ID},
     symbol::Constant,
-    table::Table,
+    table::{
+        state::{build_flag, Builder, State, Symbol},
+        Table,
+    },
 };
 
-super::build_flag!(
-    pub(super) enum Flag {
+build_flag!(
+    pub(in crate::table) enum Flag {
         Drafted,
         Built,
         Check,
@@ -25,5 +29,13 @@ impl Symbol for Constant {
 
     fn get_arena_mut(table: &mut Table) -> &mut Arena<RwLock<Self>, ID<Self>> {
         &mut table.constants
+    }
+
+    fn get_states(builder: &Builder) -> &HashMap<ID<Self>, State<Self>> {
+        &builder.states_by_constant_id
+    }
+
+    fn get_states_mut(builder: &mut Builder) -> &mut HashMap<ID<Self>, State<Self>> {
+        &mut builder.states_by_constant_id
     }
 }

@@ -588,20 +588,6 @@ pub struct TypeExpected {
     pub non_type_symbol_span: Span,
 }
 
-/// Trying to access a member on a type that is not a struct or an enum.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MemberAccessOnType {
-    /// The span where the member access occurred.
-    pub access_span: Span,
-}
-
-/// Trying to access a member on the expression
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MemberAccessOnExpression {
-    /// The span where the member access occurred.
-    pub access_span: Span,
-}
-
 /// The generic parameter with the same name already exists in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericParameterDuplication<ID> {
@@ -1068,8 +1054,6 @@ pub enum Error {
     LifetimeExpected(LifetimeExpected),
     MoreThanOneUnpackedInTupleType(MoreThanOneUnpackedInTupleType),
     TypeExpected(TypeExpected),
-    MemberAccessOnType(MemberAccessOnType),
-    MemberAccessOnExpression(MemberAccessOnExpression),
     MisorderedGenericParameter(MisorderedGenericParameter),
     LifetimeParameterDuplication(GenericParameterDuplication<LifetimeParameterID>),
     TypeParameterDuplication(GenericParameterDuplication<TypeParameterID>),

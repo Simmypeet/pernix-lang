@@ -38,25 +38,7 @@ pub(super) struct Context<'a, 'b> {
     pub(super) usings_by_module_id: RwLock<HashMap<ID<Module>, Vec<syntax_tree::item::Using>>>,
     pub(super) implementations_by_module_id:
         RwLock<HashMap<ID<Module>, Vec<syntax_tree::item::Implementation>>>,
-    pub(super) state_manger: RwLock<state::Manager>,
-}
-
-macro_rules! draft_symbol {
-    ($table:expr, $symbol:ident, $symbol_id:ident, $expr:expr, $state_expr:expr, $state_manger:expr) => {{
-        let symbol_id = {
-            let $symbol_id = ID::new($table.$symbol.len());
-
-            $table.$symbol.insert(RwLock::new($expr));
-
-            $state_manger
-                .draft_symbol($symbol_id, $state_expr)
-                .expect("failed to draft symbol");
-
-            $symbol_id
-        };
-
-        symbol_id
-    }};
+    pub(super) builder: RwLock<state::Builder>,
 }
 
 impl Table {
@@ -64,14 +46,12 @@ impl Table {
         &mut self,
         syntax_tree: syntax_tree::item::ImplementationFunction,
         parent_implementation_id: ID<symbol::Implementation>,
-        state_manger: &RwLock<state::Manager>,
+        builder: &RwLock<state::Builder>,
     ) -> ID<ImplementationFunction> {
-        draft_symbol!(
+        builder.write().draft_symbol(
             self,
-            implementation_functions,
-            implementation_function_id,
-            ImplementationFunction {
-                id: implementation_function_id,
+            |id, syntax_tree| ImplementationFunction {
+                id,
                 parent_implementation_id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 generic_declaration: GenericDeclaration::default(),
@@ -80,7 +60,6 @@ impl Table {
                 return_type: r#type::Type::default(),
             },
             syntax_tree,
-            state_manger.write()
         )
     }
 
@@ -88,14 +67,12 @@ impl Table {
         &mut self,
         syntax_tree: syntax_tree::item::ImplementationType,
         parent_implementation_id: ID<symbol::Implementation>,
-        state_manger: &RwLock<state::Manager>,
+        builder: &RwLock<state::Builder>,
     ) -> ID<ImplementationType> {
-        draft_symbol!(
+        builder.write().draft_symbol(
             self,
-            implementation_types,
-            implementation_type_id,
-            ImplementationType {
-                id: implementation_type_id,
+            |id, syntax_tree| ImplementationType {
+                id,
                 parent_implementation_id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 generic_declaration: GenericDeclaration::default(),
@@ -103,7 +80,6 @@ impl Table {
                 r#type: r#type::Type::default(),
             },
             syntax_tree,
-            state_manger.write()
         )
     }
 
@@ -142,14 +118,12 @@ impl Table {
         &mut self,
         syntax_tree: syntax_tree::item::ImplementationConstant,
         parent_implementation_id: ID<symbol::Implementation>,
-        state_manger: &RwLock<state::Manager>,
+        builder: &RwLock<state::Builder>,
     ) -> ID<ImplementationConstant> {
-        draft_symbol!(
+        builder.write().draft_symbol(
             self,
-            implementation_constants,
-            implementation_constant_id,
-            ImplementationConstant {
-                id: implementation_constant_id,
+            |id, syntax_tree| ImplementationConstant {
+                id,
                 parent_implementation_id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 r#type: r#type::Type::default(),
@@ -157,7 +131,6 @@ impl Table {
                 span: Some(syntax_tree.signature().identifier().span()),
             },
             syntax_tree,
-            state_manger.write()
         )
     }
 
@@ -167,7 +140,7 @@ impl Table {
         implementation_syntax_tree: syntax_tree::item::Implementation,
         declared_in_module_id: ID<Module>,
         parent_trait_id: ID<Trait>,
-        state_manger: &RwLock<state::Manager>,
+        builder: &RwLock<state::Builder>,
         handler: &dyn Handler<error::Error>,
     ) {
         let (signature, kind) = implementation_syntax_tree.dissolve();
@@ -175,23 +148,20 @@ impl Table {
 
         match kind {
             syntax_tree::item::ImplementationKind::Negative(..) => {
-                let negative_implementation_id = draft_symbol!(
+                let negative_implementation_id = builder.write().draft_symbol(
                     self,
-                    negative_implementations,
-                    negative_implementation_id,
-                    NegativeImplementation {
-                        id: negative_implementation_id,
+                    |id, signature| NegativeImplementation {
+                        id,
                         signature: ImplementationSignature {
                             arguments: GenericArguments::default(),
                             trait_id: parent_trait_id,
                             span: Some(signature.qualified_identifier().span()),
                             generic_declaration: GenericDeclaration::default(),
                             declared_in: declared_in_module_id,
-                            trait_name: name
-                        }
+                            trait_name: name,
+                        },
                     },
                     signature,
-                    state_manger.write()
                 );
 
                 self.get_mut(parent_trait_id)
@@ -202,28 +172,25 @@ impl Table {
             syntax_tree::item::ImplementationKind::Positive(body) => {
                 let (_, members, _) = body.dissolve();
 
-                let implementation_id = draft_symbol!(
+                let implementation_id = builder.write().draft_symbol(
                     self,
-                    implementations,
-                    implementation_id,
-                    symbol::Implementation {
-                        id: implementation_id,
+                    |id, signature| symbol::Implementation {
+                        id,
                         signature: ImplementationSignature {
                             arguments: GenericArguments::default(),
                             trait_id: parent_trait_id,
                             span: Some(signature.qualified_identifier().span()),
                             generic_declaration: GenericDeclaration::default(),
                             declared_in: declared_in_module_id,
-                            trait_name: name
+                            trait_name: name,
                         },
                         is_const: signature.const_keyword().is_some(),
                         implementation_member_ids_by_name: HashMap::new(),
                         implementation_type_ids_by_trait_type_id: HashMap::new(),
                         implementation_function_ids_by_trait_function_id: HashMap::new(),
-                        implementation_constant_ids_by_trait_constant_id: HashMap::new()
+                        implementation_constant_ids_by_trait_constant_id: HashMap::new(),
                     },
                     signature,
-                    state_manger.write()
                 );
 
                 self.get_mut(parent_trait_id)
@@ -237,21 +204,21 @@ impl Table {
                             ImplementationMemberID::Type(self.draft_implementation_type(
                                 syn,
                                 implementation_id,
-                                state_manger,
+                                builder,
                             ))
                         }
                         syntax_tree::item::ImplementationMember::Function(syn) => {
                             ImplementationMemberID::Function(self.draft_implementation_function(
                                 syn,
                                 implementation_id,
-                                state_manger,
+                                builder,
                             ))
                         }
                         syntax_tree::item::ImplementationMember::Constant(syn) => {
                             ImplementationMemberID::Constant(self.draft_implementation_constant(
                                 syn,
                                 implementation_id,
-                                state_manger,
+                                builder,
                             ))
                         }
                     };
@@ -338,20 +305,16 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::TraitType,
         parent_trait_id: ID<Trait>,
     ) -> ID<TraitType> {
-        let mut table = self.table.write();
-        draft_symbol!(
-            table,
-            trait_types,
-            trait_id,
-            TraitType {
-                id: trait_id,
+        self.builder.write().draft_symbol(
+            &mut self.table.write(),
+            |id, syntax_tree| TraitType {
+                id,
                 parent_trait_id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 generic_declaration: GenericDeclaration::default(),
                 span: Some(syntax_tree.signature().identifier().span()),
             },
             syntax_tree,
-            self.state_manger.write()
         )
     }
 
@@ -361,13 +324,10 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::TraitFunction,
         parent_trait_id: ID<Trait>,
     ) -> ID<TraitFunction> {
-        let mut table = self.table.write();
-        draft_symbol!(
-            table,
-            trait_functions,
-            trait_id,
-            TraitFunction {
-                id: trait_id,
+        self.builder.write().draft_symbol(
+            &mut self.table.write(),
+            |id, syntax_tree| TraitFunction {
+                id,
                 parent_trait_id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 generic_declaration: GenericDeclaration::default(),
@@ -376,7 +336,6 @@ impl<'a, 'b> Context<'a, 'b> {
                 return_type: r#type::Type::default(),
             },
             syntax_tree,
-            self.state_manger.write()
         )
     }
 
@@ -386,20 +345,16 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::TraitConstant,
         parent_trait_id: ID<Trait>,
     ) -> ID<TraitConstant> {
-        let mut table = self.table.write();
-        draft_symbol!(
-            table,
-            trait_constants,
-            trait_constant_id,
-            TraitConstant {
-                id: trait_constant_id,
+        self.builder.write().draft_symbol(
+            &mut self.table.write(),
+            |id, syntax_tree| TraitConstant {
+                id,
                 parent_trait_id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 r#type: r#type::Type::default(),
                 span: Some(syntax_tree.signature().identifier().span()),
             },
             syntax_tree,
-            self.state_manger.write()
         )
     }
 
@@ -409,22 +364,18 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Struct,
         parent_module_id: ID<Module>,
     ) -> ID<Struct> {
-        let mut table = self.table.write();
-        draft_symbol!(
-            table,
-            structs,
-            struct_id,
-            Struct {
-                id: struct_id,
+        self.builder.write().draft_symbol(
+            &mut self.table.write(),
+            |id, syntax_tree| Struct {
+                id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
                 parent_module_id,
                 generic_declaration: GenericDeclaration::default(),
                 fields: Map::new(),
-                span: Some(syntax_tree.signature().identifier().span.clone())
+                span: Some(syntax_tree.signature().identifier().span.clone()),
             },
             syntax_tree,
-            self.state_manger.write()
         )
     }
 
@@ -434,20 +385,16 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Variant,
         parent_enum_id: ID<Enum>,
     ) -> ID<Variant> {
-        let mut table = self.table.write();
-        draft_symbol!(
-            table,
-            variants,
-            variant_id,
-            Variant {
+        self.builder.write().draft_symbol(
+            &mut self.table.write(),
+            |id, syntax_tree| Variant {
                 associated_type: None,
-                id: variant_id,
+                id,
                 name: syntax_tree.identifier().span.str().to_owned(),
                 parent_enum_id,
-                span: Some(syntax_tree.identifier().span.clone())
+                span: Some(syntax_tree.identifier().span.clone()),
             },
             syntax_tree,
-            self.state_manger.write()
         )
     }
 
@@ -460,13 +407,10 @@ impl<'a, 'b> Context<'a, 'b> {
         let (access_modifier, signature, body) = syntax_tree.dissolve();
 
         let enum_id = {
-            let mut table = self.table.write();
-            draft_symbol!(
-                table,
-                enums,
-                enum_id,
-                Enum {
-                    id: enum_id,
+            self.builder.write().draft_symbol(
+                &mut self.table.write(),
+                |id, signature| Enum {
+                    id,
                     name: signature.identifier().span.str().to_owned(),
                     accessibility: Accessibility::from_syntax_tree(&access_modifier),
                     parent_module_id,
@@ -475,7 +419,6 @@ impl<'a, 'b> Context<'a, 'b> {
                     span: Some(signature.identifier().span.clone()),
                 },
                 signature,
-                self.state_manger.write()
             )
         };
 
@@ -505,22 +448,18 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Constant,
         parent_module_id: ID<Module>,
     ) -> ID<Constant> {
-        let mut table = self.table.write();
-        draft_symbol!(
-            table,
-            constants,
-            constant_id,
-            Constant {
-                id: constant_id,
+        self.builder.write().draft_symbol(
+            &mut self.table.write(),
+            |id, syntax_tree| Constant {
+                id,
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 r#type: r#type::Type::default(),
                 constant: constant::Constant::default(),
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
-                parent_module_id
+                parent_module_id,
             },
             syntax_tree,
-            self.state_manger.write()
         )
     }
 
@@ -530,22 +469,18 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Type,
         parent_module_id: ID<Module>,
     ) -> ID<Type> {
-        let mut table = self.table.write();
-        draft_symbol!(
-            table,
-            types,
-            type_id,
-            Type {
-                id: type_id,
+        self.builder.write().draft_symbol(
+            &mut self.table.write(),
+            |id, syntax_tree| Type {
+                id,
                 generic_declaration: GenericDeclaration::default(),
                 r#type: r#type::Type::default(),
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 name: syntax_tree.signature().identifier().span.str().to_owned(),
                 accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
-                parent_module_id
+                parent_module_id,
             },
             syntax_tree,
-            self.state_manger.write()
         )
     }
 
@@ -559,14 +494,10 @@ impl<'a, 'b> Context<'a, 'b> {
         let (_, member_list, _) = body.dissolve();
 
         let trait_id = {
-            let mut table = self.table.write();
-
-            draft_symbol!(
-                table,
-                traits,
-                trait_id,
-                Trait {
-                    id: trait_id,
+            self.builder.write().draft_symbol(
+                &mut self.table.write(),
+                |id, signature| Trait {
+                    id,
                     name: signature.identifier().span.str().to_owned(),
                     accessibility: Accessibility::from_syntax_tree(&access_modifier),
                     parent_module_id,
@@ -577,7 +508,6 @@ impl<'a, 'b> Context<'a, 'b> {
                     trait_member_ids_by_name: HashMap::new(),
                 },
                 signature,
-                self.state_manger.write()
             )
         };
 
@@ -612,13 +542,10 @@ impl<'a, 'b> Context<'a, 'b> {
         syntax_tree: syntax_tree::item::Function,
         parent_module_id: ID<Module>,
     ) -> ID<Function> {
-        let mut table = self.table.write();
-        draft_symbol!(
-            table,
-            functions,
-            function_id,
-            Function {
-                id: function_id,
+        self.builder.write().draft_symbol(
+            &mut self.table.write(),
+            |id, syntax_tree| Function {
+                id,
                 accessibility: Accessibility::from_syntax_tree(syntax_tree.access_modifier()),
                 parameters: Map::default(),
                 parent_module_id,
@@ -628,7 +555,6 @@ impl<'a, 'b> Context<'a, 'b> {
                 generic_declaration: GenericDeclaration::default(),
             },
             syntax_tree,
-            self.state_manger.write()
         )
     }
 

@@ -17,9 +17,9 @@ use crate::{
     arena::ID,
     error::{
         self, GenericArgumentCountMismatch, LifetimeExpected, LifetimeParameterNotFound,
-        MemberAccessOnExpression, MemberAccessOnType, MisorderedGenericArgument, ModuleExpected,
-        MoreThanOneUnpackedInTupleType, NoGenericArgumentsRequired, ResolutionAmbiguity,
-        SymbolIsNotAccessible, SymbolNotFound, TraitExpectedInImplemenation, TypeExpected,
+        MisorderedGenericArgument, ModuleExpected, MoreThanOneUnpackedInTupleType,
+        NoGenericArgumentsRequired, ResolutionAmbiguity, SymbolIsNotAccessible, SymbolNotFound,
+        TraitExpectedInImplemenation, TypeExpected,
     },
     semantic::{
         model::{Entity, Model},
@@ -27,14 +27,14 @@ use crate::{
         term::{
             constant,
             lifetime::Lifetime,
-            r#type::{self, Local, Qualifier},
+            r#type::{self, Algebraic, AlgebraicKind, Local, Qualifier},
             GenericArguments, TupleElement, Unpacked,
         },
     },
     symbol::{
         self, semantic::Symbolic, Enum, Function, Generic, GenericID, GenericKind, GlobalID,
-        ImplementationFunction, LifetimeParameterID, MemberID, Module, Struct, Trait,
-        TraitConstant, TraitFunction, TraitType, TypeParameterID,
+        ImplementationConstant, ImplementationFunction, ImplementationType, LifetimeParameterID,
+        MemberID, Module, Struct, Trait, TraitConstant, TraitFunction, TraitType, TypeParameterID,
     },
 };
 
@@ -81,105 +81,11 @@ pub enum Resolution<S: Model> {
     TraitType(WithParent<WithGenerics<ID<TraitType>, S>, S>),
     TraitConstant(WithParent<ID<TraitConstant>, S>),
     Variant(Variant<S>),
-    NonGlobalIDType(NonGlobalIDType<S>),
-    Constant(constant::Constant<Symbolic>),
+    Type(WithGenerics<ID<symbol::Type>, S>),
+    Constant(ID<symbol::Constant>),
     ImplementationFunction(WithGenerics<ID<ImplementationFunction>, S>),
-}
-
-/// Enumeration of all type variants that can't be represented into a global ID.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum NonGlobalIDType<S: Model> {
-    Primitive(r#type::Primitive),
-    Inference(S::TypeInference),
-    Pointer(r#type::Pointer<S>),
-    Reference(r#type::Reference<S>),
-    Array(r#type::Array<S>),
-    Parameter(TypeParameterID),
-    Local(r#type::Local<S>),
-    Tuple(r#type::Tuple<S>),
-}
-
-impl<S: Model> From<NonGlobalIDType<S>> for r#type::Type<S> {
-    fn from(value: NonGlobalIDType<S>) -> Self {
-        match value {
-            NonGlobalIDType::Local(local) => Self::Local(local),
-            NonGlobalIDType::Primitive(primitive) => Self::Primitive(primitive),
-            NonGlobalIDType::Inference(inference) => Self::Inference(inference),
-            NonGlobalIDType::Pointer(pointer) => Self::Pointer(pointer),
-            NonGlobalIDType::Reference(reference) => Self::Reference(reference),
-            NonGlobalIDType::Array(array) => Self::Array(array),
-            NonGlobalIDType::Parameter(parameter) => Self::Parameter(parameter),
-            NonGlobalIDType::Tuple(tuple) => Self::Tuple(tuple),
-        }
-    }
-}
-
-impl<S: Model> TryInto<r#type::Type<S>> for Resolution<S> {
-    type Error = Self;
-
-    fn try_into(self) -> Result<r#type::Type<S>, Self::Error> {
-        match self {
-            Self::Enum(res) => Ok(r#type::Type::Algebraic(r#type::Algebraic {
-                kind: r#type::AlgebraicKind::Enum(res.id),
-                generic_arguments: res.generic_arguments,
-            })),
-            Self::Struct(res) => Ok(r#type::Type::Algebraic(r#type::Algebraic {
-                kind: r#type::AlgebraicKind::Struct(res.id),
-                generic_arguments: res.generic_arguments,
-            })),
-            Self::TraitType(res) => Ok(r#type::Type::TraitMember(r#type::TraitMember {
-                trait_type_id: res.member.id,
-                trait_generic_arguments: res.parent_generic_arguments,
-                member_generic_arguments: res.member.generic_arguments,
-            })),
-            Self::NonGlobalIDType(res) => Ok(res.into()),
-
-            err => Err(err),
-        }
-    }
-}
-
-impl<S: Model> From<r#type::Type<S>> for Resolution<S> {
-    fn from(value: r#type::Type<S>) -> Self {
-        match value {
-            r#type::Type::Primitive(primitive) => {
-                Self::NonGlobalIDType(NonGlobalIDType::Primitive(primitive))
-            }
-            r#type::Type::Inference(inference) => {
-                Self::NonGlobalIDType(NonGlobalIDType::Inference(inference))
-            }
-            r#type::Type::Pointer(pointer) => {
-                Self::NonGlobalIDType(NonGlobalIDType::Pointer(pointer))
-            }
-            r#type::Type::Reference(reference) => {
-                Self::NonGlobalIDType(NonGlobalIDType::Reference(reference))
-            }
-            r#type::Type::Array(array) => Self::NonGlobalIDType(NonGlobalIDType::Array(array)),
-            r#type::Type::Parameter(parameter) => {
-                Self::NonGlobalIDType(NonGlobalIDType::Parameter(parameter))
-            }
-            r#type::Type::Tuple(tuple) => Self::NonGlobalIDType(NonGlobalIDType::Tuple(tuple)),
-            r#type::Type::Algebraic(adt) => match adt.kind {
-                r#type::AlgebraicKind::Enum(enum_id) => Self::Enum(WithGenerics {
-                    id: enum_id,
-                    generic_arguments: adt.generic_arguments,
-                }),
-                r#type::AlgebraicKind::Struct(struct_id) => Self::Struct(WithGenerics {
-                    id: struct_id,
-                    generic_arguments: adt.generic_arguments,
-                }),
-            },
-            r#type::Type::TraitMember(trait_member) => Self::TraitType(WithParent {
-                parent_generic_arguments: trait_member.trait_generic_arguments,
-                member: WithGenerics {
-                    id: trait_member.trait_type_id,
-                    generic_arguments: trait_member.member_generic_arguments,
-                },
-            }),
-            r#type::Type::Local(local) => Self::NonGlobalIDType(NonGlobalIDType::Local(local)),
-        }
-    }
+    ImplementationType(WithGenerics<ID<ImplementationType>, S>),
+    ImplementationConstant(ID<ImplementationConstant>),
 }
 
 /// A configuration for the resolution.
@@ -384,6 +290,63 @@ impl Table {
         Ok(current_module_id.unwrap())
     }
 
+    /// Converts a [`Resolution`] into a [`r#type::Type`].
+    ///
+    /// # Errors
+    ///
+    /// If the resolution cannot be converted into a [`r#type::Type`].
+    pub fn resolution_to_type<S: Model>(
+        &self,
+        resolution: Resolution<S>,
+    ) -> Result<r#type::Type<S>, Resolution<S>> {
+        match resolution {
+            Resolution::Enum(sym) => Ok(r#type::Type::Algebraic(Algebraic {
+                kind: AlgebraicKind::Enum(sym.id),
+                generic_arguments: sym.generic_arguments,
+            })),
+            Resolution::Struct(sym) => Ok(r#type::Type::Algebraic(Algebraic {
+                kind: AlgebraicKind::Struct(sym.id),
+                generic_arguments: sym.generic_arguments,
+            })),
+            Resolution::TraitType(sym) => Ok(r#type::Type::TraitMember(r#type::TraitMember {
+                trait_type_id: sym.member.id,
+                trait_generic_arguments: sym.parent_generic_arguments,
+                member_generic_arguments: sym.member.generic_arguments,
+            })),
+            Resolution::Type(sym) => {
+                let type_id = sym.id;
+
+                let Some(type_symol) = self.get(type_id) else {
+                    return Err(Resolution::Type(sym));
+                };
+
+                let mut alias = type_symol.r#type.clone().into_other_model();
+                let substitution =
+                    Substitution::from_generic_arguments(sym.generic_arguments, sym.id.into());
+
+                alias.apply(&substitution);
+
+                Ok(alias)
+            }
+            Resolution::ImplementationType(sym) => {
+                let type_id = sym.id;
+
+                let Some(type_symol) = self.get(type_id) else {
+                    return Err(Resolution::ImplementationType(sym));
+                };
+
+                let mut alias = type_symol.r#type.clone().into_other_model();
+                let substitution =
+                    Substitution::from_generic_arguments(sym.generic_arguments, sym.id.into());
+
+                alias.apply(&substitution);
+
+                Ok(alias)
+            }
+            resolution => Err(resolution),
+        }
+    }
+
     fn resolve_root_down_the_tree(
         &self,
         identifier: &Identifier,
@@ -444,20 +407,10 @@ impl Table {
                     Resolution::TraitType(res) => res.member.id.into(),
                     Resolution::TraitConstant(res) => res.member.into(),
                     Resolution::ImplementationFunction(res) => res.id.into(),
-                    Resolution::NonGlobalIDType(..) => {
-                        handler.receive(error::Error::MemberAccessOnType(MemberAccessOnType {
-                            access_span: identifier.span.clone(),
-                        }));
-                        return Err(Error::SemanticError);
-                    }
-                    Resolution::Constant(..) => {
-                        handler.receive(error::Error::MemberAccessOnExpression(
-                            MemberAccessOnExpression {
-                                access_span: identifier.span.clone(),
-                            },
-                        ));
-                        return Err(Error::SemanticError);
-                    }
+                    Resolution::Type(res) => res.id.into(),
+                    Resolution::Constant(res) => (*res).into(),
+                    Resolution::ImplementationType(res) => res.id.into(),
+                    Resolution::ImplementationConstant(res) => (*res).into(),
                 };
 
                 (
@@ -666,17 +619,14 @@ impl Table {
             }
         }
 
-        let resolution = self.resolve(syntax_tree, referring_site, config, handler)?;
-
-        resolution.try_into().map_or_else(
-            |_| {
+        self.resolution_to_type(self.resolve(syntax_tree, referring_site, config, handler)?)
+            .map_err(|x| {
                 handler.receive(error::Error::TypeExpected(TypeExpected {
                     non_type_symbol_span: syntax_tree.span(),
                 }));
-                Err(Error::SemanticError)
-            },
-            Ok,
-        )
+
+                Error::SemanticError
+            })
     }
 
     /// Resolves a [`syntax_tree::r#type::Type`] to a [`r#type::Type`].
@@ -1144,33 +1094,11 @@ impl Table {
                 id: enum_id,
                 generic_arguments: generic_arguments.expect("should have generic arguments"),
             }),
-            GlobalID::Type(type_id) => {
-                let mut ty = self
-                    .get(type_id)
-                    .expect("should have been valid ")
-                    .r#type
-                    .clone()
-                    .into_other_model();
-
-                // substitution from the generic arguments
-                let substitution = Substitution::from_generic_arguments(
-                    generic_arguments.expect("should have generic arguments"),
-                    GenericID::Type(type_id),
-                );
-
-                ty.apply(&substitution);
-
-                ty.into()
-            }
-            GlobalID::Constant(constant_id) => {
-                let constant = self
-                    .get(constant_id)
-                    .expect("should have been valid ")
-                    .constant
-                    .clone();
-
-                Resolution::Constant(constant)
-            }
+            GlobalID::Type(type_id) => Resolution::Type(WithGenerics {
+                id: type_id,
+                generic_arguments: generic_arguments.expect("should have generic arguments"),
+            }),
+            GlobalID::Constant(constant_id) => Resolution::Constant(constant_id),
             GlobalID::Function(function_id) => Resolution::Function(WithGenerics {
                 id: function_id,
                 generic_arguments: generic_arguments.expect("should have generic arguments"),
@@ -1267,35 +1195,13 @@ impl Table {
                 })
             }
             GlobalID::ImplementationType(implementation_type_id) => {
-                assert!(latest_resolution.is_none());
-
-                let mut ty = self
-                    .get(implementation_type_id)
-                    .expect("should have been valid ")
-                    .r#type
-                    .clone()
-                    .into_other_model();
-
-                // substitution from the generic arguments
-                let substitution = Substitution::from_generic_arguments(
-                    generic_arguments.expect("should have generic arguments"),
-                    GenericID::ImplementationType(implementation_type_id),
-                );
-
-                ty.apply(&substitution);
-
-                ty.into()
+                Resolution::ImplementationType(WithGenerics {
+                    id: implementation_type_id,
+                    generic_arguments: generic_arguments.expect("should have generic arguments"),
+                })
             }
             GlobalID::ImplementationConstant(implementation_constant_id) => {
-                assert!(latest_resolution.is_none());
-
-                let constant = self
-                    .get(implementation_constant_id)
-                    .expect("should have been valid ")
-                    .constant
-                    .clone();
-
-                Resolution::Constant(constant)
+                Resolution::ImplementationConstant(implementation_constant_id)
             }
         }
     }
