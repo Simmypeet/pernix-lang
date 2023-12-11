@@ -6,8 +6,8 @@ members = [
     "compiler/pernixc_syntax",
     "compiler/pernixc_tests",
     "compiler/pernixc_semantic",
-    "compiler/pernixc_driver",
-    "compiler/pernixc",
+    #"compiler/pernixc_driver",
+    #"compiler/pernixc",
 ]
 
 [workspace.dependencies]
@@ -40,3 +40,6 @@ version = "0.1.0"
 authors = ["Simmypeet"]
 description = "The Pernix Programming Language Compiler"
 edition = "2021"
+
+[profile.release]
+strip = false

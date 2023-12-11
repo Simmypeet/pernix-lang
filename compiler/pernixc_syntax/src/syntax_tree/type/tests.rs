@@ -12,15 +12,12 @@ use proptest::{
 use crate::syntax_tree::{
     self,
     expression::tests::Expression,
-    tests::{
-        ConnectedList, ConstantPunctuation, GenericArgument, LifetimeArgument, QualifiedIdentifier,
-        Qualifier,
-    },
+    tests::{ConnectedList, ConstantPunctuation, Lifetime, QualifiedIdentifier, Qualifier},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reference {
-    pub lifetime_argument: Option<LifetimeArgument>,
+    pub lifetime: Option<Lifetime>,
     pub qualifier: Option<Qualifier>,
     pub operand_type: Box<Type>,
 }
@@ -31,12 +28,12 @@ impl Arbitrary for Reference {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
-            proptest::option::of(LifetimeArgument::arbitrary()),
+            proptest::option::of(Lifetime::arbitrary()),
             proptest::option::of(Qualifier::arbitrary()),
             args.unwrap_or_else(Type::arbitrary),
         )
-            .prop_map(|(lifetime_argument, qualifier, operand_type)| Self {
-                lifetime_argument,
+            .prop_map(|(lifetime, qualifier, operand_type)| Self {
+                lifetime,
                 qualifier,
                 operand_type: Box::new(operand_type),
             })
@@ -44,12 +41,14 @@ impl Arbitrary for Reference {
     }
 }
 
-impl Input for Reference {
-    type Output = super::Reference;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.lifetime_argument.assert(output.lifetime_argument())?;
-        self.qualifier.assert(output.qualifier())?;
+impl Input<&super::Reference> for &Reference {
+    fn assert(self, output: &super::Reference) -> TestCaseResult {
+        self.lifetime
+            .as_ref()
+            .assert(output.lifetime_argument().as_ref())?;
+        self.qualifier
+            .as_ref()
+            .assert(output.qualifier().as_ref())?;
         self.operand_type.assert(output.operand())
     }
 }
@@ -58,7 +57,7 @@ impl Display for Reference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('&')?;
 
-        if let Some(lifetime_argument) = &self.lifetime_argument {
+        if let Some(lifetime_argument) = &self.lifetime {
             Display::fmt(lifetime_argument, f)?;
             f.write_char(' ')?;
         }
@@ -114,24 +113,22 @@ impl Arbitrary for Primitive {
     }
 }
 
-impl Input for Primitive {
-    type Output = super::Primitive;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Primitive> for &Primitive {
+    fn assert(self, output: &super::Primitive) -> TestCaseResult {
         match (self, output) {
-            (Self::Bool, super::Primitive::Bool(..))
-            | (Self::Float32, super::Primitive::Float32(..))
-            | (Self::Float64, super::Primitive::Float64(..))
-            | (Self::Int8, super::Primitive::Int8(..))
-            | (Self::Int16, super::Primitive::Int16(..))
-            | (Self::Int32, super::Primitive::Int32(..))
-            | (Self::Int64, super::Primitive::Int64(..))
-            | (Self::Uint8, super::Primitive::Uint8(..))
-            | (Self::Uint16, super::Primitive::Uint16(..))
-            | (Self::Uint32, super::Primitive::Uint32(..))
-            | (Self::Uint64, super::Primitive::Uint64(..))
-            | (Self::Usize, super::Primitive::Usize(..))
-            | (Self::Isize, super::Primitive::Isize(..)) => Ok(()),
+            (Primitive::Bool, super::Primitive::Bool(..))
+            | (Primitive::Float32, super::Primitive::Float32(..))
+            | (Primitive::Float64, super::Primitive::Float64(..))
+            | (Primitive::Int8, super::Primitive::Int8(..))
+            | (Primitive::Int16, super::Primitive::Int16(..))
+            | (Primitive::Int32, super::Primitive::Int32(..))
+            | (Primitive::Int64, super::Primitive::Int64(..))
+            | (Primitive::Uint8, super::Primitive::Uint8(..))
+            | (Primitive::Uint16, super::Primitive::Uint16(..))
+            | (Primitive::Uint32, super::Primitive::Uint32(..))
+            | (Primitive::Uint64, super::Primitive::Uint64(..))
+            | (Primitive::Usize, super::Primitive::Usize(..))
+            | (Primitive::Isize, super::Primitive::Isize(..)) => Ok(()),
 
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
@@ -175,10 +172,8 @@ impl Arbitrary for Array {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
-            args.0
-                .clone()
-                .unwrap_or_else(|| Type::arbitrary_with((None, args.1.clone()))),
-            args.1.unwrap_or_else(|| Expression::arbitrary_with(args.0)),
+            args.0.unwrap_or_else(Type::arbitrary),
+            args.1.unwrap_or_else(Expression::arbitrary),
         )
             .prop_map(|(type_specifier, expression)| Self {
                 operand: Box::new(type_specifier),
@@ -188,10 +183,8 @@ impl Arbitrary for Array {
     }
 }
 
-impl Input for Array {
-    type Output = super::Array;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Array> for &Array {
+    fn assert(self, output: &super::Array) -> TestCaseResult {
         self.operand.assert(output.operand())?;
         self.expression.assert(output.expression())
     }
@@ -215,12 +208,12 @@ pub struct Pointer {
     pub qualifier: Option<Qualifier>,
 }
 
-impl Input for Pointer {
-    type Output = super::Pointer;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Pointer> for &Pointer {
+    fn assert(self, output: &super::Pointer) -> TestCaseResult {
         self.operand.assert(output.operand())?;
-        self.qualifier.assert(output.qualifier())?;
+        self.qualifier
+            .as_ref()
+            .assert(output.qualifier().as_ref())?;
         Ok(())
     }
 }
@@ -261,10 +254,8 @@ pub struct Unpackable {
     pub ty: Box<Type>,
 }
 
-impl Input for Unpackable {
-    type Output = super::Unpackable;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Unpackable> for &Unpackable {
+    fn assert(self, output: &super::Unpackable) -> TestCaseResult {
         prop_assert_eq!(self.ellipsis, output.ellipsis().is_some());
         self.ty.assert(output.ty())
     }
@@ -298,11 +289,11 @@ pub struct Tuple {
     pub unpackable_list: Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
 }
 
-impl Input for Tuple {
-    type Output = super::Tuple;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.unpackable_list.assert(output.unpackable_list())
+impl Input<&super::Tuple> for &Tuple {
+    fn assert(self, output: &super::Tuple) -> TestCaseResult {
+        self.unpackable_list
+            .as_ref()
+            .assert(output.unpackable_list().as_ref())
     }
 }
 
@@ -339,10 +330,8 @@ pub struct Local {
     pub ty: Box<Type>,
 }
 
-impl Input for Local {
-    type Output = super::Local;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.ty.assert(output.ty()) }
+impl Input<&super::Local> for &Local {
+    fn assert(self, output: &super::Local) -> TestCaseResult { self.ty.assert(output.ty()) }
 }
 
 impl Arbitrary for Local {
@@ -374,18 +363,16 @@ pub enum Type {
     Local(Local),
 }
 
-impl Input for Type {
-    type Output = super::Type;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Type> for &Type {
+    fn assert(self, output: &super::Type) -> TestCaseResult {
         match (self, output) {
-            (Self::Primitive(i), super::Type::Primitive(o)) => i.assert(o),
-            (Self::Reference(i), super::Type::Reference(o)) => i.assert(o),
-            (Self::Local(i), super::Type::Local(o)) => i.assert(o),
-            (Self::QualifiedIdentifier(i), super::Type::QualifiedIdentifier(o)) => i.assert(o),
-            (Self::Array(i), super::Type::Array(o)) => i.assert(o),
-            (Self::Pointer(i), super::Type::Pointer(o)) => i.assert(o),
-            (Self::Tuple(i), super::Type::Tuple(o)) => i.assert(o),
+            (Type::Primitive(i), super::Type::Primitive(o)) => i.assert(o),
+            (Type::Reference(i), super::Type::Reference(o)) => i.assert(o),
+            (Type::Local(i), super::Type::Local(o)) => i.assert(o),
+            (Type::QualifiedIdentifier(i), super::Type::QualifiedIdentifier(o)) => i.assert(o),
+            (Type::Array(i), super::Type::Array(o)) => i.assert(o),
+            (Type::Pointer(i), super::Type::Pointer(o)) => i.assert(o),
+            (Type::Tuple(i), super::Type::Tuple(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -393,40 +380,10 @@ impl Input for Type {
     }
 }
 
-fn remove_turbo_fish(qualified_identifier: &mut QualifiedIdentifier) {
-    for generic_identifier in
-        std::iter::once(&mut qualified_identifier.first).chain(qualified_identifier.rest.iter_mut())
-    {
-        if let Some(generic_arguments) = &mut generic_identifier.generic_arguments {
-            generic_arguments.turbofish = false;
-
-            for generic_argument in std::iter::once(&mut generic_arguments.argument_list.first)
-                .chain(
-                    generic_arguments
-                        .argument_list
-                        .rest
-                        .iter_mut()
-                        .map(|(_, a)| a),
-                )
-            {
-                let GenericArgument::Type(q) = generic_argument else {
-                    continue;
-                };
-
-                let Type::QualifiedIdentifier(ref mut q) = q.as_mut() else {
-                    continue;
-                };
-
-                remove_turbo_fish(q);
-            }
-        }
-    }
-}
-
 impl Arbitrary for Type {
     type Parameters = (
-        Option<BoxedStrategy<QualifiedIdentifier>>,
         Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -435,18 +392,17 @@ impl Arbitrary for Type {
 
         leaf.prop_recursive(4, 24, 6, move |inner| {
             prop_oneof![
-                Reference::arbitrary_with(Some(inner.clone())).prop_map(Type::Reference),
-                args.0
+                Reference::arbitrary_with(Some(inner.clone())).prop_map(Self::Reference),
+                Local::arbitrary_with(Some(inner.clone())).prop_map(Self::Local),
+                Pointer::arbitrary_with(Some(inner.clone())).prop_map(Self::Pointer),
+                Tuple::arbitrary_with(Some(inner.clone())).prop_map(Self::Tuple),
+                args.1
                     .clone()
-                    .unwrap_or_else(|| QualifiedIdentifier::arbitrary_with((false, args.1.clone())))
-                    .prop_map(|mut x| {
-                        remove_turbo_fish(&mut x);
-                        Self::QualifiedIdentifier(x)
-                    }),
-                Local::arbitrary_with(Some(inner.clone())).prop_map(Type::Local),
-                Array::arbitrary_with((Some(inner.clone()), args.1.clone())).prop_map(Type::Array),
-                Pointer::arbitrary_with(Some(inner.clone())).prop_map(Type::Pointer),
-                Tuple::arbitrary_with(Some(inner)).prop_map(Type::Tuple),
+                    .unwrap_or_else(|| QualifiedIdentifier::arbitrary_with((
+                        Some(inner),
+                        args.0.clone(),
+                    )))
+                    .prop_map(Self::QualifiedIdentifier)
             ]
         })
         .boxed()

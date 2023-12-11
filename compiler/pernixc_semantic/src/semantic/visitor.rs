@@ -94,9 +94,11 @@ impl<S: Model> Element for Type<S> {
         }
 
         match self {
-            Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
+            Self::Error | Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
+
             Self::Algebraic(adt) => visit_generic_arguments(&adt.generic_arguments, visitor),
             Self::Pointer(pointer) => pointer.pointee.accept(visitor, sub_structural_visit),
+
             Self::Reference(reference) => {
                 reference.pointee.accept(visitor, sub_structural_visit);
                 reference.lifetime.accept(visitor, sub_structural_visit);
@@ -138,7 +140,7 @@ impl<S: Model> Element for Constant<S> {
         }
 
         match self {
-            Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
+            Self::Error | Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
             Self::Struct(val) => {
                 visit_generic_arguments(&val.generic_arguments, visitor);
 

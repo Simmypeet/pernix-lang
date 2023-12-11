@@ -128,7 +128,6 @@ impl<S: Model> Entity for Predicate<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         match self {
             Self::LifetimeOutlives(outlives) => {
@@ -152,7 +151,6 @@ impl<S: Model> Entity for Predicate<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         Some(match self {
             Self::LifetimeOutlives(outlives) => {
@@ -194,7 +192,6 @@ impl<S: Model> Entity for ConstantType<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         ConstantType {
             r#type: self.r#type.into_other_model(),
@@ -207,7 +204,6 @@ impl<S: Model> Entity for ConstantType<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         Some(ConstantType {
             r#type: self.r#type.try_into_other_model()?,
@@ -251,7 +247,6 @@ impl<S: Model> Entity for LifetimeOutlives<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         LifetimeOutlives {
             operand: self.operand.into_other_model(),
@@ -265,7 +260,6 @@ impl<S: Model> Entity for LifetimeOutlives<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         Some(LifetimeOutlives {
             operand: self.operand.try_into_other_model()?,
@@ -287,7 +281,6 @@ impl<S: Model> Entity for TypeOutlives<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         TypeOutlives {
             operand: self.operand.into_other_model(),
@@ -301,7 +294,6 @@ impl<S: Model> Entity for TypeOutlives<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         Some(TypeOutlives {
             operand: self.operand.try_into_other_model()?,
@@ -344,7 +336,6 @@ impl<S: Entity> Entity for Equals<S> {
         <Self::Model as Model>::TypeInference: Into<T::TypeInference>,
         <Self::Model as Model>::LifetimeInference: Into<T::LifetimeInference>,
         <Self::Model as Model>::ScopedLifetime: Into<T::ScopedLifetime>,
-        <Self::Model as Model>::ForallLifetime: Into<T::ForallLifetime>,
     {
         Equals {
             lhs: self.lhs.into_other_model(),
@@ -358,7 +349,6 @@ impl<S: Entity> Entity for Equals<S> {
         <Self::Model as Model>::TypeInference: TryInto<T::TypeInference>,
         <Self::Model as Model>::LifetimeInference: TryInto<T::LifetimeInference>,
         <Self::Model as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        <Self::Model as Model>::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         Some(Equals {
             lhs: self.lhs.try_into_other_model()?,
@@ -425,7 +415,6 @@ impl<S: Model> Entity for Trait<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         Trait {
             trait_id: self.trait_id,
@@ -440,7 +429,6 @@ impl<S: Model> Entity for Trait<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         Some(Trait {
             trait_id: self.trait_id,
@@ -636,7 +624,8 @@ impl<M: Model> ConstantType<M> {
             | Type::TraitMember(_)
             | Type::Parameter(_) => false,
 
-            Type::Primitive(_) => true,
+            /*will just make error statisfies easily*/
+            Type::Error | Type::Primitive(_) => true,
 
             Type::Local(local) => {
                 Self::satisfies_internal(&local.0, premises, table, semantic, session)

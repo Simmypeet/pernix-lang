@@ -66,19 +66,6 @@ pub trait Model:
         + Send
         + Sync
         + From<Never>;
-
-    /// The type used to represent higher-ranked lifetime variable.
-    type ForallLifetime: Debug
-        + Clone
-        + PartialEq
-        + Eq
-        + PartialOrd
-        + Ord
-        + Hash
-        + 'static
-        + Send
-        + Sync
-        + From<Never>;
 }
 
 /// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used in higher-ranked
@@ -120,8 +107,7 @@ pub trait Entity {
         <Self::Model as Model>::ConstantInference: Into<T::ConstantInference>,
         <Self::Model as Model>::TypeInference: Into<T::TypeInference>,
         <Self::Model as Model>::LifetimeInference: Into<T::LifetimeInference>,
-        <Self::Model as Model>::ScopedLifetime: Into<T::ScopedLifetime>,
-        <Self::Model as Model>::ForallLifetime: Into<T::ForallLifetime>;
+        <Self::Model as Model>::ScopedLifetime: Into<T::ScopedLifetime>;
 
     /// Tries to convert this entity into another model.
     #[must_use]
@@ -130,6 +116,5 @@ pub trait Entity {
         <Self::Model as Model>::ConstantInference: TryInto<T::ConstantInference>,
         <Self::Model as Model>::TypeInference: TryInto<T::TypeInference>,
         <Self::Model as Model>::LifetimeInference: TryInto<T::LifetimeInference>,
-        <Self::Model as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        <Self::Model as Model>::ForallLifetime: TryInto<T::ForallLifetime>;
+        <Self::Model as Model>::ScopedLifetime: TryInto<T::ScopedLifetime>;
 }

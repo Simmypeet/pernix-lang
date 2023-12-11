@@ -11,17 +11,11 @@ use pernixc_lexical::{
 };
 
 use super::{
-    expression::{Expression, Functional},
-    pattern, r#type,
-    statement::Statement,
-    AccessModifier, ConnectedList, ConstantArgument, LifetimeArgument, QualifiedIdentifier,
-    ScopeSeparator,
+    expression::Expression, pattern, r#type, statement::Statement, AccessModifier, ConnectedList,
+    ConstantArgument, Lifetime, LifetimeIdentifier, QualifiedIdentifier, ScopeSeparator,
 };
 use crate::{
-    error::{
-        Error, GenericArgumentParameterListCannotBeEmpty, HigherRankedBoundParameterCannotBeEmpty,
-        SyntaxKind, UnexpectedSyntax,
-    },
+    error::{Error, SyntaxKind},
     parser::{Parser, Reading},
 };
 
@@ -230,10 +224,10 @@ type DefaultTypeParameter = DefaultGenericParameter<r#type::Type>;
 /// Syntax Synopsis:
 /// ``` txt
 /// DefaultConstantParameter:
-///     '=' Functional
+///     '=' Expression
 ///     ;
 /// ```
-type DefaultConstantParameter = DefaultGenericParameter<Functional>;
+type DefaultConstantParameter = DefaultGenericParameter<Expression>;
 
 /// Syntax Synopsis:
 /// ``` txt
@@ -274,17 +268,19 @@ impl SourceElement for TypeParameter {
 /// Syntax Synopsis:
 /// ``` txt
 /// ConstantParameter:
-///     Identifier TypeAnnotation DefaultConstParameter?
+///     'const' Identifier TypeAnnotation DefaultConstParameter?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ConstantParameter {
     #[get = "pub"]
+    const_keyword: Keyword,
+    #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    ty: r#type::Type,
+    r#type: r#type::Type,
     #[get = "pub"]
     default: Option<DefaultConstantParameter>,
 }
@@ -295,24 +291,31 @@ impl ConstantParameter {
     pub fn dissolve(
         self,
     ) -> (
+        Keyword,
         Identifier,
         Punctuation,
         r#type::Type,
         Option<DefaultConstantParameter>,
     ) {
-        (self.identifier, self.colon, self.ty, self.default)
+        (
+            self.const_keyword,
+            self.identifier,
+            self.colon,
+            self.r#type,
+            self.default,
+        )
     }
 }
 
 impl SourceElement for ConstantParameter {
     fn span(&self) -> Span {
-        self.identifier
+        self.const_keyword
             .span
             .join(
                 &self
                     .default
                     .as_ref()
-                    .map_or_else(|| self.ty.span(), SourceElement::span),
+                    .map_or_else(|| self.r#type.span(), SourceElement::span),
             )
             .unwrap()
     }
@@ -354,92 +357,88 @@ pub type GenericParameterList = ConnectedList<GenericParameter, Punctuation>;
 /// Syntax Synopsis:
 /// ``` txt
 /// GenericParameters:
-///     '<' GenericParameterList '>'
+///     '[' GenericParameterList? ']'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct GenericParameters {
     #[get = "pub"]
-    left_angle_bracket: Punctuation,
+    left_bracket: Punctuation,
     #[get = "pub"]
-    parameter_list: GenericParameterList,
+    parameter_list: Option<GenericParameterList>,
     #[get = "pub"]
-    right_angle_bracket: Punctuation,
+    right_bracket: Punctuation,
 }
 
 impl GenericParameters {
     /// Dissolves the [`GenericParameters`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Punctuation, GenericParameterList, Punctuation) {
-        (
-            self.left_angle_bracket,
-            self.parameter_list,
-            self.right_angle_bracket,
-        )
+    pub fn dissolve(self) -> (Punctuation, Option<GenericParameterList>, Punctuation) {
+        (self.left_bracket, self.parameter_list, self.right_bracket)
     }
 }
 
 impl SourceElement for GenericParameters {
     fn span(&self) -> Span {
-        self.left_angle_bracket
+        self.left_bracket
             .span
-            .join(&self.right_angle_bracket.span)
+            .join(&self.right_bracket.span)
             .unwrap()
     }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
-/// LifetimeBound:
-///     LifetimeBoundOperand ':' LifetimeArgument ('+' LifetimeArgument)*
+/// LifetimePredicate:
+///     LifetimePredicateOperand (+ LifetimePredicateOperand)* ':' LifetimeArgument ('+' LifetimeArgument)*
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct LifetimeBound {
+pub struct LifetimePredicate {
     #[get = "pub"]
-    operand: LifetimeBoundOperand,
+    operands: BoundList<LifetimePredicateOperand>,
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    arguments: BoundList<LifetimeArgument>,
+    bounds: BoundList<Lifetime>,
 }
 
-impl LifetimeBound {
+impl LifetimePredicate {
     /// Dissolves the [`LifetimeBound`] into a tuple of its fields.
     #[must_use]
     pub fn dissolve(
         self,
     ) -> (
-        LifetimeBoundOperand,
+        BoundList<LifetimePredicateOperand>,
         Punctuation,
-        BoundList<LifetimeArgument>,
+        BoundList<Lifetime>,
     ) {
-        (self.operand, self.colon, self.arguments)
+        (self.operands, self.colon, self.bounds)
     }
 }
 
-impl SourceElement for LifetimeBound {
-    fn span(&self) -> Span { self.operand.span().join(&self.arguments.span()).unwrap() }
+impl SourceElement for LifetimePredicate {
+    fn span(&self) -> Span { self.operands.span().join(&self.bounds.span()).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
-/// LifetimeBoundOperand:
+/// LifetimePredicateOperand:
 ///     LifetimeParameter
-///     | QualifiedIdentifier
+///     | Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum LifetimeBoundOperand {
+pub enum LifetimePredicateOperand {
     LifetimeParameter(LifetimeParameter),
-    QualifiedIdentifier(QualifiedIdentifier),
+    Type(r#type::Type),
 }
 
-impl SourceElement for LifetimeBoundOperand {
+impl SourceElement for LifetimePredicateOperand {
     fn span(&self) -> Span {
         match self {
             Self::LifetimeParameter(lifetime_parameter) => lifetime_parameter.span(),
-            Self::QualifiedIdentifier(qualified_identifier) => qualified_identifier.span(),
+            Self::Type(ty) => ty.span(),
         }
     }
 }
@@ -482,43 +481,38 @@ impl<T: SourceElement> SourceElement for BoundList<T> {
 /// Syntax Synopsis:
 /// ``` txt
 /// ConstantTypeBound:
-///     'const' 'type' Type
+///     'const' 'type' Type ('+' Type)*
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ConstantTypeBound {
+pub struct ConstantTypePredicate {
     #[get = "pub"]
     const_keyword: Keyword,
     #[get = "pub"]
     type_keyword: Keyword,
     #[get = "pub"]
-    qualified_identifier: QualifiedIdentifier,
+    types: BoundList<r#type::Type>,
 }
 
-impl SourceElement for ConstantTypeBound {
-    fn span(&self) -> Span {
-        self.const_keyword
-            .span
-            .join(&self.qualified_identifier.span())
-            .unwrap()
-    }
+impl SourceElement for ConstantTypePredicate {
+    fn span(&self) -> Span { self.const_keyword.span.join(&self.types.span()).unwrap() }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
 /// Predicate:
-///     TraitMemberBound
-///     | TraitBound
-///     | LifetimeBoundOperand
-///     | ConstantTypeBound
+///     TraitMemberPredicate
+///     | TraitPredicate
+///     | LifetimePredicate
+///     | ConstantTypePredicate
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum Predicate {
-    TraitMember(TraitMemberBound),
-    Trait(TraitBound),
-    Lifetime(LifetimeBound),
-    ConstantType(ConstantTypeBound),
+    TraitMember(TraitMemberPredicate),
+    Trait(TraitPredicate),
+    Lifetime(LifetimePredicate),
+    ConstantType(ConstantTypePredicate),
 }
 
 impl SourceElement for Predicate {
@@ -540,12 +534,12 @@ impl SourceElement for Predicate {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum TraitMemberBoundArgument {
+pub enum TraitMemberBound {
     Type(r#type::Type),
     Constant(ConstantArgument),
 }
 
-impl SourceElement for TraitMemberBoundArgument {
+impl SourceElement for TraitMemberBound {
     fn span(&self) -> Span {
         match self {
             Self::Type(ty) => ty.span(),
@@ -556,33 +550,33 @@ impl SourceElement for TraitMemberBoundArgument {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// TraitMemberBound:
-///     QualifiedIdentifier '=' TraitMemberBoundArgument
+/// TraitMemberPredicate:
+///     QualifiedIdentifier '=' TraitMemberBound
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct TraitMemberBound {
+pub struct TraitMemberPredicate {
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
     equals: Punctuation,
     #[get = "pub"]
-    argument: TraitMemberBoundArgument,
+    bound: TraitMemberBound,
 }
 
-impl TraitMemberBound {
+impl TraitMemberPredicate {
     /// Dissolves the [`TraitMemberBound`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (QualifiedIdentifier, Punctuation, TraitMemberBoundArgument) {
-        (self.qualified_identifier, self.equals, self.argument)
+    pub fn dissolve(self) -> (QualifiedIdentifier, Punctuation, TraitMemberBound) {
+        (self.qualified_identifier, self.equals, self.bound)
     }
 }
 
-impl SourceElement for TraitMemberBound {
+impl SourceElement for TraitMemberPredicate {
     fn span(&self) -> Span {
         self.qualified_identifier
             .span()
-            .join(&self.argument.span())
+            .join(&self.bound.span())
             .unwrap()
     }
 }
@@ -590,7 +584,7 @@ impl SourceElement for TraitMemberBound {
 /// Syntax Synopsis:
 /// ``` txt
 /// HigherRankedLifetimeParameters:
-///     'for' '<' LifetimeParameter (',' LifetimeParameter)* ','? '>'
+///     'for' '[' (LifetimeParameter (',' LifetimeParameter)* ','?)? ']'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -598,18 +592,18 @@ pub struct HigherRankedLifetimeParameters {
     #[get = "pub"]
     for_keyword: Keyword,
     #[get = "pub"]
-    left_angle_bracket: Punctuation,
+    left_bracket: Punctuation,
     #[get = "pub"]
-    lifetime_parameter_list: ConnectedList<LifetimeParameter, Punctuation>,
+    lifetime_parameter_list: Option<ConnectedList<LifetimeParameter, Punctuation>>,
     #[get = "pub"]
-    right_angle_bracket: Punctuation,
+    right_bracket: Punctuation,
 }
 
 impl SourceElement for HigherRankedLifetimeParameters {
     fn span(&self) -> Span {
         self.for_keyword
             .span
-            .join(&self.right_angle_bracket.span)
+            .join(&self.right_bracket.span)
             .unwrap()
     }
 }
@@ -617,40 +611,35 @@ impl SourceElement for HigherRankedLifetimeParameters {
 /// Syntax Synopsis:
 /// ``` txt
 /// TraitBound:
-///     HigherRankedLifetimeParameters? 'const'? QualifiedIdentifier
+///     HigherRankedLifetimeParameters? 'const'? 'trait'
+///     QualifiedIdentifier ('+' QualifiedIdentifier)*
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct TraitBound {
+pub struct TraitPredicate {
     #[get = "pub"]
     higher_ranked_lifetime_parameters: Option<HigherRankedLifetimeParameters>,
     #[get = "pub"]
     const_keyword: Option<Keyword>,
     #[get = "pub"]
-    qualified_identifier: QualifiedIdentifier,
+    trait_keyword: Keyword,
+    #[get = "pub"]
+    qualified_identifiers: BoundList<QualifiedIdentifier>,
 }
 
-impl SourceElement for TraitBound {
+impl SourceElement for TraitPredicate {
     fn span(&self) -> Span {
-        self.higher_ranked_lifetime_parameters.as_ref().map_or_else(
+        let begin = self.higher_ranked_lifetime_parameters.as_ref().map_or_else(
             || {
                 self.const_keyword.as_ref().map_or_else(
-                    || self.qualified_identifier.span(),
-                    |const_keyword| {
-                        const_keyword
-                            .span
-                            .join(&self.qualified_identifier.span())
-                            .unwrap()
-                    },
+                    || self.trait_keyword.span.clone(),
+                    |const_keyword| const_keyword.span.clone(),
                 )
             },
-            |higher_ranked_lifetime_parameters| {
-                higher_ranked_lifetime_parameters
-                    .span()
-                    .join(&self.qualified_identifier.span())
-                    .unwrap()
-            },
-        )
+            SourceElement::span,
+        );
+
+        begin.join(&self.qualified_identifiers.span()).unwrap()
     }
 }
 
@@ -665,7 +654,7 @@ pub type PredicateList = ConnectedList<Predicate, Punctuation>;
 /// Syntax Synopsis:
 /// ``` txt
 /// WhereClause:
-///     'where' ':' PredicateList
+///     'where' PredicateList
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -673,24 +662,20 @@ pub struct WhereClause {
     #[get = "pub"]
     where_keyword: Keyword,
     #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    constraint_list: PredicateList,
+    predicate_list: PredicateList,
 }
 
 impl WhereClause {
     /// Dissolves the [`WhereClause`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Keyword, Punctuation, PredicateList) {
-        (self.where_keyword, self.colon, self.constraint_list)
-    }
+    pub fn dissolve(self) -> (Keyword, PredicateList) { (self.where_keyword, self.predicate_list) }
 }
 
 impl SourceElement for WhereClause {
     fn span(&self) -> Span {
         self.where_keyword
             .span
-            .join(&self.constraint_list.span())
+            .join(&self.predicate_list.span())
             .unwrap()
     }
 }
@@ -984,15 +969,13 @@ impl SourceElement for ReturnType {
 /// Syntax Synopsis:
 /// ``` txt
 /// FunctionSignature:
-///     'function' 'const'? Identifier GenericParameters? Parameters ReturnType? WhereClause?
+///     'function' Identifier GenericParameters? Parameters ReturnType? WhereClause?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct FunctionSignature {
     #[get = "pub"]
     function_keyword: Keyword,
-    #[get = "pub"]
-    const_keyword: Option<Keyword>,
     #[get = "pub"]
     identifier: Identifier,
     #[get = "pub"]
@@ -1013,7 +996,6 @@ impl FunctionSignature {
         self,
     ) -> (
         Keyword,
-        Option<Keyword>,
         Identifier,
         Option<GenericParameters>,
         Parameters,
@@ -1022,7 +1004,6 @@ impl FunctionSignature {
     ) {
         (
             self.function_keyword,
-            self.const_keyword,
             self.identifier,
             self.generic_parameters,
             self.parameters,
@@ -1034,15 +1015,17 @@ impl FunctionSignature {
 
 impl SourceElement for FunctionSignature {
     fn span(&self) -> Span {
-        self.where_clause.as_ref().map_or_else(
+        let being = self.function_keyword.span.clone();
+        let end = self.where_clause.as_ref().map_or_else(
             || {
-                self.return_type.as_ref().map_or_else(
-                    || self.identifier.span.join(&self.parameters.span()).unwrap(),
-                    |return_type| self.identifier.span.join(&return_type.span()).unwrap(),
-                )
+                self.return_type
+                    .as_ref()
+                    .map_or_else(|| self.parameters.span(), SourceElement::span)
             },
-            |where_clause| self.identifier.span.join(&where_clause.span()).unwrap(),
-        )
+            SourceElement::span,
+        );
+
+        being.join(&end).unwrap()
     }
 }
 
@@ -1077,6 +1060,8 @@ pub struct Function {
     #[get = "pub"]
     access_modifier: AccessModifier,
     #[get = "pub"]
+    const_keyword: Option<Keyword>,
+    #[get = "pub"]
     signature: FunctionSignature,
     #[get = "pub"]
     body: FunctionBody,
@@ -1085,8 +1070,20 @@ pub struct Function {
 impl Function {
     /// Dissolves the [`Function`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (AccessModifier, FunctionSignature, FunctionBody) {
-        (self.access_modifier, self.signature, self.body)
+    pub fn dissolve(
+        self,
+    ) -> (
+        AccessModifier,
+        Option<Keyword>,
+        FunctionSignature,
+        FunctionBody,
+    ) {
+        (
+            self.access_modifier,
+            self.const_keyword,
+            self.signature,
+            self.body,
+        )
     }
 }
 
@@ -1889,20 +1886,21 @@ impl<'a> Parser<'a> {
         handler: &dyn Handler<Error>,
     ) -> Option<AccessModifier> {
         match self.next_significant_token() {
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Public => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Public => {
                 Some(AccessModifier::Public(k))
             }
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Private => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Private => {
                 Some(AccessModifier::Private(k))
             }
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Internal => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Internal => {
                 Some(AccessModifier::Internal(k))
             }
             found => {
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::AccessModifier,
                     found: found.into_token(),
-                }));
+                    alternatives: Vec::new(),
+                });
                 None
             }
         }
@@ -1912,108 +1910,107 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<GenericParameters> {
-        let left_angle_bracket = self.parse_punctuation('<', true, handler)?;
-        let (generic_parameter_list, right_angle_bracket) = self.parse_generic_list(
-            |parser| match parser.stop_at_significant() {
-                Reading::Atomic(Token::Punctuation(apostrophe))
-                    if apostrophe.punctuation == '\'' =>
-                {
-                    // eat apostrophe
-                    parser.forward();
+        let tree = self.parse_enclosed_list(
+            Delimiter::Bracket,
+            ',',
+            |parser| match parser.next_significant_token() {
+                Reading::Unit(Token::Identifier(identifier)) => {
+                    Some(GenericParameter::Type(TypeParameter {
+                        identifier,
+                        default: match parser.stop_at_significant() {
+                            Reading::Unit(Token::Punctuation(equals))
+                                if equals.punctuation == '=' =>
+                            {
+                                // eat equals
+                                parser.forward();
 
-                    Some(GenericParameter::Lifetime(LifetimeParameter {
-                        apostrophe,
-                        identifier: parser.parse_identifier(handler)?,
+                                let value = parser.parse_type(handler)?;
+
+                                Some(DefaultGenericParameter { equals, value })
+                            }
+                            _ => None,
+                        },
                     }))
                 }
-                _ => {
+
+                Reading::Unit(Token::Punctuation(punc)) if punc.punctuation == '\'' => {
                     let identifier = parser.parse_identifier(handler)?;
 
-                    match parser.stop_at_significant() {
-                        // const generic parameter
-                        Reading::Atomic(Token::Punctuation(colon)) if colon.punctuation == ':' => {
-                            // eat colon
-                            parser.forward();
+                    Some(GenericParameter::Lifetime(LifetimeParameter {
+                        apostrophe: punc,
+                        identifier,
+                    }))
+                }
 
-                            let ty = parser.parse_type(handler)?;
-                            let default = match parser.stop_at_significant() {
-                                Reading::Atomic(Token::Punctuation(equals))
-                                    if equals.punctuation == '=' =>
-                                {
-                                    // eat equals
-                                    parser.forward();
+                Reading::Unit(Token::Keyword(const_keyword))
+                    if const_keyword.kind == KeywordKind::Const =>
+                {
+                    let identifier = parser.parse_identifier(handler)?;
+                    let colon = parser.parse_punctuation(':', true, handler)?;
+                    let r#type = parser.parse_type(handler)?;
 
-                                    Some(DefaultConstantParameter {
-                                        equals,
-                                        value: parser.parse_primary_expression(handler)?,
-                                    })
-                                }
-                                _ => None,
-                            };
+                    Some(GenericParameter::Constant(ConstantParameter {
+                        const_keyword,
+                        identifier,
+                        colon,
+                        r#type,
+                        default: match parser.stop_at_significant() {
+                            Reading::Unit(Token::Punctuation(equals))
+                                if equals.punctuation == '=' =>
+                            {
+                                // eat equals
+                                parser.forward();
 
-                            Some(GenericParameter::Constant(ConstantParameter {
-                                identifier,
-                                colon,
-                                ty,
-                                default,
-                            }))
-                        }
+                                let value = parser.parse_expression(handler)?;
 
-                        // type generic parameter
-                        _ => {
-                            let default = match parser.stop_at_significant() {
-                                Reading::Atomic(Token::Punctuation(equals))
-                                    if equals.punctuation == '=' =>
-                                {
-                                    // eat equals
-                                    parser.forward();
+                                Some(DefaultGenericParameter { equals, value })
+                            }
+                            _ => None,
+                        },
+                    }))
+                }
 
-                                    Some(DefaultTypeParameter {
-                                        equals,
-                                        value: parser.parse_type(handler)?,
-                                    })
-                                }
-                                _ => None,
-                            };
-
-                            Some(GenericParameter::Type(TypeParameter {
-                                identifier,
-                                default,
-                            }))
-                        }
-                    }
+                found => {
+                    handler.receive(Error {
+                        expected: SyntaxKind::GenericParameter,
+                        alternatives: Vec::new(),
+                        found: found.into_token(),
+                    });
+                    None
                 }
             },
             handler,
         )?;
 
-        let Some(generic_parameter_list) = generic_parameter_list else {
-            handler.receive(Error::GenericArgumentParameterListCannotBeEmpty(
-                GenericArgumentParameterListCannotBeEmpty {
-                    span: left_angle_bracket
-                        .span
-                        .join(&right_angle_bracket.span)
-                        .expect("Span should be joint successfully"),
-                },
-            ));
-            return None;
-        };
-
         Some(GenericParameters {
-            left_angle_bracket,
-            parameter_list: generic_parameter_list,
-            right_angle_bracket,
+            left_bracket: tree.open,
+            parameter_list: tree.list,
+            right_bracket: tree.close,
         })
     }
 
-    fn parse_lifetime_argument(
-        &mut self,
-        handler: &dyn Handler<Error>,
-    ) -> Option<LifetimeArgument> {
+    fn parse_lifetime_argument(&mut self, handler: &dyn Handler<Error>) -> Option<Lifetime> {
         let apostrophe = self.parse_punctuation('\'', true, handler)?;
-        let identifier = self.parse_lifetime_argument_identifier(handler)?;
+        let identifier = match self.next_token() {
+            Reading::Unit(Token::Identifier(identifier)) => {
+                LifetimeIdentifier::Identifier(identifier)
+            }
+            Reading::Unit(Token::Keyword(static_keyword))
+                if static_keyword.kind == KeywordKind::Static =>
+            {
+                LifetimeIdentifier::Static(static_keyword)
+            }
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Identifier,
+                    alternatives: vec![SyntaxKind::Keyword(KeywordKind::Static)],
+                    found: found.into_token(),
+                });
+                return None;
+            }
+        };
 
-        Some(LifetimeArgument {
+        Some(Lifetime {
             apostrophe,
             identifier,
         })
@@ -2022,7 +2019,7 @@ impl<'a> Parser<'a> {
     fn parse_lifetime_bound_list(
         &mut self,
         handler: &dyn Handler<Error>,
-    ) -> Option<BoundList<LifetimeArgument>> {
+    ) -> Option<BoundList<Lifetime>> {
         let first = self.parse_lifetime_argument(handler)?;
         let mut rest = Vec::new();
 
@@ -2034,209 +2031,236 @@ impl<'a> Parser<'a> {
         Some(BoundList { first, rest })
     }
 
-    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    fn parse_constraint(&mut self, handler: &dyn Handler<Error>) -> Option<Predicate> {
+    fn parse_lifetime_predicate_operand(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<LifetimePredicateOperand> {
         match self.stop_at_significant() {
-            // parse for higher ranked bounds
-            Reading::Atomic(Token::Keyword(for_keyword))
-                if for_keyword.keyword == KeywordKind::For =>
-            {
-                // eat for keyword
+            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 self.forward();
 
-                let left_angle_bracket = self.parse_punctuation('<', true, handler)?;
-
-                match self.stop_at_significant() {
-                    // parse higher rankned lifetime bounds
-                    Reading::Atomic(Token::Punctuation(apostrophe))
-                        if apostrophe.punctuation == '\'' =>
-                    {
-                        let enclosed_tree = self.parse_generic_list(
-                            |parser| {
-                                let apostrophe = parser.parse_punctuation('\'', true, handler)?;
-                                let identifier = parser.parse_identifier(handler)?;
-
-                                Some(LifetimeParameter {
-                                    apostrophe,
-                                    identifier,
-                                })
-                            },
-                            handler,
-                        )?;
-
-                        let const_keyword = match self.stop_at_significant() {
-                            Reading::Atomic(Token::Keyword(const_keyword))
-                                if const_keyword.keyword == KeywordKind::Const =>
-                            {
-                                // eat `const` keyword
-                                self.forward();
-
-                                Some(const_keyword)
+                Some(LifetimePredicateOperand::LifetimeParameter(
+                    LifetimeParameter {
+                        apostrophe,
+                        identifier: match self.next_token() {
+                            Reading::Unit(Token::Identifier(ident)) => ident,
+                            found => {
+                                handler.receive(Error {
+                                    expected: SyntaxKind::Identifier,
+                                    alternatives: Vec::new(),
+                                    found: found.into_token(),
+                                });
+                                return None;
                             }
-                            _ => None,
-                        };
-
-                        let qualified_identifier =
-                            self.parse_qualified_identifier(false, handler)?;
-
-                        Some(Predicate::Trait(TraitBound {
-                            higher_ranked_lifetime_parameters: Some(
-                                HigherRankedLifetimeParameters {
-                                    for_keyword,
-                                    left_angle_bracket,
-                                    lifetime_parameter_list: enclosed_tree.0.unwrap(),
-                                    right_angle_bracket: enclosed_tree.1,
-                                },
-                            ),
-                            const_keyword,
-                            qualified_identifier,
-                        }))
-                    }
-
-                    // empty higher ranked bounds
-                    Reading::Atomic(Token::Punctuation(right_angle_bracket))
-                        if right_angle_bracket.punctuation == '>' =>
-                    {
-                        // eat right angle bracket
-                        self.forward();
-
-                        // error
-                        handler.receive(Error::HigherRankedBoundParameterCannotBeEmpty(
-                            HigherRankedBoundParameterCannotBeEmpty {
-                                span: for_keyword.span.join(&right_angle_bracket.span).unwrap(),
-                            },
-                        ));
-                        None
-                    }
-
-                    found => {
-                        // error
-                        handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
-                            expected: SyntaxKind::HigherRankedBound,
-                            found: found.into_token(),
-                        }));
-                        None
-                    }
-                }
+                        },
+                    },
+                ))
             }
 
-            // parse const keyword
-            Reading::Atomic(Token::Keyword(const_keyword))
-                if const_keyword.keyword == KeywordKind::Const =>
+            _ => Some(LifetimePredicateOperand::Type(self.parse_type(handler)?)),
+        }
+    }
+
+    fn parse_bound_list<T>(
+        &mut self,
+        mut parser: impl FnMut(&mut Self) -> Option<T>,
+    ) -> Option<BoundList<T>> {
+        let first = parser(self)?;
+        let mut rest = Vec::new();
+
+        while let Some(plus) = self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
+        {
+            rest.push((plus, parser(self)?));
+        }
+
+        Some(BoundList { first, rest })
+    }
+
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    fn parse_predicate(&mut self, handler: &dyn Handler<Error>) -> Option<Predicate> {
+        match self.stop_at_significant() {
+            Reading::Unit(Token::Keyword(const_keyword))
+                if const_keyword.kind == KeywordKind::Const =>
             {
                 // eat const keyword
                 self.forward();
 
                 match self.stop_at_significant() {
-                    Reading::Atomic(Token::Keyword(type_keyword))
-                        if type_keyword.keyword == KeywordKind::Type =>
+                    Reading::Unit(Token::Keyword(trait_keyword))
+                        if trait_keyword.kind == KeywordKind::Trait =>
+                    {
+                        // eat trait keyword
+                        self.forward();
+
+                        Some(Predicate::Trait(TraitPredicate {
+                            higher_ranked_lifetime_parameters: None,
+                            const_keyword: Some(const_keyword),
+                            trait_keyword,
+                            qualified_identifiers: self.parse_bound_list(|parser| {
+                                parser.parse_qualified_identifier(handler)
+                            })?,
+                        }))
+                    }
+
+                    Reading::Unit(Token::Keyword(type_keyword))
+                        if type_keyword.kind == KeywordKind::Type =>
                     {
                         // eat type keyword
                         self.forward();
 
-                        let qualified_identifier =
-                            self.parse_qualified_identifier(false, handler)?;
-
-                        Some(Predicate::ConstantType(ConstantTypeBound {
+                        Some(Predicate::ConstantType(ConstantTypePredicate {
                             const_keyword,
                             type_keyword,
-                            qualified_identifier,
+                            types: self.parse_bound_list(|parser| parser.parse_type(handler))?,
                         }))
                     }
-                    _ => {
-                        let qualified_identifier =
-                            self.parse_qualified_identifier(false, handler)?;
 
-                        Some(Predicate::Trait(TraitBound {
-                            higher_ranked_lifetime_parameters: None,
-                            const_keyword: Some(const_keyword),
-                            qualified_identifier,
-                        }))
+                    found => {
+                        handler.receive(Error {
+                            expected: SyntaxKind::Keyword(KeywordKind::Trait),
+                            alternatives: vec![SyntaxKind::Keyword(KeywordKind::Type)],
+                            found: found.into_token(),
+                        });
+                        None
                     }
                 }
             }
 
-            // parses lifetime argument / bound
-            Reading::Atomic(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
-                // eat apostrophe
+            Reading::Unit(Token::Keyword(for_keyword)) if for_keyword.kind == KeywordKind::For => {
+                // eat for keyword
                 self.forward();
 
-                let identifier = self.parse_identifier(handler)?;
-                let colon = self.parse_punctuation(':', true, handler)?;
+                let lifetimes = self.parse_enclosed_list(
+                    Delimiter::Bracket,
+                    ',',
+                    |parser| {
+                        let apostrophe = parser.parse_punctuation('\'', true, handler)?;
+                        let identifier = parser.parse_identifier(handler)?;
 
-                let operand = LifetimeBoundOperand::LifetimeParameter(LifetimeParameter {
-                    apostrophe,
-                    identifier,
-                });
+                        Some(LifetimeParameter {
+                            apostrophe,
+                            identifier,
+                        })
+                    },
+                    handler,
+                )?;
 
-                let arguments = self.parse_lifetime_bound_list(handler)?;
+                let higher_ranked_lifetime = HigherRankedLifetimeParameters {
+                    for_keyword,
+                    left_bracket: lifetimes.open,
+                    lifetime_parameter_list: lifetimes.list,
+                    right_bracket: lifetimes.close,
+                };
 
-                Some(Predicate::Lifetime(LifetimeBound {
-                    operand,
-                    colon,
-                    arguments,
+                let const_keyword =
+                    self.try_parse(|parser| parser.parse_keyword(KeywordKind::Const, &Dummy));
+
+                let trait_keyword = self.parse_keyword(KeywordKind::Trait, handler)?;
+
+                Some(Predicate::Trait(TraitPredicate {
+                    higher_ranked_lifetime_parameters: Some(higher_ranked_lifetime),
+                    const_keyword,
+                    trait_keyword,
+                    qualified_identifiers: self
+                        .parse_bound_list(|parser| parser.parse_qualified_identifier(handler))?,
                 }))
             }
+
+            Reading::Unit(Token::Keyword(trait_keyword))
+                if trait_keyword.kind == KeywordKind::Trait =>
+            {
+                // eat trait keyword
+                self.forward();
+
+                Some(Predicate::Trait(TraitPredicate {
+                    higher_ranked_lifetime_parameters: None,
+                    const_keyword: None,
+                    trait_keyword,
+                    qualified_identifiers: self
+                        .parse_bound_list(|parser| parser.parse_qualified_identifier(handler))?,
+                }))
+            }
+
+            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+                let operands = self
+                    .parse_bound_list(|parser| parser.parse_lifetime_predicate_operand(handler))?;
+                let colon = self.parse_punctuation(':', true, handler)?;
+                let bounds = self.parse_lifetime_bound_list(handler)?;
+
+                Some(Predicate::Lifetime(LifetimePredicate {
+                    operands,
+                    colon,
+                    bounds,
+                }))
+            }
+
             _ => {
-                let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+                let first_ty = self.parse_type(handler)?;
 
-                Some(match self.stop_at_significant() {
-                    Reading::Atomic(Token::Punctuation(colon)) if colon.punctuation == ':' => {
-                        // eat colon
-                        self.forward();
-
-                        let arguments = self.parse_lifetime_bound_list(handler)?;
-
-                        Predicate::Lifetime(LifetimeBound {
-                            operand: LifetimeBoundOperand::QualifiedIdentifier(
-                                qualified_identifier,
-                            ),
-                            colon,
-                            arguments,
-                        })
-                    }
-                    Reading::Atomic(Token::Punctuation(equals)) if equals.punctuation == '=' => {
+                match (first_ty, self.stop_at_significant()) {
+                    // parse member constraint
+                    (
+                        r#type::Type::QualifiedIdentifier(qualified_identifier),
+                        Reading::Unit(Token::Punctuation(equals)),
+                    ) if equals.punctuation == '=' => {
                         // eat equals
                         self.forward();
 
-                        let argument = match self.stop_at_significant() {
-                            Reading::IntoDelimited(p) if p.punctuation == '{' => {
-                                let tree = self.step_into(
+                        let bound = match self.stop_at_significant() {
+                            Reading::IntoDelimited(Delimiter::Brace, _) => {
+                                let expr = self.step_into(
                                     Delimiter::Brace,
                                     |parser| parser.parse_expression(handler),
                                     handler,
                                 )?;
 
-                                TraitMemberBoundArgument::Constant(ConstantArgument {
-                                    left_brace: tree.open,
-                                    expression: Box::new(tree.tree?),
-                                    right_brace: tree.close,
+                                TraitMemberBound::Constant(ConstantArgument {
+                                    left_brace: expr.open,
+                                    expression: Box::new(expr.tree?),
+                                    right_brace: expr.close,
                                 })
                             }
-                            _ => TraitMemberBoundArgument::Type(self.parse_type(handler)?),
+                            _ => TraitMemberBound::Type(self.parse_type(handler)?),
                         };
 
-                        Predicate::TraitMember(TraitMemberBound {
+                        Some(Predicate::TraitMember(TraitMemberPredicate {
                             qualified_identifier,
                             equals,
-                            argument,
-                        })
+                            bound,
+                        }))
                     }
-                    _ => Predicate::Trait(TraitBound {
-                        higher_ranked_lifetime_parameters: None,
-                        const_keyword: None,
-                        qualified_identifier,
-                    }),
-                })
+
+                    (first_ty, _) => {
+                        let mut rest = Vec::new();
+
+                        while let Some(plus) =
+                            self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
+                        {
+                            rest.push((plus, self.parse_lifetime_predicate_operand(handler)?));
+                        }
+
+                        let operands = BoundList {
+                            first: LifetimePredicateOperand::Type(first_ty),
+                            rest,
+                        };
+                        let colon = self.parse_punctuation(':', true, handler)?;
+                        let bounds = self.parse_lifetime_bound_list(handler)?;
+
+                        Some(Predicate::Lifetime(LifetimePredicate {
+                            operands,
+                            colon,
+                            bounds,
+                        }))
+                    }
+                }
             }
         }
     }
 
     fn parse_where_clause(&mut self, handler: &dyn Handler<Error>) -> Option<WhereClause> {
         let where_keyword = self.parse_keyword(KeywordKind::Where, handler)?;
-        let colon = self.parse_punctuation(':', true, handler)?;
 
-        let first = self.parse_constraint(handler)?;
+        let first = self.parse_predicate(handler)?;
         let mut rest = Vec::new();
         let mut trailing_separator = None;
 
@@ -2244,26 +2268,25 @@ impl<'a> Parser<'a> {
         {
             if matches!(
                 self.stop_at_significant(),
-                Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ';'
+                Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
             ) || matches!(
                 self.stop_at_significant(),
-                Reading::IntoDelimited(p) if p.punctuation == '{'
+                Reading::IntoDelimited(Delimiter::Brace, _)
             ) || matches!(
                 self.stop_at_significant(),
-                Reading::Atomic(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::Delete
+                Reading::Unit(Token::Keyword(keyword)) if keyword.kind == KeywordKind::Delete
             ) {
                 trailing_separator = Some(comma);
                 break;
             }
 
-            let constraint = self.parse_constraint(handler)?;
+            let constraint = self.parse_predicate(handler)?;
             rest.push((comma, constraint));
         }
 
         Some(WhereClause {
             where_keyword,
-            colon,
-            constraint_list: ConnectedList {
+            predicate_list: ConnectedList {
                 first,
                 rest,
                 trailing_separator,
@@ -2277,8 +2300,8 @@ impl<'a> Parser<'a> {
         handler: &dyn Handler<Error>,
     ) -> Option<Option<WhereClause>> {
         match self.stop_at_significant() {
-            Reading::Atomic(Token::Keyword(where_keyword))
-                if where_keyword.keyword == KeywordKind::Where =>
+            Reading::Unit(Token::Keyword(where_keyword))
+                if where_keyword.kind == KeywordKind::Where =>
             {
                 self.parse_where_clause(handler).map(Some)
             }
@@ -2303,14 +2326,14 @@ impl<'a> Parser<'a> {
                     parser.stop_at(|token| {
                         matches!(
                             token,
-                            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ';'
+                            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
                         )
                     });
 
                     // go after the semicolon
                     if matches!(
                         parser.stop_at_significant(),
-                        Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ';'
+                        Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
                     ) {
                         parser.forward();
                     }
@@ -2333,14 +2356,6 @@ impl<'a> Parser<'a> {
         handler: &dyn Handler<Error>,
     ) -> Option<FunctionSignature> {
         let function_keyword = self.parse_keyword(KeywordKind::Function, handler)?;
-        let const_keyword = match self.stop_at_significant() {
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Const => {
-                self.forward();
-                Some(k)
-            }
-            _ => None,
-        };
-
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
 
@@ -2368,7 +2383,7 @@ impl<'a> Parser<'a> {
         };
 
         let return_type = match self.stop_at_significant() {
-            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ':' => Some(ReturnType {
+            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ':' => Some(ReturnType {
                 colon: self.parse_punctuation(':', true, handler)?,
                 ty: self.parse_type(handler)?,
             }),
@@ -2379,7 +2394,6 @@ impl<'a> Parser<'a> {
 
         Some(FunctionSignature {
             function_keyword,
-            const_keyword,
             identifier,
             generic_parameters,
             parameters,
@@ -2395,7 +2409,7 @@ impl<'a> Parser<'a> {
     ) -> Option<Option<GenericParameters>> {
         if matches!(
             self.stop_at_significant(),
-            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '<'
+            Reading::IntoDelimited(Delimiter::Bracket, _)
         ) {
             Some(Some(self.parse_generic_parameters(handler)?))
         } else {
@@ -2408,8 +2422,8 @@ impl<'a> Parser<'a> {
         handler: &dyn Handler<Error>,
     ) -> Option<ImplementationMember> {
         match self.stop_at_significant() {
-            Reading::Atomic(Token::Keyword(function_keyword))
-                if function_keyword.keyword == KeywordKind::Function =>
+            Reading::Unit(Token::Keyword(function_keyword))
+                if function_keyword.kind == KeywordKind::Function =>
             {
                 let function_signature = self.parse_function_signature(handler)?;
                 let function_body = self.parse_function_body(handler)?;
@@ -2420,8 +2434,8 @@ impl<'a> Parser<'a> {
                 }))
             }
 
-            Reading::Atomic(Token::Keyword(const_keyword))
-                if const_keyword.keyword == KeywordKind::Const =>
+            Reading::Unit(Token::Keyword(const_keyword))
+                if const_keyword.kind == KeywordKind::Const =>
             {
                 let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
                 let identifier = self.parse_identifier(handler)?;
@@ -2446,8 +2460,8 @@ impl<'a> Parser<'a> {
                 }))
             }
 
-            Reading::Atomic(Token::Keyword(type_keyword))
-                if type_keyword.keyword == KeywordKind::Type =>
+            Reading::Unit(Token::Keyword(type_keyword))
+                if type_keyword.kind == KeywordKind::Type =>
             {
                 let type_signature = self.parse_type_signature(handler)?;
                 let type_definition = self.parse_type_definition(handler)?;
@@ -2462,10 +2476,11 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     found: found.into_token(),
+                    alternatives: Vec::new(),
                     expected: SyntaxKind::ImplementationMember,
-                }));
+                });
                 None
             }
         }
@@ -2488,10 +2503,7 @@ impl<'a> Parser<'a> {
 
                     // try to stop at next function signature
                     parser.stop_at(|token| {
-                        matches!(
-                            token,
-                            Reading::IntoDelimited(p) if p.punctuation == '{'
-                        )
+                        matches!(token, Reading::IntoDelimited(Delimiter::Brace, _))
                     });
                     parser.forward();
                 }
@@ -2512,8 +2524,8 @@ impl<'a> Parser<'a> {
         let implements_keyword = self.parse_keyword(KeywordKind::Implements, handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let const_keyword = match self.stop_at_significant() {
-            Reading::Atomic(Token::Keyword(const_keyword))
-                if const_keyword.keyword == KeywordKind::Const =>
+            Reading::Unit(Token::Keyword(const_keyword))
+                if const_keyword.kind == KeywordKind::Const =>
             {
                 // eat const keyword
                 self.forward();
@@ -2522,12 +2534,12 @@ impl<'a> Parser<'a> {
             }
             _ => None,
         };
-        let qualified_identifier = self.parse_qualified_identifier(false, handler)?;
+        let qualified_identifier = self.parse_qualified_identifier(handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
 
         let kind = match self.stop_at_significant() {
-            Reading::Atomic(Token::Keyword(delete_keyword))
-                if delete_keyword.keyword == KeywordKind::Delete =>
+            Reading::Unit(Token::Keyword(delete_keyword))
+                if delete_keyword.kind == KeywordKind::Delete =>
             {
                 // eat delete
                 self.forward();
@@ -2570,8 +2582,8 @@ impl<'a> Parser<'a> {
 
     fn parse_trait_member(&mut self, handler: &dyn Handler<Error>) -> Option<TraitMember> {
         match self.stop_at_significant() {
-            Reading::Atomic(Token::Keyword(function_keyword))
-                if function_keyword.keyword == KeywordKind::Function =>
+            Reading::Unit(Token::Keyword(function_keyword))
+                if function_keyword.kind == KeywordKind::Function =>
             {
                 let function_signature = self.parse_function_signature(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
@@ -2582,8 +2594,8 @@ impl<'a> Parser<'a> {
                 }))
             }
 
-            Reading::Atomic(Token::Keyword(const_keyword))
-                if const_keyword.keyword == KeywordKind::Const =>
+            Reading::Unit(Token::Keyword(const_keyword))
+                if const_keyword.kind == KeywordKind::Const =>
             {
                 let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
                 let identifier = self.parse_identifier(handler)?;
@@ -2602,8 +2614,8 @@ impl<'a> Parser<'a> {
                 }))
             }
 
-            Reading::Atomic(Token::Keyword(type_keyword))
-                if type_keyword.keyword == KeywordKind::Type =>
+            Reading::Unit(Token::Keyword(type_keyword))
+                if type_keyword.kind == KeywordKind::Type =>
             {
                 let signature = self.parse_type_signature(handler)?;
                 let where_clause = self.try_parse_where_clause(handler)?;
@@ -2618,10 +2630,11 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::TraitMember,
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
                 None
             }
         }
@@ -2643,7 +2656,7 @@ impl<'a> Parser<'a> {
                     parser.stop_at(|token| {
                         matches!(
                             token,
-                            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ';'
+                            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'
                         )
                     });
 
@@ -2751,7 +2764,7 @@ impl<'a> Parser<'a> {
                 // parse associated enum value
                 let associated_value = if matches!(
                     parser.stop_at_significant(),
-                    Reading::IntoDelimited(p) if p.punctuation == '('
+                    Reading::IntoDelimited(Delimiter::Parenthesis, _)
                 ) {
                     let delimited_tree = parser.step_into(
                         Delimiter::Parenthesis,
@@ -2830,8 +2843,8 @@ impl<'a> Parser<'a> {
 
         while !self.is_exhausted() {
             match (items.is_empty(), self.stop_at_significant()) {
-                (true, Reading::Atomic(Token::Keyword(using_keyword)))
-                    if using_keyword.keyword == KeywordKind::Using =>
+                (true, Reading::Unit(Token::Keyword(using_keyword)))
+                    if using_keyword.kind == KeywordKind::Using =>
                 {
                     if let Some(using) = self.parse_using(handler) {
                         usings.push(using);
@@ -2848,12 +2861,12 @@ impl<'a> Parser<'a> {
 
             // try to stop at the next access modifier or usings keyword
             self.stop_at(|token| {
-                if let Reading::Atomic(Token::Keyword(keyword)) = token {
-                    (keyword.keyword == KeywordKind::Public
-                        || keyword.keyword == KeywordKind::Private
-                        || keyword.keyword == KeywordKind::Internal)
+                if let Reading::Unit(Token::Keyword(keyword)) = token {
+                    (keyword.kind == KeywordKind::Public
+                        || keyword.kind == KeywordKind::Private
+                        || keyword.kind == KeywordKind::Internal)
                         || if items.is_empty() {
-                            keyword.keyword == KeywordKind::Using
+                            keyword.kind == KeywordKind::Using
                         } else {
                             false
                         }
@@ -2875,8 +2888,8 @@ impl<'a> Parser<'a> {
 
                 while !parser.is_exhausted() {
                     match (items.is_empty(), parser.stop_at_significant()) {
-                        (true, Reading::Atomic(Token::Keyword(using_keyword)))
-                            if using_keyword.keyword == KeywordKind::Using =>
+                        (true, Reading::Unit(Token::Keyword(using_keyword)))
+                            if using_keyword.kind == KeywordKind::Using =>
                         {
                             // eat using keyword
                             parser.forward();
@@ -2901,12 +2914,12 @@ impl<'a> Parser<'a> {
 
                     // try to stop at the next access modifier or usings keyword
                     parser.stop_at(|token| {
-                        if let Reading::Atomic(Token::Keyword(keyword)) = token {
-                            (keyword.keyword == KeywordKind::Public
-                                || keyword.keyword == KeywordKind::Private
-                                || keyword.keyword == KeywordKind::Internal)
+                        if let Reading::Unit(Token::Keyword(keyword)) = token {
+                            (keyword.kind == KeywordKind::Public
+                                || keyword.kind == KeywordKind::Private
+                                || keyword.kind == KeywordKind::Internal)
                                 || if items.is_empty() {
-                                    keyword.keyword == KeywordKind::Using
+                                    keyword.kind == KeywordKind::Using
                                 } else {
                                     false
                                 }
@@ -2931,8 +2944,16 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_const_signature(&mut self, handler: &dyn Handler<Error>) -> Option<ConstantSignature> {
-        let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
+    fn parse_const_signature(
+        &mut self,
+        const_keyword: Option<Keyword>,
+        handler: &dyn Handler<Error>,
+    ) -> Option<ConstantSignature> {
+        let const_keyword = if let Some(const_keyword) = const_keyword {
+            const_keyword
+        } else {
+            self.parse_keyword(KeywordKind::Const, handler)?
+        };
         let identifier = self.parse_identifier(handler)?;
         let colon = self.parse_punctuation(':', true, handler)?;
         let ty = self.parse_type(handler)?;
@@ -2960,39 +2981,72 @@ impl<'a> Parser<'a> {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_item_with_access_modifier(&mut self, handler: &dyn Handler<Error>) -> Option<Item> {
         let access_modifier = self.parse_access_modifier(handler)?;
 
         match self.stop_at_significant() {
             // parse function
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Function => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Function => {
                 let function_signature = self.parse_function_signature(handler)?;
                 let function_body = self.parse_function_body(handler)?;
 
                 Some(Item::Function(Function {
                     access_modifier,
+                    const_keyword: None,
                     signature: function_signature,
                     body: function_body,
                 }))
             }
 
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Const => {
-                let signature = self.parse_const_signature(handler)?;
-                let definition = self.parse_const_definition(handler)?;
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Const => {
+                // eat const keyword
+                self.forward();
 
-                Some(Item::Constant(Constant {
-                    access_modifier,
-                    signature,
-                    definition,
-                }))
+                match self.stop_at_significant() {
+                    Reading::Unit(Token::Keyword(function_keyword))
+                        if function_keyword.kind == KeywordKind::Function =>
+                    {
+                        let function_signature = self.parse_function_signature(handler)?;
+                        let function_body = self.parse_function_body(handler)?;
+
+                        Some(Item::Function(Function {
+                            access_modifier,
+                            const_keyword: Some(k),
+                            signature: function_signature,
+                            body: function_body,
+                        }))
+                    }
+
+                    Reading::Unit(Token::Identifier(_)) => {
+                        let const_signature = self.parse_const_signature(Some(k), handler)?;
+                        let const_definition = self.parse_const_definition(handler)?;
+
+                        Some(Item::Constant(Constant {
+                            access_modifier,
+                            signature: const_signature,
+                            definition: const_definition,
+                        }))
+                    }
+
+                    found => {
+                        self.forward();
+                        handler.receive(Error {
+                            expected: SyntaxKind::Keyword(KeywordKind::Function),
+                            alternatives: vec![SyntaxKind::Identifier],
+                            found: found.into_token(),
+                        });
+                        None
+                    }
+                }
             }
 
             // parse module
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Module => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Module => {
                 let signature = self.parse_module_signature(handler)?;
 
                 let content = match self.stop_at_significant() {
-                    Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ';' => {
+                    Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';' => {
                         // eat semi colon
                         self.forward();
                         ModuleKind::File(p)
@@ -3008,7 +3062,7 @@ impl<'a> Parser<'a> {
             }
 
             // parse trait
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Trait => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Trait => {
                 let trait_signature = self.parse_trait_signature(handler)?;
                 let trait_body = self.parse_trait_body(handler)?;
 
@@ -3020,7 +3074,7 @@ impl<'a> Parser<'a> {
             }
 
             // parse struct
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Struct => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Struct => {
                 let struct_signature = self.parse_struct_signature(handler)?;
                 let struct_body = self.parse_struct_body(handler)?;
 
@@ -3032,7 +3086,7 @@ impl<'a> Parser<'a> {
             }
 
             // parse type
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Type => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Type => {
                 let type_signature = self.parse_type_signature(handler)?;
                 let type_definition = self.parse_type_definition(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
@@ -3046,7 +3100,7 @@ impl<'a> Parser<'a> {
             }
 
             // parse enum
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Enum => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Enum => {
                 let enum_signature = self.parse_enum_signature(handler)?;
                 let enum_body = self.parse_enum_body(handler)?;
 
@@ -3059,10 +3113,11 @@ impl<'a> Parser<'a> {
 
             found => {
                 self.forward();
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::Item,
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
                 None
             }
         }
@@ -3073,9 +3128,9 @@ impl<'a> Parser<'a> {
     pub fn parse_item(&mut self, handler: &dyn Handler<Error>) -> Option<Item> {
         match self.stop_at_significant() {
             // parses an item with an access modifier
-            Reading::Atomic(Token::Keyword(access_modifier))
+            Reading::Unit(Token::Keyword(access_modifier))
                 if matches!(
-                    access_modifier.keyword,
+                    access_modifier.kind,
                     KeywordKind::Public | KeywordKind::Private | KeywordKind::Internal
                 ) =>
             {
@@ -3083,16 +3138,17 @@ impl<'a> Parser<'a> {
             }
 
             // parses an implements
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Implements => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Implements => {
                 self.parse_implements(handler).map(Item::Implementation)
             }
 
             found => {
                 self.forward();
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::Item,
                     found: found.into_token(),
-                }));
+                    alternatives: Vec::new(),
+                });
                 None
             }
         }

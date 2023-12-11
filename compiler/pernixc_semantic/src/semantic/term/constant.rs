@@ -92,6 +92,7 @@ pub enum Constant<S: Model> {
     TraitMember(TraitMember<S>),
     Local(Local<S>),
     Tuple(Tuple<S>),
+    Error,
 }
 
 impl<M: Model> Term for Constant<M> {
@@ -146,7 +147,6 @@ impl<S: Model> Entity for Constant<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Constant::Primitive(primitive),
@@ -205,6 +205,7 @@ impl<S: Model> Entity for Constant<S> {
                 }
                 Constant::Tuple(Tuple { elements })
             }
+            Self::Error => Constant::Error,
         }
     }
 
@@ -214,7 +215,6 @@ impl<S: Model> Entity for Constant<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Some(Constant::Primitive(primitive)),
@@ -275,6 +275,7 @@ impl<S: Model> Entity for Constant<S> {
                     })
                     .collect::<Option<_>>()?,
             })),
+            Self::Error => Some(Constant::Error),
         }
     }
 }

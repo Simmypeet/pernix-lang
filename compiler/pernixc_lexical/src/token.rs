@@ -78,10 +78,6 @@ pub enum KeywordKind {
     Usize,
     /// `isize` keyword.
     Isize,
-    /// `this` keyword.
-    This,
-    /// `self` keyword.
-    SelfKeyword,
     /// `and` keyword.
     And,
     /// `or` keyword.
@@ -193,8 +189,6 @@ impl KeywordKind {
             Self::Float64 => "float64",
             Self::Usize => "usize",
             Self::Isize => "isize",
-            Self::This => "this",
-            Self::SelfKeyword => "self",
             Self::And => "and",
             Self::Or => "or",
             Self::Private => "private",
@@ -284,7 +278,7 @@ pub struct Keyword {
     pub span: Span,
 
     /// Is the [`KeywordKind`] that the token represents.
-    pub keyword: KeywordKind,
+    pub kind: KeywordKind,
 }
 
 impl SourceElement for Keyword {
@@ -411,7 +405,7 @@ impl Token {
             |kw| {
                 Keyword {
                     span: span.clone(),
-                    keyword: kw,
+                    kind: kw,
                 }
                 .into()
             },

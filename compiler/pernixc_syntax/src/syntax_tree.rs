@@ -14,7 +14,7 @@ use pernixc_lexical::{
 
 use self::{expression::Expression, r#type::Type};
 use crate::{
-    error::{self, Error, GenericArgumentParameterListCannotBeEmpty, SyntaxKind, UnexpectedSyntax},
+    error::{self, Error, SyntaxKind},
     parser::{Frame, Parser, Reading},
 };
 
@@ -56,119 +56,6 @@ pub struct DelimitedList<T> {
 }
 
 impl<'a> Parser<'a> {
-    /// Use to sepcifically parse a generic bracketed list `<a, b, c, d>`.
-    pub(crate) fn parse_generic_list<T>(
-        &mut self,
-        mut parse_item: impl FnMut(&mut Self) -> Option<T>,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<(Option<ConnectedList<T, Punctuation>>, Punctuation)> {
-        const DELIMITER: char = '>';
-        const SEPARATOR: char = ',';
-
-        let mut first = None;
-        let mut rest = Vec::new();
-        let mut trailing_separator = None;
-
-        // check for empty list
-        match self.stop_at_significant() {
-            Reading::Atomic(Token::Punctuation(punc)) if punc.punctuation == DELIMITER => {
-                self.next_token();
-                return Some((None, punc));
-            }
-            _ => (),
-        }
-
-        if let Some(value) = parse_item(self) {
-            first = Some(value);
-        } else {
-            let token = self.stop_at(|token| match token {
-                Reading::Atomic(Token::Punctuation(punc)) => {
-                    punc.punctuation == DELIMITER || punc.punctuation == SEPARATOR
-                }
-                _ => false,
-            });
-
-            // if found delimiter, return empty list
-            if let Reading::Atomic(Token::Punctuation(token)) = token {
-                if token.punctuation == DELIMITER {
-                    self.next_token();
-                    return Some((None, token));
-                }
-            }
-        }
-
-        let delimiter = loop {
-            match self.stop_at_significant() {
-                Reading::Atomic(Token::Punctuation(separator_token))
-                    if separator_token.punctuation == SEPARATOR =>
-                {
-                    // eat the separator
-                    self.next_token();
-
-                    match self.stop_at_significant() {
-                        Reading::Atomic(Token::Punctuation(delimiter_token))
-                            if delimiter_token.punctuation == DELIMITER =>
-                        {
-                            // eat the delimiter
-                            self.next_token();
-
-                            trailing_separator = Some(separator_token);
-                            break delimiter_token;
-                        }
-                        _ => (),
-                    }
-
-                    parse_item(self).map_or_else(
-                        || {
-                            self.stop_at(|token| {
-                                matches!(
-                                    token,
-                                    Reading::Atomic(Token::Punctuation(punc)) if punc.punctuation == DELIMITER ||
-                                        punc.punctuation == SEPARATOR
-                                )
-                            });
-                        },
-                        |value| {
-                            if first.is_none() {
-                                first = Some(value);
-                            } else {
-                                rest.push((separator_token.clone(), value));
-                            }
-                        },
-                    );
-                }
-
-                Reading::Atomic(Token::Punctuation(delimiter_token))
-                    if delimiter_token.punctuation == DELIMITER =>
-                {
-                    // eat the delimiter
-                    self.next_token();
-
-                    break delimiter_token;
-                }
-
-                found => {
-                    handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
-                        expected: SyntaxKind::Punctuation(DELIMITER),
-                        found: found.into_token(),
-                    }));
-                    return None;
-                }
-            }
-        };
-
-        Some((
-            first.map(|first| ConnectedList {
-                first,
-                rest,
-                trailing_separator,
-            }),
-            delimiter,
-        ))
-    }
-}
-
-impl<'a> Parser<'a> {
     /// Parses a list of elements enclosed by a pair of delimiters, separated by a separator.
     ///
     /// The parser position must be at the delimited list of the given delimiter. It will
@@ -185,9 +72,9 @@ impl<'a> Parser<'a> {
         handler: &dyn Handler<error::Error>,
     ) -> Option<DelimitedList<T>> {
         fn skip_to_next_separator(this: &mut Parser, separator: char) -> Option<Punctuation> {
-            if let Reading::Atomic(Token::Punctuation(punc)) = this.stop_at(|token| {
+            if let Reading::Unit(Token::Punctuation(punc)) = this.stop_at(|token| {
                 matches!(
-                    token, Reading::Atomic(Token::Punctuation(punc))
+                    token, Reading::Unit(Token::Punctuation(punc))
                     if punc.punctuation == separator
                 )
             }) {
@@ -338,19 +225,19 @@ impl SourceElement for ScopeSeparator {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// LifetimeArgumentIdentifier:
+/// LifetimeIdentifier:
 ///     Identifier
 ///     | 'static'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
-pub enum LifetimeArgumentIdentifier {
+pub enum LifetimeIdentifier {
     Identifier(Identifier),
     Static(Keyword),
 }
 
-impl SourceElement for LifetimeArgumentIdentifier {
+impl SourceElement for LifetimeIdentifier {
     fn span(&self) -> Span {
         match self {
             Self::Identifier(ident) => ident.span.clone(),
@@ -361,20 +248,20 @@ impl SourceElement for LifetimeArgumentIdentifier {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// LifetimeArgument:
-///     '/'' LifetimeArgumentIdentifier
+/// Lifetime:
+///     '/'' LifetimeIdentifier
 ///     ;
 /// ``
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
-pub struct LifetimeArgument {
+pub struct Lifetime {
     #[get = "pub"]
     apostrophe: Punctuation,
     #[get = "pub"]
-    identifier: LifetimeArgumentIdentifier,
+    identifier: LifetimeIdentifier,
 }
 
-impl SourceElement for LifetimeArgument {
+impl SourceElement for Lifetime {
     fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span()).unwrap() }
 }
 
@@ -403,7 +290,7 @@ impl SourceElement for ConstantArgument {
 /// GenericArgument:
 ///     Type
 ///     | ConstantArgument
-///     | LifetimeArgument
+///     | Lifetime
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
@@ -411,7 +298,7 @@ impl SourceElement for ConstantArgument {
 pub enum GenericArgument {
     Type(Box<Type>),
     Constant(ConstantArgument),
-    Lifetime(LifetimeArgument),
+    Lifetime(Lifetime),
 }
 
 impl SourceElement for GenericArgument {
@@ -435,30 +322,26 @@ pub type GenericArgumentList = ConnectedList<GenericArgument, Punctuation>;
 /// Syntax Synopsis:
 /// ``` txt
 /// GenericArguments:
-///     ':'? '<' GenericArgumentList '>'
+///     '[' GenericArgumentList? ']'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct GenericArguments {
     #[get = "pub"]
-    colon: Option<Punctuation>,
+    left_bracket: Punctuation,
     #[get = "pub"]
-    left_angle: Punctuation,
+    argument_list: Option<GenericArgumentList>,
     #[get = "pub"]
-    argument_list: GenericArgumentList,
-    #[get = "pub"]
-    right_angle: Punctuation,
+    right_bracket: Punctuation,
 }
 
 impl SourceElement for GenericArguments {
     fn span(&self) -> Span {
-        let start = self
-            .colon
-            .as_ref()
-            .map_or_else(|| self.left_angle.span(), SourceElement::span);
-
-        start.join(&self.right_angle.span).unwrap()
+        self.left_bracket
+            .span
+            .join(&self.right_bracket.span())
+            .unwrap()
     }
 }
 
@@ -591,32 +474,19 @@ impl<'a> Parser<'a> {
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_generic_identifier(
         &mut self,
-        use_turbo_fish: bool,
         handler: &dyn Handler<Error>,
     ) -> Option<GenericIdentifier> {
         let identifier = self.parse_identifier(handler)?;
 
         self.stop_at_significant();
-        let parse_generic_arguments = if use_turbo_fish {
-            self.peek().into_atomic().map_or(
-                false,
-                |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
-            ) && self
-                .peek_offset(1)
-                .and_then(|x| x.into_atomic().ok())
-                .map_or(
-                    false,
-                    |token| matches!(token, Token::Punctuation(p) if p.punctuation == '<'),
-                )
-        } else {
-            self.peek().into_atomic().map_or(
-                false,
-                |token| matches!(token, Token::Punctuation(p) if p.punctuation == '<'),
-            )
+        let parse_generic_arguments = {
+            self.peek()
+                .into_into_delimited()
+                .map_or(false, |punc| punc.0 == Delimiter::Bracket)
         };
 
         let generic_arguments = if parse_generic_arguments {
-            Some(self.parse_generic_arguments(use_turbo_fish, handler)?)
+            Some(self.parse_generic_arguments(handler)?)
         } else {
             None
         };
@@ -631,20 +501,17 @@ impl<'a> Parser<'a> {
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_qualified_identifier(
         &mut self,
-        use_turbo_fish: bool,
         handler: &dyn Handler<Error>,
     ) -> Option<QualifiedIdentifier> {
         // stop at significant tokens
         self.stop_at_significant();
 
         // leading scope separator
-        let parse_leading_scope_separator = self.peek().into_atomic().map_or(
-            false,
-            |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
-        ) && self
-            .peek_offset(1)
-            .and_then(|x| x.into_atomic().ok())
-            .map_or(
+        let parse_leading_scope_separator =
+            self.peek().into_unit().map_or(
+                false,
+                |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
+            ) && self.peek_offset(1).and_then(|x| x.into_unit().ok()).map_or(
                 false,
                 |token| matches!(token, Token::Punctuation(p) if p.punctuation == ':'),
             );
@@ -655,12 +522,12 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let first = self.parse_generic_identifier(use_turbo_fish, handler)?;
+        let first = self.parse_generic_identifier(handler)?;
         let mut rest = Vec::new();
 
         // parses the identifier chain
         while let Some(token) = self.try_parse(|frame| frame.parse_scope_separator(&Dummy)) {
-            let another_identifier = self.parse_generic_identifier(use_turbo_fish, handler)?;
+            let another_identifier = self.parse_generic_identifier(handler)?;
 
             rest.push((token, another_identifier));
         }
@@ -680,21 +547,38 @@ impl<'a> Parser<'a> {
     ) -> Option<GenericArgument> {
         match self.stop_at_significant() {
             // parse lifetime argument
-            Reading::Atomic(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat apostrophe
-                self.next_token();
+                self.forward();
 
-                let lifetime_argument_identifier =
-                    self.parse_lifetime_argument_identifier(handler)?;
+                let lifetime_identifier = match self.next_token() {
+                    Reading::Unit(Token::Identifier(identifier)) => {
+                        LifetimeIdentifier::Identifier(identifier)
+                    }
+                    Reading::Unit(Token::Keyword(keyword))
+                        if keyword.kind == KeywordKind::Static =>
+                    {
+                        LifetimeIdentifier::Static(keyword)
+                    }
 
-                Some(GenericArgument::Lifetime(LifetimeArgument {
+                    found => {
+                        handler.receive(Error {
+                            expected: SyntaxKind::Identifier,
+                            alternatives: vec![SyntaxKind::Keyword(KeywordKind::Static)],
+                            found: found.into_token(),
+                        });
+                        return None;
+                    }
+                };
+
+                Some(GenericArgument::Lifetime(Lifetime {
                     apostrophe,
-                    identifier: lifetime_argument_identifier,
+                    identifier: lifetime_identifier,
                 }))
             }
 
             // parse const argument
-            Reading::IntoDelimited(left_brace) if left_brace.punctuation == '{' => {
+            Reading::IntoDelimited(Delimiter::Brace, _) => {
                 let delimited_tree = self.step_into(
                     Delimiter::Brace,
                     |parser| parser.parse_expression(handler).map(Box::new),
@@ -717,65 +601,20 @@ impl<'a> Parser<'a> {
     #[allow(clippy::missing_errors_doc)]
     pub fn parse_generic_arguments(
         &mut self,
-        use_turbo_fish: bool,
         handler: &dyn Handler<Error>,
     ) -> Option<GenericArguments> {
-        let colon = if use_turbo_fish {
-            Some(self.parse_punctuation(':', true, handler)?)
-        } else {
-            None
-        };
-
-        let left_angle = self.parse_punctuation('<', !use_turbo_fish, handler)?;
-
-        let (argument_list, right_angle) =
-            self.parse_generic_list(|this| this.parse_generic_argument(handler), handler)?;
-
-        // cannot be empty
-        let Some(argument_list) = argument_list else {
-            handler.receive(Error::GenericArgumentParameterListCannotBeEmpty(
-                GenericArgumentParameterListCannotBeEmpty {
-                    span: left_angle.span.join(&right_angle.span).unwrap(),
-                },
-            ));
-            return None;
-        };
+        let arguments = self.parse_enclosed_list(
+            Delimiter::Bracket,
+            ',',
+            |parser| parser.parse_generic_argument(handler),
+            handler,
+        )?;
 
         Some(GenericArguments {
-            colon,
-            left_angle,
-            argument_list,
-            right_angle,
+            left_bracket: arguments.open,
+            argument_list: arguments.list,
+            right_bracket: arguments.close,
         })
-    }
-
-    fn parse_lifetime_argument_identifier(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<LifetimeArgumentIdentifier> {
-        match self.next_significant_token() {
-            // static
-            Reading::Atomic(Token::Keyword(static_keyword))
-                if static_keyword.keyword == KeywordKind::Static =>
-            {
-                Some(LifetimeArgumentIdentifier::Static(static_keyword))
-            }
-
-            // identifier
-            Reading::Atomic(Token::Identifier(identifier)) => {
-                Some(LifetimeArgumentIdentifier::Identifier(identifier))
-            }
-
-            // error: lifetime argument identifier expected
-            found => {
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
-                    expected: SyntaxKind::Identifier,
-                    found: found.into_token(),
-                }));
-
-                None
-            }
-        }
     }
 }
 

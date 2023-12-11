@@ -1,16 +1,14 @@
 use std::fmt::Display;
 
-use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_base::{
-    log::{Message, Severity, SourceCodeDisplay},
-    source_file::Span,
-};
+use pernixc_base::log::{Message, Severity, SourceCodeDisplay};
 use pernixc_lexical::token::{KeywordKind, Token};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum SyntaxKind {
-    Pattern,
+    RefutablePattern,
+    IrrefutablePattern,
+    GenericParameter,
     HigherRankedBound,
     Identifier,
     TypeSpecifier,
@@ -23,40 +21,79 @@ pub enum SyntaxKind {
     TraitMember,
     ImplementationMember,
     Numeric,
+    Predicate,
+}
+
+impl SyntaxKind {
+    fn get_expected_string(self) -> String {
+        match self {
+            Self::IrrefutablePattern => "an irrefutable pattern syntax".to_string(),
+            Self::HigherRankedBound => "a higher ranked bound syntax".to_string(),
+            Self::GenericParameter => "a generic parameter syntax".to_string(),
+            Self::Identifier => "an identifier token".to_string(),
+            Self::Predicate => "a predicate syntax".to_string(),
+            Self::TypeSpecifier => "a type specifier syntax".to_string(),
+            Self::Expression => "an expression syntax".to_string(),
+            Self::StructMember => "a struct member syntax".to_string(),
+            Self::Item => "an item syntax".to_string(),
+            Self::AccessModifier => "an access modifier syntax".to_string(),
+            Self::Punctuation(char) => format!("a punctuation token `{char}`"),
+            Self::Keyword(keyword) => format!("a keyword token `{}`", keyword.as_str()),
+            Self::TraitMember => "a trait member syntax".to_string(),
+            Self::ImplementationMember => "an implements member syntax".to_string(),
+            Self::RefutablePattern => "a refutable pattern syntax".to_string(),
+            Self::Numeric => "a numeric token".to_string(),
+        }
+    }
 }
 
 /// A syntax/token is expected but found an other invalid token.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnexpectedSyntax {
+pub struct Error {
     /// The kind of syntax that was expected.
     pub expected: SyntaxKind,
+
+    /// The alternative syntax that can be used other than the expected one.
+    pub alternatives: Vec<SyntaxKind>,
 
     /// The invalid token that was found.
     pub found: Option<Token>,
 }
 
-impl Display for UnexpectedSyntax {
+impl Error {
+    fn get_expected_string(&self) -> String {
+        match self.alternatives.len() {
+            0 => self.expected.get_expected_string(),
+            1 => format!(
+                "{} or {}",
+                self.expected.get_expected_string(),
+                self.alternatives[0].get_expected_string()
+            ),
+            _ => {
+                format!(
+                    "{}, or {}",
+                    self.alternatives
+                        .iter()
+                        .copied()
+                        .map(SyntaxKind::get_expected_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    self.expected.get_expected_string()
+                )
+            }
+        }
+    }
+}
+
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let expected_binding = match self.expected {
-            SyntaxKind::HigherRankedBound => "a higher ranked bound syntax".to_string(),
-            SyntaxKind::Identifier => "an identifier token".to_string(),
-            SyntaxKind::TypeSpecifier => "a type specifier syntax".to_string(),
-            SyntaxKind::Expression => "an expression syntax".to_string(),
-            SyntaxKind::StructMember => "a struct member syntax".to_string(),
-            SyntaxKind::Item => "an item syntax".to_string(),
-            SyntaxKind::AccessModifier => "an access modifier syntax".to_string(),
-            SyntaxKind::Punctuation(char) => format!("a punctuation token `{char}`"),
-            SyntaxKind::Keyword(keyword) => format!("a keyword token `{}`", keyword.as_str()),
-            SyntaxKind::TraitMember => "a trait member syntax".to_string(),
-            SyntaxKind::ImplementationMember => "an implements member syntax".to_string(),
-            SyntaxKind::Pattern => "a pattern syntax".to_string(),
-            SyntaxKind::Numeric => "a numeric token".to_string(),
-        };
-        let found_binding = match self.found.clone() {
+        let expected_string = self.get_expected_string();
+
+        let found_string = match self.found.clone() {
             Some(Token::Comment(..)) => "a comment token".to_string(),
             Some(Token::Identifier(..)) => "an identifier token".to_string(),
             Some(Token::Keyword(keyword)) => {
-                format!("a keyword token `{}`", keyword.keyword.as_str())
+                format!("a keyword token `{}`", keyword.kind.as_str())
             }
             Some(Token::WhiteSpaces(..)) => "a white spaces token".to_string(),
             Some(Token::Punctuation(punctuation)) => {
@@ -67,7 +104,7 @@ impl Display for UnexpectedSyntax {
             None => "EOF".to_string(),
         };
 
-        let message = format!("expected {expected_binding}, but found {found_binding}");
+        let message = format!("expected {expected_string}, but found {found_string}");
 
         write!(f, "{}", Message::new(Severity::Error, message))?;
 
@@ -78,66 +115,5 @@ impl Display for UnexpectedSyntax {
                 SourceCodeDisplay::new(span.span(), Option::<i32>::None)
             )
         })
-    }
-}
-
-/// A higher ranked bound parameter cannot be empty.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct HigherRankedBoundParameterCannotBeEmpty {
-    /// The span of the higher ranked bound parameter.
-    pub span: Span,
-}
-
-impl Display for HigherRankedBoundParameterCannotBeEmpty {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}\n{}",
-            Message::new(
-                Severity::Error,
-                "a higher ranked bound parameter cannot be empty"
-            ),
-            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
-        )
-    }
-}
-
-/// A generic arugment/parameter list cannot be empty.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GenericArgumentParameterListCannotBeEmpty {
-    /// The span of the generic argument/parameter.
-    pub span: Span,
-}
-
-impl Display for GenericArgumentParameterListCannotBeEmpty {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}\n{}",
-            Message::new(
-                Severity::Error,
-                "a generic argument/parameter list cannot be empty"
-            ),
-            SourceCodeDisplay::new(&self.span, Option::<i32>::None)
-        )
-    }
-}
-
-/// Is an enumeration containing all kinds of syntactic errors that can occur while parsing the
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
-#[allow(missing_docs)]
-pub enum Error {
-    GenericArgumentParameterListCannotBeEmpty(GenericArgumentParameterListCannotBeEmpty),
-    HigherRankedBoundParameterCannotBeEmpty(HigherRankedBoundParameterCannotBeEmpty),
-    UnexpectedSyntax(UnexpectedSyntax),
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::GenericArgumentParameterListCannotBeEmpty(e) => e.fmt(f),
-            Self::HigherRankedBoundParameterCannotBeEmpty(e) => e.fmt(f),
-            Self::UnexpectedSyntax(e) => e.fmt(f),
-        }
     }
 }

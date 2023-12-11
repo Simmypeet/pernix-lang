@@ -9,13 +9,19 @@ use std::{
 };
 
 use parking_lot::{Condvar, Mutex, RwLock};
-use pernixc_base::diagnostic::Handler;
+use paste::paste;
+use pernixc_base::{diagnostic::Handler, source_file::Span};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use thiserror::Error;
 
-use super::{build::Build, Table};
+use super::{build::Build, resolution, Table};
 use crate::{
     arena::{Arena, Key, ID},
     error::{self, CyclicDependency},
+    semantic::{
+        model::Model,
+        term::{self, lifetime::Lifetime},
+    },
     symbol::{
         Constant, Enum, Function, GlobalID, Implementation, ImplementationConstant,
         ImplementationFunction, ImplementationType, NegativeImplementation, Struct, Trait,
@@ -23,21 +29,21 @@ use crate::{
     },
 };
 
-mod constant;
-mod r#enum;
-mod function;
-mod implementation;
-mod implementation_constant;
-mod implementation_function;
-mod implementation_type;
-mod negative_implementation;
-mod r#struct;
-mod r#trait;
-mod trait_constant;
-mod trait_function;
-mod trait_type;
-mod r#type;
-mod variant;
+pub(super) mod constant;
+pub(super) mod r#enum;
+pub(super) mod function;
+pub(super) mod implementation;
+pub(super) mod implementation_constant;
+pub(super) mod implementation_function;
+pub(super) mod implementation_type;
+pub(super) mod negative_implementation;
+pub(super) mod r#struct;
+pub(super) mod r#trait;
+pub(super) mod trait_constant;
+pub(super) mod trait_function;
+pub(super) mod trait_type;
+pub(super) mod r#type;
+pub(super) mod variant;
 
 /// The trait for flag, indicating the state of a symbol.
 pub(super) trait Flag:
@@ -101,7 +107,7 @@ macro_rules! build_flag {
             }
 
             fn final_state() -> Self {
-                unsafe { std::mem::transmute($crate::table::state::count!($($variant),*)) }
+                unsafe { std::mem::transmute($crate::table::state::count!($($variant),*) - 1) }
             }
 
             fn increment(&mut self) {
@@ -178,7 +184,8 @@ pub struct Builder {
     reported_cyclic_dependencies: HashSet<BTreeSet<GlobalID>>,
 }
 
-pub(super) struct Config<'a, 'd, T: Symbol>
+#[derive(Clone, Copy)]
+pub(super) struct Config<'a, T: Symbol>
 where
     ID<T>: Into<GlobalID>,
 {
@@ -187,7 +194,152 @@ where
     table: &'a Table,
     handler: &'a dyn Handler<error::Error>,
     syntax_tree: &'a T::SyntaxTree,
-    data: &'d mut T::Data,
+}
+
+impl<'a, T: Symbol> Config<'a, T>
+where
+    ID<T>: Into<GlobalID>,
+{
+    pub(super) fn table(&self) -> &'a Table { self.table }
+
+    pub(super) fn current_id(&self) -> ID<T> { self.current_id }
+
+    pub(super) fn syntax_tree(&self) -> &'a T::SyntaxTree { self.syntax_tree }
+
+    pub(super) fn handler(&self) -> &'a dyn Handler<error::Error> { self.handler }
+
+    pub(super) fn build_to<U: Build>(&self, id: ID<U>, to_flag: U::Flag) -> Result<(), BuildError>
+    where
+        ID<U>: Into<GlobalID>,
+    {
+        Builder::build_to::<U>(
+            self.builder,
+            self.table,
+            id,
+            Some(self.current_id.into()),
+            to_flag,
+            self.handler,
+        )
+    }
+}
+
+impl<'a, T: Symbol, S: Model> resolution::Config<S> for Config<'a, T>
+where
+    ID<T>: Into<GlobalID>,
+{
+    fn lifetime_arguments_placeholder(&mut self) -> Option<Lifetime<S>> { None }
+
+    fn type_arguments_placeholder(&mut self) -> Option<term::r#type::Type<S>> { None }
+
+    fn constant_arguments_placeholder(&mut self) -> Option<term::constant::Constant<S>> { None }
+
+    fn on_global_id_resolved(&mut self, global_id: GlobalID, _: &Span) {
+        let _ = match global_id {
+            GlobalID::TraitConstant(_)
+            | GlobalID::Variant(_)
+            | GlobalID::Constant(_)
+            | GlobalID::Module(_) => Ok(()),
+
+            GlobalID::Struct(id) => Builder::build_to::<Struct>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                r#struct::Flag::GenericParameter,
+                self.handler,
+            ),
+            GlobalID::Trait(id) => Builder::build_to::<Trait>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                r#trait::Flag::GenericParameter,
+                self.handler,
+            ),
+            GlobalID::Enum(id) => Builder::build_to::<Enum>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                r#enum::Flag::GenericParameter,
+                self.handler,
+            ),
+            GlobalID::Type(id) => Builder::build_to::<Type>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                r#type::Flag::Body, // build to the body
+                self.handler,
+            ),
+            GlobalID::Function(id) => Builder::build_to::<Function>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                function::Flag::GenericParameter,
+                self.handler,
+            ),
+            GlobalID::TraitType(id) => Builder::build_to::<TraitType>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                trait_type::Flag::GenericParameter,
+                self.handler,
+            ),
+            GlobalID::TraitFunction(id) => Builder::build_to::<TraitFunction>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                trait_function::Flag::GenericParameter,
+                self.handler,
+            ),
+            GlobalID::Implementation(_) | GlobalID::NegativeImplementation(_) => {
+                unreachable!("implementation can't be referred by qualified name")
+            }
+            GlobalID::ImplementationFunction(id) => Builder::build_to::<ImplementationFunction>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                implementation_function::Flag::GenericParameter,
+                self.handler,
+            ),
+            GlobalID::ImplementationType(id) => Builder::build_to::<ImplementationType>(
+                self.builder,
+                self.table,
+                id,
+                Some(self.current_id.into()),
+                implementation_type::Flag::Body,
+                self.handler,
+            ),
+            GlobalID::ImplementationConstant(_) => todo!("will be decided later"),
+        };
+    }
+
+    fn on_generic_arguments_resolved(
+        &mut self,
+        _: GlobalID,
+        _: Option<&term::GenericArguments<S>>,
+        _: &Span,
+    ) {
+    }
+
+    fn on_resolved(&mut self, _: &resolution::Resolution<S>, _: &Span) {}
+
+    fn on_constant_arguments_resolved(
+        &mut self,
+        _: &term::constant::Constant<S>,
+        _: &term::r#type::Type<S>,
+        _: &Span,
+    ) {
+    }
+
+    fn extra_lifetime_provider(&self, _: &str) -> Option<Lifetime<S>> { None }
+
+    fn on_type_resolved(&mut self, _: &term::r#type::Type<S>, _: &Span) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
@@ -234,9 +386,10 @@ impl Builder {
             dependencies: HashMap::new(),
         };
 
-        states
-            .insert(id, state)
-            .expect("should have no duplicate ID");
+        assert!(
+            states.insert(id, state).is_none(),
+            "should have no existing id"
+        );
 
         id
     }
@@ -251,27 +404,28 @@ impl Builder {
     where
         ID<T>: Into<GlobalID>,
     {
+        let (synchronization, syntax_tree, data) = {
+            let builder_read = builder.read();
+            let states = T::get_states(&builder_read);
+            let state = states.get(&id).ok_or(EntryNotFoundError)?;
+            let result = (
+                state.synchronization.clone(),
+                state.syntax_tree.clone(),
+                state.data.clone(),
+            );
+
+            drop(builder_read);
+
+            result
+        };
+
         loop {
-            let (synchronization, syntax_tree, data) = {
-                let builder_read = builder.read();
-                let states = T::get_states(&builder_read);
-                let state = states.get(&id).ok_or(EntryNotFoundError)?;
-                let result = (
-                    state.synchronization.clone(),
-                    state.syntax_tree.clone(),
-                    state.data.clone(),
-                );
-
-                drop(builder_read);
-
-                result
-            };
-
             // if the symbol is already finalized beyond the given flag, then we can just return.
             if *synchronization.finalize_flag.lock() >= to_flag {
                 synchronization
                     .building
                     .store(false, atomic::Ordering::SeqCst);
+                synchronization.notify.notify_all();
                 return Ok(());
             }
 
@@ -286,8 +440,8 @@ impl Builder {
                     table,
                     handler,
                     syntax_tree: &syntax_tree,
-                    data: &mut data.lock(),
                 },
+                &mut data.lock(),
                 next_flag,
             );
 
@@ -299,15 +453,16 @@ impl Builder {
             let states = T::get_states_mut(&mut builder_write);
 
             let dependencies = states
-                .get(&id)
+                .get_mut(&id)
                 .ok_or(EntryNotFoundError)?
                 .dependencies
-                .get(&synchronization.finalize_flag.lock())
-                .cloned();
+                .remove(&synchronization.finalize_flag.lock());
 
             for dependency in dependencies.into_iter().flatten() {
-                assert!(builder_write.dependencies.remove(&dependency).is_some());
+                // no assertion, because the dependency may be removed by cyclic dependency
+                builder_write.dependencies.remove(&dependency);
             }
+
             drop(builder_write);
 
             synchronization.notify.notify_all();
@@ -382,10 +537,9 @@ impl Builder {
     where
         ID<T>: Into<GlobalID>,
     {
-        let mut builder_read = builder.upgradable_read();
-
         // if the state is already finalized beyond the given flag, then we can just return.
-        if *T::get_states(&builder_read)
+        let mut builder_write = builder.write();
+        if *T::get_states(&builder_write)
             .get(&id)
             .ok_or(EntryNotFoundError)?
             .synchronization
@@ -410,22 +564,23 @@ impl Builder {
             let mut dependency_stack = vec![id.into()];
             let mut current_node = id.into();
 
-            while let Some(dependant) = builder_read.dependencies.get(&current_node).copied() {
+            while let Some(dependant) = builder_write.dependencies.get(&current_node).copied() {
                 dependency_stack.push(dependant);
 
                 // cyclic dependency found
                 if dependant == required_site {
                     let dependency_stack_set = dependency_stack.iter().copied().collect();
 
-                    let reported = !builder_read
+                    let reported = !builder_write
                         .reported_cyclic_dependencies
                         .contains(&dependency_stack_set);
+
                     if reported {
-                        builder_read.with_upgraded(|x| {
-                            x.reported_cyclic_dependencies.insert(dependency_stack_set)
-                        });
+                        builder_write
+                            .reported_cyclic_dependencies
+                            .insert(dependency_stack_set);
                         handler.receive(error::Error::CyclicDependency(CyclicDependency {
-                            participants: dependency_stack,
+                            participants: dependency_stack.clone(),
                         }));
                     }
 
@@ -436,24 +591,107 @@ impl Builder {
             }
 
             // no cyclic dependency, add it to the dependency graph
-            builder_read.with_upgraded(|x| {
-                x.dependencies.insert(required_site, id.into());
-                let states = T::get_states_mut(x);
 
-                states
-                    .get_mut(&id)
-                    .unwrap()
+            assert!(
+                builder_write
                     .dependencies
-                    .entry(to_flag)
-                    .or_default()
-                    .insert(required_site);
-            });
+                    .insert(required_site, id.into())
+                    .is_none(),
+                "should have no duplication"
+            );
+
+            let states = T::get_states_mut(&mut builder_write);
+
+            states
+                .get_mut(&id)
+                .unwrap()
+                .dependencies
+                .entry(to_flag)
+                .or_default()
+                .insert(required_site);
         }
 
-        drop(builder_read);
+        drop(builder_write);
 
         let result = Self::attempt_build_to(builder, table, id, to_flag, handler);
 
         Ok(result?)
+    }
+}
+
+impl Table {
+    pub(super) fn build_all(&self, builder: &RwLock<Builder>, handler: &dyn Handler<error::Error>) {
+        macro_rules! make_ids {
+            ($field_name:ident) => {
+                paste! {
+                     builder
+                        .read()
+                        .[<states_by_ $field_name:snake _id>]
+                        .keys()
+                        .copied()
+                        .collect::<Vec<_>>()
+                }
+            };
+        }
+
+        let enum_ids = make_ids!(Enum);
+        let variant_ids = make_ids!(Variant);
+        let struct_ids = make_ids!(Struct);
+        let constant_ids = make_ids!(Constant);
+        let type_ids = make_ids!(Type);
+        let function_ids = make_ids!(Function);
+        let trait_ids = make_ids!(Trait);
+        let trait_constant_ids = make_ids!(TraitConstant);
+        let trait_type_ids = make_ids!(TraitType);
+        let trait_function_ids = make_ids!(TraitFunction);
+        let negative_implementation_ids = make_ids!(NegativeImplementation);
+        let implementation_ids = make_ids!(Implementation);
+        let implementation_function_ids = make_ids!(ImplementationFunction);
+        let implementation_constant_ids = make_ids!(ImplementationConstant);
+        let implementation_type_ids = make_ids!(ImplementationType);
+
+        macro_rules! build_id {
+            ($field_name:ident) => {
+                paste! {
+                    [<$field_name:snake _ids>].into_par_iter()
+                        .map(|x| {
+                            let _ = Builder::build_to(
+                                builder,
+                                self,
+                                x,
+                                None,
+                                <<$field_name as Symbol>::Flag as Flag>::final_state(),
+                                handler
+                            );
+                        })
+                }
+            };
+        }
+
+        macro_rules! build_all {
+            ($first_name:ident, $($names:ident),*) => {
+                build_id!($first_name)
+                    $( .chain(build_id!($names)) )*
+                    .for_each(|()| {})
+            };
+        }
+
+        build_all!(
+            Enum,
+            Variant,
+            Struct,
+            Constant,
+            Type,
+            Function,
+            Trait,
+            TraitConstant,
+            TraitType,
+            TraitFunction,
+            NegativeImplementation,
+            Implementation,
+            ImplementationFunction,
+            ImplementationConstant,
+            ImplementationType
+        );
     }
 }

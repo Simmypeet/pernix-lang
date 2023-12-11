@@ -16,7 +16,7 @@ use super::{
     ConnectedList,
 };
 use crate::{
-    error::{self, SyntaxKind, UnexpectedSyntax},
+    error::{self, Error, SyntaxKind},
     parser::{Parser, Reading},
 };
 
@@ -264,8 +264,8 @@ impl<'a> Parser<'a> {
             ',',
             |parser| {
                 let mutable_keyword = match parser.stop_at_significant() {
-                    Reading::Atomic(Token::Keyword(keyword))
-                        if keyword.keyword == KeywordKind::Mutable =>
+                    Reading::Unit(Token::Keyword(keyword))
+                        if keyword.kind == KeywordKind::Mutable =>
                     {
                         parser.forward();
                         Some(keyword)
@@ -276,7 +276,7 @@ impl<'a> Parser<'a> {
                 let identifier = parser.parse_identifier(handler)?;
 
                 match (mutable_keyword.is_none(), parser.stop_at_significant()) {
-                    (true, Reading::Atomic(Token::Punctuation(colon)))
+                    (true, Reading::Unit(Token::Punctuation(colon)))
                         if colon.punctuation == ':' =>
                     {
                         // eat colon
@@ -318,17 +318,17 @@ impl<'a> Parser<'a> {
 
                 match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
                     (
-                        Reading::Atomic(Token::Punctuation(
+                        Reading::Unit(Token::Punctuation(
                             p1 @ Punctuation {
                                 punctuation: '.', ..
                             },
                         )),
-                        Some(Reading::Atomic(Token::Punctuation(
+                        Some(Reading::Unit(Token::Punctuation(
                             p2 @ Punctuation {
                                 punctuation: '.', ..
                             },
                         ))),
-                        Some(Reading::Atomic(Token::Punctuation(
+                        Some(Reading::Unit(Token::Punctuation(
                             p3 @ Punctuation {
                                 punctuation: '.', ..
                             },
@@ -342,12 +342,10 @@ impl<'a> Parser<'a> {
 
                         let mutable_keyword = parser
                             .stop_at_significant()
-                            .into_atomic()
+                            .into_unit()
                             .ok()
                             .and_then(|token| match token {
-                                Token::Keyword(keyword)
-                                    if keyword.keyword == KeywordKind::Mutable =>
-                                {
+                                Token::Keyword(keyword) if keyword.kind == KeywordKind::Mutable => {
                                     parser.forward();
                                     Some(keyword)
                                 }
@@ -385,7 +383,7 @@ impl<'a> Parser<'a> {
 
         match self.stop_at_significant() {
             // parse enum pattern
-            Reading::IntoDelimited(left_paren) if left_paren.punctuation == '(' => {
+            Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
                 let delimited_tree = self.step_into(
                     Delimiter::Parenthesis,
                     |parser| T::parse(parser, handler).map(Box::new),
@@ -418,8 +416,8 @@ impl Pattern for Irrefutable {
     fn parse(parser: &mut Parser, handler: &dyn Handler<error::Error>) -> Option<Self> {
         match parser.stop_at_significant() {
             // parse named pattern
-            Reading::Atomic(Token::Keyword(mutable_keyword))
-                if mutable_keyword.keyword == KeywordKind::Mutable =>
+            Reading::Unit(Token::Keyword(mutable_keyword))
+                if mutable_keyword.kind == KeywordKind::Mutable =>
             {
                 // eat the mutable keyword
                 parser.forward();
@@ -433,7 +431,7 @@ impl Pattern for Irrefutable {
             }
 
             // parse named pattern
-            Reading::Atomic(Token::Identifier(identifier)) => {
+            Reading::Unit(Token::Identifier(identifier)) => {
                 // eat identifier
                 parser.forward();
 
@@ -444,20 +442,25 @@ impl Pattern for Irrefutable {
             }
 
             // parse tuple pattern
-            Reading::IntoDelimited(left_paren) if left_paren.punctuation == '(' => {
+            Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
                 parser.parse_tuple_pattern(handler).map(Self::Tuple)
             }
 
             // parse structural pattern
-            Reading::IntoDelimited(left_brace) if left_brace.punctuation == '{' => parser
+            Reading::IntoDelimited(Delimiter::Brace, _) => parser
                 .parse_structural_pattern(handler)
                 .map(Self::Structural),
 
             found => {
-                handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
-                    expected: SyntaxKind::Pattern,
+                handler.receive(Error {
+                    expected: SyntaxKind::IrrefutablePattern,
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
+
+                // make progress
+                parser.forward();
+
                 None
             }
         }
@@ -468,8 +471,8 @@ impl Pattern for Refutable {
     fn parse(parser: &mut Parser, handler: &dyn Handler<error::Error>) -> Option<Self> {
         match parser.stop_at_significant() {
             // parse named pattern
-            Reading::Atomic(Token::Keyword(mutable_keyword))
-                if mutable_keyword.keyword == KeywordKind::Mutable =>
+            Reading::Unit(Token::Keyword(mutable_keyword))
+                if mutable_keyword.kind == KeywordKind::Mutable =>
             {
                 // eat the mutable keyword
                 parser.forward();
@@ -483,32 +486,29 @@ impl Pattern for Refutable {
             }
 
             // parse named pattern
-            Reading::Atomic(Token::Identifier(..)) => parser.parse_identifier_pattern(handler),
+            Reading::Unit(Token::Identifier(..)) => parser.parse_identifier_pattern(handler),
 
             // parse tuple pattern
-            Reading::IntoDelimited(left_paren) if left_paren.punctuation == '(' => {
+            Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
                 parser.parse_tuple_pattern(handler).map(Self::Tuple)
             }
 
             // parse structural pattern
-            Reading::IntoDelimited(left_brace) if left_brace.punctuation == '{' => parser
+            Reading::IntoDelimited(Delimiter::Brace, _) => parser
                 .parse_structural_pattern(handler)
                 .map(Self::Structural),
 
             // parse numeric literal pattern
-            Reading::Atomic(Token::Numeric(_)) => {
+            Reading::Unit(Token::Numeric(_)) => {
                 Some(Self::NumericLiteral(parser.parse_numeric_literal()?))
             }
 
             // parse boolean literal pattern
-            Reading::Atomic(Token::Keyword(boolean_keyword))
-                if matches!(
-                    boolean_keyword.keyword,
-                    KeywordKind::True | KeywordKind::False
-                ) =>
+            Reading::Unit(Token::Keyword(boolean_keyword))
+                if matches!(boolean_keyword.kind, KeywordKind::True | KeywordKind::False) =>
             {
                 parser.forward();
-                let constructor = match boolean_keyword.keyword {
+                let constructor = match boolean_keyword.kind {
                     KeywordKind::True => BooleanLiteral::True,
                     KeywordKind::False => BooleanLiteral::False,
                     _ => unreachable!(),
@@ -517,10 +517,12 @@ impl Pattern for Refutable {
             }
 
             found => {
-                handler.receive(error::Error::UnexpectedSyntax(UnexpectedSyntax {
-                    expected: SyntaxKind::Pattern,
+                handler.receive(Error {
+                    expected: SyntaxKind::RefutablePattern,
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
+                parser.forward();
                 None
             }
         }

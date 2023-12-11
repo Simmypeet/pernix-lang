@@ -1,0 +1,207 @@
+using std::memory;
+
+/// A dynamically sized array of elements.
+public struct List[T, A = Allocator]
+where 
+    trait Allocator[A] + Default[A],
+{
+    private begin:     *mutable T,
+    private end:       *mutable T,
+    private capacity:  *mutable T,
+    private allocator: Allocator,
+}
+
+implements[T, A] Copy[List[T, A]] 
+where
+    trait Copy[A] + Allocator[A] + Default[A] + Copy[T]
+{
+    public function copy(this: &List[T, A]): List[T, A] {
+        unsafe {
+            let copyAllocator = this->allocator';
+            let length = this->length();
+
+            let allocation = copyAllocator.allocate(
+                Layout {
+                    size:  core::sizeOf[T]() * length,
+                    align: core::alignOf[T](),
+                }
+            );
+
+            let begin    = allocation.pointer as *mutable T;
+            let end      = begin + length;
+            let capacity = (allocator.pointer + allocator.size) as *mutable T;
+
+            for (let i = 0; i < length; i += 1) {
+                let value = (this->begin + i) as &T;
+                let cloned = value';
+
+                std::memory::write(begin + i, cloned); }
+
+            return List[T, A] {
+                begin:     begin,
+                end:       end,
+                capacity:  capacity,
+                allocator: copyAllocator,
+            }
+        }
+    }
+}
+
+implements[T, A] List[T, A]
+where
+    trait Allocator[A] + Default[A],
+{
+    /// Creates a new empty list.
+    public function new(): List[T, A] {
+        return List[T, A] {
+            begin:     null,
+            end:       null,
+            capacity:  null,
+            allocator: Default[A]::default(),
+        }
+    }
+
+    /// Gets the number of elements in the list.
+    public function length(this: &List[T, A]): usize {
+        let result = 'a: {
+            express 'a this->end - this->begin;
+        };
+        return result;
+    }
+
+    /// Gets the number of elements the list can hold without reallocating.
+    public function capacity(this: &List[T, A]): usize {
+        return this->capacity - this->begin;
+    }
+
+    /// Pushes a new element to the back of the list.
+    ///
+    /// This function can invalidate any references given out prior to the call. 
+    /// Therefore, the function takes `&restrict` reference to the list instead of `&mutable`.
+    /// Use `pushBackIfAvailable` if you need to push to a list that already has a available
+    /// capacity for the new element, which takes `&mutable` reference.
+    public function pushBack(this: &restrict List[T, A], value: T) {
+        if (this->end == this->capacity) {
+            this->grow();
+        }
+
+        this->placeBack(value);
+    }
+
+    private function placeBack(
+        this: &mutable List[T, A], value: T) {
+        core::clib::memcpy(
+            this->end,
+            &value as *const T,
+            core::sizeOf[T](),
+        );
+
+        this->end += 1;
+
+        // supress the drop of the value
+        core::mem::forget(value);
+    }
+
+    /// Pushes a new element to the back of the list if there is available capacity.
+    ///
+    /// # Returns
+    ///
+    /// - `Result::Ok` if the element was pushed successfully.
+    /// - `Result::Error` if the list is full. The value is returned back to the caller.
+    public function pushBackIfAvailable(
+        this: &mutable List[T, A], 
+        value: T
+    ): Result[(), T] {
+        if (this->end == this->capacity) {
+            return Result::Error(value);
+        }
+
+        this->placeBack(value);
+    }
+}
+
+implements[T, A] core::Drop[List[T, A]] 
+where
+    trait Allocator[A] + Default[A],
+{
+    public function drop(this: &restrict List[T, A]) {
+        for (let i = this->begin; i < this->end; i += 1) {
+            unsafe {
+                Drop::drop(i as &restrict T);
+            }
+        }
+
+        // deallocate the memory
+        this->allocator.deallocate(this->begin)
+    }
+}
+
+public function main() {
+    let mutable list = List::new();
+    list.pushBack(32);
+    list.pushBack(32);
+    list.pushBack(32);
+}
+
+
+public module TypeTraits {
+
+    public trait IsReference[T] {
+        const VALUE: bool;
+    }
+
+    implements[T] IsReference[&T] {
+        const VALUE = true;
+    }
+    
+    implements[T] IsReference[&mutable T] {
+        const VALUE = true;
+    }
+
+    implements[T] IsReference[&restrict T] {
+        const VALUE = true;
+    }
+
+    implements[T] IsReference[T] {
+        const VALUE = false;
+    }
+
+    public trait IsSame[T, U] {
+        const VALUE: bool;
+    }
+
+    implements[T] IsSame[T, T] {
+        const VALUE = true;
+    }
+
+    implements[T, U] IsSame[T, U] {
+        const VALUE = false;
+    }
+
+    implements[T] TupleLength[T] {
+        function length(): usize;
+    }
+
+    implements const TupleLength[()] {
+        function length(): usize {
+            return 0;
+        }
+    }
+
+    implements[T, Rest] const TupleLength[(T, ...Rest)] 
+    where
+        const trait TupleLength[Rest]
+    {
+        function length(): usize {
+            return 1 + TupleLength[Rest]::length();
+        }
+    }
+}
+
+public function main() {
+    let mutable list = List::new();
+    list.pushBack(32);
+    list.pushBack(62);
+    list.pushBack(54);
+
+}

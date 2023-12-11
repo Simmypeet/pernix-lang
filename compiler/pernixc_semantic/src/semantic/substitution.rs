@@ -31,7 +31,6 @@ impl<S: Model> Entity for Substitution<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         Substitution {
             types: self
@@ -58,7 +57,6 @@ impl<S: Model> Entity for Substitution<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         Some(Substitution {
             types: self
@@ -177,7 +175,7 @@ impl<S: Model> Substitute for Type<S> {
         }
 
         match self {
-            Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
+            Self::Error | Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
 
             Self::Algebraic(adt) => {
                 apply_generic_arguments(&mut adt.generic_arguments, substitution);
@@ -224,7 +222,7 @@ impl<S: Model> Substitute for Constant<S> {
         }
 
         match self {
-            Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
+            Self::Error | Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
 
             Self::Struct(value) => {
                 apply_generic_arguments(&mut value.generic_arguments, substitution);

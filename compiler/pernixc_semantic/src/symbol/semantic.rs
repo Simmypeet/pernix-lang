@@ -8,7 +8,6 @@ pub struct Symbolic;
 
 impl Model for Symbolic {
     type ConstantInference = Never;
-    type ForallLifetime = Never;
     type LifetimeInference = Never;
     type ScopedLifetime = Never;
     type TypeInference = Never;

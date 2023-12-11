@@ -1,4 +1,4 @@
-use std::fmt::{Display, Write};
+use std::fmt::{Debug, Display, Write};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_tests::input::Input;
@@ -11,14 +11,12 @@ use proptest::{
 
 use crate::syntax_tree::{
     self,
-    expression::{
-        self,
-        tests::{Expression, Functional},
-    },
-    pattern, r#type,
+    expression::{self, tests::Expression},
+    pattern::tests::Irrefutable,
+    r#type,
     statement::tests::Statement,
     tests::{
-        AccessModifier, ConnectedList, ConstantPunctuation, Identifier, LifetimeArgument,
+        AccessModifier, ConnectedList, ConstantPunctuation, Identifier, Lifetime,
         QualifiedIdentifier,
     },
 };
@@ -30,10 +28,8 @@ pub struct Module {
     pub kind: ModuleKind,
 }
 
-impl Input for Module {
-    type Output = super::Module;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Module> for &Module {
+    fn assert(self, output: &super::Module) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.signature.assert(output.signature())?;
         self.kind.assert(output.kind())
@@ -75,10 +71,8 @@ pub struct ModulePath {
     pub rest: Vec<Identifier>,
 }
 
-impl Input for ModulePath {
-    type Output = super::ModulePath;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ModulePath> for &ModulePath {
+    fn assert(self, output: &super::ModulePath) -> TestCaseResult {
         self.first.assert(output.first())?;
         prop_assert_eq!(self.rest.len(), output.rest().len());
 
@@ -121,10 +115,8 @@ pub struct Using {
     module_path: ModulePath,
 }
 
-impl Input for Using {
-    type Output = super::Using;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Using> for &Using {
+    fn assert(self, output: &super::Using) -> TestCaseResult {
         self.module_path.assert(output.module_path())
     }
 }
@@ -151,10 +143,8 @@ pub struct ModuleSignature {
     identifier: Identifier,
 }
 
-impl Input for ModuleSignature {
-    type Output = super::ModuleSignature;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ModuleSignature> for &ModuleSignature {
+    fn assert(self, output: &super::ModuleSignature) -> TestCaseResult {
         self.identifier.assert(output.identifier())
     }
 }
@@ -182,10 +172,8 @@ pub struct ModuleContent {
     pub items: Vec<Item>,
 }
 
-impl Input for ModuleContent {
-    type Output = super::ModuleContent;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ModuleContent> for &ModuleContent {
+    fn assert(self, output: &super::ModuleContent) -> TestCaseResult {
         prop_assert_eq!(self.usings.len(), output.usings().len());
         prop_assert_eq!(self.items.len(), output.items().len());
 
@@ -236,13 +224,11 @@ pub enum ModuleKind {
     Inline(ModuleContent),
 }
 
-impl Input for ModuleKind {
-    type Output = super::ModuleKind;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ModuleKind> for &ModuleKind {
+    fn assert(self, output: &super::ModuleKind) -> TestCaseResult {
         match (self, output) {
-            (Self::File, super::ModuleKind::File(_)) => Ok(()),
-            (Self::Inline(input), super::ModuleKind::Inline(output)) => {
+            (ModuleKind::File, super::ModuleKind::File(_)) => Ok(()),
+            (ModuleKind::Inline(input), super::ModuleKind::Inline(output)) => {
                 input.assert(output.content())
             }
             _ => Err(TestCaseError::fail(format!(
@@ -281,10 +267,8 @@ pub struct LifetimeParameter {
     pub identifier: Identifier,
 }
 
-impl Input for LifetimeParameter {
-    type Output = super::LifetimeParameter;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::LifetimeParameter> for &LifetimeParameter {
+    fn assert(self, output: &super::LifetimeParameter) -> TestCaseResult {
         self.identifier.assert(output.identifier())
     }
 }
@@ -307,29 +291,23 @@ impl Display for LifetimeParameter {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstParameter {
+pub struct ConstantParameter {
     pub identifier: Identifier,
     pub ty: r#type::tests::Type,
-    pub default: Option<Functional>,
+    pub default: Option<Expression>,
 }
 
-impl Input for ConstParameter {
-    type Output = super::ConstantParameter;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ConstantParameter> for &ConstantParameter {
+    fn assert(self, output: &super::ConstantParameter) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
-        self.ty.assert(output.ty())?;
-        match (self.default.as_ref(), output.default().as_ref()) {
-            (None, None) => Ok(()),
-            (Some(expected), Some(output)) => expected.assert(output.value()),
-            (expected, output) => Err(TestCaseError::fail(format!(
-                "expected {expected:?}, got {output:?}",
-            ))),
-        }
+        self.ty.assert(output.r#type())?;
+        self.default
+            .as_ref()
+            .assert(output.default().as_ref().map(|x| &x.value))
     }
 }
 
-impl Arbitrary for ConstParameter {
+impl Arbitrary for ConstantParameter {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -337,14 +315,7 @@ impl Arbitrary for ConstParameter {
         (
             Identifier::arbitrary(),
             r#type::tests::Type::arbitrary(),
-            proptest::option::of(Expression::arbitrary().prop_filter_map(
-                "allows only non-binary functional variant",
-                |x| match x {
-                    Expression::Functional(Functional::Binary(_)) => None,
-                    Expression::Functional(functional) => Some(functional),
-                    _ => None,
-                },
-            )),
+            proptest::option::of(Expression::arbitrary()),
         )
             .prop_map(|(identifier, ty, default)| Self {
                 identifier,
@@ -355,9 +326,9 @@ impl Arbitrary for ConstParameter {
     }
 }
 
-impl Display for ConstParameter {
+impl Display for ConstantParameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.identifier, self.ty)?;
+        write!(f, "const {}: {}", self.identifier, self.ty)?;
 
         if let Some(default) = self.default.as_ref() {
             write!(f, " = {default}")?;
@@ -373,18 +344,12 @@ pub struct TypeParameter {
     pub default: Option<r#type::tests::Type>,
 }
 
-impl Input for TypeParameter {
-    type Output = super::TypeParameter;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TypeParameter> for &TypeParameter {
+    fn assert(self, output: &super::TypeParameter) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
-        match (self.default.as_ref(), output.default().as_ref()) {
-            (None, None) => Ok(()),
-            (Some(expected), Some(output)) => expected.assert(output.value()),
-            (expected, output) => Err(TestCaseError::fail(format!(
-                "expected {expected:?}, got {output:?}",
-            ))),
-        }
+        self.default
+            .as_ref()
+            .assert(output.default.as_ref().map(|x| &x.value))
     }
 }
 
@@ -421,17 +386,15 @@ impl Display for TypeParameter {
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
-    Const(ConstParameter),
+    Const(ConstantParameter),
 }
 
-impl Input for GenericParameter {
-    type Output = super::GenericParameter;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::GenericParameter> for &GenericParameter {
+    fn assert(self, output: &super::GenericParameter) -> TestCaseResult {
         match (self, output) {
-            (Self::Lifetime(i), super::GenericParameter::Lifetime(o)) => i.assert(o),
-            (Self::Type(i), super::GenericParameter::Type(o)) => i.assert(o),
-            (Self::Const(i), super::GenericParameter::Constant(o)) => i.assert(o),
+            (GenericParameter::Lifetime(i), super::GenericParameter::Lifetime(o)) => i.assert(o),
+            (GenericParameter::Type(i), super::GenericParameter::Type(o)) => i.assert(o),
+            (GenericParameter::Const(i), super::GenericParameter::Constant(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}"
             ))),
@@ -447,7 +410,7 @@ impl Arbitrary for GenericParameter {
         proptest::prop_oneof![
             LifetimeParameter::arbitrary().prop_map(Self::Lifetime),
             TypeParameter::arbitrary().prop_map(Self::Type),
-            ConstParameter::arbitrary().prop_map(Self::Const),
+            ConstantParameter::arbitrary().prop_map(Self::Const),
         ]
         .boxed()
     }
@@ -465,14 +428,14 @@ impl Display for GenericParameter {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericParameters {
-    pub parameter_list: ConnectedList<GenericParameter, ConstantPunctuation<','>>,
+    pub parameter_list: Option<ConnectedList<GenericParameter, ConstantPunctuation<','>>>,
 }
 
-impl Input for GenericParameters {
-    type Output = super::GenericParameters;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.parameter_list.assert(output.parameter_list())
+impl Input<&super::GenericParameters> for &GenericParameters {
+    fn assert(self, output: &super::GenericParameters) -> TestCaseResult {
+        self.parameter_list
+            .as_ref()
+            .assert(output.parameter_list().as_ref())
     }
 }
 
@@ -481,10 +444,10 @@ impl Arbitrary for GenericParameters {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        ConnectedList::arbitrary_with(
+        proptest::option::of(ConnectedList::arbitrary_with(
             GenericParameter::arbitrary(),
             ConstantPunctuation::arbitrary(),
-        )
+        ))
         .prop_map(|parameter_list| Self { parameter_list })
         .boxed()
     }
@@ -492,21 +455,26 @@ impl Arbitrary for GenericParameters {
 
 impl Display for GenericParameters {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<{}>", self.parameter_list)
+        f.write_char('[')?;
+
+        if let Some(parameter_list) = &self.parameter_list {
+            Display::fmt(parameter_list, f)?;
+        }
+
+        f.write_char(']')
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HigherRankedLifetimeParameters {
-    pub lifetime_parameter_list: ConnectedList<LifetimeParameter, ConstantPunctuation<','>>,
+    pub lifetime_parameter_list: Option<ConnectedList<LifetimeParameter, ConstantPunctuation<','>>>,
 }
 
-impl Input for HigherRankedLifetimeParameters {
-    type Output = super::HigherRankedLifetimeParameters;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::HigherRankedLifetimeParameters> for &HigherRankedLifetimeParameters {
+    fn assert(self, output: &super::HigherRankedLifetimeParameters) -> TestCaseResult {
         self.lifetime_parameter_list
-            .assert(output.lifetime_parameter_list())
+            .as_ref()
+            .assert(output.lifetime_parameter_list().as_ref())
     }
 }
 
@@ -515,10 +483,10 @@ impl Arbitrary for HigherRankedLifetimeParameters {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        ConnectedList::arbitrary_with(
+        proptest::option::of(ConnectedList::arbitrary_with(
             LifetimeParameter::arbitrary(),
             ConstantPunctuation::arbitrary(),
-        )
+        ))
         .prop_map(|lifetime_parameter_list| Self {
             lifetime_parameter_list,
         })
@@ -528,51 +496,56 @@ impl Arbitrary for HigherRankedLifetimeParameters {
 
 impl Display for HigherRankedLifetimeParameters {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "for<{}>", self.lifetime_parameter_list)
+        f.write_str("for[")?;
+
+        if let Some(lifetime_parameter_list) = &self.lifetime_parameter_list {
+            Display::fmt(lifetime_parameter_list, f)?;
+        }
+
+        f.write_char(']')
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitBound {
+pub struct TraitPredicate {
     pub higher_ranked_lifetime_parameters: Option<HigherRankedLifetimeParameters>,
     pub is_const: bool,
-    pub qualified_identifier: QualifiedIdentifier,
+    pub qualified_identifiers: BoundList<QualifiedIdentifier>,
 }
 
-impl Input for TraitBound {
-    type Output = super::TraitBound;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TraitPredicate> for &TraitPredicate {
+    fn assert(self, output: &super::TraitPredicate) -> TestCaseResult {
         self.higher_ranked_lifetime_parameters
-            .assert(output.higher_ranked_lifetime_parameters())?;
+            .as_ref()
+            .assert(output.higher_ranked_lifetime_parameters().as_ref())?;
         prop_assert_eq!(self.is_const, output.const_keyword.is_some());
-        self.qualified_identifier
-            .assert(output.qualified_identifier())
+        self.qualified_identifiers
+            .assert(output.qualified_identifiers())
     }
 }
 
-impl Arbitrary for TraitBound {
+impl Arbitrary for TraitPredicate {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(HigherRankedLifetimeParameters::arbitrary()),
-            QualifiedIdentifier::arbitrary_with((false, None)),
+            BoundList::arbitrary_with(QualifiedIdentifier::arbitrary()),
             proptest::bool::ANY,
         )
             .prop_map(
-                |(higher_ranked_lifetime_parameters, qualified_identifier, is_const)| Self {
+                |(higher_ranked_lifetime_parameters, qualified_identifiers, is_const)| Self {
                     higher_ranked_lifetime_parameters,
                     is_const,
-                    qualified_identifier,
+                    qualified_identifiers,
                 },
             )
             .boxed()
     }
 }
 
-impl Display for TraitBound {
+impl Display for TraitPredicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(higher_ranked_lifetime_parameters) = &self.higher_ranked_lifetime_parameters {
             write!(f, "{higher_ranked_lifetime_parameters} ")?;
@@ -582,7 +555,9 @@ impl Display for TraitBound {
             write!(f, "const ")?;
         }
 
-        Display::fmt(&self.qualified_identifier, f)
+        write!(f, "trait ")?;
+
+        Display::fmt(&self.qualified_identifiers, f)
     }
 }
 
@@ -592,16 +567,17 @@ pub struct BoundList<T> {
     pub rest: Vec<T>,
 }
 
-impl<T: Input> Input for BoundList<T> {
-    type Output = super::BoundList<T::Output>;
+impl<I: Debug, O: Debug> Input<&super::BoundList<O>> for &BoundList<I>
+where
+    for<'i, 'o> &'i I: Input<&'o O>,
+{
+    fn assert(self, output: &super::BoundList<O>) -> TestCaseResult {
+        self.first.assert(&output.first)?;
 
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.first.assert(output.first())?;
+        prop_assert_eq!(self.rest.len(), output.rest.len());
 
-        prop_assert_eq!(self.rest.len(), output.rest().len());
-
-        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
-            input.assert(output)?;
+        for (input, output) in self.rest.iter().zip(output.rest.iter()) {
+            input.assert(&output.1)?;
         }
 
         Ok(())
@@ -629,20 +605,19 @@ impl<T: std::fmt::Debug> BoundList<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum LifetimeBoundOperand {
+pub enum LifetimePredicateOperand {
     LifetimeParameter(LifetimeParameter),
-    QualifiedIdentifier(syntax_tree::tests::QualifiedIdentifier),
+    Type(r#type::tests::Type),
 }
 
-impl Input for LifetimeBoundOperand {
-    type Output = super::LifetimeBoundOperand;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::LifetimePredicateOperand> for &LifetimePredicateOperand {
+    fn assert(self, output: &super::LifetimePredicateOperand) -> TestCaseResult {
         match (self, output) {
-            (Self::LifetimeParameter(i), super::LifetimeBoundOperand::LifetimeParameter(o)) => {
-                i.assert(o)
-            }
-            (Self::QualifiedIdentifier(i), super::LifetimeBoundOperand::QualifiedIdentifier(o)) => {
+            (
+                LifetimePredicateOperand::LifetimeParameter(i),
+                super::LifetimePredicateOperand::LifetimeParameter(o),
+            ) => i.assert(o),
+            (LifetimePredicateOperand::Type(i), super::LifetimePredicateOperand::Type(o)) => {
                 i.assert(o)
             }
             _ => Err(TestCaseError::fail(format!(
@@ -652,84 +627,76 @@ impl Input for LifetimeBoundOperand {
     }
 }
 
-impl Arbitrary for LifetimeBoundOperand {
+impl Arbitrary for LifetimePredicateOperand {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             LifetimeParameter::arbitrary().prop_map(Self::LifetimeParameter),
-            syntax_tree::tests::QualifiedIdentifier::arbitrary_with((false, None))
-                .prop_map(Self::QualifiedIdentifier),
+            r#type::tests::Type::arbitrary().prop_map(Self::Type),
         ]
         .boxed()
     }
 }
 
-impl Display for LifetimeBoundOperand {
+impl Display for LifetimePredicateOperand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::LifetimeParameter(lifetime_parameter) => Display::fmt(lifetime_parameter, f),
-            Self::QualifiedIdentifier(ty) => Display::fmt(ty, f),
+            Self::Type(ty) => Display::fmt(ty, f),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LifetimeBound {
-    pub operand: LifetimeBoundOperand,
-    pub parameters: BoundList<LifetimeArgument>,
+pub struct LifetimePredicate {
+    pub operands: BoundList<LifetimePredicateOperand>,
+    pub bounds: BoundList<Lifetime>,
 }
 
-impl Input for LifetimeBound {
-    type Output = super::LifetimeBound;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.parameters.assert(output.arguments())?;
+impl Input<&super::LifetimePredicate> for &LifetimePredicate {
+    fn assert(self, output: &super::LifetimePredicate) -> TestCaseResult {
+        self.operands.assert(output.operands())?;
+        self.bounds.assert(output.bounds())?;
 
         Ok(())
     }
 }
 
-impl Arbitrary for LifetimeBound {
+impl Arbitrary for LifetimePredicate {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            LifetimeBoundOperand::arbitrary(),
-            BoundList::arbitrary_with(LifetimeArgument::arbitrary()),
+            BoundList::arbitrary_with(LifetimePredicateOperand::arbitrary()),
+            BoundList::arbitrary_with(Lifetime::arbitrary()),
         )
-            .prop_map(|(operand, parameters)| Self {
-                operand,
-                parameters,
-            })
+            .prop_map(|(operands, bounds)| Self { operands, bounds })
             .boxed()
     }
 }
 
-impl Display for LifetimeBound {
+impl Display for LifetimePredicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.operand, self.parameters)
+        write!(f, "{}: {}", self.operands, self.bounds)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TraitAssociationBoundArgument {
-    Const(Expression),
+pub enum TraitMemberBound {
+    Constant(Expression),
     Type(r#type::tests::Type),
 }
 
-impl Input for TraitAssociationBoundArgument {
-    type Output = super::TraitMemberBoundArgument;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TraitMemberBound> for &TraitMemberBound {
+    fn assert(self, output: &super::TraitMemberBound) -> TestCaseResult {
         match (self, output) {
-            (Self::Const(i), super::TraitMemberBoundArgument::Constant(o)) => {
+            (TraitMemberBound::Constant(i), super::TraitMemberBound::Constant(o)) => {
                 i.assert(o.expression())
             }
-            (Self::Type(i), super::TraitMemberBoundArgument::Type(o)) => i.assert(o),
+            (TraitMemberBound::Type(i), super::TraitMemberBound::Type(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -737,23 +704,23 @@ impl Input for TraitAssociationBoundArgument {
     }
 }
 
-impl Arbitrary for TraitAssociationBoundArgument {
+impl Arbitrary for TraitMemberBound {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Expression::arbitrary().prop_map(Self::Const),
+            Expression::arbitrary().prop_map(Self::Constant),
             r#type::tests::Type::arbitrary().prop_map(Self::Type),
         ]
         .boxed()
     }
 }
 
-impl Display for TraitAssociationBoundArgument {
+impl Display for TraitMemberBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Const(expression) => {
+            Self::Constant(expression) => {
                 write!(f, "{{{expression}}}")
             }
             Self::Type(ty) => Display::fmt(ty, f),
@@ -762,59 +729,55 @@ impl Display for TraitAssociationBoundArgument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitAssociationBound {
+pub struct TraitMemberPredicate {
     pub qualified_identifier: QualifiedIdentifier,
-    pub argument: TraitAssociationBoundArgument,
+    pub bound: TraitMemberBound,
 }
 
-impl Input for TraitAssociationBound {
-    type Output = super::TraitMemberBound;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TraitMemberPredicate> for &TraitMemberPredicate {
+    fn assert(self, output: &super::TraitMemberPredicate) -> TestCaseResult {
         self.qualified_identifier
             .assert(output.qualified_identifier())?;
-        self.argument.assert(output.argument())
+        self.bound.assert(output.bound())
     }
 }
 
-impl Arbitrary for TraitAssociationBound {
+impl Arbitrary for TraitMemberPredicate {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            QualifiedIdentifier::arbitrary_with((false, None)),
-            TraitAssociationBoundArgument::arbitrary(),
+            QualifiedIdentifier::arbitrary(),
+            TraitMemberBound::arbitrary(),
         )
             .prop_map(|(qualified_identifier, argument)| Self {
                 qualified_identifier,
-                argument,
+                bound: argument,
             })
             .boxed()
     }
 }
 
-impl Display for TraitAssociationBound {
+impl Display for TraitMemberPredicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} = {}", self.qualified_identifier, self.argument)
+        write!(f, "{} = {}", self.qualified_identifier, self.bound)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Constraint {
-    Trait(TraitBound),
-    Lifetime(LifetimeBound),
-    TraitAssociation(TraitAssociationBound),
+pub enum Predicate {
+    Trait(TraitPredicate),
+    Lifetime(LifetimePredicate),
+    TraitAssociation(TraitMemberPredicate),
 }
 
-impl Input for Constraint {
-    type Output = super::Predicate;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Predicate> for &Predicate {
+    fn assert(self, output: &super::Predicate) -> TestCaseResult {
         match (self, output) {
-            (Self::Trait(i), super::Predicate::Trait(o)) => i.assert(o),
-            (Self::Lifetime(i), super::Predicate::Lifetime(o)) => i.assert(o),
-            (Self::TraitAssociation(i), super::Predicate::TraitMember(o)) => i.assert(o),
+            (Predicate::Trait(i), super::Predicate::Trait(o)) => i.assert(o),
+            (Predicate::Lifetime(i), super::Predicate::Lifetime(o)) => i.assert(o),
+            (Predicate::TraitAssociation(i), super::Predicate::TraitMember(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -822,21 +785,21 @@ impl Input for Constraint {
     }
 }
 
-impl Arbitrary for Constraint {
+impl Arbitrary for Predicate {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            TraitBound::arbitrary().prop_map(Self::Trait),
-            LifetimeBound::arbitrary().prop_map(Self::Lifetime),
-            TraitAssociationBound::arbitrary().prop_map(Self::TraitAssociation),
+            TraitPredicate::arbitrary().prop_map(Self::Trait),
+            LifetimePredicate::arbitrary().prop_map(Self::Lifetime),
+            TraitMemberPredicate::arbitrary().prop_map(Self::TraitAssociation),
         ]
         .boxed()
     }
 }
 
-impl Display for Constraint {
+impl Display for Predicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Trait(i) => Display::fmt(i, f),
@@ -848,14 +811,12 @@ impl Display for Constraint {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WhereClause {
-    pub constraint_list: ConnectedList<Constraint, ConstantPunctuation<','>>,
+    pub predicate_list: ConnectedList<Predicate, ConstantPunctuation<','>>,
 }
 
-impl Input for WhereClause {
-    type Output = super::WhereClause;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.constraint_list.assert(output.constraint_list())
+impl Input<&super::WhereClause> for &WhereClause {
+    fn assert(self, output: &super::WhereClause) -> TestCaseResult {
+        self.predicate_list.assert(output.predicate_list())
     }
 }
 
@@ -864,28 +825,28 @@ impl Arbitrary for WhereClause {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        ConnectedList::arbitrary_with(Constraint::arbitrary(), ConstantPunctuation::arbitrary())
-            .prop_map(|constraint_list| Self { constraint_list })
+        ConnectedList::arbitrary_with(Predicate::arbitrary(), ConstantPunctuation::arbitrary())
+            .prop_map(|constraint_list| Self {
+                predicate_list: constraint_list,
+            })
             .boxed()
     }
 }
 
 impl Display for WhereClause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "where: {}", self.constraint_list)
+        write!(f, "where {}", self.predicate_list)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameter {
-    pub irrefutable_pattern: pattern::tests::Irrefutable,
+    pub irrefutable_pattern: Irrefutable,
     pub ty: r#type::tests::Type,
 }
 
-impl Input for Parameter {
-    type Output = super::Parameter;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Parameter> for &Parameter {
+    fn assert(self, output: &super::Parameter) -> TestCaseResult {
         self.irrefutable_pattern
             .assert(output.irrefutable_pattern())?;
         self.ty.assert(output.ty())
@@ -897,10 +858,7 @@ impl Arbitrary for Parameter {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            pattern::tests::Irrefutable::arbitrary(),
-            r#type::tests::Type::arbitrary(),
-        )
+        (Irrefutable::arbitrary(), r#type::tests::Type::arbitrary())
             .prop_map(|(irrefutable_pattern, ty)| Self {
                 irrefutable_pattern,
                 ty,
@@ -920,11 +878,11 @@ pub struct Parameters {
     pub parameter_list: Option<ConnectedList<Parameter, ConstantPunctuation<','>>>,
 }
 
-impl Input for Parameters {
-    type Output = super::Parameters;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.parameter_list.assert(output.parameter_list())
+impl Input<&super::Parameters> for &Parameters {
+    fn assert(self, output: &super::Parameters) -> TestCaseResult {
+        self.parameter_list
+            .as_ref()
+            .assert(output.parameter_list().as_ref())
     }
 }
 
@@ -957,10 +915,8 @@ pub struct ReturnType {
     pub ty: r#type::tests::Type,
 }
 
-impl Input for ReturnType {
-    type Output = super::ReturnType;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.ty.assert(output.ty()) }
+impl Input<&super::ReturnType> for &ReturnType {
+    fn assert(self, output: &super::ReturnType) -> TestCaseResult { self.ty.assert(output.ty()) }
 }
 
 impl Arbitrary for ReturnType {
@@ -980,7 +936,6 @@ impl Display for ReturnType {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionSignature {
-    is_const: bool,
     identifier: Identifier,
     generic_parameters: Option<GenericParameters>,
     parameters: Parameters,
@@ -988,17 +943,19 @@ pub struct FunctionSignature {
     where_clause: Option<WhereClause>,
 }
 
-impl Input for FunctionSignature {
-    type Output = super::FunctionSignature;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.is_const, output.const_keyword.is_some());
+impl Input<&super::FunctionSignature> for &FunctionSignature {
+    fn assert(self, output: &super::FunctionSignature) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
         self.generic_parameters
-            .assert(output.generic_parameters())?;
+            .as_ref()
+            .assert(output.generic_parameters().as_ref())?;
         self.parameters.assert(output.parameters())?;
-        self.return_type.assert(output.return_type())?;
-        self.where_clause.assert(output.where_clause())
+        self.return_type
+            .as_ref()
+            .assert(output.return_type().as_ref())?;
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref())
     }
 }
 
@@ -1008,7 +965,6 @@ impl Arbitrary for FunctionSignature {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            proptest::bool::ANY,
             Identifier::arbitrary(),
             proptest::option::of(GenericParameters::arbitrary()),
             Parameters::arbitrary(),
@@ -1016,15 +972,7 @@ impl Arbitrary for FunctionSignature {
             proptest::option::of(WhereClause::arbitrary()),
         )
             .prop_map(
-                |(
-                    is_const,
-                    identifier,
-                    generic_parameters,
-                    parameters,
-                    return_type,
-                    where_clause,
-                )| Self {
-                    is_const,
+                |(identifier, generic_parameters, parameters, return_type, where_clause)| Self {
                     identifier,
                     generic_parameters,
                     parameters,
@@ -1039,10 +987,6 @@ impl Arbitrary for FunctionSignature {
 impl Display for FunctionSignature {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("function ")?;
-
-        if self.is_const {
-            formatter.write_str("const ")?;
-        }
 
         Display::fmt(&self.identifier, formatter)?;
 
@@ -1069,10 +1013,8 @@ pub struct FunctionBody {
     pub statements: Vec<Statement>,
 }
 
-impl Input for FunctionBody {
-    type Output = super::FunctionBody;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::FunctionBody> for &FunctionBody {
+    fn assert(self, output: &super::FunctionBody) -> TestCaseResult {
         prop_assert_eq!(self.statements.len(), output.statements().len());
 
         for (left, right) in self.statements.iter().zip(output.statements().iter()) {
@@ -1111,15 +1053,15 @@ impl Display for FunctionBody {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function {
     pub access_modifier: AccessModifier,
+    pub is_const: bool,
     pub signature: FunctionSignature,
     pub body: FunctionBody,
 }
 
-impl Input for Function {
-    type Output = super::Function;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Function> for &Function {
+    fn assert(self, output: &super::Function) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
+        prop_assert_eq!(self.is_const, output.const_keyword().is_some());
         self.signature.assert(output.signature())?;
         self.body.assert(output.body())
     }
@@ -1132,11 +1074,13 @@ impl Arbitrary for Function {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
+            proptest::bool::ANY,
             FunctionSignature::arbitrary(),
             FunctionBody::arbitrary(),
         )
-            .prop_map(|(access_modifier, signature, body)| Self {
+            .prop_map(|(access_modifier, is_const, signature, body)| Self {
                 access_modifier,
+                is_const,
                 signature,
                 body,
             })
@@ -1146,30 +1090,30 @@ impl Arbitrary for Function {
 
 impl Display for Function {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "{} {} {}",
-            self.access_modifier, self.signature, self.body
-        )
+        write!(formatter, "{} ", self.access_modifier)?;
+
+        if self.is_const {
+            write!(formatter, "const ")?;
+        }
+
+        write!(formatter, "{} {}", self.signature, self.body)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstSignature {
+pub struct ConstantSignature {
     pub identifier: Identifier,
     pub ty: r#type::tests::Type,
 }
 
-impl Input for ConstSignature {
-    type Output = super::ConstantSignature;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ConstantSignature> for &ConstantSignature {
+    fn assert(self, output: &super::ConstantSignature) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
         self.ty.assert(output.ty())
     }
 }
 
-impl Arbitrary for ConstSignature {
+impl Arbitrary for ConstantSignature {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -1180,26 +1124,24 @@ impl Arbitrary for ConstSignature {
     }
 }
 
-impl Display for ConstSignature {
+impl Display for ConstantSignature {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "const {}: {}", self.identifier, self.ty)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstDefinition {
+pub struct ConstantDefinition {
     expression: Expression,
 }
 
-impl Input for ConstDefinition {
-    type Output = super::ConstantDefinition;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ConstantDefinition> for &ConstantDefinition {
+    fn assert(self, output: &super::ConstantDefinition) -> TestCaseResult {
         self.expression.assert(output.expression())
     }
 }
 
-impl Arbitrary for ConstDefinition {
+impl Arbitrary for ConstantDefinition {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -1210,38 +1152,36 @@ impl Arbitrary for ConstDefinition {
     }
 }
 
-impl Display for ConstDefinition {
+impl Display for ConstantDefinition {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, " = {};", self.expression)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Const {
+pub struct Constant {
     access_modifier: AccessModifier,
-    signature: ConstSignature,
-    definition: ConstDefinition,
+    signature: ConstantSignature,
+    definition: ConstantDefinition,
 }
 
-impl Input for Const {
-    type Output = super::Constant;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Constant> for &Constant {
+    fn assert(self, output: &super::Constant) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.signature.assert(output.signature())?;
         self.definition.assert(output.definition())
     }
 }
 
-impl Arbitrary for Const {
+impl Arbitrary for Constant {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             AccessModifier::arbitrary(),
-            ConstSignature::arbitrary(),
-            ConstDefinition::arbitrary(),
+            ConstantSignature::arbitrary(),
+            ConstantDefinition::arbitrary(),
         )
             .prop_map(|(access_modifier, signature, definition)| Self {
                 access_modifier,
@@ -1252,7 +1192,7 @@ impl Arbitrary for Const {
     }
 }
 
-impl Display for Const {
+impl Display for Constant {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
@@ -1271,22 +1211,20 @@ pub enum Item {
     Module(Module),
     Enum(Enum),
     Implementation(Implementation),
-    Const(Const),
+    Constant(Constant),
 }
 
-impl Input for Item {
-    type Output = super::Item;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Item> for &Item {
+    fn assert(self, output: &super::Item) -> TestCaseResult {
         match (self, output) {
-            (Self::Function(i), super::Item::Function(o)) => i.assert(o),
-            (Self::Trait(i), super::Item::Trait(o)) => i.assert(o),
-            (Self::Type(i), super::Item::Type(o)) => i.assert(o),
-            (Self::Struct(i), super::Item::Struct(o)) => i.assert(o),
-            (Self::Enum(i), super::Item::Enum(o)) => i.assert(o),
-            (Self::Implementation(i), super::Item::Implementation(o)) => i.assert(o),
-            (Self::Module(i), super::Item::Module(o)) => i.assert(o),
-            (Self::Const(i), super::Item::Constant(o)) => i.assert(o),
+            (Item::Function(i), super::Item::Function(o)) => i.assert(o),
+            (Item::Trait(i), super::Item::Trait(o)) => i.assert(o),
+            (Item::Type(i), super::Item::Type(o)) => i.assert(o),
+            (Item::Struct(i), super::Item::Struct(o)) => i.assert(o),
+            (Item::Enum(i), super::Item::Enum(o)) => i.assert(o),
+            (Item::Implementation(i), super::Item::Implementation(o)) => i.assert(o),
+            (Item::Module(i), super::Item::Module(o)) => i.assert(o),
+            (Item::Constant(i), super::Item::Constant(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -1306,7 +1244,7 @@ impl Arbitrary for Item {
             Struct::arbitrary().prop_map(Self::Struct),
             Enum::arbitrary().prop_map(Self::Enum),
             Implementation::arbitrary().prop_map(Self::Implementation),
-            Const::arbitrary().prop_map(Self::Const),
+            Constant::arbitrary().prop_map(Self::Constant),
         ];
 
         if avoid_module {
@@ -1330,7 +1268,7 @@ impl Display for Item {
             Self::Enum(e) => Display::fmt(e, formatter),
             Self::Implementation(i) => Display::fmt(i, formatter),
             Self::Module(m) => Display::fmt(m, formatter),
-            Self::Const(c) => Display::fmt(c, formatter),
+            Self::Constant(c) => Display::fmt(c, formatter),
         }
     }
 }
@@ -1342,14 +1280,15 @@ pub struct TraitSignature {
     pub where_clause: Option<WhereClause>,
 }
 
-impl Input for TraitSignature {
-    type Output = super::TraitSignature;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TraitSignature> for &TraitSignature {
+    fn assert(self, output: &super::TraitSignature) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
         self.generic_parameters
-            .assert(output.generic_parameters())?;
-        self.where_clause.assert(output.where_clause())
+            .as_ref()
+            .assert(output.generic_parameters().as_ref())?;
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref())
     }
 }
 
@@ -1394,12 +1333,12 @@ pub struct TypeSignature {
     pub generic_parameters: Option<GenericParameters>,
 }
 
-impl Input for TypeSignature {
-    type Output = super::TypeSignature;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TypeSignature> for &TypeSignature {
+    fn assert(self, output: &super::TypeSignature) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
-        self.generic_parameters.assert(output.generic_parameters())
+        self.generic_parameters
+            .as_ref()
+            .assert(output.generic_parameters().as_ref())
     }
 }
 
@@ -1437,10 +1376,8 @@ pub struct TraitFunction {
     pub function_signature: FunctionSignature,
 }
 
-impl Input for TraitFunction {
-    type Output = super::TraitFunction;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TraitFunction> for &TraitFunction {
+    fn assert(self, output: &super::TraitFunction) -> TestCaseResult {
         self.function_signature.assert(output.signature())
     }
 }
@@ -1468,12 +1405,12 @@ pub struct TraitType {
     pub where_clause: Option<WhereClause>,
 }
 
-impl Input for TraitType {
-    type Output = super::TraitType;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TraitType> for &TraitType {
+    fn assert(self, output: &super::TraitType) -> TestCaseResult {
         self.type_signature.assert(output.signature())?;
-        self.where_clause.assert(output.where_clause())
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref())
     }
 }
 
@@ -1514,10 +1451,8 @@ pub struct TraitConstant {
     pub ty: r#type::tests::Type,
 }
 
-impl Input for TraitConstant {
-    type Output = super::TraitConstant;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TraitConstant> for &TraitConstant {
+    fn assert(self, output: &super::TraitConstant) -> TestCaseResult {
         self.identifier.assert(output.signature().identifier())?;
         self.ty.assert(output.signature().ty())
     }
@@ -1547,14 +1482,12 @@ pub enum TraitMember {
     Constant(TraitConstant),
 }
 
-impl Input for TraitMember {
-    type Output = super::TraitMember;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TraitMember> for &TraitMember {
+    fn assert(self, output: &super::TraitMember) -> TestCaseResult {
         match (self, output) {
-            (Self::Function(f), super::TraitMember::Function(g)) => f.assert(g),
-            (Self::Type(f), super::TraitMember::Type(g)) => f.assert(g),
-            (Self::Constant(f), super::TraitMember::Constant(g)) => f.assert(g),
+            (TraitMember::Function(f), super::TraitMember::Function(g)) => f.assert(g),
+            (TraitMember::Type(f), super::TraitMember::Type(g)) => f.assert(g),
+            (TraitMember::Constant(f), super::TraitMember::Constant(g)) => f.assert(g),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}",
             ))),
@@ -1591,17 +1524,9 @@ pub struct TraitBody {
     pub members: Vec<TraitMember>,
 }
 
-impl Input for TraitBody {
-    type Output = super::TraitBody;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.members.len(), output.members().len());
-
-        for (left, right) in self.members.iter().zip(output.members().iter()) {
-            left.assert(right)?;
-        }
-
-        Ok(())
+impl Input<&super::TraitBody> for &TraitBody {
+    fn assert(self, output: &super::TraitBody) -> TestCaseResult {
+        self.members.assert(output.members())
     }
 }
 
@@ -1635,10 +1560,8 @@ pub struct Trait {
     pub body: TraitBody,
 }
 
-impl Input for Trait {
-    type Output = super::Trait;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Trait> for &Trait {
+    fn assert(self, output: &super::Trait) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.signature.assert(output.signature())?;
         self.body.assert(output.body())
@@ -1680,12 +1603,12 @@ pub struct TypeDefinition {
     pub where_clause: Option<WhereClause>,
 }
 
-impl Input for TypeDefinition {
-    type Output = super::TypeDefinition;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TypeDefinition> for &TypeDefinition {
+    fn assert(self, output: &super::TypeDefinition) -> TestCaseResult {
         self.ty.assert(output.ty())?;
-        self.where_clause.assert(output.where_clause())
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref())
     }
 }
 
@@ -1722,10 +1645,8 @@ pub struct Type {
     pub definition: TypeDefinition,
 }
 
-impl Input for Type {
-    type Output = super::Type;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Type> for &Type {
+    fn assert(self, output: &super::Type) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.signature.assert(output.signature())?;
         self.definition.assert(output.definition())
@@ -1768,10 +1689,8 @@ pub struct StructField {
     pub ty: r#type::tests::Type,
 }
 
-impl Input for StructField {
-    type Output = super::StructField;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::StructField> for &StructField {
+    fn assert(self, output: &super::StructField) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.identifier.assert(output.identifier())?;
         self.ty.assert(output.ty())
@@ -1812,12 +1731,10 @@ pub enum StructMember {
     Field(StructField),
 }
 
-impl Input for StructMember {
-    type Output = super::StructMember;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::StructMember> for &StructMember {
+    fn assert(self, output: &super::StructMember) -> TestCaseResult {
         match (self, output) {
-            (Self::Field(i), super::StructMember::Field(o)) => i.assert(o),
+            (StructMember::Field(i), super::StructMember::Field(o)) => i.assert(o),
         }
     }
 }
@@ -1844,14 +1761,11 @@ pub struct StructBody {
     struct_member_list: Option<ConnectedList<StructMember, ConstantPunctuation<','>>>,
 }
 
-impl Input for StructBody {
-    type Output = super::StructBody;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::StructBody> for &StructBody {
+    fn assert(self, output: &super::StructBody) -> TestCaseResult {
         self.struct_member_list
-            .assert(output.struct_member_list())?;
-
-        Ok(())
+            .as_ref()
+            .assert(output.struct_member_list().as_ref())
     }
 }
 
@@ -1890,14 +1804,15 @@ pub struct StructSignature {
     pub where_clause: Option<WhereClause>,
 }
 
-impl Input for StructSignature {
-    type Output = super::StructSignature;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::StructSignature> for &StructSignature {
+    fn assert(self, output: &super::StructSignature) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
         self.generic_parameters
-            .assert(output.generic_parameters())?;
-        self.where_clause.assert(output.where_clause())
+            .as_ref()
+            .assert(output.generic_parameters().as_ref())?;
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref())
     }
 }
 
@@ -1943,10 +1858,8 @@ pub struct Struct {
     pub body: StructBody,
 }
 
-impl Input for Struct {
-    type Output = super::Struct;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Struct> for &Struct {
+    fn assert(self, output: &super::Struct) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.signature.assert(output.signature())?;
         self.body.assert(output.body())
@@ -1989,14 +1902,15 @@ pub struct EnumSignature {
     pub where_clause: Option<WhereClause>,
 }
 
-impl Input for EnumSignature {
-    type Output = super::EnumSignature;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::EnumSignature> for &EnumSignature {
+    fn assert(self, output: &super::EnumSignature) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
         self.generic_parameters
-            .assert(output.generic_parameters())?;
-        self.where_clause.assert(output.where_clause())
+            .as_ref()
+            .assert(output.generic_parameters().as_ref())?;
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref())
     }
 }
 
@@ -2036,15 +1950,13 @@ impl Display for EnumSignature {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct EnumVariant {
+pub struct Variant {
     pub identifier: Identifier,
     pub association: Option<r#type::tests::Type>,
 }
 
-impl Input for EnumVariant {
-    type Output = super::Variant;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Variant> for &Variant {
+    fn assert(self, output: &super::Variant) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
         match (self.association.as_ref(), output.association().as_ref()) {
             (None, None) => Ok(()),
@@ -2056,7 +1968,7 @@ impl Input for EnumVariant {
     }
 }
 
-impl Arbitrary for EnumVariant {
+impl Arbitrary for Variant {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -2073,7 +1985,7 @@ impl Arbitrary for EnumVariant {
     }
 }
 
-impl Display for EnumVariant {
+impl Display for Variant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.identifier)?;
 
@@ -2087,14 +1999,14 @@ impl Display for EnumVariant {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnumBody {
-    pub variant_list: Option<ConnectedList<EnumVariant, ConstantPunctuation<','>>>,
+    pub variant_list: Option<ConnectedList<Variant, ConstantPunctuation<','>>>,
 }
 
-impl Input for EnumBody {
-    type Output = super::EnumBody;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.variant_list.assert(output.variant_list())
+impl Input<&super::EnumBody> for &EnumBody {
+    fn assert(self, output: &super::EnumBody) -> TestCaseResult {
+        self.variant_list
+            .as_ref()
+            .assert(output.variant_list().as_ref())
     }
 }
 
@@ -2104,7 +2016,7 @@ impl Arbitrary for EnumBody {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::option::of(ConnectedList::arbitrary_with(
-            EnumVariant::arbitrary(),
+            Variant::arbitrary(),
             ConstantPunctuation::arbitrary(),
         ))
         .prop_map(|variant_list| Self { variant_list })
@@ -2116,7 +2028,7 @@ impl Display for EnumBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('{')?;
         if let Some(variant_list) = &self.variant_list {
-            variant_list.fmt(f)?;
+            Display::fmt(&variant_list, f)?;
         }
         f.write_char('}')
     }
@@ -2129,10 +2041,8 @@ pub struct Enum {
     pub body: EnumBody,
 }
 
-impl Input for Enum {
-    type Output = super::Enum;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Enum> for &Enum {
+    fn assert(self, output: &super::Enum) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.signature.assert(output.signature())?;
         self.body.assert(output.body())
@@ -2174,10 +2084,8 @@ pub struct ImplementationType {
     pub definition: TypeDefinition,
 }
 
-impl Input for ImplementationType {
-    type Output = super::ImplementationType;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ImplementationType> for &ImplementationType {
+    fn assert(self, output: &super::ImplementationType) -> TestCaseResult {
         self.signature.assert(output.signature())?;
         self.definition.assert(output.definition())
     }
@@ -2209,10 +2117,8 @@ pub struct ImplementationFunction {
     pub body: FunctionBody,
 }
 
-impl Input for ImplementationFunction {
-    type Output = super::ImplementationFunction;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ImplementationFunction> for &ImplementationFunction {
+    fn assert(self, output: &super::ImplementationFunction) -> TestCaseResult {
         self.signature.assert(output.signature())?;
         self.body.assert(output.body())
     }
@@ -2248,15 +2154,17 @@ pub enum ImplementationMember {
     Function(ImplementationFunction),
 }
 
-impl Input for ImplementationMember {
-    type Output = super::ImplementationMember;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ImplementationMember> for &ImplementationMember {
+    fn assert(self, output: &super::ImplementationMember) -> TestCaseResult {
         match (self, output) {
-            (Self::Type(input), super::ImplementationMember::Type(output)) => input.assert(output),
-            (Self::Function(input), super::ImplementationMember::Function(output)) => {
+            (ImplementationMember::Type(input), super::ImplementationMember::Type(output)) => {
                 input.assert(output)
             }
+            (
+                ImplementationMember::Function(input),
+                super::ImplementationMember::Function(output),
+            ) => input.assert(output),
+
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -2291,17 +2199,9 @@ pub struct ImplementationBody {
     pub members: Vec<ImplementationMember>,
 }
 
-impl Input for ImplementationBody {
-    type Output = super::ImplementationBody;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.members.len(), output.members().len());
-
-        for (input, output) in self.members.iter().zip(output.members().iter()) {
-            input.assert(output)?;
-        }
-
-        Ok(())
+impl Input<&super::ImplementationBody> for &ImplementationBody {
+    fn assert(self, output: &super::ImplementationBody) -> TestCaseResult {
+        self.members.assert(output.members())
     }
 }
 
@@ -2334,16 +2234,17 @@ pub struct ImplementationSignature {
     pub where_clause: Option<WhereClause>,
 }
 
-impl Input for ImplementationSignature {
-    type Output = super::ImplementationSignature;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ImplementationSignature> for &ImplementationSignature {
+    fn assert(self, output: &super::ImplementationSignature) -> TestCaseResult {
         self.generic_parameters
-            .assert(output.generic_parameters())?;
+            .as_ref()
+            .assert(output.generic_parameters().as_ref())?;
         self.qualified_identifier
             .assert(output.qualified_identifier())?;
         prop_assert_eq!(self.is_const, output.const_keyword.is_some());
-        self.where_clause.assert(output.where_clause())
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref())
     }
 }
 
@@ -2354,7 +2255,7 @@ impl Arbitrary for ImplementationSignature {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             proptest::option::of(GenericParameters::arbitrary()),
-            QualifiedIdentifier::arbitrary_with((false, None)),
+            QualifiedIdentifier::arbitrary(),
             proptest::bool::ANY,
             proptest::option::of(WhereClause::arbitrary()),
         )
@@ -2398,13 +2299,11 @@ pub enum ImplementationKind {
     Positive(ImplementationBody),
 }
 
-impl Input for ImplementationKind {
-    type Output = super::ImplementationKind;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::ImplementationKind> for &ImplementationKind {
+    fn assert(self, output: &super::ImplementationKind) -> TestCaseResult {
         match (self, output) {
-            (Self::Negative, super::ImplementationKind::Negative(..)) => Ok(()),
-            (Self::Positive(input), super::ImplementationKind::Positive(output)) => {
+            (ImplementationKind::Negative, super::ImplementationKind::Negative(..)) => Ok(()),
+            (ImplementationKind::Positive(input), super::ImplementationKind::Positive(output)) => {
                 input.assert(output)
             }
             _ => Err(TestCaseError::fail(format!(
@@ -2442,10 +2341,8 @@ pub struct Implementation {
     pub kind: ImplementationKind,
 }
 
-impl Input for Implementation {
-    type Output = super::Implementation;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Implementation> for &Implementation {
+    fn assert(self, output: &super::Implementation) -> TestCaseResult {
         self.signature.assert(output.signature())?;
         self.kind.assert(output.kind())
     }
@@ -2472,6 +2369,10 @@ impl Display for Implementation {
 }
 
 proptest! {
+    #![proptest_config(proptest::test_runner::Config {
+        max_shrink_iters: 819_200,
+        ..proptest::test_runner::Config::default()
+    })]
     #[test]
     #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn item_test(

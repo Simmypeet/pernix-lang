@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 
 use self::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use super::{
-    definite, equality,
+    definite, equality, errorneous,
     map::Map,
     model::{Entity, Model},
     predicate::Premises,
@@ -159,6 +159,11 @@ pub trait Term:
     ) -> bool {
         equality::equals(self, other, premises, table, semantic, session)
     }
+
+    /// Checks if the term is errorneous.
+    ///
+    /// The term is errorneous if it contains an errorneous sub-term.
+    fn errorneous(&self) -> bool { errorneous::errorneous(self) }
 }
 
 /// Represents a list of generic arguments supplied to a particular generic symbol.
@@ -184,7 +189,6 @@ impl<S: Model> Entity for GenericArguments<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         GenericArguments {
             lifetimes: self
@@ -211,7 +215,6 @@ impl<S: Model> Entity for GenericArguments<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         Some(GenericArguments {
             lifetimes: self

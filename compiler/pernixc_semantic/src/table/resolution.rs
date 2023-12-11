@@ -8,7 +8,7 @@ use pernixc_base::{
 };
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{
-    self, item::ModulePath, ConnectedList, GenericIdentifier, LifetimeArgumentIdentifier,
+    self, item::ModulePath, ConnectedList, GenericIdentifier, LifetimeIdentifier,
     QualifiedIdentifier,
 };
 
@@ -88,6 +88,29 @@ pub enum Resolution<S: Model> {
     ImplementationConstant(ID<ImplementationConstant>),
 }
 
+impl<S: Model> Resolution<S> {
+    /// Gets the [`GlobalID`] of the resolved symbol.
+    #[must_use]
+    pub fn id(&self) -> GlobalID {
+        match self {
+            Self::Enum(res) => res.id.into(),
+            Self::Struct(res) => res.id.into(),
+            Self::Module(id) => (*id).into(),
+            Self::Function(res) => res.id.into(),
+            Self::Trait(res) => res.id.into(),
+            Self::TraitFunction(res) => res.member.id.into(),
+            Self::TraitType(res) => res.member.id.into(),
+            Self::TraitConstant(res) => res.member.into(),
+            Self::Variant(res) => res.variant_id.into(),
+            Self::Type(res) => res.id.into(),
+            Self::Constant(res) => (*res).into(),
+            Self::ImplementationFunction(res) => res.id.into(),
+            Self::ImplementationType(res) => res.id.into(),
+            Self::ImplementationConstant(res) => (*res).into(),
+        }
+    }
+}
+
 /// A configuration for the resolution.
 pub trait Config<S: Model> {
     /// Obtains the lifetime where the lifetime arguments aren't supplied.
@@ -119,19 +142,22 @@ pub trait Config<S: Model> {
     /// Gets notified when a single generic identifier is resolved.
     fn on_resolved(&mut self, resolution: &Resolution<S>, generic_identifier_span: &Span);
 
-    /// Gets notified when a constant is on generic arguments.
-    fn on_constant_resolved(
+    /// Gets notified when a constant is evaluated in a generic constant arguments.
+    fn on_constant_arguments_resolved(
         &mut self,
         constant: &constant::Constant<S>,
         expected_type: &r#type::Type<S>,
         constant_expression_span: &Span,
     );
 
+    /// Gets notified when a type is resolved.
+    fn on_type_resolved(&mut self, ty: &r#type::Type<S>, type_span: &Span);
+
     /// Will be called every resolution to a lifetime. Allows the user to provide an extra source
     /// of lifetime.
     ///
     /// This is primarily used for the higher-ranked lifetimes.
-    fn extra_lifetime_provider(&self, _: &str) -> Option<Lifetime<S>> { None }
+    fn extra_lifetime_provider(&self, _: &str) -> Option<Lifetime<S>>;
 }
 
 macro_rules! handle_generic_arguments_supplied {
@@ -167,7 +193,7 @@ macro_rules! handle_generic_arguments_supplied {
 
                 for _ in 0..inference_fill_count {
                     let Some(placeholder) = $config.[<$kind:lower _arguments_placeholder>]() else {
-                        $handler.receive(error::Error::GenericArgumentCountMismatch(
+                        $handler.receive(Box::new(
                             GenericArgumentCountMismatch {
                                 generic_kind: GenericKind::$kind,
                                 $generic_identifier_span,
@@ -209,7 +235,7 @@ macro_rules! handle_generic_arguments_supplied {
                     .collect::<Result<Vec<_>, _>>()
             } else {
                 // type arguments count mismatch
-                $handler.receive(error::Error::GenericArgumentCountMismatch(
+                $handler.receive(Box::new(
                     GenericArgumentCountMismatch {
                         generic_kind: GenericKind::$kind,
                         $generic_identifier_span,
@@ -235,7 +261,7 @@ impl Table {
         &self,
         module_path: &ModulePath,
         referring_site: GlobalID,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<ID<Module>, Error> {
         let mut current_module_id: Option<ID<Module>> = None;
 
@@ -252,7 +278,7 @@ impl Table {
                     .map(|x| match x.into_module() {
                         Ok(mod_id) => Ok(mod_id),
                         Err(found_id) => {
-                            handler.receive(error::Error::ModuleExpected(ModuleExpected {
+                            handler.receive(Box::new(ModuleExpected {
                                 module_path: path.span.clone(),
                                 found_id: found_id.into(),
                             }));
@@ -265,7 +291,7 @@ impl Table {
 
             // if the next module ID is not found, emit an error.
             let Some(next) = next else {
-                handler.receive(error::Error::SymbolNotFound(SymbolNotFound {
+                handler.receive(Box::new(SymbolNotFound {
                     searched_global_id: current_module_id.map(Into::into),
                     resolution_span: path.span.clone(),
                 }));
@@ -277,7 +303,7 @@ impl Table {
                 .symbol_accessible(referring_site, next.into())
                 .ok_or(Error::InvalidID)?
             {
-                handler.receive(error::Error::SymbolIsNotAccessible(SymbolIsNotAccessible {
+                handler.receive(Box::new(SymbolIsNotAccessible {
                     referring_site,
                     referred: next.into(),
                     referred_span: path.span.clone(),
@@ -351,7 +377,7 @@ impl Table {
         &self,
         identifier: &Identifier,
         mut referring_site: GlobalID,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<GlobalID, Error> {
         // NOTE: Accessibility is not checked here because the symbol searching is done within the
         // same module ancestor tree.
@@ -376,7 +402,7 @@ impl Table {
                     return Ok(id.into());
                 }
 
-                handler.receive(error::Error::SymbolNotFound(SymbolNotFound {
+                handler.receive(Box::new(SymbolNotFound {
                     searched_global_id: None,
                     resolution_span: identifier.span.clone(),
                 }));
@@ -391,7 +417,7 @@ impl Table {
         latest_resolution: &Option<Resolution<S>>,
         referring_site: GlobalID,
         search_from_root: bool,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<GlobalID, Error> {
         let (global_id, parent_global_id) = match latest_resolution {
             Some(resolution) => {
@@ -437,7 +463,7 @@ impl Table {
 
         global_id.map_or_else(
             || {
-                handler.receive(error::Error::SymbolNotFound(SymbolNotFound {
+                handler.receive(Box::new(SymbolNotFound {
                     searched_global_id: parent_global_id,
                     resolution_span: identifier.span.clone(),
                 }));
@@ -446,7 +472,7 @@ impl Table {
             |global_id| {
                 if !self.symbol_accessible(referring_site, global_id).unwrap() {
                     // non-fatal error, keep going
-                    handler.receive(error::Error::SymbolIsNotAccessible(SymbolIsNotAccessible {
+                    handler.receive(Box::new(SymbolIsNotAccessible {
                         referring_site,
                         referred: global_id,
                         referred_span: identifier.span.clone(),
@@ -463,7 +489,7 @@ impl Table {
         &self,
         identifier: &Identifier,
         referring_site: GlobalID,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Option<GlobalID>, Error> {
         let closet_module_id = self
             .get_closet_module_id(referring_site)
@@ -490,7 +516,7 @@ impl Table {
         };
 
         candidates.next().map_or(Ok(Some(result)), |other| {
-            handler.receive(error::Error::ResolutionAmbiguity(ResolutionAmbiguity {
+            handler.receive(Box::new(ResolutionAmbiguity {
                 resolution_span: identifier.span.clone(),
                 candidates: [result, other].into_iter().chain(candidates).collect(),
             }));
@@ -502,7 +528,7 @@ impl Table {
         &self,
         identifier: &Identifier,
         referring_site: GlobalID,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<GlobalID, Error> {
         if let Some(first_attemp) =
             self.resolve_root_from_using_and_self(identifier, referring_site, handler)?
@@ -525,7 +551,7 @@ impl Table {
         &self,
         qualified_identifier: &QualifiedIdentifier,
         referring_site: GlobalID,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<ID<Trait>, Error> {
         let mut latest_resolution = None;
 
@@ -544,7 +570,7 @@ impl Table {
 
             if !is_last {
                 let GlobalID::Module(module_id) = global_id else {
-                    handler.receive(error::Error::ModuleExpected(ModuleExpected {
+                    handler.receive(Box::new(ModuleExpected {
                         module_path: generic_identifier.span(),
                         found_id: global_id,
                     }));
@@ -553,24 +579,20 @@ impl Table {
 
                 if let Some(generic_arguments) = generic_identifier.generic_arguments() {
                     // non-fatal error, keep going
-                    handler.receive(error::Error::NoGenericArgumentsRequired(
-                        NoGenericArgumentsRequired {
-                            global_id: module_id.into(),
-                            generic_argument_span: generic_arguments.span(),
-                        },
-                    ));
+                    handler.receive(Box::new(NoGenericArgumentsRequired {
+                        global_id: module_id.into(),
+                        generic_argument_span: generic_arguments.span(),
+                    }));
                 }
 
                 latest_resolution = Some(Resolution::Module(module_id));
             } else if let GlobalID::Trait(trait_id) = global_id {
                 return Ok(trait_id);
             } else {
-                handler.receive(error::Error::TraitExpectedInImplemenation(
-                    TraitExpectedInImplemenation {
-                        found_id: global_id,
-                        trait_path: qualified_identifier.span(),
-                    },
-                ));
+                handler.receive(Box::new(TraitExpectedInImplemenation {
+                    found_id: global_id,
+                    trait_path: qualified_identifier.span(),
+                }));
                 return Err(Error::SemanticError);
             }
         }
@@ -589,7 +611,7 @@ impl Table {
         syntax_tree: &syntax_tree::QualifiedIdentifier,
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<r#type::Type<S>, Error> {
         let is_simple_identifier = syntax_tree.rest().is_empty()
             && syntax_tree.leading_scope_separator().is_none()
@@ -620,9 +642,10 @@ impl Table {
         }
 
         self.resolution_to_type(self.resolve(syntax_tree, referring_site, config, handler)?)
-            .map_err(|x| {
-                handler.receive(error::Error::TypeExpected(TypeExpected {
+            .map_err(|resolution| {
+                handler.receive(Box::new(TypeExpected {
                     non_type_symbol_span: syntax_tree.span(),
+                    resolved_global_id: resolution.id(),
                 }));
 
                 Error::SemanticError
@@ -641,9 +664,9 @@ impl Table {
         syntax_tree: &syntax_tree::r#type::Type,
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<r#type::Type<S>, Error> {
-        match syntax_tree {
+        let result = match syntax_tree {
             syntax_tree::r#type::Type::Primitive(primitive) => {
                 Ok(r#type::Type::Primitive(match primitive {
                     syntax_tree::r#type::Primitive::Bool(_) => r#type::Primitive::Bool,
@@ -681,11 +704,9 @@ impl Table {
                         || {
                             config.lifetime_arguments_placeholder().map_or_else(
                                 || {
-                                    handler.receive(error::Error::LifetimeExpected(
-                                        LifetimeExpected {
-                                            expected_span: reference.span(),
-                                        },
-                                    ));
+                                    handler.receive(Box::new(LifetimeExpected {
+                                        expected_span: reference.span(),
+                                    }));
                                     Err(Error::SemanticError)
                                 },
                                 Ok,
@@ -762,11 +783,9 @@ impl Table {
 
                 // check if there is more than one unpacked type
                 if elements.iter().filter(|x| x.is_unpacked()).count() > 1 {
-                    handler.receive(error::Error::MoreThanOneUnpackedInTupleType(
-                        MoreThanOneUnpackedInTupleType {
-                            illegal_tuple_type_span: syntax_tree.span(),
-                        },
-                    ));
+                    handler.receive(Box::new(MoreThanOneUnpackedInTupleType {
+                        illegal_tuple_type_span: syntax_tree.span(),
+                    }));
                     return Err(Error::SemanticError);
                 }
 
@@ -782,7 +801,11 @@ impl Table {
                     element: Box::new(element_ty),
                 }))
             }
-        }
+        }?;
+
+        config.on_type_resolved(&result, &syntax_tree.span());
+
+        Ok(result)
     }
 
     /// Resolves an [`Identifier`] as a [`LifetimeParameterID`].
@@ -795,7 +818,7 @@ impl Table {
         &self,
         identifier: &Identifier,
         referring_site: GlobalID,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<LifetimeParameterID, Error> {
         for scope in self.scope_walker(referring_site).ok_or(Error::InvalidID)? {
             let Ok(generic_id) = GenericID::try_from(scope) else {
@@ -818,12 +841,10 @@ impl Table {
             }
         }
 
-        handler.receive(error::Error::LifetimeParameterNotFound(
-            LifetimeParameterNotFound {
-                referred_span: identifier.span(),
-                referring_site,
-            },
-        ));
+        handler.receive(Box::new(LifetimeParameterNotFound {
+            referred_span: identifier.span(),
+            referring_site,
+        }));
         Err(Error::SemanticError)
     }
 
@@ -835,14 +856,14 @@ impl Table {
     /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
     pub fn resolve_lifetime<S: Model>(
         &self,
-        lifetime_argument: &syntax_tree::LifetimeArgument,
+        lifetime_argument: &syntax_tree::Lifetime,
         referring_site: GlobalID,
         config: &dyn Config<S>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Lifetime<S>, Error> {
         match lifetime_argument.identifier() {
-            LifetimeArgumentIdentifier::Static(..) => Ok(Lifetime::Static),
-            LifetimeArgumentIdentifier::Identifier(ident) => {
+            LifetimeIdentifier::Static(..) => Ok(Lifetime::Static),
+            LifetimeIdentifier::Identifier(ident) => {
                 if let Some(lifetime) = config.extra_lifetime_provider(ident.span.str()) {
                     return Ok(lifetime);
                 }
@@ -858,9 +879,9 @@ impl Table {
         generic_identifier_span: Span,
         referring_site: GlobalID,
         generic_symbol: &dyn Generic,
-        lifetime_argument_syns: Vec<&syntax_tree::LifetimeArgument>,
+        lifetime_argument_syns: Vec<&syntax_tree::Lifetime>,
         config: &mut dyn Config<S>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Vec<Lifetime<S>>, Error> {
         let expected_count = generic_symbol
             .generic_declaration()
@@ -879,18 +900,16 @@ impl Table {
                 .len()
             {
                 let Some(placeholder) = config.lifetime_arguments_placeholder() else {
-                    handler.receive(error::Error::GenericArgumentCountMismatch(
-                        GenericArgumentCountMismatch {
-                            generic_kind: GenericKind::Lifetime,
-                            generic_identifier_span,
-                            expected_count: generic_symbol
-                                .generic_declaration()
-                                .parameters
-                                .lifetimes
-                                .len(),
-                            supplied_count: 0,
-                        },
-                    ));
+                    handler.receive(Box::new(GenericArgumentCountMismatch {
+                        generic_kind: GenericKind::Lifetime,
+                        generic_identifier_span,
+                        expected_count: generic_symbol
+                            .generic_declaration()
+                            .parameters
+                            .lifetimes
+                            .len(),
+                        supplied_count: 0,
+                    }));
                     return Err(Error::SemanticError);
                 };
 
@@ -905,14 +924,12 @@ impl Table {
                 .collect::<Result<Vec<_>, _>>()?)
         } else {
             // lifetime arguments count mismatch
-            handler.receive(error::Error::GenericArgumentCountMismatch(
-                GenericArgumentCountMismatch {
-                    generic_kind: GenericKind::Lifetime,
-                    generic_identifier_span,
-                    expected_count,
-                    supplied_count: lifetime_argument_syns.len(),
-                },
-            ));
+            handler.receive(Box::new(GenericArgumentCountMismatch {
+                generic_kind: GenericKind::Lifetime,
+                generic_identifier_span,
+                expected_count,
+                supplied_count: lifetime_argument_syns.len(),
+            }));
             Err(Error::SemanticError)
         }
     }
@@ -924,7 +941,7 @@ impl Table {
         generic_symbol: &dyn Generic,
         constant_argument_syns: Vec<&syntax_tree::expression::Expression>,
         config: &mut dyn Config<S>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Vec<constant::Constant<S>>, Error> {
         handle_generic_arguments_supplied!(
             self,
@@ -941,7 +958,7 @@ impl Table {
             {
                 self.evaluate(syntax_tree, referring_site, handler)
                     .map(|val| {
-                        config.on_constant_resolved(
+                        config.on_constant_arguments_resolved(
                             &val,
                             &param.r#type.clone().into_other_model(),
                             &generic_identifier_span,
@@ -962,7 +979,7 @@ impl Table {
         type_argument_syns: Vec<&syntax_tree::r#type::Type>,
         constant_arguments_is_empty: bool,
         config: &mut dyn Config<S>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Vec<r#type::Type<S>>, Error> {
         handle_generic_arguments_supplied!(
             self,
@@ -987,17 +1004,15 @@ impl Table {
         referring_site: GlobalID,
         resolved_id: GlobalID,
         config: &mut dyn Config<S>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Option<GenericArguments<S>>, Error> {
         let Ok(generic_id) = GenericID::try_from(resolved_id) else {
             if let Some(generic_arguments) = generic_identifier.generic_arguments() {
                 // non-fatal error, keep going
-                handler.receive(error::Error::NoGenericArgumentsRequired(
-                    NoGenericArgumentsRequired {
-                        global_id: resolved_id,
-                        generic_argument_span: generic_arguments.span(),
-                    },
-                ));
+                handler.receive(Box::new(NoGenericArgumentsRequired {
+                    global_id: resolved_id,
+                    generic_argument_span: generic_arguments.span(),
+                }));
             }
 
             return Ok(None);
@@ -1013,7 +1028,7 @@ impl Table {
         for generic_arguments in generic_identifier
             .generic_arguments()
             .iter()
-            .flat_map(|x| x.argument_list().elements())
+            .flat_map(|x| x.argument_list().iter().flat_map(ConnectedList::elements))
         {
             match generic_arguments {
                 syntax_tree::GenericArgument::Constant(arg) => {
@@ -1028,16 +1043,14 @@ impl Table {
                     lifetime_argument_syns.push(arg);
                 }
                 arg => {
-                    handler.receive(error::Error::MisorderedGenericArguments(
-                        MisorderedGenericArgument {
-                            generic_kind: match arg {
-                                syntax_tree::GenericArgument::Type(_) => GenericKind::Type,
-                                syntax_tree::GenericArgument::Constant(_) => GenericKind::Constant,
-                                syntax_tree::GenericArgument::Lifetime(_) => GenericKind::Lifetime,
-                            },
-                            generic_argument: arg.span(),
+                    handler.receive(Box::new(MisorderedGenericArgument {
+                        generic_kind: match arg {
+                            syntax_tree::GenericArgument::Type(_) => GenericKind::Type,
+                            syntax_tree::GenericArgument::Constant(_) => GenericKind::Constant,
+                            syntax_tree::GenericArgument::Lifetime(_) => GenericKind::Lifetime,
                         },
-                    ));
+                        generic_argument: arg.span(),
+                    }));
                     return Err(Error::SemanticError);
                 }
             }
@@ -1217,7 +1230,7 @@ impl Table {
         qualified_identifier: &QualifiedIdentifier,
         referring_site: GlobalID,
         config: &mut dyn Config<S>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Resolution<S>, Error> {
         // Checks if the given `referring_site` is a valid ID.
         drop(self.get_global(referring_site).ok_or(Error::InvalidID)?);

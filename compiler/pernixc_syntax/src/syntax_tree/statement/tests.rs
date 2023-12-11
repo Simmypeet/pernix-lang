@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 use pernixc_tests::input::Input;
 use proptest::{
@@ -10,11 +10,8 @@ use proptest::{
 
 use crate::syntax_tree::{
     self,
-    expression::{
-        self,
-        tests::{Expression, Functional, Imperative, Terminator},
-    },
-    pattern,
+    expression::tests::{Binary, Brace, Expression, Terminator},
+    pattern::tests::Irrefutable,
     r#type::tests::Type,
 };
 
@@ -25,13 +22,13 @@ pub enum Statement {
     VariableDeclaration(VariableDeclaration),
 }
 
-impl Input for Statement {
-    type Output = super::Statement;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Statement> for &Statement {
+    fn assert(self, output: &super::Statement) -> TestCaseResult {
         match (self, output) {
-            (Self::VariableDeclaration(i), super::Statement::VariableDeclaration(o)) => i.assert(o),
-            (Self::Expressive(i), super::Statement::Expressive(o)) => i.assert(o),
+            (Statement::VariableDeclaration(i), super::Statement::VariableDeclaration(o)) => {
+                i.assert(o)
+            }
+            (Statement::Expressive(i), super::Statement::Expressive(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}",
             ))),
@@ -40,32 +37,16 @@ impl Input for Statement {
 }
 
 impl Arbitrary for Statement {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let args = args.unwrap_or_else(Expression::arbitrary);
         prop_oneof![
-            VariableDeclaration::arbitrary_with(Some(args.clone()))
-                .prop_map(Statement::VariableDeclaration),
-            args.prop_map(|expr| match expr {
-                expression::tests::Expression::Imperative(a) =>
-                    Self::Expressive(Expressive::Imperative(a)),
-                expression::tests::Expression::Terminator(..)
-                | expression::tests::Expression::Functional(..) => {
-                    let expression = match expr {
-                        expression::tests::Expression::Terminator(a) => {
-                            SemiExpression::Terminator(a)
-                        }
-                        expression::tests::Expression::Functional(a) => {
-                            SemiExpression::Functional(a)
-                        }
-                        expression::tests::Expression::Imperative(..) => unreachable!(),
-                    };
-
-                    Self::Expressive(Expressive::Semi(Semi { expression }))
-                }
-            })
+            Expressive::arbitrary_with(args.clone()).prop_map(Self::Expressive),
+            VariableDeclaration::arbitrary_with(args).prop_map(Self::VariableDeclaration),
         ]
         .boxed()
     }
@@ -82,15 +63,13 @@ impl Display for Statement {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableDeclaration {
-    pub irrefutable_pattern: pattern::tests::Irrefutable,
+    pub irrefutable_pattern: Irrefutable,
     pub ty: Option<Type>,
-    pub expression: Expression,
+    pub expression: Option<Expression>,
 }
 
-impl Input for VariableDeclaration {
-    type Output = super::VariableDeclaration;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::VariableDeclaration> for &VariableDeclaration {
+    fn assert(self, output: &super::VariableDeclaration) -> TestCaseResult {
         self.irrefutable_pattern
             .assert(output.irrefutable_pattern())?;
 
@@ -104,21 +83,32 @@ impl Input for VariableDeclaration {
             }
         }
 
-        self.expression.assert(output.expression())
+        self.expression
+            .as_ref()
+            .assert(output.initializer().as_ref().map(|x| &x.expression))
     }
 }
 
 impl Arbitrary for VariableDeclaration {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.unwrap_or_else(Expression::arbitrary);
+        let expression = args
+            .0
+            .clone()
+            .unwrap_or_else(|| Expression::arbitrary_with((args.1.clone(), None, None)));
 
         (
-            pattern::tests::Irrefutable::arbitrary(),
-            proptest::option::of(Type::arbitrary_with((None, Some(expression.clone())))),
-            expression,
+            Irrefutable::arbitrary(),
+            proptest::option::of(
+                args.1
+                    .unwrap_or_else(|| Type::arbitrary_with((args.0.clone(), None))),
+            ),
+            proptest::option::of(expression),
         )
             .prop_map(|(irrefutable_pattern, ty, expression)| Self {
                 irrefutable_pattern,
@@ -139,24 +129,26 @@ impl Display for VariableDeclaration {
             write!(f, ": {type_annotation}")?;
         }
 
-        write!(f, " = {};", self.expression)
+        if let Some(expression) = &self.expression {
+            write!(f, " = {expression}")?;
+        }
+
+        f.write_char(';')
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Expressive {
-    Imperative(Imperative),
+    Brace(Brace),
     Semi(Semi),
 }
 
-impl Input for Expressive {
-    type Output = super::Expressive;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Expressive> for &Expressive {
+    fn assert(self, output: &super::Expressive) -> TestCaseResult {
         match (self, output) {
-            (Self::Imperative(i), super::Expressive::Imperative(o)) => i.assert(o),
-            (Self::Semi(i), super::Expressive::Semi(o)) => i.assert(o),
+            (Expressive::Brace(i), super::Expressive::Brace(o)) => i.assert(o),
+            (Expressive::Semi(i), super::Expressive::Semi(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}",
             ))),
@@ -164,10 +156,36 @@ impl Input for Expressive {
     }
 }
 
+impl Arbitrary for Expressive {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expr_strat = args
+            .0
+            .unwrap_or_else(|| Expression::arbitrary_with((args.1, None, None)));
+
+        expr_strat
+            .prop_map(|x| match x {
+                Expression::Binary(x) => Self::Semi(Semi {
+                    expression: SemiExpression::Binary(x),
+                }),
+                Expression::Terminator(x) => Self::Semi(Semi {
+                    expression: SemiExpression::Terminator(x),
+                }),
+                Expression::Brace(x) => Self::Brace(x),
+            })
+            .boxed()
+    }
+}
+
 impl Display for Expressive {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Imperative(t) => Display::fmt(t, f),
+            Self::Brace(t) => Display::fmt(t, f),
             Self::Semi(t) => Display::fmt(t, f),
         }
     }
@@ -176,17 +194,15 @@ impl Display for Expressive {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum SemiExpression {
-    Functional(Functional),
+    Binary(Binary),
     Terminator(Terminator),
 }
 
-impl Input for SemiExpression {
-    type Output = super::SemiExpression;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::SemiExpression> for &SemiExpression {
+    fn assert(self, output: &super::SemiExpression) -> TestCaseResult {
         match (self, output) {
-            (Self::Functional(i), super::SemiExpression::Functional(o)) => i.assert(o),
-            (Self::Terminator(i), super::SemiExpression::Terminator(o)) => i.assert(o),
+            (SemiExpression::Binary(i), super::SemiExpression::Binary(o)) => i.assert(o),
+            (SemiExpression::Terminator(i), super::SemiExpression::Terminator(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, found {output:?}",
             ))),
@@ -197,7 +213,7 @@ impl Input for SemiExpression {
 impl Display for SemiExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Functional(t) => Display::fmt(t, f),
+            Self::Binary(t) => Display::fmt(t, f),
             Self::Terminator(t) => Display::fmt(t, f),
         }
     }
@@ -208,10 +224,8 @@ pub struct Semi {
     pub expression: SemiExpression,
 }
 
-impl Input for Semi {
-    type Output = super::Semi;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Semi> for &Semi {
+    fn assert(self, output: &super::Semi) -> TestCaseResult {
         self.expression.assert(output.expression())
     }
 }

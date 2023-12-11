@@ -137,6 +137,7 @@ where
     Parameter(TypeParameterID),
     Tuple(Tuple<S>),
     Local(Local<S>),
+    Error,
 }
 
 impl<M: Model> Term for Type<M> {
@@ -191,7 +192,6 @@ impl<S: Model> Entity for Type<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Type::Primitive(primitive),
@@ -247,6 +247,7 @@ impl<S: Model> Entity for Type<S> {
                 Type::Tuple(Tuple { elements })
             }
             Self::Local(local) => Type::Local(Local(Box::new(local.0.into_other_model()))),
+            Self::Error => Type::Error,
         }
     }
 
@@ -256,7 +257,6 @@ impl<S: Model> Entity for Type<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         match self {
             Self::Primitive(primitive) => Some(Type::Primitive(primitive)),
@@ -339,6 +339,7 @@ impl<S: Model> Entity for Type<S> {
                 .0
                 .try_into_other_model()
                 .map(|r#type| Type::Local(Local(Box::new(r#type)))),
+            Self::Error => Some(Type::Error),
         }
     }
 }

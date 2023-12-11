@@ -116,6 +116,8 @@ pub enum Error {
     NonDefiniteGenericArguments,
     #[error("resolved into a negative implementation")]
     NegativeImplementation,
+    #[error("the table is malformed, contains ambiguous implementation")]
+    SuboptimalTable,
 }
 
 fn extract<T: Eq + std::hash::Hash>(
@@ -485,7 +487,7 @@ impl Table {
                             }
                         }
                     }
-                    Order::Ambiguous => unreachable!(),
+                    Order::Ambiguous => return Err(Error::SuboptimalTable),
                 }
             } else {
                 candidates.push((key, unification));

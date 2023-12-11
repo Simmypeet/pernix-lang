@@ -16,6 +16,7 @@ use crate::table::{Index, Table};
 
 pub mod definite;
 pub mod equality;
+mod errorneous;
 pub mod map;
 pub mod model;
 pub mod pattern;
@@ -57,7 +58,7 @@ pub trait Semantic<T: Term> {
     ///
     /// Returns an error if the two terms cannot be unified.
     #[allow(clippy::too_many_arguments)]
-    fn sub_structural_unify_internal<
+    fn sub_structural_unify<
         C: Config<T>
             + Config<Type<<T as Term>::Model>>
             + Config<Constant<<T as Term>::Model>>
@@ -86,7 +87,8 @@ impl<S: Model> Semantic<Type<S>> for Default {
     fn definitetiveness(&mut self, term: &Type<S>) -> Definitiveness {
         match term {
             Type::Primitive(_) => Definitiveness::Definite,
-            Type::Parameter(_) | Type::Inference(_) => Definitiveness::Indefinite,
+            Type::Error | Type::Parameter(_) | Type::Inference(_) => Definitiveness::Indefinite,
+
             Type::Algebraic(_)
             | Type::Local(_)
             | Type::Tuple(_)
@@ -146,7 +148,7 @@ impl<S: Model> Semantic<Type<S>> for Default {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn sub_structural_unify_internal<
+    fn sub_structural_unify<
         C: Config<Type<S>> + Config<Constant<S>> + Config<Lifetime<S>>,
         R: Session<Type<S>> + Session<Lifetime<S>> + Session<Constant<S>>,
     >(
@@ -278,7 +280,11 @@ impl<S: Model> Semantic<Constant<S>> for Default {
     fn definitetiveness(&mut self, term: &Constant<S>) -> Definitiveness {
         match term {
             Constant::Primitive(_) => Definitiveness::Definite,
-            Constant::Parameter(_) | Constant::Inference(_) => Definitiveness::Indefinite,
+
+            Constant::Error | Constant::Parameter(_) | Constant::Inference(_) => {
+                Definitiveness::Indefinite
+            }
+
             Constant::Struct(_)
             | Constant::Enum(_)
             | Constant::Array(_)
@@ -329,7 +335,7 @@ impl<S: Model> Semantic<Constant<S>> for Default {
         Some(equivalent)
     }
 
-    fn sub_structural_unify_internal<
+    fn sub_structural_unify<
         C: Config<Type<S>> + Config<Constant<S>> + Config<Lifetime<S>>,
         R: Session<Type<S>> + Session<Lifetime<S>> + Session<Constant<S>>,
     >(
@@ -465,7 +471,7 @@ impl<S: Model> Semantic<Lifetime<S>> for Default {
         None
     }
 
-    fn sub_structural_unify_internal<
+    fn sub_structural_unify<
         C: Config<Type<S>> + Config<Constant<S>> + Config<Lifetime<S>>,
         R: Session<Type<S>> + Session<Lifetime<S>> + Session<Constant<S>>,
     >(

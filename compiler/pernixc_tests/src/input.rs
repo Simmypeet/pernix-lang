@@ -8,49 +8,61 @@ use proptest::{
 };
 
 /// Represents an input generated for testing purposes.
-pub trait Input {
-    /// The output type of the input that wll be validated against.
-    type Output;
-
-    /// Verifies that the given [`Self::Output`] complies with this input.
+pub trait Input<Output: Debug>: Debug {
+    /// Verifies that the given output complies with this input.
     ///
     /// # Errors
     /// [`proptest::test_runner::TestCaseError`]: for any reason the assertion fails.
-    fn assert(&self, output: &Self::Output) -> TestCaseResult;
+    fn assert(self, output: Output) -> TestCaseResult;
 }
 
-impl<T: Input + Debug> Input for Option<T>
+impl<T: Debug, U> Input<&Box<T>> for &Box<U>
 where
-    T::Output: Debug,
+    for<'a, 'b> &'a U: Input<&'b T>,
+    Self: Debug,
 {
-    type Output = Option<T::Output>;
+    fn assert(self, output: &Box<T>) -> TestCaseResult { self.as_ref().assert(output.as_ref()) }
+}
 
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl<T: Debug, U: Debug> Input<Option<T>> for Option<U>
+where
+    U: Input<T>,
+{
+    fn assert(self, output: Option<T>) -> TestCaseResult {
         match (self, output) {
-            (Some(i), Some(o)) => i.assert(o),
+            (Some(input), Some(output)) => input.assert(output),
             (None, None) => Ok(()),
-            (i, o) => Err(TestCaseError::fail(
-                format!("Expected {i:?} but got {o:?}",),
-            )),
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {:?}, got {:?}",
+                input, output
+            ))),
         }
     }
 }
 
-impl<T: Input> Input for Box<T> {
-    type Output = Box<T::Output>;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult { (**self).assert(&**output) }
-}
-
-impl<T: Input> Input for Vec<T> {
-    type Output = Vec<T::Output>;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl<T: Debug, U: Debug> Input<&[T]> for &[U]
+where
+    for<'a, 'b> &'a U: Input<&'b T>,
+{
+    fn assert(self, output: &[T]) -> TestCaseResult {
         prop_assert_eq!(self.len(), output.len());
 
-        for (i, o) in self.iter().zip(output.iter()) {
-            i.assert(o)?;
+        for (input, output) in self.iter().zip(output.iter()) {
+            input.assert(output)?;
         }
+
+        Ok(())
+    }
+}
+
+impl<T: Debug, U: Debug, V: Debug, W: Debug> Input<&(T, U)> for &(V, W)
+where
+    for<'a, 'b> &'a V: Input<&'b T>,
+    for<'a, 'b> &'a W: Input<&'b U>,
+{
+    fn assert(self, output: &(T, U)) -> TestCaseResult {
+        self.0.assert(&output.0)?;
+        self.1.assert(&output.1)?;
 
         Ok(())
     }

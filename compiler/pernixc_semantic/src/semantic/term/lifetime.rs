@@ -3,7 +3,10 @@
 use enum_as_inner::EnumAsInner;
 
 use super::{Model, Term};
-use crate::{semantic::model::Entity, symbol::LifetimeParameterID};
+use crate::{
+    semantic::model::{Entity, Forall},
+    symbol::LifetimeParameterID,
+};
 
 /// Represents a particular variable lifetime
 #[derive(Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -18,10 +21,13 @@ pub enum Lifetime<S: Model> {
     Scoped(S::ScopedLifetime),
 
     /// Quantified lifetime, denoted by `for<'a> 'a`.
-    Forall(S::ForallLifetime),
+    Forall(Forall),
 
     /// Inferred lifetime.
     Inference(S::LifetimeInference),
+
+    /// Error lifetime
+    Error,
 }
 
 impl<M: Model> Term for Lifetime<M> {
@@ -38,14 +44,14 @@ impl<S: Model> Entity for Lifetime<S> {
         S::TypeInference: Into<T::TypeInference>,
         S::LifetimeInference: Into<T::LifetimeInference>,
         S::ScopedLifetime: Into<T::ScopedLifetime>,
-        S::ForallLifetime: Into<T::ForallLifetime>,
     {
         match self {
             Self::Static => Lifetime::Static,
             Self::Parameter(id) => Lifetime::Parameter(id),
             Self::Scoped(lifetime) => Lifetime::Scoped(lifetime.into()),
-            Self::Forall(lifetime) => Lifetime::Forall(lifetime.into()),
+            Self::Forall(lifetime) => Lifetime::Forall(lifetime),
             Self::Inference(lifetime) => Lifetime::Inference(lifetime.into()),
+            Self::Error => Lifetime::Error,
         }
     }
 
@@ -55,14 +61,14 @@ impl<S: Model> Entity for Lifetime<S> {
         S::TypeInference: TryInto<T::TypeInference>,
         S::LifetimeInference: TryInto<T::LifetimeInference>,
         S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-        S::ForallLifetime: TryInto<T::ForallLifetime>,
     {
         match self {
             Self::Static => Some(Lifetime::Static),
             Self::Parameter(id) => Some(Lifetime::Parameter(id)),
+            Self::Forall(lifetime) => Some(Lifetime::Forall(lifetime)),
             Self::Scoped(lifetime) => lifetime.try_into().ok().map(Lifetime::Scoped),
-            Self::Forall(lifetime) => lifetime.try_into().ok().map(Lifetime::Forall),
             Self::Inference(lifetime) => lifetime.try_into().ok().map(Lifetime::Inference),
+            Self::Error => Some(Lifetime::Error),
         }
     }
 }

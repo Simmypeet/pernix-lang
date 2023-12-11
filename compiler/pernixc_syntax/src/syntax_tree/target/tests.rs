@@ -18,10 +18,8 @@ pub struct ModuleTree {
     submodules_by_name: HashMap<String, ModuleTree>,
 }
 
-impl Input for ModuleTree {
-    type Output = super::ModuleTree;
-
-    fn assert(&self, output: &Self::Output) -> proptest::test_runner::TestCaseResult {
+impl Input<&super::ModuleTree> for &ModuleTree {
+    fn assert(self, output: &super::ModuleTree) -> proptest::test_runner::TestCaseResult {
         match (&self.signature, &output.signature) {
             (Some(self_signature), Some(output_signature)) => {
                 self_signature.assert(&output_signature.access_modifier)?;

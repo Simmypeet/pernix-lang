@@ -6,8 +6,8 @@ use pernixc_syntax::syntax_tree;
 use super::{Builder, State, Symbol};
 use crate::{
     arena::{Arena, ID},
-    symbol::Type,
-    table::Table,
+    symbol::{semantic::Symbolic, Type},
+    table::{build, Table},
 };
 
 super::build_flag!(
@@ -15,13 +15,12 @@ super::build_flag!(
         Drafted,
         GenericParameter,
         Body,
-        WhereClause,
-        Check,
+        WhereClauseAndCheck,
     }
 );
 
 impl Symbol for Type {
-    type Data = ();
+    type Data = build::Storage<Self, Symbolic>;
     type Flag = Flag;
     type SyntaxTree = syntax_tree::item::Type;
 

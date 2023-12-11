@@ -1,6 +1,9 @@
 //! Contains all the definition of errors that can be emitted by the semantic analyzer.
 
-use std::fmt::{self, Display};
+use std::{
+    any::Any,
+    fmt::{self, Display},
+};
 
 use pernixc_base::{
     log::{
@@ -12,14 +15,10 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    semantic::{
-        predicate::Predicate,
-        term::{constant, r#type},
-    },
+    semantic::{predicate::Predicate, term::r#type},
     symbol::{
-        semantic::Symbolic, ConstantParameterID, GenericID, GenericKind, GlobalID, Implementation,
-        ImplementationKindID, ImplementationMemberID, LifetimeParameterID, LocalGenericParameterID,
-        TraitMemberID, TypeParameterID,
+        semantic::Symbolic, GenericID, GenericKind, GlobalID, Implementation, ImplementationKindID,
+        ImplementationMemberID, LocalGenericParameterID, TraitMemberID,
     },
     table::{Index, Table},
 };
@@ -392,7 +391,7 @@ pub struct MisorderedGenericArgument {
     pub generic_argument: Span,
 }
 
-impl Display for WithTable<'_, MisorderedGenericArgument> {
+impl<'a> Display for WithTable<'a, MisorderedGenericArgument> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -586,6 +585,33 @@ impl Display for WithTable<'_, MoreThanOneUnpackedInTupleType> {
 pub struct TypeExpected {
     /// The span where the non-type symbol was found.
     pub non_type_symbol_span: Span,
+
+    /// The [`GlobalID`] where the non-type symbol was found.
+    pub resolved_global_id: GlobalID,
+}
+
+impl Display for WithTable<'_, TypeExpected> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let qualified_name = self
+            .table
+            .get_qualified_name(self.error.resolved_global_id)
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "The type was expected but found {} `{qualified_name}`",
+                self.error.resolved_global_id.kind_str(),
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.error.non_type_symbol_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
 }
 
 /// The generic parameter with the same name already exists in the given scope.
@@ -1036,88 +1062,23 @@ impl Display for WithTable<'_, WhereClausePredicateNotSatisfied> {
     }
 }
 
-/// An enumeration containing all kinds of errors that can be emitted by the semantic analyzer.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum Error {
-    GlobalRedefinition(GlobalRedefinition),
-    ModuleExpected(ModuleExpected),
-    SymbolIsNotAccessible(SymbolIsNotAccessible),
-    ResolutionAmbiguity(ResolutionAmbiguity),
-    SymbolNotFound(SymbolNotFound),
-    NoGenericArgumentsRequired(NoGenericArgumentsRequired),
-    TraitExpectedInImplemenation(TraitExpectedInImplemenation),
-    CyclicDependency(CyclicDependency),
-    MisorderedGenericArguments(MisorderedGenericArgument),
-    GenericArgumentCountMismatch(GenericArgumentCountMismatch),
-    LifetimeParameterNotFound(LifetimeParameterNotFound),
-    LifetimeExpected(LifetimeExpected),
-    MoreThanOneUnpackedInTupleType(MoreThanOneUnpackedInTupleType),
-    TypeExpected(TypeExpected),
-    MisorderedGenericParameter(MisorderedGenericParameter),
-    LifetimeParameterDuplication(GenericParameterDuplication<LifetimeParameterID>),
-    TypeParameterDuplication(GenericParameterDuplication<TypeParameterID>),
-    ConstantParameterDuplication(GenericParameterDuplication<ConstantParameterID>),
-    DefaultGenericParameterMustBeTrailing(DefaultGenericParameterMustBeTrailing),
-    PrivateTypeLeakedToPublicInterface(
-        PrivateEntityLeakedToPublicInterface<r#type::Type<Symbolic>>,
-    ),
-    PrivateConstantLeakedToPublicInterface(
-        PrivateEntityLeakedToPublicInterface<constant::Constant<Symbolic>>,
-    ),
-    InvalidTypeInOutlivesPredicate(InvalidTypeInOutlivesPredicate),
-    TraitMemberExpected(TraitMemberExpected),
-    TraitMemberBoundArgumentMismatched(TraitMemberBoundArgumentMismatched),
-    InvalidTypeInConstantTypePredicate(InvalidTypeInConstantTypePredicate),
-    TraitMemberNotImplemented(TraitMemberNotImplemented),
-    TraitMemberAndImplementationMemberMismatched(TraitMemberAndImplementationMemberMismatched),
-    UnusedGenericParameterInImplementation(UnusedGenericParameterInImplementation),
-    AmbiguousImplementation(AmbiguousImplementation),
-    HigherRankedLifetimeRedeclaration(HigherRankedLifetimeRedeclaration),
-    MismatchedGenericParameterCountInImplementation(
-        MismatchedGenericParameterCountInImplementation,
-    ),
-    MismatchedImplementationConstantTypeParameter(MismatchedImplementationConstantTypeParameter),
-    WhereClausePredicateNotSatisfied(WhereClausePredicateNotSatisfied),
+/// Implemented by all semantic errors.
+pub trait Error: Any
+where
+    for<'a> WithTable<'a, Self>: Display,
+{
+    /// Returns the error as a [`dyn Any`].
+    fn as_any(&self) -> &dyn Any;
+
+    /// Returns the error as a mutable [`dyn Any`].
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-macro_rules! impl_display {
-    ($($error:ident),*) => {
-        impl Display for WithTable<'_, Error> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match self.error {
-                    $(Error::$error(error) => write!(f, "{}", WithTable {
-                        table: self.table,
-                        error,
-                    })),*,
+impl<T: Any> Error for T
+where
+    for<'a> WithTable<'a, T>: Display,
+{
+    fn as_any(&self) -> &dyn Any { self }
 
-                    error => { write!(f, "{:?}", error) },
-                }
-            }
-        }
-    };
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
-
-impl_display!(
-    GlobalRedefinition,
-    ModuleExpected,
-    SymbolIsNotAccessible,
-    ResolutionAmbiguity,
-    SymbolNotFound,
-    NoGenericArgumentsRequired,
-    TraitExpectedInImplemenation,
-    CyclicDependency,
-    MisorderedGenericArguments,
-    MisorderedGenericParameter,
-    GenericArgumentCountMismatch,
-    LifetimeParameterNotFound,
-    LifetimeExpected,
-    MoreThanOneUnpackedInTupleType,
-    AmbiguousImplementation,
-    HigherRankedLifetimeRedeclaration,
-    TraitMemberNotImplemented,
-    UnusedGenericParameterInImplementation,
-    MismatchedGenericParameterCountInImplementation,
-    MismatchedImplementationConstantTypeParameter,
-    WhereClausePredicateNotSatisfied
-);

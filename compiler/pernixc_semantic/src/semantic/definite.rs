@@ -8,7 +8,7 @@ use super::{
 };
 use crate::table::Table;
 
-/// The [`Definitivess`] property of the term.
+/// The [`Definitiveness`] property of the term.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Definitiveness {
     /// The term is definite.

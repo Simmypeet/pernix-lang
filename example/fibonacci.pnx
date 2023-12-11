@@ -1,5 +1,0 @@
-public module inner {
-    public trait Test<T> {}
-}
-
-implements inner::Test {}

@@ -6,8 +6,8 @@ use pernixc_syntax::syntax_tree;
 use super::{Builder, State, Symbol};
 use crate::{
     arena::{Arena, ID},
-    symbol::Trait,
-    table::Table,
+    symbol::{semantic::Symbolic, Trait},
+    table::{build::Storage, Table},
 };
 
 super::build_flag!(
@@ -20,7 +20,7 @@ super::build_flag!(
 );
 
 impl Symbol for Trait {
-    type Data = ();
+    type Data = Storage<Self, Symbolic>;
     type Flag = Flag;
     type SyntaxTree = syntax_tree::item::TraitSignature;
 

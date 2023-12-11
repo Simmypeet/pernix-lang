@@ -21,10 +21,8 @@ pub struct Named {
     pub identifier: Identifier,
 }
 
-impl Input for Named {
-    type Output = super::Named;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Named> for &Named {
+    fn assert(self, output: &super::Named) -> TestCaseResult {
         prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
         self.identifier.assert(&output.identifier)
     }
@@ -59,10 +57,11 @@ pub struct FieldAssociation<Pattern> {
     pattern: Box<Pattern>,
 }
 
-impl<Pattern: Input> Input for FieldAssociation<Pattern> {
-    type Output = super::FieldAssociation<Pattern::Output>;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl<I: Debug, O: Debug> Input<&super::FieldAssociation<O>> for &FieldAssociation<I>
+where
+    for<'i, 'o> &'i I: Input<&'o O>,
+{
+    fn assert(self, output: &super::FieldAssociation<O>) -> TestCaseResult {
         self.identifier.assert(&output.identifier)?;
         self.pattern.assert(&output.pattern)
     }
@@ -98,16 +97,14 @@ pub enum Field<Pattern> {
     Named(Named),
 }
 
-impl<Pattern: Input + Debug> Input for Field<Pattern>
+impl<I: Debug, O: Debug> Input<&super::Field<O>> for &Field<I>
 where
-    Pattern::Output: Debug,
+    for<'i, 'o> &'i I: Input<&'o O>,
 {
-    type Output = super::Field<Pattern::Output>;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+    fn assert(self, output: &super::Field<O>) -> TestCaseResult {
         match (self, output) {
-            (Self::Association(input), super::Field::Association(output)) => input.assert(output),
-            (Self::Named(input), super::Field::Named(output)) => input.assert(output),
+            (Field::Association(input), super::Field::Association(output)) => input.assert(output),
+            (Field::Named(input), super::Field::Named(output)) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -142,13 +139,13 @@ pub struct Structural<Pattern> {
     pub fields: Option<ConnectedList<Field<Pattern>, ConstantPunctuation<','>>>,
 }
 
-impl<Pattern: Input + Debug> Input for Structural<Pattern>
+impl<I: Debug, O: Debug> Input<&super::Structural<O>> for &Structural<I>
 where
-    Pattern::Output: Debug,
+    for<'i, 'o> &'i I: Input<&'o O>,
 {
-    type Output = super::Structural<Pattern::Output>;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.fields.assert(&output.fields) }
+    fn assert(self, output: &super::Structural<O>) -> TestCaseResult {
+        self.fields.as_ref().assert(output.fields.as_ref())
+    }
 }
 
 impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
@@ -184,10 +181,8 @@ pub struct Unpack {
     pub identifier: Identifier,
 }
 
-impl Input for Unpack {
-    type Output = super::Unpack;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Unpack> for &Unpack {
+    fn assert(self, output: &super::Unpack) -> TestCaseResult {
         prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
         self.identifier.assert(&output.identifier)
     }
@@ -223,16 +218,16 @@ pub enum Unpackable<Pattern> {
     Pattern(Box<Pattern>),
 }
 
-impl<Pattern: Input + Debug> Input for Unpackable<Pattern>
+impl<I: Debug, O: Debug> Input<&super::Unpackable<O>> for &Unpackable<I>
 where
-    Pattern::Output: Debug,
+    for<'i, 'o> &'i I: Input<&'o O>,
 {
-    type Output = super::Unpackable<Pattern::Output>;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+    fn assert(self, output: &super::Unpackable<O>) -> TestCaseResult {
         match (self, output) {
-            (Self::Unpack(input), super::Unpackable::Unpack(output)) => input.assert(output),
-            (Self::Pattern(input), super::Unpackable::Pattern(output)) => input.assert(output),
+            (Unpackable::Unpack(input), super::Unpackable::Unpack(output)) => input.assert(output),
+            (Unpackable::Pattern(input), super::Unpackable::Pattern(output)) => {
+                input.assert(output)
+            }
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -271,14 +266,12 @@ pub struct Tuple<Pattern> {
     pub patterns: Option<ConnectedList<Unpackable<Pattern>, ConstantPunctuation<','>>>,
 }
 
-impl<Pattern: Input + Debug> Input for Tuple<Pattern>
+impl<I: Debug, O: Debug> Input<&super::Tuple<O>> for &Tuple<I>
 where
-    Pattern::Output: Debug,
+    for<'i, 'o> &'i I: Input<&'o O>,
 {
-    type Output = super::Tuple<Pattern::Output>;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.patterns.assert(&output.patterns)
+    fn assert(self, output: &super::Tuple<O>) -> TestCaseResult {
+        self.patterns.as_ref().assert(output.patterns.as_ref())
     }
 }
 
@@ -313,16 +306,14 @@ pub enum Irrefutable {
     Named(Named),
 }
 
-impl Input for Irrefutable {
-    type Output = super::Irrefutable;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Irrefutable> for &Irrefutable {
+    fn assert(self, output: &super::Irrefutable) -> TestCaseResult {
         match (self, output) {
-            (Self::Structural(input), super::Irrefutable::Structural(output)) => {
+            (Irrefutable::Structural(input), super::Irrefutable::Structural(output)) => {
                 input.assert(output)
             }
-            (Self::Tuple(input), super::Irrefutable::Tuple(output)) => input.assert(output),
-            (Self::Named(input), super::Irrefutable::Named(output)) => input.assert(output),
+            (Irrefutable::Tuple(input), super::Irrefutable::Tuple(output)) => input.assert(output),
+            (Irrefutable::Named(input), super::Irrefutable::Named(output)) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -363,14 +354,12 @@ pub struct Enum<Pattern> {
     pub pattern: Box<Pattern>,
 }
 
-impl<Pattern: Input + Debug> Input for Enum<Pattern>
+impl<I: Debug, O: Debug> Input<&super::Enum<O>> for &Enum<I>
 where
-    Pattern::Output: Debug,
+    for<'i, 'o> &'i I: Input<&'o O>,
 {
-    type Output = super::Enum<Pattern::Output>;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.identifier.assert(&output.identifier)?;
+    fn assert(self, output: &super::Enum<O>) -> TestCaseResult {
+        (&self.identifier).assert(&output.identifier)?;
         self.pattern.assert(&output.pattern)
     }
 }
@@ -408,21 +397,21 @@ pub enum Refutable {
     Named(Named),
 }
 
-impl Input for Refutable {
-    type Output = super::Refutable;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Refutable> for &Refutable {
+    fn assert(self, output: &super::Refutable) -> TestCaseResult {
         match (self, output) {
-            (Self::BooleanLiteral(input), super::Refutable::BooleanLiteral(output)) => {
+            (Refutable::BooleanLiteral(input), super::Refutable::BooleanLiteral(output)) => {
                 input.assert(output)
             }
-            (Self::NumericLiteral(input), super::Refutable::NumericLiteral(output)) => {
+            (Refutable::NumericLiteral(input), super::Refutable::NumericLiteral(output)) => {
                 input.assert(output)
             }
-            (Self::Structural(input), super::Refutable::Structural(output)) => input.assert(output),
-            (Self::Tuple(input), super::Refutable::Tuple(output)) => input.assert(output),
-            (Self::Enum(input), super::Refutable::Enum(output)) => input.assert(output),
-            (Self::Named(input), super::Refutable::Named(output)) => input.assert(output),
+            (Refutable::Structural(input), super::Refutable::Structural(output)) => {
+                input.assert(output)
+            }
+            (Refutable::Tuple(input), super::Refutable::Tuple(output)) => input.assert(output),
+            (Refutable::Enum(input), super::Refutable::Enum(output)) => input.assert(output),
+            (Refutable::Named(input), super::Refutable::Named(output)) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),

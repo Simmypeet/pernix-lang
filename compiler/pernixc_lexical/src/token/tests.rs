@@ -48,10 +48,8 @@ impl Arbitrary for Identifier {
     }
 }
 
-impl Input for Identifier {
-    type Output = super::Identifier;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Identifier> for &Identifier {
+    fn assert(self, output: &super::Identifier) -> TestCaseResult {
         prop_assert_eq!(self.string.as_str(), output.span.str());
         Ok(())
     }
@@ -85,11 +83,9 @@ impl Arbitrary for Keyword {
     }
 }
 
-impl Input for Keyword {
-    type Output = super::Keyword;
-
-    fn assert(&self, output: &super::Keyword) -> TestCaseResult {
-        prop_assert_eq!(self.keyword, output.keyword);
+impl Input<&super::Keyword> for &Keyword {
+    fn assert(self, output: &super::Keyword) -> TestCaseResult {
+        prop_assert_eq!(self.keyword, output.kind);
         Ok(())
     }
 }
@@ -271,12 +267,10 @@ impl Display for Punctuation {
     }
 }
 
-impl Input for Punctuation {
-    type Output = super::Punctuation;
-
+impl Input<&super::Punctuation> for &Punctuation {
     /// Verifies that the given [`super::Punctuation`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+    fn assert(self, output: &super::Punctuation) -> TestCaseResult {
         prop_assert_eq!(output.punctuation, self.punctuation);
         Ok(())
     }
@@ -396,29 +390,27 @@ impl Display for Token {
     }
 }
 
-impl Input for Token {
-    type Output = super::Token;
-
+impl Input<&super::Token> for &Token {
     /// Verifies that the given [`super::Token`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+    fn assert(self, output: &super::Token) -> TestCaseResult {
         match (self, output) {
-            (Self::Identifier(i), super::Token::Identifier(o)) => {
+            (Token::Identifier(i), super::Token::Identifier(o)) => {
                 i.assert(o)?;
             }
-            (Self::Keyword(i), super::Token::Keyword(o)) => {
+            (Token::Keyword(i), super::Token::Keyword(o)) => {
                 i.assert(o)?;
             }
-            (Self::NumericLiteral(i), super::Token::Numeric(o)) => {
+            (Token::NumericLiteral(i), super::Token::Numeric(o)) => {
                 i.assert(o)?;
             }
-            (Self::Comment(i), super::Token::Comment(o)) => {
+            (Token::Comment(i), super::Token::Comment(o)) => {
                 i.assert(o)?;
             }
-            (Self::WhiteSpaces(i), super::Token::WhiteSpaces(o)) => {
+            (Token::WhiteSpaces(i), super::Token::WhiteSpaces(o)) => {
                 i.assert(o)?;
             }
-            (Self::Punctuation(i), super::Token::Punctuation(o)) => {
+            (Token::Punctuation(i), super::Token::Punctuation(o)) => {
                 i.assert(o)?;
             }
             _ => {

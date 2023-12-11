@@ -207,7 +207,7 @@ fn unify_internal<
 
     // sub structurally unify
     if semantic
-        .sub_structural_unify_internal(lhs, rhs, premises, table, session, config, &mut unifier)
+        .sub_structural_unify(lhs, rhs, premises, table, session, config, &mut unifier)
         .is_ok()
     {
         session.mark_as_done(Record { lhs, rhs });
@@ -363,7 +363,7 @@ pub(super) fn sub_structural_unify<
     };
 
     semantic
-        .sub_structural_unify_internal(lhs, rhs, premises, table, session, config, &mut unifier)
+        .sub_structural_unify(lhs, rhs, premises, table, session, config, &mut unifier)
         .map(|()| existing)
 }
 

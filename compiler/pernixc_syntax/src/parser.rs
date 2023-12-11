@@ -8,7 +8,7 @@ use pernixc_lexical::{
     token_stream::{Delimited, Delimiter, TokenStream, TokenTree},
 };
 
-use crate::error::{Error, SyntaxKind, UnexpectedSyntax};
+use crate::error::{Error, SyntaxKind};
 
 /// Provides a way to iterate over a token stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -43,15 +43,15 @@ pub struct Frame<'a> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Reading {
     /// A singular token.
-    Atomic(Token),
+    Unit(Token),
 
     /// Found an openning delimiter token, which means that the parser can step into a new
     /// delimited frame.
-    IntoDelimited(Punctuation),
+    IntoDelimited(Delimiter, Punctuation),
 
     /// Found a closing delimiter token, which means that the parser should step out of the current
     /// delimited frame.
-    DelimitedEnd(Punctuation),
+    DelimitedEnd(Delimiter, Punctuation),
 
     /// End of file.
     Eof,
@@ -66,8 +66,10 @@ impl Reading {
     #[must_use]
     pub fn into_token(self) -> Option<Token> {
         match self {
-            Self::Atomic(token) => Some(token),
-            Self::IntoDelimited(punc) | Self::DelimitedEnd(punc) => Some(Token::Punctuation(punc)),
+            Self::Unit(token) => Some(token),
+            Self::IntoDelimited(_, punc) | Self::DelimitedEnd(_, punc) => {
+                Some(Token::Punctuation(punc))
+            }
             Self::Eof => None,
         }
     }
@@ -102,12 +104,14 @@ impl<'a> Frame<'a> {
                 // end of file
                 TokenProvider::TokenStream(..) => Reading::Eof,
                 TokenProvider::Delimited(delimited) => {
-                    Reading::DelimitedEnd(delimited.close.clone())
+                    Reading::DelimitedEnd(delimited.delimiter, delimited.close.clone())
                 }
             },
             |token| match token {
-                TokenTree::Token(token) => Reading::Atomic(token.clone()),
-                TokenTree::Delimited(delimited) => Reading::IntoDelimited(delimited.open.clone()),
+                TokenTree::Token(token) => Reading::Unit(token.clone()),
+                TokenTree::Delimited(delimited) => {
+                    Reading::IntoDelimited(delimited.delimiter, delimited.open.clone())
+                }
             },
         )
     }
@@ -138,6 +142,8 @@ impl<'a> Frame<'a> {
 
     /// Returns a [`Token`] pointing by the `current_index` of the [`Frame`] and increments the
     /// `current_index` by 1.
+    #[must_use = "use `forward` instead if you don't need the token and just want to increment the \
+                  index"]
     pub fn next_token(&mut self) -> Reading {
         let token = self.peek();
 
@@ -176,7 +182,7 @@ impl<'a> Frame<'a> {
 
             if !matches!(
                 token,
-                Reading::Atomic(Token::WhiteSpaces(..) | Token::Comment(..))
+                Reading::Unit(Token::WhiteSpaces(..) | Token::Comment(..))
             ) {
                 return token;
             }
@@ -186,7 +192,9 @@ impl<'a> Frame<'a> {
 
         match self.token_provider {
             TokenProvider::TokenStream(..) => Reading::Eof,
-            TokenProvider::Delimited(delimited) => Reading::DelimitedEnd(delimited.close.clone()),
+            TokenProvider::Delimited(delimited) => {
+                Reading::DelimitedEnd(delimited.delimiter, delimited.close.clone())
+            }
         }
     }
 
@@ -204,7 +212,9 @@ impl<'a> Frame<'a> {
 
         match self.token_provider {
             TokenProvider::TokenStream(..) => Reading::Eof,
-            TokenProvider::Delimited(delimited) => Reading::DelimitedEnd(delimited.close.clone()),
+            TokenProvider::Delimited(delimited) => {
+                Reading::DelimitedEnd(delimited.delimiter, delimited.close.clone())
+            }
         }
     }
 
@@ -214,12 +224,13 @@ impl<'a> Frame<'a> {
     /// If the next [`Token`] is not an [`Identifier`].
     pub fn parse_identifier(&mut self, handler: &dyn Handler<Error>) -> Option<Identifier> {
         match self.next_significant_token() {
-            Reading::Atomic(Token::Identifier(ident)) => Some(ident),
+            Reading::Unit(Token::Identifier(ident)) => Some(ident),
             found => {
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::Identifier,
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
                 None
             }
         }
@@ -231,12 +242,13 @@ impl<'a> Frame<'a> {
     /// If the next [`Token`] is not an [`Identifier`].
     pub fn parse_numeric(&mut self, handler: &dyn Handler<Error>) -> Option<Numeric> {
         match self.next_significant_token() {
-            Reading::Atomic(Token::Numeric(ident)) => Some(ident),
+            Reading::Unit(Token::Numeric(ident)) => Some(ident),
             found => {
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::Numeric,
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
                 None
             }
         }
@@ -252,14 +264,15 @@ impl<'a> Frame<'a> {
         handler: &dyn Handler<Error>,
     ) -> Option<Keyword> {
         match self.next_significant_token() {
-            Reading::Atomic(Token::Keyword(keyword_token)) if keyword_token.keyword == expected => {
+            Reading::Unit(Token::Keyword(keyword_token)) if keyword_token.kind == expected => {
                 Some(keyword_token)
             }
             found => {
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::Keyword(expected),
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
                 None
             }
         }
@@ -280,16 +293,17 @@ impl<'a> Frame<'a> {
         } else {
             self.next_token()
         } {
-            Reading::Atomic(Token::Punctuation(punctuation_token))
+            Reading::Unit(Token::Punctuation(punctuation_token))
                 if punctuation_token.punctuation == expected =>
             {
                 Some(punctuation_token)
             }
             found => {
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::Punctuation(expected),
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
                 None
             }
         }
@@ -376,24 +390,26 @@ impl<'a> Parser<'a> {
                     delimited_tree
                 }
                 found => {
-                    handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                    handler.receive(Error {
                         expected: SyntaxKind::Punctuation(expected),
+                        alternatives: Vec::new(),
                         found: Some(match found {
                             TokenTree::Token(token) => token.clone(),
                             TokenTree::Delimited(delimited_tree) => {
                                 Token::Punctuation(delimited_tree.open.clone())
                             }
                         }),
-                    }));
+                    });
 
                     return None;
                 }
             }
         } else {
-            handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+            handler.receive(Error {
                 expected: SyntaxKind::Punctuation(expected),
+                alternatives: Vec::new(),
                 found: self.get_reading(None).into_token(),
-            }));
+            });
 
             return None;
         };
@@ -431,10 +447,11 @@ impl<'a> Parser<'a> {
                 Delimiter::Bracket => ']',
             };
 
-            handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+            handler.receive(Error {
                 expected: SyntaxKind::Punctuation(expected),
+                alternatives: Vec::new(),
                 found: self.peek().into_token(),
-            }));
+            });
         }
 
         let close_punctuation = self

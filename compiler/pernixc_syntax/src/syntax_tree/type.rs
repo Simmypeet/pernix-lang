@@ -10,10 +10,11 @@ use pernixc_lexical::{
 };
 
 use super::{
-    expression::Expression, ConnectedList, LifetimeArgument, QualifiedIdentifier, Qualifier,
+    expression::Expression, ConnectedList, Lifetime, LifetimeIdentifier, QualifiedIdentifier,
+    Qualifier,
 };
 use crate::{
-    error::{Error, SyntaxKind, UnexpectedSyntax},
+    error::{Error, SyntaxKind},
     parser::{Parser, Reading},
 };
 
@@ -83,7 +84,7 @@ pub struct Reference {
     #[get = "pub"]
     ampersand: Punctuation,
     #[get = "pub"]
-    lifetime_argument: Option<LifetimeArgument>,
+    lifetime_argument: Option<Lifetime>,
     #[get = "pub"]
     qualifier: Option<Qualifier>,
     #[get = "pub"]
@@ -252,28 +253,46 @@ impl<'a> Parser<'a> {
     fn parse_reference_type(&mut self, handler: &dyn Handler<Error>) -> Option<Reference> {
         let ampersand = self.parse_punctuation('&', true, handler)?;
         let lifetime_argument = match self.stop_at_significant() {
-            Reading::Atomic(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
                 // eat apostrophe
                 self.forward();
 
-                let lifetime_argument_identifier =
-                    self.parse_lifetime_argument_identifier(handler)?;
+                let lifetime_identifier = match self.next_token() {
+                    Reading::Unit(Token::Identifier(identifier)) => {
+                        LifetimeIdentifier::Identifier(identifier)
+                    }
+                    Reading::Unit(Token::Keyword(keyword))
+                        if keyword.kind == KeywordKind::Static =>
+                    {
+                        LifetimeIdentifier::Static(keyword)
+                    }
 
-                Some(LifetimeArgument {
+                    found => {
+                        handler.receive(Error {
+                            expected: SyntaxKind::Identifier,
+                            alternatives: vec![SyntaxKind::Keyword(KeywordKind::Static)],
+                            found: found.into_token(),
+                        });
+
+                        return None;
+                    }
+                };
+
+                Some(Lifetime {
                     apostrophe,
-                    identifier: lifetime_argument_identifier,
+                    identifier: lifetime_identifier,
                 })
             }
 
             _ => None,
         };
         let reference_qualifier = match self.stop_at_significant() {
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Mutable => {
                 self.forward();
                 Some(Qualifier::Mutable(k))
             }
 
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Restrict => {
                 self.forward();
                 Some(Qualifier::Restrict(k))
             }
@@ -294,12 +313,12 @@ impl<'a> Parser<'a> {
         let asterisk = self.parse_punctuation('*', true, handler)?;
 
         let qualifier = match self.stop_at_significant() {
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Mutable => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Mutable => {
                 self.forward();
                 Some(Qualifier::Mutable(k))
             }
 
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Restrict => {
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Restrict => {
                 self.forward();
                 Some(Qualifier::Restrict(k))
             }
@@ -349,9 +368,9 @@ impl<'a> Parser<'a> {
 
                 let ellipsis = match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
                     (
-                        Reading::Atomic(Token::Punctuation(p1)),
-                        Some(Reading::Atomic(Token::Punctuation(p2))),
-                        Some(Reading::Atomic(Token::Punctuation(p3))),
+                        Reading::Unit(Token::Punctuation(p1)),
+                        Some(Reading::Unit(Token::Punctuation(p2))),
+                        Some(Reading::Unit(Token::Punctuation(p3))),
                     ) if p1.punctuation == '.'
                         && p2.punctuation == '.'
                         && p3.punctuation == '.' =>
@@ -389,24 +408,24 @@ impl<'a> Parser<'a> {
     pub fn parse_type(&mut self, handler: &dyn Handler<Error>) -> Option<Type> {
         match self.stop_at_significant() {
             // parse qualified identifier
-            Reading::Atomic(Token::Punctuation(first_colon))
+            Reading::Unit(Token::Punctuation(first_colon))
                 if first_colon.punctuation == ':'
                     && self.peek_offset(1).map_or(false, |x| {
                         matches!(
                             x,
-                            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == ':'
+                            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ':'
                         )
                     }) =>
             {
                 Some(Type::QualifiedIdentifier(
-                    self.parse_qualified_identifier(false, handler)?,
+                    self.parse_qualified_identifier(handler)?,
                 ))
             }
 
             // parse local type
-            Reading::Atomic(Token::Keyword(keyword)) if keyword.keyword == KeywordKind::Local => {
+            Reading::Unit(Token::Keyword(keyword)) if keyword.kind == KeywordKind::Local => {
                 // eat local keyword
-                self.next_token();
+                self.forward();
 
                 let identifier = self.parse_type(handler)?;
 
@@ -417,34 +436,34 @@ impl<'a> Parser<'a> {
             }
 
             // parse qualified identifier
-            Reading::Atomic(Token::Identifier(..)) => Some(Type::QualifiedIdentifier(
-                self.parse_qualified_identifier(false, handler)?,
+            Reading::Unit(Token::Identifier(..)) => Some(Type::QualifiedIdentifier(
+                self.parse_qualified_identifier(handler)?,
             )),
 
             // parse pointer type
-            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '*' => {
+            Reading::Unit(Token::Punctuation(p)) if p.punctuation == '*' => {
                 self.parse_pointer_type(handler).map(Type::Pointer)
             }
 
             // parse reference
-            Reading::Atomic(Token::Punctuation(p)) if p.punctuation == '&' => {
+            Reading::Unit(Token::Punctuation(p)) if p.punctuation == '&' => {
                 self.parse_reference_type(handler).map(Type::Reference)
             }
 
             // parse array type
-            Reading::IntoDelimited(p) if p.punctuation == '[' => {
+            Reading::IntoDelimited(Delimiter::Bracket, _) => {
                 self.parse_array_type(handler).map(Type::Array)
             }
 
             // parse tuple type
-            Reading::IntoDelimited(p) if p.punctuation == '(' => {
+            Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
                 self.parse_tuple_type(handler).map(Type::Tuple)
             }
 
             // primitive type
-            Reading::Atomic(Token::Keyword(keyword))
+            Reading::Unit(Token::Keyword(keyword))
                 if matches!(
-                    keyword.keyword,
+                    keyword.kind,
                     KeywordKind::Int8
                         | KeywordKind::Int16
                         | KeywordKind::Int32
@@ -461,9 +480,9 @@ impl<'a> Parser<'a> {
                 ) =>
             {
                 // eat primitive type token
-                self.next_token();
+                self.forward();
 
-                let primitive_type = match keyword.keyword {
+                let primitive_type = match keyword.kind {
                     KeywordKind::Bool => Primitive::Bool(keyword),
                     KeywordKind::Int8 => Primitive::Int8(keyword),
                     KeywordKind::Int16 => Primitive::Int16(keyword),
@@ -487,10 +506,11 @@ impl<'a> Parser<'a> {
                 // eat the current token / make progress
                 self.forward();
 
-                handler.receive(Error::UnexpectedSyntax(UnexpectedSyntax {
+                handler.receive(Error {
                     expected: SyntaxKind::TypeSpecifier,
+                    alternatives: Vec::new(),
                     found: found.into_token(),
-                }));
+                });
 
                 None
             }

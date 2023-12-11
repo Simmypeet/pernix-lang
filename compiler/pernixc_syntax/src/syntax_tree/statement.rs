@@ -8,7 +8,7 @@ use pernixc_base::{
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation, Token};
 
 use super::{
-    expression::{Expression, Functional, Imperative, Terminator},
+    expression::{Binary, Brace, Expression, Terminator},
     pattern::Irrefutable,
     r#type::Type,
 };
@@ -58,9 +58,24 @@ impl SourceElement for TypeAnnotation {
 }
 
 /// Syntax Synopsis:
+///
+/// ``` txt
+/// Initializer:
+///     '=' Expression
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Initializer {
+    #[get = "pub"]
+    equals: Punctuation,
+    #[get = "pub"]
+    expression: Expression,
+}
+
+/// Syntax Synopsis:
 /// ``` txt
 /// VariableDeclaration:
-///     'let' Irrefutable TypeAnnotation? '=' Expression ';'
+///     'let' Irrefutable TypeAnnotation? Initializer? ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -73,9 +88,7 @@ pub struct VariableDeclaration {
     #[get = "pub"]
     type_annotation: Option<TypeAnnotation>,
     #[get = "pub"]
-    equals: Punctuation,
-    #[get = "pub"]
-    expression: Expression,
+    initializer: Option<Initializer>,
     #[get = "pub"]
     semicolon: Punctuation,
 }
@@ -95,14 +108,14 @@ impl SourceElement for VariableDeclaration {
 #[allow(missing_docs)]
 pub enum Expressive {
     Semi(Semi),
-    Imperative(Imperative),
+    Brace(Brace),
 }
 
 impl SourceElement for Expressive {
     fn span(&self) -> Span {
         match self {
             Self::Semi(expression) => expression.span(),
-            Self::Imperative(expression) => expression.span(),
+            Self::Brace(expression) => expression.span(),
         }
     }
 }
@@ -117,14 +130,14 @@ impl SourceElement for Expressive {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum SemiExpression {
-    Functional(Functional),
+    Binary(Binary),
     Terminator(Terminator),
 }
 
 impl SourceElement for SemiExpression {
     fn span(&self) -> Span {
         match self {
-            Self::Functional(expression) => expression.span(),
+            Self::Binary(expression) => expression.span(),
             Self::Terminator(expression) => expression.span(),
         }
     }
@@ -155,16 +168,16 @@ impl<'a> Parser<'a> {
     pub fn parse_statement(&mut self, handler: &dyn Handler<Error>) -> Option<Statement> {
         if matches!(
             self.stop_at_significant(),
-            Reading::Atomic(Token::Keyword(k)) if k.keyword == KeywordKind::Let
+            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Let
         ) {
             self.parse_variable_declaration(handler)
                 .map(Statement::VariableDeclaration)
         } else {
             let semi_expression = match self.parse_expression(handler)? {
-                Expression::Imperative(imperative) => {
-                    return Some(Statement::Expressive(Expressive::Imperative(imperative)));
+                Expression::Brace(brace) => {
+                    return Some(Statement::Expressive(Expressive::Brace(brace)));
                 }
-                Expression::Functional(functional) => SemiExpression::Functional(functional),
+                Expression::Binary(binary) => SemiExpression::Binary(binary),
                 Expression::Terminator(terminator) => SemiExpression::Terminator(terminator),
             };
 
@@ -188,7 +201,7 @@ impl<'a> Parser<'a> {
 
         // parse optional type annotation
         let type_annotation = match self.stop_at_significant() {
-            Reading::Atomic(Token::Punctuation(colon)) if colon.punctuation == ':' => {
+            Reading::Unit(Token::Punctuation(colon)) if colon.punctuation == ':' => {
                 self.forward();
                 let ty = self.parse_type(handler)?;
                 Some(TypeAnnotation { colon, ty })
@@ -196,16 +209,24 @@ impl<'a> Parser<'a> {
             _ => None,
         };
 
-        let equals = self.parse_punctuation('=', true, handler)?;
-        let expression = self.parse_expression(handler)?;
+        let initializer = match self.stop_at_significant() {
+            Reading::Unit(Token::Punctuation(equals)) if equals.punctuation == '=' => {
+                // eat the '='
+                self.forward();
+                let expression = self.parse_expression(handler)?;
+
+                Some(Initializer { equals, expression })
+            }
+            _ => None,
+        };
+
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
         Some(VariableDeclaration {
             let_keyword,
             irrefutable_pattern,
             type_annotation,
-            equals,
-            expression,
+            initializer,
             semicolon,
         })
     }

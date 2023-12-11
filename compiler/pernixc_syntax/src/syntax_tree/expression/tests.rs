@@ -1,1248 +1,109 @@
 use std::fmt::{Display, Write};
 
-use enum_as_inner::EnumAsInner;
-use pernixc_lexical::token::KeywordKind;
 use pernixc_tests::input::Input;
 use proptest::{
-    prelude::Arbitrary,
+    arbitrary::Arbitrary,
+    prelude::prop::test_runner::TestCaseResult,
     prop_assert_eq, prop_oneof, proptest,
     strategy::{BoxedStrategy, Just, Strategy},
-    test_runner::{TestCaseError, TestCaseResult},
+    test_runner::TestCaseError,
 };
 
 use crate::syntax_tree::{
-    self, pattern,
+    pattern::tests::Refutable,
     r#type::tests::Type,
     statement::tests::Statement,
-    tests::{ConnectedList, ConstantPunctuation, QualifiedIdentifier, Qualifier},
+    tests::{
+        parse, ConnectedList, ConstantPunctuation, Identifier, Label, Numeric, QualifiedIdentifier,
+        Qualifier,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NumericLiteral {
-    pub numeric_string: String,
-    pub decimal_string: Option<String>,
-    pub suffix_string: Option<String>,
+pub enum Expression {
+    Binary(Binary),
+    Terminator(Terminator),
+    Brace(Brace),
 }
 
-impl Arbitrary for NumericLiteral {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            "[0-9]+",
-            proptest::option::of("[0-9]+"),
-            proptest::option::of(syntax_tree::tests::Identifier::arbitrary()),
-        )
-            .prop_map(|(numeric, decimal, suffix)| Self {
-                numeric_string: numeric,
-                decimal_string: decimal,
-                suffix_string: suffix.map(|x| x.string),
-            })
-            .boxed()
-    }
-}
-
-impl Input for NumericLiteral {
-    type Output = super::NumericLiteral;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(&self.numeric_string, output.numeric.span.str());
-
-        match (&self.decimal_string, &output.decimal) {
-            (Some(input), Some(output)) => {
-                prop_assert_eq!(input, output.numeric.span.str());
-            }
-            (None, None) => {}
-            (input, output) => {
-                return Err(TestCaseError::fail(format!(
-                    "expected decimal to be {input:?}, found {output:?}"
-                )))
-            }
-        }
-
-        match (&self.suffix_string, &output.suffix) {
-            (Some(input), Some(output)) => {
-                prop_assert_eq!(input, output.span.str());
-            }
-            (None, None) => {}
-            (input, output) => {
-                return Err(TestCaseError::fail(format!(
-                    "expected suffix to be {input:?}, found {output:?}"
-                )))
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl Display for NumericLiteral {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.numeric_string, f)?;
-
-        if let Some(decimal) = self.decimal_string.as_ref() {
-            write!(f, ".{decimal}")?;
-        }
-
-        if let Some(suffix) = self.suffix_string.as_ref() {
-            write!(f, "{suffix}")?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BooleanLiteral {
-    pub boolean_value: bool,
-}
-
-impl Arbitrary for BooleanLiteral {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::bool::ANY
-            .prop_map(|x| Self { boolean_value: x })
-            .boxed()
-    }
-}
-
-impl Input for BooleanLiteral {
-    type Output = super::BooleanLiteral;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self.boolean_value, output) {
-            (true, super::BooleanLiteral::True(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::True);
-            }
-            (false, super::BooleanLiteral::False(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::False);
-            }
-            _ => {
-                return Err(TestCaseError::fail(format!(
-                    "expected boolean literal to be {:?}, found {:?}",
-                    self.boolean_value, output
-                )))
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl Display for BooleanLiteral {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.boolean_value {
-            f.write_str("true")
-        } else {
-            f.write_str("false")
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ArrayLiteral {
-    pub expressions: Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
-}
-
-impl Input for ArrayLiteral {
-    type Output = super::ArrayLiteral;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.expressions.assert(output.arguments())
-    }
-}
-
-impl Arbitrary for ArrayLiteral {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
-
-        proptest::option::of(ConnectedList::arbitrary_with(
-            expression_strategy.prop_map(Box::new),
-            ConstantPunctuation::arbitrary(),
-        ))
-        .prop_map(|expressions| Self { expressions })
-        .boxed()
-    }
-}
-
-impl Display for ArrayLiteral {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char('[')?;
-
-        if let Some(expressions) = &self.expressions {
-            write!(f, "{expressions}")?;
-        }
-
-        f.write_char(']')
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Named {
-    pub qualified_identifier: QualifiedIdentifier,
-}
-
-impl Input for Named {
-    type Output = super::Named;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.qualified_identifier
-            .assert(output.qualified_identifier())
-    }
-}
-
-impl Display for Named {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.qualified_identifier, f)
-    }
-}
-
-impl Arbitrary for Named {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        QualifiedIdentifier::arbitrary_with((true, args))
-            .prop_map(|x| Self {
-                qualified_identifier: x,
-            })
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ReferenceOfKind {
-    Local,
-    Regular,
-}
-
-impl Input for ReferenceOfKind {
-    type Output = super::ReferenceOfKind;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Expression> for &Expression {
+    fn assert(self, output: &super::Expression) -> TestCaseResult {
         match (self, output) {
-            (Self::Local, super::ReferenceOfKind::Local(k)) => {
-                prop_assert_eq!(k.punctuation, '@');
+            (Expression::Binary(input), super::Expression::Binary(output)) => input.assert(output),
+            (Expression::Terminator(input), super::Expression::Terminator(output)) => {
+                input.assert(output)
             }
-            (Self::Regular, super::ReferenceOfKind::Regular(k)) => {
-                prop_assert_eq!(k.punctuation, '&');
-            }
-            _ => {
-                return Err(TestCaseError::fail(format!(
-                    "expected reference of kind to be {self:?}, found {output:?}",
-                )))
-            }
-        }
+            (Expression::Brace(input), super::Expression::Brace(output)) => input.assert(output),
 
-        Ok(())
-    }
-}
-
-impl Arbitrary for ReferenceOfKind {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![Just(Self::Local), Just(Self::Regular),].boxed()
-    }
-}
-
-impl Display for ReferenceOfKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Local => f.write_char('@'),
-            Self::Regular => f.write_char('&'),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReferenceOf {
-    pub kind: ReferenceOfKind,
-    pub qualifier: Option<Qualifier>,
-}
-
-impl Input for ReferenceOf {
-    type Output = super::ReferenceOf;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.kind.assert(output.kind())?;
-        self.qualifier.assert(output.qualifier())
-    }
-}
-
-impl Display for ReferenceOf {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.kind, f)?;
-
-        if let Some(qualifier) = &self.qualifier {
-            Display::fmt(qualifier, f)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl Arbitrary for ReferenceOf {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            ReferenceOfKind::arbitrary(),
-            proptest::option::of(Qualifier::arbitrary()),
-        )
-            .prop_map(|(kind, qualifier)| Self { kind, qualifier })
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum PrefixOperator {
-    LogicalNot,
-    Negate,
-    ReferenceOf(ReferenceOf),
-    Dereference,
-    Local,
-    Unlocal,
-}
-
-impl Arbitrary for PrefixOperator {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            Just(Self::LogicalNot),
-            Just(Self::Negate),
-            ReferenceOf::arbitrary().prop_map(Self::ReferenceOf),
-            Just(Self::Dereference),
-            Just(Self::Local),
-            Just(Self::Unlocal),
-        ]
-        .boxed()
-    }
-}
-
-impl Input for PrefixOperator {
-    type Output = super::PrefixOperator;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::LogicalNot, super::PrefixOperator::LogicalNot(k)) => {
-                prop_assert_eq!(k.punctuation, '!');
-            }
-            (Self::Negate, super::PrefixOperator::Negate(k)) => {
-                prop_assert_eq!(k.punctuation, '-');
-            }
-            (Self::ReferenceOf(i), super::PrefixOperator::ReferenceOf(o)) => i.assert(o)?,
-            (Self::Dereference, super::PrefixOperator::Dereference(k)) => {
-                prop_assert_eq!(k.punctuation, '*');
-            }
-            (Self::Local, super::PrefixOperator::Local(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::Local);
-            }
-            (Self::Unlocal, super::PrefixOperator::Unlocal(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::Unlocal);
-            }
-            _ => {
-                return Err(TestCaseError::fail(format!(
-                    "expected prefix operator to be {self:?}, found {output:?}",
-                )))
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl Display for PrefixOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::LogicalNot => f.write_char('!'),
-            Self::Negate => f.write_char('-'),
-            Self::ReferenceOf(i) => Display::fmt(i, f),
-            Self::Dereference => f.write_char('*'),
-            Self::Local => f.write_str("local"),
-            Self::Unlocal => f.write_str("unlocal"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Prefix {
-    pub operator: PrefixOperator,
-    pub operand: Box<Functional>,
-}
-
-impl Input for Prefix {
-    type Output = super::Prefix;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operator.assert(output.operator())?;
-        self.operand.assert(output.operand())
-    }
-}
-
-impl Display for Prefix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.operator, self.operand)
-    }
-}
-
-impl Arbitrary for Prefix {
-    type Parameters = Option<BoxedStrategy<Functional>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let prefix = args
-            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
-            .prop_filter("filter out binary", |x| {
-                !matches!(x, Functional::Binary(..))
-            });
-
-        (prefix, PrefixOperator::arbitrary())
-            .prop_map(|(operand, operator)| Self {
-                operator,
-                operand: Box::new(operand),
-            })
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Access {
-    Struct(syntax_tree::tests::Identifier),
-    Tuple(usize),
-}
-
-impl Input for Access {
-    type Output = super::Access;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::Struct(input), super::Access::Struct(output)) => input.assert(output),
-            (Self::Tuple(input), super::Access::Tuple(output)) => {
-                prop_assert_eq!(*input, output.span.str().parse().unwrap());
-                Ok(())
-            }
             (input, output) => Err(TestCaseError::fail(format!(
-                "expected access to be {input:?}, found {output:?}",
+                "expected {input:?}, got {output:?}",
             ))),
         }
     }
 }
 
-impl Arbitrary for Access {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            syntax_tree::tests::Identifier::arbitrary().prop_map(Access::Struct),
-            usize::arbitrary().prop_map(Access::Tuple),
-        ]
-        .boxed()
-    }
-}
-
-impl Display for Access {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Struct(x) => Display::fmt(x, f),
-            Self::Tuple(x) => Display::fmt(x, f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Dot {
-    pub operand: Box<Functional>,
-    pub access: Access,
-}
-
-impl Input for Dot {
-    type Output = super::Dot;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.access.assert(output.access())
-    }
-}
-
-impl Arbitrary for Dot {
-    type Parameters = Option<BoxedStrategy<Functional>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let operand = args
-            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
-            .prop_filter("filter out `prefix` and `binary`", |x| {
-                !matches!(
-                    x,
-                    Functional::Prefix(..)
-                        | Functional::Binary(..)
-                        | Functional::NumericLiteral(..)
-                )
-            });
-
-        (operand, Access::arbitrary())
-            .prop_map(|(operand, access)| Self {
-                operand: Box::new(operand),
-                access,
-            })
-            .boxed()
-    }
-}
-
-impl Display for Dot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}", self.operand, self.access)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Arrow {
-    pub operand: Box<Functional>,
-    pub access: Access,
-}
-
-impl Input for Arrow {
-    type Output = super::Arrow;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.access.assert(output.access())
-    }
-}
-
-impl Arbitrary for Arrow {
-    type Parameters = Option<BoxedStrategy<Functional>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let operand = args
-            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
-            .prop_filter("filter out `prefix` and `binary`", |x| {
-                !matches!(x, Functional::Prefix(..) | Functional::Binary(..))
-            });
-
-        (operand, Access::arbitrary())
-            .prop_map(|(operand, access)| Self {
-                operand: Box::new(operand),
-                access,
-            })
-            .boxed()
-    }
-}
-
-impl Display for Arrow {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}->{}", self.operand, self.access)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Copy {
-    pub operand: Box<Functional>,
-}
-
-impl Input for Copy {
-    type Output = super::Copy;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operand.assert(output.operand())
-    }
-}
-
-impl Arbitrary for Copy {
-    type Parameters = Option<BoxedStrategy<Functional>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression_strategy = args.unwrap_or_else(|| {
-            Expression::arbitrary()
-                .prop_filter_map("filter functional variant", |x| x.into_functional().ok())
-                .boxed()
-        });
-
-        expression_strategy
-            .prop_filter_map("only allows functional variants", |x| match x {
-                Functional::Binary(_) | Functional::Prefix(_) => None,
-                functional => Some(functional),
-            })
-            .prop_map(|operand| Self {
-                operand: Box::new(operand),
-            })
-            .boxed()
-    }
-}
-
-impl Display for Copy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}'", self.operand)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum BinaryOperator {
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Modulo,
-    Assign,
-    CompoundAdd,
-    CompoundSubtract,
-    CompoundMultiply,
-    CompoundDivide,
-    CompoundModulo,
-    Equal,
-    NotEqual,
-    GreaterThan,
-    GreaterThanOrEqual,
-    LessThan,
-    LessThanOrEqual,
-    LogicalAnd,
-    LogicalOr,
-}
-
-impl Input for BinaryOperator {
-    type Output = super::BinaryOperator;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::Add, super::BinaryOperator::Add(k)) => {
-                prop_assert_eq!(k.punctuation, '+');
-            }
-            (Self::Subtract, super::BinaryOperator::Subtract(k)) => {
-                prop_assert_eq!(k.punctuation, '-');
-            }
-            (Self::Multiply, super::BinaryOperator::Multiply(k)) => {
-                prop_assert_eq!(k.punctuation, '*');
-            }
-            (Self::Divide, super::BinaryOperator::Divide(k)) => {
-                prop_assert_eq!(k.punctuation, '/');
-            }
-            (Self::Modulo, super::BinaryOperator::Modulo(k)) => {
-                prop_assert_eq!(k.punctuation, '%');
-            }
-            (Self::Assign, super::BinaryOperator::Assign(k)) => {
-                prop_assert_eq!(k.punctuation, '=');
-            }
-            (Self::CompoundAdd, super::BinaryOperator::CompoundAdd(f, s)) => {
-                prop_assert_eq!(f.punctuation, '+');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::CompoundSubtract, super::BinaryOperator::CompoundSubtract(f, s)) => {
-                prop_assert_eq!(f.punctuation, '-');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::CompoundMultiply, super::BinaryOperator::CompoundMultiply(f, s)) => {
-                prop_assert_eq!(f.punctuation, '*');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::CompoundDivide, super::BinaryOperator::CompoundDivide(f, s)) => {
-                prop_assert_eq!(f.punctuation, '/');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::CompoundModulo, super::BinaryOperator::CompoundModulo(f, s)) => {
-                prop_assert_eq!(f.punctuation, '%');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::Equal, super::BinaryOperator::Equal(f, s)) => {
-                prop_assert_eq!(f.punctuation, '=');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::NotEqual, super::BinaryOperator::NotEqual(f, s)) => {
-                prop_assert_eq!(f.punctuation, '!');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::GreaterThan, super::BinaryOperator::GreaterThan(f)) => {
-                prop_assert_eq!(f.punctuation, '>');
-            }
-            (Self::GreaterThanOrEqual, super::BinaryOperator::GreaterThanOrEqual(f, s)) => {
-                prop_assert_eq!(f.punctuation, '>');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::LessThan, super::BinaryOperator::LessThan(f)) => {
-                prop_assert_eq!(f.punctuation, '<');
-            }
-            (Self::LessThanOrEqual, super::BinaryOperator::LessThanOrEqual(f, s)) => {
-                prop_assert_eq!(f.punctuation, '<');
-                prop_assert_eq!(s.punctuation, '=');
-            }
-            (Self::LogicalAnd, super::BinaryOperator::LogicalAnd(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::And);
-            }
-            (Self::LogicalOr, super::BinaryOperator::LogicalOr(k)) => {
-                prop_assert_eq!(k.keyword, KeywordKind::Or);
-            }
-            _ => {
-                return Err(TestCaseError::fail(format!(
-                    "expected `{self:?}`, found `{output:?}`",
-                )))
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl Display for BinaryOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Add => write!(f, "+"),
-            Self::Subtract => write!(f, "-"),
-            Self::Multiply => write!(f, "*"),
-            Self::Divide => write!(f, "/"),
-            Self::Modulo => write!(f, "%"),
-            Self::Assign => write!(f, "="),
-            Self::CompoundAdd => write!(f, "+="),
-            Self::CompoundSubtract => write!(f, "-="),
-            Self::CompoundMultiply => write!(f, "*="),
-            Self::CompoundDivide => write!(f, "/="),
-            Self::CompoundModulo => write!(f, "%="),
-            Self::Equal => write!(f, "=="),
-            Self::NotEqual => write!(f, "!="),
-            Self::GreaterThan => write!(f, ">"),
-            Self::GreaterThanOrEqual => write!(f, ">="),
-            Self::LessThan => write!(f, "<"),
-            Self::LessThanOrEqual => write!(f, "<="),
-            Self::LogicalAnd => write!(f, "and"),
-            Self::LogicalOr => write!(f, "or"),
-        }
-    }
-}
-
-impl Arbitrary for BinaryOperator {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            Just(Self::Add),
-            Just(Self::Subtract),
-            Just(Self::Multiply),
-            Just(Self::Divide),
-            Just(Self::Modulo),
-            Just(Self::Assign),
-            Just(Self::CompoundAdd),
-            Just(Self::CompoundSubtract),
-            Just(Self::CompoundMultiply),
-            Just(Self::CompoundDivide),
-            Just(Self::CompoundModulo),
-            Just(Self::Equal),
-            Just(Self::NotEqual),
-            Just(Self::GreaterThan),
-            Just(Self::GreaterThanOrEqual),
-            Just(Self::LessThan),
-            Just(Self::LessThanOrEqual),
-            Just(Self::LogicalAnd),
-            Just(Self::LogicalOr),
-        ]
-        .boxed()
-    }
-}
-
-impl BinaryOperator {
-    #[must_use]
-    pub fn is_assignment(self) -> bool {
-        matches!(
-            self,
-            Self::Assign
-                | Self::CompoundAdd
-                | Self::CompoundSubtract
-                | Self::CompoundMultiply
-                | Self::CompoundDivide
-                | Self::CompoundModulo
-        )
-    }
-
-    #[must_use]
-    pub fn get_precedence(self) -> u32 {
-        match self {
-            Self::Assign
-            | Self::CompoundAdd
-            | Self::CompoundSubtract
-            | Self::CompoundMultiply
-            | Self::CompoundDivide
-            | Self::CompoundModulo => 1,
-            Self::LogicalOr => 2,
-            Self::LogicalAnd => 3,
-            Self::Equal | Self::NotEqual => 4,
-            Self::LessThan
-            | Self::LessThanOrEqual
-            | Self::GreaterThan
-            | Self::GreaterThanOrEqual => 5,
-            Self::Add | Self::Subtract => 6,
-            Self::Multiply | Self::Divide | Self::Modulo => 7,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Binary {
-    pub left_operand: Box<Functional>,
-    pub operator: BinaryOperator,
-    pub right_operand: Box<Functional>,
-}
-
-impl Input for Binary {
-    type Output = super::Binary;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operator.assert(output.operator())?;
-
-        self.left_operand.assert(output.left_operand())?;
-        self.right_operand.assert(output.right_operand())?;
-
-        Ok(())
-    }
-}
-
-impl Display for Binary {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} {}",
-            self.left_operand, self.operator, self.right_operand
-        )
-    }
-}
-
-impl Arbitrary for Binary {
-    type Parameters = Option<BoxedStrategy<Functional>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        fn create_binary(
-            operator: BinaryOperator,
-            binary_input: Binary,
-            functional_input: Functional,
-            swap: bool,
-        ) -> Option<Binary> {
-            match operator
-                .get_precedence()
-                .cmp(&binary_input.operator.get_precedence())
-            {
-                std::cmp::Ordering::Less => {
-                    let mut left_operand = Box::new(Functional::Binary(binary_input));
-                    let mut right_operand = Box::new(functional_input);
-
-                    if swap {
-                        std::mem::swap(&mut left_operand, &mut right_operand);
-                    }
-
-                    Some(Binary {
-                        left_operand,
-                        operator,
-                        right_operand,
-                    })
-                }
-                std::cmp::Ordering::Equal => {
-                    let mut left_operand = Box::new(Functional::Binary(binary_input));
-                    let mut right_operand = Box::new(functional_input);
-
-                    if operator.is_assignment() {
-                        std::mem::swap(&mut left_operand, &mut right_operand);
-                    }
-
-                    Some(Binary {
-                        left_operand,
-                        operator,
-                        right_operand,
-                    })
-                }
-                std::cmp::Ordering::Greater => None,
-            }
-        }
-        let functional_strategy =
-            args.unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()));
-
-        (
-            functional_strategy.clone(),
-            BinaryOperator::arbitrary(),
-            functional_strategy,
-        )
-            .prop_filter_map("disambiguate the syntax", |(left, operator, right)| match (
-                left, right,
-            ) {
-                (Functional::Binary(left_operand), Functional::Binary(right_operand)) => {
-                    if operator.get_precedence() >= left_operand.operator.get_precedence()
-                        || operator.get_precedence() >= right_operand.operator.get_precedence()
-                    {
-                        None
-                    } else {
-                        Some(Self {
-                            left_operand: Box::new(Functional::Binary(left_operand)),
-                            operator,
-                            right_operand: Box::new(Functional::Binary(right_operand)),
-                        })
-                    }
-                }
-                (Functional::Binary(left_operand), right_operand) => {
-                    create_binary(operator, left_operand, right_operand, false)
-                }
-                (left_operand, Functional::Binary(right_operand)) => {
-                    create_binary(operator, right_operand, left_operand, true)
-                }
-                (left_operand, right_operand) => Some(Self {
-                    left_operand: Box::new(left_operand),
-                    operator,
-                    right_operand: Box::new(right_operand),
-                }),
-            })
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FunctionCall {
-    pub qualified_identifier: QualifiedIdentifier,
-    pub arguments: Option<
-        syntax_tree::tests::ConnectedList<
-            Box<Expression>,
-            syntax_tree::tests::ConstantPunctuation<','>,
-        >,
-    >,
-}
-
-impl Input for FunctionCall {
-    type Output = super::FunctionCall;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.qualified_identifier
-            .assert(output.qualified_identifier())?;
-
-        self.arguments.assert(output.arguments())?;
-
-        Ok(())
-    }
-}
-
-impl Display for FunctionCall {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}(", self.qualified_identifier)?;
-
-        if let Some(arguments) = &self.arguments {
-            write!(f, "{arguments}")?;
-        }
-
-        write!(f, ")")
-    }
-}
-
-impl Arbitrary for FunctionCall {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
-        (
-            QualifiedIdentifier::arbitrary_with((true, Some(expression_strategy.clone()))),
-            proptest::option::of(syntax_tree::tests::ConnectedList::arbitrary_with(
-                expression_strategy.prop_map(Box::new),
-                syntax_tree::tests::ConstantPunctuation::arbitrary(),
-            )),
-        )
-            .prop_map(|(qualified_identifier, arguments)| Self {
-                qualified_identifier,
-                arguments,
-            })
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Unpackable {
-    pub ellipsis: bool,
-    pub expression: Box<Expression>,
-}
-
-impl Input for Unpackable {
-    type Output = super::Unpackable;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.ellipsis, output.ellipsis().is_some());
-        self.expression.assert(output.expression())
-    }
-}
-
-impl Display for Unpackable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.ellipsis {
-            f.write_str("...")?;
-        }
-
-        Display::fmt(&self.expression, f)
-    }
-}
-
-impl Arbitrary for Unpackable {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
-
-        (proptest::bool::ANY, expression_strategy.prop_map(Box::new))
-            .prop_map(|(ellipsis, expression)| Self {
-                ellipsis,
-                expression,
-            })
-            .boxed()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Parenthesized {
-    pub expressions: Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
-}
-
-impl Input for Parenthesized {
-    type Output = super::Parenthesized;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.expressions.assert(output.expression())
-    }
-}
-
-impl Arbitrary for Parenthesized {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        proptest::option::of(ConnectedList::arbitrary_with(
-            Unpackable::arbitrary_with(args),
-            ConstantPunctuation::<','>::arbitrary(),
-        ))
-        .prop_map(|expressions| Self { expressions })
-        .boxed()
-    }
-}
-
-impl Display for Parenthesized {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-
-        if let Some(expressions) = &self.expressions {
-            write!(f, "{expressions}")?;
-        }
-
-        write!(f, ")")
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Subscript {
-    pub operand: Box<Functional>,
-    pub index: Box<Expression>,
-}
-
-impl Input for Subscript {
-    type Output = super::Subscript;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.index.assert(output.expression())
-    }
-}
-
-impl Arbitrary for Subscript {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
-
-        (
-            expression_strategy
-                .clone()
-                .prop_filter_map("only allows functional variants", |x| match x {
-                    Expression::Functional(Functional::Binary(_) | Functional::Prefix(_)) => None,
-                    Expression::Functional(x) => Some(x),
-                    _ => None,
-                }),
-            expression_strategy.prop_map(Box::new),
-        )
-            .prop_map(|(operand, index)| Self {
-                operand: Box::new(operand),
-                index,
-            })
-            .boxed()
-    }
-}
-
-impl Display for Subscript {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}[{}]", self.operand, self.index)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FieldInitializer {
-    pub identifier: syntax_tree::tests::Identifier,
-    pub expression: Box<Expression>,
-}
-
-impl Input for FieldInitializer {
-    type Output = super::FieldInitializer;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.identifier.assert(output.identifier())?;
-        self.expression.assert(output.expression())
-    }
-}
-
-impl Arbitrary for FieldInitializer {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.unwrap_or_else(Expression::arbitrary);
-
-        (syntax_tree::tests::Identifier::arbitrary(), expression)
-            .prop_map(|(identifier, expression)| Self {
-                identifier,
-                expression: Box::new(expression),
-            })
-            .boxed()
-    }
-}
-
-impl Display for FieldInitializer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.identifier, self.expression)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StructLiteral {
-    pub qualified_identifier: QualifiedIdentifier,
-    pub field_initializers: Option<
-        syntax_tree::tests::ConnectedList<
-            FieldInitializer,
-            syntax_tree::tests::ConstantPunctuation<','>,
-        >,
-    >,
-}
-
-impl Input for StructLiteral {
-    type Output = super::StructLiteral;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.qualified_identifier
-            .assert(output.qualified_identifier())?;
-        self.field_initializers.assert(output.field_initializers())
-    }
-}
-
-impl Arbitrary for StructLiteral {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
-        (
-            QualifiedIdentifier::arbitrary_with((true, Some(expression_strategy.clone()))),
-            proptest::option::of(syntax_tree::tests::ConnectedList::arbitrary_with(
-                FieldInitializer::arbitrary_with(Some(expression_strategy)),
-                syntax_tree::tests::ConstantPunctuation::arbitrary(),
-            )),
-        )
-            .prop_map(|(qualified_identifier, field_initializers)| Self {
-                qualified_identifier,
-                field_initializers,
-            })
-            .boxed()
-    }
-}
-
-impl Display for StructLiteral {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.qualified_identifier, f)?;
-
-        f.write_char('{')?;
-        if let Some(field_initializers) = &self.field_initializers {
-            Display::fmt(field_initializers, f)?;
-        }
-        f.write_char('}')?;
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Cast {
-    pub operand: Box<Functional>,
-    pub ty: Type,
-}
-
-impl Input for Cast {
-    type Output = super::Cast;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.ty.assert(output.ty())
-    }
-}
-
-impl Arbitrary for Cast {
+impl Arbitrary for Expression {
     type Parameters = (
-        Option<BoxedStrategy<Functional>>,
         Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let operand = args
-            .0
-            .clone()
-            .unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()))
-            .prop_filter("filter out `prefix` and `binary`", |x| {
-                !matches!(x, Functional::Prefix(..) | Functional::Binary(..))
-            });
+        let leaf = prop_oneof![
+            BooleanLiteral::arbitrary().prop_map(|x| Self::Binary(Binary {
+                first: Box::new(Prefixable::Postfixable(Postfixable::Unit(
+                    Unit::BooleanLiteral(x)
+                ))),
+                chain: Vec::new(),
+            })),
+            NumericLiteral::arbitrary().prop_map(|x| Self::Binary(Binary {
+                first: Box::new(Prefixable::Postfixable(Postfixable::Unit(
+                    Unit::NumericLiteral(x)
+                ))),
+                chain: Vec::new(),
+            })),
+        ];
 
-        let ty = args.1.unwrap_or_else(|| {
-            Type::arbitrary_with((
-                None,
-                Some(operand.clone().prop_map(Expression::Functional).boxed()),
-            ))
-        });
-
-        (operand.clone(), ty)
-            .prop_map(|(operand, ty)| Self {
-                operand: Box::new(operand),
-                ty,
-            })
-            .boxed()
+        leaf.prop_recursive(4, 64, 16, move |inner| {
+            prop_oneof![
+                Binary::arbitrary_with((Some(inner.clone()), args.0.clone(), args.1.clone()))
+                    .prop_map(Expression::Binary),
+                Terminator::arbitrary_with((Some(inner.clone()), args.0.clone(), args.1.clone()))
+                    .prop_map(Expression::Terminator),
+                Brace::arbitrary_with((
+                    Some(inner),
+                    args.0.clone(),
+                    args.1.clone(),
+                    args.2.clone()
+                ))
+                .prop_map(Expression::Brace),
+            ]
+        })
+        .boxed()
     }
 }
 
-impl Display for Cast {
+impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} as ({})", self.operand, self.ty)
+        match self {
+            Self::Binary(binary) => Display::fmt(binary, f),
+            Self::Terminator(terminator) => Display::fmt(terminator, f),
+            Self::Brace(brace) => Display::fmt(brace, f),
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelSpecifier {
-    pub label: syntax_tree::tests::Label,
+    pub label: Label,
 }
 
-impl Input for LabelSpecifier {
-    type Output = super::LabelSpecifier;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.label.assert(output.label()) }
+impl Input<&super::LabelSpecifier> for &LabelSpecifier {
+    fn assert(self, output: &super::LabelSpecifier) -> TestCaseResult {
+        self.label.assert(output.label())
+    }
 }
 
 impl Arbitrary for LabelSpecifier {
@@ -1250,9 +111,7 @@ impl Arbitrary for LabelSpecifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        syntax_tree::tests::Label::arbitrary()
-            .prop_map(|label| Self { label })
-            .boxed()
+        Label::arbitrary().prop_map(|label| Self { label }).boxed()
     }
 }
 
@@ -1267,26 +126,25 @@ pub struct Statements {
     pub statements: Vec<Statement>,
 }
 
-impl Input for Statements {
-    type Output = super::Statements;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.statements.len(), output.statements().len());
-
-        for (input, output) in self.statements.iter().zip(output.statements().iter()) {
-            input.assert(output)?;
-        }
-
-        Ok(())
+impl Input<&super::Statements> for &Statements {
+    fn assert(self, output: &super::Statements) -> TestCaseResult {
+        self.statements.assert(output.statements())
     }
 }
 
 impl Arbitrary for Statements {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let statement = Statement::arbitrary_with(args);
+        let statement = args
+            .3
+            .unwrap_or_else(|| Statement::arbitrary_with((args.0, args.1)));
 
         proptest::collection::vec(statement, 0..=6)
             .prop_map(|statements| Self { statements })
@@ -1311,18 +169,23 @@ pub struct Block {
     pub statements: Statements,
 }
 
-impl Input for Block {
-    type Output = super::Block;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.label_specifier.assert(output.label_specifier())?;
+impl Input<&super::Block> for &Block {
+    fn assert(self, output: &super::Block) -> TestCaseResult {
+        self.label_specifier
+            .as_ref()
+            .assert(output.label_specifier().as_ref())?;
         prop_assert_eq!(self.is_unsafe, output.unsafe_keyword.is_some());
         self.statements.assert(output.statements())
     }
 }
 
 impl Arbitrary for Block {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -1359,14 +222,17 @@ pub struct Loop {
     pub block: Block,
 }
 
-impl Input for Loop {
-    type Output = super::Loop;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.block.assert(output.block()) }
+impl Input<&super::Loop> for &Loop {
+    fn assert(self, output: &super::Loop) -> TestCaseResult { self.block.assert(output.block()) }
 }
 
 impl Arbitrary for Loop {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -1392,28 +258,33 @@ pub struct IfElse {
 }
 
 impl Arbitrary for IfElse {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.unwrap_or_else(Expression::arbitrary);
+        let expression = args.0.clone().unwrap_or_else(|| {
+            Expression::arbitrary_with((args.1.clone(), args.2.clone(), args.3.clone()))
+        });
 
-        let leaf = (
-            expression.clone(),
-            Block::arbitrary_with(Some(expression.clone())),
-        )
-            .prop_map(|(condition, then_expression)| Self {
+        let leaf = (expression.clone(), Block::arbitrary_with(args.clone())).prop_map(
+            |(condition, then_expression)| Self {
                 condition: Box::new(condition),
                 then_expression,
                 else_expression: None,
-            });
+            },
+        );
 
         leaf.prop_recursive(4, 24, 6, move |inner| {
             (
                 expression.clone(),
-                Block::arbitrary_with(Some(expression.clone())),
+                Block::arbitrary_with(args.clone()),
                 proptest::option::of(prop_oneof![
-                    Block::arbitrary_with(Some(expression.clone())).prop_map(|x| Else {
+                    Block::arbitrary_with(args.clone()).prop_map(|x| Else {
                         expression: Box::new(BlockOrIfElse::Block(x))
                     }),
                     inner.prop_map(|x| Else {
@@ -1431,13 +302,13 @@ impl Arbitrary for IfElse {
     }
 }
 
-impl Input for IfElse {
-    type Output = super::IfElse;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::IfElse> for &IfElse {
+    fn assert(self, output: &super::IfElse) -> TestCaseResult {
         self.condition.assert(output.condition())?;
         self.then_expression.assert(output.then_expression())?;
-        self.else_expression.assert(output.else_expression())
+        self.else_expression
+            .as_ref()
+            .assert(output.else_expression().as_ref())
     }
 }
 
@@ -1460,13 +331,11 @@ pub enum BlockOrIfElse {
     IfElse(IfElse),
 }
 
-impl Input for BlockOrIfElse {
-    type Output = super::BlockOrIfElse;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::BlockOrIfElse> for &BlockOrIfElse {
+    fn assert(self, output: &super::BlockOrIfElse) -> TestCaseResult {
         match (self, output) {
-            (Self::Block(i), super::BlockOrIfElse::Block(o)) => i.assert(o),
-            (Self::IfElse(i), super::BlockOrIfElse::IfElse(o)) => i.assert(o),
+            (BlockOrIfElse::Block(i), super::BlockOrIfElse::Block(o)) => i.assert(o),
+            (BlockOrIfElse::IfElse(i), super::BlockOrIfElse::IfElse(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} to be {output:?}"
             ))),
@@ -1488,10 +357,8 @@ pub struct Else {
     expression: Box<BlockOrIfElse>,
 }
 
-impl Input for Else {
-    type Output = super::Else;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Else> for &Else {
+    fn assert(self, output: &super::Else) -> TestCaseResult {
         self.expression.assert(output.expression())
     }
 }
@@ -1510,11 +377,17 @@ pub struct MatchArmGuard {
 }
 
 impl Arbitrary for MatchArmGuard {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        args.unwrap_or_else(Expression::arbitrary)
+        args.0
+            .unwrap_or_else(|| Expression::arbitrary_with((args.1, args.2, args.3)))
             .prop_map(|expression| Self {
                 expression: Box::new(expression),
             })
@@ -1522,10 +395,8 @@ impl Arbitrary for MatchArmGuard {
     }
 }
 
-impl Input for MatchArmGuard {
-    type Output = super::MatchArmGuard;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::MatchArmGuard> for &MatchArmGuard {
+    fn assert(self, output: &super::MatchArmGuard) -> TestCaseResult {
         self.expression.assert(output.expression())
     }
 }
@@ -1538,22 +409,25 @@ impl Display for MatchArmGuard {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchArm {
-    pub refutable_pattern: pattern::tests::Refutable,
+    pub refutable_pattern: Refutable,
     pub guard: Option<MatchArmGuard>,
     pub block: Block,
 }
 
 impl Arbitrary for MatchArm {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.unwrap_or_else(Expression::arbitrary);
-
         (
-            pattern::tests::Refutable::arbitrary(),
-            proptest::option::of(MatchArmGuard::arbitrary_with(Some(expression.clone()))),
-            Block::arbitrary_with(Some(expression)),
+            Refutable::arbitrary(),
+            proptest::option::of(MatchArmGuard::arbitrary_with(args.clone())),
+            Block::arbitrary_with(args),
         )
             .prop_map(|(pattern, guard, block)| Self {
                 refutable_pattern: pattern,
@@ -1564,12 +438,10 @@ impl Arbitrary for MatchArm {
     }
 }
 
-impl Input for MatchArm {
-    type Output = super::MatchArm;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::MatchArm> for &MatchArm {
+    fn assert(self, output: &super::MatchArm) -> TestCaseResult {
         self.refutable_pattern.assert(output.refutable_pattern())?;
-        self.guard.assert(output.guard())?;
+        self.guard.as_ref().assert(output.guard().as_ref())?;
         self.block.assert(output.block())
     }
 }
@@ -1592,31 +464,30 @@ pub struct Match {
     pub arms: Vec<MatchArm>,
 }
 
-impl Input for Match {
-    type Output = super::Match;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Match> for &Match {
+    fn assert(self, output: &super::Match) -> TestCaseResult {
         self.expression.assert(output.expression())?;
-        prop_assert_eq!(self.arms.len(), output.arms().len());
-
-        for (i, arm) in self.arms.iter().enumerate() {
-            arm.assert(&output.arms()[i])?;
-        }
-
-        Ok(())
+        self.arms.assert(output.arms())
     }
 }
 
 impl Arbitrary for Match {
-    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.unwrap_or_else(Expression::arbitrary);
+        let expression = args.0.clone().unwrap_or_else(|| {
+            Expression::arbitrary_with((args.1.clone(), args.2.clone(), args.3.clone()))
+        });
 
         (
-            expression.clone(),
-            proptest::collection::vec(MatchArm::arbitrary_with(Some(expression)), 1..=6),
+            expression,
+            proptest::collection::vec(MatchArm::arbitrary_with(args), 1..=6),
         )
             .prop_map(|(expression, arms)| Self {
                 expression: Box::new(expression),
@@ -1636,83 +507,139 @@ impl Display for Match {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Imperative {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Brace {
     Block(Block),
     Loop(Loop),
     IfElse(IfElse),
     Match(Match),
 }
 
-impl Input for Imperative {
-    type Output = super::Imperative;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Brace> for &Brace {
+    fn assert(self, output: &super::Brace) -> TestCaseResult {
         match (self, output) {
-            (Self::Block(i), super::Imperative::Block(o)) => i.assert(o),
-            (Self::Loop(i), super::Imperative::Loop(o)) => i.assert(o),
-            (Self::IfElse(i), super::Imperative::IfElse(o)) => i.assert(o),
-            (Self::Match(i), super::Imperative::Match(o)) => i.assert(o),
-            _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?}, got {output:?}",
+            (Brace::Block(input), super::Brace::Block(output)) => input.assert(output),
+            (Brace::Loop(input), super::Brace::Loop(output)) => input.assert(output),
+            (Brace::IfElse(input), super::Brace::IfElse(output)) => input.assert(output),
+            (Brace::Match(input), super::Brace::Match(output)) => input.assert(output),
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
             ))),
         }
     }
 }
 
-impl Display for Imperative {
+impl Arbitrary for Brace {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Block::arbitrary_with(args.clone()).prop_map(Brace::Block),
+            Loop::arbitrary_with(args.clone()).prop_map(Brace::Loop),
+            IfElse::arbitrary_with(args.clone()).prop_map(Brace::IfElse),
+            Match::arbitrary_with(args).prop_map(Brace::Match),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for Brace {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Block(i) => Display::fmt(i, f),
-            Self::Loop(i) => Display::fmt(i, f),
-            Self::IfElse(i) => Display::fmt(i, f),
-            Self::Match(i) => Display::fmt(i, f),
+            Self::Block(block) => Display::fmt(block, f),
+            Self::Loop(loop_) => Display::fmt(loop_, f),
+            Self::IfElse(if_else) => Display::fmt(if_else, f),
+            Self::Match(match_) => Display::fmt(match_, f),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum Functional {
-    NumericLiteral(NumericLiteral),
-    BooleanLiteral(BooleanLiteral),
-    Named(Named),
-    Prefix(Prefix),
-    Binary(Binary),
-    FunctionCall(FunctionCall),
-    Parenthesized(Parenthesized),
-    StructLiteral(StructLiteral),
-    ArrayLiteral(ArrayLiteral),
-    Subscript(Subscript),
-    Cast(Cast),
-    Arrow(Arrow),
-    Dot(Dot),
-    Copy(Copy),
+pub enum Terminator {
+    Return(Return),
+    Continue(Continue),
+    Express(Express),
+    Break(Break),
+}
+
+impl Input<&super::Terminator> for &Terminator {
+    fn assert(self, output: &super::Terminator) -> TestCaseResult {
+        match (self, output) {
+            (Terminator::Return(input), super::Terminator::Return(output)) => input.assert(output),
+            (Terminator::Continue(input), super::Terminator::Continue(output)) => {
+                input.assert(output)
+            }
+            (Terminator::Express(input), super::Terminator::Express(output)) => {
+                input.assert(output)
+            }
+            (Terminator::Break(input), super::Terminator::Break(output)) => input.assert(output),
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for Terminator {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Return::arbitrary_with(args.clone()).prop_map(Terminator::Return),
+            Continue::arbitrary_with(()).prop_map(Terminator::Continue),
+            Express::arbitrary_with(args.clone()).prop_map(Terminator::Express),
+            Break::arbitrary_with(args).prop_map(Terminator::Break),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for Terminator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Return(r#return) => Display::fmt(r#return, f),
+            Self::Continue(continue_) => Display::fmt(continue_, f),
+            Self::Express(express) => Display::fmt(express, f),
+            Self::Break(break_) => Display::fmt(break_, f),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Return {
-    pub expression: Option<Functional>,
+    pub binary: Option<Binary>,
 }
 
-impl Input for Return {
-    type Output = super::Return;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.expression.assert(output.expression())
+impl Input<&super::Return> for &Return {
+    fn assert(self, output: &super::Return) -> TestCaseResult {
+        self.binary.as_ref().assert(output.binary().as_ref())
     }
 }
 
 impl Arbitrary for Return {
-    type Parameters = Option<BoxedStrategy<Functional>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let functional = args.unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()));
-
-        proptest::option::of(functional)
-            .prop_map(|expression| Self { expression })
+        proptest::option::of(Binary::arbitrary_with(args))
+            .prop_map(|expression| Self { binary: expression })
             .boxed()
     }
 }
@@ -1721,7 +648,7 @@ impl Display for Return {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("return")?;
 
-        if let Some(expression) = &self.expression {
+        if let Some(expression) = &self.binary {
             write!(f, " {expression}")?;
         }
 
@@ -1731,13 +658,13 @@ impl Display for Return {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Continue {
-    pub label: Option<syntax_tree::tests::Label>,
+    pub label: Option<Label>,
 }
 
-impl Input for Continue {
-    type Output = super::Continue;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult { self.label.assert(output.label()) }
+impl Input<&super::Continue> for &Continue {
+    fn assert(self, output: &super::Continue) -> TestCaseResult {
+        self.label.as_ref().assert(output.label().as_ref())
+    }
 }
 
 impl Arbitrary for Continue {
@@ -1745,7 +672,7 @@ impl Arbitrary for Continue {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::option::of(syntax_tree::tests::Label::arbitrary())
+        proptest::option::of(Label::arbitrary())
             .prop_map(|label| Self { label })
             .boxed()
     }
@@ -1765,16 +692,32 @@ impl Display for Continue {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Express {
-    pub label: Option<syntax_tree::tests::Label>,
-    pub expression: Option<Functional>,
+    pub label: Option<Label>,
+    pub binary: Option<Binary>,
 }
 
-impl Input for Express {
-    type Output = super::Express;
+impl Input<&super::Express> for &Express {
+    fn assert(self, output: &super::Express) -> TestCaseResult {
+        self.label.as_ref().assert(output.label().as_ref())?;
+        self.binary.as_ref().assert(output.binary().as_ref())
+    }
+}
 
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.label.assert(output.label())?;
-        self.expression.assert(output.expression())
+impl Arbitrary for Express {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            proptest::option::of(Label::arbitrary()),
+            proptest::option::of(Binary::arbitrary_with(args)),
+        )
+            .prop_map(|(label, binary)| Self { label, binary })
+            .boxed()
     }
 }
 
@@ -1786,41 +729,42 @@ impl Display for Express {
             write!(f, " {label}")?;
         }
 
-        if let Some(expression) = &self.expression {
-            write!(f, " {expression}")?;
+        if let Some(binary) = &self.binary {
+            write!(f, " {binary}")?;
         }
 
         Ok(())
     }
 }
 
-impl Arbitrary for Express {
-    type Parameters = Option<BoxedStrategy<Functional>>;
-    type Strategy = BoxedStrategy<Self>;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Break {
+    pub label: Option<Label>,
+    pub binary: Option<Binary>,
+}
 
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()));
-        (
-            proptest::option::of(syntax_tree::tests::Label::arbitrary()),
-            proptest::option::of(expression),
-        )
-            .prop_map(|(label, expression)| Self { label, expression })
-            .boxed()
+impl Input<&super::Break> for &Break {
+    fn assert(self, output: &super::Break) -> TestCaseResult {
+        self.label.as_ref().assert(output.label().as_ref())?;
+        self.binary.as_ref().assert(output.binary().as_ref())
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Break {
-    pub label: Option<syntax_tree::tests::Label>,
-    pub expression: Option<Functional>,
-}
+impl Arbitrary for Break {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
 
-impl Input for Break {
-    type Output = super::Break;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        self.label.assert(output.label())?;
-        self.expression.assert(output.expression())
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            proptest::option::of(Label::arbitrary()),
+            proptest::option::of(Binary::arbitrary_with(args)),
+        )
+            .prop_map(|(label, binary)| Self { label, binary })
+            .boxed()
     }
 }
 
@@ -1832,226 +776,1234 @@ impl Display for Break {
             write!(f, " {label}")?;
         }
 
-        if let Some(expression) = &self.expression {
-            write!(f, " {expression}")?;
+        if let Some(binary) = &self.binary {
+            write!(f, " {binary}")?;
         }
 
         Ok(())
     }
 }
 
-impl Arbitrary for Break {
-    type Parameters = Option<BoxedStrategy<Functional>>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BooleanLiteral {
+    pub value: bool,
+}
+
+impl Arbitrary for BooleanLiteral {
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.unwrap_or_else(|| filter_functional_variant(Expression::arbitrary()));
-        (
-            proptest::option::of(syntax_tree::tests::Label::arbitrary()),
-            proptest::option::of(expression),
-        )
-            .prop_map(|(label, expression)| Self { label, expression })
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::bool::ANY.prop_map(|value| Self { value }).boxed()
+    }
+}
+
+impl Display for BooleanLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", if self.value { "true" } else { "false" })
+    }
+}
+
+impl Input<&super::BooleanLiteral> for &BooleanLiteral {
+    fn assert(self, output: &super::BooleanLiteral) -> TestCaseResult {
+        match (self.value, output) {
+            (true, super::BooleanLiteral::True(_)) | (false, super::BooleanLiteral::False(_)) => {
+                Ok(())
+            }
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Decimal {
+    pub numeric: Numeric,
+}
+
+impl Input<&super::Decimal> for &Decimal {
+    fn assert(self, output: &super::Decimal) -> TestCaseResult {
+        self.numeric.assert(&output.numeric)
+    }
+}
+
+impl Arbitrary for Decimal {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        Numeric::arbitrary_with(())
+            .prop_map(|numeric| Self { numeric })
             .boxed()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Terminator {
-    Return(Return),
-    Continue(Continue),
-    Express(Express),
-    Break(Break),
-}
-
-impl Input for Terminator {
-    type Output = super::Terminator;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::Return(i), super::Terminator::Return(o)) => i.assert(o),
-            (Self::Continue(i), super::Terminator::Continue(o)) => i.assert(o),
-            (Self::Express(i), super::Terminator::Express(o)) => i.assert(o),
-            (Self::Break(i), super::Terminator::Break(o)) => i.assert(o),
-            _ => Err(TestCaseError::fail(format!(
-                "expected {self:?}, got {output:?}"
-            ))),
-        }
-    }
-}
-
-impl Display for Terminator {
+impl Display for Decimal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Return(return_) => Display::fmt(return_, f),
-            Self::Continue(continue_) => Display::fmt(continue_, f),
-            Self::Express(express) => Display::fmt(express, f),
-            Self::Break(break_) => Display::fmt(break_, f),
-        }
+        write!(f, ".{}", self.numeric)
     }
 }
 
-impl Input for Functional {
-    type Output = super::Functional;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NumericLiteral {
+    pub numeric: Numeric,
+    pub decimal: Option<Decimal>,
+    pub suffix: Option<Identifier>,
+}
 
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::NumericLiteral(i), super::Functional::NumericLiteral(o)) => i.assert(o),
-            (Self::BooleanLiteral(i), super::Functional::BooleanLiteral(o)) => i.assert(o),
-            (Self::Named(i), super::Functional::Named(o)) => i.assert(o),
-            (Self::Prefix(i), super::Functional::Prefix(o)) => i.assert(o),
-            (Self::Binary(i), super::Functional::Binary(o)) => i.assert(o),
-            (Self::FunctionCall(i), super::Functional::FunctionCall(o)) => i.assert(o),
-            (Self::Parenthesized(i), super::Functional::Parenthesized(o)) => i.assert(o),
-            (Self::StructLiteral(i), super::Functional::StructLiteral(o)) => i.assert(o),
-            (Self::Cast(i), super::Functional::Cast(o)) => i.assert(o),
-            (Self::ArrayLiteral(i), super::Functional::ArrayLiteral(o)) => i.assert(o),
-            (Self::Subscript(i), super::Functional::Subscript(o)) => i.assert(o),
-            (Self::Arrow(i), super::Functional::Arrow(o)) => i.assert(o),
-            (Self::Dot(i), super::Functional::Dot(o)) => i.assert(o),
-            (Self::Copy(i), super::Functional::Copy(o)) => i.assert(o),
-            _ => Err(TestCaseError::fail(format!(
-                "expected functional to be {self:?}, found {output:?}",
-            ))),
-        }
+impl Input<&super::NumericLiteral> for &NumericLiteral {
+    fn assert(self, output: &super::NumericLiteral) -> TestCaseResult {
+        self.numeric.assert(&output.numeric)?;
+        self.decimal.as_ref().assert(output.decimal.as_ref())?;
+        self.suffix.as_ref().assert(output.suffix.as_ref())
     }
 }
 
-impl Display for Functional {
+impl Arbitrary for NumericLiteral {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            Numeric::arbitrary_with(()),
+            proptest::option::of(Decimal::arbitrary_with(())),
+            proptest::option::of(Identifier::arbitrary_with(())),
+        )
+            .prop_map(|(numeric, decimal, suffix)| Self {
+                numeric,
+                decimal,
+                suffix,
+            })
+            .boxed()
+    }
+}
+
+impl Display for NumericLiteral {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NumericLiteral(i) => Display::fmt(i, f),
-            Self::BooleanLiteral(i) => Display::fmt(i, f),
-            Self::Named(i) => Display::fmt(i, f),
-            Self::Prefix(i) => Display::fmt(i, f),
-            Self::Binary(i) => Display::fmt(i, f),
-            Self::FunctionCall(i) => Display::fmt(i, f),
-            Self::Parenthesized(i) => Display::fmt(i, f),
-            Self::StructLiteral(i) => Display::fmt(i, f),
-            Self::Cast(i) => Display::fmt(i, f),
-            Self::ArrayLiteral(a) => Display::fmt(a, f),
-            Self::Subscript(s) => Display::fmt(s, f),
-            Self::Arrow(s) => Display::fmt(s, f),
-            Self::Dot(s) => Display::fmt(s, f),
-            Self::Copy(s) => Display::fmt(s, f),
+        write!(f, "{}", self.numeric)?;
+
+        if let Some(decimal) = &self.decimal {
+            write!(f, "{decimal}")?;
         }
+
+        if let Some(suffix) = &self.suffix {
+            write!(f, "{suffix}")?;
+        }
+
+        Ok(())
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum Expression {
-    Functional(Functional),
-    Imperative(Imperative),
-    Terminator(Terminator),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Unpackable {
+    pub ellipsis: bool,
+    pub expression: Box<Expression>,
 }
 
-impl Input for Expression {
-    type Output = super::Expression;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        match (self, output) {
-            (Self::Functional(i), super::Expression::Functional(o)) => i.assert(o),
-            (Self::Imperative(i), super::Expression::Imperative(o)) => i.assert(o),
-            (Self::Terminator(i), super::Expression::Terminator(o)) => i.assert(o),
-            _ => Err(TestCaseError::fail(format!(
-                "expected expression to be {self:?}, found {output:?}",
-            ))),
-        }
+impl Input<&super::Unpackable> for &Unpackable {
+    fn assert(self, output: &super::Unpackable) -> TestCaseResult {
+        prop_assert_eq!(self.ellipsis, output.ellipsis().is_some());
+        self.expression.assert(output.expression())
     }
 }
 
-impl Display for Expression {
+impl Display for Unpackable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Functional(i) => Display::fmt(i, f),
-            Self::Imperative(i) => Display::fmt(i, f),
-            Self::Terminator(i) => Display::fmt(i, f),
+        if self.ellipsis {
+            f.write_str("...")?;
         }
+
+        Display::fmt(&self.expression, f)
     }
 }
 
-fn filter_functional_variant(
-    x: impl Strategy<Value = Expression> + 'static,
-) -> BoxedStrategy<Functional> {
-    x.prop_filter_map("filter functional variant", |x| match x {
-        Expression::Functional(f) => Some(f),
-        Expression::Imperative(..) | Expression::Terminator(..) => None,
-    })
-    .boxed()
-}
-
-impl Arbitrary for Expression {
-    type Parameters = Option<BoxedStrategy<Type>>;
+impl Arbitrary for Unpackable {
+    type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let leaf = proptest::prop_oneof![
-            NumericLiteral::arbitrary()
-                .prop_map(|x| Self::Functional(Functional::NumericLiteral(x))),
-            BooleanLiteral::arbitrary()
-                .prop_map(|x| Self::Functional(Functional::BooleanLiteral(x))),
-        ];
+        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
 
-        leaf.prop_recursive(4, 24, 6, move |inner| {
-            prop_oneof![
-                Named::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Functional(Functional::Named(x))),
-                Prefix::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Functional(Functional::Prefix(x))),
-                Binary::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Functional(Functional::Binary(x))),
-                FunctionCall::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Functional(Functional::FunctionCall(x))),
-                Parenthesized::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Functional(Functional::Parenthesized(x))),
-                StructLiteral::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Functional(Functional::StructLiteral(x))),
-                Cast::arbitrary_with((
-                    Some(filter_functional_variant(inner.clone())),
-                    args.clone()
-                ))
-                .prop_map(|x| Self::Functional(Functional::Cast(x))),
-                Block::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Imperative(Imperative::Block(x))),
-                Loop::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Imperative(Imperative::Loop(x))),
-                Match::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Imperative(Imperative::Match(x))),
-                IfElse::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Imperative(Imperative::IfElse(x))),
-                Return::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Terminator(Terminator::Return(x))),
-                Continue::arbitrary().prop_map(|x| Self::Terminator(Terminator::Continue(x))),
-                Express::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Terminator(Terminator::Express(x))),
-                Break::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Terminator(Terminator::Break(x))),
-                ArrayLiteral::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Functional(Functional::ArrayLiteral(x))),
-                Subscript::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Self::Functional(Functional::Subscript(x))),
-                Dot::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Functional(Functional::Dot(x))),
-                Arrow::arbitrary_with(Some(filter_functional_variant(inner.clone())))
-                    .prop_map(|x| Self::Functional(Functional::Arrow(x))),
-                Copy::arbitrary_with(Some(filter_functional_variant(inner)))
-                    .prop_map(|x| Self::Functional(Functional::Copy(x))),
-            ]
-        })
+        (proptest::bool::ANY, expression_strategy.prop_map(Box::new))
+            .prop_map(|(ellipsis, expression)| Self {
+                ellipsis,
+                expression,
+            })
+            .boxed()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Parenthesized {
+    pub expressions: Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
+}
+
+impl Input<&super::Parenthesized> for &Parenthesized {
+    fn assert(self, output: &super::Parenthesized) -> TestCaseResult {
+        self.expressions
+            .as_ref()
+            .assert(output.expression().as_ref())
+    }
+}
+
+impl Arbitrary for Parenthesized {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        proptest::option::of(ConnectedList::arbitrary_with(
+            Unpackable::arbitrary_with(args),
+            ConstantPunctuation::<','>::arbitrary(),
+        ))
+        .prop_map(|expressions| Self { expressions })
         .boxed()
     }
 }
 
+impl Display for Parenthesized {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+
+        if let Some(expressions) = &self.expressions {
+            write!(f, "{expressions}")?;
+        }
+
+        write!(f, ")")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FieldInitializer {
+    pub identifier: Identifier,
+    pub expression: Box<Expression>,
+}
+
+impl Input<&super::FieldInitializer> for &FieldInitializer {
+    fn assert(self, output: &super::FieldInitializer) -> TestCaseResult {
+        self.identifier.assert(output.identifier())?;
+        self.expression.assert(output.expression())
+    }
+}
+
+impl Arbitrary for FieldInitializer {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression = args.unwrap_or_else(Expression::arbitrary);
+
+        (Identifier::arbitrary(), expression)
+            .prop_map(|(identifier, expression)| Self {
+                identifier,
+                expression: Box::new(expression),
+            })
+            .boxed()
+    }
+}
+
+impl Display for FieldInitializer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.identifier, self.expression)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StructLiteral {
+    pub qualified_identifier: QualifiedIdentifier,
+    pub field_initializers: Option<ConnectedList<FieldInitializer, ConstantPunctuation<','>>>,
+}
+
+impl Input<&super::StructLiteral> for &StructLiteral {
+    fn assert(self, output: &super::StructLiteral) -> TestCaseResult {
+        self.qualified_identifier
+            .assert(output.qualified_identifier())?;
+        self.field_initializers
+            .as_ref()
+            .assert(output.field_initializers().as_ref())
+    }
+}
+
+impl Arbitrary for StructLiteral {
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            args.2.clone().unwrap_or_else(|| {
+                QualifiedIdentifier::arbitrary_with((args.0.clone(), args.1.clone()))
+            }),
+            proptest::option::of(ConnectedList::arbitrary_with(
+                FieldInitializer::arbitrary_with(args.1),
+                ConstantPunctuation::arbitrary(),
+            )),
+        )
+            .prop_map(|(qualified_identifier, field_initializers)| Self {
+                qualified_identifier,
+                field_initializers,
+            })
+            .boxed()
+    }
+}
+
+impl Display for StructLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.qualified_identifier, f)?;
+
+        f.write_char('{')?;
+        if let Some(field_initializers) = &self.field_initializers {
+            Display::fmt(field_initializers, f)?;
+        }
+        f.write_char('}')?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ArrayLiteral {
+    pub expressions: Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
+}
+
+impl Input<&super::ArrayLiteral> for &ArrayLiteral {
+    fn assert(self, output: &super::ArrayLiteral) -> TestCaseResult {
+        self.expressions
+            .as_ref()
+            .assert(output.arguments().as_ref())
+    }
+}
+
+impl Arbitrary for ArrayLiteral {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
+
+        proptest::option::of(ConnectedList::arbitrary_with(
+            expression_strategy.prop_map(Box::new),
+            ConstantPunctuation::arbitrary(),
+        ))
+        .prop_map(|expressions| Self { expressions })
+        .boxed()
+    }
+}
+
+impl Display for ArrayLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('[')?;
+
+        if let Some(expressions) = &self.expressions {
+            write!(f, "{expressions}")?;
+        }
+
+        f.write_char(']')
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Unit {
+    BooleanLiteral(BooleanLiteral),
+    NumericLiteral(NumericLiteral),
+    QualifiedIdentifier(QualifiedIdentifier),
+    Parenthesized(Parenthesized),
+    StructLiteral(StructLiteral),
+    ArrayLiteral(ArrayLiteral),
+}
+
+impl Arbitrary for Unit {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((expr_strat, ty_strat, qualified_strat): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            BooleanLiteral::arbitrary_with(()).prop_map(Unit::BooleanLiteral),
+            NumericLiteral::arbitrary_with(()).prop_map(Unit::NumericLiteral),
+            qualified_strat
+                .clone()
+                .unwrap_or_else(|| QualifiedIdentifier::arbitrary_with((
+                    ty_strat.clone(),
+                    expr_strat.clone()
+                )))
+                .prop_map(Unit::QualifiedIdentifier),
+            Parenthesized::arbitrary_with(expr_strat.clone()).prop_map(Unit::Parenthesized),
+            StructLiteral::arbitrary_with((ty_strat, expr_strat.clone(), qualified_strat))
+                .prop_map(Unit::StructLiteral),
+            ArrayLiteral::arbitrary_with(expr_strat).prop_map(Unit::ArrayLiteral),
+        ]
+        .boxed()
+    }
+}
+
+impl Input<&super::Unit> for &Unit {
+    fn assert(self, output: &super::Unit) -> TestCaseResult {
+        match (self, output) {
+            (Unit::BooleanLiteral(input), super::Unit::BooleanLiteral(output)) => {
+                input.assert(output)
+            }
+            (Unit::NumericLiteral(input), super::Unit::NumericLiteral(output)) => {
+                input.assert(output)
+            }
+            (Unit::QualifiedIdentifier(input), super::Unit::QualifiedIdentifier(output)) => {
+                input.assert(output)
+            }
+            (Unit::Parenthesized(input), super::Unit::Parenthesized(output)) => {
+                input.assert(output)
+            }
+            (Unit::StructLiteral(input), super::Unit::StructLiteral(output)) => {
+                input.assert(output)
+            }
+            (Unit::ArrayLiteral(input), super::Unit::ArrayLiteral(output)) => input.assert(output),
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Display for Unit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BooleanLiteral(boolean_literal) => Display::fmt(boolean_literal, f),
+            Self::NumericLiteral(numeric_literal) => Display::fmt(numeric_literal, f),
+            Self::QualifiedIdentifier(qualified_identifier) => {
+                Display::fmt(qualified_identifier, f)
+            }
+            Self::Parenthesized(parenthesized) => Display::fmt(parenthesized, f),
+            Self::StructLiteral(struct_literal) => Display::fmt(struct_literal, f),
+            Self::ArrayLiteral(array_literal) => Display::fmt(array_literal, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Call {
+    pub arguments: Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
+}
+
+impl Input<&super::Call> for &Call {
+    fn assert(self, output: &super::Call) -> TestCaseResult {
+        self.arguments.as_ref().assert(output.arguments().as_ref())
+    }
+}
+
+impl Arbitrary for Call {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
+
+        proptest::option::of(ConnectedList::arbitrary_with(
+            expression_strategy.prop_map(Box::new),
+            ConstantPunctuation::arbitrary(),
+        ))
+        .prop_map(|arguments| Self { arguments })
+        .boxed()
+    }
+}
+
+impl Display for Call {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('(')?;
+
+        if let Some(arguments) = &self.arguments {
+            write!(f, "{arguments}")?;
+        }
+
+        f.write_char(')')
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Cast {
+    pub r#type: Type,
+}
+
+impl Input<&super::Cast> for &Cast {
+    fn assert(self, output: &super::Cast) -> TestCaseResult { self.r#type.assert(output.r#type()) }
+}
+
+impl Arbitrary for Cast {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let type_strategy = args
+            .1
+            .unwrap_or_else(|| Type::arbitrary_with((args.0, args.2)));
+
+        type_strategy.prop_map(|r#type| Self { r#type }).boxed()
+    }
+}
+
+impl Display for Cast {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, " as {}", self.r#type)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AccessOperator {
+    Dot,
+    Arrow,
+}
+
+impl Input<&super::AccessOperator> for &AccessOperator {
+    fn assert(self, output: &super::AccessOperator) -> TestCaseResult {
+        match (self, output) {
+            (AccessOperator::Dot, super::AccessOperator::Dot(_))
+            | (AccessOperator::Arrow, super::AccessOperator::Arrow(_, _)) => Ok(()),
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for AccessOperator {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![Just(Self::Dot), Just(Self::Arrow)].boxed()
+    }
+}
+
+impl Display for AccessOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Dot => f.write_char('.'),
+            Self::Arrow => f.write_str("->"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AccessKind {
+    Identifier(Identifier),
+    Tuple(Numeric),
+}
+
+impl Input<&super::AccessKind> for &AccessKind {
+    fn assert(self, output: &super::AccessKind) -> TestCaseResult {
+        match (self, output) {
+            (AccessKind::Identifier(input), super::AccessKind::Identifier(output)) => {
+                input.assert(output)
+            }
+            (AccessKind::Tuple(input), super::AccessKind::Tuple(output)) => input.assert(output),
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for AccessKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Identifier::arbitrary().prop_map(AccessKind::Identifier),
+            Numeric::arbitrary().prop_map(AccessKind::Tuple),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for AccessKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Identifier(identifier) => Display::fmt(identifier, f),
+            Self::Tuple(numeric) => Display::fmt(numeric, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Access {
+    pub operator: AccessOperator,
+    pub kind: AccessKind,
+}
+
+impl Input<&super::Access> for &Access {
+    fn assert(self, output: &super::Access) -> TestCaseResult {
+        self.operator.assert(output.operator())?;
+        self.kind.assert(output.kind())
+    }
+}
+
+impl Arbitrary for Access {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            AccessOperator::arbitrary_with(()),
+            AccessKind::arbitrary_with(()),
+        )
+            .prop_map(|(operator, kind)| Self { operator, kind })
+            .boxed()
+    }
+}
+
+impl Display for Access {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.operator, self.kind)?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PostfixOperator {
+    Copy,
+    Call(Call),
+    Cast(Cast),
+    Access(Access),
+}
+
+impl Input<&super::PostfixOperator> for &PostfixOperator {
+    fn assert(self, output: &super::PostfixOperator) -> TestCaseResult {
+        match (self, output) {
+            (PostfixOperator::Copy, super::PostfixOperator::Copy(_)) => Ok(()),
+            (PostfixOperator::Call(input), super::PostfixOperator::Call(output)) => {
+                input.assert(output)
+            }
+            (PostfixOperator::Cast(input), super::PostfixOperator::Cast(output)) => {
+                input.assert(output)
+            }
+            (PostfixOperator::Access(input), super::PostfixOperator::Access(output)) => {
+                input.assert(output)
+            }
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for PostfixOperator {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::Copy),
+            Call::arbitrary_with(args.0.clone()).prop_map(Self::Call),
+            Cast::arbitrary_with(args).prop_map(Self::Cast),
+            Access::arbitrary_with(()).prop_map(Self::Access),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for PostfixOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Copy => f.write_char('\''),
+            Self::Call(call) => Display::fmt(call, f),
+            Self::Cast(cast) => Display::fmt(cast, f),
+            Self::Access(access) => Display::fmt(access, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Postfix {
+    pub postfixable: Box<Postfixable>,
+    pub operator: PostfixOperator,
+}
+
+impl Input<&super::Postfix> for &Postfix {
+    fn assert(self, output: &super::Postfix) -> TestCaseResult {
+        self.postfixable.assert(output.postfixable())?;
+        self.operator.assert(output.operator())
+    }
+}
+
+impl Arbitrary for Postfix {
+    type Parameters = (
+        Option<BoxedStrategy<Postfixable>>,
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            args.0.clone().unwrap_or_else(|| {
+                Postfixable::arbitrary_with((args.1.clone(), args.2.clone(), args.3.clone()))
+            }),
+            PostfixOperator::arbitrary_with((args.1, args.2, args.3)),
+        )
+            .prop_map(|(postfixable, operator)| Self {
+                postfixable: Box::new(postfixable),
+                operator,
+            })
+            .prop_filter("filter ambiguous syntax", |x| {
+                !matches!(
+                    (&*x.postfixable, &x.operator),
+                    (
+                        Postfixable::Unit(Unit::NumericLiteral(NumericLiteral {
+                            decimal: None,
+                            suffix: None,
+                            ..
+                        })),
+                        PostfixOperator::Access(Access {
+                            operator: AccessOperator::Dot,
+                            kind: AccessKind::Tuple(..)
+                        })
+                    )
+                )
+            })
+            .boxed()
+    }
+}
+
+impl Display for Postfix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.postfixable, f)?;
+        Display::fmt(&self.operator, f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Postfixable {
+    Unit(Unit),
+    Postfix(Postfix),
+}
+
+impl Input<&super::Postfixable> for &Postfixable {
+    fn assert(self, output: &super::Postfixable) -> TestCaseResult {
+        match (self, output) {
+            (Postfixable::Unit(input), super::Postfixable::Unit(output)) => input.assert(output),
+            (Postfixable::Postfix(input), super::Postfixable::Postfix(output)) => {
+                input.assert(output)
+            }
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for Postfixable {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        Unit::arbitrary_with(args.clone())
+            .prop_map(Postfixable::Unit)
+            .prop_recursive(3, 3, 3, move |inner| {
+                Postfix::arbitrary_with((
+                    Some(inner),
+                    args.0.clone(),
+                    args.1.clone(),
+                    args.2.clone(),
+                ))
+                .prop_map(Postfixable::Postfix)
+            })
+            .boxed()
+    }
+}
+
+impl Display for Postfixable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unit(unit) => Display::fmt(unit, f),
+            Self::Postfix(postfix) => Display::fmt(postfix, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ReferenceOfKind {
+    Local,
+    Regular,
+}
+
+impl Input<&super::ReferenceOfKind> for &ReferenceOfKind {
+    fn assert(self, output: &super::ReferenceOfKind) -> TestCaseResult {
+        match (self, output) {
+            (ReferenceOfKind::Local, super::ReferenceOfKind::Local(_))
+            | (ReferenceOfKind::Regular, super::ReferenceOfKind::Regular(_)) => Ok(()),
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for ReferenceOfKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![Just(Self::Local), Just(Self::Regular)].boxed()
+    }
+}
+
+impl Display for ReferenceOfKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local => f.write_char('@'),
+            Self::Regular => f.write_char('&'),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReferenceOf {
+    pub kind: ReferenceOfKind,
+    pub qualifier: Option<Qualifier>,
+}
+
+impl Input<&super::ReferenceOf> for &ReferenceOf {
+    fn assert(self, output: &super::ReferenceOf) -> TestCaseResult {
+        self.kind.assert(output.kind())?;
+        self.qualifier.as_ref().assert(output.qualifier().as_ref())
+    }
+}
+
+impl Arbitrary for ReferenceOf {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            ReferenceOfKind::arbitrary(),
+            proptest::option::of(Qualifier::arbitrary_with(())),
+        )
+            .prop_map(|(kind, qualifier)| Self { kind, qualifier })
+            .boxed()
+    }
+}
+
+impl Display for ReferenceOf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.kind, f)?;
+
+        if let Some(qualifier) = &self.qualifier {
+            write!(f, "{qualifier} ")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PrefixOperator {
+    LogicalNot,
+    Negate,
+    BitwiseNot,
+    Dereference,
+    Local,
+    Unlocal,
+    ReferenceOf(ReferenceOf),
+}
+
+impl Input<&super::PrefixOperator> for &PrefixOperator {
+    fn assert(self, output: &super::PrefixOperator) -> TestCaseResult {
+        match (self, output) {
+            (PrefixOperator::LogicalNot, super::PrefixOperator::LogicalNot(_))
+            | (PrefixOperator::Negate, super::PrefixOperator::Negate(_))
+            | (PrefixOperator::BitwiseNot, super::PrefixOperator::BitwiseNot(_))
+            | (PrefixOperator::Dereference, super::PrefixOperator::Dereference(_))
+            | (PrefixOperator::Local, super::PrefixOperator::Local(_))
+            | (PrefixOperator::Unlocal, super::PrefixOperator::Unlocal(_)) => Ok(()),
+
+            (PrefixOperator::ReferenceOf(input), super::PrefixOperator::ReferenceOf(output)) => {
+                input.assert(output)
+            }
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for PrefixOperator {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::LogicalNot),
+            Just(Self::Negate),
+            Just(Self::BitwiseNot),
+            Just(Self::Dereference),
+            Just(Self::Local),
+            Just(Self::Unlocal),
+            ReferenceOf::arbitrary_with(()).prop_map(Self::ReferenceOf),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for PrefixOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LogicalNot => f.write_char('!'),
+            Self::Negate => f.write_char('-'),
+            Self::BitwiseNot => f.write_char('~'),
+            Self::Dereference => f.write_char('*'),
+            Self::Local => f.write_str("local "),
+            Self::Unlocal => f.write_str("unlocal "),
+            Self::ReferenceOf(reference_of) => Display::fmt(reference_of, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Prefix {
+    pub prefixable: Box<Prefixable>,
+    pub operator: PrefixOperator,
+}
+
+impl Input<&super::Prefix> for &Prefix {
+    fn assert(self, output: &super::Prefix) -> TestCaseResult {
+        self.prefixable.assert(output.prefixable())?;
+        self.operator.assert(output.operator())
+    }
+}
+
+impl Arbitrary for Prefix {
+    type Parameters = (
+        Option<BoxedStrategy<Prefixable>>,
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            args.0.clone().unwrap_or_else(|| {
+                Prefixable::arbitrary_with((args.1.clone(), args.2.clone(), args.3.clone()))
+            }),
+            PrefixOperator::arbitrary(),
+        )
+            .prop_map(|(prefixable, operator)| Self {
+                prefixable: Box::new(prefixable),
+                operator,
+            })
+            .boxed()
+    }
+}
+
+impl Display for Prefix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.operator, f)?;
+        Display::fmt(&self.prefixable, f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Prefixable {
+    Postfixable(Postfixable),
+    Prefix(Prefix),
+}
+
+impl Input<&super::Prefixable> for &Prefixable {
+    fn assert(self, output: &super::Prefixable) -> TestCaseResult {
+        match (self, output) {
+            (Prefixable::Postfixable(input), super::Prefixable::Postfixable(output)) => {
+                input.assert(output)
+            }
+            (Prefixable::Prefix(input), super::Prefixable::Prefix(output)) => input.assert(output),
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for Prefixable {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        Postfixable::arbitrary_with(args.clone())
+            .prop_map(Prefixable::Postfixable)
+            .prop_recursive(3, 3, 3, move |inner| {
+                Prefix::arbitrary_with((
+                    Some(inner),
+                    args.0.clone(),
+                    args.1.clone(),
+                    args.2.clone(),
+                ))
+                .prop_map(Prefixable::Prefix)
+            })
+            .boxed()
+    }
+}
+
+impl Display for Prefixable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Postfixable(postfixable) => Display::fmt(postfixable, f),
+            Self::Prefix(prefix) => Display::fmt(prefix, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BinaryOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+    Assign,
+    CompoundAdd,
+    CompoundSubtract,
+    CompoundMultiply,
+    CompoundDivide,
+    CompoundModulo,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+    RestrictAssign,
+    LogicalAnd,
+    LogicalOr,
+    BitwiseAnd,
+    CompoundBitwiseAnd,
+    BitwiseOr,
+    CompoundBitwiseOr,
+    BitwiseXor,
+    CompoundBitwiseXor,
+    BitwiseLeftShift,
+    CompoundBitwiseLeftShift,
+    BitwiseRightShift,
+    CompoundBitwiseRightShift,
+}
+
+impl Input<&super::BinaryOperator> for &BinaryOperator {
+    fn assert(self, output: &super::BinaryOperator) -> TestCaseResult {
+        match (self, output) {
+            (BinaryOperator::Add, super::BinaryOperator::Add(_))
+            | (BinaryOperator::Subtract, super::BinaryOperator::Subtract(_))
+            | (BinaryOperator::Multiply, super::BinaryOperator::Multiply(_))
+            | (BinaryOperator::Divide, super::BinaryOperator::Divide(_))
+            | (BinaryOperator::Modulo, super::BinaryOperator::Modulo(_))
+            | (BinaryOperator::Assign, super::BinaryOperator::Assign(_))
+            | (BinaryOperator::CompoundAdd, super::BinaryOperator::CompoundAdd(..))
+            | (BinaryOperator::CompoundSubtract, super::BinaryOperator::CompoundSubtract(..))
+            | (BinaryOperator::CompoundMultiply, super::BinaryOperator::CompoundMultiply(..))
+            | (BinaryOperator::CompoundDivide, super::BinaryOperator::CompoundDivide(..))
+            | (BinaryOperator::CompoundModulo, super::BinaryOperator::CompoundModulo(..))
+            | (BinaryOperator::Equal, super::BinaryOperator::Equal(..))
+            | (BinaryOperator::NotEqual, super::BinaryOperator::NotEqual(..))
+            | (BinaryOperator::LessThan, super::BinaryOperator::LessThan(_))
+            | (BinaryOperator::LessThanOrEqual, super::BinaryOperator::LessThanOrEqual(..))
+            | (BinaryOperator::GreaterThan, super::BinaryOperator::GreaterThan(_))
+            | (BinaryOperator::GreaterThanOrEqual, super::BinaryOperator::GreaterThanOrEqual(..))
+            | (BinaryOperator::RestrictAssign, super::BinaryOperator::RestrictAssign(..))
+            | (BinaryOperator::LogicalAnd, super::BinaryOperator::LogicalAnd(_))
+            | (BinaryOperator::LogicalOr, super::BinaryOperator::LogicalOr(_))
+            | (BinaryOperator::BitwiseAnd, super::BinaryOperator::BitwiseAnd(_))
+            | (BinaryOperator::CompoundBitwiseAnd, super::BinaryOperator::CompoundBitwiseAnd(..))
+            | (BinaryOperator::BitwiseOr, super::BinaryOperator::BitwiseOr(_))
+            | (BinaryOperator::CompoundBitwiseOr, super::BinaryOperator::CompoundBitwiseOr(..))
+            | (BinaryOperator::BitwiseXor, super::BinaryOperator::BitwiseXor(_))
+            | (BinaryOperator::CompoundBitwiseXor, super::BinaryOperator::CompoundBitwiseXor(..))
+            | (BinaryOperator::BitwiseLeftShift, super::BinaryOperator::BitwiseLeftShift(..))
+            | (
+                BinaryOperator::CompoundBitwiseLeftShift,
+                super::BinaryOperator::CompoundBitwiseLeftShift(..),
+            )
+            | (BinaryOperator::BitwiseRightShift, super::BinaryOperator::BitwiseRightShift(..))
+            | (
+                BinaryOperator::CompoundBitwiseRightShift,
+                super::BinaryOperator::CompoundBitwiseRightShift(..),
+            ) => Ok(()),
+
+            (input, output) => Err(TestCaseError::fail(format!(
+                "expected {input:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for BinaryOperator {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::Add),
+            Just(Self::Subtract),
+            Just(Self::Multiply),
+            Just(Self::Divide),
+            Just(Self::Modulo),
+            Just(Self::Assign),
+            Just(Self::CompoundAdd),
+            Just(Self::CompoundSubtract),
+            Just(Self::CompoundMultiply),
+            Just(Self::CompoundDivide),
+            Just(Self::CompoundModulo),
+            Just(Self::Equal),
+            Just(Self::NotEqual),
+            Just(Self::LessThan),
+            Just(Self::LessThanOrEqual),
+            Just(Self::GreaterThan),
+            Just(Self::GreaterThanOrEqual),
+            Just(Self::RestrictAssign),
+            Just(Self::LogicalAnd),
+            Just(Self::LogicalOr),
+            Just(Self::BitwiseAnd),
+            Just(Self::CompoundBitwiseAnd),
+            Just(Self::BitwiseOr),
+            Just(Self::CompoundBitwiseOr),
+            Just(Self::BitwiseXor),
+            Just(Self::CompoundBitwiseXor),
+            Just(Self::BitwiseLeftShift),
+            Just(Self::CompoundBitwiseLeftShift),
+            Just(Self::BitwiseRightShift),
+            Just(Self::CompoundBitwiseRightShift),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for BinaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Add => f.write_char('+'),
+            Self::Subtract => f.write_char('-'),
+            Self::Multiply => f.write_char('*'),
+            Self::Divide => f.write_char('/'),
+            Self::Modulo => f.write_char('%'),
+            Self::Assign => f.write_char('='),
+            Self::CompoundAdd => f.write_str("+="),
+            Self::CompoundSubtract => f.write_str("-="),
+            Self::CompoundMultiply => f.write_str("*="),
+            Self::CompoundDivide => f.write_str("/="),
+            Self::CompoundModulo => f.write_str("%="),
+            Self::Equal => f.write_str("=="),
+            Self::NotEqual => f.write_str("!="),
+            Self::LessThan => f.write_char('<'),
+            Self::LessThanOrEqual => f.write_str("<="),
+            Self::GreaterThan => f.write_char('>'),
+            Self::GreaterThanOrEqual => f.write_str(">="),
+            Self::RestrictAssign => f.write_str(":="),
+            Self::LogicalAnd => f.write_str("and"),
+            Self::LogicalOr => f.write_str("or"),
+            Self::BitwiseAnd => f.write_char('&'),
+            Self::CompoundBitwiseAnd => f.write_str("&="),
+            Self::BitwiseOr => f.write_char('|'),
+            Self::CompoundBitwiseOr => f.write_str("|="),
+            Self::BitwiseXor => f.write_char('^'),
+            Self::CompoundBitwiseXor => f.write_str("^="),
+            Self::BitwiseLeftShift => f.write_str("<<"),
+            Self::CompoundBitwiseLeftShift => f.write_str("<<="),
+            Self::BitwiseRightShift => f.write_str(">>"),
+            Self::CompoundBitwiseRightShift => f.write_str(">>="),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Binary {
+    pub first: Box<Prefixable>,
+    pub chain: Vec<(BinaryOperator, Prefixable)>,
+}
+
+impl Arbitrary for Binary {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let prefixable = Prefixable::arbitrary_with((args.0, args.1, args.2));
+        (
+            prefixable.clone(),
+            proptest::collection::vec((BinaryOperator::arbitrary(), prefixable), 0..=3),
+        )
+            .prop_map(|(first, chain)| Self {
+                first: Box::new(first),
+                chain,
+            })
+            .boxed()
+    }
+}
+
+impl Input<&super::Binary> for &Binary {
+    fn assert(self, output: &super::Binary) -> TestCaseResult {
+        self.first.assert(output.first())?;
+        self.chain.assert(output.chain())?;
+
+        Ok(())
+    }
+}
+
+impl Display for Binary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.first, f)?;
+
+        for (operator, prefixable) in &self.chain {
+            write!(f, " {operator} {prefixable}")?;
+        }
+
+        Ok(())
+    }
+}
+
 proptest! {
+    #![proptest_config(proptest::test_runner::Config {
+        max_shrink_iters: 4096,
+        ..proptest::test_runner::Config::default()
+    })]
+    #[allow(clippy::ignored_unit_patterns)]
     #[test]
-    #[allow(clippy::redundant_closure_for_method_calls, clippy::ignored_unit_patterns)]
     fn expression_test(
-        expression_input in Expression::arbitrary()
+        expression_input in Expression::arbitrary(),
     ) {
         let source = expression_input.to_string();
-
-        let expression = syntax_tree::tests::parse(
+        println!("{source}");
+        let expression = parse(
             &source,
             |parser, handler| parser.parse_expression(handler)
         )?;

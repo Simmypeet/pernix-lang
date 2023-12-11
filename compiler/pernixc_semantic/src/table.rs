@@ -1,6 +1,6 @@
 //! Contains the definition of [`Table`]
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 
 use getset::Getters;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -10,7 +10,6 @@ use pernixc_syntax::syntax_tree::target::Target;
 use rayon::iter::ParallelIterator;
 use thiserror::Error;
 
-use self::state::Builder;
 use crate::{
     arena::{Arena, ID},
     error,
@@ -31,12 +30,16 @@ use crate::{
     },
 };
 
-mod drafting;
 pub mod evaluate;
-//mod finalizing;
-mod build;
 pub mod resolution;
-mod state;
+
+trait Symbol: Sized + 'static
+where
+    ID<Self>: Into<GlobalID>,
+{
+    fn get_arena(table: &Table) -> &Arena<RwLock<Self>, ID<Self>>;
+    fn get_arena_mut(table: &mut Table) -> &mut Arena<RwLock<Self>, ID<Self>>;
+}
 
 /// A trait used to access the symbols defined in the table.
 pub trait Index<Idx: ?Sized> {
@@ -48,8 +51,27 @@ pub trait Index<Idx: ?Sized> {
 }
 
 trait IndexMut<Idx: ?Sized>: Index<Idx> {
-    /// Returns the output of the indexing operation if the index is valid.
     fn get_mut(&self, index: Idx) -> Option<RwLockWriteGuard<Self::Output>>;
+}
+
+impl<T: Symbol> Index<ID<T>> for Table
+where
+    ID<T>: Into<GlobalID>,
+{
+    type Output = T;
+
+    fn get(&self, index: ID<T>) -> Option<RwLockReadGuard<Self::Output>> {
+        T::get_arena(self).get(index).map(|x| x.read())
+    }
+}
+
+impl<T: Symbol> IndexMut<ID<T>> for Table
+where
+    ID<T>: Into<GlobalID>,
+{
+    fn get_mut(&self, index: ID<T>) -> Option<RwLockWriteGuard<Self::Output>> {
+        T::get_arena(self).get(index).map(|x| x.write())
+    }
 }
 
 /// Contains all the symbols and information defined in the target.
@@ -102,46 +124,40 @@ impl Table {
     }
 }
 
-macro_rules! index {
-    ($field:ident, $struct_name:ident) => {
-        impl Index<crate::arena::ID<$struct_name>> for Table {
-            type Output = $struct_name;
-
-            fn get(
-                &self,
-                id: crate::arena::ID<$struct_name>,
-            ) -> Option<RwLockReadGuard<Self::Output>> {
-                self.$field.get(id).map(|x| x.read())
+macro_rules! implements_symbol {
+    ($symbol:ident) => {
+        impl Symbol for $symbol {
+            fn get_arena(table: &Table) -> &Arena<RwLock<Self>, ID<Self>> {
+                paste! {
+                    &table.[<$symbol:snake s>]
+                }
             }
-        }
 
-        impl IndexMut<crate::arena::ID<$struct_name>> for Table {
-            fn get_mut(
-                &self,
-                id: crate::arena::ID<$struct_name>,
-            ) -> Option<RwLockWriteGuard<Self::Output>> {
-                self.$field.get(id).map(|x| x.write())
+            fn get_arena_mut(table: &mut Table) -> &mut Arena<RwLock<Self>, ID<Self>> {
+                paste! {
+                    &mut table.[<$symbol:snake s>]
+                }
             }
         }
     };
 }
 
-index!(modules, Module);
-index!(structs, Struct);
-index!(enums, Enum);
-index!(types, Type);
-index!(functions, Function);
-index!(constants, Constant);
-index!(traits, Trait);
-index!(trait_types, TraitType);
-index!(trait_functions, TraitFunction);
-index!(trait_constants, TraitConstant);
-index!(variants, Variant);
-index!(implementations, Implementation);
-index!(negative_implementations, NegativeImplementation);
-index!(implementation_types, ImplementationType);
-index!(implementation_constants, ImplementationConstant);
-index!(implementation_functions, ImplementationFunction);
+implements_symbol!(Module);
+implements_symbol!(Struct);
+implements_symbol!(Enum);
+implements_symbol!(Type);
+implements_symbol!(Function);
+implements_symbol!(Constant);
+implements_symbol!(Trait);
+implements_symbol!(TraitType);
+implements_symbol!(TraitFunction);
+implements_symbol!(TraitConstant);
+implements_symbol!(Variant);
+implements_symbol!(Implementation);
+implements_symbol!(NegativeImplementation);
+implements_symbol!(ImplementationType);
+implements_symbol!(ImplementationConstant);
+implements_symbol!(ImplementationFunction);
 
 /// The error type returned by [`Table::build()`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Error)]
@@ -199,8 +215,10 @@ impl Table {
     /// - [`BuildError::DuplicateTargetName`]: if there are two targets with the same name.
     pub fn build(
         targets: impl ParallelIterator<Item = Target>,
-        handler: &dyn Handler<error::Error>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Self, BuildError> {
+        todo!()
+        /*
         let table = RwLock::new(Self::default());
 
         let drafting_context = drafting::Context {
@@ -230,7 +248,7 @@ impl Table {
         let drafting::Context {
             usings_by_module_id,
             implementations_by_module_id,
-            builder: state_manger,
+            builder,
             ..
         } = drafting_context;
 
@@ -264,19 +282,14 @@ impl Table {
                     continue;
                 };
 
-                table.draft_implementation(
-                    implementation,
-                    module_id,
-                    trait_id,
-                    &state_manger,
-                    handler,
-                );
+                table.draft_implementation(implementation, module_id, trait_id, &builder, handler);
             }
         }
 
-        // TODO: finalize the table
+        table.build_all(&builder, handler);
 
         Ok(table)
+        */
     }
 
     /// Checks if the `referred` is accessible from the `referring_site`.
@@ -488,12 +501,10 @@ impl Table {
             ConstantInference = Never,
             ScopedLifetime = Never,
             LifetimeInference = Never,
-            ForallLifetime = Never,
         >,
     {
         match ty {
             r#type::Type::Local(local) => self.get_type_overall_accessibility(&local.0),
-            r#type::Type::Primitive(_) => Some(Accessibility::Public),
             r#type::Type::Inference(never) => match *never {},
             r#type::Type::Algebraic(adt) => Some(
                 self.get_accessibility(adt.kind.into())?
@@ -520,6 +531,7 @@ impl Table {
                     )?),
             ),
             r#type::Type::Parameter(parameter) => self.get_accessibility(parameter.parent.into()),
+            r#type::Type::Error | r#type::Type::Primitive(_) => Some(Accessibility::Public),
             r#type::Type::Tuple(tuple) => {
                 let mut current_min = Accessibility::Public;
 
@@ -566,13 +578,15 @@ impl Table {
             ConstantInference = Never,
             ScopedLifetime = Never,
             LifetimeInference = Never,
-            ForallLifetime = Never,
         >,
     {
         match constant {
-            constant::Constant::Primitive(_) => Some(Accessibility::Public),
+            constant::Constant::Error | constant::Constant::Primitive(_) => {
+                Some(Accessibility::Public)
+            }
             constant::Constant::Local(local) => self.get_constant_overall_accessibility(&local.0),
             constant::Constant::Inference(never) => match *never {},
+
             constant::Constant::Struct(constant) => {
                 let mut current_min = self.get_accessibility(constant.struct_id.into())?.min(
                     self.get_generic_arguments_overall_accessibility(&constant.generic_arguments)?,
@@ -608,17 +622,14 @@ impl Table {
             ConstantInference = Never,
             ScopedLifetime = Never,
             LifetimeInference = Never,
-            ForallLifetime = Never,
         >,
     {
         match lifetime {
-            Lifetime::Static => Some(Accessibility::Public),
             Lifetime::Parameter(lifetime_parameter_id) => {
                 self.get_accessibility(lifetime_parameter_id.parent.into())
             }
-            Lifetime::Forall(never) | Lifetime::Scoped(never) | Lifetime::Inference(never) => {
-                match *never {}
-            }
+            Lifetime::Error | Lifetime::Static | Lifetime::Forall(_) => Some(Accessibility::Public),
+            Lifetime::Scoped(never) | Lifetime::Inference(never) => match *never {},
         }
     }
 
@@ -642,7 +653,6 @@ impl Table {
             ConstantInference = Never,
             ScopedLifetime = Never,
             LifetimeInference = Never,
-            ForallLifetime = Never,
         >,
     {
         let mut current_min = Accessibility::Public;

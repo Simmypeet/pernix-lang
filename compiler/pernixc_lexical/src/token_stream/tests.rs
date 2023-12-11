@@ -81,10 +81,8 @@ impl Display for Delimited {
     }
 }
 
-impl Input for Delimited {
-    type Output = super::Delimited;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::Delimited> for &Delimited {
+    fn assert(self, output: &super::Delimited) -> TestCaseResult {
         prop_assert_eq!(self.delimiter.delimiter, output.delimiter);
 
         let (open_char, close_char) = match self.delimiter.delimiter {
@@ -132,13 +130,11 @@ impl Display for TokenTree {
     }
 }
 
-impl Input for TokenTree {
-    type Output = super::TokenTree;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
+impl Input<&super::TokenTree> for &TokenTree {
+    fn assert(self, output: &super::TokenTree) -> TestCaseResult {
         match (self, output) {
-            (Self::Token(i), super::TokenTree::Token(o)) => i.assert(o)?,
-            (Self::Delimited(i), super::TokenTree::Delimited(o)) => i.assert(o)?,
+            (TokenTree::Token(i), super::TokenTree::Token(o)) => i.assert(o)?,
+            (TokenTree::Delimited(i), super::TokenTree::Delimited(o)) => i.assert(o)?,
             _ => return Err(TestCaseError::fail("token tree variant mismatch")),
         }
 
@@ -227,10 +223,8 @@ impl Arbitrary for SignificantToken {
     }
 }
 
-/// Represents an input for the [`super::TokenStream`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenStream {
-    /// List of token trees in the token stream.
     pub token_trees: Vec<TokenTree>,
 }
 
@@ -304,17 +298,9 @@ impl Display for TokenStream {
     }
 }
 
-impl Input for TokenStream {
-    type Output = super::TokenStream;
-
-    fn assert(&self, output: &Self::Output) -> TestCaseResult {
-        prop_assert_eq!(self.token_trees.len(), output.len());
-
-        for (lhs, rhs) in self.token_trees.iter().zip(output.iter()) {
-            lhs.assert(rhs)?;
-        }
-
-        Ok(())
+impl Input<&super::TokenStream> for &TokenStream {
+    fn assert(self, output: &super::TokenStream) -> TestCaseResult {
+        self.token_trees.assert(&output.token_trees)
     }
 }
 
