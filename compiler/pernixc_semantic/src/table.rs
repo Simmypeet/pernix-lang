@@ -1,9 +1,8 @@
 //! Contains the definition of [`Table`]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug, ops::Deref};
 
-use getset::Getters;
-use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard};
 use paste::paste;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::target::Target;
@@ -22,118 +21,281 @@ use crate::{
         },
     },
     symbol::{
-        semantic::Symbolic, Accessibility, Constant, Enum, Function, Generic, GenericID, Global,
-        GlobalID, Implementation, ImplementationConstant, ImplementationFunction,
-        ImplementationKindID, ImplementationSignature, ImplementationType, Module,
-        NegativeImplementation, Predicate, Struct, Trait, TraitConstant, TraitFunction, TraitType,
-        Type, Variant,
+        semantic::Symbolic, Accessibility, AdtImplementation, AdtImplementationConstant,
+        AdtImplementationFunction, AdtImplementationType, Constant, Enum, Function, Generic,
+        GenericID, Global, GlobalID, ImplementationSignature, Module, NegativeTraitImplementation,
+        Predicate, Struct, Trait, TraitConstant, TraitFunction, TraitImplementation,
+        TraitImplementationConstant, TraitImplementationFunction, TraitImplementationKindID,
+        TraitImplementationType, TraitType, Type, Variant,
     },
 };
 
 pub mod evaluate;
 pub mod resolution;
 
-trait Symbol: Sized + 'static
-where
-    ID<Self>: Into<GlobalID>,
-{
-    fn get_arena(table: &Table) -> &Arena<RwLock<Self>, ID<Self>>;
-    fn get_arena_mut(table: &mut Table) -> &mut Arena<RwLock<Self>, ID<Self>>;
-}
+mod state;
 
 /// A trait used to access the symbols defined in the table.
 pub trait Index<Idx: ?Sized> {
     /// The output type of the indexing operation.
-    type Output: ?Sized;
+    type Output<'a>: Sized
+    where
+        Self: 'a;
 
     /// Returns the output of the indexing operation if the index is valid.
-    fn get(&self, index: Idx) -> Option<RwLockReadGuard<Self::Output>>;
+    fn get(&self, index: Idx) -> Option<Self::Output<'_>>;
 }
 
-trait IndexMut<Idx: ?Sized>: Index<Idx> {
-    fn get_mut(&self, index: Idx) -> Option<RwLockWriteGuard<Self::Output>>;
-}
-
-impl<T: Symbol> Index<ID<T>> for Table
+impl<T: Element, S: State> Index<ID<T>> for Representation<S>
 where
     ID<T>: Into<GlobalID>,
 {
-    type Output = T;
+    type Output<'a> = <S::Container as Container>::Read<'a, T> where Self: 'a;
 
-    fn get(&self, index: ID<T>) -> Option<RwLockReadGuard<Self::Output>> {
-        T::get_arena(self).get(index).map(|x| x.read())
+    fn get(&self, index: ID<T>) -> Option<Self::Output<'_>> {
+        T::get_arena(self).get(index).map(|x| S::Container::read(x))
     }
 }
 
-impl<T: Symbol> IndexMut<ID<T>> for Table
-where
-    ID<T>: Into<GlobalID>,
-{
-    fn get_mut(&self, index: ID<T>) -> Option<RwLockWriteGuard<Self::Output>> {
-        T::get_arena(self).get(index).map(|x| x.write())
+/// A trait used to wrap a symbol in a container.
+///
+/// This is primarily used to either wrap a symbol in a [`RwLock`] or not at all.
+///
+/// See [`RwLockContainer`] for an example.
+pub trait Container: Debug {
+    /// The type of the wrapped value.
+    type Wrap<T: Debug>: Debug;
+
+    /// The type of the read guard of the wrapped value.
+    #[clippy::has_significant_drop]
+    type Read<'a, T: ?Sized + 'a>: Deref<Target = T> + 'a;
+
+    /// The type of the mapped read guard of the wrapped value.
+    #[clippy::has_significant_drop]
+    type MappedRead<'a, T: ?Sized + 'a>: Deref<Target = T> + 'a;
+
+    /// Wraps the given value.
+    fn wrap<T: Debug>(value: T) -> Self::Wrap<T>;
+
+    /// Reads the given value.
+    fn read<T: Debug>(value: &Self::Wrap<T>) -> Self::Read<'_, T>;
+
+    /// Maps the given value into another sub-field value.
+    fn map_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
+        value: Self::Read<'a, T>,
+        f: impl FnOnce(&T) -> &U,
+    ) -> Self::MappedRead<'a, U>;
+
+    /// Maps the given value into another sub-field value.
+    fn map_mapped_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
+        value: Self::MappedRead<'a, T>,
+        f: impl FnOnce(&T) -> &U,
+    ) -> Self::MappedRead<'a, U>;
+}
+
+/// A struct which implements [`Container`] by wrapping the value in a [`RwLock`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct RwLockContainer;
+
+impl Container for RwLockContainer {
+    type MappedRead<'a, T: ?Sized + 'a> = MappedRwLockReadGuard<'a, T>;
+    type Read<'a, T: ?Sized + 'a> = RwLockReadGuard<'a, T>;
+    type Wrap<T: Debug> = RwLock<T>;
+
+    fn wrap<T: Debug>(value: T) -> Self::Wrap<T> { RwLock::new(value) }
+
+    fn read<T: Debug>(value: &Self::Wrap<T>) -> Self::Read<'_, T> { value.read() }
+
+    fn map_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
+        value: Self::Read<'a, T>,
+        f: impl FnOnce(&T) -> &U,
+    ) -> Self::MappedRead<'a, U> {
+        RwLockReadGuard::map(value, f)
+    }
+
+    fn map_mapped_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
+        value: Self::MappedRead<'a, T>,
+        f: impl FnOnce(&T) -> &U,
+    ) -> Self::MappedRead<'a, U> {
+        MappedRwLockReadGuard::map(value, f)
     }
 }
 
-/// Contains all the symbols and information defined in the target.
-#[derive(Debug, Getters)]
-pub struct Table {
-    modules: Arena<RwLock<Module>, ID<Module>>,
-    structs: Arena<RwLock<Struct>, ID<Struct>>,
-    enums: Arena<RwLock<Enum>, ID<Enum>>,
-    variants: Arena<RwLock<Variant>, ID<Variant>>,
-    types: Arena<RwLock<Type>, ID<Type>>,
-    functions: Arena<RwLock<Function>, ID<Function>>,
-    constants: Arena<RwLock<Constant>, ID<Constant>>,
+/// A struct which implements [`Container`] by not wrapping the value at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct NoContainer;
 
-    traits: Arena<RwLock<Trait>, ID<Trait>>,
-    trait_types: Arena<RwLock<TraitType>, ID<TraitType>>,
-    trait_functions: Arena<RwLock<TraitFunction>, ID<TraitFunction>>,
-    trait_constants: Arena<RwLock<TraitConstant>, ID<TraitConstant>>,
+impl Container for NoContainer {
+    type MappedRead<'a, T: ?Sized + 'a> = &'a T;
+    type Read<'a, T: ?Sized + 'a> = &'a T;
+    type Wrap<T: Debug> = T;
 
-    implementations: Arena<RwLock<Implementation>, ID<Implementation>>,
-    negative_implementations: Arena<RwLock<NegativeImplementation>, ID<NegativeImplementation>>,
+    fn wrap<T: Debug>(value: T) -> Self::Wrap<T> { value }
 
-    implementation_types: Arena<RwLock<ImplementationType>, ID<ImplementationType>>,
-    implementation_functions: Arena<RwLock<ImplementationFunction>, ID<ImplementationFunction>>,
-    implementation_constants: Arena<RwLock<ImplementationConstant>, ID<ImplementationConstant>>,
+    fn read<T: Debug>(value: &Self::Wrap<T>) -> Self::Read<'_, T> { value }
+
+    fn map_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
+        value: Self::Read<'a, T>,
+        f: impl FnOnce(&T) -> &U,
+    ) -> Self::MappedRead<'a, U> {
+        f(value)
+    }
+
+    fn map_mapped_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
+        value: Self::MappedRead<'a, T>,
+        f: impl FnOnce(&T) -> &U,
+    ) -> Self::MappedRead<'a, U> {
+        f(value)
+    }
+}
+
+/// A struct which implements [`State`] used to signify that the table is built with some errors
+/// and is not suitable for the next phase (i.e. code generation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Suboptimal;
+
+impl State for Suboptimal {
+    type Container = NoContainer;
+}
+
+/// A struct which implements [`State`] used to signify that the table is built successfully and
+/// is ready to be used for the next phase (i.e. code generation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Success;
+
+impl State for Success {
+    type Container = NoContainer;
+}
+
+/// Represents a state object for the [`Table`].
+///
+/// This is used to distiguish between the states of the symbols in the table.
+pub trait State: Default + Debug {
+    type Container: Container;
+}
+
+/// The representation of the table without any state information.
+#[derive(Debug)]
+pub struct Representation<T: State> {
+    modules: Arena<<T::Container as Container>::Wrap<Module>, ID<Module>>,
+    structs: Arena<<T::Container as Container>::Wrap<Struct>, ID<Struct>>,
+    enums: Arena<<T::Container as Container>::Wrap<Enum>, ID<Enum>>,
+    variants: Arena<<T::Container as Container>::Wrap<Variant>, ID<Variant>>,
+    types: Arena<<T::Container as Container>::Wrap<Type>, ID<Type>>,
+    functions: Arena<<T::Container as Container>::Wrap<Function>, ID<Function>>,
+    constants: Arena<<T::Container as Container>::Wrap<Constant>, ID<Constant>>,
+
+    traits: Arena<<T::Container as Container>::Wrap<Trait>, ID<Trait>>,
+    trait_types: Arena<<T::Container as Container>::Wrap<TraitType>, ID<TraitType>>,
+    trait_functions: Arena<<T::Container as Container>::Wrap<TraitFunction>, ID<TraitFunction>>,
+    trait_constants: Arena<<T::Container as Container>::Wrap<TraitConstant>, ID<TraitConstant>>,
+
+    trait_implementations:
+        Arena<<T::Container as Container>::Wrap<TraitImplementation>, ID<TraitImplementation>>,
+    negative_trait_implementations: Arena<
+        <T::Container as Container>::Wrap<NegativeTraitImplementation>,
+        ID<NegativeTraitImplementation>,
+    >,
+
+    trait_implementation_types: Arena<
+        <T::Container as Container>::Wrap<TraitImplementationType>,
+        ID<TraitImplementationType>,
+    >,
+    trait_implementation_functions: Arena<
+        <T::Container as Container>::Wrap<TraitImplementationFunction>,
+        ID<TraitImplementationFunction>,
+    >,
+    trait_implementation_constants: Arena<
+        <T::Container as Container>::Wrap<TraitImplementationConstant>,
+        ID<TraitImplementationConstant>,
+    >,
+
+    adt_implementations:
+        Arena<<T::Container as Container>::Wrap<AdtImplementation>, ID<AdtImplementation>>,
+
+    adt_implementation_types:
+        Arena<<T::Container as Container>::Wrap<AdtImplementationType>, ID<AdtImplementationType>>,
+    adt_implementation_functions: Arena<
+        <T::Container as Container>::Wrap<AdtImplementationFunction>,
+        ID<AdtImplementationFunction>,
+    >,
+    adt_implementation_constants: Arena<
+        <T::Container as Container>::Wrap<AdtImplementationConstant>,
+        ID<AdtImplementationConstant>,
+    >,
 
     root_module_ids_by_name: HashMap<String, ID<Module>>,
 }
 
-impl Table {
+/// Contains all the symbols and information defined in the target.
+#[derive(Debug, derive_more::Deref)]
+pub struct Table<T: State> {
+    #[deref]
+    representation: Representation<T>,
+    state: T,
+}
+
+impl<T: State> Table<T> {
     pub(crate) fn default() -> Self {
         Self {
-            modules: Arena::default(),
-            structs: Arena::default(),
-            enums: Arena::default(),
-            types: Arena::default(),
-            functions: Arena::default(),
-            constants: Arena::default(),
-            traits: Arena::default(),
-            variants: Arena::default(),
-            implementations: Arena::default(),
-            implementation_constants: Arena::default(),
-            implementation_functions: Arena::default(),
-            implementation_types: Arena::default(),
-            trait_constants: Arena::default(),
-            trait_functions: Arena::default(),
-            trait_types: Arena::default(),
-            negative_implementations: Arena::default(),
-            root_module_ids_by_name: HashMap::new(),
+            representation: Representation {
+                modules: Arena::default(),
+                structs: Arena::default(),
+                enums: Arena::default(),
+                types: Arena::default(),
+                functions: Arena::default(),
+                constants: Arena::default(),
+                traits: Arena::default(),
+                variants: Arena::default(),
+                trait_implementations: Arena::default(),
+                trait_implementation_constants: Arena::default(),
+                trait_implementation_functions: Arena::default(),
+                trait_implementation_types: Arena::default(),
+                trait_constants: Arena::default(),
+                trait_functions: Arena::default(),
+                trait_types: Arena::default(),
+                negative_trait_implementations: Arena::default(),
+                adt_implementations: Arena::default(),
+                adt_implementation_constants: Arena::default(),
+                adt_implementation_functions: Arena::default(),
+                adt_implementation_types: Arena::default(),
+
+                root_module_ids_by_name: HashMap::new(),
+            },
+            state: T::default(),
         }
     }
 }
 
+/// A trait used to access the symbols defined in the table.
+trait Element: Sized + Debug + 'static {
+    /// Gets the arena reference containing *this* kind of symbol.
+    fn get_arena<T: State>(
+        table: &Representation<T>,
+    ) -> &Arena<<T::Container as Container>::Wrap<Self>, ID<Self>>;
+
+    /// Gets the mutable arena reference containing *this* kind of symbol.
+    fn get_arena_mut<T: State>(
+        table: &mut Representation<T>,
+    ) -> &mut Arena<<T::Container as Container>::Wrap<Self>, ID<Self>>;
+}
+
 macro_rules! implements_symbol {
     ($symbol:ident) => {
-        impl Symbol for $symbol {
-            fn get_arena(table: &Table) -> &Arena<RwLock<Self>, ID<Self>> {
+        impl Element for $symbol {
+            /// Gets the arena reference containing *this* kind of symbol.
+            fn get_arena<T: State>(
+                table: &Representation<T>,
+            ) -> &Arena<<T::Container as Container>::Wrap<Self>, ID<Self>> {
                 paste! {
                     &table.[<$symbol:snake s>]
                 }
             }
 
-            fn get_arena_mut(table: &mut Table) -> &mut Arena<RwLock<Self>, ID<Self>> {
+            /// Gets the mutable arena reference containing *this* kind of symbol.
+            fn get_arena_mut<T: State>(
+                table: &mut Representation<T>,
+            ) -> &mut Arena<<T::Container as Container>::Wrap<Self>, ID<Self>> {
                 paste! {
                     &mut table.[<$symbol:snake s>]
                 }
@@ -153,29 +315,22 @@ implements_symbol!(TraitType);
 implements_symbol!(TraitFunction);
 implements_symbol!(TraitConstant);
 implements_symbol!(Variant);
-implements_symbol!(Implementation);
-implements_symbol!(NegativeImplementation);
-implements_symbol!(ImplementationType);
-implements_symbol!(ImplementationConstant);
-implements_symbol!(ImplementationFunction);
+implements_symbol!(TraitImplementation);
+implements_symbol!(NegativeTraitImplementation);
+implements_symbol!(TraitImplementationType);
+implements_symbol!(TraitImplementationConstant);
+implements_symbol!(TraitImplementationFunction);
+implements_symbol!(AdtImplementation);
+implements_symbol!(AdtImplementationType);
+implements_symbol!(AdtImplementationConstant);
+implements_symbol!(AdtImplementationFunction);
 
 /// The error type returned by [`Table::build()`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Error)]
 #[allow(missing_docs)]
-pub enum BuildError {
+pub enum BuildTableError {
     #[error("the target `{0}` was already defined")]
     DuplicateTargetName(String),
-}
-
-/// The error type returned by most operations on [`Table`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
-#[allow(missing_docs)]
-pub enum Error {
-    #[error("The given ID does not exist in the table")]
-    InvalidID,
-
-    #[error("Encountered a fatal semantic error that aborts the process")]
-    SemanticError,
 }
 
 /// The error type returned by [`Table::get_by_qualified_name()`].
@@ -201,13 +356,13 @@ macro_rules! get {
     ($self:ident, $id:ident, $kind:ident, $($field:ident),*) => {
         match $id {
             $(
-                $kind::$field($id) => $self.get($id).map(|x| RwLockReadGuard::map(x, |x| x as _)),
+                $kind::$field($id) => $self.get($id).map(|x| <T::Container as Container>::map_read(x, |x| x as _)),
             )*
         }
     };
 }
 
-impl Table {
+impl<T: State> Representation<T> {
     /// Builds a symbol table from the given targets.
     ///
     /// # Errors
@@ -216,7 +371,7 @@ impl Table {
     pub fn build(
         targets: impl ParallelIterator<Item = Target>,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Self, BuildError> {
+    ) -> Result<Self, BuildTableError> {
         todo!()
         /*
         let table = RwLock::new(Self::default());
@@ -342,6 +497,23 @@ impl Table {
         )
     }
 
+    /// Returns the [`ImplementationSignature`] of the given [`TraitImplementationKindID`].
+    #[must_use]
+    pub fn get_trait_implementation_signature(
+        &self,
+        trait_implementation_kind: TraitImplementationKindID,
+    ) -> Option<<T::Container as Container>::MappedRead<'_, ImplementationSignature<ID<Trait>>>>
+    {
+        match trait_implementation_kind {
+            TraitImplementationKindID::Positive(id) => self
+                .get(id)
+                .map(|x| <T::Container as Container>::map_read(x, |x| &x.signature)),
+            TraitImplementationKindID::Negative(id) => self
+                .get(id)
+                .map(|x| <T::Container as Container>::map_read(x, |x| &x.signature)),
+        }
+    }
+
     /// Returns the [`Module`] ID that is the closest to the given [`GlobalID`] (including itself).
     #[must_use]
     pub fn get_closet_module_id(&self, mut global_id: GlobalID) -> Option<ID<Module>> {
@@ -407,43 +579,43 @@ impl Table {
     #[must_use]
     pub fn get_qualified_name(&self, global_id: GlobalID) -> Option<String> {
         match global_id {
-            GlobalID::Implementation(id) => {
-                self.get_qualified_name(self.get(id)?.signature.trait_id.into())
+            GlobalID::TraitImplementation(id) => {
+                self.get_qualified_name(self.get(id)?.signature.implemented_id.into())
             }
-            GlobalID::NegativeImplementation(id) => {
-                self.get_qualified_name(self.get(id)?.signature.trait_id.into())
+            GlobalID::NegativeTraitImplementation(id) => {
+                self.get_qualified_name(self.get(id)?.signature.implemented_id.into())
             }
 
-            GlobalID::ImplementationType(id) => {
+            GlobalID::TraitImplementationType(id) => {
                 let mut qualified_name = self.get_qualified_name(
-                    self.get(self.get(id)?.parent_implementation_id)
+                    self.get(self.get(id)?.parent_id)
                         .unwrap()
                         .signature
-                        .trait_id
+                        .implemented_id
                         .into(),
                 )?;
                 qualified_name.push_str("::");
                 qualified_name.push_str(self.get(id)?.name.as_str());
                 Some(qualified_name)
             }
-            GlobalID::ImplementationFunction(id) => {
+            GlobalID::TraitImplementationFunction(id) => {
                 let mut qualified_name = self.get_qualified_name(
-                    self.get(self.get(id)?.parent_implementation_id)
+                    self.get(self.get(id)?.parent_id)
                         .unwrap()
                         .signature
-                        .trait_id
+                        .implemented_id
                         .into(),
                 )?;
                 qualified_name.push_str("::");
                 qualified_name.push_str(self.get(id)?.name.as_str());
                 Some(qualified_name)
             }
-            GlobalID::ImplementationConstant(id) => {
+            GlobalID::TraitImplementationConstant(id) => {
                 let mut qualified_name = self.get_qualified_name(
-                    self.get(self.get(id)?.parent_implementation_id)
+                    self.get(self.get(id)?.parent_id)
                         .unwrap()
                         .signature
-                        .trait_id
+                        .implemented_id
                         .into(),
                 )?;
                 qualified_name.push_str("::");
@@ -531,7 +703,7 @@ impl Table {
                     )?),
             ),
             r#type::Type::Parameter(parameter) => self.get_accessibility(parameter.parent.into()),
-            r#type::Type::Error | r#type::Type::Primitive(_) => Some(Accessibility::Public),
+            r#type::Type::Primitive(_) => Some(Accessibility::Public),
             r#type::Type::Tuple(tuple) => {
                 let mut current_min = Accessibility::Public;
 
@@ -581,9 +753,6 @@ impl Table {
         >,
     {
         match constant {
-            constant::Constant::Error | constant::Constant::Primitive(_) => {
-                Some(Accessibility::Public)
-            }
             constant::Constant::Local(local) => self.get_constant_overall_accessibility(&local.0),
             constant::Constant::Inference(never) => match *never {},
 
@@ -598,10 +767,56 @@ impl Table {
 
                 Some(current_min)
             }
-            constant::Constant::Enum(_) => todo!(),
-            constant::Constant::Array(_) => todo!(),
-            constant::Constant::Parameter(_) => todo!(),
-            constant::Constant::TraitMember(_) => todo!(),
+
+            constant::Constant::Array(constant) => constant
+                .elements
+                .iter()
+                .map(|x| self.get_constant_overall_accessibility(x))
+                .try_fold(Accessibility::Public, |acc, x| Some(acc.min(x?))),
+
+            constant::Constant::Parameter(_) | constant::Constant::Primitive(_) => {
+                Some(Accessibility::Public)
+            }
+
+            constant::Constant::TraitMember(trait_member) => Some(
+                self.get_accessibility(trait_member.trait_constant_id.into())?
+                    .min(self.get_generic_arguments_overall_accessibility(
+                        &trait_member.trait_generic_arguments,
+                    )?)
+                    .min(self.get_generic_arguments_overall_accessibility(
+                        &trait_member.trait_generic_arguments,
+                    )?),
+            ),
+
+            constant::Constant::Enum(constant) => {
+                let mut current_min = self.get_accessibility(constant.variant_id.into())?.min(
+                    self.get_generic_arguments_overall_accessibility(&constant.generic_arguments)?,
+                );
+
+                if let Some(associated_value) = &constant.associated_value {
+                    current_min =
+                        current_min.min(self.get_constant_overall_accessibility(associated_value)?);
+                }
+
+                Some(current_min)
+            }
+
+            constant::Constant::Symbol(symbol) => {
+                Some(self.get_accessibility(symbol.id.into())?.min(
+                    self.get_generic_arguments_overall_accessibility(&symbol.generic_arguments)?,
+                ))
+            }
+
+            constant::Constant::Implementation(symbol) => Some(
+                self.get_accessibility(symbol.id.into())?.min(
+                    self.get_generic_arguments_overall_accessibility(
+                        &symbol.constant_generic_arguments,
+                    )?
+                    .min(self.get_generic_arguments_overall_accessibility(
+                        &symbol.implementation_generic_arguments,
+                    )?),
+                ),
+            ),
             constant::Constant::Tuple(_) => todo!(),
         }
     }
@@ -628,7 +843,7 @@ impl Table {
             Lifetime::Parameter(lifetime_parameter_id) => {
                 self.get_accessibility(lifetime_parameter_id.parent.into())
             }
-            Lifetime::Error | Lifetime::Static | Lifetime::Forall(_) => Some(Accessibility::Public),
+            Lifetime::Static | Lifetime::Forall(_) => Some(Accessibility::Public),
             Lifetime::Scoped(never) | Lifetime::Inference(never) => match *never {},
         }
     }
@@ -732,7 +947,7 @@ impl Table {
     ///
     /// See [`ScopeWalker`] for more information.
     #[must_use]
-    pub fn scope_walker(&self, global_id: GlobalID) -> Option<ScopeWalker> {
+    pub fn scope_walker(&self, global_id: GlobalID) -> Option<ScopeWalker<T>> {
         drop(self.get_global(global_id)?);
 
         Some(ScopeWalker {
@@ -751,7 +966,7 @@ impl Table {
         macro_rules! arm_expression {
             ($table:ident, $id:ident, $kind:ident) => {
                 paste! {
-                    $table.[<$kind:lower s>].get($id).map(|$id| $id.read().accessibility)
+                    $table.[<$kind:snake s>].get($id).map(|$id| T::Container::read($id).accessibility)
                 }
             };
 
@@ -782,48 +997,71 @@ impl Table {
             (Type),
             (Constant),
             (Function),
+            (AdtImplementationType),
+            (AdtImplementationFunction),
+            (AdtImplementationConstant),
             (
                 Variant,
-                self.get_accessibility(global_id.read().parent_enum_id.into())
+                self.get_accessibility(T::Container::read(global_id).parent_enum_id.into())
             ),
             (
                 TraitType,
-                self.get_accessibility(global_id.read().parent_trait_id.into())
+                self.get_accessibility(T::Container::read(global_id).parent_id.into())
             ),
             (
                 TraitConstant,
-                self.get_accessibility(global_id.read().parent_trait_id.into())
+                self.get_accessibility(T::Container::read(global_id).parent_id.into())
             ),
             (
                 TraitFunction,
-                self.get_accessibility(global_id.read().parent_trait_id.into())
+                self.get_accessibility(T::Container::read(global_id).parent_id.into())
             ),
             (
-                Implementation,
-                self.get_accessibility(global_id.read().signature.trait_id.into())
+                TraitImplementation,
+                self.get_accessibility(
+                    T::Container::read(global_id)
+                        .signature
+                        .implemented_id
+                        .into()
+                )
             ),
             (
-                ImplementationType,
-                self.get_accessibility(global_id.read().parent_implementation_id.into())
+                TraitImplementationType,
+                self.get_accessibility(T::Container::read(global_id).parent_id.into())
             ),
             (
-                ImplementationFunction,
-                self.get_accessibility(global_id.read().parent_implementation_id.into())
+                TraitImplementationFunction,
+                self.get_accessibility(T::Container::read(global_id).parent_id.into())
             ),
             (
-                ImplementationConstant,
-                self.get_accessibility(global_id.read().parent_implementation_id.into())
+                TraitImplementationConstant,
+                self.get_accessibility(T::Container::read(global_id).parent_id.into())
             ),
             (
-                NegativeImplementation,
-                self.get_accessibility(global_id.read().signature.trait_id.into())
-            )
+                NegativeTraitImplementation,
+                self.get_accessibility(
+                    T::Container::read(global_id)
+                        .signature
+                        .implemented_id
+                        .into()
+                )
+            ),
+            (AdtImplementation, {
+                let implemented_id = T::Container::read(global_id).signature.implemented_id;
+                match implemented_id {
+                    crate::symbol::AlgebraicKindID::Struct(id) => self.get_accessibility(id.into()),
+                    crate::symbol::AlgebraicKindID::Enum(id) => self.get_accessibility(id.into()),
+                }
+            })
         )
     }
 
     /// Returns the [`Generic`] symbol from the given [`GenericID`]
     #[must_use]
-    pub fn get_generic(&self, generic_id: GenericID) -> Option<MappedRwLockReadGuard<dyn Generic>> {
+    pub fn get_generic(
+        &self,
+        generic_id: GenericID,
+    ) -> Option<<T::Container as Container>::MappedRead<'_, dyn Generic>> {
         get!(
             self,
             generic_id,
@@ -832,43 +1070,29 @@ impl Table {
             Trait,
             Enum,
             Function,
+            Constant,
             Type,
             TraitFunction,
+            TraitConstant,
             TraitType,
-            Implementation,
-            ImplementationType,
-            ImplementationFunction,
-            NegativeImplementation
+            TraitImplementation,
+            TraitImplementationType,
+            TraitImplementationConstant,
+            TraitImplementationFunction,
+            NegativeTraitImplementation,
+            AdtImplementation,
+            AdtImplementationType,
+            AdtImplementationConstant,
+            AdtImplementationFunction
         )
-    }
-
-    /// Gets the [`ImplementationSignature`] of the given [`ImplementationKindID`].
-    ///
-    /// # Returns
-    ///
-    /// Returns `None` if the given [`ImplementationKindID`] is not valid.
-    #[must_use]
-    pub fn get_implementation_signature(
-        &self,
-        implementation_kind: ImplementationKindID,
-    ) -> Option<MappedRwLockReadGuard<ImplementationSignature>> {
-        match implementation_kind {
-            ImplementationKindID::Positive(positive) => {
-                let implementation = self.get(positive)?;
-                Some(RwLockReadGuard::map(implementation, |x| &x.signature))
-            }
-            ImplementationKindID::Negative(negative) => {
-                let negative_implementation = self.get(negative)?;
-                Some(RwLockReadGuard::map(negative_implementation, |x| {
-                    &x.signature
-                }))
-            }
-        }
     }
 
     /// Returns the [`Global`] symbol from the given [`GlobalID`].
     #[must_use]
-    pub fn get_global(&self, global_id: GlobalID) -> Option<MappedRwLockReadGuard<dyn Global>> {
+    pub fn get_global(
+        &self,
+        global_id: GlobalID,
+    ) -> Option<<T::Container as Container>::MappedRead<'_, dyn Global>> {
         get!(
             self,
             global_id,
@@ -884,11 +1108,15 @@ impl Table {
             Constant,
             Function,
             Variant,
-            ImplementationFunction,
-            Implementation,
-            ImplementationType,
-            ImplementationConstant,
-            NegativeImplementation
+            TraitImplementationFunction,
+            TraitImplementation,
+            TraitImplementationType,
+            TraitImplementationConstant,
+            NegativeTraitImplementation,
+            AdtImplementation,
+            AdtImplementationType,
+            AdtImplementationFunction,
+            AdtImplementationConstant
         )
     }
 }
@@ -898,18 +1126,12 @@ impl Table {
 ///
 /// The iterator iterates through the scope in id-to-parent order.
 #[derive(Debug, Clone)]
-pub struct ScopeWalker<'a> {
-    table: &'a Table,
+pub struct ScopeWalker<'a, T: State> {
+    table: &'a Representation<T>,
     current_id: Option<GlobalID>,
 }
 
-impl<'a> ScopeWalker<'a> {
-    /// Creates a new scope walker.
-    #[must_use]
-    pub fn table(&self) -> &'a Table { self.table }
-}
-
-impl<'a> Iterator for ScopeWalker<'a> {
+impl<'a, T: State> Iterator for ScopeWalker<'a, T> {
     type Item = GlobalID;
 
     fn next(&mut self) -> Option<Self::Item> {

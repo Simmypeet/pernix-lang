@@ -5,11 +5,11 @@ use crate::{
         predicate::Premises,
         session,
         term::{
-            r#type::{Algebraic, AlgebraicKind, Primitive, Type},
+            r#type::{Algebraic, Primitive, Type},
             GenericArguments, Term,
         },
     },
-    symbol::{semantic::Symbolic, GenericID, TypeParameterID},
+    symbol::{semantic::Symbolic, AlgebraicKind, GenericID, TypeParameterID},
     table::Table,
 };
 

@@ -23,3 +23,4 @@ paste = { workspace = true }
 take_mut = { workspace = true }
 rayon = { workspace = true }
 bitflags = { workspace = true }
+typestate = { workspace = true }

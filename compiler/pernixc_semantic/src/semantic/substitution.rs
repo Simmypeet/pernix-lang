@@ -175,7 +175,7 @@ impl<S: Model> Substitute for Type<S> {
         }
 
         match self {
-            Self::Error | Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
+            Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
 
             Self::Algebraic(adt) => {
                 apply_generic_arguments(&mut adt.generic_arguments, substitution);
@@ -222,7 +222,7 @@ impl<S: Model> Substitute for Constant<S> {
         }
 
         match self {
-            Self::Error | Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
+            Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
 
             Self::Struct(value) => {
                 apply_generic_arguments(&mut value.generic_arguments, substitution);
@@ -246,11 +246,18 @@ impl<S: Model> Substitute for Constant<S> {
                 }
             }
             Self::TraitMember(value) => {
-                apply_generic_arguments(&mut value.trait_arguments, substitution);
+                apply_generic_arguments(&mut value.trait_generic_arguments, substitution);
             }
 
             Self::Local(local) => local.0.apply(substitution),
             Self::Tuple(tuple) => tuple_apply(tuple, substitution),
+
+            Self::Symbol(symbol) => symbol.generic_arguments.apply(substitution),
+
+            Self::Implementation(symbol) => {
+                symbol.constant_generic_arguments.apply(substitution);
+                symbol.implementation_generic_arguments.apply(substitution);
+            }
         }
     }
 

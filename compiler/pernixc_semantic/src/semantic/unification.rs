@@ -11,7 +11,7 @@ use super::{
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments},
     Semantic, Term,
 };
-use crate::table::Table;
+use crate::table::{State, Table};
 
 /// Describes which types of terms can be unified.
 pub trait Config<T: ?Sized> {
@@ -64,7 +64,7 @@ impl<'a, M: Model> Unifier<'a, M> {
         lhs: &T,
         rhs: &T,
         premises: &Premises<M>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
         config: &mut C,
@@ -93,7 +93,7 @@ impl<M: Model> GenericArguments<M> {
         &self,
         other: &Self,
         premises: &Premises<M>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
         config: &mut C,
@@ -172,7 +172,7 @@ fn unify_internal<
     lhs: &T,
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
     config: &mut C,
@@ -314,7 +314,7 @@ pub(super) fn unify<
     lhs: &T,
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
     config: &mut C,
@@ -352,7 +352,7 @@ pub(super) fn sub_structural_unify<
     lhs: &T,
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
     config: &mut C,

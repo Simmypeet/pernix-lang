@@ -17,10 +17,10 @@ use crate::{
     arena::ID,
     semantic::{predicate::Predicate, term::r#type},
     symbol::{
-        semantic::Symbolic, GenericID, GenericKind, GlobalID, Implementation, ImplementationKindID,
-        ImplementationMemberID, LocalGenericParameterID, TraitMemberID,
+        semantic::Symbolic, GenericID, GenericKind, GlobalID, LocalGenericParameterID,
+        TraitImplementation, TraitImplementationKindID, TraitImplementationMemberID, TraitMemberID,
     },
-    table::{Index, Table},
+    table::{Index, Suboptimal, Table},
 };
 
 /// Contains both error and the table in which the error occurred.
@@ -29,7 +29,7 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub struct WithTable<'a, Error> {
     /// The table in which the error occurred.
-    pub table: &'a Table,
+    pub table: &'a Table<Suboptimal>,
 
     /// The error that occurred.
     pub error: &'a Error,
@@ -104,18 +104,22 @@ impl GlobalID {
             Self::Type(_) => "type",
             Self::Constant(_) => "constant",
             Self::Trait(_) => "trait",
-            Self::Implementation(_) => "implementation",
+            Self::TraitImplementation(_) => "trait implementation",
             Self::TraitFunction(_) => "trait function",
             Self::TraitType(_) => "trait type",
             Self::TraitConstant(_) => "trait constant",
-            Self::ImplementationFunction(_) => "implementation function",
-            Self::ImplementationType(_) => "implementation type",
-            Self::ImplementationConstant(_) => "implementation constant",
+            Self::TraitImplementationFunction(_) => "trait implementation function",
+            Self::TraitImplementationType(_) => "trait implementation type",
+            Self::TraitImplementationConstant(_) => "trait implementation constant",
             Self::Struct(_) => "struct",
             Self::Enum(_) => "enum",
             Self::Function(_) => "function",
             Self::Variant(_) => "enum variant",
-            Self::NegativeImplementation(_) => "negative implementation",
+            Self::NegativeTraitImplementation(_) => "negative implementation",
+            Self::AdtImplementation(_) => "implementation",
+            Self::AdtImplementationType(_) => "implementation type",
+            Self::AdtImplementationFunction(_) => "implementation function",
+            Self::AdtImplementationConstant(_) => "implementation constant",
         }
     }
 }
@@ -672,7 +676,7 @@ pub struct TraitMemberNotImplemented {
     pub trait_member_id: TraitMemberID,
 
     /// The ID of the implementation in which the trait member is not implemented.
-    pub implementation_id: ID<Implementation>,
+    pub implementation_id: ID<TraitImplementation>,
 }
 
 impl Display for WithTable<'_, TraitMemberNotImplemented> {
@@ -722,7 +726,7 @@ pub struct TraitMemberAndImplementationMemberMismatched {
     pub trait_member_id: TraitMemberID,
 
     /// The ID of the implementation member that is not implemented.
-    pub implementation_member_id: ImplementationMemberID,
+    pub implementation_member_id: TraitImplementationMemberID,
 }
 
 /// Generic parameter is unused in the implementation.
@@ -732,7 +736,7 @@ pub struct UnusedGenericParameterInImplementation {
     pub generic_parameter_id: LocalGenericParameterID,
 
     /// The ID of the implementation in which the generic parameter is unused.
-    pub implementation_kind_id: ImplementationKindID,
+    pub implementation_kind_id: TraitImplementationKindID,
 }
 
 impl Display for WithTable<'_, UnusedGenericParameterInImplementation> {
@@ -809,10 +813,10 @@ impl Display for WithTable<'_, UnusedGenericParameterInImplementation> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmbiguousImplementation {
     /// The ID of the first implementation.
-    pub first_implementation_id: ImplementationKindID,
+    pub first_implementation_id: TraitImplementationKindID,
 
     /// The ID of the second implementation.
-    pub second_implementation_id: ImplementationKindID,
+    pub second_implementation_id: TraitImplementationKindID,
 }
 impl Display for WithTable<'_, AmbiguousImplementation> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -882,7 +886,7 @@ impl Display for WithTable<'_, HigherRankedLifetimeRedeclaration> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedGenericParameterCountInImplementation {
     /// The ID of the implementation member
-    pub implementation_member_id: ImplementationMemberID,
+    pub implementation_member_id: TraitImplementationMemberID,
 
     /// The ID of the trait member
     pub trait_member_id: TraitMemberID,
@@ -947,7 +951,7 @@ impl Display for WithTable<'_, MismatchedGenericParameterCountInImplementation> 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedImplementationConstantTypeParameter {
     /// The ID of the implementation member
-    pub implementation_member_id: ImplementationMemberID,
+    pub implementation_member_id: TraitImplementationMemberID,
 
     /// The ID of the trait member
     pub trait_member_id: TraitMemberID,
@@ -991,7 +995,7 @@ impl Display for WithTable<'_, MismatchedImplementationConstantTypeParameter> {
         };
 
         let implementation_member_span = match self.error.implementation_member_id {
-            ImplementationMemberID::Type(implementation_type_id) => self
+            TraitImplementationMemberID::Type(implementation_type_id) => self
                 .table
                 .get(implementation_type_id)
                 .ok_or(fmt::Error)?
@@ -1002,7 +1006,7 @@ impl Display for WithTable<'_, MismatchedImplementationConstantTypeParameter> {
                 .ok_or(fmt::Error)?
                 .span
                 .clone(),
-            ImplementationMemberID::Function(implementation_function_id) => self
+            TraitImplementationMemberID::Function(implementation_function_id) => self
                 .table
                 .get(implementation_function_id)
                 .ok_or(fmt::Error)?
@@ -1013,7 +1017,7 @@ impl Display for WithTable<'_, MismatchedImplementationConstantTypeParameter> {
                 .ok_or(fmt::Error)?
                 .span
                 .clone(),
-            ImplementationMemberID::Constant(_) => return Err(fmt::Error),
+            TraitImplementationMemberID::Constant(_) => return Err(fmt::Error),
         };
 
         if let Some(span) = implementation_member_span {

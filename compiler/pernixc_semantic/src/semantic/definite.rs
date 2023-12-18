@@ -6,11 +6,11 @@ use super::{
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     visitor, Semantic,
 };
-use crate::table::Table;
+use crate::table::{State, Table};
 
-/// The [`Definitiveness`] property of the term.
+/// The definitiveness property of the term.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Definitiveness {
+pub enum Property {
     /// The term is definite.
     Definite,
 
@@ -30,6 +30,7 @@ struct Visitor<
     'p,
     's,
     'r,
+    Ts: State,
     T: Term,
     S: Semantic<T>
         + Semantic<Type<<T as Term>::Model>>
@@ -41,7 +42,7 @@ struct Visitor<
         + Session<Constant<<T as Term>::Model>>,
 > {
     premises: &'p Premises<<T as Term>::Model>,
-    table: &'p Table,
+    table: &'p Table<Ts>,
     semantic: &'s mut S,
     session: &'r mut R,
 
@@ -49,6 +50,7 @@ struct Visitor<
 }
 
 impl<
+        Ts: State,
         T: Term,
         S: Semantic<T>
             + Semantic<Type<<T as Term>::Model>>
@@ -58,7 +60,7 @@ impl<
             + Session<Type<<T as Term>::Model>>
             + Session<Lifetime<<T as Term>::Model>>
             + Session<Constant<<T as Term>::Model>>,
-    > visitor::Visitor for Visitor<'_, '_, '_, T, S, R>
+    > visitor::Visitor for Visitor<'_, '_, '_, Ts, T, S, R>
 {
     type Model = <T as Term>::Model;
 
@@ -106,19 +108,19 @@ pub(super) fn definite<
 >(
     term: &T,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     mut semantic: &mut S,
     mut session: &mut R,
 ) -> bool {
-    match semantic.definitetiveness(term) {
-        Definitiveness::Definite => true,
-        Definitiveness::Indefinite => false,
-        Definitiveness::Applicative => {
+    match semantic.definitive_property(term) {
+        Property::Definite => true,
+        Property::Indefinite => false,
+        Property::Applicative => {
             if !session.mark_as_working_on(Record(term)) {
                 return false;
             }
 
-            let mut all_trivially_definite: Visitor<'_, '_, '_, T, S, R> = Visitor {
+            let mut all_trivially_definite: Visitor<'_, '_, '_, _, T, S, R> = Visitor {
                 premises,
                 table,
                 semantic,

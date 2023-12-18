@@ -512,7 +512,7 @@ pub enum Predicate {
     TraitMember(TraitMemberPredicate),
     Trait(TraitPredicate),
     Lifetime(LifetimePredicate),
-    ConstantType(ConstantTypePredicate),
+    ConstantTypePredicate(ConstantTypePredicate),
 }
 
 impl SourceElement for Predicate {
@@ -521,7 +521,7 @@ impl SourceElement for Predicate {
             Self::TraitMember(s) => s.span(),
             Self::Trait(s) => s.span(),
             Self::Lifetime(s) => s.span(),
-            Self::ConstantType(s) => s.span(),
+            Self::ConstantTypePredicate(s) => s.span(),
         }
     }
 }
@@ -852,6 +852,8 @@ impl SourceElement for TraitType {
 pub struct TraitConstant {
     #[get = "pub"]
     signature: ConstantSignature,
+    #[get = "pub"]
+    where_clause: Option<WhereClause>,
     #[get = "pub"]
     semicolon: Punctuation,
 }
@@ -1488,15 +1490,16 @@ impl SourceElement for ImplementationConstant {
 /// Syntax Synopsis:
 /// ``` txt
 /// ImplementationMember:
-///     ImplementationFunction
-///     | ImplementationType
+///     Function
+///     | Type
+///     | Constant
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
 pub enum ImplementationMember {
-    Type(ImplementationType),
-    Function(ImplementationFunction),
-    Constant(ImplementationConstant),
+    Type(Type),
+    Function(Function),
+    Constant(Constant),
 }
 
 impl SourceElement for ImplementationMember {
@@ -1773,7 +1776,7 @@ impl SourceElement for Enum {
 /// Syntax Synopsis:
 /// ``` txt
 /// ConstSignature:
-///     'const' Identifier ':' Type
+///     'const' Identifier GenericParameters? ':' Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1782,6 +1785,8 @@ pub struct ConstantSignature {
     const_keyword: Keyword,
     #[get = "pub"]
     identifier: Identifier,
+    #[get = "pub"]
+    generic_parameters: Option<GenericParameters>,
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
@@ -1795,7 +1800,7 @@ impl SourceElement for ConstantSignature {
 /// Syntax Synopsis:
 /// ``` txt
 /// ConstDefinition:
-///     '=' Expression ';'
+///     '=' Expression WhereCaluse? ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1804,6 +1809,8 @@ pub struct ConstantDefinition {
     equals: Punctuation,
     #[get = "pub"]
     expression: Expression,
+    #[get = "pub"]
+    where_clause: Option<WhereClause>,
     #[get = "pub"]
     semicolon: Punctuation,
 }
@@ -2108,7 +2115,7 @@ impl<'a> Parser<'a> {
                         // eat type keyword
                         self.forward();
 
-                        Some(Predicate::ConstantType(ConstantTypePredicate {
+                        Some(Predicate::ConstantTypePredicate(ConstantTypePredicate {
                             const_keyword,
                             type_keyword,
                             types: self.parse_bound_list(|parser| parser.parse_type(handler))?,
@@ -2421,65 +2428,86 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<ImplementationMember> {
+        let access_modifier = self.parse_access_modifier(handler)?;
+
         match self.stop_at_significant() {
+            Reading::Unit(Token::Keyword(type_keyword))
+                if type_keyword.kind == KeywordKind::Type =>
+            {
+                let signature = self.parse_type_signature(handler)?;
+                let definition = self.parse_type_definition(handler)?;
+                let semicolon = self.parse_punctuation(';', true, handler)?;
+
+                Some(ImplementationMember::Type(Type {
+                    access_modifier,
+                    signature,
+                    definition,
+                    semicolon,
+                }))
+            }
+
             Reading::Unit(Token::Keyword(function_keyword))
                 if function_keyword.kind == KeywordKind::Function =>
             {
-                let function_signature = self.parse_function_signature(handler)?;
-                let function_body = self.parse_function_body(handler)?;
+                let signature = self.parse_function_signature(handler)?;
+                let body = self.parse_function_body(handler)?;
 
-                Some(ImplementationMember::Function(ImplementationFunction {
-                    signature: function_signature,
-                    body: function_body,
+                Some(ImplementationMember::Function(Function {
+                    access_modifier,
+                    const_keyword: None,
+                    signature,
+                    body,
                 }))
             }
 
             Reading::Unit(Token::Keyword(const_keyword))
                 if const_keyword.kind == KeywordKind::Const =>
             {
-                let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
-                let identifier = self.parse_identifier(handler)?;
-                let colon = self.parse_punctuation(':', true, handler)?;
-                let ty = self.parse_type(handler)?;
-                let equals = self.parse_punctuation('=', true, handler)?;
-                let expression = self.parse_expression(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
+                // eat const Keyword
+                self.forward();
 
-                Some(ImplementationMember::Constant(ImplementationConstant {
-                    signature: ConstantSignature {
-                        const_keyword,
-                        identifier,
-                        colon,
-                        ty,
-                    },
-                    definition: ConstantDefinition {
-                        equals,
-                        expression,
-                        semicolon,
-                    },
-                }))
-            }
+                match self.stop_at_significant() {
+                    Reading::Unit(Token::Keyword(function_keyword))
+                        if function_keyword.kind == KeywordKind::Function =>
+                    {
+                        let signature = self.parse_function_signature(handler)?;
+                        let body = self.parse_function_body(handler)?;
 
-            Reading::Unit(Token::Keyword(type_keyword))
-                if type_keyword.kind == KeywordKind::Type =>
-            {
-                let type_signature = self.parse_type_signature(handler)?;
-                let type_definition = self.parse_type_definition(handler)?;
-                let semicolon = self.parse_punctuation(';', true, handler)?;
+                        Some(ImplementationMember::Function(Function {
+                            access_modifier,
+                            const_keyword: Some(const_keyword),
+                            signature,
+                            body,
+                        }))
+                    }
 
-                Some(ImplementationMember::Type(ImplementationType {
-                    signature: type_signature,
-                    definition: type_definition,
-                    semicolon,
-                }))
+                    Reading::Unit(Token::Identifier(..)) => {
+                        let signature = self.parse_const_signature(Some(const_keyword), handler)?;
+                        let definition = self.parse_const_definition(handler)?;
+
+                        Some(ImplementationMember::Constant(Constant {
+                            access_modifier,
+                            signature,
+                            definition,
+                        }))
+                    }
+
+                    found => {
+                        handler.receive(Error {
+                            expected: SyntaxKind::Keyword(KeywordKind::Const),
+                            alternatives: vec![SyntaxKind::Identifier],
+                            found: found.into_token(),
+                        });
+                        None
+                    }
+                }
             }
 
             found => {
-                self.forward();
                 handler.receive(Error {
-                    found: found.into_token(),
-                    alternatives: Vec::new(),
                     expected: SyntaxKind::ImplementationMember,
+                    alternatives: vec![],
+                    found: found.into_token(),
                 });
                 None
             }
@@ -2599,17 +2627,21 @@ impl<'a> Parser<'a> {
             {
                 let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
                 let identifier = self.parse_identifier(handler)?;
+                let generic_parameters = self.try_parse_generic_parameters(handler)?;
                 let colon = self.parse_punctuation(':', true, handler)?;
                 let ty = self.parse_type(handler)?;
+                let where_clause = self.try_parse_where_clause(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Some(TraitMember::Constant(TraitConstant {
                     signature: ConstantSignature {
                         const_keyword,
                         identifier,
+                        generic_parameters,
                         colon,
                         ty,
                     },
+                    where_clause,
                     semicolon,
                 }))
             }
@@ -2955,12 +2987,14 @@ impl<'a> Parser<'a> {
             self.parse_keyword(KeywordKind::Const, handler)?
         };
         let identifier = self.parse_identifier(handler)?;
+        let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let colon = self.parse_punctuation(':', true, handler)?;
         let ty = self.parse_type(handler)?;
 
         Some(ConstantSignature {
             const_keyword,
             identifier,
+            generic_parameters,
             colon,
             ty,
         })
@@ -2972,11 +3006,13 @@ impl<'a> Parser<'a> {
     ) -> Option<ConstantDefinition> {
         let equals = self.parse_punctuation('=', true, handler)?;
         let expression = self.parse_expression(handler)?;
+        let where_clause = self.try_parse_where_clause(handler)?;
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
         Some(ConstantDefinition {
             equals,
             expression,
+            where_clause,
             semicolon,
         })
     }

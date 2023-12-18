@@ -10,16 +10,13 @@ use super::{
     r#trait::LifetimeConstraint,
     session::Session,
     substitution::{Substitute, Substitution},
-    term::{
-        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Term, TupleElement,
-        Unpacked,
-    },
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Term},
     unification, Semantic,
 };
 use crate::{
     arena::ID,
     symbol,
-    table::{Index, Table},
+    table::{Index, State, Table},
 };
 
 /// Represents a subset of [`Predicate`] that does not contain equality predicates.
@@ -219,18 +216,18 @@ impl<S: Model> ConstantType<S> {
 /// Represents an outlive predicate, defnoted by `'OPERAND 'argument` syntax.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Outlives<T: Entity> {
-    /// The entity that lives as long or longer than the [`Self::argument`] lifetime.
+    /// The entity that lives as long or longer than the [`Self::bound`] lifetime.
     pub operand: T,
 
     /// The lifetime that the [`Self::operand`] lives as long or longer than.
-    pub argument: Lifetime<T::Model>,
+    pub bound: Lifetime<T::Model>,
 }
 
 impl<S: Model, T: Term<Model = S> + Entity<Model = S>> Outlives<T> {
     /// Applies the given substitution to this outlive predicate.
     pub fn apply(&mut self, substitution: &Substitution<S>) {
         self.operand.apply(substitution);
-        self.argument.apply(substitution);
+        self.bound.apply(substitution);
     }
 }
 
@@ -250,7 +247,7 @@ impl<S: Model> Entity for LifetimeOutlives<S> {
     {
         LifetimeOutlives {
             operand: self.operand.into_other_model(),
-            argument: self.argument.into_other_model(),
+            bound: self.bound.into_other_model(),
         }
     }
 
@@ -263,7 +260,7 @@ impl<S: Model> Entity for LifetimeOutlives<S> {
     {
         Some(LifetimeOutlives {
             operand: self.operand.try_into_other_model()?,
-            argument: self.argument.try_into_other_model()?,
+            bound: self.bound.try_into_other_model()?,
         })
     }
 }
@@ -284,7 +281,7 @@ impl<S: Model> Entity for TypeOutlives<S> {
     {
         TypeOutlives {
             operand: self.operand.into_other_model(),
-            argument: self.argument.into_other_model(),
+            bound: self.bound.into_other_model(),
         }
     }
 
@@ -297,7 +294,7 @@ impl<S: Model> Entity for TypeOutlives<S> {
     {
         Some(TypeOutlives {
             operand: self.operand.try_into_other_model()?,
-            argument: self.argument.try_into_other_model()?,
+            bound: self.bound.try_into_other_model()?,
         })
     }
 }
@@ -467,7 +464,7 @@ impl<M: Model> Trait<M> {
         const_trait: bool,
         generic_arguments: &GenericArguments<M>,
         premises: &Premises<M>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
     ) -> TraitSatisfiability<M> {
@@ -560,129 +557,11 @@ impl<M: Model, T: Term<Model = M> + Entity<Model = M>> Equals<T> {
     >(
         &self,
         premises: &Premises<M>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
     ) -> bool {
         self.lhs
             .equals(&self.rhs, premises, table, semantic, session)
-    }
-}
-
-/// Records to query of the [`ConstantType::satisfies()`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstantTypeRecord<'a, S: Model>(pub &'a Type<S>);
-
-impl<M: Model> ConstantType<M> {
-    /// Determines if this predicate is satisfiable or not.
-    pub fn satisfies<
-        S: Semantic<Type<M>> + Semantic<Lifetime<M>> + Semantic<Constant<M>>,
-        R: Session<Type<M>> + Session<Lifetime<M>> + Session<Constant<M>>,
-    >(
-        &self,
-        premises: &Premises<M>,
-        table: &Table,
-        semantic: &mut S,
-        session: &mut R,
-    ) -> bool {
-        Self::satisfies_internal(&self.r#type, premises, table, semantic, session)
-    }
-
-    fn satisfies_internal<
-        S: Semantic<Type<M>> + Semantic<Lifetime<M>> + Semantic<Constant<M>>,
-        R: Session<Type<M>> + Session<Lifetime<M>> + Session<Constant<M>>,
-    >(
-        required_type: &Type<M>,
-        premises: &Premises<M>,
-        table: &Table,
-        semantic: &mut S,
-        session: &mut R,
-    ) -> bool {
-        if !session.mark_as_working_on(ConstantTypeRecord(required_type)) {
-            return false;
-        }
-
-        // search in the premises
-        for predicate in &premises.non_equality_predicates {
-            let NonEquality::ConstantType(constant_type) = predicate else {
-                continue;
-            };
-
-            if constant_type
-                .r#type
-                .equals(required_type, premises, table, semantic, session)
-            {
-                session.mark_as_done(ConstantTypeRecord(required_type));
-                return true;
-            }
-        }
-
-        let result = match required_type {
-            Type::Pointer(_)
-            | Type::Reference(_)
-            | Type::Inference(_)
-            | Type::TraitMember(_)
-            | Type::Parameter(_) => false,
-
-            /*will just make error statisfies easily*/
-            Type::Error | Type::Primitive(_) => true,
-
-            Type::Local(local) => {
-                Self::satisfies_internal(&local.0, premises, table, semantic, session)
-            }
-
-            // don't have to decide that
-            Type::Algebraic(algebraic) => 'a: {
-                // no borrowing in constant type context
-                if !algebraic.generic_arguments.lifetimes.is_empty() {
-                    break 'a false;
-                };
-
-                algebraic
-                    .generic_arguments
-                    .types
-                    .iter()
-                    .all(|ty| Self::satisfies_internal(ty, premises, table, semantic, session))
-            }
-
-            Type::Array(array) => {
-                Self::satisfies_internal(&array.element, premises, table, semantic, session)
-            }
-
-            Type::Tuple(tuple) => tuple.elements.iter().all(|x| match x {
-                TupleElement::Regular(x) => {
-                    Self::satisfies_internal(x, premises, table, semantic, session)
-                }
-                TupleElement::Unpacked(Unpacked::Parameter(x)) => Self::satisfies_internal(
-                    &Type::Parameter(*x),
-                    premises,
-                    table,
-                    semantic,
-                    session,
-                ),
-                TupleElement::Unpacked(Unpacked::TraitMember(x)) => Self::satisfies_internal(
-                    &Type::TraitMember(x.clone()),
-                    premises,
-                    table,
-                    semantic,
-                    session,
-                ),
-            }),
-        };
-
-        if result {
-            session.mark_as_done(ConstantTypeRecord(required_type));
-            return result;
-        }
-
-        if let Some(normalized) = required_type.normalize(premises, table, semantic, session) {
-            if Self::satisfies_internal(&normalized, premises, table, semantic, session) {
-                session.mark_as_done(ConstantTypeRecord(required_type));
-                return true;
-            }
-        }
-
-        session.mark_as_done(ConstantTypeRecord(required_type));
-        false
     }
 }

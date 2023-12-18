@@ -8,25 +8,8 @@ use super::{
 use crate::{
     arena::ID,
     semantic::model::Entity,
-    symbol::{Enum, GlobalID, Struct, TraitType, TypeParameterID},
+    symbol::{AlgebraicKind, TraitType, TypeParameterID},
 };
-
-/// Either an ID of an enum or an ID of a struct.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum AlgebraicKind {
-    Enum(ID<Enum>),
-    Struct(ID<Struct>),
-}
-
-impl From<AlgebraicKind> for GlobalID {
-    fn from(value: AlgebraicKind) -> Self {
-        match value {
-            AlgebraicKind::Enum(id) => Self::Enum(id),
-            AlgebraicKind::Struct(id) => Self::Struct(id),
-        }
-    }
-}
 
 /// Represents an algebraic type, which is either an enum or a struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -137,7 +120,6 @@ where
     Parameter(TypeParameterID),
     Tuple(Tuple<S>),
     Local(Local<S>),
-    Error,
 }
 
 impl<M: Model> Term for Type<M> {
@@ -247,7 +229,6 @@ impl<S: Model> Entity for Type<S> {
                 Type::Tuple(Tuple { elements })
             }
             Self::Local(local) => Type::Local(Local(Box::new(local.0.into_other_model()))),
-            Self::Error => Type::Error,
         }
     }
 
@@ -339,7 +320,6 @@ impl<S: Model> Entity for Type<S> {
                 .0
                 .try_into_other_model()
                 .map(|r#type| Type::Local(Local(Box::new(r#type)))),
-            Self::Error => Some(Type::Error),
         }
     }
 }

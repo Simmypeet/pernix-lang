@@ -1,7 +1,6 @@
 //! Contains code related to logic applied to the entities.
 
 use self::{
-    definite::Definitiveness,
     model::{Entity, Model},
     predicate::Premises,
     session::Session,
@@ -12,11 +11,10 @@ use self::{
     },
     unification::{Config, Unifier},
 };
-use crate::table::{Index, Table};
+use crate::table::{Index, State, Table};
 
 pub mod definite;
 pub mod equality;
-mod errorneous;
 pub mod map;
 pub mod model;
 pub mod pattern;
@@ -30,8 +28,8 @@ pub mod visitor;
 
 /// Implements the basic semantic logic used to reason about the entities.
 pub trait Semantic<T: Term> {
-    /// Gets the [`Definitiveness`] of the given term.
-    fn definitetiveness(&mut self, term: &T) -> Definitiveness;
+    /// Gets the definitiveness property of the given term.
+    fn definitive_property(&mut self, term: &T) -> definite::Property;
 
     /// Checks if the two given terms are trivally equal.
     ///
@@ -48,7 +46,7 @@ pub trait Semantic<T: Term> {
         &mut self,
         term: &T,
         premises: &Premises<<T as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         session: &mut R,
     ) -> Option<T>;
 
@@ -72,7 +70,7 @@ pub trait Semantic<T: Term> {
         lhs: &T,
         rhs: &T,
         premises: &Premises<<T as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         session: &mut R,
         config: &mut C,
         unifier: &mut Unifier<'_, <T as Term>::Model>,
@@ -84,10 +82,10 @@ pub trait Semantic<T: Term> {
 pub struct Default;
 
 impl<S: Model> Semantic<Type<S>> for Default {
-    fn definitetiveness(&mut self, term: &Type<S>) -> Definitiveness {
+    fn definitive_property(&mut self, term: &Type<S>) -> definite::Property {
         match term {
-            Type::Primitive(_) => Definitiveness::Definite,
-            Type::Error | Type::Parameter(_) | Type::Inference(_) => Definitiveness::Indefinite,
+            Type::Primitive(_) => definite::Property::Definite,
+            Type::Parameter(_) | Type::Inference(_) => definite::Property::Indefinite,
 
             Type::Algebraic(_)
             | Type::Local(_)
@@ -95,7 +93,7 @@ impl<S: Model> Semantic<Type<S>> for Default {
             | Type::Pointer(_)
             | Type::Reference(_)
             | Type::Array(_)
-            | Type::TraitMember(_) => Definitiveness::Applicative,
+            | Type::TraitMember(_) => definite::Property::Applicative,
         }
     }
 
@@ -105,7 +103,7 @@ impl<S: Model> Semantic<Type<S>> for Default {
         &mut self,
         term: &Type<S>,
         premises: &Premises<<Type<S> as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         session: &mut R,
     ) -> Option<Type<S>> {
         let Type::TraitMember(trait_member) = term else {
@@ -114,7 +112,7 @@ impl<S: Model> Semantic<Type<S>> for Default {
 
         let resolved_implementation = table
             .resolve_implementation(
-                table.get(trait_member.trait_type_id)?.parent_trait_id,
+                table.get(trait_member.trait_type_id)?.parent_id,
                 &trait_member.trait_generic_arguments,
                 premises,
                 self,
@@ -156,7 +154,7 @@ impl<S: Model> Semantic<Type<S>> for Default {
         lhs: &Type<S>,
         rhs: &Type<S>,
         premises: &Premises<<Type<S> as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         session: &mut R,
         config: &mut C,
         unifier: &mut Unifier<'_, <Type<S> as Term>::Model>,
@@ -277,20 +275,20 @@ impl<S: Model> Semantic<Type<S>> for Default {
 }
 
 impl<S: Model> Semantic<Constant<S>> for Default {
-    fn definitetiveness(&mut self, term: &Constant<S>) -> Definitiveness {
+    fn definitive_property(&mut self, term: &Constant<S>) -> definite::Property {
         match term {
-            Constant::Primitive(_) => Definitiveness::Definite,
+            Constant::Primitive(_) => definite::Property::Definite,
 
-            Constant::Error | Constant::Parameter(_) | Constant::Inference(_) => {
-                Definitiveness::Indefinite
-            }
+            Constant::Parameter(_) | Constant::Inference(_) => definite::Property::Indefinite,
 
             Constant::Struct(_)
             | Constant::Enum(_)
             | Constant::Array(_)
             | Constant::TraitMember(_)
             | Constant::Local(_)
-            | Constant::Tuple(_) => Definitiveness::Applicative,
+            | Constant::Symbol(_)
+            | Constant::Implementation(_)
+            | Constant::Tuple(_) => definite::Property::Applicative,
         }
     }
 
@@ -298,43 +296,15 @@ impl<S: Model> Semantic<Constant<S>> for Default {
 
     fn normalize<R: Session<Type<S>> + Session<Lifetime<S>> + Session<Constant<S>>>(
         &mut self,
-        term: &Constant<S>,
-        premises: &Premises<<Type<S> as Term>::Model>,
-        table: &Table,
-        session: &mut R,
+        _: &Constant<S>,
+        _: &Premises<<Type<S> as Term>::Model>,
+        _: &Table<impl State>,
+        _: &mut R,
     ) -> Option<Constant<S>> {
-        let Constant::TraitMember(trait_member) = term else {
-            return None;
-        };
-
-        let resolved_implementation = table
-            .resolve_implementation(
-                table.get(trait_member.trait_constant_id)?.parent_trait_id,
-                &trait_member.trait_arguments,
-                premises,
-                self,
-                session,
-            )
-            .ok()?;
-
-        let implementation_constant_id = table
-            .get(resolved_implementation.implementation_id)?
-            .implementation_constant_ids_by_trait_constant_id
-            .get(&trait_member.trait_constant_id)
-            .copied()?;
-
-        let mut equivalent = table
-            .get(implementation_constant_id)
-            .map(|x| x.constant.clone())?
-            .into_other_model();
-
-        let substitution = resolved_implementation.deduced_unification;
-
-        equivalent.apply(&substitution);
-
-        Some(equivalent)
+        todo!("We must normalize for trait members, symbol, and implementation symbol")
     }
 
+    #[allow(clippy::too_many_lines)]
     fn sub_structural_unify<
         C: Config<Type<S>> + Config<Constant<S>> + Config<Lifetime<S>>,
         R: Session<Type<S>> + Session<Lifetime<S>> + Session<Constant<S>>,
@@ -343,7 +313,7 @@ impl<S: Model> Semantic<Constant<S>> for Default {
         lhs: &Constant<S>,
         rhs: &Constant<S>,
         premises: &Premises<<Type<S> as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         session: &mut R,
         config: &mut C,
         unifier: &mut Unifier<'_, <Type<S> as Term>::Model>,
@@ -422,12 +392,36 @@ impl<S: Model> Semantic<Constant<S>> for Default {
                 Ok(())
             }
 
+            (Constant::Implementation(lhs), Constant::Implementation(rhs)) if lhs.id == rhs.id => {
+                sub_structural_unify_generic_arguments(
+                    &lhs.implementation_generic_arguments,
+                    &rhs.implementation_generic_arguments,
+                    premises,
+                    table,
+                    self,
+                    session,
+                    config,
+                    unifier,
+                )?;
+
+                sub_structural_unify_generic_arguments(
+                    &lhs.constant_generic_arguments,
+                    &rhs.constant_generic_arguments,
+                    premises,
+                    table,
+                    self,
+                    session,
+                    config,
+                    unifier,
+                )
+            }
+
             (Constant::TraitMember(lhs), Constant::TraitMember(rhs))
                 if lhs.trait_constant_id == rhs.trait_constant_id =>
             {
                 sub_structural_unify_generic_arguments(
-                    &lhs.trait_arguments,
-                    &rhs.trait_arguments,
+                    &lhs.trait_generic_arguments,
+                    &rhs.trait_generic_arguments,
                     premises,
                     table,
                     self,
@@ -457,7 +451,9 @@ impl<S: Model> Semantic<Constant<S>> for Default {
 }
 
 impl<S: Model> Semantic<Lifetime<S>> for Default {
-    fn definitetiveness(&mut self, _: &Lifetime<S>) -> Definitiveness { Definitiveness::Definite }
+    fn definitive_property(&mut self, _: &Lifetime<S>) -> definite::Property {
+        definite::Property::Definite
+    }
 
     fn trivially_equals(&mut self, lhs: &Lifetime<S>, rhs: &Lifetime<S>) -> bool { lhs == rhs }
 
@@ -465,7 +461,7 @@ impl<S: Model> Semantic<Lifetime<S>> for Default {
         &mut self,
         _: &Lifetime<S>,
         _: &Premises<<Type<S> as Term>::Model>,
-        _: &Table,
+        _: &Table<impl State>,
         _: &mut R,
     ) -> Option<Lifetime<S>> {
         None
@@ -479,7 +475,7 @@ impl<S: Model> Semantic<Lifetime<S>> for Default {
         lhs: &Lifetime<S>,
         rhs: &Lifetime<S>,
         premises: &Premises<<Type<S> as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         session: &mut R,
         _: &mut C,
         _: &mut Unifier<'_, <Type<S> as Term>::Model>,
@@ -502,7 +498,7 @@ fn sub_structural_unify_generic_arguments<
     lhs: &GenericArguments<M>,
     rhs: &GenericArguments<M>,
     premises: &Premises<M>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
     config: &mut C,
@@ -584,7 +580,7 @@ fn sub_structural_unify_tuple<M, T, Parameter, TraitMember, C, S, R>(
     lhs: &Tuple<T, Parameter, TraitMember>,
     rhs: &Tuple<T, Parameter, TraitMember>,
     premises: &Premises<M>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
     config: &mut C,

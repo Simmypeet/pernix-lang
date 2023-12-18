@@ -75,7 +75,7 @@ impl SourceElement for Primitive {
 /// Syntax Synopsis:
 /// ``` txt
 /// Reference:
-///     '&' LifetimeArgument? Qualifier? Type
+///     '&' Lifetime? Qualifier? Type
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -84,7 +84,7 @@ pub struct Reference {
     #[get = "pub"]
     ampersand: Punctuation,
     #[get = "pub"]
-    lifetime_argument: Option<Lifetime>,
+    lifetime: Option<Lifetime>,
     #[get = "pub"]
     qualifier: Option<Qualifier>,
     #[get = "pub"]
@@ -303,7 +303,7 @@ impl<'a> Parser<'a> {
 
         Some(Reference {
             ampersand,
-            lifetime_argument,
+            lifetime: lifetime_argument,
             qualifier: reference_qualifier,
             operand,
         })

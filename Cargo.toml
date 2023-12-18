@@ -34,6 +34,7 @@ rayon = "1.8.0"
 clap = { version = "4.4.0", features = ["derive"] }
 bitflags = "2.4.1"
 drain_filter_polyfill = "0.1.3"
+typestate = "0.8.0"
 
 [workspace.package]
 version = "0.1.0"

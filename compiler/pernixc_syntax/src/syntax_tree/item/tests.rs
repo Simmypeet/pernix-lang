@@ -769,7 +769,7 @@ impl Display for TraitMemberPredicate {
 pub enum Predicate {
     Trait(TraitPredicate),
     Lifetime(LifetimePredicate),
-    TraitAssociation(TraitMemberPredicate),
+    TraitMember(TraitMemberPredicate),
 }
 
 impl Input<&super::Predicate> for &Predicate {
@@ -777,7 +777,7 @@ impl Input<&super::Predicate> for &Predicate {
         match (self, output) {
             (Predicate::Trait(i), super::Predicate::Trait(o)) => i.assert(o),
             (Predicate::Lifetime(i), super::Predicate::Lifetime(o)) => i.assert(o),
-            (Predicate::TraitAssociation(i), super::Predicate::TraitMember(o)) => i.assert(o),
+            (Predicate::TraitMember(i), super::Predicate::TraitMember(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -793,7 +793,7 @@ impl Arbitrary for Predicate {
         prop_oneof![
             TraitPredicate::arbitrary().prop_map(Self::Trait),
             LifetimePredicate::arbitrary().prop_map(Self::Lifetime),
-            TraitMemberPredicate::arbitrary().prop_map(Self::TraitAssociation),
+            TraitMemberPredicate::arbitrary().prop_map(Self::TraitMember),
         ]
         .boxed()
     }
@@ -804,7 +804,7 @@ impl Display for Predicate {
         match self {
             Self::Trait(i) => Display::fmt(i, f),
             Self::Lifetime(i) => Display::fmt(i, f),
-            Self::TraitAssociation(i) => Display::fmt(i, f),
+            Self::TraitMember(i) => Display::fmt(i, f),
         }
     }
 }
@@ -1103,12 +1103,16 @@ impl Display for Function {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantSignature {
     pub identifier: Identifier,
+    pub generic_parameters: Option<GenericParameters>,
     pub ty: r#type::tests::Type,
 }
 
 impl Input<&super::ConstantSignature> for &ConstantSignature {
     fn assert(self, output: &super::ConstantSignature) -> TestCaseResult {
         self.identifier.assert(output.identifier())?;
+        self.generic_parameters
+            .as_ref()
+            .assert(output.generic_parameters.as_ref())?;
         self.ty.assert(output.ty())
     }
 }
@@ -1118,26 +1122,44 @@ impl Arbitrary for ConstantSignature {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (Identifier::arbitrary(), r#type::tests::Type::arbitrary())
-            .prop_map(|(identifier, ty)| Self { identifier, ty })
+        (
+            Identifier::arbitrary(),
+            proptest::option::of(GenericParameters::arbitrary()),
+            r#type::tests::Type::arbitrary(),
+        )
+            .prop_map(|(identifier, generic_parameters, ty)| Self {
+                identifier,
+                generic_parameters,
+                ty,
+            })
             .boxed()
     }
 }
 
 impl Display for ConstantSignature {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "const {}: {}", self.identifier, self.ty)
+        write!(formatter, "const {}", self.identifier)?;
+
+        if let Some(generic_parameters) = &self.generic_parameters {
+            Display::fmt(generic_parameters, formatter)?;
+        }
+
+        write!(formatter, ": {}", self.ty)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantDefinition {
     expression: Expression,
+    where_clause: Option<WhereClause>,
 }
 
 impl Input<&super::ConstantDefinition> for &ConstantDefinition {
     fn assert(self, output: &super::ConstantDefinition) -> TestCaseResult {
-        self.expression.assert(output.expression())
+        self.expression.assert(output.expression())?;
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause.as_ref())
     }
 }
 
@@ -1146,15 +1168,27 @@ impl Arbitrary for ConstantDefinition {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Expression::arbitrary()
-            .prop_map(|expression| Self { expression })
+        (
+            Expression::arbitrary(),
+            proptest::option::of(WhereClause::arbitrary()),
+        )
+            .prop_map(|(expression, where_clause)| Self {
+                expression,
+                where_clause,
+            })
             .boxed()
     }
 }
 
 impl Display for ConstantDefinition {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, " = {};", self.expression)
+        write!(formatter, " = {}", self.expression)?;
+
+        if let Some(where_clause) = &self.where_clause {
+            write!(formatter, " {where_clause}")?;
+        }
+
+        write!(formatter, ";")
     }
 }
 
@@ -1447,14 +1481,16 @@ impl Display for TraitType {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitConstant {
-    pub identifier: Identifier,
-    pub ty: r#type::tests::Type,
+    pub signature: ConstantSignature,
+    pub where_clause: Option<WhereClause>,
 }
 
 impl Input<&super::TraitConstant> for &TraitConstant {
     fn assert(self, output: &super::TraitConstant) -> TestCaseResult {
-        self.identifier.assert(output.signature().identifier())?;
-        self.ty.assert(output.signature().ty())
+        self.signature.assert(output.signature())?;
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref())
     }
 }
 
@@ -1463,15 +1499,29 @@ impl Arbitrary for TraitConstant {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (Identifier::arbitrary(), r#type::tests::Type::arbitrary())
-            .prop_map(|(identifier, ty)| Self { identifier, ty })
+        (
+            ConstantSignature::arbitrary(),
+            proptest::option::of(WhereClause::arbitrary()),
+        )
+            .prop_map(|(signature, where_clause)| Self {
+                signature,
+                where_clause,
+            })
             .boxed()
     }
 }
 
 impl Display for TraitConstant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "const {}: {};", self.identifier, self.ty)
+        write!(f, "{}", self.signature)?;
+
+        if let Some(where_clause) = self.where_clause.as_ref() {
+            write!(f, " {where_clause}")?;
+        }
+
+        write!(f, ";")?;
+
+        Ok(())
     }
 }
 
@@ -2150,23 +2200,24 @@ pub struct ImplementationConstant {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ImplementationMember {
-    Type(ImplementationType),
-    Function(ImplementationFunction),
+    Type(Type),
+    Function(Function),
+    Constant(Constant),
 }
 
 impl Input<&super::ImplementationMember> for &ImplementationMember {
     fn assert(self, output: &super::ImplementationMember) -> TestCaseResult {
         match (self, output) {
-            (ImplementationMember::Type(input), super::ImplementationMember::Type(output)) => {
-                input.assert(output)
+            (ImplementationMember::Type(i), super::ImplementationMember::Type(o)) => i.assert(o),
+            (ImplementationMember::Function(i), super::ImplementationMember::Function(o)) => {
+                i.assert(o)
             }
-            (
-                ImplementationMember::Function(input),
-                super::ImplementationMember::Function(output),
-            ) => input.assert(output),
+            (ImplementationMember::Constant(i), super::ImplementationMember::Constant(o)) => {
+                i.assert(o)
+            }
 
             _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?}, got {output:?}"
+                "Expected {self:?}, got {output:?}",
             ))),
         }
     }
@@ -2178,8 +2229,9 @@ impl Arbitrary for ImplementationMember {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            ImplementationType::arbitrary().prop_map(Self::Type),
-            ImplementationFunction::arbitrary().prop_map(Self::Function),
+            Type::arbitrary().prop_map(Self::Type),
+            Function::arbitrary().prop_map(Self::Function),
+            Constant::arbitrary().prop_map(Self::Constant),
         ]
         .boxed()
     }
@@ -2190,6 +2242,7 @@ impl Display for ImplementationMember {
         match self {
             Self::Type(t) => Display::fmt(t, f),
             Self::Function(t) => Display::fmt(t, f),
+            Self::Constant(t) => Display::fmt(t, f),
         }
     }
 }

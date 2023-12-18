@@ -11,11 +11,11 @@ use crate::{
         term::{
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{Algebraic, AlgebraicKind, Primitive, Tuple, Type},
+            r#type::{Algebraic, Primitive, Tuple, Type},
             GenericArguments, Term, TupleElement, Unpacked,
         },
     },
-    symbol::{semantic::Symbolic, GenericID, TypeParameterID},
+    symbol::{semantic::Symbolic, AlgebraicKind, GenericID, TypeParameterID},
     table::Table,
 };
 

@@ -25,9 +25,6 @@ pub enum Lifetime<S: Model> {
 
     /// Inferred lifetime.
     Inference(S::LifetimeInference),
-
-    /// Error lifetime
-    Error,
 }
 
 impl<M: Model> Term for Lifetime<M> {
@@ -51,7 +48,6 @@ impl<S: Model> Entity for Lifetime<S> {
             Self::Scoped(lifetime) => Lifetime::Scoped(lifetime.into()),
             Self::Forall(lifetime) => Lifetime::Forall(lifetime),
             Self::Inference(lifetime) => Lifetime::Inference(lifetime.into()),
-            Self::Error => Lifetime::Error,
         }
     }
 
@@ -68,7 +64,6 @@ impl<S: Model> Entity for Lifetime<S> {
             Self::Forall(lifetime) => Some(Lifetime::Forall(lifetime)),
             Self::Scoped(lifetime) => lifetime.try_into().ok().map(Lifetime::Scoped),
             Self::Inference(lifetime) => lifetime.try_into().ok().map(Lifetime::Inference),
-            Self::Error => Some(Lifetime::Error),
         }
     }
 }

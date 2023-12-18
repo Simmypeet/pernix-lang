@@ -51,3 +51,6 @@ pub(super) fn errorneous<T: Term>(term: &T) -> bool {
 
     visitor.is_errorneous
 }
+
+#[cfg(test)]
+mod tests;

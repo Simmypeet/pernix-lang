@@ -43,9 +43,7 @@ impl Arbitrary for Reference {
 
 impl Input<&super::Reference> for &Reference {
     fn assert(self, output: &super::Reference) -> TestCaseResult {
-        self.lifetime
-            .as_ref()
-            .assert(output.lifetime_argument().as_ref())?;
+        self.lifetime.as_ref().assert(output.lifetime().as_ref())?;
         self.qualifier
             .as_ref()
             .assert(output.qualifier().as_ref())?;

@@ -143,28 +143,33 @@ public function main() {
     list.pushBack(32);
 }
 
+const function someThing[T]() {
+    let someSizeOfT = SIZE_OF[T]; 
+    let sizeOfInt32 = SIZE_OF[int32];
+}
 
 public module TypeTraits {
-
-    public trait IsReference[T] {
+    trait IsReferenceInternal[T] {
         const VALUE: bool;
     }
 
-    implements[T] IsReference[&T] {
-        const VALUE = true;
+    implements[T] IsReferenceInternal[&T] {
+        const VALUE: bool = true;
     }
     
-    implements[T] IsReference[&mutable T] {
-        const VALUE = true;
+    implements[T] IsReferenceInternal[&mutable T] {
+        const VALUE: bool = true;
     }
 
-    implements[T] IsReference[&restrict T] {
-        const VALUE = true;
+    implements[T] IsReferenceInternal[&restrict T] {
+        const VALUE: bool = true;
     }
 
-    implements[T] IsReference[T] {
-        const VALUE = false;
+    implements[T] IsReferenceInternal[T] {
+        const VALUE: bool = false;
     }
+
+    const IsReference[T]: bool = IsReferenceInternal[T]::VALUE;
 
     public trait IsSame[T, U] {
         const VALUE: bool;
@@ -199,9 +204,6 @@ public module TypeTraits {
 }
 
 public function main() {
-    let mutable list = List::new();
-    list.pushBack(32);
-    list.pushBack(62);
-    list.pushBack(54);
+    let mutable cell = Cell::new(List::new());
 
 }

@@ -1,7 +1,6 @@
 //! Contains logic related to symbol resolution.
 
 use enum_as_inner::EnumAsInner;
-use paste::paste;
 use pernixc_base::{
     diagnostic::Handler,
     source_file::{SourceElement, Span},
@@ -12,9 +11,9 @@ use pernixc_syntax::syntax_tree::{
     QualifiedIdentifier,
 };
 
-use super::{Error, Index, Table};
+use super::{Error, Index, State, Table};
 use crate::{
-    arena::ID,
+    arena::{Arena, ID},
     error::{
         self, GenericArgumentCountMismatch, LifetimeExpected, LifetimeParameterNotFound,
         MisorderedGenericArgument, ModuleExpected, MoreThanOneUnpackedInTupleType,
@@ -27,16 +26,237 @@ use crate::{
         term::{
             constant,
             lifetime::Lifetime,
-            r#type::{self, Algebraic, AlgebraicKind, Local, Qualifier},
+            r#type::{self, Algebraic, Local, Qualifier},
             GenericArguments, TupleElement, Unpacked,
         },
     },
     symbol::{
-        self, semantic::Symbolic, Enum, Function, Generic, GenericID, GenericKind, GlobalID,
-        ImplementationConstant, ImplementationFunction, ImplementationType, LifetimeParameterID,
-        MemberID, Module, Struct, Trait, TraitConstant, TraitFunction, TraitType, TypeParameterID,
+        self, semantic::Symbolic, AdtImplementationMemberID, AlgebraicKind, ConstantParameter,
+        Function, GenericID, GenericKind, GlobalID, LifetimeParameter, LifetimeParameterID,
+        MemberID, Module, Trait, TraitConstant, TraitFunction, TraitType, TypeParameter,
+        TypeParameterID,
     },
 };
+
+trait GenericParameter: Sized + 'static {
+    type SyntaxTree;
+    type Argument<S: Model>;
+
+    fn elision_placeholder<S: Model>(config: &mut dyn Config<S>) -> Option<Self::Argument<S>>;
+
+    fn resolve<S: Model>(
+        table: &Table<impl State>,
+        syntax_tree: &Self::SyntaxTree,
+        referring_site: GlobalID,
+        config: &mut dyn Config<S>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Self::Argument<S>, Error>;
+
+    fn generic_kind() -> GenericKind;
+
+    fn on_resolved<S: Model>(
+        config: &mut dyn Config<S>,
+        argument: &Self::Argument<S>,
+        parameter: &Self,
+        span: &Span,
+    );
+
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_generic_parameters<'a, 'b, S, I, D>(
+        table: &Table<impl State>,
+        syntax_trees: I,
+        parameters: &Arena<Self>,
+        defaults: D,
+        allows_default: bool,
+        generic_identifier_span: Span,
+        referring_site: GlobalID,
+        config: &mut dyn Config<S>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Vec<Self::Argument<S>>, Error>
+    where
+        S: Model,
+        I: ExactSizeIterator<Item = &'a Self::SyntaxTree>,
+        D: ExactSizeIterator<Item = Self::Argument<S>>,
+    {
+        let parameters = parameters.iter();
+
+        if syntax_trees.len() == 0 {
+            // no arguments required
+            if parameters.len() == 0 {
+                return Ok(Vec::new());
+            }
+
+            if let Some(first) = Self::elision_placeholder(config) {
+                let mut arguments = vec![first];
+
+                // fortunate
+                if arguments.len() == parameters.len() {
+                    return Ok(arguments);
+                }
+
+                while let Some(argument) = Self::elision_placeholder(config) {
+                    arguments.push(argument);
+
+                    if arguments.len() == parameters.len() {
+                        return Ok(arguments);
+                    }
+                }
+
+                // no more placeholder available
+                handler.receive(Box::new(GenericArgumentCountMismatch {
+                    expected_count: parameters.len(),
+                    supplied_count: 0,
+                    generic_identifier_span,
+                    generic_kind: Self::generic_kind(),
+                }));
+
+                Err(Error::SemanticError)
+            } else if allows_default && defaults.len() == parameters.len() {
+                // use default arguments
+                Ok(defaults.collect())
+            } else {
+                // no arguments supplied
+                handler.receive(Box::new(GenericArgumentCountMismatch {
+                    expected_count: parameters.len(),
+                    supplied_count: 0,
+                    generic_identifier_span,
+                    generic_kind: Self::generic_kind(),
+                }));
+
+                Err(Error::SemanticError)
+            }
+        } else {
+            let valid_count = if allows_default {
+                let expected_range = parameters.len() - defaults.len()..=parameters.len();
+
+                expected_range.contains(&parameters.len())
+            } else {
+                parameters.len() == syntax_trees.len()
+            };
+
+            if !valid_count {
+                handler.receive(Box::new(GenericArgumentCountMismatch {
+                    expected_count: parameters.len(),
+                    supplied_count: syntax_trees.len(),
+                    generic_identifier_span,
+                    generic_kind: Self::generic_kind(),
+                }));
+                return Err(Error::SemanticError);
+            }
+
+            let mut arguments = Vec::new();
+
+            for syntax_tree in syntax_trees.take(parameters.len()) {
+                arguments.push(Self::resolve(
+                    table,
+                    syntax_tree,
+                    referring_site,
+                    config,
+                    handler,
+                )?);
+            }
+
+            let left = parameters.len() - arguments.len();
+            let default_fill = left.min(defaults.len());
+            let default_len = defaults.len();
+
+            arguments.extend(defaults.skip(default_len - default_fill));
+
+            Ok(arguments)
+        }
+    }
+}
+
+impl GenericParameter for TypeParameter {
+    type Argument<S: Model> = r#type::Type<S>;
+    type SyntaxTree = syntax_tree::r#type::Type;
+
+    fn elision_placeholder<S: Model>(config: &mut dyn Config<S>) -> Option<Self::Argument<S>> {
+        config.type_arguments_elision_placeholder()
+    }
+
+    fn resolve<S: Model>(
+        table: &Table<impl State>,
+        syntax_tree: &Self::SyntaxTree,
+        referring_site: GlobalID,
+        config: &mut dyn Config<S>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Self::Argument<S>, Error> {
+        table.resolve_type(syntax_tree, referring_site, config, handler)
+    }
+
+    fn generic_kind() -> GenericKind { GenericKind::Type }
+
+    fn on_resolved<S: Model>(_: &mut dyn Config<S>, _: &Self::Argument<S>, _: &Self, _: &Span) {}
+}
+
+impl GenericParameter for LifetimeParameter {
+    type Argument<S: Model> = Lifetime<S>;
+    type SyntaxTree = syntax_tree::Lifetime;
+
+    fn elision_placeholder<S: Model>(config: &mut dyn Config<S>) -> Option<Self::Argument<S>> {
+        config.lifetime_arguments_elision_placeholder()
+    }
+
+    fn resolve<S: Model>(
+        table: &Table<impl State>,
+        syntax_tree: &Self::SyntaxTree,
+        referring_site: GlobalID,
+        config: &mut dyn Config<S>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Self::Argument<S>, Error> {
+        table.resolve_lifetime(syntax_tree, referring_site, config, handler)
+    }
+
+    fn generic_kind() -> GenericKind { GenericKind::Lifetime }
+
+    fn on_resolved<S: Model>(_: &mut dyn Config<S>, _: &Self::Argument<S>, _: &Self, _: &Span) {}
+}
+
+impl GenericParameter for ConstantParameter {
+    type Argument<S: Model> = constant::Constant<S>;
+    type SyntaxTree = syntax_tree::expression::Expression;
+
+    fn elision_placeholder<S: Model>(config: &mut dyn Config<S>) -> Option<Self::Argument<S>> {
+        config.constant_arguments_elision_placeholder()
+    }
+
+    fn resolve<S: Model>(
+        table: &Table<impl State>,
+        syntax_tree: &Self::SyntaxTree,
+        referring_site: GlobalID,
+        config: &mut dyn Config<S>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<Self::Argument<S>, Error> {
+        Ok(table.evaluate(syntax_tree, referring_site, config, handler)?)
+    }
+
+    fn generic_kind() -> GenericKind { GenericKind::Constant }
+
+    fn on_resolved<S: Model>(
+        config: &mut dyn Config<S>,
+        argument: &Self::Argument<S>,
+        parameter: &Self,
+        span: &Span,
+    ) {
+        config.on_constant_arguments_resolved(
+            argument,
+            &parameter.r#type.clone().into_other_model(),
+            span,
+        );
+    }
+}
+
+/// The error type returned by resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[allow(missing_docs)]
+pub enum Error {
+    #[error("The given `referring_site` id does not exist in the table")]
+    InvalidReferringSiteID,
+
+    #[error("Encountered a fatal semantic error that aborts the process")]
+    SemanticError,
+}
 
 /// Represents a resolution of a symbol with generic arguments supplied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -55,7 +275,7 @@ pub struct Variant<S: Model> {
     pub enum_generic_arguments: GenericArguments<S>,
 
     /// The resolved enum variant ID.
-    pub variant_id: ID<symbol::Variant>,
+    pub id: ID<symbol::Variant>,
 }
 
 /// Symbol resolution with parent resolution.
@@ -68,45 +288,160 @@ pub struct WithParent<Member, S: Model> {
     pub member: Member,
 }
 
+/// Symbol resolution in an adt implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AdtMember<S: Model> {
+    /// The id of the resolved adt implementation member.
+    pub adt_implementation_member_id: ID<AdtImplementationMemberID>,
+
+    /// The deduced generic arguments of the adt implementation.
+    pub deduced_implementation_generic_arguments: GenericArguments<S>,
+
+    /// The generic arugments supplied to the adt implementation member.
+    pub member_generic_arguments: GenericArguments<S>,
+}
+
+/// A subset of [`GenericID`] that is not a member of an another symbol.
+///
+/// For example, function declaration declared in a module can be categorized as a non-member
+/// generic ID. However, a function declared in a trait is not.
+/// Result of a resolution.
+///
+/// Trait implementation members are included here since we can't refer the trait implementation
+/// part (i.e. trait[Args]).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum NonMemberGenericID {
+    Struct(ID<symbol::Struct>),
+    Enum(ID<symbol::Enum>),
+    Function(ID<Function>),
+    Trait(ID<Trait>),
+    Constant(ID<symbol::Constant>),
+    Type(ID<symbol::Type>),
+
+    TraitImplementationFunction(ID<symbol::TraitImplementationFunction>),
+    TraitImplementationType(ID<symbol::TraitImplementationType>),
+    TraitImplementationConstant(ID<symbol::TraitImplementationConstant>),
+}
+
+impl From<NonMemberGenericID> for GlobalID {
+    fn from(value: NonMemberGenericID) -> Self {
+        match value {
+            NonMemberGenericID::Struct(id) => id.into(),
+            NonMemberGenericID::Enum(id) => id.into(),
+            NonMemberGenericID::Function(id) => id.into(),
+            NonMemberGenericID::Trait(id) => id.into(),
+            NonMemberGenericID::Constant(id) => id.into(),
+            NonMemberGenericID::Type(id) => id.into(),
+            NonMemberGenericID::TraitImplementationFunction(id) => id.into(),
+            NonMemberGenericID::TraitImplementationType(id) => id.into(),
+            NonMemberGenericID::TraitImplementationConstant(id) => id.into(),
+        }
+    }
+}
+
+impl From<NonMemberGenericID> for GenericID {
+    fn from(value: NonMemberGenericID) -> Self {
+        match value {
+            NonMemberGenericID::Struct(id) => id.into(),
+            NonMemberGenericID::Enum(id) => id.into(),
+            NonMemberGenericID::Function(id) => id.into(),
+            NonMemberGenericID::Trait(id) => id.into(),
+            NonMemberGenericID::Constant(id) => id.into(),
+            NonMemberGenericID::Type(id) => id.into(),
+            NonMemberGenericID::TraitImplementationFunction(id) => id.into(),
+            NonMemberGenericID::TraitImplementationType(id) => id.into(),
+            NonMemberGenericID::TraitImplementationConstant(id) => id.into(),
+        }
+    }
+}
+
+/// A resolution of a non-member generic symbol.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NonMemberGeneric<S: Model> {
+    /// The generic ID of the resolved symbol.
+    pub id: NonMemberGenericID,
+
+    /// The generic arguments supplied to the symbol.
+    pub generic_arguments: GenericArguments<S>,
+}
+
+/// A subset of [`GenericID`] that is a member of an another symbol.
+///
+/// See [`NonMemberGenericID`] for more information.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum MemberGenericID {
+    TraitFunction(ID<TraitFunction>),
+    TraitType(ID<TraitType>),
+    TraitConstant(ID<TraitConstant>),
+    AdtImplementationFunction(ID<symbol::TraitImplementationFunction>),
+    AdtImplementationType(ID<symbol::TraitImplementationType>),
+    AdtImplementationConstant(ID<symbol::TraitImplementationConstant>),
+}
+
+impl From<MemberGenericID> for GlobalID {
+    fn from(value: MemberGenericID) -> Self {
+        match value {
+            MemberGenericID::TraitFunction(id) => id.into(),
+            MemberGenericID::TraitType(id) => id.into(),
+            MemberGenericID::TraitConstant(id) => id.into(),
+            MemberGenericID::AdtImplementationFunction(id) => id.into(),
+            MemberGenericID::AdtImplementationType(id) => id.into(),
+            MemberGenericID::AdtImplementationConstant(id) => id.into(),
+        }
+    }
+}
+
+impl From<MemberGenericID> for GenericID {
+    fn from(value: MemberGenericID) -> Self {
+        match value {
+            MemberGenericID::TraitFunction(id) => id.into(),
+            MemberGenericID::TraitType(id) => id.into(),
+            MemberGenericID::TraitConstant(id) => id.into(),
+            MemberGenericID::AdtImplementationFunction(id) => id.into(),
+            MemberGenericID::AdtImplementationType(id) => id.into(),
+            MemberGenericID::AdtImplementationConstant(id) => id.into(),
+        }
+    }
+}
+
+/// A resolution of a member generic symbol.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MemberGeneric<S: Model> {
+    /// The generic ID of the resolved symbol.
+    pub id: MemberGenericID,
+
+    /// The generic arguments supplied to the parent symbol.
+    pub parent_generic_arguments: GenericArguments<S>,
+
+    /// The generic arguments supplied to the member symbol.
+    pub member_generic_arguments: GenericArguments<S>,
+}
+
 /// Result of a resolution.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Resolution<S: Model> {
-    Enum(WithGenerics<ID<Enum>, S>),
-    Struct(WithGenerics<ID<Struct>, S>),
     Module(ID<Module>),
-    Function(WithGenerics<ID<Function>, S>),
-    Trait(WithGenerics<ID<Trait>, S>),
-    TraitFunction(WithParent<WithGenerics<ID<TraitFunction>, S>, S>),
-    TraitType(WithParent<WithGenerics<ID<TraitType>, S>, S>),
-    TraitConstant(WithParent<ID<TraitConstant>, S>),
     Variant(Variant<S>),
-    Type(WithGenerics<ID<symbol::Type>, S>),
-    Constant(ID<symbol::Constant>),
-    ImplementationFunction(WithGenerics<ID<ImplementationFunction>, S>),
-    ImplementationType(WithGenerics<ID<ImplementationType>, S>),
-    ImplementationConstant(ID<ImplementationConstant>),
+    NonMemberGeneric(NonMemberGeneric<S>),
+    MemberGeneric(MemberGeneric<S>),
 }
 
 impl<S: Model> Resolution<S> {
     /// Gets the [`GlobalID`] of the resolved symbol.
     #[must_use]
-    pub fn id(&self) -> GlobalID {
+    pub fn global_id(&self) -> GlobalID {
         match self {
-            Self::Enum(res) => res.id.into(),
-            Self::Struct(res) => res.id.into(),
             Self::Module(id) => (*id).into(),
-            Self::Function(res) => res.id.into(),
-            Self::Trait(res) => res.id.into(),
-            Self::TraitFunction(res) => res.member.id.into(),
-            Self::TraitType(res) => res.member.id.into(),
-            Self::TraitConstant(res) => res.member.into(),
-            Self::Variant(res) => res.variant_id.into(),
-            Self::Type(res) => res.id.into(),
-            Self::Constant(res) => (*res).into(),
-            Self::ImplementationFunction(res) => res.id.into(),
-            Self::ImplementationType(res) => res.id.into(),
-            Self::ImplementationConstant(res) => (*res).into(),
+            Self::Variant(id) => id.id.into(),
+            Self::NonMemberGeneric(id) => id.id.into(),
+            Self::MemberGeneric(id) => id.id.into(),
         }
     }
 }
@@ -116,28 +451,20 @@ pub trait Config<S: Model> {
     /// Obtains the lifetime where the lifetime arguments aren't supplied.
     ///
     /// Returns `None` if the lifetime arguments are **explicitly** required.
-    fn lifetime_arguments_placeholder(&mut self) -> Option<Lifetime<S>>;
+    fn lifetime_arguments_elision_placeholder(&mut self) -> Option<Lifetime<S>>;
 
     /// Obtains the type where the type arguments aren't supplied.
     ///
     /// Returns `None` if the type arguments are **explicitly** required.
-    fn type_arguments_placeholder(&mut self) -> Option<r#type::Type<S>>;
+    fn type_arguments_elision_placeholder(&mut self) -> Option<r#type::Type<S>>;
 
     /// Obtains the constant where the constant arguments aren't supplied.
     ///
     /// Returns `None` if the constant arguments are **explicitly** required.
-    fn constant_arguments_placeholder(&mut self) -> Option<constant::Constant<S>>;
+    fn constant_arguments_elision_placeholder(&mut self) -> Option<constant::Constant<S>>;
 
     /// Gets notified when a global ID is resolved.
     fn on_global_id_resolved(&mut self, global_id: GlobalID, identifier_span: &Span);
-
-    /// Gets notified if the symbol is [`Generic`] and the generic arguments are resolved.
-    fn on_generic_arguments_resolved(
-        &mut self,
-        global_id: GlobalID,
-        generic_arguments: Option<&GenericArguments<S>>,
-        generic_identifier_span: &Span,
-    );
 
     /// Gets notified when a single generic identifier is resolved.
     fn on_resolved(&mut self, resolution: &Resolution<S>, generic_identifier_span: &Span);
@@ -160,103 +487,12 @@ pub trait Config<S: Model> {
     fn extra_lifetime_provider(&self, _: &str) -> Option<Lifetime<S>>;
 }
 
-macro_rules! handle_generic_arguments_supplied {
-    (
-        $self:ident,
-        $generic_identifier_span:ident,
-        $referring_site:ident,
-        $generic_symbol:ident,
-        $argument_syns:ident,
-        $config:ident,
-        $handler:ident,
-        $kind:ident,
-        $exrta_cond:expr,
-        $syntax_tree:ident,
-        $param:pat,
-        $resolve_function:expr
-    ) => {
-        {
-        paste! {
-            let expected_count = $generic_symbol.generic_declaration().parameters.[<$kind:lower s>].len();
-            let default_count = $generic_symbol
-                .generic_declaration()
-                .parameters
-                .[<default_ $kind:lower _parameters>]
-                .len();
-
-            let expected_count_range = std::ops::RangeInclusive::new(expected_count - default_count, expected_count);
-
-            // filled with type inference / default
-            if $argument_syns.is_empty() && $exrta_cond {
-                let inference_fill_count = expected_count - default_count;
-                let mut arguments = Vec::new();
-
-                for _ in 0..inference_fill_count {
-                    let Some(placeholder) = $config.[<$kind:lower _arguments_placeholder>]() else {
-                        $handler.receive(Box::new(
-                            GenericArgumentCountMismatch {
-                                generic_kind: GenericKind::$kind,
-                                $generic_identifier_span,
-                                expected_count,
-                                supplied_count: 0,
-                            },
-                        ));
-                        return Err(Error::SemanticError);
-                    };
-
-                    arguments.push(placeholder);
-                }
-
-                arguments.extend(
-                    $generic_symbol
-                        .generic_declaration()
-                        .parameters
-                        .[<default_ $kind:lower _parameters>]
-                        .iter()
-                        .map(|x| x.clone().into_other_model()),
-                );
-
-                Ok(arguments)
-            } else if expected_count_range.contains(&$argument_syns.len()) {
-                let default_argument_fill = expected_count - $argument_syns.len();
-
-                $argument_syns
-                    .into_iter()
-                    .zip($generic_symbol.generic_declaration().parameters.[<$kind:lower s>].iter())
-                    .map(|($syntax_tree, $param)| $resolve_function)
-                    .chain(
-                        $generic_symbol
-                            .generic_declaration()
-                            .parameters
-                            .[<default_ $kind:lower _parameters>][default_count - default_argument_fill..]
-                            .iter()
-                            .map(|x| Ok(x.clone().into_other_model())),
-                    )
-                    .collect::<Result<Vec<_>, _>>()
-            } else {
-                // type arguments count mismatch
-                $handler.receive(Box::new(
-                    GenericArgumentCountMismatch {
-                        generic_kind: GenericKind::$kind,
-                        $generic_identifier_span,
-                        expected_count,
-                        supplied_count: $argument_syns.len(),
-                    },
-                ));
-                Err(Error::SemanticError)
-            }
-        }
-        }
-    };
-}
-
-impl Table {
+impl<T: State> Table<T> {
     /// Resolves a module path to a module ID>
     ///
     /// # Errors
     ///
-    /// - [`Error::InvalidID`]: if the `referring_site` is not a valid ID.
-    /// - [`Error::SemanticError`]: if encountered a fatal semantic error e.g. a module not found.
+    /// See [`Error`] for more information.
     pub fn resolve_module_path(
         &self,
         module_path: &ModulePath,
@@ -301,7 +537,7 @@ impl Table {
             // check if accessible
             if !self
                 .symbol_accessible(referring_site, next.into())
-                .ok_or(Error::InvalidID)?
+                .ok_or(Error::InvalidReferringSiteID)?
             {
                 handler.receive(Box::new(SymbolIsNotAccessible {
                     referring_site,
@@ -326,49 +562,80 @@ impl Table {
         resolution: Resolution<S>,
     ) -> Result<r#type::Type<S>, Resolution<S>> {
         match resolution {
-            Resolution::Enum(sym) => Ok(r#type::Type::Algebraic(Algebraic {
-                kind: AlgebraicKind::Enum(sym.id),
-                generic_arguments: sym.generic_arguments,
-            })),
-            Resolution::Struct(sym) => Ok(r#type::Type::Algebraic(Algebraic {
-                kind: AlgebraicKind::Struct(sym.id),
-                generic_arguments: sym.generic_arguments,
-            })),
-            Resolution::TraitType(sym) => Ok(r#type::Type::TraitMember(r#type::TraitMember {
-                trait_type_id: sym.member.id,
-                trait_generic_arguments: sym.parent_generic_arguments,
-                member_generic_arguments: sym.member.generic_arguments,
-            })),
-            Resolution::Type(sym) => {
-                let type_id = sym.id;
+            // substitute the generic arguments
+            Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: NonMemberGenericID::Type(id),
+                generic_arguments,
+            }) => {
+                let mut aliased = self.get(id).unwrap().r#type.clone().into_other_model();
 
-                let Some(type_symol) = self.get(type_id) else {
-                    return Err(Resolution::Type(sym));
-                };
+                aliased.apply(&Substitution::from_generic_arguments(
+                    generic_arguments,
+                    id.into(),
+                ));
 
-                let mut alias = type_symol.r#type.clone().into_other_model();
-                let substitution =
-                    Substitution::from_generic_arguments(sym.generic_arguments, sym.id.into());
-
-                alias.apply(&substitution);
-
-                Ok(alias)
+                Ok(aliased)
             }
-            Resolution::ImplementationType(sym) => {
-                let type_id = sym.id;
+            Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: NonMemberGenericID::TraitImplementationType(id),
+                generic_arguments,
+            }) => {
+                let mut aliased = self.get(id).unwrap().r#type.clone().into_other_model();
 
-                let Some(type_symol) = self.get(type_id) else {
-                    return Err(Resolution::ImplementationType(sym));
-                };
+                aliased.apply(&Substitution::from_generic_arguments(
+                    generic_arguments,
+                    id.into(),
+                ));
 
-                let mut alias = type_symol.r#type.clone().into_other_model();
-                let substitution =
-                    Substitution::from_generic_arguments(sym.generic_arguments, sym.id.into());
-
-                alias.apply(&substitution);
-
-                Ok(alias)
+                Ok(aliased)
             }
+            Resolution::MemberGeneric(MemberGeneric {
+                id: MemberGenericID::AdtImplementationType(id),
+                parent_generic_arguments,
+                member_generic_arguments,
+            }) => {
+                let mut aliased = self.get(id).unwrap().r#type.clone().into_other_model();
+                let parent_id = self.get(id).unwrap().parent_id;
+
+                let mut substitution = Substitution::from_generic_arguments(
+                    parent_generic_arguments,
+                    parent_id.into(),
+                );
+                substitution = substitution
+                    .append_from_generic_arguments(member_generic_arguments, id.into())
+                    .unwrap();
+
+                aliased.apply(&substitution);
+
+                Ok(aliased)
+            }
+
+            Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: NonMemberGenericID::Enum(id),
+                generic_arguments,
+            }) => Ok(r#type::Type::Algebraic(Algebraic {
+                kind: AlgebraicKind::Enum(id),
+                generic_arguments,
+            })),
+
+            Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: NonMemberGenericID::Struct(id),
+                generic_arguments,
+            }) => Ok(r#type::Type::Algebraic(Algebraic {
+                kind: AlgebraicKind::Struct(id),
+                generic_arguments,
+            })),
+
+            Resolution::MemberGeneric(MemberGeneric {
+                id: MemberGenericID::TraitType(trait_type_id),
+                parent_generic_arguments,
+                member_generic_arguments,
+            }) => Ok(r#type::Type::TraitMember(r#type::TraitMember {
+                trait_type_id,
+                trait_generic_arguments: parent_generic_arguments,
+                member_generic_arguments,
+            })),
+
             resolution => Err(resolution),
         }
     }
@@ -384,7 +651,9 @@ impl Table {
 
         loop {
             // try to find the symbol in the current scope
-            let global_symbol = self.get_global(referring_site).ok_or(Error::InvalidID)?;
+            let global_symbol = self
+                .get_global(referring_site)
+                .ok_or(Error::InvalidReferringSiteID)?;
 
             if let Some(id) = global_symbol.get_member(identifier.span.str()) {
                 return Ok(id);
@@ -422,26 +691,11 @@ impl Table {
         let (global_id, parent_global_id) = match latest_resolution {
             Some(resolution) => {
                 // gets the global id from the latest resolution
-                let parent_global_id: GlobalID = match resolution {
-                    Resolution::Enum(res) => res.id.into(),
-                    Resolution::Struct(res) => res.id.into(),
-                    Resolution::Module(id) => (*id).into(),
-                    Resolution::Function(res) => res.id.into(),
-                    Resolution::Trait(res) => res.id.into(),
-                    Resolution::Variant(res) => res.variant_id.into(),
-                    Resolution::TraitFunction(res) => res.member.id.into(),
-                    Resolution::TraitType(res) => res.member.id.into(),
-                    Resolution::TraitConstant(res) => res.member.into(),
-                    Resolution::ImplementationFunction(res) => res.id.into(),
-                    Resolution::Type(res) => res.id.into(),
-                    Resolution::Constant(res) => (*res).into(),
-                    Resolution::ImplementationType(res) => res.id.into(),
-                    Resolution::ImplementationConstant(res) => (*res).into(),
-                };
+                let parent_global_id: GlobalID = resolution.global_id();
 
                 (
                     self.get_global(parent_global_id)
-                        .ok_or(Error::InvalidID)?
+                        .ok_or(Error::InvalidReferringSiteID)?
                         .get_member(identifier.span.str()),
                     Some(parent_global_id),
                 )
@@ -493,7 +747,7 @@ impl Table {
     ) -> Result<Option<GlobalID>, Error> {
         let closet_module_id = self
             .get_closet_module_id(referring_site)
-            .ok_or(Error::InvalidID)?;
+            .ok_or(Error::InvalidReferringSiteID)?;
         let closet_module = self.get(closet_module_id).unwrap();
 
         let map = closet_module.usings.iter().copied().map(Into::into);
@@ -545,8 +799,7 @@ impl Table {
     ///
     /// # Errors
     ///
-    /// - [`Error::InvalidID`]: if the `referring_site` is not a valid ID.
-    /// - [`Error::SemanticError`]: if encountered a fatal semantic error e.g. symbol not found.
+    /// See [`Error`] for more information.
     pub fn resolve_trait_path(
         &self,
         qualified_identifier: &QualifiedIdentifier,
@@ -600,13 +853,7 @@ impl Table {
         unreachable!()
     }
 
-    /// Resolves a qualified identifier to a [`r#type::Type`].
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InvalidID`]: if the `referring_site` is not a valid ID.
-    /// - [`Error::SemanticError`]: if encountered a fatal semantic error e.g. symbol not found.
-    pub fn resolve_qualified_identifier_type<S: Model>(
+    fn resolve_qualified_identifier_type<S: Model>(
         &self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
         referring_site: GlobalID,
@@ -619,7 +866,10 @@ impl Table {
 
         // try to resolve the identifier as a type parameter
         if is_simple_identifier {
-            for global_id in self.scope_walker(referring_site).ok_or(Error::InvalidID)? {
+            for global_id in self
+                .scope_walker(referring_site)
+                .ok_or(Error::InvalidReferringSiteID)?
+            {
                 let Ok(generic_id) = GenericID::try_from(global_id) else {
                     continue;
                 };
@@ -642,12 +892,11 @@ impl Table {
         }
 
         self.resolution_to_type(self.resolve(syntax_tree, referring_site, config, handler)?)
-            .map_err(|resolution| {
+            .map_err(|err| {
                 handler.receive(Box::new(TypeExpected {
                     non_type_symbol_span: syntax_tree.span(),
-                    resolved_global_id: resolution.id(),
+                    resolved_global_id: err.global_id(),
                 }));
-
                 Error::SemanticError
             })
     }
@@ -656,8 +905,7 @@ impl Table {
     ///
     /// # Errors
     ///
-    /// - [`Error::InvalidID`]: If the `referring_site` is not a valid ID.
-    /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
+    /// See [`Error`] for more information.
     #[allow(clippy::too_many_lines)]
     pub fn resolve_type<S: Model>(
         &self,
@@ -666,7 +914,7 @@ impl Table {
         config: &mut dyn Config<S>,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<r#type::Type<S>, Error> {
-        let result = match syntax_tree {
+        match syntax_tree {
             syntax_tree::r#type::Type::Primitive(primitive) => {
                 Ok(r#type::Type::Primitive(match primitive {
                     syntax_tree::r#type::Primitive::Bool(_) => r#type::Primitive::Bool,
@@ -696,17 +944,18 @@ impl Table {
                 ),
             syntax_tree::r#type::Type::Reference(reference) => {
                 let lifetime = reference
-                    .lifetime_argument()
+                    .lifetime()
                     .as_ref()
                     .map(|x| self.resolve_lifetime(x, referring_site, config, handler))
                     .transpose()?
                     .map_or_else(
                         || {
-                            config.lifetime_arguments_placeholder().map_or_else(
+                            config.lifetime_arguments_elision_placeholder().map_or_else(
                                 || {
                                     handler.receive(Box::new(LifetimeExpected {
                                         expected_span: reference.span(),
                                     }));
+
                                     Err(Error::SemanticError)
                                 },
                                 Ok,
@@ -792,7 +1041,7 @@ impl Table {
                 Ok(r#type::Type::Tuple(r#type::Tuple { elements }))
             }
             syntax_tree::r#type::Type::Array(array) => {
-                let length = self.evaluate(array.expression(), referring_site, handler)?;
+                let length = self.evaluate(array.expression(), referring_site, config, handler)?;
                 let element_ty =
                     self.resolve_type(array.operand(), referring_site, config, handler)?;
 
@@ -801,11 +1050,11 @@ impl Table {
                     element: Box::new(element_ty),
                 }))
             }
-        }?;
-
-        config.on_type_resolved(&result, &syntax_tree.span());
-
-        Ok(result)
+        }
+        .map(|result| {
+            config.on_type_resolved(&result, &syntax_tree.span());
+            result
+        })
     }
 
     /// Resolves an [`Identifier`] as a [`LifetimeParameterID`].
@@ -820,7 +1069,10 @@ impl Table {
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<LifetimeParameterID, Error> {
-        for scope in self.scope_walker(referring_site).ok_or(Error::InvalidID)? {
+        for scope in self
+            .scope_walker(referring_site)
+            .ok_or(Error::InvalidReferringSiteID)?
+        {
             let Ok(generic_id) = GenericID::try_from(scope) else {
                 continue;
             };
@@ -852,8 +1104,7 @@ impl Table {
     ///
     /// # Errors
     ///
-    /// - [`Error::InvalidID`]: If the `referring_site` is not a valid ID.
-    /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
+    /// See [`Error`] for more information.
     pub fn resolve_lifetime<S: Model>(
         &self,
         lifetime_argument: &syntax_tree::Lifetime,
@@ -872,129 +1123,6 @@ impl Table {
                     .map(Lifetime::Parameter)
             }
         }
-    }
-
-    fn handle_lifetime_arguments_supplied<S: Model>(
-        &self,
-        generic_identifier_span: Span,
-        referring_site: GlobalID,
-        generic_symbol: &dyn Generic,
-        lifetime_argument_syns: Vec<&syntax_tree::Lifetime>,
-        config: &mut dyn Config<S>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Vec<Lifetime<S>>, Error> {
-        let expected_count = generic_symbol
-            .generic_declaration()
-            .parameters
-            .lifetimes
-            .len();
-
-        // resolve the lifetime arguments
-        if lifetime_argument_syns.is_empty() {
-            let mut lifetime_arguments = Vec::new();
-
-            for _ in 0..generic_symbol
-                .generic_declaration()
-                .parameters
-                .lifetimes
-                .len()
-            {
-                let Some(placeholder) = config.lifetime_arguments_placeholder() else {
-                    handler.receive(Box::new(GenericArgumentCountMismatch {
-                        generic_kind: GenericKind::Lifetime,
-                        generic_identifier_span,
-                        expected_count: generic_symbol
-                            .generic_declaration()
-                            .parameters
-                            .lifetimes
-                            .len(),
-                        supplied_count: 0,
-                    }));
-                    return Err(Error::SemanticError);
-                };
-
-                lifetime_arguments.push(placeholder);
-            }
-
-            Ok(lifetime_arguments)
-        } else if lifetime_argument_syns.len() == expected_count {
-            Ok(lifetime_argument_syns
-                .into_iter()
-                .map(|x| self.resolve_lifetime(x, referring_site, config, handler))
-                .collect::<Result<Vec<_>, _>>()?)
-        } else {
-            // lifetime arguments count mismatch
-            handler.receive(Box::new(GenericArgumentCountMismatch {
-                generic_kind: GenericKind::Lifetime,
-                generic_identifier_span,
-                expected_count,
-                supplied_count: lifetime_argument_syns.len(),
-            }));
-            Err(Error::SemanticError)
-        }
-    }
-
-    fn handle_constant_arguments_supplied<S: Model>(
-        &self,
-        generic_identifier_span: Span,
-        referring_site: GlobalID,
-        generic_symbol: &dyn Generic,
-        constant_argument_syns: Vec<&syntax_tree::expression::Expression>,
-        config: &mut dyn Config<S>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Vec<constant::Constant<S>>, Error> {
-        handle_generic_arguments_supplied!(
-            self,
-            generic_identifier_span,
-            referring_site,
-            generic_symbol,
-            constant_argument_syns,
-            config,
-            handler,
-            Constant,
-            true,
-            syntax_tree,
-            param,
-            {
-                self.evaluate(syntax_tree, referring_site, handler)
-                    .map(|val| {
-                        config.on_constant_arguments_resolved(
-                            &val,
-                            &param.r#type.clone().into_other_model(),
-                            &generic_identifier_span,
-                        );
-
-                        val
-                    })
-            }
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn handle_type_arguments_supplied<S: Model>(
-        &self,
-        generic_identifier_span: Span,
-        referring_site: GlobalID,
-        generic_symbol: &dyn Generic,
-        type_argument_syns: Vec<&syntax_tree::r#type::Type>,
-        constant_arguments_is_empty: bool,
-        config: &mut dyn Config<S>,
-        handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<Vec<r#type::Type<S>>, Error> {
-        handle_generic_arguments_supplied!(
-            self,
-            generic_identifier_span,
-            referring_site,
-            generic_symbol,
-            type_argument_syns,
-            config,
-            handler,
-            Type,
-            constant_arguments_is_empty,
-            syntax_tree,
-            _,
-            self.resolve_type(syntax_tree, referring_site, config, handler)
-        )
     }
 
     // resolve the generic arguments required for `resolved_id`.
@@ -1018,7 +1146,7 @@ impl Table {
             return Ok(None);
         };
 
-        let generic_symbol = self.get_generic(generic_id).ok_or(Error::InvalidID)?;
+        let generic_symbol = self.get_generic(generic_id).unwrap();
 
         let mut lifetime_argument_syns = Vec::new();
         let mut type_argument_syns = Vec::new();
@@ -1058,28 +1186,46 @@ impl Table {
 
         // extract the arguments syntax
         Ok(Some(GenericArguments {
-            lifetimes: self.handle_lifetime_arguments_supplied(
+            lifetimes: LifetimeParameter::resolve_generic_parameters(
+                self,
+                lifetime_argument_syns.into_iter(),
+                &generic_symbol.generic_declaration().parameters.lifetimes,
+                std::iter::empty(),
+                false,
                 generic_identifier.span(),
                 referring_site,
-                &*generic_symbol,
-                lifetime_argument_syns,
                 config,
                 handler,
             )?,
-            types: self.handle_type_arguments_supplied(
-                generic_identifier.span(),
-                referring_site,
-                &*generic_symbol,
-                type_argument_syns,
+            types: TypeParameter::resolve_generic_parameters(
+                self,
+                type_argument_syns.into_iter(),
+                &generic_symbol.generic_declaration().parameters.types,
+                generic_symbol
+                    .generic_declaration()
+                    .parameters
+                    .default_type_parameters
+                    .iter()
+                    .map(|x| x.clone().into_other_model()),
                 constant_argument_syns.is_empty(),
+                generic_identifier.span(),
+                referring_site,
                 config,
                 handler,
             )?,
-            constants: self.handle_constant_arguments_supplied(
+            constants: ConstantParameter::resolve_generic_parameters(
+                self,
+                constant_argument_syns.into_iter(),
+                &generic_symbol.generic_declaration().parameters.constants,
+                generic_symbol
+                    .generic_declaration()
+                    .parameters
+                    .default_constant_parameters
+                    .iter()
+                    .map(|x| x.clone().into_other_model()),
+                true,
                 generic_identifier.span(),
                 referring_site,
-                &*generic_symbol,
-                constant_argument_syns,
                 config,
                 handler,
             )?,
@@ -1094,128 +1240,81 @@ impl Table {
         latest_resolution: Option<Resolution<S>>,
     ) -> Resolution<S> {
         match resolved_id {
-            GlobalID::Module(module_id) => Resolution::Module(module_id),
-            GlobalID::Struct(struct_id) => Resolution::Struct(WithGenerics {
-                id: struct_id,
-                generic_arguments: generic_arguments.expect("should have generic arguments"),
+            GlobalID::Module(id) => Resolution::Module(id),
+            GlobalID::Struct(id) => Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: id.into(),
+                generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Trait(trait_id) => Resolution::Trait(WithGenerics {
-                id: trait_id,
-                generic_arguments: generic_arguments.expect("should have generic arguments"),
+            GlobalID::Trait(id) => Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: id.into(),
+                generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Enum(enum_id) => Resolution::Enum(WithGenerics {
-                id: enum_id,
-                generic_arguments: generic_arguments.expect("should have generic arguments"),
+            GlobalID::Enum(id) => Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: id.into(),
+                generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Type(type_id) => Resolution::Type(WithGenerics {
-                id: type_id,
-                generic_arguments: generic_arguments.expect("should have generic arguments"),
+            GlobalID::Type(id) => Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: id.into(),
+                generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Constant(constant_id) => Resolution::Constant(constant_id),
-            GlobalID::Function(function_id) => Resolution::Function(WithGenerics {
-                id: function_id,
-                generic_arguments: generic_arguments.expect("should have generic arguments"),
+            GlobalID::Constant(id) => Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: id.into(),
+                generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::Variant(variant_id) => Resolution::Variant(Variant {
-                enum_generic_arguments: generic_arguments.unwrap_or_else(|| {
-                    let parent_enum_id = self.get(variant_id).unwrap().parent_enum_id;
-                    self.get(parent_enum_id)
-                        .unwrap()
-                        .generic_declaration
-                        .parameters
-                        .create_identity_generic_arguments(parent_enum_id.into())
-                }),
-                variant_id,
+            GlobalID::Function(id) => Resolution::NonMemberGeneric(NonMemberGeneric {
+                id: id.into(),
+                generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::TraitType(trait_type_id) => Resolution::TraitType(WithParent {
-                parent_generic_arguments: latest_resolution.map_or_else(
+            GlobalID::Variant(id) => Resolution::Variant(Variant {
+                enum_generic_arguments: latest_resolution.map_or_else(
                     || {
-                        let parent_trait_id = self.get(trait_type_id).unwrap().parent_trait_id;
-                        self.get(parent_trait_id)
+                        let parent_enum_id = self.get(id).unwrap().parent_enum_id;
+                        self.get(parent_enum_id)
                             .unwrap()
                             .generic_declaration
                             .parameters
-                            .create_identity_generic_arguments(parent_trait_id.into())
+                            .create_identity_generic_arguments(parent_enum_id.into())
                     },
                     |x| {
-                        let trait_res = x
-                            .into_trait()
-                            .expect("should be a trait as its parent resolution");
-
-                        trait_res.generic_arguments
+                        let non_member = x.into_non_member_generic().unwrap();
+                        assert!(non_member.id.is_enum());
+                        non_member.generic_arguments
                     },
                 ),
-                member: WithGenerics {
-                    id: trait_type_id,
-                    generic_arguments: generic_arguments.expect("should have generic arguments"),
+                id,
+            }),
+            GlobalID::TraitType(id) => Resolution::MemberGeneric(MemberGeneric {
+                id: id.into(),
+                parent_generic_arguments: {
+                    latest_resolution.map_or_else(
+                        || {
+                            let parent_trait_id = self.get(id).unwrap().parent_id;
+                            self.get(parent_trait_id)
+                                .unwrap()
+                                .generic_declaration
+                                .parameters
+                                .create_identity_generic_arguments(parent_trait_id.into())
+                        },
+                        |x| {
+                            let non_member = x.into_non_member_generic().unwrap();
+                            assert!(non_member.id.is_trait());
+                            non_member.generic_arguments
+                        },
+                    )
                 },
+                member_generic_arguments: generic_arguments.unwrap(),
             }),
-            GlobalID::TraitFunction(trait_function_id) => Resolution::TraitFunction(WithParent {
-                parent_generic_arguments: latest_resolution.map_or_else(
-                    || {
-                        let parent_trait_id = self.get(trait_function_id).unwrap().parent_trait_id;
-                        self.get(parent_trait_id)
-                            .unwrap()
-                            .generic_declaration
-                            .parameters
-                            .create_identity_generic_arguments(parent_trait_id.into())
-                    },
-                    |x| {
-                        let trait_res = x
-                            .into_trait()
-                            .expect("should be a trait as its parent resolution");
-
-                        trait_res.generic_arguments
-                    },
-                ),
-                member: WithGenerics {
-                    id: trait_function_id,
-                    generic_arguments: generic_arguments.expect("should have generic arguments"),
-                },
-            }),
-
-            GlobalID::TraitConstant(trait_constant_id) => Resolution::TraitConstant(WithParent {
-                parent_generic_arguments: latest_resolution.map_or_else(
-                    || {
-                        let parent_trait_id = self.get(trait_constant_id).unwrap().parent_trait_id;
-                        self.get(parent_trait_id)
-                            .unwrap()
-                            .generic_declaration
-                            .parameters
-                            .create_identity_generic_arguments(parent_trait_id.into())
-                    },
-                    |x| {
-                        let trait_res = x
-                            .into_trait()
-                            .expect("should be a trait as its parent resolution");
-
-                        trait_res.generic_arguments
-                    },
-                ),
-                member: trait_constant_id,
-            }),
-
-            GlobalID::Implementation(_) | GlobalID::NegativeImplementation(_) => {
-                unreachable!("impossible to refer to the implementation")
-            }
-
-            GlobalID::ImplementationFunction(implementation_function_id) => {
-                assert!(latest_resolution.is_none());
-
-                Resolution::ImplementationFunction(WithGenerics {
-                    id: implementation_function_id,
-                    generic_arguments: generic_arguments.expect("should have generic arguments"),
-                })
-            }
-            GlobalID::ImplementationType(implementation_type_id) => {
-                Resolution::ImplementationType(WithGenerics {
-                    id: implementation_type_id,
-                    generic_arguments: generic_arguments.expect("should have generic arguments"),
-                })
-            }
-            GlobalID::ImplementationConstant(implementation_constant_id) => {
-                Resolution::ImplementationConstant(implementation_constant_id)
-            }
+            GlobalID::TraitFunction(_) => todo!(),
+            GlobalID::TraitConstant(_) => todo!(),
+            GlobalID::TraitImplementation(_) => todo!(),
+            GlobalID::NegativeTraitImplementation(_) => todo!(),
+            GlobalID::TraitImplementationFunction(_) => todo!(),
+            GlobalID::TraitImplementationType(_) => todo!(),
+            GlobalID::TraitImplementationConstant(_) => todo!(),
+            GlobalID::AdtImplementation(_) => todo!(),
+            GlobalID::AdtImplementationFunction(_) => todo!(),
+            GlobalID::AdtImplementationType(_) => todo!(),
+            GlobalID::AdtImplementationConstant(_) => todo!(),
         }
     }
 
@@ -1223,8 +1322,7 @@ impl Table {
     ///
     /// # Errors
     ///
-    /// - [`Error::InvalidID`]: If the `referring_site` is not a valid ID.
-    /// - [`Error::SemanticError`]: If encountered a fatal semantic error e.g. symbol not found.
+    /// See [`Error`] for more information.
     pub fn resolve<S: Model>(
         &self,
         qualified_identifier: &QualifiedIdentifier,
@@ -1233,7 +1331,10 @@ impl Table {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Resolution<S>, Error> {
         // Checks if the given `referring_site` is a valid ID.
-        drop(self.get_global(referring_site).ok_or(Error::InvalidID)?);
+        drop(
+            self.get_global(referring_site)
+                .ok_or(Error::InvalidReferringSiteID)?,
+        );
 
         // create the current root
         let mut latest_resolution = None;
@@ -1260,12 +1361,6 @@ impl Table {
                 config,
                 handler,
             )?;
-
-            config.on_generic_arguments_resolved(
-                global_id,
-                generic_arguments.as_ref(),
-                &generic_identifier.span(),
-            );
 
             let resolved = self.final_pass(global_id, generic_arguments, latest_resolution);
 

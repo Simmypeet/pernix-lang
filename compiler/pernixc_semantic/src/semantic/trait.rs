@@ -2,7 +2,7 @@
 
 use std::{
     cmp::Ordering,
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{HashMap, HashSet},
 };
 
 use lazy_static::lazy_static;
@@ -18,11 +18,9 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::{
-        self, model::Entity, predicate::Predicate, session, substitution::Substitute, term::Term,
-    },
-    symbol::{self, semantic::Symbolic, ImplementationKindID, Trait},
-    table::{Index, Table},
+    semantic::{self, model::Entity, predicate::Predicate, session, term::Term},
+    symbol::{self, semantic::Symbolic, Trait, TraitImplementationKindID},
+    table::{Index, State, Suboptimal, Success, Table},
 };
 
 /// Enumeration containing the predicates related to lifetime constraints.
@@ -43,7 +41,7 @@ pub struct Implementation<M: Model> {
     pub deduced_unification: Substitution<M>,
 
     /// The resolved implements id.
-    pub implementation_id: ID<symbol::Implementation>,
+    pub implementation_id: ID<symbol::TraitImplementation>,
 
     /// List of lifetime constraints that are introduced by the implements.
     pub lifetime_constraints: Vec<LifetimeConstraint<M>>,
@@ -138,88 +136,6 @@ fn extract<T: Eq + std::hash::Hash>(
     (positive, negative)
 }
 
-fn extract_unification_from_eq_predicate<
-    M: Model,
-    T: Term<Model = Symbolic> + Entity<Model = Symbolic>,
-    S: Semantic<<T as Entity>::Rebind<M>>
-        + Semantic<Type<M>>
-        + Semantic<Constant<M>>
-        + Semantic<Lifetime<M>>,
-    R: Session<<T as Entity>::Rebind<M>>
-        + Session<Type<M>>
-        + Session<Constant<M>>
-        + Session<Lifetime<M>>,
->(
-    premises: &Premises<M>,
-    table: &Table,
-    semantic: &mut S,
-    session: &mut R,
-    base_unification: &Substitution<M>,
-    eq: &predicate::Equals<T>,
-) -> Option<Substitution<M>>
-where
-    <T as Entity>::Rebind<M>: Term<Model = M>,
-    TypeParameterUnifingConfig: unification::Config<<T as Entity>::Rebind<M>>,
-{
-    let mut lhs = eq.lhs.clone().into_other_model::<M>();
-    let mut rhs = eq.rhs.clone().into_other_model::<M>();
-
-    lhs.apply(base_unification);
-    rhs.apply(base_unification);
-
-    if !lhs.definite(premises, table, semantic, session) {
-        return None;
-    }
-
-    rhs.unify(
-        &lhs,
-        premises,
-        table,
-        semantic,
-        session,
-        &mut TypeParameterUnifingConfig,
-    )
-}
-
-fn append_new_unification<
-    T: Term,
-    S: Semantic<T>
-        + Semantic<Type<<T as Term>::Model>>
-        + Semantic<Constant<<T as Term>::Model>>
-        + Semantic<Lifetime<<T as Term>::Model>>,
-    R: Session<T>
-        + Session<Type<<T as Term>::Model>>
-        + Session<Constant<<T as Term>::Model>>
-        + Session<Lifetime<<T as Term>::Model>>,
->(
-    premises: &Premises<<T as Term>::Model>,
-    table: &Table,
-    semantic: &mut S,
-    session: &mut R,
-    base: &mut Substitution<<T as Term>::Model>,
-    mapping: HashMap<T, T>,
-) -> bool {
-    let map = <T as Substitute>::get_mut(base);
-
-    for (key, value) in mapping {
-        match map.entry(key) {
-            Entry::Occupied(entry) => {
-                if !entry
-                    .get()
-                    .equals(&value, premises, table, semantic, session)
-                {
-                    return false;
-                }
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(value);
-            }
-        }
-    }
-
-    true
-}
-
 fn mapping_equals<
     T: Term,
     S: Semantic<T>
@@ -234,7 +150,7 @@ fn mapping_equals<
     mappigs: HashMap<T, T>,
     deduced_unification: &Substitution<<T as Term>::Model>,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
 ) -> bool {
@@ -255,11 +171,10 @@ fn build_unification<
     S: Semantic<Type<M>> + Semantic<Constant<M>> + Semantic<Lifetime<M>>,
     R: Session<Type<M>> + Session<Constant<M>> + Session<Lifetime<M>>,
 >(
-    key: ImplementationKindID,
     implements_arguments: &GenericArguments<M>,
     arguments: &GenericArguments<M>,
     premises: &Premises<M>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
 ) -> Option<Substitution<M>> {
@@ -276,7 +191,7 @@ fn build_unification<
     };
 
     // exract the trait members
-    let (mut base_unification, trait_type_map, trait_constant_map) = {
+    let (base_unification, trait_type_map, trait_constant_map) = {
         let (type_param_map, trait_type_map) =
             extract(base_unification.types, Type::is_trait_member);
         let (constant_param_map, trait_constant_map) =
@@ -292,75 +207,6 @@ fn build_unification<
             trait_constant_map,
         )
     };
-
-    let mut unification_from_predicates = Vec::new();
-    for predicate in &table
-        .get_implementation_signature(key)
-        .unwrap()
-        .generic_declaration
-        .predicates
-    {
-        let uni = match &predicate.predicate {
-            Predicate::TypeEquals(ty_eq) => extract_unification_from_eq_predicate(
-                premises,
-                table,
-                semantic,
-                session,
-                &base_unification,
-                ty_eq,
-            ),
-            Predicate::ConstantEquals(const_eq) => extract_unification_from_eq_predicate(
-                premises,
-                table,
-                semantic,
-                session,
-                &base_unification,
-                const_eq,
-            ),
-            _ => continue,
-        };
-
-        if let Some(uni) = uni {
-            unification_from_predicates.push(uni);
-        } else {
-            return None;
-        }
-    }
-
-    for unification in unification_from_predicates {
-        if !append_new_unification(
-            premises,
-            table,
-            semantic,
-            session,
-            &mut base_unification,
-            unification.types,
-        ) {
-            return None;
-        }
-
-        if !append_new_unification(
-            premises,
-            table,
-            semantic,
-            session,
-            &mut base_unification,
-            unification.constants,
-        ) {
-            return None;
-        }
-
-        if !append_new_unification(
-            premises,
-            table,
-            semantic,
-            session,
-            &mut base_unification,
-            unification.lifetimes,
-        ) {
-            return None;
-        }
-    }
 
     if !(mapping_equals(
         trait_type_map,
@@ -383,7 +229,7 @@ fn build_unification<
     Some(base_unification)
 }
 
-impl Table {
+impl<T: State> Table<T> {
     /// Resolves for the implementation of the given trait with the given generic arguments.
     ///
     /// # Errors
@@ -408,14 +254,14 @@ impl Table {
             return Err(Error::NonDefiniteGenericArguments);
         }
 
-        let mut candidates: Vec<(ImplementationKindID, Substitution<M>)> = Vec::new();
+        let mut candidates: Vec<(TraitImplementationKindID, Substitution<M>)> = Vec::new();
 
         'outer: for (key, arguments) in traits
             .implementations
             .iter()
             .map(|k| {
                 (
-                    ImplementationKindID::Positive(*k),
+                    TraitImplementationKindID::Positive(*k),
                     self.get(*k)
                         .unwrap()
                         .signature
@@ -426,7 +272,7 @@ impl Table {
             })
             .chain(traits.negative_implementations.iter().map(|k| {
                 (
-                    ImplementationKindID::Negative(*k),
+                    TraitImplementationKindID::Negative(*k),
                     self.get(*k)
                         .unwrap()
                         .signature
@@ -438,7 +284,6 @@ impl Table {
         {
             // builds the unification
             let Some(unification) = build_unification(
-                key,
                 &arguments,
                 generic_arguments,
                 premises,
@@ -450,9 +295,9 @@ impl Table {
             };
 
             if let Some(candidate) = candidates.last() {
-                let contender_signature = self.get_implementation_signature(key).unwrap();
+                let contender_signature = self.get_trait_implementation_signature(key).unwrap();
                 let order = self
-                    .get_implementation_signature(candidate.0)
+                    .get_trait_implementation_signature(candidate.0)
                     .unwrap()
                     .arguments
                     .order(&contender_signature.arguments);
@@ -468,7 +313,7 @@ impl Table {
                             candidates.binary_search_by(|existing| {
                                 match contender_signature.arguments.order(
                                     &self
-                                        .get_implementation_signature(existing.0)
+                                        .get_trait_implementation_signature(existing.0)
                                         .unwrap()
                                         .arguments,
                                 ) {
@@ -502,11 +347,11 @@ impl Table {
             let mut existing_lifetime_constraints = HashSet::new();
 
             let parent_trait_id = self
-                .get_implementation_signature(candidate.0)
+                .get_trait_implementation_signature(candidate.0)
                 .unwrap()
-                .trait_id;
+                .implemented_id;
             let trait_substitution = Substitution::from_generic_arguments(
-                self.get_implementation_signature(candidate.0)
+                self.get_trait_implementation_signature(candidate.0)
                     .unwrap()
                     .arguments
                     .clone()
@@ -534,10 +379,11 @@ impl Table {
 
                         existing_lifetime_constraints.insert(LifetimeConstraint::TypeOutlives(x));
                     }
-                    Predicate::TypeEquals(_)
+
+                    Predicate::ConstantType(_)
+                    | Predicate::TypeEquals(_)
                     | Predicate::ConstantEquals(_)
-                    | Predicate::Trait(_)
-                    | Predicate::ConstantType(_) => {}
+                    | Predicate::Trait(_) => {}
                 }
             }
 
@@ -593,22 +439,23 @@ impl Table {
                             false
                         }
                     }
-
-                    Predicate::ConstantType(x) => x.satisfies(premises, self, semantic, session),
+                    Predicate::ConstantType(_) => todo!(),
                 } {
                     continue 'candidate;
                 }
             }
 
             match candidate.0 {
-                ImplementationKindID::Positive(positive) => {
+                TraitImplementationKindID::Positive(positive) => {
                     return Ok(Implementation {
                         deduced_unification: deduced_substitution,
                         implementation_id: positive,
                         lifetime_constraints,
                     });
                 }
-                ImplementationKindID::Negative(_) => return Err(Error::NegativeImplementation),
+                TraitImplementationKindID::Negative(_) => {
+                    return Err(Error::NegativeImplementation)
+                }
             }
         }
 
@@ -632,7 +479,7 @@ impl GenericArguments<Symbolic> {
     #[must_use]
     pub fn order(&self, other: &Self) -> Order {
         lazy_static! {
-            static ref DEFAULT_TABLE: Table = Table::default();
+            static ref DEFAULT_TABLE: Table<Success> = Table::default();
         }
 
         let self_to_other = self.unify(

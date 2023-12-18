@@ -6,8 +6,52 @@ use super::{r#type::Type, GenericArguments, Model, Term, TupleElement, Unpacked}
 use crate::{
     arena::ID,
     semantic::model::Entity,
-    symbol::{self, ConstantParameterID, TraitConstant, Variant},
+    symbol::{self, ConstantParameterID, GlobalID, TraitConstant, Variant},
 };
+
+/// Represents a constant symbol, denoted by `constant[args]` syntax.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Symbol<S: Model> {
+    /// The ID to the constant symbol.
+    pub id: ID<symbol::Constant>,
+
+    /// The generic arguments supplied to the constant symbol.
+    pub generic_arguments: GenericArguments<S>,
+}
+
+/// Enumeration of either a trait implementation constant or an ADT implementation constant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum ImplementationKindID {
+    Trait(ID<symbol::TraitImplementationConstant>),
+    Adt(ID<symbol::AdtImplementationConstant>),
+}
+
+impl From<ImplementationKindID> for GlobalID {
+    fn from(value: ImplementationKindID) -> Self {
+        match value {
+            ImplementationKindID::Trait(id) => id.into(),
+            ImplementationKindID::Adt(id) => id.into(),
+        }
+    }
+}
+
+impl From<ID<symbol::TraitImplementationConstant>> for ImplementationKindID {
+    fn from(value: ID<symbol::TraitImplementationConstant>) -> Self { Self::Trait(value) }
+}
+
+/// Represents an implementation constant symbol, denoted by `impl[args]::constant[args]` syntax.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ImplementatinoSymbol<S: Model> {
+    /// The ID to the implementation.
+    pub id: ImplementationKindID,
+
+    /// The generic arguments supplied to the implementation.
+    pub implementation_generic_arguments: GenericArguments<S>,
+
+    /// The ID to the constant symbol.
+    pub constant_generic_arguments: GenericArguments<S>,
+}
 
 /// Represents a primitive constant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -69,7 +113,10 @@ pub struct TraitMember<S: Model> {
     pub trait_constant_id: ID<TraitConstant>,
 
     /// The generic arguments supplied to the trait.
-    pub trait_arguments: GenericArguments<S>,
+    pub trait_generic_arguments: GenericArguments<S>,
+
+    /// The generic arguments supplied to the trait constant.
+    pub constant_generic_arguments: GenericArguments<S>,
 }
 
 /// Represents a tuple constant value, denoted by `(value, value, ...value)` syntax.
@@ -92,7 +139,8 @@ pub enum Constant<S: Model> {
     TraitMember(TraitMember<S>),
     Local(Local<S>),
     Tuple(Tuple<S>),
-    Error,
+    Symbol(Symbol<S>),
+    Implementation(ImplementatinoSymbol<S>),
 }
 
 impl<M: Model> Term for Constant<M> {
@@ -179,7 +227,10 @@ impl<S: Model> Entity for Constant<S> {
             Self::Parameter(parameter) => Constant::Parameter(parameter),
             Self::TraitMember(trait_member) => Constant::TraitMember(TraitMember {
                 trait_constant_id: trait_member.trait_constant_id,
-                trait_arguments: trait_member.trait_arguments.into_other_model(),
+                trait_generic_arguments: trait_member.trait_generic_arguments.into_other_model(),
+                constant_generic_arguments: trait_member
+                    .constant_generic_arguments
+                    .into_other_model(),
             }),
             Self::Tuple(tuple) => {
                 let mut elements = Vec::with_capacity(tuple.elements.len());
@@ -195,8 +246,11 @@ impl<S: Model> Entity for Constant<S> {
                             Unpacked::TraitMember(trait_member) => {
                                 TupleElement::Unpacked(Unpacked::TraitMember(TraitMember {
                                     trait_constant_id: trait_member.trait_constant_id,
-                                    trait_arguments: trait_member
-                                        .trait_arguments
+                                    trait_generic_arguments: trait_member
+                                        .trait_generic_arguments
+                                        .into_other_model(),
+                                    constant_generic_arguments: trait_member
+                                        .constant_generic_arguments
                                         .into_other_model(),
                                 }))
                             }
@@ -205,7 +259,17 @@ impl<S: Model> Entity for Constant<S> {
                 }
                 Constant::Tuple(Tuple { elements })
             }
-            Self::Error => Constant::Error,
+            Self::Symbol(symbol) => Constant::Symbol(Symbol {
+                id: symbol.id,
+                generic_arguments: symbol.generic_arguments.into_other_model(),
+            }),
+            Self::Implementation(symbol) => Constant::Implementation(ImplementatinoSymbol {
+                id: symbol.id,
+                implementation_generic_arguments: symbol
+                    .implementation_generic_arguments
+                    .into_other_model(),
+                constant_generic_arguments: symbol.constant_generic_arguments.into_other_model(),
+            }),
         }
     }
 
@@ -251,7 +315,12 @@ impl<S: Model> Entity for Constant<S> {
             Self::Parameter(parameter) => Some(Constant::Parameter(parameter)),
             Self::TraitMember(trait_member) => Some(Constant::TraitMember(TraitMember {
                 trait_constant_id: trait_member.trait_constant_id,
-                trait_arguments: trait_member.trait_arguments.try_into_other_model()?,
+                trait_generic_arguments: trait_member
+                    .trait_generic_arguments
+                    .try_into_other_model()?,
+                constant_generic_arguments: trait_member
+                    .constant_generic_arguments
+                    .try_into_other_model()?,
             })),
             Self::Tuple(tuple) => Some(Constant::Tuple(Tuple {
                 elements: tuple
@@ -267,15 +336,30 @@ impl<S: Model> Entity for Constant<S> {
                         TupleElement::Unpacked(Unpacked::TraitMember(trait_member)) => {
                             Some(TupleElement::Unpacked(Unpacked::TraitMember(TraitMember {
                                 trait_constant_id: trait_member.trait_constant_id,
-                                trait_arguments: trait_member
-                                    .trait_arguments
+                                trait_generic_arguments: trait_member
+                                    .trait_generic_arguments
+                                    .try_into_other_model()?,
+                                constant_generic_arguments: trait_member
+                                    .constant_generic_arguments
                                     .try_into_other_model()?,
                             })))
                         }
                     })
                     .collect::<Option<_>>()?,
             })),
-            Self::Error => Some(Constant::Error),
+            Self::Symbol(symbol) => Some(Constant::Symbol(Symbol {
+                id: symbol.id,
+                generic_arguments: symbol.generic_arguments.try_into_other_model()?,
+            })),
+            Self::Implementation(symbol) => Some(Constant::Implementation(ImplementatinoSymbol {
+                id: symbol.id,
+                implementation_generic_arguments: symbol
+                    .implementation_generic_arguments
+                    .try_into_other_model()?,
+                constant_generic_arguments: symbol
+                    .constant_generic_arguments
+                    .try_into_other_model()?,
+            })),
         }
     }
 }

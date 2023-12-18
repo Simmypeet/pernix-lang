@@ -27,7 +27,6 @@ pub trait Session<T: Term>:
     for<'a> Cache<definite::Record<'a, T>>
     + for<'a> Cache<unification::Record<'a, T>>
     + for<'a> Cache<equality::Record<'a, T>>
-    + for<'a> Cache<predicate::ConstantTypeRecord<'a, <T as Term>::Model>>
     + for<'a> Cache<predicate::TraitRecord<'a, <T as Term>::Model>>
 {
 }
@@ -36,7 +35,6 @@ impl<T: Term, U> Session<T> for U where
     U: for<'a> Cache<definite::Record<'a, T>>
         + for<'a> Cache<unification::Record<'a, T>>
         + for<'a> Cache<equality::Record<'a, T>>
-        + for<'a> Cache<predicate::ConstantTypeRecord<'a, <T as Term>::Model>>
         + for<'a> Cache<predicate::TraitRecord<'a, <T as Term>::Model>>
 {
 }
@@ -154,16 +152,6 @@ implements_cache!(
     (record.lhs.clone(), record.rhs.clone()),
     &(record.lhs.clone(), record.rhs.clone())
 );
-
-impl<'a, S: Model> Cache<predicate::ConstantTypeRecord<'a, S>> for Default<S> {
-    fn mark_as_working_on(&mut self, record: predicate::ConstantTypeRecord<'a, S>) -> bool {
-        self.constnat_type_satisfies.insert(record.0.clone())
-    }
-
-    fn mark_as_done(&mut self, record: predicate::ConstantTypeRecord<'a, S>) {
-        self.constnat_type_satisfies.remove(record.0);
-    }
-}
 
 impl<'a, S: Model> Cache<predicate::TraitRecord<'a, S>> for Default<S> {
     fn mark_as_working_on(&mut self, record: predicate::TraitRecord<'a, S>) -> bool {

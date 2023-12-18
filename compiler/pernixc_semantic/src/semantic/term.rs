@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 
 use self::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use super::{
-    definite, equality, errorneous,
+    definite, equality,
     map::Map,
     model::{Entity, Model},
     predicate::Premises,
@@ -16,7 +16,7 @@ use super::{
     visitor::Element,
     Semantic,
 };
-use crate::table::Table;
+use crate::table::{State, Table};
 
 pub mod constant;
 pub mod lifetime;
@@ -51,7 +51,7 @@ pub trait Term:
     >(
         &self,
         premises: &Premises<<Self as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
     ) -> Option<Self> {
@@ -71,7 +71,7 @@ pub trait Term:
     >(
         &self,
         premises: &Premises<<Self as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
     ) -> bool {
@@ -100,7 +100,7 @@ pub trait Term:
         &self,
         rhs: &Self,
         premises: &Premises<<Self as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
         config: &mut C,
@@ -130,7 +130,7 @@ pub trait Term:
         &self,
         rhs: &Self,
         premises: &Premises<<Self as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
         config: &mut C,
@@ -153,17 +153,12 @@ pub trait Term:
         &self,
         other: &Self,
         premises: &Premises<<Self as Term>::Model>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
     ) -> bool {
         equality::equals(self, other, premises, table, semantic, session)
     }
-
-    /// Checks if the term is errorneous.
-    ///
-    /// The term is errorneous if it contains an errorneous sub-term.
-    fn errorneous(&self) -> bool { errorneous::errorneous(self) }
 }
 
 /// Represents a list of generic arguments supplied to a particular generic symbol.
@@ -293,7 +288,7 @@ impl<M: Model> GenericArguments<M> {
     >(
         &self,
         premises: &Premises<M>,
-        table: &Table,
+        table: &Table<impl State>,
         semantic: &mut S,
         session: &mut R,
     ) -> bool {

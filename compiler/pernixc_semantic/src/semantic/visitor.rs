@@ -21,12 +21,12 @@ pub trait Visitor {
     /// Visits a lifetime.
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of the lifetime.
-    fn visit_lifetime(&mut self, ty: &Lifetime<Self::Model>) -> bool;
+    fn visit_lifetime(&mut self, lifetime: &Lifetime<Self::Model>) -> bool;
 
     /// Visits a constant.
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of the constant.
-    fn visit_constant(&mut self, ty: &Constant<Self::Model>) -> bool;
+    fn visit_constant(&mut self, constant: &Constant<Self::Model>) -> bool;
 }
 
 /// A term that can be visited by a visitor.
@@ -38,49 +38,45 @@ pub trait Element {
     fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, sub_structural_visit: bool);
 }
 
-fn visit_generic_arguments<V: Visitor>(
-    generic_arguments: &GenericArguments<V::Model>,
-    visitor: &mut V,
-) {
-    for ty in &generic_arguments.types {
-        ty.accept(visitor, false);
-    }
+impl<S: Model> Element for GenericArguments<S> {
+    type Model = S;
 
-    for constant in &generic_arguments.constants {
-        constant.accept(visitor, false);
-    }
+    fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, _: bool) {
+        for ty in &self.types {
+            ty.accept(visitor, false);
+        }
 
-    for lifetime in &generic_arguments.lifetimes {
-        lifetime.accept(visitor, false);
+        for constant in &self.constants {
+            constant.accept(visitor, false);
+        }
+
+        for lifetime in &self.lifetimes {
+            lifetime.accept(visitor, false);
+        }
     }
 }
 
-fn visit_tuple<
-    S: Model,
-    Term,
+impl<Term, Parameter, TraitMember> Element for Tuple<Term, Parameter, TraitMember>
+where
+    Term: Element + From<Parameter> + From<TraitMember> + From<Self>,
     Parameter: Clone + TryFrom<Term, Error = Term>,
     TraitMember: Clone + TryFrom<Term, Error = Term>,
-    V: Visitor<Model = S>,
->(
-    tuple: &Tuple<Term, Parameter, TraitMember>,
-    visitor: &mut V,
-) where
-    Term: Element<Model = S>
-        + From<Parameter>
-        + From<TraitMember>
-        + From<Tuple<Term, Parameter, TraitMember>>,
 {
-    for element in &tuple.elements {
-        match element {
-            TupleElement::Regular(term) => term.accept(visitor, false),
-            TupleElement::Unpacked(unpacked) => match unpacked {
-                Unpacked::Parameter(parameter) => {
-                    Term::from(parameter.clone()).accept(visitor, false);
-                }
-                Unpacked::TraitMember(trait_member) => {
-                    Term::from(trait_member.clone()).accept(visitor, false);
-                }
-            },
+    type Model = Term::Model;
+
+    fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, _: bool) {
+        for element in &self.elements {
+            match element {
+                TupleElement::Regular(term) => term.accept(visitor, false),
+                TupleElement::Unpacked(unpacked) => match unpacked {
+                    Unpacked::Parameter(parameter) => {
+                        Term::from(parameter.clone()).accept(visitor, false);
+                    }
+                    Unpacked::TraitMember(trait_member) => {
+                        Term::from(trait_member.clone()).accept(visitor, false);
+                    }
+                },
+            }
         }
     }
 }
@@ -94,25 +90,25 @@ impl<S: Model> Element for Type<S> {
         }
 
         match self {
-            Self::Error | Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
+            Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
 
-            Self::Algebraic(adt) => visit_generic_arguments(&adt.generic_arguments, visitor),
-            Self::Pointer(pointer) => pointer.pointee.accept(visitor, sub_structural_visit),
+            Self::Algebraic(adt) => adt.generic_arguments.accept(visitor, false),
+            Self::Pointer(pointer) => pointer.pointee.accept(visitor, false),
 
             Self::Reference(reference) => {
-                reference.pointee.accept(visitor, sub_structural_visit);
-                reference.lifetime.accept(visitor, sub_structural_visit);
+                reference.pointee.accept(visitor, false);
+                reference.lifetime.accept(visitor, false);
             }
             Self::Array(array) => {
-                array.element.accept(visitor, sub_structural_visit);
-                array.length.accept(visitor, sub_structural_visit);
+                array.element.accept(visitor, false);
+                array.length.accept(visitor, false);
             }
             Self::TraitMember(trait_member) => {
-                visit_generic_arguments(&trait_member.member_generic_arguments, visitor);
-                visit_generic_arguments(&trait_member.trait_generic_arguments, visitor);
+                trait_member.member_generic_arguments.accept(visitor, false);
+                trait_member.trait_generic_arguments.accept(visitor, false);
             }
-            Self::Tuple(tuple) => visit_tuple(tuple, visitor),
-            Self::Local(local) => local.0.accept(visitor, sub_structural_visit),
+            Self::Tuple(tuple) => tuple.accept(visitor, false),
+            Self::Local(local) => local.0.accept(visitor, false),
         }
     }
 }
@@ -140,34 +136,46 @@ impl<S: Model> Element for Constant<S> {
         }
 
         match self {
-            Self::Error | Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
+            Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
             Self::Struct(val) => {
-                visit_generic_arguments(&val.generic_arguments, visitor);
+                val.generic_arguments.accept(visitor, false);
 
                 for field in &val.fields {
-                    field.accept(visitor, sub_structural_visit);
+                    field.accept(visitor, false);
                 }
             }
             Self::Enum(val) => {
-                visit_generic_arguments(&val.generic_arguments, visitor);
+                val.generic_arguments.accept(visitor, false);
 
                 if let Some(val) = &val.associated_value {
-                    val.accept(visitor, sub_structural_visit);
+                    val.accept(visitor, false);
                 }
             }
             Self::Array(array) => {
                 for element in &array.elements {
-                    element.accept(visitor, sub_structural_visit);
+                    element.accept(visitor, false);
                 }
             }
             Self::TraitMember(trait_member) => {
-                visit_generic_arguments(&trait_member.trait_arguments, visitor);
+                trait_member.trait_generic_arguments.accept(visitor, false);
+                trait_member
+                    .constant_generic_arguments
+                    .accept(visitor, false);
             }
             Self::Local(local) => {
-                local.0.accept(visitor, sub_structural_visit);
+                local.0.accept(visitor, false);
             }
             Self::Tuple(tuple) => {
-                visit_tuple(tuple, visitor);
+                tuple.accept(visitor, false);
+            }
+            Self::Symbol(symbol) => {
+                symbol.generic_arguments.accept(visitor, false);
+            }
+            Self::Implementation(symbol) => {
+                symbol
+                    .implementation_generic_arguments
+                    .accept(visitor, false);
+                symbol.constant_generic_arguments.accept(visitor, false);
             }
         }
     }

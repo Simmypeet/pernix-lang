@@ -18,10 +18,8 @@ use crate::{
     semantic::term::{constant, r#type, GenericArguments},
     symbol::{
         self, Accessibility, Constant, Enum, Function, GenericDeclaration, GlobalID,
-        ImplementationConstant, ImplementationFunction, ImplementationMemberID,
-        ImplementationSignature, ImplementationType, Module, ModuleMemberID,
-        NegativeImplementation, Struct, Trait, TraitConstant, TraitFunction, TraitMemberID,
-        TraitType, Type, Variant,
+        ImplementationSignature, Module, ModuleMemberID, Struct, Trait, TraitConstant,
+        TraitFunction, TraitMemberID, TraitType, Type, Variant,
     },
     table::Index,
 };

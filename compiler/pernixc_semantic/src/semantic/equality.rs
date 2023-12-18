@@ -7,7 +7,7 @@ use super::{
     term::{constant::Constant, lifetime::Lifetime, r#type::Type},
     unification, Semantic, Term,
 };
-use crate::table::Table;
+use crate::table::{State, Table};
 
 /// Records object for the [`equals()`] query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -31,7 +31,7 @@ fn equals_by_mapping<
     lhs: &T,
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
 ) -> bool {
@@ -70,7 +70,7 @@ fn equals_by_normalization<
     lhs: &T,
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
 ) -> bool {
@@ -104,7 +104,7 @@ fn equals_by_unification<
     lhs: &T,
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
 ) -> bool {
@@ -150,7 +150,7 @@ pub(super) fn equals<
     lhs: &T,
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
-    table: &Table,
+    table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
 ) -> bool {

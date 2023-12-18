@@ -139,13 +139,15 @@ impl<T, Idx: Key> Arena<T, Idx> {
     pub fn get_mut(&mut self, id: Idx) -> Option<&mut T> { self.items.get_mut(id.into_index()) }
 
     /// Returns an iterator over the items in the [`Arena`].
-    pub fn iter(&self) -> impl Iterator<Item = &T> { self.items.iter() }
+    #[must_use]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &T> { self.items.iter() }
 
     /// Returns an mutable iterator over the items in the [`Arena`].
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> { self.items.iter_mut() }
+    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> { self.items.iter_mut() }
 
     /// Returns an iterator over the `Idx`s of the items in the [`Arena`].
-    pub fn keys(&self) -> impl Iterator<Item = Idx> {
+    #[must_use]
+    pub fn keys(&self) -> impl ExactSizeIterator<Item = Idx> {
         (0..self.items.len()).map(|i| Idx::from_index(i))
     }
 }
@@ -261,24 +263,27 @@ impl<T, Secondary: Hash + Eq, Primary: Key> Map<T, Secondary, Primary> {
     /// Returns an iterator over the items in the [`Map`].
     ///
     /// The order of the items is **not** maintained.
-    pub fn iter(&self) -> impl Iterator<Item = (&Secondary, &T)> {
+    #[must_use]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&Secondary, &T)> {
         self.items.iter().map(|(k, v)| (k, self.get(*v).unwrap()))
     }
 
     /// Returns an iterator over the keys in the [`Map`].
     ///
     /// The order of the keys is **not** maintained.
-    pub fn keys(&self) -> impl Iterator<Item = &Secondary> { self.items.keys() }
+    #[must_use]
+    pub fn keys(&self) -> impl ExactSizeIterator<Item = &Secondary> { self.items.keys() }
 
     /// Returns an iterator over the values in the [`Map`].
     ///
     /// The order of the values is maintained.
-    pub fn values(&self) -> impl Iterator<Item = &T> { self.arena.iter() }
+    #[must_use]
+    pub fn values(&self) -> impl ExactSizeIterator<Item = &T> { self.arena.iter() }
 
     /// Returns an mutable iterator over the items in the [`Map`].
     ///
     /// The order of the values is not maintained.
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> { self.arena.iter_mut() }
+    pub fn values_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> { self.arena.iter_mut() }
 }
 
 impl<T, K: Eq + Hash, Idx: Key> Default for Map<T, K, Idx> {

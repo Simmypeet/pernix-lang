@@ -38,7 +38,6 @@ impl<T: Send + Sync> Storage<T> {
 impl<T: Send + Sync> Default for Storage<T> {
     fn default() -> Self { Self::new() }
 }
-
 impl<T: Send + Sync, U> Handler<U> for Storage<T>
 where
     U: Into<T>,
