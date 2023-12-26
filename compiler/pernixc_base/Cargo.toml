@@ -11,7 +11,21 @@ description = { workspace = true }
 derive_more = { workspace = true }
 getset = { workspace = true }
 tempfile = { workspace = true }
-memmap = { workspace = true }
+memmap2 = { workspace = true }
 ouroboros = { workspace = true }
 thiserror = { workspace = true }
 derive-new = { workspace = true }
+parking_lot = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
+missing_copy_implementations = "deny"
+missing_debug_implementations = "deny"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[lints.clippy]
+all = "deny"
+pedantic = "deny"
+nursery = "deny"

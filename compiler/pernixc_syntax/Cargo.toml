@@ -24,3 +24,6 @@ take_mut = { workspace = true }
 [dev-dependencies]
 pernixc_tests = { path = "../pernixc_tests" }
 proptest = { workspace = true }
+
+[lints]
+workspace = true

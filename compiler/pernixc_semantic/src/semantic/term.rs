@@ -1,307 +1,243 @@
-//! Contains all the declarations of the semantic terms.
+//! Contains the three fundamental terms of the language: [`Type`], [`Constant`], and [`Lifetime`].
 
-use std::{fmt::Debug, hash::Hash};
-
+use constant::Constant;
 use enum_as_inner::EnumAsInner;
+use lifetime::Lifetime;
+use r#type::Type;
 
-use self::{constant::Constant, lifetime::Lifetime, r#type::Type};
-use super::{
-    definite, equality,
-    map::Map,
-    model::{Entity, Model},
-    predicate::Premises,
-    session::Session,
-    substitution::{Substitute, Substitution},
-    unification::{self, Config},
-    visitor::Element,
-    Semantic,
-};
-use crate::table::{State, Table};
+use super::mapping::Map;
 
 pub mod constant;
 pub mod lifetime;
 pub mod r#type;
+/// Represents a generic arguments supplied to a term (i.e., `type[ARGS]`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct GenericArguments {
+    /// The lifetimes supplied to the term.
+    pub lifetimes: Vec<Lifetime>,
 
-/// A trait implemented by `Type`, `Constant` and `Lifetime` providing a common interface for
-/// processing the terms.
-pub trait Term:
-    Eq
-    + Hash
-    + Clone
-    + Debug
-    + Element<Model = <Self as Term>::Model>
-    + Map<Model = <Self as Term>::Model>
-    + Substitute<Model = <Self as Term>::Model>
-{
-    /// The model in which the term is defined.
-    type Model: Model;
-
-    /// Normalizes the given term to its canonical form.
-    ///
-    /// Normally, this used fro normalizing the trait-member term to its implementation.
-    fn normalize<
-        S: Semantic<Self>
-            + Semantic<Type<<Self as Term>::Model>>
-            + Semantic<Constant<<Self as Term>::Model>>
-            + Semantic<Lifetime<<Self as Term>::Model>>,
-        R: Session<Self>
-            + Session<Type<<Self as Term>::Model>>
-            + Session<Constant<<Self as Term>::Model>>
-            + Session<Lifetime<<Self as Term>::Model>>,
-    >(
-        &self,
-        premises: &Premises<<Self as Term>::Model>,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut R,
-    ) -> Option<Self> {
-        semantic.normalize(self, premises, table, session)
-    }
-
-    /// Checks if the term is *definite*.
-    fn definite<
-        S: Semantic<Self>
-            + Semantic<Type<<Self as Term>::Model>>
-            + Semantic<Constant<<Self as Term>::Model>>
-            + Semantic<Lifetime<<Self as Term>::Model>>,
-        R: Session<Self>
-            + Session<Type<<Self as Term>::Model>>
-            + Session<Constant<<Self as Term>::Model>>
-            + Session<Lifetime<<Self as Term>::Model>>,
-    >(
-        &self,
-        premises: &Premises<<Self as Term>::Model>,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut R,
-    ) -> bool {
-        definite::definite(self, premises, table, semantic, session)
-    }
-
-    /// Unifies the given two terms.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the given terms cannot be unified.
-    fn unify<
-        C: Config<Self>
-            + Config<Type<<Self as Term>::Model>>
-            + Config<Constant<<Self as Term>::Model>>
-            + Config<Lifetime<<Self as Term>::Model>>,
-        S: Semantic<Self>
-            + Semantic<Type<<Self as Term>::Model>>
-            + Semantic<Constant<<Self as Term>::Model>>
-            + Semantic<Lifetime<<Self as Term>::Model>>,
-        R: Session<Self>
-            + Session<Type<<Self as Term>::Model>>
-            + Session<Constant<<Self as Term>::Model>>
-            + Session<Lifetime<<Self as Term>::Model>>,
-    >(
-        &self,
-        rhs: &Self,
-        premises: &Premises<<Self as Term>::Model>,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut R,
-        config: &mut C,
-    ) -> Option<Substitution<<Self as Term>::Model>> {
-        unification::unify(self, rhs, premises, table, semantic, session, config).ok()
-    }
-
-    /// Sub-structurally unifies the given two terms.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the given terms cannot be sub-structurally unified.
-    fn sub_structural_unify<
-        C: Config<Self>
-            + Config<Type<<Self as Term>::Model>>
-            + Config<Constant<<Self as Term>::Model>>
-            + Config<Lifetime<<Self as Term>::Model>>,
-        S: Semantic<Self>
-            + Semantic<Type<<Self as Term>::Model>>
-            + Semantic<Constant<<Self as Term>::Model>>
-            + Semantic<Lifetime<<Self as Term>::Model>>,
-        R: Session<Self>
-            + Session<Type<<Self as Term>::Model>>
-            + Session<Constant<<Self as Term>::Model>>
-            + Session<Lifetime<<Self as Term>::Model>>,
-    >(
-        &self,
-        rhs: &Self,
-        premises: &Premises<<Self as Term>::Model>,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut R,
-        config: &mut C,
-    ) -> Option<Substitution<<Self as Term>::Model>> {
-        unification::sub_structural_unify(self, rhs, premises, table, semantic, session, config)
-            .ok()
-    }
-
-    /// Checks if the other term is equal to this term.
-    fn equals<
-        S: Semantic<Self>
-            + Semantic<Type<<Self as Term>::Model>>
-            + Semantic<Constant<<Self as Term>::Model>>
-            + Semantic<Lifetime<<Self as Term>::Model>>,
-        R: Session<Self>
-            + Session<Type<<Self as Term>::Model>>
-            + Session<Constant<<Self as Term>::Model>>
-            + Session<Lifetime<<Self as Term>::Model>>,
-    >(
-        &self,
-        other: &Self,
-        premises: &Premises<<Self as Term>::Model>,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut R,
-    ) -> bool {
-        equality::equals(self, other, premises, table, semantic, session)
-    }
+    /// The types supplied to the term.
+    pub types: Vec<Type>,
+    /// The constants supplied to the term.
+    pub constants: Vec<Constant>,
 }
 
-/// Represents a list of generic arguments supplied to a particular generic symbol.
+/// Represents a term where its value is stored as a symbol (i.e., `type` or `const` declaration).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Symbol<ID> {
+    /// The ID of the symbol that contains the value of the term.
+    pub id: ID,
+
+    /// The generic arguments supplied to the symbol.
+    pub generic_arguments: GenericArguments,
+}
+
+/// Represents a term where its value is stored as a member of a particular symbol
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MemberSymbol<ID> {
+    /// The ID of the symbol that contains the value of the term.
+    pub id: ID,
+
+    /// The generic arguments supplied to the member.
+    pub member_generic_arguments: GenericArguments,
+
+    /// The generic arguments supplied to the parent scope.
+    pub parent_generic_arguments: GenericArguments,
+}
+
+/// Represents a single element of a tuple.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum TupleElement<Term> {
+    /// A regular term.
+    Regular(Term),
+
+    /// A term that can be unpacked into multiple terms.
+    Unpacked(Term),
+}
+
+/// Represents a tuple of terms.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct GenericArguments<S: Model> {
-    /// List of lifetime arguments.
-    pub lifetimes: Vec<Lifetime<S>>,
-
-    /// List of type arguments.
-    pub types: Vec<Type<S>>,
-
-    /// List of constant arguments.
-    pub constants: Vec<Constant<S>>,
-}
-
-impl<S: Model> Entity for GenericArguments<S> {
-    type Model = S;
-    type Rebind<A: Model> = GenericArguments<A>;
-
-    fn into_other_model<T: Model>(self) -> Self::Rebind<T>
-    where
-        S::ConstantInference: Into<T::ConstantInference>,
-        S::TypeInference: Into<T::TypeInference>,
-        S::LifetimeInference: Into<T::LifetimeInference>,
-        S::ScopedLifetime: Into<T::ScopedLifetime>,
-    {
-        GenericArguments {
-            lifetimes: self
-                .lifetimes
-                .into_iter()
-                .map(Entity::into_other_model)
-                .collect(),
-            types: self
-                .types
-                .into_iter()
-                .map(Entity::into_other_model)
-                .collect(),
-            constants: self
-                .constants
-                .into_iter()
-                .map(Entity::into_other_model)
-                .collect(),
-        }
-    }
-
-    fn try_into_other_model<T: Model>(self) -> Option<Self::Rebind<T>>
-    where
-        S::ConstantInference: TryInto<T::ConstantInference>,
-        S::TypeInference: TryInto<T::TypeInference>,
-        S::LifetimeInference: TryInto<T::LifetimeInference>,
-        S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-    {
-        Some(GenericArguments {
-            lifetimes: self
-                .lifetimes
-                .into_iter()
-                .map(Entity::try_into_other_model)
-                .collect::<Option<_>>()?,
-            types: self
-                .types
-                .into_iter()
-                .map(Entity::try_into_other_model)
-                .collect::<Option<_>>()?,
-            constants: self
-                .constants
-                .into_iter()
-                .map(Entity::try_into_other_model)
-                .collect::<Option<_>>()?,
-        })
-    }
+pub struct Tuple<Term: Clone>
+where
+    Self: TryFrom<Term, Error = Term> + Into<Term>,
+{
+    /// The elements of the tuple.
+    pub elements: Vec<TupleElement<Term>>,
 }
 
 /// A type that can't never be instantiated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Never {}
 
-/// Represents a term that can be unpacked into multiple terms.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Unpacked<Parameter, TraitMember> {
-    /// Unpack from a parameter.
-    Parameter(Parameter),
-
-    /// Unpack from a trait member.
-    TraitMember(TraitMember),
-}
-
-/// Represents a single element of a tuple.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum TupleElement<Term, Parameter, TraitMember> {
-    /// A regular term.
-    Regular(Term),
-
-    /// A term that can be unpacked into multiple terms.
-    Unpacked(Unpacked<Parameter, TraitMember>),
-}
-
-/// Represents a tuple of terms.
+/// Represents a substructural matching between two terms.
+///
+/// See [`Term::substructural_match`] for more information.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Tuple<Term, Parameter, TraitMember>
+#[allow(missing_docs)]
+pub struct Substructural {
+    pub lifetimes: Vec<(Lifetime, Lifetime)>,
+    pub types: Vec<(Type, Type)>,
+    pub constants: Vec<(Constant, Constant)>,
+}
+
+/// Contains the functionality for determining the properties of a term.
+pub trait Term: Map + Sized + Clone {
+    /// Returns the matching substructural matches between `self` and `other`.
+    ///
+    /// # Example
+    ///
+    /// If `self` is `List[T, Map[U, V]]` and `other` is `List[A, B]`, then the
+    /// substructural matches are:
+    ///
+    /// - `T` and `A`
+    /// - `Map[U, V]` and `B`
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if the terms cannot be substructurally matched.
+    fn substructural_match(&self, other: &Self) -> Option<Substructural>;
+
+    #[doc(hidden)]
+    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)>;
+
+    #[doc(hidden)]
+    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)>;
+}
+
+impl<T: Term> Tuple<T>
 where
-    Self: Into<Term>,
-    Term: From<Parameter> + From<TraitMember>,
-    Parameter: Clone + TryFrom<Term, Error = Term>,
-    TraitMember: Clone + TryFrom<Term, Error = Term>,
+    Self: TryFrom<T, Error = T> + Into<T>,
 {
-    /// The elements of the tuple.
-    pub elements: Vec<TupleElement<Term, Parameter, TraitMember>>,
-}
+    fn substructural_match<'a>(mut self: &'a Self, mut other: &'a Self) -> Option<Substructural> {
+        fn push<T: Term>(lhs: T, rhs: T, existing: &mut Substructural, swap: bool) {
+            if swap {
+                T::get_substructural_mut(existing).push((rhs, lhs));
+            } else {
+                T::get_substructural_mut(existing).push((lhs, rhs));
+            }
+        }
 
-impl<M: Model> GenericArguments<M> {
-    /// Applies the given substitution to the generic arguments.
-    pub fn apply(&mut self, substitution: &Substitution<M>) {
-        self.lifetimes
-            .iter_mut()
-            .for_each(|x| x.apply(substitution));
-        self.types.iter_mut().for_each(|x| x.apply(substitution));
-        self.constants
-            .iter_mut()
-            .for_each(|x| x.apply(substitution));
-    }
+        let lhs_unpacked_count = self.elements.iter().filter(|x| x.is_unpacked()).count();
+        let rhs_unpacked_count = other.elements.iter().filter(|x| x.is_unpacked()).count();
 
-    /// Checks if all the terms in the generic arguments are definite.
-    #[must_use]
-    pub fn is_definite<
-        S: Semantic<Type<M>> + Semantic<Constant<M>> + Semantic<Lifetime<M>>,
-        R: Session<Type<M>> + Session<Constant<M>> + Session<Lifetime<M>>,
-    >(
-        &self,
-        premises: &Premises<M>,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut R,
-    ) -> bool {
-        self.lifetimes
+        let swap = match (lhs_unpacked_count, rhs_unpacked_count) {
+            (1, _) => false,
+            (_, 1) => true,
+
+            (lhs_length, rhs_length) => {
+                let mut result = Substructural::default();
+                if lhs_length != rhs_length {
+                    return None;
+                }
+
+                for (lhs, rhs) in self.elements.iter().zip(other.elements.iter()) {
+                    match (lhs, rhs) {
+                        (TupleElement::Regular(lhs), TupleElement::Regular(rhs))
+                        | (TupleElement::Unpacked(lhs), TupleElement::Unpacked(rhs)) => {
+                            T::get_substructural_mut(&mut result).push((lhs.clone(), rhs.clone()));
+                        }
+
+                        _ => return None,
+                    }
+                }
+
+                return Some(result);
+            }
+        };
+
+        let mut existing = Substructural::default();
+        if swap {
+            std::mem::swap(&mut self, &mut other);
+        }
+
+        if self.elements.len() > other.elements.len() + 1 {
+            return None;
+        }
+
+        let unpacked_position = self
+            .elements
             .iter()
-            .all(|x| x.definite(premises, table, semantic, session))
-            && self
-                .types
-                .iter()
-                .all(|x| x.definite(premises, table, semantic, session))
-            && self
-                .constants
-                .iter()
-                .all(|x| x.definite(premises, table, semantic, session))
+            .position(TupleElement::is_unpacked)
+            .unwrap();
+
+        let head_range = 0..unpacked_position;
+        let self_tail_range = (unpacked_position + 1)..self.elements.len();
+        let other_tail_range =
+            (other.elements.len() - self_tail_range.clone().count())..other.elements.len();
+        let other_unpack_range = unpacked_position..other_tail_range.start;
+
+        // unify head
+        for (self_element, other_element) in self.elements[head_range.clone()]
+            .iter()
+            .zip(&other.elements[head_range])
+        {
+            let self_element = self_element.as_regular().unwrap();
+            let other_element = other_element.as_regular().unwrap();
+
+            push(
+                self_element.clone(),
+                other_element.clone(),
+                &mut existing,
+                swap,
+            );
+        }
+
+        // unify tail
+        for (self_element, other_element) in self.elements[self_tail_range]
+            .iter()
+            .zip(&other.elements[other_tail_range])
+        {
+            let self_element = self_element.as_regular().unwrap();
+            let other_element = other_element.as_regular().unwrap();
+
+            push(
+                self_element.clone(),
+                other_element.clone(),
+                &mut existing,
+                swap,
+            );
+        }
+
+        let other_unpack = Self {
+            elements: other.elements[other_unpack_range].to_vec(),
+        }
+        .into();
+
+        let unpacked = self.elements[unpacked_position].as_unpacked().unwrap();
+        push(unpacked.clone(), other_unpack, &mut existing, swap);
+
+        Some(existing)
     }
 }
+
+impl GenericArguments {
+    fn substructural_match(
+        &self,
+        other: &Self,
+        mut existing: Substructural,
+    ) -> Option<Substructural> {
+        if self.lifetimes.len() != other.lifetimes.len()
+            || self.types.len() != other.types.len()
+            || self.constants.len() != other.constants.len()
+        {
+            return None;
+        }
+
+        for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
+            existing.lifetimes.push((*lhs, *rhs));
+        }
+
+        for (lhs, rhs) in self.types.iter().zip(&other.types) {
+            existing.types.push((lhs.clone(), rhs.clone()));
+        }
+
+        for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
+            existing.constants.push((lhs.clone(), rhs.clone()));
+        }
+
+        Some(existing)
+    }
+}
+
+#[cfg(test)]
+mod tests;

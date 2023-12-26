@@ -11,12 +11,12 @@ use crate::{
         term::{
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{Algebraic, Primitive, Tuple, Type},
-            GenericArguments, Term, TupleElement, Unpacked,
+            r#type::{Primitive, SymbolKindID, Tuple, Type},
+            GenericArguments, Symbol, Term, TupleElement, Unpacked,
         },
     },
-    symbol::{semantic::Symbolic, AlgebraicKind, GenericID, TypeParameterID},
-    table::Table,
+    symbol::{semantic::Symbolic, GenericID, TypeParameterID},
+    table::{Success, Table},
 };
 
 #[test]
@@ -70,14 +70,14 @@ fn tuple_test() {
         ))],
     });
 
-    let table = Table::default();
+    let table = Table::<Success>::default();
 
     let sub = lhs
         .unify(
             &rhs,
             &premises,
             &table,
-            &mut semantic::Default,
+            &semantic::Default,
             &mut session::Default::default(),
             &mut VariableConfig,
         )
@@ -94,7 +94,7 @@ fn tuple_test() {
             &Type::Primitive(Primitive::Int32),
             &premises,
             &table,
-            &mut semantic::Default,
+            &semantic::Default,
             &mut session::Default::default(),
         ));
 
@@ -114,16 +114,15 @@ fn tuple_test() {
             }),
             &premises,
             &table,
-            &mut semantic::Default,
+            &semantic::Default,
             &mut session::Default::default(),
         ));
 }
 
 #[test]
-fn recursive_term_test() {
+fn infinite_recrusion_test() {
     /*
     ?0 = Enum0(?0)
-    ?0 = bool
      */
 
     let equalities = [(
@@ -131,8 +130,8 @@ fn recursive_term_test() {
             parent: GenericID::Enum(ID::new(0)),
             id: ID::new(0),
         })),
-        (Type::Algebraic(Algebraic {
-            kind: AlgebraicKind::Enum(ID::new(0)),
+        (Type::Symbol(Symbol {
+            id: SymbolKindID::Enum(ID::new(0)),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Parameter(TypeParameterID {
@@ -149,14 +148,79 @@ fn recursive_term_test() {
         mapping: Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty()),
     };
 
-    let table = Table::default();
+    let table = Table::<Success>::default();
 
-    let mut lhs = Type::Algebraic(Algebraic {
-        kind: AlgebraicKind::Enum(ID::new(0)),
+    let lhs = Type::Symbol(Symbol {
+        id: SymbolKindID::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
-            types: vec![Type::Algebraic(Algebraic {
-                kind: AlgebraicKind::Enum(ID::new(0)),
+            types: vec![Type::Symbol(Symbol {
+                id: SymbolKindID::Enum(ID::new(0)),
+                generic_arguments: GenericArguments {
+                    lifetimes: Vec::new(),
+                    types: vec![Type::Primitive(Primitive::Bool)],
+                    constants: Vec::new(),
+                },
+            })],
+            constants: Vec::new(),
+        },
+    });
+
+    let rhs = Type::Parameter(TypeParameterID {
+        parent: GenericID::Enum(ID::new(0)),
+        id: ID::new(0),
+    });
+
+    assert!(lhs
+        .unify(
+            &rhs,
+            &premises,
+            &table,
+            &semantic::Default,
+            &mut session::Default::default(),
+            &mut VariableConfig,
+        )
+        .is_none());
+}
+
+#[test]
+fn recursive_term_test() {
+    /*
+    ?0 = Enum0(?0)
+    ?0 = bool
+     */
+
+    let equalities = [(
+        (Type::Parameter(TypeParameterID {
+            parent: GenericID::Enum(ID::new(0)),
+            id: ID::new(0),
+        })),
+        (Type::Symbol(Symbol {
+            id: SymbolKindID::Enum(ID::new(0)),
+            generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![Type::Parameter(TypeParameterID {
+                    parent: GenericID::Enum(ID::new(0)),
+                    id: ID::new(0),
+                })],
+                constants: Vec::new(),
+            },
+        })),
+    )];
+
+    let premises: Premises<Symbolic> = Premises {
+        non_equality_predicates: Vec::new(),
+        mapping: Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty()),
+    };
+
+    let table = Table::<Success>::default();
+
+    let mut lhs = Type::Symbol(Symbol {
+        id: SymbolKindID::Enum(ID::new(0)),
+        generic_arguments: GenericArguments {
+            lifetimes: Vec::new(),
+            types: vec![Type::Symbol(Symbol {
+                id: SymbolKindID::Enum(ID::new(0)),
                 generic_arguments: GenericArguments {
                     lifetimes: Vec::new(),
                     types: vec![Type::Parameter(TypeParameterID {
@@ -180,7 +244,7 @@ fn recursive_term_test() {
             &rhs,
             &premises,
             &table,
-            &mut semantic::Default,
+            &semantic::Default,
             &mut session::Default::default(),
             &mut VariableConfig,
         )
@@ -201,7 +265,7 @@ fn recursive_term_test() {
         }),
         &premises,
         &table,
-        &mut semantic::Default,
+        &semantic::Default,
         &mut session::Default::default(),
     ));
 
@@ -209,7 +273,7 @@ fn recursive_term_test() {
         &rhs,
         &premises,
         &table,
-        &mut semantic::Default,
+        &semantic::Default,
         &mut session::Default::default(),
     ));
 
@@ -220,7 +284,7 @@ fn recursive_term_test() {
         &rhs,
         &premises,
         &table,
-        &mut semantic::Default,
+        &semantic::Default,
         &mut session::Default::default(),
     ));
 }
@@ -232,8 +296,8 @@ fn unification_conflict() {
             parent: GenericID::Enum(ID::new(0)),
             id: ID::new(0),
         }),
-        Type::Algebraic(Algebraic {
-            kind: AlgebraicKind::Enum(ID::new(0)),
+        Type::Symbol(Symbol {
+            id: SymbolKindID::Enum(ID::new(0)),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![
@@ -256,10 +320,10 @@ fn unification_conflict() {
         mapping: Mapping::from_pairs(std::iter::empty(), equalities, std::iter::empty()),
     };
 
-    let table = Table::default();
+    let table = Table::<Success>::default();
 
-    let lhs = Type::Algebraic(Algebraic {
-        kind: AlgebraicKind::Enum(ID::new(0)),
+    let lhs = Type::Symbol(Symbol {
+        id: SymbolKindID::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![
@@ -285,7 +349,7 @@ fn unification_conflict() {
             &rhs,
             &premises,
             &table,
-            &mut semantic::Default,
+            &semantic::Default,
             &mut session::Default::default(),
             &mut VariableConfig
         )

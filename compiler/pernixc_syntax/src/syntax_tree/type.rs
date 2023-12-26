@@ -1,3 +1,7 @@
+//! Contains all definition of type syntax trees.
+
+#![allow(missing_docs)]
+
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_base::{

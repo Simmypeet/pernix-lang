@@ -1,3 +1,7 @@
+//! Contains all definition of item syntax trees.
+
+#![allow(missing_docs)]
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;

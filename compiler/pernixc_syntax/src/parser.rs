@@ -23,7 +23,7 @@ pub enum TokenProvider<'a> {
 impl<'a> TokenProvider<'a> {
     /// Gets the token stream of the current token provider.
     #[must_use]
-    pub fn token_stream(&self) -> &'a TokenStream {
+    pub const fn token_stream(&self) -> &'a TokenStream {
         match self {
             TokenProvider::TokenStream(token_stream) => token_stream,
             TokenProvider::Delimited(delimited) => &delimited.token_stream,
@@ -349,7 +349,7 @@ pub struct DelimitedTree<T> {
 impl<'a> Parser<'a> {
     /// Creates a new parser from the given token stream.
     #[must_use]
-    pub fn new(token_stream: &'a TokenStream) -> Self {
+    pub const fn new(token_stream: &'a TokenStream) -> Self {
         Self {
             current_frame: Frame {
                 token_provider: TokenProvider::TokenStream(token_stream),

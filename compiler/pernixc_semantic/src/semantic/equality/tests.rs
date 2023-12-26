@@ -1,567 +1,376 @@
+use std::fmt::Debug;
+
+use proptest::{
+    arbitrary::Arbitrary,
+    prop_assert, prop_oneof, proptest,
+    strategy::{BoxedStrategy, Strategy},
+    test_runner::TestCaseError,
+};
+
+use super::equals;
 use crate::{
     arena::ID,
     semantic::{
         self,
-        map::Mapping,
-        predicate::Premises,
+        mapping::{self, Map},
         session,
         term::{
-            r#type::{Algebraic, Primitive, Type},
-            GenericArguments, Term,
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{Primitive, SymbolKindID, Type},
+            GenericArguments, Symbol, Term,
         },
+        Premise, Semantic,
     },
-    symbol::{semantic::Symbolic, AlgebraicKind, GenericID, TypeParameterID},
-    table::Table,
+    table::{Success, Table},
 };
 
-/*
-0? != 1?
- */
 #[test]
-fn not_equal_test() {
-    let pair = (
-        Type::Parameter(TypeParameterID {
-            parent: GenericID::Enum(ID::new(0)),
-            id: ID::new(0),
-        }),
-        Type::Parameter(TypeParameterID {
-            parent: GenericID::Enum(ID::new(0)),
-            id: ID::new(1),
-        }),
-    );
-    let premises = Premises {
-        non_equality_predicates: Vec::new(),
-        mapping: Mapping::from_pairs(
-            std::iter::empty(),
-            std::iter::once(pair),
-            std::iter::empty(),
-        ),
+fn reflexive() {
+    let premise = Premise {
+        equalities_mapping: mapping::Mapping::default(),
     };
+    let table = Table::<Success>::default();
 
-    let table = Table::default();
+    let term = Type::Primitive(Primitive::Bool);
 
-    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(0),
-    });
-    let rhs: Type<Symbolic> = Type::Primitive(Primitive::Float32);
-
-    assert!(!lhs.equals(
-        &rhs,
-        &premises,
+    assert!(equals(
+        &term,
+        &term,
+        &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
+        &mut session::Default::default(),
     ));
-    assert!(!rhs.equals(
-        &lhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    )); // symmetric
 }
 
-/*
-Suppose:
-10? = 20?
-1? = 10?
-2? = 20?
-
-Then:
-1? = 2?
- */
 #[test]
-fn transitivity_test() {
-    let pairs = [
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(10),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(20),
-            }),
+fn symmetric() {
+    let premise = Premise {
+        equalities_mapping: mapping::Mapping::from_pairs(
+            std::iter::empty(),
+            std::iter::once((
+                Type::Primitive(Primitive::Bool),
+                Type::Primitive(Primitive::Float32),
+            )),
+            std::iter::empty(),
         ),
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(1),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(10),
-            }),
-        ),
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(2),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(20),
-            }),
-        ),
-    ];
-    let premises: Premises<Symbolic> = Premises {
-        non_equality_predicates: Vec::new(),
-        mapping: Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty()),
     };
+    let table = Table::<Success>::default();
+    let lhs = Type::Primitive(Primitive::Bool);
+    let rhs = Type::Primitive(Primitive::Float32);
 
-    let table = Table::default();
-
-    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(1),
-    });
-    let rhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(2),
-    });
-
-    assert!(lhs.equals(
-        &rhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    ));
-    assert!(rhs.equals(
+    assert!(equals(
         &lhs,
-        &premises,
+        &rhs,
+        &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
-    )); // symmetric
+        &mut session::Default::default(),
+    ));
+    assert!(equals(
+        &rhs,
+        &lhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default(),
+    ));
+}
+#[test]
+fn transitivity() {
+    let premise = Premise {
+        equalities_mapping: mapping::Mapping::from_pairs(
+            std::iter::empty(),
+            [
+                (
+                    Type::Primitive(Primitive::Bool),
+                    Type::Primitive(Primitive::Float32),
+                ),
+                (
+                    Type::Primitive(Primitive::Float32),
+                    Type::Primitive(Primitive::Float64),
+                ),
+            ],
+            std::iter::empty(),
+        ),
+    };
+    let table = Table::<Success>::default();
+    let lhs = Type::Primitive(Primitive::Bool);
+    let rhs = Type::Primitive(Primitive::Float64);
+
+    assert!(equals(
+        &lhs,
+        &rhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default(),
+    ));
+    assert!(equals(
+        &rhs,
+        &lhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default(),
+    ));
 }
 
-/*
-
-suppose:
-a = c(a, b)
-
-then:
- a = c(a, b) = c(c(a, b), b) = c(c(c(a, b), b), b) = ...
-*/
-
 #[test]
-fn recursive_term_test() {
-    let pair = (
-        (Type::Parameter(TypeParameterID {
-            parent: GenericID::Enum(ID::new(0)),
-            id: ID::new(0),
-        })),
-        (Type::Algebraic(Algebraic {
-            kind: AlgebraicKind::Enum(ID::new(0)),
-            generic_arguments: GenericArguments {
-                lifetimes: Vec::new(),
-                types: vec![
-                    Type::Parameter(TypeParameterID {
-                        parent: GenericID::Enum(ID::new(0)),
-                        id: ID::new(0),
-                    }),
-                    Type::Parameter(TypeParameterID {
-                        parent: GenericID::Enum(ID::new(0)),
-                        id: ID::new(1),
-                    }),
-                ],
-                constants: Vec::new(),
-            },
-        })),
-    );
-
-    let premises: Premises<Symbolic> = Premises {
-        non_equality_predicates: Vec::new(),
-        mapping: Mapping::from_pairs(
+fn congruence() {
+    let premise = Premise {
+        equalities_mapping: mapping::Mapping::from_pairs(
             std::iter::empty(),
-            std::iter::once(pair),
+            [
+                (
+                    Type::Primitive(Primitive::Int32),
+                    Type::Primitive(Primitive::Float32),
+                ),
+                (
+                    Type::Primitive(Primitive::Int64),
+                    Type::Primitive(Primitive::Float64),
+                ),
+            ],
             std::iter::empty(),
         ),
     };
-
-    // ?0 = Enum0(?0, ?1)
-
-    let table = Table::default();
-
-    // will 0? = Enum0(Enum0(0?, 1?), 1?) ?
-
-    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(0),
-    });
-    let rhs: Type<Symbolic> = Type::Algebraic(Algebraic {
-        kind: AlgebraicKind::Enum(ID::new(0)),
+    let table = Table::<Success>::default();
+    let lhs = Type::Symbol(Symbol {
+        id: SymbolKindID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![
-                Type::Algebraic(Algebraic {
-                    kind: AlgebraicKind::Enum(ID::new(0)),
-                    generic_arguments: GenericArguments {
-                        lifetimes: Vec::new(),
-                        types: vec![
-                            Type::Parameter(TypeParameterID {
-                                parent: GenericID::Enum(ID::new(0)),
-                                id: ID::new(0),
-                            }),
-                            Type::Parameter(TypeParameterID {
-                                parent: GenericID::Enum(ID::new(0)),
-                                id: ID::new(1),
-                            }),
-                        ],
-                        constants: Vec::new(),
-                    },
-                }),
-                Type::Parameter(TypeParameterID {
-                    parent: GenericID::Enum(ID::new(0)),
-                    id: ID::new(1),
-                }),
+                Type::Primitive(Primitive::Int32),
+                Type::Primitive(Primitive::Int64),
+            ],
+            constants: Vec::new(),
+        },
+    });
+    let rhs = Type::Symbol(Symbol {
+        id: SymbolKindID::Struct(ID::new(0)),
+        generic_arguments: GenericArguments {
+            lifetimes: Vec::new(),
+            types: vec![
+                Type::Primitive(Primitive::Float32),
+                Type::Primitive(Primitive::Float64),
             ],
             constants: Vec::new(),
         },
     });
 
-    assert!(lhs.equals(
-        &rhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    ));
-    assert!(rhs.equals(
+    assert!(equals(
         &lhs,
-        &premises,
+        &rhs,
+        &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
-    )); // symmetric
+        &mut session::Default::default(),
+    ));
+    assert!(equals(
+        &rhs,
+        &lhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default(),
+    ));
 }
 
-/*
-Suppose:
-0? = 1? = 2? = 3?
-1? = 4?
+/// A trait for generating term for checking equality.
+pub trait Property<T>: 'static + Debug {
+    /// Determines whether this property requires [`Self::apply`] to be called in order to make the
+    /// terms equal.
+    fn requires_environment(&self) -> bool;
 
-Then:
- 0? = 2?
- */
+    /// Applies this property to the environment.
+    ///
+    /// # Returns
+    ///
+    /// Returns `false` if failed to apply the environment to the
+    #[must_use]
+    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool;
 
-#[test]
-fn more_transitivity_test() {
-    let pairs = [
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(0),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(1),
-            }),
-        ),
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(1),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(2),
-            }),
-        ),
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(1),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(4),
-            }),
-        ),
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(2),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(3),
-            }),
-        ),
-    ];
-
-    let premises: Premises<Symbolic> = Premises {
-        non_equality_predicates: Vec::new(),
-        mapping: Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty()),
-    };
-
-    let table = Table::default();
-
-    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(0),
-    });
-
-    let rhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(3),
-    });
-
-    assert!(lhs.equals(
-        &rhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    ));
-    assert!(rhs.equals(
-        &lhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    )); // symmetric
-
-    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(0),
-    });
-
-    let rhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(3),
-    });
-
-    assert!(lhs.equals(
-        &rhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    ));
-    assert!(rhs.equals(
-        &lhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    )); // symmetric
+    /// Generates the term for testing.
+    fn generate(&self) -> (T, T);
 }
 
-/*
-Suppose:
-0? = 1?
-2? = 3?
+impl Arbitrary for Box<dyn Property<Type>> {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
 
-Then:
-Enum(0?, 2?) = Enum(1?, 3?)
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-*/
-#[test]
-fn by_unification_test() {
-    let pairs = [
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(0),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(1),
-            }),
-        ),
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(2),
-            }),
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(3),
-            }),
-        ),
-    ];
-
-    let premises: Premises<Symbolic> = Premises {
-        non_equality_predicates: Vec::new(),
-        mapping: Mapping::from_pairs(std::iter::empty(), pairs, std::iter::empty()),
-    };
-
-    let table = Table::default();
-
-    let lhs: Type<Symbolic> = Type::Algebraic(Algebraic {
-        kind: AlgebraicKind::Enum(ID::new(0)),
-        generic_arguments: GenericArguments {
-            lifetimes: Vec::new(),
-            types: vec![
-                Type::Parameter(TypeParameterID {
-                    parent: GenericID::Enum(ID::new(0)),
-                    id: ID::new(0),
-                }),
-                Type::Parameter(TypeParameterID {
-                    parent: GenericID::Enum(ID::new(0)),
-                    id: ID::new(2),
-                }),
-            ],
-            constants: Vec::new(),
-        },
-    });
-
-    let rhs: Type<Symbolic> = Type::Algebraic(Algebraic {
-        kind: AlgebraicKind::Enum(ID::new(0)),
-        generic_arguments: GenericArguments {
-            lifetimes: Vec::new(),
-            types: vec![
-                Type::Parameter(TypeParameterID {
-                    parent: GenericID::Enum(ID::new(0)),
-                    id: ID::new(1),
-                }),
-                Type::Parameter(TypeParameterID {
-                    parent: GenericID::Enum(ID::new(0)),
-                    id: ID::new(3),
-                }),
-            ],
-            constants: Vec::new(),
-        },
-    });
-
-    assert!(lhs.equals(
-        &rhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    ));
-    assert!(rhs.equals(
-        &lhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    )); // symmetric
+        leaf.prop_recursive(128, 256, 2, |inner| {
+            prop_oneof![Mapping::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _)]
+        })
+        .boxed()
+    }
 }
 
-/*
-Suppose:
-0? = enum0(1?, 2?)
-0? = enum0(3?, 4?)
+impl Arbitrary for Box<dyn Property<Lifetime>> {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
 
-Then:
-1? != 3?
-2? != 4?
-*/
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-#[test]
-#[allow(clippy::too_many_lines)]
-fn fallacy_test() {
-    let equalities = [
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(0),
-            }),
-            Type::Algebraic(Algebraic {
-                kind: AlgebraicKind::Enum(ID::new(0)),
-                generic_arguments: GenericArguments {
-                    lifetimes: vec![],
-                    types: vec![
-                        Type::Parameter(TypeParameterID {
-                            parent: GenericID::Enum(ID::new(0)),
-                            id: ID::new(1),
-                        }),
-                        Type::Parameter(TypeParameterID {
-                            parent: GenericID::Enum(ID::new(0)),
-                            id: ID::new(2),
-                        }),
-                    ],
-                    constants: vec![],
-                },
-            }),
-        ),
-        (
-            Type::Parameter(TypeParameterID {
-                parent: GenericID::Enum(ID::new(0)),
-                id: ID::new(0),
-            }),
-            Type::Algebraic(Algebraic {
-                kind: AlgebraicKind::Enum(ID::new(0)),
-                generic_arguments: GenericArguments {
-                    lifetimes: vec![],
-                    types: vec![
-                        Type::Parameter(TypeParameterID {
-                            parent: GenericID::Enum(ID::new(0)),
-                            id: ID::new(3),
-                        }),
-                        Type::Parameter(TypeParameterID {
-                            parent: GenericID::Enum(ID::new(0)),
-                            id: ID::new(4),
-                        }),
-                    ],
-                    constants: vec![],
-                },
-            }),
-        ),
-    ];
+        leaf.prop_recursive(128, 256, 2, |inner| {
+            prop_oneof![Mapping::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _)]
+        })
+        .boxed()
+    }
+}
 
-    let premises: Premises<Symbolic> = Premises {
-        non_equality_predicates: Vec::new(),
-        mapping: Mapping::from_pairs(
-            std::iter::empty(),
-            equalities.iter().cloned(),
-            std::iter::empty(),
-        ),
-    };
+impl Arbitrary for Box<dyn Property<Constant>> {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
 
-    let table = Table::default();
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(1),
-    });
-    let rhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(3),
-    });
+        leaf.prop_recursive(128, 256, 2, |inner| {
+            prop_oneof![Mapping::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _)]
+        })
+        .boxed()
+    }
+}
 
-    assert!(!lhs.equals(
-        &rhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    ));
-    assert!(!rhs.equals(
-        &lhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    )); // symmetric
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Identity<T> {
+    term: T,
+}
 
-    let lhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(2),
-    });
+impl<T: Arbitrary> Arbitrary for Identity<T>
+where
+    T::Strategy: 'static,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
 
-    let rhs: Type<Symbolic> = Type::Parameter(TypeParameterID {
-        parent: GenericID::Enum(ID::new(0)),
-        id: ID::new(4),
-    });
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        T::arbitrary().prop_map(|term| Self { term }).boxed()
+    }
+}
 
-    assert!(!lhs.equals(
-        &rhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    ));
-    assert!(!rhs.equals(
-        &lhs,
-        &premises,
-        &table,
-        &mut semantic::Default,
-        &mut session::Default::default()
-    )); // symmetric
+impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
+    fn requires_environment(&self) -> bool { false }
+
+    fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> bool { true }
+
+    fn generate(&self) -> (T, T) { (self.term.clone(), self.term.clone()) }
+}
+
+#[derive(Debug)]
+pub struct Mapping<T> {
+    lhs: Box<dyn Property<T>>,
+    rhs: Box<dyn Property<T>>,
+}
+
+impl<T: 'static + Debug + Term> Arbitrary for Mapping<T>
+where
+    Box<dyn Property<T>>: Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+    semantic::Default: Semantic<T>,
+{
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let strat = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+
+        (strat.clone(), strat)
+            .prop_map(|(lhs, rhs)| Self { lhs, rhs })
+            .prop_filter("filter out the trivially equal case", |x| {
+                let (lhs, rhs) = x.generate();
+
+                !semantic::Default.trivially_equals(&lhs, &rhs)
+            })
+            .boxed()
+    }
+}
+
+impl<T: Term + Debug + 'static> Property<T> for Mapping<T> {
+    fn requires_environment(&self) -> bool { true }
+
+    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
+        if !self.lhs.apply(table, premise) || !self.rhs.apply(table, premise) {
+            return false;
+        };
+
+        let (_, l_rhs) = self.lhs.generate();
+        let (r_lhs, _) = self.rhs.generate();
+
+        <T as Map>::insert(&mut premise.equalities_mapping, l_rhs, r_lhs);
+
+        true
+    }
+
+    fn generate(&self) -> (T, T) {
+        let (l_lhs, _) = self.lhs.generate();
+        let (_, r_rhs) = self.rhs.generate();
+
+        (l_lhs, r_rhs)
+    }
+}
+
+proptest! {
+    #[test]
+    fn property_based_testing(
+        property in Box::<dyn Property<Type>>::arbitrary()
+    ) {
+        let (term1, term2) = property.generate();
+        let mut premise = Premise::default();
+        let mut table = Table::<Success>::default();
+
+        if property.requires_environment() {
+            // without premise the equality should not hold
+            prop_assert!(
+                !equals(
+                    &term1,
+                    &term2,
+                    &premise,
+                    &table,
+                    &mut semantic::Default,
+                    &mut session::Default::default()
+                )
+            );
+            prop_assert!(
+                !equals(
+                    &term2,
+                    &term1,
+                    &premise,
+                    &table,
+                    &mut semantic::Default,
+                    &mut session::Default::default()
+                )
+            );
+
+            if !property.apply(&mut table, &mut premise) {
+                // failed to apply the environment
+                return Err(TestCaseError::reject("failed to apply the environment"));
+            }
+        }
+
+        prop_assert!(
+            equals(
+                &term1,
+                &term2,
+                &premise,
+                &table,
+                &mut semantic::Default,
+                &mut session::Default::default()
+            )
+        );
+        prop_assert!(
+            equals(
+                &term2,
+                &term1,
+                &premise,
+                &table,
+                &mut semantic::Default,
+                &mut session::Default::default()
+            )
+        );
+    }
 }

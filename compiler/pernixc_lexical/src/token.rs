@@ -154,7 +154,7 @@ impl FromStr for KeywordKind {
 impl KeywordKind {
     /// Gets the string representation of the keyword as a `&str`.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::For => "for",
             Self::Function => "function",
@@ -224,7 +224,7 @@ pub enum Token {
 impl Token {
     /// Returns the span of the token.
     #[must_use]
-    pub fn span(&self) -> &Span {
+    pub const fn span(&self) -> &Span {
         match self {
             Self::WhiteSpaces(token) => &token.span,
             Self::Identifier(token) => &token.span,

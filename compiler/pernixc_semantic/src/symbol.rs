@@ -3,6 +3,7 @@
 use std::{
     collections::{HashMap, HashSet},
     convert::Into,
+    sync::Arc,
 };
 
 use derive_more::{Deref, DerefMut, From};
@@ -10,19 +11,10 @@ use enum_as_inner::EnumAsInner;
 use pernixc_base::source_file::Span;
 use pernixc_syntax::syntax_tree::AccessModifier;
 
-use self::semantic::Symbolic;
 use crate::{
     arena::{Arena, Map, ID},
-    semantic::{
-        model::Model,
-        pattern::Irrefutable,
-        predicate,
-        substitution::Substitution,
-        term::{constant, lifetime, r#type, GenericArguments, Never},
-    },
+    semantic::term::{constant, lifetime, r#type, GenericArguments, Never},
 };
-
-pub mod semantic;
 
 /// Represents an accessibility of a symbol.
 ///
@@ -52,7 +44,7 @@ pub enum Accessibility {
 impl Accessibility {
     /// Converts the [`AccessModifier`] to [`Accessibility`].
     #[must_use]
-    pub fn from_syntax_tree(syntax_tree: &AccessModifier) -> Self {
+    pub const fn from_syntax_tree(syntax_tree: &AccessModifier) -> Self {
         match syntax_tree {
             AccessModifier::Public(..) => Self::Public,
             AccessModifier::Private(..) => Self::Private,
@@ -64,7 +56,7 @@ impl Accessibility {
     ///
     /// The higher the number, the more accessible the accessibility is.
     #[must_use]
-    pub fn rank(&self) -> usize {
+    pub const fn rank(&self) -> usize {
         match self {
             Self::Private => 0,
             Self::Internal => 1,
@@ -77,7 +69,7 @@ impl Accessibility {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Predicate {
     /// The predicate itself.
-    pub predicate: predicate::Predicate<Symbolic>,
+    // pub predicate: predicate::Predicate<Symbolic>,
 
     /// Location of where the predicate is declared.
     pub span: Option<Span>,
@@ -195,7 +187,7 @@ pub trait Generic {
 }
 
 /// Represents a generic declaration containing generic parameters and predicates.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenericDeclaration {
     /// Generic parameters defined in the generic declaration.
     pub parameters: GenericParameters,
@@ -387,14 +379,14 @@ pub struct ConstantParameter {
     pub parent_generic_id: GenericID,
 
     /// The type of the constant parameter.
-    pub r#type: r#type::Type<Symbolic>,
+    pub r#type: Arc<r#type::Type>,
 
     /// The type of the constant parameter.
     pub span: Option<Span>,
 }
 
 /// Represents a list of generic parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.
     pub lifetimes: Arena<LifetimeParameter>,
@@ -415,86 +407,86 @@ pub struct GenericParameters {
     pub constant_parameter_ids_by_name: HashMap<String, ID<ConstantParameter>>,
 
     /// List of default type parameters to be used when the generic parameters are not specified.
-    pub default_type_parameters: Vec<r#type::Type<Symbolic>>,
+    pub default_type_parameters: Arc<[r#type::Type]>,
 
     /// List of default constant parameters to be used when the generic parameters are not
-    pub default_constant_parameters: Vec<constant::Constant<Symbolic>>,
+    pub default_constant_parameters: Arc<[constant::Constant]>,
 }
 
 impl GenericParameters {
     /// Creates a new [`GenericArguments`] that contains the generic parameters as its arguments.
     #[must_use]
-    pub fn create_identity_generic_arguments<S: Model>(
-        &self,
-        parent_generic_id: GenericID,
-    ) -> GenericArguments<S> {
+    pub fn create_identity_generic_arguments(&self, parent: GenericID) -> GenericArguments {
         GenericArguments {
-            types: (0..self.types.len())
-                .map(|idx| {
-                    r#type::Type::Parameter(TypeParameterID {
-                        parent: parent_generic_id,
-                        id: ID::new(idx),
+            lifetimes: {
+                (0..self.lifetimes.len())
+                    .map(|id| {
+                        lifetime::Lifetime::Parameter(LifetimeParameterID {
+                            parent,
+                            id: ID::new(id),
+                        })
                     })
-                })
-                .collect(),
-            lifetimes: (0..self.lifetimes.len())
-                .map(|idx| {
-                    lifetime::Lifetime::Parameter(LifetimeParameterID {
-                        parent: parent_generic_id,
-                        id: ID::new(idx),
+                    .collect::<Vec<_>>()
+            },
+            types: {
+                (0..self.types.len())
+                    .map(|id| {
+                        r#type::Type::Parameter(TypeParameterID {
+                            parent,
+                            id: ID::new(id),
+                        })
                     })
-                })
-                .collect(),
-            constants: (0..self.constants.len())
-                .map(|idx| {
-                    constant::Constant::Parameter(ConstantParameterID {
-                        parent: parent_generic_id,
-                        id: ID::new(idx),
+                    .collect::<Vec<_>>()
+            },
+            constants: {
+                (0..self.constants.len())
+                    .map(|id| {
+                        constant::Constant::Parameter(ConstantParameterID {
+                            parent,
+                            id: ID::new(id),
+                        })
                     })
-                })
-                .collect(),
+                    .collect::<Vec<_>>()
+            },
         }
     }
 
-    /// Creates a new [`Substitution`] that maps all the generic parameters to itself.
-    #[must_use]
-    pub fn create_identity_substitution<S: Model>(
-        &self,
-        parent_generic_id: GenericID,
-    ) -> Substitution<S> {
-        Substitution {
-            types: (0..self.types.len())
-                .map(|idx| {
-                    let type_parameter = r#type::Type::Parameter(TypeParameterID {
-                        parent: parent_generic_id,
-                        id: ID::new(idx),
-                    });
+    // Creates a new [`Substitution`] that maps all the generic parameters to itself.
+    // #[must_use]
+    // pub fn create_identity_substitution(&self, parent_generic_id: GenericID) -> Substitution {
+    //     Substitution {
+    //         types: (0..self.types.len())
+    //             .map(|idx| {
+    //                 let type_parameter = r#type::Type::Parameter(TypeParameterID {
+    //                     parent: parent_generic_id,
+    //                     id: ID::new(idx),
+    //                 });
 
-                    (type_parameter.clone(), type_parameter)
-                })
-                .collect(),
-            constants: (0..self.constants.len())
-                .map(|idx| {
-                    let constant_parameter = constant::Constant::Parameter(ConstantParameterID {
-                        parent: parent_generic_id,
-                        id: ID::new(idx),
-                    });
+    //                 (type_parameter.clone(), type_parameter)
+    //             })
+    //             .collect(),
+    //         constants: (0..self.constants.len())
+    //             .map(|idx| {
+    //                 let constant_parameter = constant::Constant::Parameter(ConstantParameterID {
+    //                     parent: parent_generic_id,
+    //                     id: ID::new(idx),
+    //                 });
 
-                    (constant_parameter.clone(), constant_parameter)
-                })
-                .collect(),
-            lifetimes: (0..self.lifetimes.len())
-                .map(|idx| {
-                    let lifetime_parameter = lifetime::Lifetime::Parameter(LifetimeParameterID {
-                        parent: parent_generic_id,
-                        id: ID::new(idx),
-                    });
+    //                 (constant_parameter.clone(), constant_parameter)
+    //             })
+    //             .collect(),
+    //         lifetimes: (0..self.lifetimes.len())
+    //             .map(|idx| {
+    //                 let lifetime_parameter = lifetime::Lifetime::Parameter(LifetimeParameterID {
+    //                     parent: parent_generic_id,
+    //                     id: ID::new(idx),
+    //                 });
 
-                    (lifetime_parameter.clone(), lifetime_parameter)
-                })
-                .collect(),
-        }
-    }
+    //                 (lifetime_parameter.clone(), lifetime_parameter)
+    //             })
+    //             .collect(),
+    //     }
+    // }
 }
 
 /// Represents a field declaration in the struct, denoted by `NAME: TYPE` syntax.
@@ -507,7 +499,7 @@ pub struct Field {
     pub name: String,
 
     /// The type of the field.
-    pub ty: r#type::Type<Symbolic>,
+    pub r#type: r#type::Type,
 
     /// Location of where the field is declared.
     pub span: Option<Span>,
@@ -575,7 +567,7 @@ pub struct Variant {
     pub name: String,
 
     /// The type of the associated value of the variant (if any).
-    pub associated_type: Option<r#type::Type<Symbolic>>,
+    pub associated_type: Option<r#type::Type>,
 
     /// The parent enum ID.
     pub parent_enum_id: ID<Enum>,
@@ -687,7 +679,7 @@ pub struct TypeData {
     pub accessibility: Accessibility,
 
     /// Type type aliased
-    pub r#type: r#type::Type<Symbolic>,
+    pub r#type: r#type::Type,
 }
 
 /// Represents a regular type declaration i.e. those that are declared in the module level.
@@ -738,7 +730,7 @@ pub struct ConstantTemplate<ParentID: 'static, Data: 'static> {
     pub name: String,
 
     /// The type of the constant.
-    pub r#type: r#type::Type<Symbolic>,
+    pub r#type: r#type::Type,
 
     /// The generic declaration of the constant.
     pub generic_declaration: GenericDeclaration,
@@ -820,7 +812,7 @@ pub struct FunctionTemplate<ParentID: 'static, Data: 'static> {
     pub name: String,
 
     /// The return type of the function.
-    pub return_type: r#type::Type<Symbolic>,
+    pub return_type: r#type::Type,
 
     /// The accessibility of the function.
     pub generic_declaration: GenericDeclaration,
@@ -894,7 +886,7 @@ pub struct ImplementationSignature<ImplementedID> {
     pub generic_declaration: GenericDeclaration,
 
     /// The generic arguments supplied to the implemented symbol.
-    pub arguments: GenericArguments<Symbolic>,
+    pub arguments: GenericArguments,
 
     /// The ID of the symbol that is being implemented.
     pub implemented_id: ImplementedID,
@@ -1028,7 +1020,7 @@ pub type TraitImplementationType =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitImplementationTypeData {
     /// The aliased type.
-    pub r#type: r#type::Type<Symbolic>,
+    pub r#type: r#type::Type,
 }
 
 /// Represents a constant declaration as an implements member, denoted by `const NAME: TYPE` syntax.
@@ -1128,10 +1120,10 @@ impl ImplementationData for TraitImplementationData {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameter<ParentID> {
     /// The pattern binding of the parameter.
-    pub pattern: Irrefutable,
+    // pub pattern: Irrefutable,
 
     /// The type of the parameter.
-    pub r#type: r#type::Type<Symbolic>,
+    pub r#type: r#type::Type,
 
     /// The ID of the parent function.
     pub parent_id: ParentID,
@@ -1306,7 +1298,7 @@ impl From<AlgebraicKind> for GlobalID {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlgebraicImplementation {
     /// Generic arguments applied to the adt.
-    pub arguments: GenericArguments<Symbolic>,
+    pub arguments: GenericArguments,
 
     /// The kind of the algebraic type.
     pub kind: AlgebraicKind,

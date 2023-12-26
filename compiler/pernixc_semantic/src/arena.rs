@@ -46,17 +46,14 @@ unsafe impl<T> Sync for ID<T> {}
 
 impl<T> Debug for ID<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ty_name = std::any::type_name::<T>();
-        f.debug_tuple(format!("ID<{ty_name}>").as_str())
-            .field(&self.index)
-            .finish()
+        f.debug_tuple("ID").field(&self.index).finish()
     }
 }
 
 impl<T> ID<T> {
     /// Creates a new [`ID`] with the given index.
     #[must_use]
-    pub fn new(index: usize) -> Self {
+    pub const fn new(index: usize) -> Self {
         Self {
             index,
             _marker: PhantomData,

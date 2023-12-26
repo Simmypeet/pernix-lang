@@ -1,6 +1,8 @@
 //! Contains the definition of [`Mapping`]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
+
+use getset::Getters;
 
 use super::{
     model::Model,
@@ -8,12 +10,20 @@ use super::{
 };
 
 /// Represents an equality mapping between two terms.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]
 #[allow(missing_docs)]
 pub struct Mapping<S: Model> {
-    lifetimes: HashMap<Lifetime<S>, HashSet<Lifetime<S>>>,
-    types: HashMap<Type<S>, HashSet<Type<S>>>,
-    constants: HashMap<Constant<S>, HashSet<Constant<S>>>,
+    /// The list of lifetimes that are equal to each other.
+    #[get = "pub"]
+    lifetimes: BTreeMap<Lifetime<S>, HashSet<Lifetime<S>>>,
+
+    /// The list of types that are equal to each other.
+    #[get = "pub"]
+    types: BTreeMap<Type<S>, HashSet<Type<S>>>,
+
+    /// The list of constants that are equal to each other.
+    #[get = "pub"]
+    constants: BTreeMap<Constant<S>, HashSet<Constant<S>>>,
 }
 
 macro_rules! insert_item {
@@ -41,7 +51,16 @@ impl<S: Model> Mapping<S> {
         mappings
     }
 
-    /// Creates a new mapping from the given equality pairs.
+    /// Inserts a new equality pair into the mapping.
+    pub fn insert_lifetime(&mut self, lhs: Lifetime<S>, rhs: Lifetime<S>) {
+        self.lifetimes
+            .entry(lhs.clone())
+            .or_default()
+            .insert(rhs.clone());
+        self.lifetimes.entry(rhs).or_default().insert(lhs);
+    }
+
+    /// Inserts a new equality pair into the mapping.
     pub fn insert_type(&mut self, lhs: Type<S>, rhs: Type<S>) {
         self.types
             .entry(lhs.clone())
@@ -50,7 +69,7 @@ impl<S: Model> Mapping<S> {
         self.types.entry(rhs).or_default().insert(lhs);
     }
 
-    /// Creates a new mapping from the given equality pairs.
+    /// Inserts a new equality pair into the mapping.
     pub fn insert_constant(&mut self, lhs: Constant<S>, rhs: Constant<S>) {
         self.constants
             .entry(lhs.clone())
@@ -69,7 +88,10 @@ pub trait Map: Sized {
     fn map<'a>(&'a self, mapping: &'a Mapping<Self::Model>) -> Option<&'a HashSet<Self>>;
 
     /// Gets all the available mappings of this term.
-    fn get(mapping: &Mapping<Self::Model>) -> &HashMap<Self, HashSet<Self>>;
+    fn get(mapping: &Mapping<Self::Model>) -> &BTreeMap<Self, HashSet<Self>>;
+
+    /// Inserts a new equality pair into the mapping.
+    fn insert(mapping: &mut Mapping<Self::Model>, first: Self, second: Self);
 }
 
 impl<S: Model> Map for Lifetime<S> {
@@ -79,7 +101,11 @@ impl<S: Model> Map for Lifetime<S> {
         mapping.lifetimes.get(self)
     }
 
-    fn get(mapping: &Mapping<S>) -> &HashMap<Self, HashSet<Self>> { &mapping.lifetimes }
+    fn get(mapping: &Mapping<S>) -> &BTreeMap<Self, HashSet<Self>> { &mapping.lifetimes }
+
+    fn insert(mapping: &mut Mapping<Self::Model>, first: Self, second: Self) {
+        mapping.insert_lifetime(first, second);
+    }
 }
 
 impl<S: Model> Map for Constant<S> {
@@ -89,7 +115,11 @@ impl<S: Model> Map for Constant<S> {
         mapping.constants.get(self)
     }
 
-    fn get(mapping: &Mapping<S>) -> &HashMap<Self, HashSet<Self>> { &mapping.constants }
+    fn get(mapping: &Mapping<S>) -> &BTreeMap<Self, HashSet<Self>> { &mapping.constants }
+
+    fn insert(mapping: &mut Mapping<Self::Model>, first: Self, second: Self) {
+        mapping.insert_constant(first, second);
+    }
 }
 
 impl<S: Model> Map for Type<S> {
@@ -99,5 +129,9 @@ impl<S: Model> Map for Type<S> {
         mapping.types.get(self)
     }
 
-    fn get(mapping: &Mapping<S>) -> &HashMap<Self, HashSet<Self>> { &mapping.types }
+    fn get(mapping: &Mapping<S>) -> &BTreeMap<Self, HashSet<Self>> { &mapping.types }
+
+    fn insert(mapping: &mut Mapping<Self::Model>, first: Self, second: Self) {
+        mapping.insert_type(first, second);
+    }
 }

@@ -14,7 +14,7 @@ use std::{
 };
 
 use getset::{CopyGetters, Getters};
-use memmap::MmapOptions;
+use memmap2::MmapOptions;
 use ouroboros::self_referencing;
 use thiserror::Error;
 
@@ -55,7 +55,7 @@ impl Debug for SourceFile {
 #[self_referencing]
 struct MappedSource {
     file: File,
-    mapped: Option<memmap::Mmap>,
+    mapped: Option<memmap2::Mmap>,
 
     #[borrows(mapped)]
     mapped_str: &'this str,
@@ -162,6 +162,7 @@ impl SourceFile {
 
     /// Gets the [`Location`] of the given byte index.
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn get_location(&self, byte_index: ByteIndex) -> Option<Location> {
         if !self.source.content().is_char_boundary(byte_index) {
             return None;
@@ -315,6 +316,7 @@ impl Span {
 
     /// Gets the starting [`Location`] of the span.
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn start_location(&self) -> Location { self.source_file.get_location(self.start).unwrap() }
 
     /// Gets the ending [`Location`] of the span.

@@ -58,7 +58,7 @@ impl TokenStream {
     /// Tokenizes the given source code.
     ///
     /// This function tokenizes the given iterator of source code by calling the
-    /// [`Token::tokenize()`] repeatedly until the iterator is exhausted.
+    /// [`Token::lex()`] repeatedly until the iterator is exhausted.
     ///
     /// # Parameters
     /// - `source_file_iterator`: The iterator that iterates over the source code.

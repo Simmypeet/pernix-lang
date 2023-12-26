@@ -7,9 +7,7 @@ edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-
 [dependencies]
-
 pernixc_base = { path = "../pernixc_base" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_syntax = { path = "../pernixc_syntax" }
@@ -24,3 +22,10 @@ take_mut = { workspace = true }
 rayon = { workspace = true }
 bitflags = { workspace = true }
 typestate = { workspace = true }
+enum_dispatch = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

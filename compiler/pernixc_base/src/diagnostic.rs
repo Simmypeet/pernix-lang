@@ -1,8 +1,9 @@
 //! A module for handling diagnostics in the compiler.
 
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::atomic::AtomicUsize;
 
 use derive_more::{Deref, DerefMut};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Represents a trait responsible for handling diagnostics in the compiler.
 pub trait Handler<T>: Send + Sync {
@@ -19,20 +20,20 @@ pub struct Storage<T: Send + Sync> {
 impl<T: Send + Sync> Storage<T> {
     /// Creates a new empty [`Storage`]
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             errors: RwLock::new(Vec::new()),
         }
     }
 
     /// Consumes the [`Storage`] and returns the underlying vector of errors.
-    pub fn into_vec(self) -> Vec<T> { self.errors.into_inner().unwrap() }
+    pub fn into_vec(self) -> Vec<T> { self.errors.into_inner() }
 
     /// Returns a reference to the underlying vector of errors.
-    pub fn as_vec(&self) -> RwLockReadGuard<Vec<T>> { self.errors.read().unwrap() }
+    pub fn as_vec(&self) -> RwLockReadGuard<Vec<T>> { self.errors.read() }
 
     /// Returns a mutable reference to the underlying vector of errors.
-    pub fn as_vec_mut(&self) -> RwLockWriteGuard<Vec<T>> { self.errors.write().unwrap() }
+    pub fn as_vec_mut(&self) -> RwLockWriteGuard<Vec<T>> { self.errors.write() }
 }
 
 impl<T: Send + Sync> Default for Storage<T> {
@@ -42,7 +43,7 @@ impl<T: Send + Sync, U> Handler<U> for Storage<T>
 where
     U: Into<T>,
 {
-    fn receive(&self, error: U) { self.errors.write().unwrap().push(error.into()); }
+    fn receive(&self, error: U) { self.errors.write().push(error.into()); }
 }
 
 /// Is a struct that implements [`Handler`] trait by doing nothing with the errors.
@@ -56,18 +57,21 @@ impl<T> Handler<T> for Dummy {
 /// Is a struct that implements [`Handler`] trait by counting the number of diagnostics received.
 #[derive(Debug, Default)]
 pub struct Counter {
-    counter: RwLock<usize>,
+    counter: AtomicUsize,
 }
 
 impl Counter {
     /// Returns the number of diagnostics received.
     #[must_use]
-    pub fn count(&self) -> usize { *self.counter.read().unwrap() }
+    pub fn count(&self) -> usize { self.counter.load(std::sync::atomic::Ordering::Relaxed) }
 
     /// Resets the counter to zero.
-    pub fn reset(&self) { *self.counter.write().unwrap() = 0 }
+    pub fn reset(&self) { self.counter.store(0, std::sync::atomic::Ordering::Relaxed) }
 }
 
 impl<T> Handler<T> for Counter {
-    fn receive(&self, _error: T) { *self.counter.write().unwrap() += 1; }
+    fn receive(&self, _error: T) {
+        self.counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }

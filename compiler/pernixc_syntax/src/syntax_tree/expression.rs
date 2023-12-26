@@ -1,3 +1,7 @@
+//! Contains all definition of expression syntax trees.
+
+#![allow(missing_docs)]
+
 use getset::Getters;
 use pernixc_base::{
     diagnostic::{Dummy, Handler},
@@ -98,7 +102,6 @@ impl SourceElement for LabelSpecifier {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
 pub struct Statements {
     #[get = "pub"]
     left_brace: Punctuation,
@@ -1090,7 +1093,7 @@ pub enum BinaryOperator {
 
 impl BinaryOperator {
     #[must_use]
-    pub fn is_assignment(&self) -> bool {
+    pub const fn is_assignment(&self) -> bool {
         matches!(
             self,
             Self::Assign(..)
@@ -1112,7 +1115,7 @@ impl BinaryOperator {
     ///
     /// The least operator has precedence 1.
     #[must_use]
-    pub fn get_precedence(&self) -> usize {
+    pub const fn get_precedence(&self) -> usize {
         match self {
             Self::Assign(..)
             | Self::CompoundBitwiseLeftShift(..)

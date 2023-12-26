@@ -1,3 +1,7 @@
+//! Contains all definition of [`Target`].
+
+#![allow(missing_docs)]
+
 use std::{
     collections::HashMap,
     convert::Into,

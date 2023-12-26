@@ -1,10 +1,14 @@
+//! Contains the definition of [`Error`]
+
 use std::fmt::Display;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_base::log::{Message, Severity, SourceCodeDisplay};
 use pernixc_lexical::token::{KeywordKind, Token};
 
+/// Enumeration of all possible syntax kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(missing_docs)]
 pub enum SyntaxKind {
     RefutablePattern,
     IrrefutablePattern,

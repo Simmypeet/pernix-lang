@@ -13,7 +13,7 @@ pub enum Style {
 impl Style {
     /// Applies the style to the given displayable object.
     #[allow(missing_docs)]
-    pub fn with<T>(self, display: T) -> WithStyle<T> {
+    pub const fn with<T>(self, display: T) -> WithStyle<T> {
         WithStyle {
             style: self,
             display,
@@ -58,7 +58,7 @@ pub enum Color {
 
 impl Color {
     /// Applies the color to the given displayable object.
-    pub fn with<T>(self, display: T) -> WithColor<T> {
+    pub const fn with<T>(self, display: T) -> WithColor<T> {
         WithColor {
             color: self,
             display,

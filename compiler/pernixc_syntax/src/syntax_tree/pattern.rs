@@ -1,3 +1,7 @@
+//! Contains all definition of pattern syntax trees.
+
+#![allow(missing_docs)]
+
 use std::fmt::Debug;
 
 use enum_as_inner::EnumAsInner;

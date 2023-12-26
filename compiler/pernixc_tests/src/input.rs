@@ -24,17 +24,13 @@ where
     fn assert(self, output: &Box<T>) -> TestCaseResult { self.as_ref().assert(output.as_ref()) }
 }
 
-impl<T: Debug, U: Debug> Input<Option<T>> for Option<U>
-where
-    U: Input<T>,
-{
+impl<T: Debug, U: Debug + Input<T>> Input<Option<T>> for Option<U> {
     fn assert(self, output: Option<T>) -> TestCaseResult {
         match (self, output) {
             (Some(input), Some(output)) => input.assert(output),
             (None, None) => Ok(()),
             (input, output) => Err(TestCaseError::fail(format!(
-                "expected {:?}, got {:?}",
-                input, output
+                "expected {input:?}, got {output:?}"
             ))),
         }
     }

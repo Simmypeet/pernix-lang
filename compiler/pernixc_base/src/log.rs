@@ -42,7 +42,7 @@ impl<T: Display> Display for Message<T> {
     }
 }
 
-fn get_digit(mut number: usize) -> usize {
+const fn get_digit(mut number: usize) -> usize {
     let mut digit = 0;
 
     while number > 0 {

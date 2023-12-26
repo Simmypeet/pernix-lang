@@ -1,5 +1,7 @@
 //! Contains all the definition of syntax trees and their parsing functions.
 
+#![allow(missing_docs)]
+
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -48,10 +50,17 @@ pub struct ConnectedList<Element, Separator> {
     trailing_separator: Option<Separator>,
 }
 
+/// Represents a syntax tree pattern of a list of elements enclosed by a pair of delimiters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DelimitedList<T> {
+    /// The opening delimiter.
     pub open: Punctuation,
+
+    /// The list of elements inside the delimiter. If `None`, then the list is empty (immediately
+    /// closed).
     pub list: Option<ConnectedList<T, Punctuation>>,
+
+    /// The closing delimiter.
     pub close: Punctuation,
 }
 
@@ -178,7 +187,7 @@ impl<Element, Separator> ConnectedList<Element, Separator> {
     /// Returns `true` if the list is empty.
     ///
     /// The function will never return `false`.
-    pub fn is_empty(&self) -> bool { false }
+    pub const fn is_empty(&self) -> bool { false }
 }
 
 /// Syntax Synopsis:
@@ -214,7 +223,6 @@ impl SourceElement for AccessModifier {
 pub struct ScopeSeparator {
     #[get = "pub"]
     first: Punctuation,
-
     #[get = "pub"]
     second: Punctuation,
 }

@@ -1,182 +1,293 @@
-//! Provides the visitor pattern for the semantic logic.
+//! Implements the visitor pattern for semantic terms.
+
+use thiserror::Error;
 
 use super::{
-    model::Model,
+    substitution::{Substitute, Substitution},
     term::{
-        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Tuple,
-        TupleElement, Unpacked,
+        constant::Constant,
+        lifetime::Lifetime,
+        r#type::{SymbolKindID, Type},
+        GenericArguments, Tuple, TupleElement,
     },
 };
+use crate::table::{Index, State, Table};
 
 /// Represents a visitor that visits a term.
 pub trait Visitor {
-    /// The model of the term which is being visited.
-    type Model: Model;
-
     /// Visits a type.
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of the type.
-    fn visit_type(&mut self, ty: &Type<Self::Model>) -> bool;
+    #[must_use]
+    fn visit_type(&mut self, ty: &Type, source: Source) -> bool;
 
     /// Visits a lifetime.
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of the lifetime.
-    fn visit_lifetime(&mut self, lifetime: &Lifetime<Self::Model>) -> bool;
+    #[must_use]
+    fn visit_lifetime(&mut self, lifetime: &Lifetime, source: Source) -> bool;
 
-    /// Visits a constant.
+    /// Visits a constant.  
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of the constant.
-    fn visit_constant(&mut self, constant: &Constant<Self::Model>) -> bool;
+    #[must_use]
+    fn visit_constant(&mut self, constant: &Constant, source: Source) -> bool;
 }
 
-/// A term that can be visited by a visitor.
+/// Specifies where the term is coming from for the visitor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Source {
+    /// The term is coming from the input.
+    Term,
+
+    /// The term is coming from the fields/variants of an ADT.
+    AdtStructure,
+}
+
+/// Determines which terms should be included in the visit.
+#[derive(Debug)]
+pub enum VisitMode<'a, S: State> {
+    /// Only visit the sub-terms of the given term (including the term itself).
+    OnlySubTerms,
+
+    /// Additionally visit the types appearing the ADT terms as well (i.e. the fields of a struct
+    /// or variant of the enum).
+    ///
+    /// The table is required to look up the fields/variants of the ADT.
+    IncludeAdtStructure(&'a Table<S>),
+}
+
+impl<S: State> Clone for VisitMode<'_, S> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::OnlySubTerms => Self::OnlySubTerms,
+            Self::IncludeAdtStructure(table) => Self::IncludeAdtStructure(table),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
+#[error("cannot call `accept_one_level` on a non-application term")]
+#[allow(missing_docs)]
+pub struct VisitNonApplicationTermError;
+
+/// A term for the visitor pattern.
 pub trait Element {
-    /// The model of the term.
-    type Model: Model;
+    /// Invokes the visitor on the term itself once.
+    ///
+    /// # Returns
+    ///
+    /// Returns whatever the visitor `visit_*` method returns.
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool;
 
-    /// Accepts a visitor.
-    fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, sub_structural_visit: bool);
+    /// Visits one sub-level of the term.
+    ///
+    /// # Example
+    ///
+    /// When a term `Type[int32, Vec[float32]]` got called, the visitor will be visiting only
+    /// `int32` and `Vec[int32]` (i.e. the sub-terms of the term), which is unlike the `accept`
+    /// method that will also visit the term itself and `float32`.
+    ///
+    /// # Returns
+    ///
+    /// If returns boolean false, the visitor will early stop visiting the sub-terms of the term.
+    ///
+    /// # Errors
+    ///
+    /// When visiting a non-application term (i.e. `int32, float32`)
+    fn accept_one_level(
+        &self,
+        visitor: &mut impl Visitor,
+        mode: VisitMode<impl State>,
+    ) -> Result<bool, VisitNonApplicationTermError>;
 }
 
-impl<S: Model> Element for GenericArguments<S> {
-    type Model = S;
+impl<Term: Element + Clone> Tuple<Term>
+where
+    Self: TryFrom<Term, Error = Term> + Into<Term>,
+{
+    fn accept_one_level(&self, visitor: &mut impl Visitor) -> bool {
+        for element in &self.elements {
+            if !match element {
+                TupleElement::Regular(term) | TupleElement::Unpacked(term) => {
+                    term.accept_single(visitor)
+                }
+            } {
+                return false;
+            }
+        }
 
-    fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, _: bool) {
+        true
+    }
+}
+
+impl GenericArguments {
+    fn accept_one_level(&self, visitor: &mut impl Visitor) -> bool {
+        for lifetime in &self.lifetimes {
+            if !visitor.visit_lifetime(lifetime, Source::Term) {
+                return false;
+            }
+        }
+
         for ty in &self.types {
-            ty.accept(visitor, false);
+            if !visitor.visit_type(ty, Source::Term) {
+                return false;
+            }
         }
 
         for constant in &self.constants {
-            constant.accept(visitor, false);
-        }
-
-        for lifetime in &self.lifetimes {
-            lifetime.accept(visitor, false);
-        }
-    }
-}
-
-impl<Term, Parameter, TraitMember> Element for Tuple<Term, Parameter, TraitMember>
-where
-    Term: Element + From<Parameter> + From<TraitMember> + From<Self>,
-    Parameter: Clone + TryFrom<Term, Error = Term>,
-    TraitMember: Clone + TryFrom<Term, Error = Term>,
-{
-    type Model = Term::Model;
-
-    fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, _: bool) {
-        for element in &self.elements {
-            match element {
-                TupleElement::Regular(term) => term.accept(visitor, false),
-                TupleElement::Unpacked(unpacked) => match unpacked {
-                    Unpacked::Parameter(parameter) => {
-                        Term::from(parameter.clone()).accept(visitor, false);
-                    }
-                    Unpacked::TraitMember(trait_member) => {
-                        Term::from(trait_member.clone()).accept(visitor, false);
-                    }
-                },
+            if !visitor.visit_constant(constant, Source::Term) {
+                return false;
             }
         }
+
+        true
     }
 }
 
-impl<S: Model> Element for Type<S> {
-    type Model = S;
+impl Element for Type {
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
+        visitor.visit_type(self, Source::Term)
+    }
 
-    fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, sub_structural_visit: bool) {
-        if !sub_structural_visit && !visitor.visit_type(self) {
-            return;
-        }
-
+    fn accept_one_level(
+        &self,
+        visitor: &mut impl Visitor,
+        mode: VisitMode<impl State>,
+    ) -> Result<bool, VisitNonApplicationTermError> {
         match self {
-            Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
+            Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
+                Err(VisitNonApplicationTermError)
+            }
 
-            Self::Algebraic(adt) => adt.generic_arguments.accept(visitor, false),
-            Self::Pointer(pointer) => pointer.pointee.accept(visitor, false),
+            Self::Symbol(term) => {
+                if !term.generic_arguments.accept_one_level(visitor) {
+                    return Ok(false);
+                }
 
-            Self::Reference(reference) => {
-                reference.pointee.accept(visitor, false);
-                reference.lifetime.accept(visitor, false);
+                if let VisitMode::IncludeAdtStructure(table) = mode.clone() {
+                    match term.id {
+                        SymbolKindID::Struct(id) => {
+                            let Some(symbol) = table.get(id) else {
+                                return Ok(true);
+                            };
+
+                            for field_ty in symbol.fields.values().map(|x| {
+                                let mut x = x.r#type.clone();
+                                x.apply(&Substitution::from_generic_arguments(
+                                    term.generic_arguments.clone(),
+                                    id.into(),
+                                ));
+                                x
+                            }) {
+                                if !visitor.visit_type(&field_ty, Source::AdtStructure) {
+                                    return Ok(false);
+                                }
+                            }
+
+                            Ok(true)
+                        }
+                        SymbolKindID::Enum(id) => {
+                            let Some(symbol) = table.get(id) else {
+                                return Ok(true);
+                            };
+
+                            for variant_type in
+                                symbol.variant_ids_by_name.values().filter_map(|x| {
+                                    table.get(*x).and_then(|x| {
+                                        x.associated_type.as_ref().map(|x| {
+                                            let mut ty = x.clone();
+                                            ty.apply(&Substitution::from_generic_arguments(
+                                                term.generic_arguments.clone(),
+                                                id.into(),
+                                            ));
+                                            ty
+                                        })
+                                    })
+                                })
+                            {
+                                if !visitor.visit_type(&variant_type, Source::AdtStructure) {
+                                    return Ok(false);
+                                }
+                            }
+
+                            Ok(true)
+                        }
+                        SymbolKindID::Type(_) => Ok(true),
+                    }
+                } else {
+                    Ok(true)
+                }
             }
-            Self::Array(array) => {
-                array.element.accept(visitor, false);
-                array.length.accept(visitor, false);
-            }
-            Self::TraitMember(trait_member) => {
-                trait_member.member_generic_arguments.accept(visitor, false);
-                trait_member.trait_generic_arguments.accept(visitor, false);
-            }
-            Self::Tuple(tuple) => tuple.accept(visitor, false),
-            Self::Local(local) => local.0.accept(visitor, false),
+            Self::Pointer(term) => Ok(visitor.visit_type(&term.pointee, Source::Term)),
+            Self::Reference(term) => Ok(visitor.visit_lifetime(&term.lifetime, Source::Term)
+                && visitor.visit_type(&term.pointee, Source::Term)),
+            Self::Array(term) => Ok(visitor.visit_type(&term.element, Source::Term)
+                && visitor.visit_constant(&term.length, Source::Term)),
+            Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
+            Self::Local(local) => Ok(visitor.visit_type(&local.r#type, Source::Term)),
+            Self::MemberSymbol(implementation) => Ok(implementation
+                .member_generic_arguments
+                .accept_one_level(visitor)
+                && implementation
+                    .parent_generic_arguments
+                    .accept_one_level(visitor)),
         }
     }
 }
 
-impl<S: Model> Element for Lifetime<S> {
-    type Model = S;
+impl Element for Lifetime {
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
+        visitor.visit_lifetime(self, Source::Term)
+    }
 
-    fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, sub_structural_visit: bool) {
-        // no sub-structural visit for lifetimes
-        if sub_structural_visit {
-            return;
-        }
-
-        visitor.visit_lifetime(self);
+    fn accept_one_level(
+        &self,
+        _: &mut impl Visitor,
+        _: VisitMode<impl State>,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        Err(VisitNonApplicationTermError)
     }
 }
 
-impl<S: Model> Element for Constant<S> {
-    type Model = S;
+impl Element for Constant {
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
+        visitor.visit_constant(self, Source::Term)
+    }
 
-    fn accept(&self, visitor: &mut impl Visitor<Model = Self::Model>, sub_structural_visit: bool) {
-        // no sub-structural visit for constants
-        if !sub_structural_visit && !visitor.visit_constant(self) {
-            return;
-        }
-
+    fn accept_one_level(
+        &self,
+        visitor: &mut impl Visitor,
+        _: VisitMode<impl State>,
+    ) -> Result<bool, VisitNonApplicationTermError> {
         match self {
-            Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
-            Self::Struct(val) => {
-                val.generic_arguments.accept(visitor, false);
+            Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {
+                Err(VisitNonApplicationTermError)
+            }
 
-                for field in &val.fields {
-                    field.accept(visitor, false);
+            Self::Struct(term) => {
+                for field in &term.fields {
+                    if !visitor.visit_constant(field, Source::Term) {
+                        return Ok(false);
+                    }
                 }
-            }
-            Self::Enum(val) => {
-                val.generic_arguments.accept(visitor, false);
 
-                if let Some(val) = &val.associated_value {
-                    val.accept(visitor, false);
-                }
+                Ok(true)
             }
-            Self::Array(array) => {
-                for element in &array.elements {
-                    element.accept(visitor, false);
-                }
-            }
-            Self::TraitMember(trait_member) => {
-                trait_member.trait_generic_arguments.accept(visitor, false);
-                trait_member
-                    .constant_generic_arguments
-                    .accept(visitor, false);
-            }
-            Self::Local(local) => {
-                local.0.accept(visitor, false);
-            }
-            Self::Tuple(tuple) => {
-                tuple.accept(visitor, false);
-            }
-            Self::Symbol(symbol) => {
-                symbol.generic_arguments.accept(visitor, false);
-            }
-            Self::Implementation(symbol) => {
-                symbol
-                    .implementation_generic_arguments
-                    .accept(visitor, false);
-                symbol.constant_generic_arguments.accept(visitor, false);
-            }
+            Self::Enum(term) => Ok(term
+                .associated_value
+                .as_ref()
+                .map_or(true, |x| visitor.visit_constant(x, Source::Term))),
+            Self::Array(term) => Ok(term
+                .elements
+                .iter()
+                .all(|x| visitor.visit_constant(x, Source::Term))),
+
+            Self::Local(local) => Ok(visitor.visit_constant(&local.constant, Source::Term)),
+            Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
+            Self::Symbol(symbol) => Ok(symbol.generic_arguments.accept_one_level(visitor)),
+            Self::MemberSymbol(term) => Ok(term.member_generic_arguments.accept_one_level(visitor)
+                && term.parent_generic_arguments.accept_one_level(visitor)),
         }
     }
 }

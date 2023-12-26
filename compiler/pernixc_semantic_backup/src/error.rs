@@ -803,8 +803,6 @@ impl Display for WithTable<'_, UnusedGenericParameterInImplementation> {
             })?;
         }
 
-        drop(generic_symbol);
-
         Ok(())
     }
 }

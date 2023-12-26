@@ -2,173 +2,48 @@
 
 use std::collections::HashMap;
 
-use super::model::{Entity, Model};
+use super::term::{
+    constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Tuple, TupleElement,
+};
 use crate::{
     arena::ID,
-    semantic::term::{
-        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Tuple,
-        TupleElement, Unpacked,
-    },
     symbol::{ConstantParameterID, GenericID, LifetimeParameterID, TypeParameterID},
 };
 
 /// Represents a substitution of terms.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
-pub struct Substitution<S: Model> {
-    pub types: HashMap<Type<S>, Type<S>>,
-    pub constants: HashMap<Constant<S>, Constant<S>>,
-    pub lifetimes: HashMap<Lifetime<S>, Lifetime<S>>,
-}
-
-impl<S: Model> Entity for Substitution<S> {
-    type Model = S;
-    type Rebind<A: Model> = Substitution<A>;
-
-    fn into_other_model<T: Model>(self) -> Self::Rebind<T>
-    where
-        S::ConstantInference: Into<T::ConstantInference>,
-        S::TypeInference: Into<T::TypeInference>,
-        S::LifetimeInference: Into<T::LifetimeInference>,
-        S::ScopedLifetime: Into<T::ScopedLifetime>,
-    {
-        Substitution {
-            types: self
-                .types
-                .into_iter()
-                .map(|(lhs, rhs)| (lhs.into_other_model(), rhs.into_other_model()))
-                .collect(),
-            constants: self
-                .constants
-                .into_iter()
-                .map(|(lhs, rhs)| (lhs.into_other_model(), rhs.into_other_model()))
-                .collect(),
-            lifetimes: self
-                .lifetimes
-                .into_iter()
-                .map(|(lhs, rhs)| (lhs.into_other_model(), rhs.into_other_model()))
-                .collect(),
-        }
-    }
-
-    fn try_into_other_model<T: Model>(self) -> Option<Self::Rebind<T>>
-    where
-        S::ConstantInference: TryInto<T::ConstantInference>,
-        S::TypeInference: TryInto<T::TypeInference>,
-        S::LifetimeInference: TryInto<T::LifetimeInference>,
-        S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-    {
-        Some(Substitution {
-            types: self
-                .types
-                .into_iter()
-                .map(|(lhs, rhs)| Some((lhs.try_into_other_model()?, rhs.try_into_other_model()?)))
-                .collect::<Option<_>>()?,
-            constants: self
-                .constants
-                .into_iter()
-                .map(|(lhs, rhs)| Some((lhs.try_into_other_model()?, rhs.try_into_other_model()?)))
-                .collect::<Option<_>>()?,
-            lifetimes: self
-                .lifetimes
-                .into_iter()
-                .map(|(lhs, rhs)| Some((lhs.try_into_other_model()?, rhs.try_into_other_model()?)))
-                .collect::<Option<_>>()?,
-        })
-    }
+pub struct Substitution {
+    pub types: HashMap<Type, Type>,
+    pub constants: HashMap<Constant, Constant>,
+    pub lifetimes: HashMap<Lifetime, Lifetime>,
 }
 
 /// Represents a substitution of terms.
 pub trait Substitute: Sized {
-    /// The model of the substitution.
-    type Model: Model;
-
     /// Applies the given substitution to the term.
-    fn apply(&mut self, substitution: &Substitution<Self::Model>);
+    fn apply(&mut self, substitution: &Substitution);
 
     /// Gets the substitution map of this term kind.
-    fn get(substitution: &Substitution<Self::Model>) -> &HashMap<Self, Self>;
+    fn get(substitution: &Substitution) -> &HashMap<Self, Self>;
 
     /// Gets the mutable reference to the substitution map of this term kind.
-    fn get_mut(substitution: &mut Substitution<Self::Model>) -> &mut HashMap<Self, Self>;
+    fn get_mut(substitution: &mut Substitution) -> &mut HashMap<Self, Self>;
 }
 
-fn tuple_apply<S: Model, T, TraitMember, Parameter>(
-    tuple: &mut Tuple<T, Parameter, TraitMember>,
-    substitution: &Substitution<S>,
-) where
-    Tuple<T, Parameter, TraitMember>: TryFrom<T, Error = T>,
-    T: Substitute<Model = S>
-        + From<Parameter>
-        + From<TraitMember>
-        + From<Tuple<T, Parameter, TraitMember>>,
-    TraitMember: Clone + TryFrom<T, Error = T>,
-    Parameter: Clone + TryFrom<T, Error = T>,
+fn tuple_apply<T: Substitute + Clone>(tuple: &mut Tuple<T>, substitution: &Substitution)
+where
+    Tuple<T>: TryFrom<T, Error = T> + Into<T>,
 {
-    if tuple
-        .elements
-        .iter()
-        .filter(|x| x.as_unpacked().is_some())
-        .count()
-        == 0
-    {
-        for element in &mut tuple.elements {
-            element.as_regular_mut().unwrap().apply(substitution);
-        }
-    } else {
-        let mut index = 0;
-        while index < tuple.elements.len() {
-            match &mut tuple.elements[index] {
-                TupleElement::Regular(regular) => {
-                    regular.apply(substitution);
-                }
-                TupleElement::Unpacked(unpacked) => {
-                    let mut new_unpacked = match unpacked {
-                        Unpacked::Parameter(parameter) => T::from(parameter.clone()),
-                        Unpacked::TraitMember(trait_member) => T::from(trait_member.clone()),
-                    };
-
-                    new_unpacked.apply(substitution);
-
-                    new_unpacked = match TraitMember::try_from(new_unpacked) {
-                        Ok(ok) => {
-                            *unpacked = Unpacked::TraitMember(ok);
-                            continue;
-                        }
-                        Err(unpacked) => unpacked,
-                    };
-
-                    new_unpacked = match Parameter::try_from(new_unpacked) {
-                        Ok(ok) => {
-                            *unpacked = Unpacked::Parameter(ok);
-                            continue;
-                        }
-                        Err(unpacked) => unpacked,
-                    };
-
-                    match Tuple::try_from(new_unpacked) {
-                        Ok(ok) => {
-                            tuple.elements.remove(index);
-                            tuple.elements.reserve(ok.elements.len());
-                            for element in ok.elements {
-                                tuple.elements.insert(index, element);
-                                index += 1;
-                            }
-                        }
-                        Err(ok) => {
-                            tuple.elements[index] = TupleElement::Regular(ok);
-                        }
-                    }
-                }
-            }
+    for element in &mut tuple.elements {
+        match element {
+            TupleElement::Regular(term) | TupleElement::Unpacked(term) => term.apply(substitution),
         }
     }
 }
 
-impl<S: Model> Substitute for Type<S> {
-    type Model = S;
-
-    fn apply(&mut self, substitution: &Substitution<S>) {
+impl Substitute for Type {
+    fn apply(&mut self, substitution: &Substitution) {
         if let Some(replacement) = substitution.types.get(self) {
             *self = replacement.clone();
             return;
@@ -177,8 +52,13 @@ impl<S: Model> Substitute for Type<S> {
         match self {
             Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {}
 
-            Self::Algebraic(adt) => {
+            Self::Symbol(adt) => {
                 apply_generic_arguments(&mut adt.generic_arguments, substitution);
+            }
+
+            Self::MemberSymbol(adt) => {
+                apply_generic_arguments(&mut adt.member_generic_arguments, substitution);
+                apply_generic_arguments(&mut adt.parent_generic_arguments, substitution);
             }
 
             Self::Pointer(pointer) => {
@@ -195,27 +75,20 @@ impl<S: Model> Substitute for Type<S> {
                 array.length.apply(substitution);
             }
 
-            Self::TraitMember(trait_member) => {
-                apply_generic_arguments(&mut trait_member.trait_generic_arguments, substitution);
-                apply_generic_arguments(&mut trait_member.member_generic_arguments, substitution);
-            }
-
             Self::Tuple(tuple_element) => tuple_apply(tuple_element, substitution),
-            Self::Local(local) => local.0.apply(substitution),
+            Self::Local(local) => local.r#type.apply(substitution),
         }
     }
 
-    fn get(substitution: &Substitution<S>) -> &HashMap<Self, Self> { &substitution.types }
+    fn get(substitution: &Substitution) -> &HashMap<Self, Self> { &substitution.types }
 
-    fn get_mut(substitution: &mut Substitution<S>) -> &mut HashMap<Self, Self> {
+    fn get_mut(substitution: &mut Substitution) -> &mut HashMap<Self, Self> {
         &mut substitution.types
     }
 }
 
-impl<S: Model> Substitute for Constant<S> {
-    type Model = S;
-
-    fn apply(&mut self, substitution: &Substitution<S>) {
+impl Substitute for Constant {
+    fn apply(&mut self, substitution: &Substitution) {
         if let Some(replacement) = substitution.constants.get(self) {
             *self = replacement.clone();
             return;
@@ -225,69 +98,57 @@ impl<S: Model> Substitute for Constant<S> {
             Self::Primitive(_) | Self::Inference(_) | Self::Parameter(_) => {}
 
             Self::Struct(value) => {
-                apply_generic_arguments(&mut value.generic_arguments, substitution);
-
                 for field in &mut value.fields {
                     field.apply(substitution);
                 }
             }
             Self::Enum(value) => {
-                apply_generic_arguments(&mut value.generic_arguments, substitution);
-
                 if let Some(variant) = &mut value.associated_value {
                     variant.apply(substitution);
                 }
             }
             Self::Array(arraay) => {
-                arraay.element_ty.apply(substitution);
-
                 for element in &mut arraay.elements {
                     element.apply(substitution);
                 }
             }
-            Self::TraitMember(value) => {
-                apply_generic_arguments(&mut value.trait_generic_arguments, substitution);
-            }
 
-            Self::Local(local) => local.0.apply(substitution),
+            Self::Local(local) => local.constant.apply(substitution),
             Self::Tuple(tuple) => tuple_apply(tuple, substitution),
 
-            Self::Symbol(symbol) => symbol.generic_arguments.apply(substitution),
+            Self::Symbol(symbol) => {
+                apply_generic_arguments(&mut symbol.generic_arguments, substitution);
+            }
 
-            Self::Implementation(symbol) => {
-                symbol.constant_generic_arguments.apply(substitution);
-                symbol.implementation_generic_arguments.apply(substitution);
+            Self::MemberSymbol(symbol) => {
+                apply_generic_arguments(&mut symbol.member_generic_arguments, substitution);
+                apply_generic_arguments(&mut symbol.parent_generic_arguments, substitution);
             }
         }
     }
 
-    fn get(substitution: &Substitution<S>) -> &HashMap<Self, Self> { &substitution.constants }
+    fn get(substitution: &Substitution) -> &HashMap<Self, Self> { &substitution.constants }
 
-    fn get_mut(substitution: &mut Substitution<S>) -> &mut HashMap<Self, Self> {
+    fn get_mut(substitution: &mut Substitution) -> &mut HashMap<Self, Self> {
         &mut substitution.constants
     }
 }
 
-impl<S: Model> Substitute for Lifetime<S> {
-    type Model = S;
-
-    fn apply(&mut self, substitution: &Substitution<S>) {
+impl Substitute for Lifetime {
+    fn apply(&mut self, substitution: &Substitution) {
         if let Some(replacement) = substitution.lifetimes.get(self) {
-            *self = replacement.clone();
+            *self = *replacement;
         }
     }
 
-    fn get(substitution: &Substitution<S>) -> &HashMap<Self, Self> { &substitution.lifetimes }
+    fn get(substitution: &Substitution) -> &HashMap<Self, Self> { &substitution.lifetimes }
 
-    fn get_mut(substitution: &mut Substitution<S>) -> &mut HashMap<Self, Self> {
+    fn get_mut(substitution: &mut Substitution) -> &mut HashMap<Self, Self> {
         &mut substitution.lifetimes
     }
 }
 
-fn apply_generic_arguments<S: Model>(
-    generic_arguments: &mut GenericArguments<S>,
-    substitution: &Substitution<S>,
-) {
+fn apply_generic_arguments(generic_arguments: &mut GenericArguments, substitution: &Substitution) {
     for lifetime in &mut generic_arguments.lifetimes {
         lifetime.apply(substitution);
     }
@@ -301,7 +162,7 @@ fn apply_generic_arguments<S: Model>(
     }
 }
 
-impl<S: Model> Substitution<S> {
+impl Substitution {
     /// Appends the given generic arguments as a substitution.
     ///
     /// # Returns
@@ -310,7 +171,7 @@ impl<S: Model> Substitution<S> {
     #[must_use]
     pub fn append_from_generic_arguments(
         mut self,
-        generic_arguments: GenericArguments<S>,
+        generic_arguments: GenericArguments,
         generic_id: GenericID,
     ) -> Option<Self> {
         for (index, term) in generic_arguments.types.into_iter().enumerate() {
@@ -367,7 +228,7 @@ impl<S: Model> Substitution<S> {
     /// Converts the given generic arguments into a substitution.
     #[must_use]
     pub fn from_generic_arguments(
-        generic_arguments: GenericArguments<S>,
+        generic_arguments: GenericArguments,
         generic_id: GenericID,
     ) -> Self {
         Self::default()

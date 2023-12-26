@@ -3,170 +3,73 @@
 use std::collections::HashSet;
 
 use super::{
-    definite, equality,
-    model::Model,
-    predicate,
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Term},
-    unification,
+    equality,
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type},
 };
-use crate::{arena::ID, symbol};
 
-/// Used to *remember* the queries that have been made.
-pub trait Cache<Record> {
-    /// Marks the given record as working on.
+/// Used to *remember* the queries that have been made and their results.
+pub trait Cache<Query> {
+    /// Marks the given query as working on.
     ///
-    /// Returns `true` if the record is not already in the cache.
-    fn mark_as_working_on(&mut self, record: Record) -> bool;
+    /// Returns `true` if the query hasn't been made before. Returns `false` if the query has been
+    /// made before.
+    fn mark_as_working_on(&mut self, query: Query) -> bool;
 
-    /// Marks the given record as done.
-    fn mark_as_done(&mut self, record: Record);
+    /// Marks the given query as done.
+    fn mark_as_done(&mut self, record: Query);
 }
 
-/// Used to detect the circular reasoning in the system.
-pub trait Session<T: Term>:
-    for<'a> Cache<definite::Record<'a, T>>
-    + for<'a> Cache<unification::Record<'a, T>>
-    + for<'a> Cache<equality::Record<'a, T>>
-    + for<'a> Cache<predicate::TraitRecord<'a, <T as Term>::Model>>
-{
-}
+/// The session of semantic queries.  
+///
+/// Most of the semantic queries (i.e., equals, unification, etc) are recursive in nature. This
+/// means that they can be circular. This trait is used to detect the circular reasoning in the
+/// system.
+///
+/// Most of the time, you should use [`Default`] as the implementation of this trait.
+pub trait Session<T>: for<'a> Cache<equality::Query<'a, T>> {}
 
-impl<T: Term, U> Session<T> for U where
-    U: for<'a> Cache<definite::Record<'a, T>>
-        + for<'a> Cache<unification::Record<'a, T>>
-        + for<'a> Cache<equality::Record<'a, T>>
-        + for<'a> Cache<predicate::TraitRecord<'a, <T as Term>::Model>>
-{
-}
+impl<T, U> Session<T> for U where U: for<'a> Cache<equality::Query<'a, T>> {}
 
-/// Default implementation of [`Session`].
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Default<S: Model> {
-    type_definite: HashSet<Type<S>>,
-    constant_definitie: HashSet<Constant<S>>,
-    lifetime_definite: HashSet<Lifetime<S>>,
-
-    type_unifies: HashSet<(Type<S>, Type<S>)>,
-    constant_unifies: HashSet<(Constant<S>, Constant<S>)>,
-    lifetime_unifies: HashSet<(Lifetime<S>, Lifetime<S>)>,
-
-    type_equals: HashSet<(Type<S>, Type<S>)>,
-    constant_equals: HashSet<(Constant<S>, Constant<S>)>,
-    lifetime_equals: HashSet<(Lifetime<S>, Lifetime<S>)>,
-
-    constnat_type_satisfies: HashSet<Type<S>>,
-    trait_satisfies: HashSet<(ID<symbol::Trait>, bool, GenericArguments<S>)>,
+/// Default and preferred implementation of [`Session`].
+#[derive(Debug, Clone, Default)]
+pub struct Default {
+    type_equals: HashSet<(Type, Type)>,
+    constant_equals: HashSet<(Constant, Constant)>,
+    lifetime_equals: HashSet<(Lifetime, Lifetime)>,
 }
 
 macro_rules! implements_cache {
-    ($module:ident, $kind:path, $field_name:ident, $record:ident, $expr_in:expr, $expr_out:expr) => {
-        impl<'a, S: Model> Cache<$module::Record<'a, $kind>> for Default<S> {
-            fn mark_as_working_on(&mut self, $record: $module::Record<'a, $kind>) -> bool {
+    ($query:path, $param:ident, $field_name:ident, $expr_in:expr, $expr_out:expr) => {
+        impl<'a> Cache<$query> for Default {
+            fn mark_as_working_on(&mut self, $param: $query) -> bool {
                 self.$field_name.insert($expr_in)
             }
 
-            fn mark_as_done(&mut self, $record: $module::Record<'a, $kind>) {
-                self.$field_name.remove($expr_out);
-            }
+            fn mark_as_done(&mut self, $param: $query) { self.$field_name.remove(&$expr_out); }
         }
     };
 }
 
 implements_cache!(
-    definite,
-    Type<S>,
-    type_definite,
-    record,
-    record.0.clone(),
-    record.0
-);
-
-implements_cache!(
-    definite,
-    Constant<S>,
-    constant_definitie,
-    record,
-    record.0.clone(),
-    record.0
-);
-
-implements_cache!(
-    definite,
-    Lifetime<S>,
-    lifetime_definite,
-    record,
-    record.0.clone(),
-    record.0
-);
-
-implements_cache!(
-    unification,
-    Type<S>,
-    type_unifies,
-    record,
-    (record.lhs.clone(), record.rhs.clone()),
-    &(record.lhs.clone(), record.rhs.clone())
-);
-
-implements_cache!(
-    unification,
-    Constant<S>,
-    constant_unifies,
-    record,
-    (record.lhs.clone(), record.rhs.clone()),
-    &(record.lhs.clone(), record.rhs.clone())
-);
-
-implements_cache!(
-    unification,
-    Lifetime<S>,
-    lifetime_unifies,
-    record,
-    (record.lhs.clone(), record.rhs.clone()),
-    &(record.lhs.clone(), record.rhs.clone())
-);
-
-implements_cache!(
-    equality,
-    Type<S>,
+    equality::Query<'a, Type>,
+    query,
     type_equals,
-    record,
-    (record.lhs.clone(), record.rhs.clone()),
-    &(record.lhs.clone(), record.rhs.clone())
+    (query.lhs.clone(), query.rhs.clone()),
+    &(query.lhs.clone(), query.rhs.clone())
 );
 
 implements_cache!(
-    equality,
-    Constant<S>,
+    equality::Query<'a, Constant>,
+    query,
     constant_equals,
-    record,
-    (record.lhs.clone(), record.rhs.clone()),
-    &(record.lhs.clone(), record.rhs.clone())
+    (query.lhs.clone(), query.rhs.clone()),
+    &(query.lhs.clone(), query.rhs.clone())
 );
 
 implements_cache!(
-    equality,
-    Lifetime<S>,
+    equality::Query<'a, Lifetime>,
+    query,
     lifetime_equals,
-    record,
-    (record.lhs.clone(), record.rhs.clone()),
-    &(record.lhs.clone(), record.rhs.clone())
+    (*query.lhs, *query.rhs),
+    &(*query.lhs, *query.rhs)
 );
-
-impl<'a, S: Model> Cache<predicate::TraitRecord<'a, S>> for Default<S> {
-    fn mark_as_working_on(&mut self, record: predicate::TraitRecord<'a, S>) -> bool {
-        self.trait_satisfies.insert((
-            record.trait_id,
-            record.const_trait,
-            record.generic_arguments.clone(),
-        ))
-    }
-
-    fn mark_as_done(&mut self, record: predicate::TraitRecord<'a, S>) {
-        self.trait_satisfies.remove(&(
-            record.trait_id,
-            record.const_trait,
-            record.generic_arguments.clone(),
-        ));
-    }
-}

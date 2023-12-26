@@ -4,17 +4,6 @@
 //! The final output of this phase is a [`target_parsing::TargetParsing`], representing the syntax
 //! tree of a source file.
 
-#![deny(
-    missing_debug_implementations,
-    missing_copy_implementations,
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    rustdoc::broken_intra_doc_links,
-    clippy::missing_errors_doc
-)]
-#![allow(clippy::missing_panics_doc, clippy::missing_const_for_fn)]
-
 pub mod error;
 pub mod parser;
 pub mod syntax_tree;

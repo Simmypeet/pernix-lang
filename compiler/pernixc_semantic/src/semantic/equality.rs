@@ -1,133 +1,51 @@
-//! Contains the code related to checking equality of entities.
+//! Implements the logic for equality checking.
 
 use super::{
-    map::Map,
-    predicate::Premises,
+    mapping::Map,
     session::Session,
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type},
-    unification, Semantic, Term,
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    Premise, Semantic,
 };
 use crate::table::{State, Table};
 
-/// Records object for the [`equals()`] query.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// A query for checking equality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
-pub struct Record<'a, T> {
+pub struct Query<'a, T> {
     pub lhs: &'a T,
     pub rhs: &'a T,
 }
 
-fn equals_by_mapping<
-    T: Term,
-    S: Semantic<T>
-        + Semantic<Type<<T as Term>::Model>>
-        + Semantic<Lifetime<<T as Term>::Model>>
-        + Semantic<Constant<<T as Term>::Model>>,
-    R: Session<T>
-        + Session<Type<<T as Term>::Model>>
-        + Session<Lifetime<<T as Term>::Model>>
-        + Session<Constant<<T as Term>::Model>>,
->(
-    lhs: &T,
-    rhs: &T,
-    premises: &Premises<<T as Term>::Model>,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut R,
-) -> bool {
-    for (source, targets) in <T as Map>::get(&premises.mapping) {
-        for target in targets {
-            // avoid redudant works
-            if semantic.trivially_equals(source, rhs)
-                || (semantic.trivially_equals(rhs, lhs) && semantic.trivially_equals(target, lhs))
-            {
-                continue;
-            }
-
-            // check if the source and target are equal
-            if lhs.equals(source, premises, table, semantic, session)
-                && rhs.equals(target, premises, table, semantic, session)
-            {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-fn equals_by_normalization<
-    T: Term,
-    S: Semantic<T>
-        + Semantic<Type<<T as Term>::Model>>
-        + Semantic<Lifetime<<T as Term>::Model>>
-        + Semantic<Constant<<T as Term>::Model>>,
-    R: Session<T>
-        + Session<Type<<T as Term>::Model>>
-        + Session<Lifetime<<T as Term>::Model>>
-        + Session<Constant<<T as Term>::Model>>,
->(
-    lhs: &T,
-    rhs: &T,
-    premises: &Premises<<T as Term>::Model>,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut R,
-) -> bool {
-    if let Some(lhs_normalized) = lhs.normalize(premises, table, semantic, session) {
-        lhs_normalized.equals(rhs, premises, table, semantic, session)
-    } else if let Some(rhs_normalized) = rhs.normalize(premises, table, semantic, session) {
-        lhs.equals(&rhs_normalized, premises, table, semantic, session)
-    } else {
-        false
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
-struct All;
-
-impl<T> unification::Config<T> for All {
-    fn unifiable(&mut self, _: &T, _: &T) -> bool { true }
-}
-
 fn equals_by_unification<
     T: Term,
-    S: Semantic<T>
-        + Semantic<Type<<T as Term>::Model>>
-        + Semantic<Lifetime<<T as Term>::Model>>
-        + Semantic<Constant<<T as Term>::Model>>,
-    R: Session<T>
-        + Session<Type<<T as Term>::Model>>
-        + Session<Lifetime<<T as Term>::Model>>
-        + Session<Constant<<T as Term>::Model>>,
+    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
 >(
     lhs: &T,
     rhs: &T,
-    premises: &Premises<<T as Term>::Model>,
+    premise: &Premise,
     table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
 ) -> bool {
-    let Ok(unification) =
-        unification::sub_structural_unify(lhs, rhs, premises, table, semantic, session, &mut All)
-    else {
+    let Some(matching) = lhs.substructural_match(rhs) else {
         return false;
     };
 
-    for (source, target) in &unification.types {
-        if !source.equals(target, premises, table, semantic, session) {
+    for (lhs, rhs) in matching.lifetimes {
+        if !equals(&lhs, &rhs, premise, table, semantic, session) {
             return false;
         }
     }
 
-    for (source, target) in &unification.lifetimes {
-        if !source.equals(target, premises, table, semantic, session) {
+    for (lhs, rhs) in matching.types {
+        if !equals(&lhs, &rhs, premise, table, semantic, session) {
             return false;
         }
     }
 
-    for (source, target) in &unification.constants {
-        if !source.equals(target, premises, table, semantic, session) {
+    for (lhs, rhs) in matching.constants {
+        if !equals(&lhs, &rhs, premise, table, semantic, session) {
             return false;
         }
     }
@@ -135,21 +53,53 @@ fn equals_by_unification<
     true
 }
 
-/// Checks if the two given terms are equal based on the given premises.
-pub(super) fn equals<
+fn equals_by_normalization<
     T: Term,
-    S: Semantic<T>
-        + Semantic<Type<<T as Term>::Model>>
-        + Semantic<Lifetime<<T as Term>::Model>>
-        + Semantic<Constant<<T as Term>::Model>>,
-    R: Session<T>
-        + Session<Type<<T as Term>::Model>>
-        + Session<Lifetime<<T as Term>::Model>>
-        + Session<Constant<<T as Term>::Model>>,
+    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
 >(
     lhs: &T,
     rhs: &T,
-    premises: &Premises<<T as Term>::Model>,
+    premise: &Premise,
+    table: &Table<impl State>,
+    semantic: &mut S,
+    session: &mut R,
+) -> bool {
+    for lhs in semantic.normalize(lhs, premise, table, session) {
+        if equals(&lhs, rhs, premise, table, semantic, session) {
+            return true;
+        }
+    }
+
+    for rhs in semantic.normalize(rhs, premise, table, session) {
+        if equals(lhs, &rhs, premise, table, semantic, session) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Checks if the two given terms are equal.
+///
+/// Equality is one of the most important parts of the type system. The equality model is based on
+/// the first-order logic of equality.
+///
+/// These are the axioms of equality:
+///
+/// - Reflexivity: for all `x`, `x = x`.
+/// - Symmetry: for all `x` and `y`, if `x = y`, then `y = x`.
+/// - Transitivity: for all `x`, `y`, and `z`, if `x = y` and `y = z`, then `x = z`.
+/// - Congruence: for all `x, ..., xn` and `y, ..., yn`, if `x = y`, ..., and `xn = yn`, then `f(x,
+///   ..., xn) = f(y, ..., yn)`.
+pub fn equals<
+    T: Term,
+    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+>(
+    lhs: &T,
+    rhs: &T,
+    premise: &Premise,
     table: &Table<impl State>,
     semantic: &mut S,
     session: &mut R,
@@ -158,29 +108,43 @@ pub(super) fn equals<
         return true;
     }
 
-    if !session.mark_as_working_on(Record { lhs, rhs }) {
+    if !session.mark_as_working_on(Query { lhs, rhs }) {
         return false;
     }
 
-    // equals by unification
-    if equals_by_unification(lhs, rhs, premises, table, semantic, session) {
-        session.mark_as_done(Record { lhs, rhs });
+    if equals_by_unification(lhs, rhs, premise, table, semantic, session)
+        || equals_by_normalization(lhs, rhs, premise, table, semantic, session)
+    {
+        session.mark_as_done(Query { lhs, rhs });
         return true;
     }
 
-    // equals by mapping
-    if equals_by_mapping(lhs, rhs, premises, table, semantic, session) {
-        session.mark_as_done(Record { lhs, rhs });
-        return true;
+    for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
+        if semantic.trivially_equals(lhs, key)
+            || equals_by_unification(lhs, key, premise, table, semantic, session)
+            || equals_by_normalization(lhs, key, premise, table, semantic, session)
+        {
+            for value in values {
+                if equals(value, rhs, premise, table, semantic, session) {
+                    session.mark_as_done(Query { lhs, rhs });
+                    return true;
+                }
+            }
+        }
+
+        if semantic.trivially_equals(key, rhs)
+            || equals_by_unification(key, rhs, premise, table, semantic, session)
+            || equals_by_normalization(key, rhs, premise, table, semantic, session)
+        {
+            for value in values {
+                if equals(lhs, value, premise, table, semantic, session) {
+                    session.mark_as_done(Query { lhs, rhs });
+                    return true;
+                }
+            }
+        }
     }
 
-    // equals by normalization
-    if equals_by_normalization(lhs, rhs, premises, table, semantic, session) {
-        session.mark_as_done(Record { lhs, rhs });
-        return true;
-    }
-
-    session.mark_as_done(Record { lhs, rhs });
     false
 }
 

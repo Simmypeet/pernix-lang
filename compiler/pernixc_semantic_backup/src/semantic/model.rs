@@ -71,7 +71,7 @@ pub trait Model:
 /// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used in higher-ranked
 /// trait bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Forall(usize);
+pub struct Forall(pub(super) usize);
 
 impl From<Never> for Forall {
     fn from(never: Never) -> Self { match never {} }

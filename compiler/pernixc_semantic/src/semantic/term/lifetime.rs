@@ -1,69 +1,52 @@
 //! Contains the definition of [`Lifetime`].
 
-use enum_as_inner::EnumAsInner;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{Model, Term};
-use crate::{
-    semantic::model::{Entity, Forall},
-    symbol::LifetimeParameterID,
-};
+use super::{Never, Substructural, Term};
+use crate::symbol::LifetimeParameterID;
 
-/// Represents a particular variable lifetime
-#[derive(Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum Lifetime<S: Model> {
-    /// A static lifetime, denoted by `'static`.
+/// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used in higher-ranked
+/// trait bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Forall(pub(super) usize);
+
+impl Forall {
+    #[allow(missing_docs)]
+    pub fn generate() -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        Self(COUNTER.fetch_add(1, Ordering::SeqCst))
+    }
+}
+
+/// Represents a lifetime inference variable in hindley-milner type inference.
+pub type Inference = Never; /* will be changed */
+
+/// Represents a local lifetime variable.
+pub type Local = Never; /* will be changed */
+
+/// Represents a lifetiem annotation term.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Lifetime {
     Static,
-
-    /// A lifetime to a named lifetime parameter, denoted by `'a`.
-    Parameter(LifetimeParameterID),
-
-    /// The lifetime defined in the function scope.
-    Scoped(S::ScopedLifetime),
-
-    /// Quantified lifetime, denoted by `for<'a> 'a`.
     Forall(Forall),
-
-    /// Inferred lifetime.
-    Inference(S::LifetimeInference),
+    Parameter(LifetimeParameterID),
+    Inference(Inference),
+    Local(Local),
 }
 
-impl<M: Model> Term for Lifetime<M> {
-    type Model = M;
-}
+impl Term for Lifetime {
+    fn substructural_match(&self, _: &Self) -> Option<Substructural> { None }
 
-impl<S: Model> Entity for Lifetime<S> {
-    type Model = S;
-    type Rebind<A: Model> = Lifetime<A>;
-
-    fn into_other_model<T: Model>(self) -> Self::Rebind<T>
-    where
-        S::ConstantInference: Into<T::ConstantInference>,
-        S::TypeInference: Into<T::TypeInference>,
-        S::LifetimeInference: Into<T::LifetimeInference>,
-        S::ScopedLifetime: Into<T::ScopedLifetime>,
-    {
-        match self {
-            Self::Static => Lifetime::Static,
-            Self::Parameter(id) => Lifetime::Parameter(id),
-            Self::Scoped(lifetime) => Lifetime::Scoped(lifetime.into()),
-            Self::Forall(lifetime) => Lifetime::Forall(lifetime),
-            Self::Inference(lifetime) => Lifetime::Inference(lifetime.into()),
-        }
+    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {
+        &substructural.lifetimes
     }
 
-    fn try_into_other_model<T: Model>(self) -> Option<Self::Rebind<T>>
-    where
-        S::ConstantInference: TryInto<T::ConstantInference>,
-        S::TypeInference: TryInto<T::TypeInference>,
-        S::LifetimeInference: TryInto<T::LifetimeInference>,
-        S::ScopedLifetime: TryInto<T::ScopedLifetime>,
-    {
-        match self {
-            Self::Static => Some(Lifetime::Static),
-            Self::Parameter(id) => Some(Lifetime::Parameter(id)),
-            Self::Forall(lifetime) => Some(Lifetime::Forall(lifetime)),
-            Self::Scoped(lifetime) => lifetime.try_into().ok().map(Lifetime::Scoped),
-            Self::Inference(lifetime) => lifetime.try_into().ok().map(Lifetime::Inference),
-        }
+    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
+        &mut substructural.lifetimes
     }
 }
+
+#[cfg(test)]
+mod tests;

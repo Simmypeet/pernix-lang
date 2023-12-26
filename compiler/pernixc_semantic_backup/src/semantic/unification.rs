@@ -13,6 +13,15 @@ use super::{
 };
 use crate::table::{State, Table};
 
+/// Result of sub structural unification.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[allow(missing_docs)]
+pub struct Substructural<S: Model> {
+    pub lifetimes: Vec<(Lifetime<S>, Lifetime<S>)>,
+    pub types: Vec<(Type<S>, Type<S>)>,
+    pub constants: Vec<(Constant<S>, Constant<S>)>,
+}
+
 /// Describes which types of terms can be unified.
 pub trait Config<T: ?Sized> {
     /// Returns `true` if the given terms can be unified.
@@ -65,7 +74,7 @@ impl<'a, M: Model> Unifier<'a, M> {
         rhs: &T,
         premises: &Premises<M>,
         table: &Table<impl State>,
-        semantic: &mut S,
+        semantic: &S,
         session: &mut R,
         config: &mut C,
     ) -> Result {
@@ -94,7 +103,7 @@ impl<M: Model> GenericArguments<M> {
         other: &Self,
         premises: &Premises<M>,
         table: &Table<impl State>,
-        semantic: &mut S,
+        semantic: &S,
         session: &mut R,
         config: &mut C,
     ) -> Option<Substitution<M>> {
@@ -173,7 +182,7 @@ fn unify_internal<
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
     table: &Table<impl State>,
-    semantic: &mut S,
+    semantic: &S,
     session: &mut R,
     config: &mut C,
     existing: &mut Substitution<<T as Term>::Model>,
@@ -206,16 +215,13 @@ fn unify_internal<
     let mut unifier = Unifier { exisitng: existing };
 
     // sub structurally unify
-    if semantic
-        .sub_structural_unify(lhs, rhs, premises, table, session, config, &mut unifier)
-        .is_ok()
-    {
-        session.mark_as_done(Record { lhs, rhs });
-        return Ok(());
-    }
+    todo!("sub structural unify");
 
     // restore the existing substitution
     *unifier.exisitng = existing_clone.clone();
+
+    // Hopefully, there's more efficient algorithm for this. Reduce the time complexity of this
+    // algorithm.
 
     // try to unify by looking for equivalent terms
     for (lhs_eq, rhs_eqs) in <T as Map>::get(&premises.mapping) {
@@ -245,8 +251,34 @@ fn unify_internal<
             }
         }
     }
+    for (lhs_eq, rhs_eqs) in <T as Map>::get(&premises.mapping) {
+        if !lhs.equals(lhs_eq, premises, table, semantic, session) {
+            continue;
+        }
 
-    if let Some(lhs_normalized) = lhs.normalize(premises, table, semantic, session) {
+        for rhs_eq in rhs_eqs {
+            match unify_internal(
+                lhs,
+                rhs_eq,
+                premises,
+                table,
+                semantic,
+                session,
+                config,
+                unifier.exisitng,
+            ) {
+                Ok(()) => {
+                    session.mark_as_done(Record { lhs, rhs });
+                    return Ok(());
+                }
+                Err(Error) => {
+                    // restore the existing substitution
+                    *unifier.exisitng = existing_clone.clone();
+                }
+            }
+        }
+    }
+    for lhs_normalized in lhs.normalize(premises, table, semantic, session) {
         match unify_internal(
             &lhs_normalized,
             rhs,
@@ -259,17 +291,15 @@ fn unify_internal<
         ) {
             Ok(()) => {
                 session.mark_as_done(Record { lhs, rhs });
-                Ok(())
+                return Ok(());
             }
             Err(Error) => {
-                //restore the existing substitution
-                session.mark_as_done(Record { lhs, rhs });
-
-                *unifier.exisitng = existing_clone;
-                Err(Error)
+                // restore the existing substitution
+                *unifier.exisitng = existing_clone.clone();
             }
         }
-    } else if let Some(rhs_normalized) = rhs.normalize(premises, table, semantic, session) {
+    }
+    for rhs_normalized in rhs.normalize(premises, table, semantic, session) {
         match unify_internal(
             lhs,
             &rhs_normalized,
@@ -282,18 +312,17 @@ fn unify_internal<
         ) {
             Ok(()) => {
                 session.mark_as_done(Record { lhs, rhs });
-                Ok(())
+                return Ok(());
             }
             Err(Error) => {
-                //restore the existing substitution
-                session.mark_as_done(Record { lhs, rhs });
-                *unifier.exisitng = existing_clone;
-                Err(Error)
+                // restore the existing substitution
+                *unifier.exisitng = existing_clone.clone();
             }
         }
-    } else {
-        Err(Error)
     }
+
+    session.mark_as_done(Record { lhs, rhs });
+    Err(Error)
 }
 
 pub(super) fn unify<
@@ -315,7 +344,7 @@ pub(super) fn unify<
     rhs: &T,
     premises: &Premises<<T as Term>::Model>,
     table: &Table<impl State>,
-    semantic: &mut S,
+    semantic: &S,
     session: &mut R,
     config: &mut C,
 ) -> std::result::Result<Substitution<<T as Term>::Model>, Error> {
@@ -332,39 +361,6 @@ pub(super) fn unify<
         &mut existing,
     )
     .map(|()| existing)
-}
-
-pub(super) fn sub_structural_unify<
-    T: Term,
-    C: Config<T>
-        + Config<Type<<T as Term>::Model>>
-        + Config<Lifetime<<T as Term>::Model>>
-        + Config<Constant<<T as Term>::Model>>,
-    S: Semantic<T>
-        + Semantic<Type<<T as Term>::Model>>
-        + Semantic<Lifetime<<T as Term>::Model>>
-        + Semantic<Constant<<T as Term>::Model>>,
-    R: Session<T>
-        + Session<Type<<T as Term>::Model>>
-        + Session<Lifetime<<T as Term>::Model>>
-        + Session<Constant<<T as Term>::Model>>,
->(
-    lhs: &T,
-    rhs: &T,
-    premises: &Premises<<T as Term>::Model>,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut R,
-    config: &mut C,
-) -> std::result::Result<Substitution<<T as Term>::Model>, Error> {
-    let mut existing = Substitution::default();
-    let mut unifier = Unifier {
-        exisitng: &mut existing,
-    };
-
-    semantic
-        .sub_structural_unify(lhs, rhs, premises, table, session, config, &mut unifier)
-        .map(|()| existing)
 }
 
 #[cfg(test)]
