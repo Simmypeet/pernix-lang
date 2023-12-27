@@ -8,7 +8,7 @@ use crate::symbol::LifetimeParameterID;
 /// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used in higher-ranked
 /// trait bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Forall(pub(super) usize);
+pub struct Forall(pub(crate) usize);
 
 impl Forall {
     #[allow(missing_docs)]
@@ -30,10 +30,7 @@ pub type Local = Never; /* will be changed */
 #[allow(missing_docs)]
 pub enum Lifetime {
     Static,
-    Forall(Forall),
     Parameter(LifetimeParameterID),
-    Inference(Inference),
-    Local(Local),
 }
 
 impl Term for Lifetime {

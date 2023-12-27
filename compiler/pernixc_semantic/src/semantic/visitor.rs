@@ -225,7 +225,7 @@ impl Element for Type {
             Self::Array(term) => Ok(visitor.visit_type(&term.element, Source::Term)
                 && visitor.visit_constant(&term.length, Source::Term)),
             Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
-            Self::Local(local) => Ok(visitor.visit_type(&local.r#type, Source::Term)),
+            Self::Local(local) => Ok(visitor.visit_type(&local.0, Source::Term)),
             Self::MemberSymbol(implementation) => Ok(implementation
                 .member_generic_arguments
                 .accept_one_level(visitor)
@@ -283,7 +283,7 @@ impl Element for Constant {
                 .iter()
                 .all(|x| visitor.visit_constant(x, Source::Term))),
 
-            Self::Local(local) => Ok(visitor.visit_constant(&local.constant, Source::Term)),
+            Self::Local(local) => Ok(visitor.visit_constant(&local.0, Source::Term)),
             Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
             Self::Symbol(symbol) => Ok(symbol.generic_arguments.accept_one_level(visitor)),
             Self::MemberSymbol(term) => Ok(term.member_generic_arguments.accept_one_level(visitor)

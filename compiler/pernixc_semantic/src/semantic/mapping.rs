@@ -1,6 +1,6 @@
 //! Contains the definition of [`Mapping`]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use getset::Getters;
 
@@ -12,15 +12,15 @@ use super::term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 pub struct Mapping {
     /// The list of lifetimes that are equal to each other.
     #[get = "pub"]
-    lifetimes: HashMap<Lifetime, HashSet<Lifetime>>,
+    lifetimes: BTreeMap<Lifetime, BTreeSet<Lifetime>>,
 
     /// The list of types that are equal to each other.
     #[get = "pub"]
-    types: HashMap<Type, HashSet<Type>>,
+    types: BTreeMap<Type, BTreeSet<Type>>,
 
     /// The list of constants that are equal to each other.
     #[get = "pub"]
-    constants: HashMap<Constant, HashSet<Constant>>,
+    constants: BTreeMap<Constant, BTreeSet<Constant>>,
 }
 
 macro_rules! insert_item {
@@ -48,75 +48,64 @@ impl Mapping {
         mappings
     }
 
-    /// Inserts a new equality pair into the mapping.
-    pub fn insert_lifetime(&mut self, lhs: Lifetime, rhs: Lifetime) {
-        self.lifetimes.entry(lhs).or_default().insert(rhs);
-        self.lifetimes.entry(rhs).or_default().insert(lhs);
+    /// Inserts a new pair of equalities into the mapping.
+    pub fn insert<T: Map + Clone + Ord>(&mut self, first: T, second: T) {
+        T::get_mut(self)
+            .entry(first.clone())
+            .or_default()
+            .insert(second.clone());
+        T::get_mut(self).entry(second).or_default().insert(first);
     }
 
-    /// Inserts a new equality pair into the mapping.
-    pub fn insert_type(&mut self, lhs: Type, rhs: Type) {
-        self.types
-            .entry(lhs.clone())
-            .or_default()
-            .insert(rhs.clone());
-        self.types.entry(rhs).or_default().insert(lhs);
-    }
+    /// Removes all the equalities that are associated with the given term.
+    pub fn remove_equality<T: Map + Eq + Ord>(&mut self, term: &T) -> Option<BTreeSet<T>> {
+        let map = T::get_mut(self);
 
-    /// Inserts a new equality pair into the mapping.
-    pub fn insert_constant(&mut self, lhs: Constant, rhs: Constant) {
-        self.constants
-            .entry(lhs.clone())
-            .or_default()
-            .insert(rhs.clone());
-        self.constants.entry(rhs).or_default().insert(lhs);
+        let Some(terms) = map.remove(term) else {
+            return None;
+        };
+
+        for t in &terms {
+            if let Some(x) = map.get_mut(t) {
+                x.remove(term);
+
+                if x.is_empty() {
+                    map.remove(t);
+                }
+            }
+        }
+
+        Some(terms)
     }
 }
 
 /// Used to map a value to a set of equivalent values.
 pub trait Map: Sized {
-    /// Returns the set of equivalent values for the given value.
-    fn map<'a>(&'a self, mapping: &'a Mapping) -> Option<&'a HashSet<Self>>;
+    /// Gets a reference to the mapping of this kind of term.
+    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>>;
 
-    /// Gets all the available mappings of this term.
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>>;
-
-    /// Inserts a new equality pair into the mapping.
-    fn insert(mapping: &mut Mapping, first: Self, second: Self);
+    /// Gets a mutable reference to the mapping of this kind of term.
+    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>>;
 }
 
 impl Map for Lifetime {
-    fn map<'a>(&'a self, mapping: &'a Mapping) -> Option<&'a HashSet<Self>> {
-        mapping.lifetimes.get(self)
-    }
+    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>> { &mapping.lifetimes }
 
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.lifetimes }
-
-    fn insert(mapping: &mut Mapping, first: Self, second: Self) {
-        mapping.insert_lifetime(first, second);
+    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>> {
+        &mut mapping.lifetimes
     }
 }
 
 impl Map for Constant {
-    fn map<'a>(&'a self, mapping: &'a Mapping) -> Option<&'a HashSet<Self>> {
-        mapping.constants.get(self)
-    }
+    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>> { &mapping.constants }
 
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.constants }
-
-    fn insert(mapping: &mut Mapping, first: Self, second: Self) {
-        mapping.insert_constant(first, second);
+    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>> {
+        &mut mapping.constants
     }
 }
 
 impl Map for Type {
-    fn map<'a>(&'a self, mapping: &'a Mapping) -> Option<&'a HashSet<Self>> {
-        mapping.types.get(self)
-    }
+    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>> { &mapping.types }
 
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.types }
-
-    fn insert(mapping: &mut Mapping, first: Self, second: Self) {
-        mapping.insert_type(first, second);
-    }
+    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>> { &mut mapping.types }
 }

@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 
-use super::{MemberSymbol, Never, Substructural, Symbol, Term};
+use super::{Local, MemberSymbol, Never, Substructural, Symbol, Term};
 use crate::{
     arena::ID,
     symbol::{self, ConstantParameterID, GenericID, GlobalID, Variant},
@@ -86,18 +86,11 @@ pub struct Array {
 /// Represents a tuple constant value, denoted by `(value, value, ...value)` syntax.
 pub type Tuple = super::Tuple<Constant>;
 
-/// Represents a local constant value, denoted by `local CONSTANT` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Local {
-    /// The constant under local modifier.
-    pub constant: Box<Constant>,
-}
-
 /// Represents a constant inference variable in hindley-milner type inference.
 pub type Inference = Never; /* will be changed */
 
 /// Represents a compile-time constant term.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
 #[allow(missing_docs)]
 #[non_exhaustive]
 pub enum Constant {
@@ -107,7 +100,7 @@ pub enum Constant {
     Enum(Enum),
     Array(Array),
     Parameter(ConstantParameterID),
-    Local(Local),
+    Local(Local<Self>),
     Tuple(Tuple),
     Symbol(Symbol<ID<symbol::Constant>>),
 
@@ -119,10 +112,6 @@ pub enum Constant {
     /// In the **TraitImplementation** case, the `parent_generic_arguments` field **is** deduced
     /// from the implementation.
     MemberSymbol(MemberSymbol<MemberSymbolKindID>),
-}
-
-impl From<Tuple> for Constant {
-    fn from(value: Tuple) -> Self { Self::Tuple(value) }
 }
 
 impl TryFrom<Constant> for Tuple {
@@ -143,10 +132,6 @@ impl Default for Constant {
             elements: Vec::new(),
         })
     }
-}
-
-impl From<ConstantParameterID> for Constant {
-    fn from(value: ConstantParameterID) -> Self { Self::Parameter(value) }
 }
 
 impl Term for Constant {
@@ -187,7 +172,7 @@ impl Term for Constant {
             (Self::Local(lhs), Self::Local(rhs)) => Some(Substructural {
                 lifetimes: Vec::new(),
                 types: Vec::new(),
-                constants: vec![(lhs.constant.deref().clone(), rhs.constant.deref().clone())],
+                constants: vec![(lhs.0.deref().clone(), rhs.0.deref().clone())],
             }),
 
             (Self::Tuple(lhs), Self::Tuple(rhs)) => lhs.substructural_match(rhs),

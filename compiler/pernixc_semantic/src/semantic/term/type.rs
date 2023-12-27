@@ -3,7 +3,7 @@
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, MemberSymbol, Never, Substructural, Symbol, Term,
+    constant::Constant, lifetime::Lifetime, Local, MemberSymbol, Never, Substructural, Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -136,18 +136,11 @@ pub enum Primitive {
 /// Represents a tuple type, denoted by `(type, type, ...type)` syntax.
 pub type Tuple = super::Tuple<Type>;
 
-/// Represents a local type, denoted by `local TYPE` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Local {
-    /// The type under the local modifier.
-    pub r#type: Box<Type>,
-}
-
 /// Represents a type inference variable in hindley-milner type inference.
 pub type Inference = Never; /* will be changed */
 
 /// Represents a type term.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
 #[allow(missing_docs)]
 pub enum Type {
     Primitive(Primitive),
@@ -158,7 +151,7 @@ pub enum Type {
     Reference(Reference),
     Array(Array),
     Tuple(Tuple),
-    Local(Local),
+    Local(Local<Self>),
 
     /// Pleace notice this differences
     ///
@@ -168,10 +161,6 @@ pub enum Type {
     /// In the **TraitImplementation** case, the `parent_generic_arguments` field **is** deduced
     /// from the implementation.
     MemberSymbol(MemberSymbol<MemberSymbolKindID>),
-}
-
-impl From<Tuple> for Type {
-    fn from(value: Tuple) -> Self { Self::Tuple(value) }
 }
 
 impl TryFrom<Type> for Tuple {
@@ -184,10 +173,6 @@ impl TryFrom<Type> for TypeParameterID {
     type Error = Type;
 
     fn try_from(value: Type) -> Result<Self, Self::Error> { value.into_parameter() }
-}
-
-impl From<TypeParameterID> for Type {
-    fn from(value: TypeParameterID) -> Self { Self::Parameter(value) }
 }
 
 impl Default for Type {
@@ -229,7 +214,7 @@ impl Term for Type {
 
             (Self::Local(lhs), Self::Local(rhs)) => Some(Substructural {
                 lifetimes: Vec::new(),
-                types: vec![((*lhs.r#type).clone(), (*rhs.r#type).clone())],
+                types: vec![((*lhs.0).clone(), (*rhs.0).clone())],
                 constants: Vec::new(),
             }),
 

@@ -108,14 +108,22 @@ pub fn equals<
         return true;
     }
 
-    if !session.mark_as_working_on(Query { lhs, rhs }) {
-        return false;
+    if let Some(result) = session.mark_as_in_progress(Query { lhs, rhs }) {
+        match result {
+            super::session::Result::InProgress => {
+                session.mark_as_done(Query { lhs, rhs }, false);
+                return false;
+            }
+            super::session::Result::Done(result) => {
+                return result;
+            }
+        }
     }
 
     if equals_by_unification(lhs, rhs, premise, table, semantic, session)
         || equals_by_normalization(lhs, rhs, premise, table, semantic, session)
     {
-        session.mark_as_done(Query { lhs, rhs });
+        session.mark_as_done(Query { lhs, rhs }, true);
         return true;
     }
 
@@ -126,7 +134,7 @@ pub fn equals<
         {
             for value in values {
                 if equals(value, rhs, premise, table, semantic, session) {
-                    session.mark_as_done(Query { lhs, rhs });
+                    session.mark_as_done(Query { lhs, rhs }, true);
                     return true;
                 }
             }
@@ -138,13 +146,14 @@ pub fn equals<
         {
             for value in values {
                 if equals(lhs, value, premise, table, semantic, session) {
-                    session.mark_as_done(Query { lhs, rhs });
+                    session.mark_as_done(Query { lhs, rhs }, true);
                     return true;
                 }
             }
         }
     }
 
+    session.clear_query(Query { lhs, rhs });
     false
 }
 

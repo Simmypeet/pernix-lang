@@ -1,5 +1,7 @@
 //! Contains the three fundamental terms of the language: [`Type`], [`Constant`], and [`Lifetime`].
 
+use std::{fmt::Debug, hash::Hash};
+
 use constant::Constant;
 use enum_as_inner::EnumAsInner;
 use lifetime::Lifetime;
@@ -15,7 +17,6 @@ pub mod r#type;
 pub struct GenericArguments {
     /// The lifetimes supplied to the term.
     pub lifetimes: Vec<Lifetime>,
-
     /// The types supplied to the term.
     pub types: Vec<Type>,
     /// The constants supplied to the term.
@@ -80,8 +81,14 @@ pub struct Substructural {
     pub constants: Vec<(Constant, Constant)>,
 }
 
+/// The term under the `local` modifier.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Local<T>(pub Box<T>)
+where
+    Self: Into<T>;
+
 /// Contains the functionality for determining the properties of a term.
-pub trait Term: Map + Sized + Clone {
+pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord {
     /// Returns the matching substructural matches between `self` and `other`.
     ///
     /// # Example

@@ -5,6 +5,10 @@ use proptest::{
 };
 
 use super::{Constant, Primitive};
+use crate::{
+    arena::ID,
+    symbol::{ConstantParameterID, GenericID},
+};
 
 impl Arbitrary for Primitive {
     type Parameters = ();
@@ -28,11 +32,26 @@ impl Arbitrary for Primitive {
     }
 }
 
+impl Arbitrary for ConstantParameterID {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (GenericID::arbitrary(), ID::arbitrary())
+            .prop_map(|(parent, id)| Self { parent, id })
+            .boxed()
+    }
+}
+
 impl Arbitrary for Constant {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Primitive::arbitrary().prop_map(Self::Primitive).boxed()
+        prop_oneof![
+            Primitive::arbitrary().prop_map(Self::Primitive),
+            ConstantParameterID::arbitrary().prop_map(Self::Parameter)
+        ]
+        .boxed()
     }
 }

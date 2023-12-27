@@ -4,7 +4,7 @@ use proptest::{
     strategy::{BoxedStrategy, Just, Strategy},
 };
 
-use super::{Forall, Lifetime};
+use super::Lifetime;
 use crate::{
     arena::ID,
     symbol::{GenericID, LifetimeParameterID},
@@ -16,10 +16,9 @@ impl Arbitrary for Lifetime {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Just(Self::Static),
-            (GenericID::arbitrary(), ID::arbitrary())
+            1 => Just(Self::Static),
+            3 => (GenericID::arbitrary(), ID::arbitrary())
                 .prop_map(|(parent, id)| Self::Parameter(LifetimeParameterID { parent, id })),
-            proptest::num::usize::ANY.prop_map(|x| Self::Forall(Forall(x)))
         ]
         .boxed()
     }

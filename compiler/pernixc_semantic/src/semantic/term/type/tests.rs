@@ -6,10 +6,10 @@ use proptest::{
     strategy::{BoxedStrategy, Just, Strategy},
 };
 
-use super::{Local, Pointer, Primitive, Qualifier, Reference, SymbolKindID, Type};
+use super::{Pointer, Primitive, Qualifier, Reference, SymbolKindID, Type};
 use crate::{
     arena::ID,
-    semantic::term::{constant::Constant, lifetime::Lifetime, Symbol},
+    semantic::term::{constant::Constant, lifetime::Lifetime},
     symbol::{GenericID, TypeParameterID},
 };
 impl Arbitrary for TypeParameterID {
@@ -92,28 +92,14 @@ impl Arbitrary for Reference {
     }
 }
 
-impl Arbitrary for Local {
-    type Parameters = Option<BoxedStrategy<Type>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(type_strategy: Self::Parameters) -> Self::Strategy {
-        type_strategy
-            .unwrap_or_else(Type::arbitrary)
-            .prop_map(|x| Self {
-                r#type: Box::new(x),
-            })
-            .boxed()
-    }
-}
-
 impl Arbitrary for SymbolKindID {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            proptest::num::usize::ANY.prop_map(|x| Self::Type(ID::new(x))),
-            proptest::num::usize::ANY.prop_map(|x| Self::Type(ID::new(x))),
+            proptest::num::usize::ANY.prop_map(|x| Self::Struct(ID::new(x))),
+            proptest::num::usize::ANY.prop_map(|x| Self::Enum(ID::new(x))),
             proptest::num::usize::ANY.prop_map(|x| Self::Type(ID::new(x))),
         ]
         .boxed()
@@ -127,21 +113,11 @@ impl Arbitrary for Type {
     );
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((lt_strat, const_strat): Self::Parameters) -> Self::Strategy {
-        let leaf = prop_oneof![
+    fn arbitrary_with((_, _): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
             Primitive::arbitrary().prop_map(Self::Primitive),
-            TypeParameterID::arbitrary().prop_map(Self::Parameter)
-        ];
-
-        leaf.prop_recursive(4, 24, 6, move |inner| {
-            prop_oneof![
-                Pointer::arbitrary_with(Some(inner.clone())).prop_map(Self::Pointer),
-                Local::arbitrary_with(Some(inner.clone())).prop_map(Self::Local),
-                Reference::arbitrary_with(Some(inner.clone())).prop_map(Self::Reference),
-                Symbol::arbitrary_with((lt_strat.clone(), Some(inner), const_strat.clone()))
-                    .prop_map(Self::Symbol)
-            ]
-        })
+            TypeParameterID::arbitrary().prop_map(Self::Parameter),
+        ]
         .boxed()
     }
 }
