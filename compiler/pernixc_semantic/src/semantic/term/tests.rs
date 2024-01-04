@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use proptest::{
     arbitrary::Arbitrary,
     prop_oneof,
@@ -5,9 +7,13 @@ use proptest::{
 };
 
 use super::{
-    constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Local, Symbol,
+    constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Local, MemberSymbol,
+    Symbol,
 };
-use crate::{arena::ID, symbol::GenericID};
+use crate::{
+    arena::ID,
+    symbol::{GenericID, MemberID},
+};
 
 impl<T: 'static> Arbitrary for ID<T> {
     type Parameters = ();
@@ -15,6 +21,21 @@ impl<T: 'static> Arbitrary for ID<T> {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::num::usize::ANY.prop_map(Self::new).boxed()
+    }
+}
+
+impl<ChildID: Arbitrary, ParentID: Arbitrary> Arbitrary for MemberID<ChildID, ParentID>
+where
+    ChildID::Strategy: 'static,
+    ParentID::Strategy: 'static,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (ChildID::arbitrary(), ParentID::arbitrary())
+            .prop_map(|(id, parent)| Self { parent, id })
+            .boxed()
     }
 }
 
@@ -92,5 +113,46 @@ where
         let strat = strat.unwrap_or_else(T::arbitrary);
 
         (strat).prop_map(|x| Self(Box::new(x))).boxed()
+    }
+}
+
+impl<ID: Debug + Arbitrary> Arbitrary for MemberSymbol<ID>
+where
+    ID::Strategy: 'static,
+{
+    type Parameters = (
+        Option<BoxedStrategy<Lifetime>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<Constant>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let lt_strat = args.0.unwrap_or_else(Lifetime::arbitrary);
+        let ty_start = args.1.unwrap_or_else(Type::arbitrary);
+        let const_strat = args.2.unwrap_or_else(Constant::arbitrary);
+        (
+            ID::arbitrary(),
+            proptest::collection::vec(lt_strat.clone(), 0..=1),
+            proptest::collection::vec(ty_start.clone(), 0..=1),
+            proptest::collection::vec(const_strat.clone(), 0..=1),
+            proptest::collection::vec(lt_strat, 0..=1),
+            proptest::collection::vec(ty_start, 0..=1),
+            proptest::collection::vec(const_strat, 0..=1),
+        )
+            .prop_map(move |(id, lts, tys, consts, lts1, tys1, consts1)| Self {
+                id,
+                member_generic_arguments: GenericArguments {
+                    lifetimes: lts,
+                    types: tys,
+                    constants: consts,
+                },
+                parent_generic_arguments: GenericArguments {
+                    lifetimes: lts1,
+                    types: tys1,
+                    constants: consts1,
+                },
+            })
+            .boxed()
     }
 }

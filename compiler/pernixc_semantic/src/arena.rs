@@ -92,17 +92,15 @@ impl<T> std::hash::Hash for ID<T> {
 /// it will invalidate all the [`ID`]s given out before. This data structure is commonly used in
 /// graph structures where the nodes are stored in an [`Arena`] and the edges are represented by
 /// [`ID`]s.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arena<T, Idx: Key = ID<T>> {
-    _marker: PhantomData<Idx>,
-    items: Vec<T>,
+    items: HashMap<Idx, T>,
 }
 
 impl<T, Idx: Key> Default for Arena<T, Idx> {
     fn default() -> Self {
         Self {
-            _marker: PhantomData,
-            items: Vec::new(),
+            items: HashMap::new(),
         }
     }
 }
@@ -122,31 +120,63 @@ impl<T, Idx: Key> Arena<T, Idx> {
 
     /// Inserts a new item into the [`Arena`] and returns its `Idx`.
     pub fn insert(&mut self, item: T) -> Idx {
-        let index = self.items.len();
-        self.items.push(item);
-        Idx::from_index(index)
+        self.insert_available(Idx::from_index(self.items.len()), item)
+    }
+
+    /// Inserts a new item into the [`Arena`] with explicit `Idx`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok` if the item was inserted successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` with the `Idx` of the existing item if the `Idx` already exists in the
+    /// [`Arena`].
+    pub fn insert_with_id(&mut self, id: Idx, item: T) -> Result<(), Idx> {
+        match self.items.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(item);
+                Ok(())
+            }
+
+            Entry::Occupied(entry) => Err(*entry.key()),
+        }
+    }
+
+    fn insert_available(&mut self, id: Idx, item: T) -> Idx {
+        match self.items.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(item);
+                id
+            }
+
+            Entry::Occupied(_) => {
+                let index = id.into_index();
+                let index = Idx::from_index(index + 1);
+                self.insert_available(index, item)
+            }
+        }
     }
 
     /// Returns a reference to the item in the [`Arena`] with the given `Idx`.
     #[must_use]
-    pub fn get(&self, id: Idx) -> Option<&T> { self.items.get(id.into_index()) }
+    pub fn get(&self, id: Idx) -> Option<&T> { self.items.get(&id) }
 
     /// Returns a mutable reference to the item in the [`Arena`] with the given `Idx`.
     #[must_use]
-    pub fn get_mut(&mut self, id: Idx) -> Option<&mut T> { self.items.get_mut(id.into_index()) }
+    pub fn get_mut(&mut self, id: Idx) -> Option<&mut T> { self.items.get_mut(&id) }
 
     /// Returns an iterator over the items in the [`Arena`].
     #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &T> { self.items.iter() }
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &T> { self.items.values() }
 
     /// Returns an mutable iterator over the items in the [`Arena`].
-    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> { self.items.iter_mut() }
+    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> { self.items.values_mut() }
 
     /// Returns an iterator over the `Idx`s of the items in the [`Arena`].
     #[must_use]
-    pub fn keys(&self) -> impl ExactSizeIterator<Item = Idx> {
-        (0..self.items.len()).map(|i| Idx::from_index(i))
-    }
+    pub fn ids(&self) -> impl ExactSizeIterator<Item = &Idx> { self.items.keys() }
 }
 
 impl<T, Idx: Key> Index<Idx> for Arena<T, Idx> {
@@ -160,22 +190,22 @@ impl<T, Idx: Key> IndexMut<Idx> for Arena<T, Idx> {
 }
 
 impl<T, Idx: Key> IntoIterator for Arena<T, Idx> {
-    type IntoIter = std::vec::IntoIter<T>;
-    type Item = T;
+    type IntoIter = std::collections::hash_map::IntoIter<Idx, T>;
+    type Item = (Idx, T);
 
     fn into_iter(self) -> Self::IntoIter { self.items.into_iter() }
 }
 
 impl<'a, T, Idx: Key> IntoIterator for &'a Arena<T, Idx> {
-    type IntoIter = std::slice::Iter<'a, T>;
-    type Item = &'a T;
+    type IntoIter = std::collections::hash_map::Iter<'a, Idx, T>;
+    type Item = (&'a Idx, &'a T);
 
     fn into_iter(self) -> Self::IntoIter { self.items.iter() }
 }
 
 impl<'a, T, Idx: Key> IntoIterator for &'a mut Arena<T, Idx> {
-    type IntoIter = std::slice::IterMut<'a, T>;
-    type Item = &'a mut T;
+    type IntoIter = std::collections::hash_map::IterMut<'a, Idx, T>;
+    type Item = (&'a Idx, &'a mut T);
 
     fn into_iter(self) -> Self::IntoIter { self.items.iter_mut() }
 }

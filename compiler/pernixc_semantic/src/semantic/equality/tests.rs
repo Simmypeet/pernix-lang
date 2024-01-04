@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, fmt::Debug, marker::PhantomData};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Debug,
+    marker::PhantomData,
+};
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -9,18 +13,23 @@ use proptest::{
 
 use super::equals;
 use crate::{
-    arena::ID,
+    arena::{Arena, ID},
     semantic::{
         self,
-        mapping::{self},
+        mapping::{self, Map},
         session::{self, Session},
+        substitution::{Substitute, Substitution},
         term::{
             constant::Constant,
             lifetime::Lifetime,
             r#type::{Primitive, SymbolKindID, Type},
             GenericArguments, Local, Symbol, Term,
         },
+        visitor::{self, VisitMode, Visitor},
         Premise, Semantic,
+    },
+    symbol::{
+        self, GenericDeclaration, GenericID, GenericParameters, TypeParameter, TypeParameterID,
     },
     table::{Success, Table},
 };
@@ -205,7 +214,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
     fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-        leaf.prop_recursive(32, 192, 6, move |inner| {
+        leaf.prop_recursive(16, 96, 6, move |inner| {
             let constant_start = strat.1.clone().unwrap_or_else(|| {
                 Box::<dyn Property<Constant>>::arbitrary_with((
                     strat.0.clone(),
@@ -220,13 +229,15 @@ impl Arbitrary for Box<dyn Property<Type>> {
             });
 
             prop_oneof![
-                Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
-                SymbolCongruence::arbitrary_with((
+                2 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
+                6 => SymbolCongruence::arbitrary_with((
                     Some(lifetime_strat),
-                    Some(inner),
+                    Some(inner.clone()),
                     Some(constant_start)
                 ))
-                .prop_map(|x| Box::new(x) as _)
+                .prop_map(|x| Box::new(x) as _),
+                1 => LocalCongruence::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
+                1 => TypeAlias::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
@@ -243,7 +254,7 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-        leaf.prop_recursive(32, 192, 6, |inner| {
+        leaf.prop_recursive(4, 8, 2, |inner| {
             prop_oneof![Mapping::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _)]
         })
         .boxed()
@@ -260,7 +271,7 @@ impl Arbitrary for Box<dyn Property<Constant>> {
     fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-        leaf.prop_recursive(32, 192, 6, move |inner| {
+        leaf.prop_recursive(16, 96, 6, move |inner| {
             let type_strat = strat.1.clone().unwrap_or_else(|| {
                 Box::<dyn Property<Type>>::arbitrary_with((strat.0.clone(), Some(inner.clone())))
             });
@@ -272,13 +283,14 @@ impl Arbitrary for Box<dyn Property<Constant>> {
             });
 
             prop_oneof![
-                Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
-                SymbolCongruence::arbitrary_with((
+                2 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
+                6 => SymbolCongruence::arbitrary_with((
                     Some(lifetime_strat),
                     Some(type_strat),
-                    Some(inner)
+                    Some(inner.clone())
                 ))
-                .prop_map(|x| Box::new(x) as _)
+                .prop_map(|x| Box::new(x) as _),
+                1 => LocalCongruence::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
@@ -330,27 +342,43 @@ where
 
         (strat.clone(), strat)
             .prop_map(|(lhs, rhs)| Self { lhs, rhs })
-            .prop_filter("filter out trivial equalities (Mapping)", |x| {
-                let (lhs, rhs) = x.generate();
-
-                !semantic::Default.trivially_equals(&lhs, &rhs)
-            })
             .boxed()
     }
 }
 
-impl<T: Term + Debug + 'static> Property<T> for Mapping<T> {
+impl<T: Term + Debug + 'static> Property<T> for Mapping<T>
+where
+    semantic::Default: Semantic<T>,
+    session::Default: Session<T>,
+{
     fn requires_environment(&self) -> bool { true }
 
     fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
-        if !self.lhs.apply(table, premise) || !self.rhs.apply(table, premise) {
+        let (l_lhs, l_rhs) = self.lhs.generate();
+        let (r_lhs, r_rhs) = self.rhs.generate();
+
+        if !equals(
+            &l_lhs,
+            &r_rhs,
+            premise,
+            table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
+        ) && (!self.lhs.apply(table, premise) || !self.rhs.apply(table, premise))
+        {
             return false;
-        };
+        }
 
-        let (_, l_rhs) = self.lhs.generate();
-        let (r_lhs, _) = self.rhs.generate();
-
-        premise.equalities_mapping.insert(l_rhs, r_lhs);
+        if !equals(
+            &l_lhs,
+            &r_rhs,
+            premise,
+            table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
+        ) {
+            premise.equalities_mapping.insert(l_rhs, r_lhs);
+        }
 
         true
     }
@@ -358,7 +386,6 @@ impl<T: Term + Debug + 'static> Property<T> for Mapping<T> {
     fn generate(&self) -> (T, T) {
         let (l_lhs, _) = self.lhs.generate();
         let (_, r_rhs) = self.rhs.generate();
-
         (l_lhs, r_rhs)
     }
 }
@@ -382,14 +409,7 @@ where
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let strat = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
-        strat
-            .prop_map(|strategy| Self { strategy })
-            .prop_filter("filter out trivial equalities (LocalCongruence)", |x| {
-                let (lhs, rhs) = x.generate();
-
-                !semantic::Default.trivially_equals(&lhs, &rhs)
-            })
-            .boxed()
+        strat.prop_map(|strategy| Self { strategy }).boxed()
     }
 }
 
@@ -460,11 +480,6 @@ where
                 constant_strategies: consts,
                 id,
                 term: PhantomData,
-            })
-            .prop_filter("filter out trivial equalities (SymbolCongruence)", |x| {
-                let (lhs, rhs) = x.generate();
-
-                !semantic::Default.trivially_equals(&lhs, &rhs)
             })
             .boxed()
     }
@@ -558,8 +573,217 @@ where
     }
 }
 
+struct TermCollector {
+    terms: Vec<Type>,
+}
+
+impl Visitor for TermCollector {
+    fn visit_type(&mut self, ty: &Type, _: semantic::visitor::Source) -> bool {
+        self.terms.push(ty.clone());
+        true
+    }
+
+    fn visit_lifetime(&mut self, _: &Lifetime, _: semantic::visitor::Source) -> bool { true }
+
+    fn visit_constant(&mut self, _: &Constant, _: semantic::visitor::Source) -> bool { true }
+}
+
+#[derive(Debug)]
+pub struct TypeAlias {
+    property: Box<dyn Property<Type>>,
+    type_id: ID<symbol::Type>,
+    argument: Type,
+    aliased_at_lhs: bool,
+    type_alias_at_lhs: bool,
+}
+
+impl Arbitrary for TypeAlias {
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let strat = args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
+
+        (
+            (proptest::bool::ANY, strat).prop_ind_flat_map2(|(aliased_at_lhs, prop)| {
+                let (lhs, rhs) = prop.generate();
+                let sampled = if aliased_at_lhs { lhs } else { rhs };
+
+                let mut term_collector = TermCollector { terms: Vec::new() };
+
+                visitor::accept_recursive(
+                    &sampled,
+                    &mut term_collector,
+                    VisitMode::<Success>::OnlySubTerms,
+                );
+
+                proptest::sample::select(term_collector.terms)
+            }),
+            ID::arbitrary(),
+            proptest::bool::ANY,
+        )
+            .prop_map(
+                |(((aliased_at_lhs, ty_strat), argument), type_id, type_alias_at_lhs)| Self {
+                    property: ty_strat,
+                    type_id,
+                    argument,
+                    aliased_at_lhs,
+                    type_alias_at_lhs,
+                },
+            )
+            .boxed()
+    }
+}
+
+impl Property<Type> for TypeAlias {
+    fn requires_environment(&self) -> bool { true }
+
+    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
+        let (lhs, rhs) = self.generate();
+
+        if !equals(
+            &lhs,
+            &rhs,
+            premise,
+            table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
+        ) && !self.property.apply(table, premise)
+        {
+            return false;
+        }
+
+        if !equals(
+            &lhs,
+            &rhs,
+            premise,
+            table,
+            &mut semantic::Default,
+            &mut session::Default::default(),
+        ) {
+            let type_symbol = symbol::Type {
+                id: self.type_id,
+                generic_declaration: GenericDeclaration {
+                    parameters: GenericParameters {
+                        lifetimes: Arena::new(),
+                        types: {
+                            let mut arena = Arena::new();
+
+                            arena
+                                .insert_with_id(ID::new(0), TypeParameter {
+                                    name: "T".to_string(),
+                                    parent_generic_id: GenericID::Type(self.type_id),
+                                    span: None,
+                                })
+                                .unwrap();
+
+                            arena
+                        },
+                        constants: Arena::new(),
+                        lifetime_parameter_ids_by_name: HashMap::new(),
+                        type_parameter_ids_by_name: {
+                            let mut map = HashMap::new();
+                            map.insert("T".to_string(), ID::new(0));
+                            map
+                        },
+                        constant_parameter_ids_by_name: HashMap::new(),
+                        default_type_parameters: Vec::new(),
+                        default_constant_parameters: Vec::new(),
+                        lifetime_order: Vec::new(),
+                        type_order: vec![ID::new(0)],
+                        constant_order: Vec::new(),
+                    },
+                    predicates: Vec::new(),
+                },
+                parent_id: ID::new(0),
+                span: None,
+                name: "Test".to_string(),
+                data: symbol::TypeData {
+                    accessibility: symbol::Accessibility::Public,
+                    r#type: {
+                        let (lhs, rhs) = self.property.generate();
+
+                        let mut sampled = if self.aliased_at_lhs { lhs } else { rhs };
+
+                        sampled.apply(&Substitution {
+                            types: {
+                                let mut map = BTreeMap::new();
+
+                                map.insert(
+                                    self.argument.clone(),
+                                    Type::Parameter(TypeParameterID {
+                                        parent: GenericID::Type(self.type_id),
+                                        id: ID::new(0),
+                                    }),
+                                );
+
+                                map
+                            },
+                            constants: BTreeMap::new(),
+                            lifetimes: BTreeMap::new(),
+                        });
+
+                        sampled
+                    },
+                },
+            };
+
+            if table
+                .representation
+                .types
+                .insert_with_id(self.type_id, type_symbol)
+                .is_err()
+            {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn generate(&self) -> (Type, Type) {
+        let (lhs, rhs) = self.property.generate();
+        let non_aliased = if self.aliased_at_lhs { rhs } else { lhs };
+        let aliased = Type::Symbol(Symbol {
+            id: SymbolKindID::Type(self.type_id),
+            generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![self.argument.clone()],
+                constants: Vec::new(),
+            },
+        });
+
+        if self.type_alias_at_lhs {
+            (aliased, non_aliased)
+        } else {
+            (non_aliased, aliased)
+        }
+    }
+}
+
+fn remove<T: Term>(equalities: &mut mapping::Mapping, term: &T) {
+    let removed_terms = equalities.remove_equality(term);
+
+    for removed_term in removed_terms.into_iter().flatten() {
+        remove(equalities, &removed_term);
+    }
+}
+
+fn remove_sampled<T: Term>(equalities: &mut mapping::Mapping) -> bool {
+    #[allow(clippy::option_if_let_else)]
+    if let Some(sampled) = <T as Map>::get(equalities).keys().next() {
+        remove(equalities, &sampled.clone());
+        true
+    } else {
+        false
+    }
+}
+
 #[allow(clippy::too_many_lines)]
-fn property_based_checking<T: Term + 'static>(property: &dyn Property<T>) -> TestCaseResult
+fn property_based_checking<T: Term + 'static>(
+    property: &dyn Property<T>,
+    decoy: Decoy,
+) -> TestCaseResult
 where
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
@@ -568,52 +792,77 @@ where
     let mut premise = Premise::default();
     let mut table = Table::<Success>::default();
 
-    if property.requires_environment() {
-        if equals(
-            &term1,
-            &term2,
-            &premise,
-            &table,
-            &mut semantic::Default,
-            &mut session::Default::default(),
-        ) || equals(
-            &term2,
-            &term1,
-            &premise,
-            &table,
-            &mut semantic::Default,
-            &mut session::Default::default(),
-        ) {
-            return Err(TestCaseError::reject("trivial equality"));
-        }
+    if property.requires_environment() && !property.apply(&mut table, &mut premise) {
+        // failed to apply the environment
+        return Err(TestCaseError::reject("failed to apply the environment"));
+    }
 
-        if !property.apply(&mut table, &mut premise) {
-            // failed to apply the environment
-            return Err(TestCaseError::reject("failed to apply the environment"));
+    println!(
+        "mapping count: {}",
+        premise.equalities_mapping.mapping_count()
+    );
+
+    prop_assert!(equals(
+        &term1,
+        &term2,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+    prop_assert!(equals(
+        &term2,
+        &term1,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut session::Default::default()
+    ));
+
+    {
+        let mut premise = premise.clone();
+
+        if remove_sampled::<Type>(&mut premise.equalities_mapping)
+            || remove_sampled::<Lifetime>(&mut premise.equalities_mapping)
+            || remove_sampled::<Constant>(&mut premise.equalities_mapping)
+        {
+            prop_assert!(!equals(
+                &term1,
+                &term2,
+                &premise,
+                &table,
+                &mut semantic::Default,
+                &mut session::Default::default()
+            ));
+            prop_assert!(!equals(
+                &term2,
+                &term1,
+                &premise,
+                &table,
+                &mut semantic::Default,
+                &mut session::Default::default()
+            ));
         }
     }
 
-    let equality_mapping_count = premise
-        .equalities_mapping
-        .lifetimes()
-        .values()
-        .map(BTreeSet::len)
-        .chain(
-            premise
-                .equalities_mapping
-                .types()
-                .values()
-                .map(BTreeSet::len),
-        )
-        .chain(
-            premise
-                .equalities_mapping
-                .constants()
-                .values()
-                .map(BTreeSet::len),
-        )
-        .sum::<usize>();
-    println!("equality mapping count: {equality_mapping_count}");
+    // adding unrelated equalities should not affect the result.
+    for decoy_lifetime_equalities in decoy.decoy_lifetime_equalities {
+        premise
+            .equalities_mapping
+            .insert(decoy_lifetime_equalities.lhs, decoy_lifetime_equalities.rhs);
+    }
+
+    for decoy_type_equalities in decoy.decoy_type_equalities {
+        premise
+            .equalities_mapping
+            .insert(decoy_type_equalities.lhs, decoy_type_equalities.rhs);
+    }
+
+    for decoy_constant_equalities in decoy.decoy_constant_equalities {
+        premise
+            .equalities_mapping
+            .insert(decoy_constant_equalities.lhs, decoy_constant_equalities.rhs);
+    }
 
     prop_assert!(equals(
         &term1,
@@ -631,8 +880,6 @@ where
         &mut semantic::Default,
         &mut session::Default::default()
     ));
-
-    // TODO: check if the equality does not hold without the proper environment applied.
 
     Ok(())
 }
@@ -661,30 +908,77 @@ where
     Ok(())
 }
 
+#[derive(Debug, Default)]
+pub struct Decoy {
+    decoy_lifetime_equalities: Vec<DecoyEquality<Lifetime>>,
+    decoy_type_equalities: Vec<DecoyEquality<Type>>,
+    decoy_constant_equalities: Vec<DecoyEquality<Constant>>,
+}
+
+impl Arbitrary for Decoy {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            proptest::collection::vec(DecoyEquality::arbitrary(), 0..=2),
+            proptest::collection::vec(DecoyEquality::arbitrary(), 0..=2),
+            proptest::collection::vec(DecoyEquality::arbitrary(), 0..=2),
+        )
+            .prop_map(|(lts, tys, consts)| Self {
+                decoy_lifetime_equalities: lts,
+                decoy_type_equalities: tys,
+                decoy_constant_equalities: consts,
+            })
+            .boxed()
+    }
+}
+
+#[derive(Debug)]
+pub struct DecoyEquality<T> {
+    lhs: T,
+    rhs: T,
+}
+
+impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary for DecoyEquality<T> {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (T::arbitrary(), T::arbitrary())
+            .prop_map(|(lhs, rhs)| Self { lhs, rhs })
+            .boxed()
+    }
+}
+
 proptest! {
     #![proptest_config(proptest::test_runner::Config {
         max_shrink_iters: 100_000,
-        max_local_rejects: u32::MAX,
-        cases: 4096,
         ..Default::default()
-    })] #[test]
+    })]
+
+    #[test]
     fn property_based_testing_constant(
-        property in Box::<dyn Property<Constant>>::arbitrary()
-    ) { property_based_checking(&*property)?;
+       property in Box::<dyn Property<Constant>>::arbitrary(),
+        decoy in Decoy::arbitrary()
+    ) {
+        property_based_checking(&*property, decoy)?;
     }
 
     #[test]
     fn property_based_testing_type(
-        property in Box::<dyn Property<Type>>::arbitrary()
+        property in Box::<dyn Property<Type>>::arbitrary(),
+        decoy in Decoy::arbitrary()
     ) {
-        property_based_checking(&*property)?;
+        property_based_checking(&*property, decoy)?;
     }
 
     #[test]
     fn property_based_testing_lifetime(
-        property in Box::<dyn Property<Lifetime>>::arbitrary()
+        property in Box::<dyn Property<Lifetime>>::arbitrary(),
+        decoy in Decoy::arbitrary()
     ) {
-        property_based_checking(&*property)?;
+        property_based_checking(&*property, decoy)?;
     }
 
     #[test]

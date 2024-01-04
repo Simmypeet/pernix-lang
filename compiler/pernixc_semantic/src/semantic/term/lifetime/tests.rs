@@ -7,17 +7,18 @@ use proptest::{
 use super::Lifetime;
 use crate::{
     arena::ID,
+    semantic::term::{constant::Constant, r#type::Type},
     symbol::{GenericID, LifetimeParameterID},
 };
 
 impl Arbitrary for Lifetime {
-    type Parameters = ();
+    type Parameters = (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Constant>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((_, _): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             1 => Just(Self::Static),
-            3 => (GenericID::arbitrary(), ID::arbitrary())
+            4 => (GenericID::arbitrary(), ID::arbitrary())
                 .prop_map(|(parent, id)| Self::Parameter(LifetimeParameterID { parent, id })),
         ]
         .boxed()

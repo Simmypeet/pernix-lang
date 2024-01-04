@@ -29,7 +29,10 @@ pub trait Cache<Query> {
     fn mark_as_done(&mut self, record: Query, result: Self::Result);
 
     /// Clears the cached result of the given query.
-    fn clear_query(&mut self, query: Query);
+    fn clear_query(&mut self, query: Query) -> Option<Result<Self::Result>>;
+
+    /// Returns the result of the given query.
+    fn get_result(&self, query: Query) -> Option<&Result<Self::Result>>;
 }
 
 /// The session of semantic queries.
@@ -72,7 +75,13 @@ macro_rules! implements_cache {
                     .map(|x| *x = Result::Done(result));
             }
 
-            fn clear_query(&mut self, $param: $query) { self.$field_name.remove($expr_out); }
+            fn clear_query(&mut self, $param: $query) -> Option<Result<Self::Result>> {
+                self.$field_name.remove($expr_out)
+            }
+
+            fn get_result(&self, $param: $query) -> Option<&Result<Self::Result>> {
+                self.$field_name.get($expr_out)
+            }
         }
     };
 }

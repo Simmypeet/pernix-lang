@@ -4,10 +4,11 @@ use proptest::{
     strategy::{BoxedStrategy, Strategy},
 };
 
-use super::{Constant, Primitive};
+use super::{Constant, MemberSymbolKindID, Primitive};
 use crate::{
     arena::ID,
-    symbol::{ConstantParameterID, GenericID},
+    semantic::term::{lifetime::Lifetime, r#type::Type, MemberSymbol, Symbol},
+    symbol::ConstantParameterID,
 };
 
 impl Arbitrary for Primitive {
@@ -32,26 +33,49 @@ impl Arbitrary for Primitive {
     }
 }
 
-impl Arbitrary for ConstantParameterID {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (GenericID::arbitrary(), ID::arbitrary())
-            .prop_map(|(parent, id)| Self { parent, id })
-            .boxed()
-    }
-}
-
-impl Arbitrary for Constant {
+impl Arbitrary for MemberSymbolKindID {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
+            ID::arbitrary().prop_map(Self::TraitImplementation),
+            ID::arbitrary().prop_map(Self::AdtImplementation),
+            ID::arbitrary().prop_map(Self::Trait),
+        ]
+        .boxed()
+    }
+}
+
+impl Arbitrary for Constant {
+    type Parameters = (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Type>>);
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(param: Self::Parameters) -> Self::Strategy {
+        let leaf = prop_oneof![
             Primitive::arbitrary().prop_map(Self::Primitive),
             ConstantParameterID::arbitrary().prop_map(Self::Parameter)
-        ]
+        ];
+
+        leaf.prop_recursive(8, 48, 6, move |inner| {
+            let lt_strat = param.0.clone().unwrap_or_else(|| {
+                Lifetime::arbitrary_with((param.1.clone(), Some(inner.clone())))
+            });
+            let ty_strat = param.1.clone().unwrap_or_else(|| {
+                Type::arbitrary_with((Some(lt_strat.clone()), Some(inner.clone())))
+            });
+
+            prop_oneof![
+                MemberSymbol::arbitrary_with((
+                    Some(lt_strat.clone()),
+                    Some(ty_strat.clone()),
+                    Some(inner.clone())
+                ))
+                .prop_map(Self::MemberSymbol),
+                Symbol::arbitrary_with((Some(lt_strat), Some(ty_strat), Some(inner)))
+                    .prop_map(Self::Symbol)
+            ]
+        })
         .boxed()
     }
 }

@@ -77,6 +77,21 @@ impl Mapping {
 
         Some(terms)
     }
+
+    /// Gets the number of equalities in this mapping.
+    #[must_use]
+    pub fn mapping_count(&self) -> usize {
+        self.lifetimes
+            .values()
+            .map(BTreeSet::len)
+            .chain(
+                self.types
+                    .values()
+                    .map(BTreeSet::len)
+                    .chain(self.constants.values().map(BTreeSet::len)),
+            )
+            .sum()
+    }
 }
 
 /// Used to map a value to a set of equivalent values.

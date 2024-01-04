@@ -397,6 +397,15 @@ pub struct GenericParameters {
     /// List of defined constant parameters.
     pub constants: Arena<ConstantParameter>,
 
+    /// The order of the declaration of lifetime parameters.
+    pub lifetime_order: Vec<ID<LifetimeParameter>>,
+
+    /// The order of the declaration of type parameters.
+    pub type_order: Vec<ID<TypeParameter>>,
+
+    /// The order of the declaration of constant parameters.
+    pub constant_order: Vec<ID<ConstantParameter>>,
+
     /// Maps the name of the lifetime parameter to its ID.
     pub lifetime_parameter_ids_by_name: HashMap<String, ID<LifetimeParameter>>,
 
@@ -407,10 +416,10 @@ pub struct GenericParameters {
     pub constant_parameter_ids_by_name: HashMap<String, ID<ConstantParameter>>,
 
     /// List of default type parameters to be used when the generic parameters are not specified.
-    pub default_type_parameters: Arc<[r#type::Type]>,
+    pub default_type_parameters: Vec<r#type::Type>,
 
     /// List of default constant parameters to be used when the generic parameters are not
-    pub default_constant_parameters: Arc<[constant::Constant]>,
+    pub default_constant_parameters: Vec<constant::Constant>,
 }
 
 impl GenericParameters {

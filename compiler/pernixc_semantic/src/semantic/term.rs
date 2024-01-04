@@ -115,7 +115,11 @@ impl<T: Term> Tuple<T>
 where
     Self: TryFrom<T, Error = T> + Into<T>,
 {
-    fn substructural_match<'a>(mut self: &'a Self, mut other: &'a Self) -> Option<Substructural> {
+    fn substructural_match_internal<'a>(
+        from: &'a Self,
+        to: &'a Self,
+        swap: bool,
+    ) -> Option<Substructural> {
         fn push<T: Term>(lhs: T, rhs: T, existing: &mut Substructural, swap: bool) {
             if swap {
                 T::get_substructural_mut(existing).push((rhs, lhs));
@@ -124,96 +128,70 @@ where
             }
         }
 
-        let lhs_unpacked_count = self.elements.iter().filter(|x| x.is_unpacked()).count();
-        let rhs_unpacked_count = other.elements.iter().filter(|x| x.is_unpacked()).count();
-
-        let swap = match (lhs_unpacked_count, rhs_unpacked_count) {
-            (1, _) => false,
-            (_, 1) => true,
-
-            (lhs_length, rhs_length) => {
-                let mut result = Substructural::default();
-                if lhs_length != rhs_length {
-                    return None;
-                }
-
-                for (lhs, rhs) in self.elements.iter().zip(other.elements.iter()) {
-                    match (lhs, rhs) {
-                        (TupleElement::Regular(lhs), TupleElement::Regular(rhs))
-                        | (TupleElement::Unpacked(lhs), TupleElement::Unpacked(rhs)) => {
-                            T::get_substructural_mut(&mut result).push((lhs.clone(), rhs.clone()));
-                        }
-
-                        _ => return None,
-                    }
-                }
-
-                return Some(result);
-            }
-        };
-
         let mut existing = Substructural::default();
-        if swap {
-            std::mem::swap(&mut self, &mut other);
-        }
 
-        if self.elements.len() > other.elements.len() + 1 {
+        if from.elements.len() > to.elements.len() + 1 {
             return None;
         }
 
-        let unpacked_position = self
+        let unpacked_position = from
             .elements
             .iter()
             .position(TupleElement::is_unpacked)
             .unwrap();
 
         let head_range = 0..unpacked_position;
-        let self_tail_range = (unpacked_position + 1)..self.elements.len();
-        let other_tail_range =
-            (other.elements.len() - self_tail_range.clone().count())..other.elements.len();
-        let other_unpack_range = unpacked_position..other_tail_range.start;
+        let from_tail_range = (unpacked_position + 1)..from.elements.len();
+        let to_tail_range =
+            (to.elements.len() - from_tail_range.clone().count())..to.elements.len();
+        let to_unpack_range = unpacked_position..to_tail_range.start;
 
         // unify head
-        for (self_element, other_element) in self.elements[head_range.clone()]
+        for (from_element, to_element) in from.elements[head_range.clone()]
             .iter()
-            .zip(&other.elements[head_range])
+            .zip(&to.elements[head_range])
         {
-            let self_element = self_element.as_regular().unwrap();
-            let other_element = other_element.as_regular().unwrap();
+            let from_element = from_element.as_regular().unwrap();
+            let to_element = to_element.as_regular().unwrap();
 
             push(
-                self_element.clone(),
-                other_element.clone(),
+                from_element.clone(),
+                to_element.clone(),
                 &mut existing,
                 swap,
             );
         }
 
         // unify tail
-        for (self_element, other_element) in self.elements[self_tail_range]
+        for (from_element, to_element) in from.elements[from_tail_range]
             .iter()
-            .zip(&other.elements[other_tail_range])
+            .zip(&to.elements[to_tail_range])
         {
-            let self_element = self_element.as_regular().unwrap();
-            let other_element = other_element.as_regular().unwrap();
+            let from_element = from_element.as_regular().unwrap();
+            let to_element = to_element.as_regular().unwrap();
 
             push(
-                self_element.clone(),
-                other_element.clone(),
+                from_element.clone(),
+                to_element.clone(),
                 &mut existing,
                 swap,
             );
         }
 
-        let other_unpack = Self {
-            elements: other.elements[other_unpack_range].to_vec(),
+        let to_unpack = Self {
+            elements: to.elements[to_unpack_range].to_vec(),
         }
         .into();
 
-        let unpacked = self.elements[unpacked_position].as_unpacked().unwrap();
-        push(unpacked.clone(), other_unpack, &mut existing, swap);
+        let unpacked = from.elements[unpacked_position].as_unpacked().unwrap();
+        push(unpacked.clone(), to_unpack, &mut existing, swap);
 
         Some(existing)
+    }
+
+    fn substructural_match<'a>(&'a self, to: &'a Self) -> Option<Substructural> {
+        Self::substructural_match_internal(self, to, true)
+            .or_else(|| Self::substructural_match_internal(to, self, false))
     }
 }
 

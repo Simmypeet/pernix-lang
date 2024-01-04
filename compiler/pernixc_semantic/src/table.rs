@@ -190,7 +190,7 @@ pub struct Representation<T: State> {
     structs: Arena<<T::Container as Container>::Wrap<Struct>, ID<Struct>>,
     enums: Arena<<T::Container as Container>::Wrap<Enum>, ID<Enum>>,
     variants: Arena<<T::Container as Container>::Wrap<Variant>, ID<Variant>>,
-    types: Arena<<T::Container as Container>::Wrap<Type>, ID<Type>>,
+    pub(crate) types: Arena<<T::Container as Container>::Wrap<Type>, ID<Type>>,
     functions: Arena<<T::Container as Container>::Wrap<Function>, ID<Function>>,
     constants: Arena<<T::Container as Container>::Wrap<Constant>, ID<Constant>>,
 
@@ -240,7 +240,7 @@ pub struct Representation<T: State> {
 #[derive(Debug, derive_more::Deref)]
 pub struct Table<T: State> {
     #[deref]
-    representation: Representation<T>,
+    pub(crate) representation: Representation<T>,
     state: T,
 }
 

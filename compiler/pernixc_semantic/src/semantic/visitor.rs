@@ -71,6 +71,42 @@ impl<S: State> Clone for VisitMode<'_, S> {
 #[allow(missing_docs)]
 pub struct VisitNonApplicationTermError;
 
+#[derive(Debug)]
+struct RecursiveVisitorAdapter<'a, V: Visitor, S: State> {
+    visitor: &'a mut V,
+    mode: VisitMode<'a, S>,
+}
+
+impl<'a, V: Visitor, S: State> Visitor for RecursiveVisitorAdapter<'a, V, S> {
+    fn visit_type(&mut self, ty: &Type, source: Source) -> bool {
+        if !self.visitor.visit_type(ty, source) {
+            return false;
+        }
+
+        ty.accept_one_level(self, self.mode.clone()).unwrap_or(true)
+    }
+
+    fn visit_lifetime(&mut self, lifetime: &Lifetime, source: Source) -> bool {
+        if !self.visitor.visit_lifetime(lifetime, source) {
+            return false;
+        }
+
+        lifetime
+            .accept_one_level(self, self.mode.clone())
+            .unwrap_or(true)
+    }
+
+    fn visit_constant(&mut self, constant: &Constant, source: Source) -> bool {
+        if !self.visitor.visit_constant(constant, source) {
+            return false;
+        }
+
+        constant
+            .accept_one_level(self, self.mode.clone())
+            .unwrap_or(true)
+    }
+}
+
 /// A term for the visitor pattern.
 pub trait Element {
     /// Invokes the visitor on the term itself once.
@@ -100,6 +136,36 @@ pub trait Element {
         visitor: &mut impl Visitor,
         mode: VisitMode<impl State>,
     ) -> Result<bool, VisitNonApplicationTermError>;
+}
+
+/// Invokes the visitor on the term itself and all of its sub-terms recursively.
+///
+/// # Example
+///
+/// When a term `Type[int32, Vec[float32]]` got called, the visitor will be visiting
+/// `Type[int32, Vec[float32]]`, `int32`, `Vec[float32]`, and `float32`.
+///
+/// # Returns
+///
+/// Returns `true` if the visitor has visited all of the sub-terms of the term.
+pub fn accept_recursive(
+    element: &impl Element,
+    visitor: &mut impl Visitor,
+    mode: VisitMode<impl State>,
+) -> bool {
+    if !element.accept_single(visitor) {
+        return false;
+    }
+
+    let mut adapter = RecursiveVisitorAdapter {
+        visitor,
+        mode: mode.clone(),
+    };
+
+    match element.accept_one_level(&mut adapter, mode) {
+        Ok(result) => result,
+        Err(VisitNonApplicationTermError) => true,
+    }
 }
 
 impl<Term: Element + Clone> Tuple<Term>

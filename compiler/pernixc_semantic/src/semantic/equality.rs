@@ -2,7 +2,7 @@
 
 use super::{
     mapping::Map,
-    session::Session,
+    session::{self, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Premise, Semantic,
 };
@@ -80,6 +80,29 @@ fn equals_by_normalization<
     false
 }
 
+fn equals_withour_mapping<
+    T: Term,
+    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+>(
+    lhs: &T,
+    rhs: &T,
+    premise: &Premise,
+    table: &Table<impl State>,
+    semantic: &mut S,
+    session: &mut R,
+) -> bool {
+    if semantic.trivially_equals(lhs, rhs)
+        || equals_by_unification(lhs, rhs, premise, table, semantic, session)
+        || equals_by_normalization(lhs, rhs, premise, table, semantic, session)
+    {
+        session.mark_as_done(Query { lhs, rhs }, true);
+        return true;
+    }
+
+    false
+}
+
 /// Checks if the two given terms are equal.
 ///
 /// Equality is one of the most important parts of the type system. The equality model is based on
@@ -104,20 +127,19 @@ pub fn equals<
     semantic: &mut S,
     session: &mut R,
 ) -> bool {
+    let query = Query { lhs, rhs };
+
     if semantic.trivially_equals(lhs, rhs) {
+        session.mark_as_done(Query { lhs, rhs }, true);
         return true;
     }
 
-    if let Some(result) = session.mark_as_in_progress(Query { lhs, rhs }) {
-        match result {
-            super::session::Result::InProgress => {
-                session.mark_as_done(Query { lhs, rhs }, false);
-                return false;
-            }
-            super::session::Result::Done(result) => {
-                return result;
-            }
+    match session.mark_as_in_progress(query.clone()) {
+        Some(session::Result::Done(result)) => return result,
+        Some(session::Result::InProgress) => {
+            return false;
         }
+        None => {}
     }
 
     if equals_by_unification(lhs, rhs, premise, table, semantic, session)
@@ -128,10 +150,7 @@ pub fn equals<
     }
 
     for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
-        if semantic.trivially_equals(lhs, key)
-            || equals_by_unification(lhs, key, premise, table, semantic, session)
-            || equals_by_normalization(lhs, key, premise, table, semantic, session)
-        {
+        if equals_withour_mapping(lhs, key, premise, table, semantic, session) {
             for value in values {
                 if equals(value, rhs, premise, table, semantic, session) {
                     session.mark_as_done(Query { lhs, rhs }, true);
@@ -140,10 +159,7 @@ pub fn equals<
             }
         }
 
-        if semantic.trivially_equals(key, rhs)
-            || equals_by_unification(key, rhs, premise, table, semantic, session)
-            || equals_by_normalization(key, rhs, premise, table, semantic, session)
-        {
+        if equals_withour_mapping(key, rhs, premise, table, semantic, session) {
             for value in values {
                 if equals(lhs, value, premise, table, semantic, session) {
                     session.mark_as_done(Query { lhs, rhs }, true);
@@ -153,7 +169,7 @@ pub fn equals<
         }
     }
 
-    session.clear_query(Query { lhs, rhs });
+    session.clear_query(query);
     false
 }
 
