@@ -1,6 +1,6 @@
 //! Contains the code related to applying substitutions to terms.
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use super::term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Tuple, TupleElement,
@@ -14,9 +14,9 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
 pub struct Substitution {
-    pub types: BTreeMap<Type, Type>,
-    pub constants: BTreeMap<Constant, Constant>,
-    pub lifetimes: BTreeMap<Lifetime, Lifetime>,
+    pub types: HashMap<Type, Type>,
+    pub constants: HashMap<Constant, Constant>,
+    pub lifetimes: HashMap<Lifetime, Lifetime>,
 }
 
 /// Represents a substitution of terms.
@@ -25,10 +25,10 @@ pub trait Substitute: Sized {
     fn apply(&mut self, substitution: &Substitution);
 
     /// Gets the substitution map of this term kind.
-    fn get(substitution: &Substitution) -> &BTreeMap<Self, Self>;
+    fn get(substitution: &Substitution) -> &HashMap<Self, Self>;
 
     /// Gets the mutable reference to the substitution map of this term kind.
-    fn get_mut(substitution: &mut Substitution) -> &mut BTreeMap<Self, Self>;
+    fn get_mut(substitution: &mut Substitution) -> &mut HashMap<Self, Self>;
 }
 
 fn tuple_apply<T: Substitute + Clone>(tuple: &mut Tuple<T>, substitution: &Substitution)
@@ -80,9 +80,9 @@ impl Substitute for Type {
         }
     }
 
-    fn get(substitution: &Substitution) -> &BTreeMap<Self, Self> { &substitution.types }
+    fn get(substitution: &Substitution) -> &HashMap<Self, Self> { &substitution.types }
 
-    fn get_mut(substitution: &mut Substitution) -> &mut BTreeMap<Self, Self> {
+    fn get_mut(substitution: &mut Substitution) -> &mut HashMap<Self, Self> {
         &mut substitution.types
     }
 }
@@ -127,9 +127,9 @@ impl Substitute for Constant {
         }
     }
 
-    fn get(substitution: &Substitution) -> &BTreeMap<Self, Self> { &substitution.constants }
+    fn get(substitution: &Substitution) -> &HashMap<Self, Self> { &substitution.constants }
 
-    fn get_mut(substitution: &mut Substitution) -> &mut BTreeMap<Self, Self> {
+    fn get_mut(substitution: &mut Substitution) -> &mut HashMap<Self, Self> {
         &mut substitution.constants
     }
 }
@@ -141,9 +141,9 @@ impl Substitute for Lifetime {
         }
     }
 
-    fn get(substitution: &Substitution) -> &BTreeMap<Self, Self> { &substitution.lifetimes }
+    fn get(substitution: &Substitution) -> &HashMap<Self, Self> { &substitution.lifetimes }
 
-    fn get_mut(substitution: &mut Substitution) -> &mut BTreeMap<Self, Self> {
+    fn get_mut(substitution: &mut Substitution) -> &mut HashMap<Self, Self> {
         &mut substitution.lifetimes
     }
 }

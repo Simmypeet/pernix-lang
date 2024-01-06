@@ -114,7 +114,8 @@ impl Arbitrary for Type {
     type Parameters = (
         Option<BoxedStrategy<Lifetime>>,
         Option<BoxedStrategy<Constant>>,
-    ); type Strategy = BoxedStrategy<Self>;
+    );
+    type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(param: Self::Parameters) -> Self::Strategy {
         let leaf = prop_oneof![
@@ -131,13 +132,13 @@ impl Arbitrary for Type {
             });
 
             prop_oneof![
-                MemberSymbol::arbitrary_with((
+                6 => MemberSymbol::arbitrary_with((
                     Some(lt_strat.clone()),
                     Some(inner.clone()),
                     Some(const_strat.clone())
                 ))
                 .prop_map(Self::MemberSymbol),
-                Symbol::arbitrary_with((Some(lt_strat), Some(inner), Some(const_strat)))
+                6 => Symbol::arbitrary_with((Some(lt_strat), Some(inner), Some(const_strat)))
                     .prop_map(Self::Symbol),
             ]
         })

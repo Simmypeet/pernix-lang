@@ -66,13 +66,13 @@ impl Arbitrary for Constant {
             });
 
             prop_oneof![
-                MemberSymbol::arbitrary_with((
+                6 => MemberSymbol::arbitrary_with((
                     Some(lt_strat.clone()),
                     Some(ty_strat.clone()),
                     Some(inner.clone())
                 ))
                 .prop_map(Self::MemberSymbol),
-                Symbol::arbitrary_with((Some(lt_strat), Some(ty_strat), Some(inner)))
+                6 => Symbol::arbitrary_with((Some(lt_strat), Some(ty_strat), Some(inner)))
                     .prop_map(Self::Symbol)
             ]
         })

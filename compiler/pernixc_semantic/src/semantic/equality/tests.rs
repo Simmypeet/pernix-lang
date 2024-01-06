@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::Debug,
-    marker::PhantomData,
-};
+use std::{collections::HashMap, fmt::Debug};
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -188,10 +184,6 @@ fn congruence() {
 
 /// A trait for generating term for checking equality.
 pub trait Property<T>: 'static + Debug {
-    /// Determines whether this property requires [`Self::apply`] to be called in order to make the
-    /// terms equal.
-    fn requires_environment(&self) -> bool;
-
     /// Applies this property to the environment.
     ///
     /// # Returns
@@ -201,6 +193,7 @@ pub trait Property<T>: 'static + Debug {
     fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool;
 
     /// Generates the term for testing.
+    #[must_use]
     fn generate(&self) -> (T, T);
 }
 
@@ -214,7 +207,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
     fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-        leaf.prop_recursive(16, 96, 6, move |inner| {
+        leaf.prop_recursive(10, 60, 6, move |inner| {
             let constant_start = strat.1.clone().unwrap_or_else(|| {
                 Box::<dyn Property<Constant>>::arbitrary_with((
                     strat.0.clone(),
@@ -271,7 +264,7 @@ impl Arbitrary for Box<dyn Property<Constant>> {
     fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-        leaf.prop_recursive(16, 96, 6, move |inner| {
+        leaf.prop_recursive(10, 60, 6, move |inner| {
             let type_strat = strat.1.clone().unwrap_or_else(|| {
                 Box::<dyn Property<Type>>::arbitrary_with((strat.0.clone(), Some(inner.clone())))
             });
@@ -315,8 +308,6 @@ where
 }
 
 impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
-    fn requires_environment(&self) -> bool { false }
-
     fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> bool { true }
 
     fn generate(&self) -> (T, T) { (self.term.clone(), self.term.clone()) }
@@ -351,8 +342,6 @@ where
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
-    fn requires_environment(&self) -> bool { true }
-
     fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
         let (l_lhs, l_rhs) = self.lhs.generate();
         let (r_lhs, r_rhs) = self.rhs.generate();
@@ -417,8 +406,6 @@ impl<T: Term + Debug + 'static> Property<T> for LocalCongruence<T>
 where
     Local<T>: Into<T>,
 {
-    fn requires_environment(&self) -> bool { self.strategy.requires_environment() }
-
     fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
         self.strategy.apply(table, premise)
     }
@@ -431,23 +418,16 @@ where
 }
 
 #[derive(Debug)]
-pub struct SymbolCongruence<ID, T> {
+pub struct SymbolCongruence<ID> {
     lifetime_strategies: Vec<Box<dyn Property<Lifetime>>>,
     type_strategies: Vec<Box<dyn Property<Type>>>,
     constant_strategies: Vec<Box<dyn Property<Constant>>>,
 
     id: ID,
-
-    term: PhantomData<T>,
 }
 
-impl<
-        ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone,
-        T: Term + From<Symbol<ID>> + 'static,
-    > Arbitrary for SymbolCongruence<ID, T>
-where
-    semantic::Default: Semantic<T>,
-    session::Default: Session<T>,
+impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbitrary
+    for SymbolCongruence<ID>
 {
     type Parameters = (
         Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
@@ -479,30 +459,15 @@ where
                 type_strategies: tys,
                 constant_strategies: consts,
                 id,
-                term: PhantomData,
             })
             .boxed()
     }
 }
 
-impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T> for SymbolCongruence<ID, T>
+impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T> for SymbolCongruence<ID>
 where
     Symbol<ID>: Into<T>,
 {
-    fn requires_environment(&self) -> bool {
-        self.lifetime_strategies
-            .iter()
-            .any(|x| x.requires_environment())
-            || self
-                .type_strategies
-                .iter()
-                .any(|x| x.requires_environment())
-            || self
-                .constant_strategies
-                .iter()
-                .any(|x| x.requires_environment())
-    }
-
     fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
         for strategy in &self.type_strategies {
             if !strategy.apply(table, premise) {
@@ -636,20 +601,19 @@ impl Arbitrary for TypeAlias {
 }
 
 impl Property<Type> for TypeAlias {
-    fn requires_environment(&self) -> bool { true }
-
     fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
         let (lhs, rhs) = self.generate();
 
-        if !equals(
+        if equals(
             &lhs,
             &rhs,
             premise,
             table,
             &mut semantic::Default,
             &mut session::Default::default(),
-        ) && !self.property.apply(table, premise)
-        {
+        ) {
+            return true;
+        } else if !self.property.apply(table, premise) {
             return false;
         }
 
@@ -707,7 +671,7 @@ impl Property<Type> for TypeAlias {
 
                         sampled.apply(&Substitution {
                             types: {
-                                let mut map = BTreeMap::new();
+                                let mut map = HashMap::new();
 
                                 map.insert(
                                     self.argument.clone(),
@@ -719,8 +683,8 @@ impl Property<Type> for TypeAlias {
 
                                 map
                             },
-                            constants: BTreeMap::new(),
-                            lifetimes: BTreeMap::new(),
+                            constants: HashMap::new(),
+                            lifetimes: HashMap::new(),
                         });
 
                         sampled
@@ -780,7 +744,7 @@ fn remove_sampled<T: Term>(equalities: &mut mapping::Mapping) -> bool {
 }
 
 #[allow(clippy::too_many_lines)]
-fn property_based_checking<T: Term + 'static>(
+fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
     decoy: Decoy,
 ) -> TestCaseResult
@@ -792,16 +756,11 @@ where
     let mut premise = Premise::default();
     let mut table = Table::<Success>::default();
 
-    if property.requires_environment() && !property.apply(&mut table, &mut premise) {
+    if !property.apply(&mut table, &mut premise) {
         // failed to apply the environment
         return Err(TestCaseError::reject("failed to apply the environment"));
     }
 
-    println!(
-        "mapping count: {}",
-        premise.equalities_mapping.mapping_count()
-    );
-
     prop_assert!(equals(
         &term1,
         &term2,
@@ -819,6 +778,7 @@ where
         &mut session::Default::default()
     ));
 
+    // remove the equality mapping should make the terms not equal.
     {
         let mut premise = premise.clone();
 
@@ -842,6 +802,37 @@ where
                 &mut semantic::Default,
                 &mut session::Default::default()
             ));
+        }
+    }
+
+    // remove the type alias symbol should make the terms not equal.
+    {
+        let id = table.representation.types.ids().next().copied();
+        if let Some(id) = id {
+            let removed = table.representation.types.remove(id).unwrap();
+
+            prop_assert!(!equals(
+                &term1,
+                &term2,
+                &premise,
+                &table,
+                &mut semantic::Default,
+                &mut session::Default::default()
+            ));
+            prop_assert!(!equals(
+                &term2,
+                &term1,
+                &premise,
+                &table,
+                &mut semantic::Default,
+                &mut session::Default::default()
+            ));
+
+            table
+                .representation
+                .types
+                .insert_with_id(id, removed)
+                .unwrap();
         }
     }
 
@@ -962,7 +953,7 @@ proptest! {
        property in Box::<dyn Property<Constant>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
-        property_based_checking(&*property, decoy)?;
+        property_based_testing(&*property, decoy)?;
     }
 
     #[test]
@@ -970,7 +961,7 @@ proptest! {
         property in Box::<dyn Property<Type>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
-        property_based_checking(&*property, decoy)?;
+        property_based_testing(&*property, decoy)?;
     }
 
     #[test]
@@ -978,7 +969,7 @@ proptest! {
         property in Box::<dyn Property<Lifetime>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
-        property_based_checking(&*property, decoy)?;
+        property_based_testing(&*property, decoy)?;
     }
 
     #[test]

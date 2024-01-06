@@ -7,6 +7,7 @@ use enum_as_inner::EnumAsInner;
 use super::{Local, MemberSymbol, Never, Substructural, Symbol, Term};
 use crate::{
     arena::ID,
+    semantic::predicate::Satisfiability,
     symbol::{self, ConstantParameterID, GenericID, GlobalID, Variant},
 };
 
@@ -199,6 +200,22 @@ impl Term for Constant {
 
     fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
         &mut substructural.constants
+    }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::Parameter(_) | Self::Inference(_) => Satisfiability::Unsatisfied,
+
+            Self::Primitive(_) => Satisfiability::Satisfied,
+
+            Self::Struct(_)
+            | Self::Enum(_)
+            | Self::Array(_)
+            | Self::Local(_)
+            | Self::Tuple(_)
+            | Self::Symbol(_)
+            | Self::MemberSymbol(_) => Satisfiability::Congruent,
+        }
     }
 }
 

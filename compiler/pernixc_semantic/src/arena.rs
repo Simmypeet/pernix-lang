@@ -177,6 +177,10 @@ impl<T, Idx: Key> Arena<T, Idx> {
     /// Returns an iterator over the `Idx`s of the items in the [`Arena`].
     #[must_use]
     pub fn ids(&self) -> impl ExactSizeIterator<Item = &Idx> { self.items.keys() }
+
+    /// Removes the item in the [`Arena`] with the given `Idx` and returns it.
+    #[must_use]
+    pub fn remove(&mut self, id: Idx) -> Option<T> { self.items.remove(&id) }
 }
 
 impl<T, Idx: Key> Index<Idx> for Arena<T, Idx> {

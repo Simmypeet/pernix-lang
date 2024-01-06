@@ -7,6 +7,7 @@ use super::{
 };
 use crate::{
     arena::ID,
+    semantic::predicate::Satisfiability,
     symbol::{self, Enum, GenericID, GlobalID, Struct, TypeParameterID},
 };
 
@@ -238,6 +239,22 @@ impl Term for Type {
 
     fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
         &mut substructural.types
+    }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::Parameter(_) | Self::Inference(_) => Satisfiability::Unsatisfied,
+
+            Self::Primitive(_) => Satisfiability::Satisfied,
+
+            Self::Local(_)
+            | Self::Pointer(_)
+            | Self::Symbol(_)
+            | Self::MemberSymbol(_)
+            | Self::Reference(_)
+            | Self::Array(_)
+            | Self::Tuple(_) => Satisfiability::Congruent,
+        }
     }
 }
 

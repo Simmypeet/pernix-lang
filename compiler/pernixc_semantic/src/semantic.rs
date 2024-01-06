@@ -17,6 +17,7 @@ use crate::{
 
 pub mod equality;
 pub mod mapping;
+pub mod predicate;
 pub mod session;
 pub mod substitution;
 pub mod term;
@@ -47,7 +48,7 @@ pub trait Semantic<T: Term> {
         premise: &Premise,
         table: &Table<impl State>,
         session: &mut R,
-    ) -> Vec<T>;
+    ) -> Option<T>;
 }
 
 /// The basic implementation of the semantic logic.
@@ -63,8 +64,8 @@ impl Semantic<Lifetime> for Default {
         _: &Premise,
         _: &Table<impl State>,
         _: &mut R,
-    ) -> Vec<Lifetime> {
-        Vec::new()
+    ) -> Option<Lifetime> {
+        None
     }
 }
 
@@ -77,7 +78,7 @@ impl Semantic<Type> for Default {
         _: &Premise,
         table: &Table<impl State>,
         _: &mut R,
-    ) -> Vec<Type> {
+    ) -> Option<Type> {
         match term {
             // transform type alias into the aliased type equivalent
             Type::Symbol(Symbol {
@@ -85,7 +86,7 @@ impl Semantic<Type> for Default {
                 generic_arguments,
             }) => {
                 let Some(type_sym) = table.get(*id) else {
-                    return Vec::new();
+                    return None;
                 };
 
                 let mut type_aliased = type_sym.r#type.clone();
@@ -94,13 +95,13 @@ impl Semantic<Type> for Default {
                     (*id).into(),
                 ));
 
-                vec![type_aliased]
+                Some(type_aliased)
             }
 
             // TODO: Transform trait-type into the trait-implementation type equivalent.
             // TODO: Transform ADT-member-type into the aliased type equivalent.
             // TODO: Normalize the unpacked tuple type.
-            _ => Vec::new(),
+            _ => None,
         }
     }
 }
@@ -114,8 +115,8 @@ impl Semantic<Constant> for Default {
         _: &Premise,
         _: &Table<impl State>,
         _: &mut R,
-    ) -> Vec<Constant> {
+    ) -> Option<Constant> {
         // TODO: Implement this.
-        Vec::new()
+        None
     }
 }

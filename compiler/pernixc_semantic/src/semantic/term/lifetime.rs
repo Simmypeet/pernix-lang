@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::{Never, Substructural, Term};
-use crate::symbol::LifetimeParameterID;
+use crate::{semantic::predicate::Satisfiability, symbol::LifetimeParameterID};
 
 /// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used in higher-ranked
 /// trait bounds.
@@ -43,6 +43,8 @@ impl Term for Lifetime {
     fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
         &mut substructural.lifetimes
     }
+
+    fn definite_satisfiability(&self) -> Satisfiability { Satisfiability::Satisfied }
 }
 
 #[cfg(test)]

@@ -186,6 +186,7 @@ pub(super) fn definite<
         }
     }
 
+    session.mark_as_done(Record(term));
     false
 }
 

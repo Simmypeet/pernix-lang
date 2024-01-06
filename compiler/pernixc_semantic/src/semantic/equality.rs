@@ -65,13 +65,13 @@ fn equals_by_normalization<
     semantic: &mut S,
     session: &mut R,
 ) -> bool {
-    for lhs in semantic.normalize(lhs, premise, table, session) {
+    if let Some(lhs) = semantic.normalize(lhs, premise, table, session) {
         if equals(&lhs, rhs, premise, table, semantic, session) {
             return true;
         }
     }
 
-    for rhs in semantic.normalize(rhs, premise, table, session) {
+    if let Some(rhs) = semantic.normalize(rhs, premise, table, session) {
         if equals(lhs, &rhs, premise, table, semantic, session) {
             return true;
         }

@@ -7,11 +7,12 @@ use enum_as_inner::EnumAsInner;
 use lifetime::Lifetime;
 use r#type::Type;
 
-use super::mapping::Map;
+use super::{mapping::Map, predicate::Satisfiability, visitor::Element};
 
 pub mod constant;
 pub mod lifetime;
 pub mod r#type;
+
 /// Represents a generic arguments supplied to a term (i.e., `type[ARGS]`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericArguments {
@@ -88,7 +89,7 @@ where
     Self: Into<T>;
 
 /// Contains the functionality for determining the properties of a term.
-pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord {
+pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element {
     /// Returns the matching substructural matches between `self` and `other`.
     ///
     /// # Example
@@ -103,6 +104,9 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord {
     ///
     /// Returns `None` if the terms cannot be substructurally matched.
     fn substructural_match(&self, other: &Self) -> Option<Substructural>;
+
+    /// Gets the satisfiability of definite predicates of the term.
+    fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
     fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)>;

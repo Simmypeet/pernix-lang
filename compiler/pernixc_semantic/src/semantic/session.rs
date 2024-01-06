@@ -1,9 +1,9 @@
 //! Contains the definition of [`Session`].
 
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::collections::{hash_map::Entry, HashMap};
 
 use super::{
-    equality,
+    equality, predicate,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type},
 };
 
@@ -42,16 +42,28 @@ pub trait Cache<Query> {
 /// system.
 ///
 /// Most of the time, you should use [`Default`] as the implementation of this trait.
-pub trait Session<T>: for<'a> Cache<equality::Query<'a, T>, Result = bool> {}
+pub trait Session<T>:
+    for<'a> Cache<equality::Query<'a, T>, Result = bool>
+    + for<'a> Cache<predicate::DefiniteRecord<'a, T>, Result = bool>
+{
+}
 
-impl<T, U> Session<T> for U where U: for<'a> Cache<equality::Query<'a, T>, Result = bool> {}
+impl<T, U> Session<T> for U where
+    U: for<'a> Cache<equality::Query<'a, T>, Result = bool>
+        + for<'a> Cache<predicate::DefiniteRecord<'a, T>, Result = bool>
+{
+}
 
 /// Default and preferred implementation of [`Session`].
 #[derive(Debug, Clone, Default)]
 pub struct Default {
-    type_equals: BTreeMap<(Type, Type), Result<bool>>,
-    constant_equals: BTreeMap<(Constant, Constant), Result<bool>>,
-    lifetime_equals: BTreeMap<(Lifetime, Lifetime), Result<bool>>,
+    type_equals: HashMap<(Type, Type), Result<bool>>,
+    constant_equals: HashMap<(Constant, Constant), Result<bool>>,
+    lifetime_equals: HashMap<(Lifetime, Lifetime), Result<bool>>,
+
+    lifetime_definites: HashMap<Lifetime, Result<bool>>,
+    type_definites: HashMap<Type, Result<bool>>,
+    constant_definites: HashMap<Constant, Result<bool>>,
 }
 
 macro_rules! implements_cache {
@@ -87,6 +99,15 @@ macro_rules! implements_cache {
 }
 
 implements_cache!(
+    equality::Query<'a, Lifetime>,
+    bool,
+    query,
+    lifetime_equals,
+    (*query.lhs, *query.rhs),
+    &(*query.lhs, *query.rhs)
+);
+
+implements_cache!(
     equality::Query<'a, Type>,
     bool,
     query,
@@ -105,10 +126,28 @@ implements_cache!(
 );
 
 implements_cache!(
-    equality::Query<'a, Lifetime>,
+    predicate::DefiniteRecord<'a, Lifetime>,
     bool,
-    query,
-    lifetime_equals,
-    (*query.lhs, *query.rhs),
-    &(*query.lhs, *query.rhs)
+    record,
+    lifetime_definites,
+    *record.0,
+    record.0
+);
+
+implements_cache!(
+    predicate::DefiniteRecord<'a, Type>,
+    bool,
+    record,
+    type_definites,
+    record.0.clone(),
+    record.0
+);
+
+implements_cache!(
+    predicate::DefiniteRecord<'a, Constant>,
+    bool,
+    record,
+    constant_definites,
+    record.0.clone(),
+    record.0
 );

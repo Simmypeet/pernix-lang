@@ -16,6 +16,7 @@ where
     trait Copy[A] + Allocator[A] + Default[A] + Copy[T]
 {
     public function copy(this: &List[T, A]): List[T, A] {
+
         unsafe {
             let copyAllocator = this->allocator';
             let length = this->length();
@@ -35,7 +36,8 @@ where
                 let value = (this->begin + i) as &T;
                 let cloned = value';
 
-                std::memory::write(begin + i, cloned); }
+                std::memory::write(begin + i, cloned);
+            }
 
             return List[T, A] {
                 begin:     begin,

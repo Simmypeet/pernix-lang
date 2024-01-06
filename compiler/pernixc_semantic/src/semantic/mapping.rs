@@ -1,6 +1,9 @@
 //! Contains the definition of [`Mapping`]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+};
 
 use getset::Getters;
 
@@ -12,15 +15,15 @@ use super::term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 pub struct Mapping {
     /// The list of lifetimes that are equal to each other.
     #[get = "pub"]
-    lifetimes: BTreeMap<Lifetime, BTreeSet<Lifetime>>,
+    lifetimes: HashMap<Lifetime, HashSet<Lifetime>>,
 
     /// The list of types that are equal to each other.
     #[get = "pub"]
-    types: BTreeMap<Type, BTreeSet<Type>>,
+    types: HashMap<Type, HashSet<Type>>,
 
     /// The list of constants that are equal to each other.
     #[get = "pub"]
-    constants: BTreeMap<Constant, BTreeSet<Constant>>,
+    constants: HashMap<Constant, HashSet<Constant>>,
 }
 
 macro_rules! insert_item {
@@ -49,7 +52,7 @@ impl Mapping {
     }
 
     /// Inserts a new pair of equalities into the mapping.
-    pub fn insert<T: Map + Clone + Ord>(&mut self, first: T, second: T) {
+    pub fn insert<T: Map + Clone + Ord + Hash + Eq>(&mut self, first: T, second: T) {
         T::get_mut(self)
             .entry(first.clone())
             .or_default()
@@ -58,7 +61,7 @@ impl Mapping {
     }
 
     /// Removes all the equalities that are associated with the given term.
-    pub fn remove_equality<T: Map + Eq + Ord>(&mut self, term: &T) -> Option<BTreeSet<T>> {
+    pub fn remove_equality<T: Map + Ord + Hash + Eq>(&mut self, term: &T) -> Option<HashSet<T>> {
         let map = T::get_mut(self);
 
         let Some(terms) = map.remove(term) else {
@@ -83,12 +86,12 @@ impl Mapping {
     pub fn mapping_count(&self) -> usize {
         self.lifetimes
             .values()
-            .map(BTreeSet::len)
+            .map(HashSet::len)
             .chain(
                 self.types
                     .values()
-                    .map(BTreeSet::len)
-                    .chain(self.constants.values().map(BTreeSet::len)),
+                    .map(HashSet::len)
+                    .chain(self.constants.values().map(HashSet::len)),
             )
             .sum()
     }
@@ -97,30 +100,30 @@ impl Mapping {
 /// Used to map a value to a set of equivalent values.
 pub trait Map: Sized {
     /// Gets a reference to the mapping of this kind of term.
-    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>>;
+    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>>;
 
     /// Gets a mutable reference to the mapping of this kind of term.
-    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>>;
+    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>>;
 }
 
 impl Map for Lifetime {
-    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>> { &mapping.lifetimes }
+    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.lifetimes }
 
-    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>> {
+    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.lifetimes
     }
 }
 
 impl Map for Constant {
-    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>> { &mapping.constants }
+    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.constants }
 
-    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>> {
+    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.constants
     }
 }
 
 impl Map for Type {
-    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>> { &mapping.types }
+    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.types }
 
-    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>> { &mut mapping.types }
+    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> { &mut mapping.types }
 }
