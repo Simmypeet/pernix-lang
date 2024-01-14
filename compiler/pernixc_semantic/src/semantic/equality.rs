@@ -8,7 +8,7 @@ use super::{
 };
 use crate::table::{State, Table};
 
-/// A query for checking equality.
+/// A query for checking equality
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub struct Query<'a, T> {
@@ -143,7 +143,6 @@ pub fn equals<
     let query = Query { lhs, rhs };
 
     if semantic.trivially_equals(lhs, rhs) {
-        session.mark_as_done(Query { lhs, rhs }, true);
         return Ok(true);
     }
 
