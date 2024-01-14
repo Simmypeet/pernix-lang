@@ -189,11 +189,131 @@ fn congruence() {
     .unwrap());
 }
 
+#[test]
+#[allow(missing_docs, clippy::too_many_lines)]
+fn recursive() {
+    let premise = Premise {
+        equalities_mapping: mapping::Mapping::from_pairs(
+            std::iter::empty(),
+            [(
+                Type::Primitive(Primitive::Int32),
+                Type::Symbol(Symbol {
+                    id: SymbolKindID::Enum(ID::new(0)),
+                    generic_arguments: GenericArguments {
+                        lifetimes: Vec::new(),
+                        types: vec![Type::Primitive(Primitive::Int32)],
+                        constants: Vec::new(),
+                    },
+                }),
+            )],
+            std::iter::empty(),
+        ),
+    };
+    let table = Table::<Success>::default();
+    let lhs = Type::Primitive(Primitive::Int32);
+    let rhs = Type::Symbol(Symbol {
+        id: SymbolKindID::Enum(ID::new(0)),
+        generic_arguments: GenericArguments {
+            lifetimes: Vec::new(),
+            types: vec![Type::Symbol(Symbol {
+                id: SymbolKindID::Enum(ID::new(0)),
+                generic_arguments: GenericArguments {
+                    lifetimes: Vec::new(),
+                    types: vec![Type::Symbol(Symbol {
+                        id: SymbolKindID::Enum(ID::new(0)),
+                        generic_arguments: GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![Type::Symbol(Symbol {
+                                id: SymbolKindID::Enum(ID::new(0)),
+                                generic_arguments: GenericArguments {
+                                    lifetimes: Vec::new(),
+                                    types: vec![Type::Primitive(Primitive::Int32)],
+                                    constants: Vec::new(),
+                                },
+                            })],
+                            constants: Vec::new(),
+                        },
+                    })],
+                    constants: Vec::new(),
+                },
+            })],
+            constants: Vec::new(),
+        },
+    });
+
+    assert!(equals(
+        &lhs,
+        &rhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
+    assert!(equals(
+        &rhs,
+        &lhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
+
+    let rhs = Type::Symbol(Symbol {
+        id: SymbolKindID::Enum(ID::new(0)),
+        generic_arguments: GenericArguments {
+            lifetimes: Vec::new(),
+            types: vec![Type::Symbol(Symbol {
+                id: SymbolKindID::Enum(ID::new(0)),
+                generic_arguments: GenericArguments {
+                    lifetimes: Vec::new(),
+                    types: vec![Type::Symbol(Symbol {
+                        id: SymbolKindID::Enum(ID::new(0)),
+                        generic_arguments: GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![Type::Symbol(Symbol {
+                                id: SymbolKindID::Enum(ID::new(0)),
+                                generic_arguments: GenericArguments {
+                                    lifetimes: Vec::new(),
+                                    types: vec![Type::Primitive(Primitive::Uint32)],
+                                    constants: Vec::new(),
+                                },
+                            })],
+                            constants: Vec::new(),
+                        },
+                    })],
+                    constants: Vec::new(),
+                },
+            })],
+            constants: Vec::new(),
+        },
+    });
+
+    assert!(!equals(
+        &lhs,
+        &rhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
+    assert!(!equals(
+        &rhs,
+        &lhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
 pub enum ApplyPropertyError {
     #[error("{0}")]
     ExceedLimitError(#[from] ExceedLimitError),
-
     #[error("failed to apply the environment")]
     TypeAliasIDCollision,
 }
@@ -474,9 +594,9 @@ where
 
 #[derive(Debug)]
 pub struct SymbolCongruence<ID> {
-    lifetime_strategies: Vec<Box<dyn Property<Lifetime>>>,
-    type_strategies: Vec<Box<dyn Property<Type>>>,
-    constant_strategies: Vec<Box<dyn Property<Constant>>>,
+    lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
+    type_properties: Vec<Box<dyn Property<Type>>>,
+    constant_properties: Vec<Box<dyn Property<Constant>>>,
 
     id: ID,
 }
@@ -510,9 +630,9 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
             ID::arbitrary(),
         )
             .prop_map(|(tys, lts, consts, id)| Self {
-                lifetime_strategies: lts,
-                type_strategies: tys,
-                constant_strategies: consts,
+                lifetime_properties: lts,
+                type_properties: tys,
+                constant_properties: consts,
                 id,
             })
             .boxed()
@@ -530,15 +650,15 @@ where
         table: &mut Table<Success>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
-        for strategy in &self.type_strategies {
+        for strategy in &self.type_properties {
             strategy.apply(table, premise)?;
         }
 
-        for strategy in &self.lifetime_strategies {
+        for strategy in &self.lifetime_properties {
             strategy.apply(table, premise)?;
         }
 
-        for strategy in &self.constant_strategies {
+        for strategy in &self.constant_properties {
             strategy.apply(table, premise)?;
         }
 
@@ -557,21 +677,21 @@ where
             constants: Vec::new(),
         };
 
-        for strategy in &self.lifetime_strategies {
+        for strategy in &self.lifetime_properties {
             let (lhs, rhs) = strategy.generate();
 
             lhs_generic_arguments.lifetimes.push(lhs);
             rhs_generic_arguments.lifetimes.push(rhs);
         }
 
-        for strategy in &self.type_strategies {
+        for strategy in &self.type_properties {
             let (lhs, rhs) = strategy.generate();
 
             lhs_generic_arguments.types.push(lhs);
             rhs_generic_arguments.types.push(rhs);
         }
 
-        for strategy in &self.constant_strategies {
+        for strategy in &self.constant_properties {
             let (lhs, rhs) = strategy.generate();
 
             lhs_generic_arguments.constants.push(lhs);
@@ -954,31 +1074,6 @@ where
     Ok(())
 }
 
-fn inequality_checking<T: Term>(lhs: &T, rhs: &T) -> TestCaseResult
-where
-    semantic::Default: Semantic<T>,
-    session::Default: Session<T>,
-{
-    let premise = Premise::default();
-    let table = Table::<Success>::default();
-
-    if semantic::Default.trivially_equals(lhs, rhs) {
-        return Err(TestCaseError::reject("trivial equality"));
-    }
-
-    prop_assert!(!equals(
-        lhs,
-        rhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
-        &mut Limit::new(&mut session::Default::default())
-    )
-    .map_err(|_| TestCaseError::reject("too complex property"))?);
-
-    Ok(())
-}
-
 #[derive(Debug, Default)]
 pub struct Decoy {
     decoy_lifetime_equalities: Vec<DecoyEquality<Lifetime>>,
@@ -1025,6 +1120,8 @@ impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary for DecoyEqu
 proptest! {
     #![proptest_config(proptest::test_runner::Config {
         max_shrink_iters: 100_000,
+        max_global_rejects: 8192,
+        cases: 8192,
         ..Default::default()
     })]
 
@@ -1050,29 +1147,5 @@ proptest! {
         decoy in Decoy::arbitrary()
     ) {
         property_based_testing(&*property, decoy)?;
-    }
-
-    #[test]
-    fn inequality_testing_constant(
-        lhs in Constant::arbitrary(),
-        rhs in Constant::arbitrary(),
-    ) {
-        inequality_checking(&lhs, &rhs)?;
-    }
-
-    #[test]
-    fn inequality_testing_type(
-        lhs in Type::arbitrary(),
-        rhs in Type::arbitrary(),
-    ) {
-        inequality_checking(&lhs, &rhs)?;
-    }
-
-    #[test]
-    fn inequality_testing_lifetime(
-        lhs in Lifetime::arbitrary(),
-        rhs in Lifetime::arbitrary(),
-    ) {
-        inequality_checking(&lhs, &rhs)?;
     }
 }
