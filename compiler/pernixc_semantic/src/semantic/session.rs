@@ -5,6 +5,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use super::{
     equality, predicate,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type},
+    unification::{self, Unification},
 };
 
 /// The result of a query.
@@ -139,26 +140,32 @@ pub trait Cache<Query> {
 /// Most of the time, you should use [`Default`] as the implementation of this trait.
 pub trait Session<T>:
     for<'a> Cache<equality::Query<'a, T>, Result = bool>
-    + for<'a> Cache<predicate::DefiniteRecord<'a, T>, Result = bool>
+    + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = bool>
+    + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
 {
 }
 
 impl<T, U> Session<T> for U where
     U: for<'a> Cache<equality::Query<'a, T>, Result = bool>
-        + for<'a> Cache<predicate::DefiniteRecord<'a, T>, Result = bool>
+        + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = bool>
+        + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
 {
 }
 
 /// Default and preferred implementation of [`Session`].
 #[derive(Debug, Clone, Default)]
 pub struct Default {
+    lifetime_equals: HashMap<(Lifetime, Lifetime), Cached<bool>>,
     type_equals: HashMap<(Type, Type), Cached<bool>>,
     constant_equals: HashMap<(Constant, Constant), Cached<bool>>,
-    lifetime_equals: HashMap<(Lifetime, Lifetime), Cached<bool>>,
 
     lifetime_definites: HashMap<Lifetime, Cached<bool>>,
     type_definites: HashMap<Type, Cached<bool>>,
     constant_definites: HashMap<Constant, Cached<bool>>,
+
+    lifetime_unifies: HashMap<(Lifetime, Lifetime), Cached<Unification>>,
+    type_unifies: HashMap<(Type, Type), Cached<Unification>>,
+    constant_unifies: HashMap<(Constant, Constant), Cached<Unification>>,
 }
 
 macro_rules! implements_cache {
@@ -231,7 +238,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::DefiniteRecord<'a, Lifetime>,
+    predicate::DefiniteQuery<'a, Lifetime>,
     bool,
     record,
     lifetime_definites,
@@ -240,7 +247,7 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::DefiniteRecord<'a, Type>,
+    predicate::DefiniteQuery<'a, Type>,
     bool,
     record,
     type_definites,
@@ -249,10 +256,37 @@ implements_cache!(
 );
 
 implements_cache!(
-    predicate::DefiniteRecord<'a, Constant>,
+    predicate::DefiniteQuery<'a, Constant>,
     bool,
     record,
     constant_definites,
     record.0.clone(),
     record.0
+);
+
+implements_cache!(
+    unification::Query<'a, Lifetime>,
+    Unification,
+    record,
+    lifetime_unifies,
+    (*record.lhs, *record.rhs),
+    &(*record.lhs, *record.rhs)
+);
+
+implements_cache!(
+    unification::Query<'a, Type>,
+    Unification,
+    record,
+    type_unifies,
+    (record.lhs.clone(), record.rhs.clone()),
+    &(record.lhs.clone(), record.rhs.clone())
+);
+
+implements_cache!(
+    unification::Query<'a, Constant>,
+    Unification,
+    record,
+    constant_unifies,
+    (record.lhs.clone(), record.rhs.clone()),
+    &(record.lhs.clone(), record.rhs.clone())
 );
