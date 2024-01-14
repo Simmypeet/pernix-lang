@@ -5,6 +5,8 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use enum_as_inner::EnumAsInner;
+
 use super::{Never, Substructural, Term};
 use crate::{
     semantic::{predicate::Satisfiability, unification::Unification},
@@ -26,17 +28,23 @@ impl Forall {
 }
 
 /// Represents a lifetime inference variable in hindley-milner type inference.
-pub type Inference = Never; /* will be changed */
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Inference(Never); /* will be changed */
 
 /// Represents a local lifetime variable.
-pub type Local = Never; /* will be changed */
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Local(Never); /* will be changed */
 
 /// Represents a lifetiem annotation term.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum Lifetime {
     Static,
     Parameter(LifetimeParameterID),
+    Inference(Inference),
+    Local(Local),
 }
 
 impl Term for Lifetime {
