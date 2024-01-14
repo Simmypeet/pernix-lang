@@ -516,7 +516,7 @@ pub enum Predicate {
     TraitMember(TraitMemberPredicate),
     Trait(TraitPredicate),
     Lifetime(LifetimePredicate),
-    ConstantTypePredicate(ConstantTypePredicate),
+    ConstantType(ConstantTypePredicate),
 }
 
 impl SourceElement for Predicate {
@@ -525,7 +525,7 @@ impl SourceElement for Predicate {
             Self::TraitMember(s) => s.span(),
             Self::Trait(s) => s.span(),
             Self::Lifetime(s) => s.span(),
-            Self::ConstantTypePredicate(s) => s.span(),
+            Self::ConstantType(s) => s.span(),
         }
     }
 }
@@ -2119,7 +2119,7 @@ impl<'a> Parser<'a> {
                         // eat type keyword
                         self.forward();
 
-                        Some(Predicate::ConstantTypePredicate(ConstantTypePredicate {
+                        Some(Predicate::ConstantType(ConstantTypePredicate {
                             const_keyword,
                             type_keyword,
                             types: self.parse_bound_list(|parser| parser.parse_type(handler))?,

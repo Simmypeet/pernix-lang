@@ -288,7 +288,7 @@ impl Element for Type {
             Self::Pointer(term) => Ok(visitor.visit_type(&term.pointee, Source::Term)),
             Self::Reference(term) => Ok(visitor.visit_lifetime(&term.lifetime, Source::Term)
                 && visitor.visit_type(&term.pointee, Source::Term)),
-            Self::Array(term) => Ok(visitor.visit_type(&term.element, Source::Term)
+            Self::Array(term) => Ok(visitor.visit_type(&term.r#type, Source::Term)
                 && visitor.visit_constant(&term.length, Source::Term)),
             Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
             Self::Local(local) => Ok(visitor.visit_type(&local.0, Source::Term)),

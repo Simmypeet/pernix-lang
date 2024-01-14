@@ -8,10 +8,11 @@ use proptest::{
 
 use super::{
     constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Local, MemberSymbol,
-    Symbol,
+    Symbol, Tuple,
 };
 use crate::{
     arena::ID,
+    semantic::term::TupleElement,
     symbol::{GenericID, MemberID},
 };
 
@@ -154,5 +155,27 @@ where
                 },
             })
             .boxed()
+    }
+}
+
+impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Debug + Clone + 'static> Arbitrary for Tuple<T>
+where
+    Self: TryFrom<T, Error = T> + Into<T>,
+{
+    type Parameters = Option<BoxedStrategy<T>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let strat = args.unwrap_or_else(T::arbitrary);
+
+        proptest::collection::vec(
+            prop_oneof![
+                strat.clone().prop_map(|x| TupleElement::Regular(x)),
+                strat.prop_map(|x| TupleElement::Unpacked(x))
+            ],
+            0..=2,
+        )
+        .prop_map(|elements| Self { elements })
+        .boxed()
     }
 }

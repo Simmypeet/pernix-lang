@@ -1,13 +1,17 @@
 //! Contains the three fundamental terms of the language: [`Type`], [`Constant`], and [`Lifetime`].
 
-use std::{fmt::Debug, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
+};
 
 use constant::Constant;
 use enum_as_inner::EnumAsInner;
 use lifetime::Lifetime;
 use r#type::Type;
 
-use super::{mapping::Map, predicate::Satisfiability, visitor::Element};
+use super::{mapping::Map, predicate::Satisfiability, unification::Unification, visitor::Element};
 
 pub mod constant;
 pub mod lifetime;
@@ -113,6 +117,12 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element {
 
     #[doc(hidden)]
     fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)>;
+
+    #[doc(hidden)]
+    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>>;
+
+    #[doc(hidden)]
+    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>>;
 }
 
 impl<T: Term> Tuple<T>
@@ -130,6 +140,37 @@ where
             } else {
                 T::get_substructural_mut(existing).push((lhs, rhs));
             }
+        }
+
+        match (
+            from.elements.iter().filter(|x| x.is_unpacked()).count(),
+            to.elements.iter().filter(|x| x.is_unpacked()).count(),
+        ) {
+            (0, 0) => {
+                if from.elements.len() != to.elements.len() {
+                    return None;
+                }
+
+                let mut existing = Substructural::default();
+
+                for (from_element, to_element) in from.elements.iter().zip(&to.elements) {
+                    let from_element = from_element.as_regular().unwrap();
+                    let to_element = to_element.as_regular().unwrap();
+
+                    push(
+                        from_element.clone(),
+                        to_element.clone(),
+                        &mut existing,
+                        swap,
+                    );
+                }
+
+                return Some(existing);
+            }
+
+            (1, _) => {}
+
+            (_, _) => return None,
         }
 
         let mut existing = Substructural::default();
@@ -156,7 +197,9 @@ where
             .zip(&to.elements[head_range])
         {
             let from_element = from_element.as_regular().unwrap();
-            let to_element = to_element.as_regular().unwrap();
+            let TupleElement::Regular(to_element) = to_element else {
+                return None;
+            };
 
             push(
                 from_element.clone(),
@@ -172,7 +215,9 @@ where
             .zip(&to.elements[to_tail_range])
         {
             let from_element = from_element.as_regular().unwrap();
-            let to_element = to_element.as_regular().unwrap();
+            let TupleElement::Regular(to_element) = to_element else {
+                return None;
+            };
 
             push(
                 from_element.clone(),
@@ -194,8 +239,8 @@ where
     }
 
     fn substructural_match<'a>(&'a self, to: &'a Self) -> Option<Substructural> {
-        Self::substructural_match_internal(self, to, true)
-            .or_else(|| Self::substructural_match_internal(to, self, false))
+        Self::substructural_match_internal(self, to, false)
+            .or_else(|| Self::substructural_match_internal(to, self, true))
     }
 }
 

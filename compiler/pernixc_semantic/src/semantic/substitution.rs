@@ -71,7 +71,7 @@ impl Substitute for Type {
             }
 
             Self::Array(array) => {
-                array.element.apply(substitution);
+                array.r#type.apply(substitution);
                 array.length.apply(substitution);
             }
 

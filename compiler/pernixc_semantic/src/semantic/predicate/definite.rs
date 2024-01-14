@@ -3,7 +3,7 @@ use crate::{
     semantic::{
         equality,
         mapping::Map,
-        session::{self, Session},
+        session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor::{self, VisitMode},
         Premise, Semantic,
@@ -16,60 +16,74 @@ struct Visitor<
     'a,
     's,
     'r,
+    'l,
     T: State,
     S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<Lifetime> + Session<Type> + Session<Constant>,
 > {
-    found_indefinite: bool,
+    definite: Result<bool, ExceedLimitError>,
     premise: &'a Premise,
     table: &'a Table<T>,
     semantic: &'s mut S,
-    session: &'r mut R,
+    session: &'l mut Limit<'r, R>,
 }
 
 impl<
         'a,
         's,
         'r,
+        'l,
         T: State,
         S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor for Visitor<'a, 's, 'r, T, S, R>
+    > visitor::Visitor for Visitor<'a, 's, 'r, 'l, T, S, R>
 {
     fn visit_type(&mut self, ty: &Type, _: visitor::Source) -> bool {
-        if !definite(ty, self.premise, self.table, self.semantic, self.session) {
-            self.found_indefinite = true;
-            return false;
+        match definite(ty, self.premise, self.table, self.semantic, self.session) {
+            result @ (Err(_) | Ok(false)) => {
+                self.definite = result;
+                return false;
+            }
+
+            Ok(true) => {}
         }
 
         true
     }
 
     fn visit_lifetime(&mut self, lifetime: &Lifetime, _: visitor::Source) -> bool {
-        if !definite(
+        match definite(
             lifetime,
             self.premise,
             self.table,
             self.semantic,
             self.session,
         ) {
-            self.found_indefinite = true;
-            return false;
+            result @ (Err(_) | Ok(false)) => {
+                self.definite = result;
+                return false;
+            }
+
+            Ok(true) => {}
         }
 
         true
     }
 
     fn visit_constant(&mut self, constant: &Constant, _: visitor::Source) -> bool {
-        if !definite(
+        match definite(
             constant,
             self.premise,
             self.table,
             self.semantic,
             self.session,
         ) {
-            self.found_indefinite = true;
-            return false;
+            result @ (Err(_) | Ok(false)) => {
+                self.definite = result;
+                return false;
+            }
+
+            Ok(true) => {}
         }
 
         true
@@ -83,6 +97,10 @@ pub struct Record<'a, T>(pub &'a T);
 /// Determines wheter a term is definite.
 ///
 /// A term is definite if the term doesn't contain any generic parameters.
+///
+/// # Errors
+///
+/// See [`ExceedLimitError`] for more information.
 pub fn definite<
     T: Term,
     S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
@@ -92,20 +110,20 @@ pub fn definite<
     premise: &Premise,
     table: &Table<impl State>,
     semantic: &mut S,
-    session: &mut R,
-) -> bool {
+    session: &mut Limit<R>,
+) -> Result<bool, ExceedLimitError> {
     let satisfiability = term.definite_satisfiability();
 
     // trivially satisfiable
     if satisfiability == Satisfiability::Satisfied {
         session.mark_as_done(Record(term), true);
-        return true;
+        return Ok(true);
     }
 
-    match session.mark_as_in_progress(Record(term)) {
-        Some(session::Result::Done(result)) => return result,
-        Some(session::Result::InProgress) => {
-            return false;
+    match session.mark_as_in_progress(Record(term))? {
+        Some(session::Cached::Done(result)) => return Ok(result),
+        Some(session::Cached::InProgress) => {
+            return Ok(false);
         }
         None => {}
     }
@@ -113,7 +131,7 @@ pub fn definite<
     // satisfiable with congruence
     if satisfiability == Satisfiability::Congruent {
         let mut visitor = Visitor {
-            found_indefinite: false,
+            definite: Ok(true),
             premise,
             table,
             semantic,
@@ -122,33 +140,33 @@ pub fn definite<
 
         let _ = term.accept_one_level(&mut visitor, VisitMode::<Success>::OnlySubTerms);
 
-        if !visitor.found_indefinite {
+        if visitor.definite? {
             session.mark_as_done(Record(term), true);
-            return true;
+            return Ok(true);
         }
     }
 
     // satisfiable with normalization
-    // if let Some(normalized) = semantic.normalize(term, premise, table, session) {
-    //     if definite(&normalized, premise, table, semantic, session) {
-    //         session.mark_as_done(Record(term), true);
-    //         return true;
-    //     }
-    // }
+    if let Some(normalized) = semantic.normalize(term, premise, table, session)? {
+        if definite(&normalized, premise, table, semantic, session)? {
+            session.mark_as_done(Record(term), true);
+            return Ok(true);
+        }
+    }
 
     for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
-        if equality::equals(term, key, premise, table, semantic, session) {
+        if equality::equals(term, key, premise, table, semantic, session)? {
             for value in values {
-                if definite(value, premise, table, semantic, session) {
+                if definite(value, premise, table, semantic, session)? {
                     session.mark_as_done(Record(term), true);
-                    return true;
+                    return Ok(true);
                 }
             }
         }
     }
 
     session.clear_query(Record(term));
-    false
+    Ok(false)
 }
 
 #[cfg(test)]

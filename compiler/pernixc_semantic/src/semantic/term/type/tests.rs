@@ -6,10 +6,12 @@ use proptest::{
     strategy::{BoxedStrategy, Just, Strategy},
 };
 
-use super::{MemberSymbolKindID, Pointer, Primitive, Qualifier, Reference, SymbolKindID, Type};
+use super::{
+    Array, MemberSymbolKindID, Pointer, Primitive, Qualifier, Reference, SymbolKindID, Type,
+};
 use crate::{
     arena::ID,
-    semantic::term::{constant::Constant, lifetime::Lifetime, MemberSymbol, Symbol},
+    semantic::term::{constant::Constant, lifetime::Lifetime, Local, MemberSymbol, Symbol, Tuple},
     symbol::TypeParameterID,
 };
 
@@ -67,12 +69,14 @@ impl Arbitrary for Pointer {
 }
 
 impl Arbitrary for Reference {
-    type Parameters = Option<BoxedStrategy<Type>>;
+    type Parameters = (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Type>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(type_strategy: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((lt_strategy, type_strategy): Self::Parameters) -> Self::Strategy {
         let type_strategy = type_strategy.unwrap_or_else(Type::arbitrary);
-        (type_strategy, Qualifier::arbitrary(), Lifetime::arbitrary())
+        let lt_strategy = lt_strategy.unwrap_or_else(Lifetime::arbitrary);
+
+        (type_strategy, Qualifier::arbitrary(), lt_strategy)
             .prop_map(|(ty, qualifier, lifetime)| Self {
                 pointee: Box::new(ty),
                 lifetime,
@@ -110,6 +114,23 @@ impl Arbitrary for MemberSymbolKindID {
     }
 }
 
+impl Arbitrary for Array {
+    type Parameters = (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Constant>>);
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((ty_strat, const_strat): Self::Parameters) -> Self::Strategy {
+        let ty_strat = ty_strat.unwrap_or_else(Type::arbitrary);
+        let const_strat = const_strat.unwrap_or_else(Constant::arbitrary);
+
+        (ty_strat, const_strat)
+            .prop_map(|(ty, length)| Self {
+                r#type: Box::new(ty),
+                length,
+            })
+            .boxed()
+    }
+}
+
 impl Arbitrary for Type {
     type Parameters = (
         Option<BoxedStrategy<Lifetime>>,
@@ -138,8 +159,13 @@ impl Arbitrary for Type {
                     Some(const_strat.clone())
                 ))
                 .prop_map(Self::MemberSymbol),
-                6 => Symbol::arbitrary_with((Some(lt_strat), Some(inner), Some(const_strat)))
+                6 => Symbol::arbitrary_with((Some(lt_strat.clone()), Some(inner.clone()), Some(const_strat.clone())))
                     .prop_map(Self::Symbol),
+                1 => Pointer::arbitrary_with(Some(inner.clone())).prop_map(Self::Pointer),
+                2 => Reference::arbitrary_with((Some(lt_strat), Some(inner.clone()))).prop_map(Self::Reference),
+                2 => Tuple::arbitrary_with(Some(inner.clone())).prop_map(Self::Tuple),
+                1 => inner.clone().prop_map(|x| Self::Local(Local(Box::new(x)))),
+                2 => Array::arbitrary_with((Some(inner), Some(const_strat))).prop_map(Self::Array),
             ]
         })
         .boxed()

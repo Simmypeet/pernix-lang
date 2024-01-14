@@ -2,7 +2,7 @@
 
 use super::{
     mapping::Map,
-    session::{self, Session},
+    session::{self, ExceedLimitError, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Premise, Semantic,
 };
@@ -26,31 +26,31 @@ fn equals_by_unification<
     premise: &Premise,
     table: &Table<impl State>,
     semantic: &mut S,
-    session: &mut R,
-) -> bool {
+    session: &mut Limit<R>,
+) -> Result<bool, ExceedLimitError> {
     let Some(matching) = lhs.substructural_match(rhs) else {
-        return false;
+        return Ok(false);
     };
 
     for (lhs, rhs) in matching.lifetimes {
-        if !equals(&lhs, &rhs, premise, table, semantic, session) {
-            return false;
+        if !equals(&lhs, &rhs, premise, table, semantic, session)? {
+            return Ok(false);
         }
     }
 
     for (lhs, rhs) in matching.types {
-        if !equals(&lhs, &rhs, premise, table, semantic, session) {
-            return false;
+        if !equals(&lhs, &rhs, premise, table, semantic, session)? {
+            return Ok(false);
         }
     }
 
     for (lhs, rhs) in matching.constants {
-        if !equals(&lhs, &rhs, premise, table, semantic, session) {
-            return false;
+        if !equals(&lhs, &rhs, premise, table, semantic, session)? {
+            return Ok(false);
         }
     }
 
-    true
+    Ok(true)
 }
 
 fn equals_by_normalization<
@@ -63,21 +63,21 @@ fn equals_by_normalization<
     premise: &Premise,
     table: &Table<impl State>,
     semantic: &mut S,
-    session: &mut R,
-) -> bool {
-    if let Some(lhs) = semantic.normalize(lhs, premise, table, session) {
-        if equals(&lhs, rhs, premise, table, semantic, session) {
-            return true;
+    session: &mut Limit<R>,
+) -> Result<bool, ExceedLimitError> {
+    if let Some(lhs) = semantic.normalize(lhs, premise, table, session)? {
+        if equals(&lhs, rhs, premise, table, semantic, session)? {
+            return Ok(true);
         }
     }
 
-    if let Some(rhs) = semantic.normalize(rhs, premise, table, session) {
-        if equals(lhs, &rhs, premise, table, semantic, session) {
-            return true;
+    if let Some(rhs) = semantic.normalize(rhs, premise, table, session)? {
+        if equals(lhs, &rhs, premise, table, semantic, session)? {
+            return Ok(true);
         }
     }
 
-    false
+    Ok(false)
 }
 
 fn equals_withour_mapping<
@@ -90,17 +90,17 @@ fn equals_withour_mapping<
     premise: &Premise,
     table: &Table<impl State>,
     semantic: &mut S,
-    session: &mut R,
-) -> bool {
+    session: &mut Limit<R>,
+) -> Result<bool, ExceedLimitError> {
     if semantic.trivially_equals(lhs, rhs)
-        || equals_by_unification(lhs, rhs, premise, table, semantic, session)
-        || equals_by_normalization(lhs, rhs, premise, table, semantic, session)
+        || equals_by_unification(lhs, rhs, premise, table, semantic, session)?
+        || equals_by_normalization(lhs, rhs, premise, table, semantic, session)?
     {
         session.mark_as_done(Query { lhs, rhs }, true);
-        return true;
+        return Ok(true);
     }
 
-    false
+    Ok(false)
 }
 
 /// Checks if the two given terms are equal.
@@ -115,6 +115,19 @@ fn equals_withour_mapping<
 /// - Transitivity: for all `x`, `y`, and `z`, if `x = y` and `y = z`, then `x = z`.
 /// - Congruence: for all `x, ..., xn` and `y, ..., yn`, if `x = y`, ..., and `xn = yn`, then `f(x,
 ///   ..., xn) = f(y, ..., yn)`.
+///
+/// # Decidability
+///
+/// Equality is **partially-decidable**. In other words, the function can halt in the case of
+/// equal terms, but it might output `false` or never halt in the case of unequal terms.
+///
+/// However, the function has a **soundness** guarantee. In other words, the function will never
+/// output `true` in the case of unequal terms. Also, the algorithm has a hard-limit on the number
+/// of recursive calls.
+///
+/// # Errors
+///
+/// See [`ExceedLimitError`] for more information.
 pub fn equals<
     T: Term,
     S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
@@ -125,52 +138,52 @@ pub fn equals<
     premise: &Premise,
     table: &Table<impl State>,
     semantic: &mut S,
-    session: &mut R,
-) -> bool {
+    session: &mut Limit<R>,
+) -> Result<bool, ExceedLimitError> {
     let query = Query { lhs, rhs };
 
     if semantic.trivially_equals(lhs, rhs) {
         session.mark_as_done(Query { lhs, rhs }, true);
-        return true;
+        return Ok(true);
     }
 
-    match session.mark_as_in_progress(query.clone()) {
-        Some(session::Result::Done(result)) => return result,
-        Some(session::Result::InProgress) => {
-            return false;
+    match session.mark_as_in_progress(query.clone())? {
+        Some(session::Cached::Done(result)) => return Ok(result),
+        Some(session::Cached::InProgress) => {
+            return Ok(false);
         }
         None => {}
     }
 
-    if equals_by_unification(lhs, rhs, premise, table, semantic, session)
-        || equals_by_normalization(lhs, rhs, premise, table, semantic, session)
+    if equals_by_unification(lhs, rhs, premise, table, semantic, session)?
+        || equals_by_normalization(lhs, rhs, premise, table, semantic, session)?
     {
         session.mark_as_done(Query { lhs, rhs }, true);
-        return true;
+        return Ok(true);
     }
 
     for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
-        if equals_withour_mapping(lhs, key, premise, table, semantic, session) {
+        if equals_withour_mapping(lhs, key, premise, table, semantic, session)? {
             for value in values {
-                if equals(value, rhs, premise, table, semantic, session) {
+                if equals(value, rhs, premise, table, semantic, session)? {
                     session.mark_as_done(Query { lhs, rhs }, true);
-                    return true;
+                    return Ok(true);
                 }
             }
         }
 
-        if equals_withour_mapping(key, rhs, premise, table, semantic, session) {
+        if equals_withour_mapping(key, rhs, premise, table, semantic, session)? {
             for value in values {
-                if equals(lhs, value, premise, table, semantic, session) {
+                if equals(lhs, value, premise, table, semantic, session)? {
                     session.mark_as_done(Query { lhs, rhs }, true);
-                    return true;
+                    return Ok(true);
                 }
             }
         }
     }
 
     session.clear_query(query);
-    false
+    Ok(false)
 }
 
 #[cfg(test)]

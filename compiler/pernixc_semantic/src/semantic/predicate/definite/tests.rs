@@ -13,7 +13,7 @@ use crate::{
         self,
         mapping::{self, Map},
         predicate::definite,
-        session::{self, Session},
+        session::{self, ExceedLimitError, Limit, Session},
         term::{
             constant::{self, Constant},
             r#type::{self, SymbolKindID, Type},
@@ -25,6 +25,12 @@ use crate::{
     table::{Success, Table},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+pub enum ApplyPropertyError {
+    #[error("{0}")]
+    ExceedLimitError(#[from] ExceedLimitError),
+}
+
 /// A trait for generating term for checking definite predicate satisfiability.
 pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
@@ -32,8 +38,11 @@ pub trait Property<T>: 'static + Debug {
     /// # Returns
     ///
     /// Returns `false` if failed to apply the environment to the
-    #[must_use]
-    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool;
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError>;
 
     /// Generate a term for checking
     #[must_use]
@@ -57,7 +66,9 @@ where
 }
 
 impl<T: Into<U> + Clone + Debug + 'static, U> Property<U> for TriviallySatisfiable<T> {
-    fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> bool { true }
+    fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> Result<(), ApplyPropertyError> {
+        Ok(())
+    }
 
     fn generate(&self) -> U { self.0.clone().into() }
 }
@@ -94,31 +105,38 @@ where
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
-    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
-        if !definite(
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
+        if definite(
             &self.generate(),
             premise,
             table,
             &mut semantic::Default,
-            &mut session::Default::default(),
-        ) && !self.property.apply(table, premise)
-        {
-            return false;
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
         }
 
-        if !definite(
+        self.property.apply(table, premise)?;
+
+        if definite(
             &self.generate(),
             premise,
             table,
             &mut semantic::Default,
-            &mut session::Default::default(),
-        ) {
-            premise
-                .equalities_mapping
-                .insert(self.generate(), self.property.generate());
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
         }
 
-        true
+        premise
+            .equalities_mapping
+            .insert(self.generate(), self.property.generate());
+
+        Ok(())
     }
 
     fn generate(&self) -> T { self.generic_parameter.clone().into() }
@@ -167,20 +185,20 @@ impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T> for SymbolCongr
 where
     Symbol<ID>: Into<T>,
 {
-    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
         for type_strategy in &self.type_strategies {
-            if !type_strategy.apply(table, premise) {
-                return false;
-            }
+            type_strategy.apply(table, premise)?;
         }
 
         for constant_strategy in &self.constant_strategies {
-            if !constant_strategy.apply(table, premise) {
-                return false;
-            }
+            constant_strategy.apply(table, premise)?;
         }
 
-        true
+        Ok(())
     }
 
     fn generate(&self) -> T {
@@ -281,18 +299,22 @@ where
     let mut premise = Premise::default();
     let mut table = Table::<Success>::default();
 
-    if !property.apply(&mut table, &mut premise) {
-        // failed to apply the environment
-        return Err(TestCaseError::reject("failed to apply the environment"));
-    }
+    property
+        .apply(&mut table, &mut premise)
+        .map_err(|x| match x {
+            ApplyPropertyError::ExceedLimitError(_) => {
+                TestCaseError::fail("too complex property to test")
+            }
+        })?;
 
     prop_assert!(definite(
         &term,
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
-    ));
+        &mut Limit::new(&mut session::Default::default())
+    )
+    .map_err(|_| TestCaseError::reject("too complex property to test"))?);
 
     // remove one of the mappings and check if the term is still definite
     {
@@ -305,8 +327,9 @@ where
                 &premise,
                 &table,
                 &mut semantic::Default,
-                &mut session::Default::default()
-            ));
+                &mut Limit::new(&mut session::Default::default())
+            )
+            .map_err(|_| TestCaseError::reject("too complex property to test"))?);
         }
     }
 

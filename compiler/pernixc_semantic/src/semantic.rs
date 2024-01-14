@@ -2,7 +2,7 @@
 
 use self::{
     mapping::Mapping,
-    session::Session,
+    session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant,
         lifetime::Lifetime,
@@ -21,6 +21,7 @@ pub mod predicate;
 pub mod session;
 pub mod substitution;
 pub mod term;
+pub mod unification;
 pub mod visitor;
 
 /// The foundation truth used to derive further arguments.
@@ -42,13 +43,17 @@ pub trait Semantic<T: Term> {
     ///
     /// It's primarily used to resolve the trait-member terms or obtain the inferred term from an
     /// inference variable.
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`] for more information.
     fn normalize<R: Session<T> + Session<Type> + Session<Lifetime> + Session<Constant>>(
         &mut self,
         term: &T,
         premise: &Premise,
         table: &Table<impl State>,
-        session: &mut R,
-    ) -> Option<T>;
+        session: &mut Limit<R>,
+    ) -> Result<Option<T>, ExceedLimitError>;
 }
 
 /// The basic implementation of the semantic logic.
@@ -63,9 +68,9 @@ impl Semantic<Lifetime> for Default {
         _: &Lifetime,
         _: &Premise,
         _: &Table<impl State>,
-        _: &mut R,
-    ) -> Option<Lifetime> {
-        None
+        _: &mut Limit<R>,
+    ) -> Result<Option<Lifetime>, ExceedLimitError> {
+        Ok(None)
     }
 }
 
@@ -77,8 +82,8 @@ impl Semantic<Type> for Default {
         term: &Type,
         _: &Premise,
         table: &Table<impl State>,
-        _: &mut R,
-    ) -> Option<Type> {
+        _: &mut Limit<R>,
+    ) -> Result<Option<Type>, ExceedLimitError> {
         match term {
             // transform type alias into the aliased type equivalent
             Type::Symbol(Symbol {
@@ -86,7 +91,7 @@ impl Semantic<Type> for Default {
                 generic_arguments,
             }) => {
                 let Some(type_sym) = table.get(*id) else {
-                    return None;
+                    return Ok(None);
                 };
 
                 let mut type_aliased = type_sym.r#type.clone();
@@ -95,13 +100,13 @@ impl Semantic<Type> for Default {
                     (*id).into(),
                 ));
 
-                Some(type_aliased)
+                Ok(Some(type_aliased))
             }
 
             // TODO: Transform trait-type into the trait-implementation type equivalent.
             // TODO: Transform ADT-member-type into the aliased type equivalent.
             // TODO: Normalize the unpacked tuple type.
-            _ => None,
+            _ => Ok(None),
         }
     }
 }
@@ -114,9 +119,9 @@ impl Semantic<Constant> for Default {
         _: &Constant,
         _: &Premise,
         _: &Table<impl State>,
-        _: &mut R,
-    ) -> Option<Constant> {
+        _: &mut Limit<R>,
+    ) -> Result<Option<Constant>, ExceedLimitError> {
         // TODO: Implement this.
-        None
+        Ok(None)
     }
 }

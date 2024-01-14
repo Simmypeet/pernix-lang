@@ -1,9 +1,15 @@
 //! Contains the definition of [`Lifetime`].
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use super::{Never, Substructural, Term};
-use crate::{semantic::predicate::Satisfiability, symbol::LifetimeParameterID};
+use crate::{
+    semantic::{predicate::Satisfiability, unification::Unification},
+    symbol::LifetimeParameterID,
+};
 
 /// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used in higher-ranked
 /// trait bounds.
@@ -36,6 +42,8 @@ pub enum Lifetime {
 impl Term for Lifetime {
     fn substructural_match(&self, _: &Self) -> Option<Substructural> { None }
 
+    fn definite_satisfiability(&self) -> Satisfiability { Satisfiability::Satisfied }
+
     fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {
         &substructural.lifetimes
     }
@@ -44,7 +52,13 @@ impl Term for Lifetime {
         &mut substructural.lifetimes
     }
 
-    fn definite_satisfiability(&self) -> Satisfiability { Satisfiability::Satisfied }
+    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
+        &unification.lifetimes
+    }
+
+    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut unification.lifetimes
+    }
 }
 
 #[cfg(test)]

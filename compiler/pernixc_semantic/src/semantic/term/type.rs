@@ -1,5 +1,7 @@
 //! Contains the definition of [`Type`].
 
+use std::collections::{HashMap, HashSet};
+
 use enum_as_inner::EnumAsInner;
 
 use super::{
@@ -7,7 +9,7 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::predicate::Satisfiability,
+    semantic::{predicate::Satisfiability, unification::Unification},
     symbol::{self, Enum, GenericID, GlobalID, Struct, TypeParameterID},
 };
 
@@ -112,7 +114,7 @@ pub struct Array {
     pub length: Constant,
 
     /// The type of the elements in the array.
-    pub element: Box<Type>,
+    pub r#type: Box<Type>,
 }
 
 /// Contains all primitive types in the language.
@@ -209,7 +211,7 @@ impl Term for Type {
 
             (Self::Array(lhs), Self::Array(rhs)) => Some(Substructural {
                 lifetimes: Vec::new(),
-                types: vec![((*lhs.element).clone(), (*rhs.element).clone())],
+                types: vec![((*lhs.r#type).clone(), (*rhs.r#type).clone())],
                 constants: vec![(lhs.length.clone(), rhs.length.clone())],
             }),
 
@@ -233,14 +235,6 @@ impl Term for Type {
         }
     }
 
-    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {
-        &substructural.types
-    }
-
-    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
-        &mut substructural.types
-    }
-
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
             Self::Parameter(_) | Self::Inference(_) => Satisfiability::Unsatisfied,
@@ -255,6 +249,22 @@ impl Term for Type {
             | Self::Array(_)
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
+    }
+
+    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {
+        &substructural.types
+    }
+
+    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
+        &mut substructural.types
+    }
+
+    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
+        &unification.types
+    }
+
+    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut unification.types
     }
 }
 

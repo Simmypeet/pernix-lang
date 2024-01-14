@@ -13,7 +13,7 @@ use crate::{
     semantic::{
         self,
         mapping::{self, Map},
-        session::{self, Session},
+        session::{self, ExceedLimitError, Limit, Session},
         substitution::{Substitute, Substitution},
         term::{
             constant::Constant,
@@ -45,8 +45,9 @@ fn reflexive() {
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default(),
-    ));
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
 }
 
 #[test]
@@ -71,16 +72,18 @@ fn symmetric() {
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default(),
-    ));
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
     assert!(equals(
         &rhs,
         &lhs,
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default(),
-    ));
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
 }
 #[test]
 fn transitivity() {
@@ -110,16 +113,18 @@ fn transitivity() {
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default(),
-    ));
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
     assert!(equals(
         &rhs,
         &lhs,
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default(),
-    ));
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
 }
 
 #[test]
@@ -170,27 +175,37 @@ fn congruence() {
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default(),
-    ));
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
     assert!(equals(
         &rhs,
         &lhs,
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default(),
-    ));
+        &mut Limit::new(&mut session::Default::default()),
+    )
+    .unwrap());
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+pub enum ApplyPropertyError {
+    #[error("{0}")]
+    ExceedLimitError(#[from] ExceedLimitError),
+
+    #[error("failed to apply the environment")]
+    TypeAliasIDCollision,
 }
 
 /// A trait for generating term for checking equality.
 pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
-    ///
-    /// # Returns
-    ///
-    /// Returns `false` if failed to apply the environment to the
-    #[must_use]
-    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool;
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError>;
 
     /// Generates the term for testing.
     #[must_use]
@@ -247,7 +262,7 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-        leaf.prop_recursive(4, 8, 2, |inner| {
+        leaf.prop_recursive(10, 20, 2, |inner| {
             prop_oneof![Mapping::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _)]
         })
         .boxed()
@@ -308,7 +323,9 @@ where
 }
 
 impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
-    fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> bool { true }
+    fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> Result<(), ApplyPropertyError> {
+        Ok(())
+    }
 
     fn generate(&self) -> (T, T) { (self.term.clone(), self.term.clone()) }
 }
@@ -342,34 +359,54 @@ where
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
-    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
         let (l_lhs, l_rhs) = self.lhs.generate();
         let (r_lhs, r_rhs) = self.rhs.generate();
 
-        if !equals(
+        if equals(
             &l_lhs,
             &r_rhs,
             premise,
             table,
             &mut semantic::Default,
-            &mut session::Default::default(),
-        ) && (!self.lhs.apply(table, premise) || !self.rhs.apply(table, premise))
-        {
-            return false;
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
         }
 
-        if !equals(
+        self.lhs.apply(table, premise)?;
+
+        if equals(
             &l_lhs,
             &r_rhs,
             premise,
             table,
             &mut semantic::Default,
-            &mut session::Default::default(),
-        ) {
-            premise.equalities_mapping.insert(l_rhs, r_lhs);
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
         }
 
-        true
+        self.rhs.apply(table, premise)?;
+
+        if equals(
+            &l_lhs,
+            &r_rhs,
+            premise,
+            table,
+            &mut semantic::Default,
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
+        }
+
+        premise.equalities_mapping.insert(l_rhs, r_lhs);
+
+        Ok(())
     }
 
     fn generate(&self) -> (T, T) {
@@ -405,8 +442,26 @@ where
 impl<T: Term + Debug + 'static> Property<T> for LocalCongruence<T>
 where
     Local<T>: Into<T>,
+    semantic::Default: Semantic<T>,
+    session::Default: Session<T>,
 {
-    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
+        let (lhs, rhs) = self.generate();
+        if equals(
+            &lhs,
+            &rhs,
+            premise,
+            table,
+            &mut semantic::Default,
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
+        }
+
         self.strategy.apply(table, premise)
     }
 
@@ -467,27 +522,27 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
 impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T> for SymbolCongruence<ID>
 where
     Symbol<ID>: Into<T>,
+    semantic::Default: Semantic<T>,
+    session::Default: Session<T>,
 {
-    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
         for strategy in &self.type_strategies {
-            if !strategy.apply(table, premise) {
-                return false;
-            }
+            strategy.apply(table, premise)?;
         }
 
         for strategy in &self.lifetime_strategies {
-            if !strategy.apply(table, premise) {
-                return false;
-            }
+            strategy.apply(table, premise)?;
         }
 
         for strategy in &self.constant_strategies {
-            if !strategy.apply(table, premise) {
-                return false;
-            }
+            strategy.apply(table, premise)?;
         }
 
-        true
+        Ok(())
     }
 
     fn generate(&self) -> (T, T) {
@@ -601,7 +656,11 @@ impl Arbitrary for TypeAlias {
 }
 
 impl Property<Type> for TypeAlias {
-    fn apply(&self, table: &mut Table<Success>, premise: &mut Premise) -> bool {
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
 
         if equals(
@@ -610,12 +669,12 @@ impl Property<Type> for TypeAlias {
             premise,
             table,
             &mut semantic::Default,
-            &mut session::Default::default(),
-        ) {
-            return true;
-        } else if !self.property.apply(table, premise) {
-            return false;
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
         }
+
+        self.property.apply(table, premise)?;
 
         if !equals(
             &lhs,
@@ -623,8 +682,8 @@ impl Property<Type> for TypeAlias {
             premise,
             table,
             &mut semantic::Default,
-            &mut session::Default::default(),
-        ) {
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
             let type_symbol = symbol::Type {
                 id: self.type_id,
                 generic_declaration: GenericDeclaration {
@@ -698,11 +757,11 @@ impl Property<Type> for TypeAlias {
                 .insert_with_id(self.type_id, type_symbol)
                 .is_err()
             {
-                return false;
+                return Err(ApplyPropertyError::TypeAliasIDCollision);
             }
         }
 
-        true
+        Ok(())
     }
 
     fn generate(&self) -> (Type, Type) {
@@ -726,10 +785,10 @@ impl Property<Type> for TypeAlias {
 }
 
 fn remove<T: Term>(equalities: &mut mapping::Mapping, term: &T) {
-    let removed_terms = equalities.remove_equality(term);
+    let removeds = equalities.remove_equality(term);
 
-    for removed_term in removed_terms.into_iter().flatten() {
-        remove(equalities, &removed_term);
+    for removed in removeds.into_iter().flatten() {
+        remove(equalities, &removed);
     }
 }
 
@@ -756,10 +815,16 @@ where
     let mut premise = Premise::default();
     let mut table = Table::<Success>::default();
 
-    if !property.apply(&mut table, &mut premise) {
-        // failed to apply the environment
-        return Err(TestCaseError::reject("failed to apply the environment"));
-    }
+    property
+        .apply(&mut table, &mut premise)
+        .map_err(|x| match x {
+            ApplyPropertyError::ExceedLimitError(_) => {
+                TestCaseError::reject("too complex property")
+            }
+            ApplyPropertyError::TypeAliasIDCollision => {
+                TestCaseError::reject("type alias id collision")
+            }
+        })?;
 
     prop_assert!(equals(
         &term1,
@@ -767,41 +832,51 @@ where
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
-    ));
+        &mut Limit::new(&mut session::Default::default())
+    )
+    .map_err(|_| TestCaseError::reject("too complex property"))?);
+
     prop_assert!(equals(
         &term2,
         &term1,
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
-    ));
+        &mut Limit::new(&mut session::Default::default())
+    )
+    .map_err(|_| TestCaseError::reject("too complex property"))?);
+
+    println!(
+        "mapping count: {}",
+        premise.equalities_mapping.mapping_count()
+    );
 
     // remove the equality mapping should make the terms not equal.
     {
-        let mut premise = premise.clone();
+        let mut premise_removed = premise.clone();
 
-        if remove_sampled::<Type>(&mut premise.equalities_mapping)
-            || remove_sampled::<Lifetime>(&mut premise.equalities_mapping)
-            || remove_sampled::<Constant>(&mut premise.equalities_mapping)
+        if remove_sampled::<Type>(&mut premise_removed.equalities_mapping)
+            || remove_sampled::<Lifetime>(&mut premise_removed.equalities_mapping)
+            || remove_sampled::<Constant>(&mut premise_removed.equalities_mapping)
         {
             prop_assert!(!equals(
                 &term1,
                 &term2,
-                &premise,
+                &premise_removed,
                 &table,
                 &mut semantic::Default,
-                &mut session::Default::default()
-            ));
+                &mut Limit::new(&mut session::Default::default())
+            )
+            .map_err(|_| TestCaseError::reject("too complex property"))?);
             prop_assert!(!equals(
                 &term2,
                 &term1,
-                &premise,
+                &premise_removed,
                 &table,
                 &mut semantic::Default,
-                &mut session::Default::default()
-            ));
+                &mut Limit::new(&mut session::Default::default())
+            )
+            .map_err(|_| TestCaseError::reject("too complex property"))?);
         }
     }
 
@@ -817,16 +892,18 @@ where
                 &premise,
                 &table,
                 &mut semantic::Default,
-                &mut session::Default::default()
-            ));
+                &mut Limit::new(&mut session::Default::default())
+            )
+            .map_err(|_| TestCaseError::reject("too complex property"))?);
             prop_assert!(!equals(
                 &term2,
                 &term1,
                 &premise,
                 &table,
                 &mut semantic::Default,
-                &mut session::Default::default()
-            ));
+                &mut Limit::new(&mut session::Default::default())
+            )
+            .map_err(|_| TestCaseError::reject("too complex property"))?);
 
             table
                 .representation
@@ -861,16 +938,18 @@ where
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
-    ));
+        &mut Limit::new(&mut session::Default::default())
+    )
+    .map_err(|_| TestCaseError::reject("too complex property"))?);
     prop_assert!(equals(
         &term2,
         &term1,
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
-    ));
+        &mut Limit::new(&mut session::Default::default())
+    )
+    .map_err(|_| TestCaseError::reject("too complex property"))?);
 
     Ok(())
 }
@@ -893,8 +972,9 @@ where
         &premise,
         &table,
         &mut semantic::Default,
-        &mut session::Default::default()
-    ));
+        &mut Limit::new(&mut session::Default::default())
+    )
+    .map_err(|_| TestCaseError::reject("too complex property"))?);
 
     Ok(())
 }

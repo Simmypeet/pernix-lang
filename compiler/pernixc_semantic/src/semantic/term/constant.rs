@@ -1,13 +1,16 @@
 //! Contains the definition of [`Constant`].
 
-use std::ops::Deref;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+};
 
 use enum_as_inner::EnumAsInner;
 
 use super::{Local, MemberSymbol, Never, Substructural, Symbol, Term};
 use crate::{
     arena::ID,
-    semantic::predicate::Satisfiability,
+    semantic::{predicate::Satisfiability, unification::Unification},
     symbol::{self, ConstantParameterID, GenericID, GlobalID, Variant},
 };
 
@@ -194,14 +197,6 @@ impl Term for Constant {
         }
     }
 
-    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {
-        &substructural.constants
-    }
-
-    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
-        &mut substructural.constants
-    }
-
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
             Self::Parameter(_) | Self::Inference(_) => Satisfiability::Unsatisfied,
@@ -216,6 +211,22 @@ impl Term for Constant {
             | Self::Symbol(_)
             | Self::MemberSymbol(_) => Satisfiability::Congruent,
         }
+    }
+
+    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {
+        &substructural.constants
+    }
+
+    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
+        &mut substructural.constants
+    }
+
+    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
+        &unification.constants
+    }
+
+    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut unification.constants
     }
 }
 
