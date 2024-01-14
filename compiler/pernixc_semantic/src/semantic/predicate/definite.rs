@@ -92,7 +92,7 @@ impl<
 
 /// A query for checking definite predicate satisfiability.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Record<'a, T>(pub &'a T);
+pub struct Query<'a, T>(pub &'a T);
 
 /// Determines wheter a term is definite.
 ///
@@ -116,11 +116,11 @@ pub fn definite<
 
     // trivially satisfiable
     if satisfiability == Satisfiability::Satisfied {
-        session.mark_as_done(Record(term), true);
+        session.mark_as_done(Query(term), true);
         return Ok(true);
     }
 
-    match session.mark_as_in_progress(Record(term))? {
+    match session.mark_as_in_progress(Query(term))? {
         Some(session::Cached::Done(result)) => return Ok(result),
         Some(session::Cached::InProgress) => {
             return Ok(false);
@@ -141,7 +141,7 @@ pub fn definite<
         let _ = term.accept_one_level(&mut visitor, VisitMode::<Success>::OnlySubTerms);
 
         if visitor.definite? {
-            session.mark_as_done(Record(term), true);
+            session.mark_as_done(Query(term), true);
             return Ok(true);
         }
     }
@@ -149,7 +149,7 @@ pub fn definite<
     // satisfiable with normalization
     if let Some(normalized) = semantic.normalize(term, premise, table, session)? {
         if definite(&normalized, premise, table, semantic, session)? {
-            session.mark_as_done(Record(term), true);
+            session.mark_as_done(Query(term), true);
             return Ok(true);
         }
     }
@@ -158,14 +158,14 @@ pub fn definite<
         if equality::equals(term, key, premise, table, semantic, session)? {
             for value in values {
                 if definite(value, premise, table, semantic, session)? {
-                    session.mark_as_done(Record(term), true);
+                    session.mark_as_done(Query(term), true);
                     return Ok(true);
                 }
             }
         }
     }
 
-    session.clear_query(Record(term));
+    session.clear_query(Query(term));
     Ok(false)
 }
 

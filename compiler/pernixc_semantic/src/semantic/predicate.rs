@@ -2,7 +2,7 @@
 
 mod definite;
 
-pub use definite::{definite, Record as DefiniteRecord};
+pub use definite::{definite, Query as DefiniteQuery};
 
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
