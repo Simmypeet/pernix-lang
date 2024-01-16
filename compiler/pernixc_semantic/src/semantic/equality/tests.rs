@@ -452,11 +452,12 @@ impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
 
 #[derive(Debug)]
 pub struct Mapping<T> {
-    lhs: Box<dyn Property<T>>,
-    rhs: Box<dyn Property<T>>,
+    property: Box<dyn Property<T>>,
+    target: T,
+    target_at_lhs: bool,
 }
 
-impl<T: 'static + Debug + Term> Arbitrary for Mapping<T>
+impl<T: 'static + Debug + Term + Arbitrary<Strategy = BoxedStrategy<T>>> Arbitrary for Mapping<T>
 where
     Box<dyn Property<T>>: Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
     semantic::Default: Semantic<T>,
@@ -468,8 +469,12 @@ where
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let strat = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
-        (strat.clone(), strat)
-            .prop_map(|(lhs, rhs)| Self { lhs, rhs })
+        (strat, T::arbitrary(), proptest::bool::ANY)
+            .prop_map(|(property, target, target_at_lhs)| Self {
+                property,
+                target,
+                target_at_lhs,
+            })
             .boxed()
     }
 }
@@ -484,12 +489,11 @@ where
         table: &mut Table<Success>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
-        let (l_lhs, l_rhs) = self.lhs.generate();
-        let (r_lhs, r_rhs) = self.rhs.generate();
+        let (lhs, rhs) = self.generate();
 
         if equals(
-            &l_lhs,
-            &r_rhs,
+            &lhs,
+            &rhs,
             premise,
             table,
             &mut semantic::Default,
@@ -498,11 +502,25 @@ where
             return Ok(());
         }
 
-        self.lhs.apply(table, premise)?;
+        let (property_lhs, property_rhs) = self.property.generate();
+
+        let to_be_mapped = if self.target_at_lhs {
+            property_lhs
+        } else {
+            property_rhs
+        };
+        self.property.apply(table, premise)?;
 
         if equals(
-            &l_lhs,
-            &r_rhs,
+            &lhs,
+            &rhs,
+            premise,
+            table,
+            &mut semantic::Default,
+            &mut Limit::new(&mut session::Default::default()),
+        )? || equals(
+            &to_be_mapped,
+            &self.target,
             premise,
             table,
             &mut semantic::Default,
@@ -511,28 +529,19 @@ where
             return Ok(());
         }
 
-        self.rhs.apply(table, premise)?;
-
-        if equals(
-            &l_lhs,
-            &r_rhs,
-            premise,
-            table,
-            &mut semantic::Default,
-            &mut Limit::new(&mut session::Default::default()),
-        )? {
-            return Ok(());
-        }
-
-        premise.equalities_mapping.insert(l_rhs, r_lhs);
+        premise
+            .equalities_mapping
+            .insert(to_be_mapped, self.target.clone());
 
         Ok(())
     }
 
     fn generate(&self) -> (T, T) {
-        let (l_lhs, _) = self.lhs.generate();
-        let (_, r_rhs) = self.rhs.generate();
-        (l_lhs, r_rhs)
+        if self.target_at_lhs {
+            (self.target.clone(), self.property.generate().1)
+        } else {
+            (self.property.generate().0, self.target.clone())
+        }
     }
 }
 
@@ -966,10 +975,10 @@ where
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?);
 
-    println!(
-        "mapping count: {}",
-        premise.equalities_mapping.mapping_count()
-    );
+    // println!(
+    //     "mapping count: {}",
+    //     premise.equalities_mapping.mapping_count()
+    // );
 
     // remove the equality mapping should make the terms not equal.
     {
