@@ -7,7 +7,7 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{unify, Config, Unification};
+use super::{unify, Config};
 use crate::{
     semantic::{
         self,
@@ -52,7 +52,6 @@ pub trait Property<T>: 'static + Debug {
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError>;
     fn generate(&self) -> (T, T);
-    fn check(&self, unification: &Unification) -> bool;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -69,12 +68,6 @@ impl<Param: Debug + Clone + 'static, T: Debug + Clone + Term + From<Param> + 'st
     }
 
     fn generate(&self) -> (T, T) { (T::from(self.parameter.clone()), self.rhs.clone()) }
-
-    fn check(&self, unification: &Unification) -> bool {
-        T::get_unification(unification)
-            .get(&T::from(self.parameter.clone()))
-            .is_some_and(|x| x.contains(&self.rhs))
-    }
 }
 
 impl<
@@ -128,8 +121,9 @@ impl Arbitrary for Box<dyn Property<Type>> {
 
             prop_oneof![
                 6 => SymbolCongruence::arbitrary_with(
-                    (Some(lifetime_prop), Some(inner), Some(constant_prop))
+                    (Some(lifetime_prop), Some(inner.clone()), Some(constant_prop))
                 ).prop_map(|x| Box::new(x) as _),
+                1 => Mapping::<_, TypeParameterID>::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
@@ -158,8 +152,10 @@ impl Arbitrary for Box<dyn Property<Constant>> {
 
             prop_oneof![
                 6 => SymbolCongruence::arbitrary_with(
-                    (Some(lifetime_prop), Some(type_prop), Some(inner))
+                    (Some(lifetime_prop), Some(type_prop), Some(inner.clone()))
                 ).prop_map(|x| Box::new(x) as _),
+                1 => Mapping::<_, ConstantParameterID>::arbitrary_with(Some(inner))
+                .prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
@@ -242,17 +238,6 @@ where
 
         (lhs.into(), rhs.into())
     }
-
-    fn check(&self, unification: &Unification) -> bool {
-        self.lifetime_properties
-            .iter()
-            .all(|x| x.check(unification))
-            && self.type_properties.iter().all(|x| x.check(unification))
-            && self
-                .constant_properties
-                .iter()
-                .all(|x| x.check(unification))
-    }
 }
 
 impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbitrary
@@ -293,6 +278,65 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
     }
 }
 
+#[derive(Debug)]
+pub struct Mapping<T, Param> {
+    pub property: Box<dyn Property<T>>,
+    pub mapping: Param,
+}
+
+impl<T: Debug + Term + From<Param> + 'static, Param: Debug + Clone + 'static> Property<T>
+    for Mapping<T, Param>
+where
+    GenericParameterUnifyConfig: Config<T>,
+{
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
+        let (lhs, rhs) = self.generate();
+
+        if GenericParameterUnifyConfig.unifiable(&lhs, &rhs) {
+            return Ok(());
+        }
+
+        self.property.apply(table, premise)?;
+
+        let mapped = self.property.generate().1;
+
+        premise
+            .equalities_mapping
+            .insert(T::from(self.mapping.clone()), mapped);
+
+        Ok(())
+    }
+
+    fn generate(&self) -> (T, T) {
+        let term = self.property.generate().1;
+
+        (term, T::from(self.mapping.clone()))
+    }
+}
+
+impl<
+        T: Debug + Arbitrary<Strategy = BoxedStrategy<T>> + 'static,
+        Param: Debug + Arbitrary<Strategy = BoxedStrategy<Param>> + 'static,
+    > Arbitrary for Mapping<T, Param>
+where
+    Box<dyn Property<T>>: Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+{
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
+        let strat = strat.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+
+        (strat, Param::arbitrary())
+            .prop_map(|(property, mapping)| Self { property, mapping })
+            .boxed()
+    }
+}
+
 pub fn property_based_testing<T: Term + 'static>(property: &dyn Property<T>) -> TestCaseResult
 where
     GenericParameterUnifyConfig: Config<T> + Config<Lifetime> + Config<Type> + Config<Constant>,
@@ -305,7 +349,14 @@ where
 
     let (lhs, rhs) = property.generate();
 
-    if lhs == rhs {
+    if equals(
+        &lhs,
+        &rhs,
+        &premise,
+        &table,
+        &mut semantic::Default,
+        &mut Limit::new(&mut session::Default::default()),
+    )? {
         return Err(TestCaseError::reject("trivially equalities"));
     }
 
@@ -322,8 +373,6 @@ where
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?
     .unwrap();
-
-    prop_assert!(property.check(&unification));
 
     for (key, values) in Type::get_unification(&unification) {
         for value in values {
