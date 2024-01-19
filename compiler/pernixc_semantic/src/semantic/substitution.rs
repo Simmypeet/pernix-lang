@@ -14,9 +14,9 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
 pub struct Substitution {
+    pub lifetimes: HashMap<Lifetime, Lifetime>,
     pub types: HashMap<Type, Type>,
     pub constants: HashMap<Constant, Constant>,
-    pub lifetimes: HashMap<Lifetime, Lifetime>,
 }
 
 /// Represents a substitution of terms.
