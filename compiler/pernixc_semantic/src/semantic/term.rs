@@ -11,7 +11,10 @@ use enum_as_inner::EnumAsInner;
 use lifetime::Lifetime;
 use r#type::Type;
 
-use super::{mapping::Map, predicate::Satisfiability, unification::Unification, visitor::Element};
+use super::{
+    mapping::Map, predicate::Satisfiability, substitution::Substitute, unification::Unification,
+    visitor::Element,
+};
 
 pub mod constant;
 pub mod lifetime;
@@ -93,7 +96,7 @@ where
     Self: Into<T>;
 
 /// Contains the functionality for determining the properties of a term.
-pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element {
+pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substitute {
     /// Returns the matching substructural matches between `self` and `other`.
     ///
     /// # Example
