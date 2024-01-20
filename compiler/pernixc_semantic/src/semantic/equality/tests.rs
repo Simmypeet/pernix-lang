@@ -21,7 +21,7 @@ use crate::{
             r#type::{Primitive, SymbolKindID, Type},
             GenericArguments, Local, Symbol, Term,
         },
-        visitor::{self, VisitMode, Visitor},
+        visitor::{self, Visitor},
         Premise, Semantic,
     },
     symbol::{
@@ -727,14 +727,14 @@ struct TermCollector {
 }
 
 impl Visitor for TermCollector {
-    fn visit_type(&mut self, ty: &Type, _: semantic::visitor::Source) -> bool {
+    fn visit_type(&mut self, ty: &Type) -> bool {
         self.terms.push(ty.clone());
         true
     }
 
-    fn visit_lifetime(&mut self, _: &Lifetime, _: semantic::visitor::Source) -> bool { true }
+    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { true }
 
-    fn visit_constant(&mut self, _: &Constant, _: semantic::visitor::Source) -> bool { true }
+    fn visit_constant(&mut self, _: &Constant) -> bool { true }
 }
 
 #[derive(Debug)]
@@ -760,11 +760,7 @@ impl Arbitrary for TypeAlias {
 
                 let mut term_collector = TermCollector { terms: Vec::new() };
 
-                visitor::accept_recursive(
-                    &sampled,
-                    &mut term_collector,
-                    VisitMode::<Success>::OnlySubTerms,
-                );
+                visitor::accept_recursive(&sampled, &mut term_collector);
 
                 proptest::sample::select(term_collector.terms)
             }),

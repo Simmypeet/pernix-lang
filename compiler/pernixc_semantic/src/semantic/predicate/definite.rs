@@ -5,10 +5,9 @@ use crate::{
         mapping::Map,
         session::{self, ExceedLimitError, Limit, Satisfied, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        visitor::{self, VisitMode},
-        Premise, Semantic,
+        visitor, Premise, Semantic,
     },
-    table::{State, Success, Table},
+    table::{State, Table},
 };
 
 #[derive(Debug)]
@@ -38,7 +37,7 @@ impl<
         R: Session<Lifetime> + Session<Type> + Session<Constant>,
     > visitor::Visitor for Visitor<'a, 's, 'r, 'l, T, S, R>
 {
-    fn visit_type(&mut self, ty: &Type, _: visitor::Source) -> bool {
+    fn visit_type(&mut self, ty: &Type) -> bool {
         match definite(ty, self.premise, self.table, self.semantic, self.session) {
             result @ (Err(_) | Ok(false)) => {
                 self.definite = result;
@@ -51,7 +50,7 @@ impl<
         true
     }
 
-    fn visit_lifetime(&mut self, lifetime: &Lifetime, _: visitor::Source) -> bool {
+    fn visit_lifetime(&mut self, lifetime: &Lifetime) -> bool {
         match definite(
             lifetime,
             self.premise,
@@ -70,7 +69,7 @@ impl<
         true
     }
 
-    fn visit_constant(&mut self, constant: &Constant, _: visitor::Source) -> bool {
+    fn visit_constant(&mut self, constant: &Constant) -> bool {
         match definite(
             constant,
             self.premise,
@@ -138,7 +137,7 @@ pub fn definite<
             session,
         };
 
-        let _ = term.accept_one_level(&mut visitor, VisitMode::<Success>::OnlySubTerms);
+        let _ = term.accept_one_level(&mut visitor);
 
         if visitor.definite? {
             session.mark_as_done(Query(term), Satisfied);

@@ -2,16 +2,9 @@
 
 use thiserror::Error;
 
-use super::{
-    substitution::{Substitute, Substitution},
-    term::{
-        constant::Constant,
-        lifetime::Lifetime,
-        r#type::{SymbolKindID, Type},
-        GenericArguments, Tuple, TupleElement,
-    },
+use super::term::{
+    constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Tuple, TupleElement,
 };
-use crate::table::{Index, State, Table};
 
 /// Represents a visitor that visits a term.
 pub trait Visitor {
@@ -19,51 +12,19 @@ pub trait Visitor {
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of the type.
     #[must_use]
-    fn visit_type(&mut self, ty: &Type, source: Source) -> bool;
+    fn visit_type(&mut self, ty: &Type) -> bool;
 
     /// Visits a lifetime.
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of the lifetime.
     #[must_use]
-    fn visit_lifetime(&mut self, lifetime: &Lifetime, source: Source) -> bool;
+    fn visit_lifetime(&mut self, lifetime: &Lifetime) -> bool;
 
     /// Visits a constant.  
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of the constant.
     #[must_use]
-    fn visit_constant(&mut self, constant: &Constant, source: Source) -> bool;
-}
-
-/// Specifies where the term is coming from for the visitor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Source {
-    /// The term is coming from the input.
-    Term,
-
-    /// The term is coming from the fields/variants of an ADT.
-    AdtStructure,
-}
-
-/// Determines which terms should be included in the visit.
-#[derive(Debug)]
-pub enum VisitMode<'a, S: State> {
-    /// Only visit the sub-terms of the given term (including the term itself).
-    OnlySubTerms,
-
-    /// Additionally visit the types appearing the ADT terms as well (i.e. the fields of a struct
-    /// or variant of the enum).
-    ///
-    /// The table is required to look up the fields/variants of the ADT.
-    IncludeAdtStructure(&'a Table<S>),
-}
-
-impl<S: State> Clone for VisitMode<'_, S> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::OnlySubTerms => Self::OnlySubTerms,
-            Self::IncludeAdtStructure(table) => Self::IncludeAdtStructure(table),
-        }
-    }
+    fn visit_constant(&mut self, constant: &Constant) -> bool;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
@@ -72,38 +33,33 @@ impl<S: State> Clone for VisitMode<'_, S> {
 pub struct VisitNonApplicationTermError;
 
 #[derive(Debug)]
-struct RecursiveVisitorAdapter<'a, V: Visitor, S: State> {
+struct RecursiveVisitorAdapter<'a, V: Visitor> {
     visitor: &'a mut V,
-    mode: VisitMode<'a, S>,
 }
 
-impl<'a, V: Visitor, S: State> Visitor for RecursiveVisitorAdapter<'a, V, S> {
-    fn visit_type(&mut self, ty: &Type, source: Source) -> bool {
-        if !self.visitor.visit_type(ty, source) {
+impl<'a, V: Visitor> Visitor for RecursiveVisitorAdapter<'a, V> {
+    fn visit_type(&mut self, ty: &Type) -> bool {
+        if !self.visitor.visit_type(ty) {
             return false;
         }
 
-        ty.accept_one_level(self, self.mode.clone()).unwrap_or(true)
+        ty.accept_one_level(self).unwrap_or(true)
     }
 
-    fn visit_lifetime(&mut self, lifetime: &Lifetime, source: Source) -> bool {
-        if !self.visitor.visit_lifetime(lifetime, source) {
+    fn visit_lifetime(&mut self, lifetime: &Lifetime) -> bool {
+        if !self.visitor.visit_lifetime(lifetime) {
             return false;
         }
 
-        lifetime
-            .accept_one_level(self, self.mode.clone())
-            .unwrap_or(true)
+        lifetime.accept_one_level(self).unwrap_or(true)
     }
 
-    fn visit_constant(&mut self, constant: &Constant, source: Source) -> bool {
-        if !self.visitor.visit_constant(constant, source) {
+    fn visit_constant(&mut self, constant: &Constant) -> bool {
+        if !self.visitor.visit_constant(constant) {
             return false;
         }
 
-        constant
-            .accept_one_level(self, self.mode.clone())
-            .unwrap_or(true)
+        constant.accept_one_level(self).unwrap_or(true)
     }
 }
 
@@ -134,7 +90,6 @@ pub trait Element {
     fn accept_one_level(
         &self,
         visitor: &mut impl Visitor,
-        mode: VisitMode<impl State>,
     ) -> Result<bool, VisitNonApplicationTermError>;
 }
 
@@ -148,21 +103,14 @@ pub trait Element {
 /// # Returns
 ///
 /// Returns `true` if the visitor has visited all of the sub-terms of the term.
-pub fn accept_recursive(
-    element: &impl Element,
-    visitor: &mut impl Visitor,
-    mode: VisitMode<impl State>,
-) -> bool {
+pub fn accept_recursive(element: &impl Element, visitor: &mut impl Visitor) -> bool {
     if !element.accept_single(visitor) {
         return false;
     }
 
-    let mut adapter = RecursiveVisitorAdapter {
-        visitor,
-        mode: mode.clone(),
-    };
+    let mut adapter = RecursiveVisitorAdapter { visitor };
 
-    match element.accept_one_level(&mut adapter, mode) {
+    match element.accept_one_level(&mut adapter) {
         Ok(result) => result,
         Err(VisitNonApplicationTermError) => true,
     }
@@ -190,19 +138,19 @@ where
 impl GenericArguments {
     fn accept_one_level(&self, visitor: &mut impl Visitor) -> bool {
         for lifetime in &self.lifetimes {
-            if !visitor.visit_lifetime(lifetime, Source::Term) {
+            if !visitor.visit_lifetime(lifetime) {
                 return false;
             }
         }
 
         for ty in &self.types {
-            if !visitor.visit_type(ty, Source::Term) {
+            if !visitor.visit_type(ty) {
                 return false;
             }
         }
 
         for constant in &self.constants {
-            if !visitor.visit_constant(constant, Source::Term) {
+            if !visitor.visit_constant(constant) {
                 return false;
             }
         }
@@ -212,14 +160,11 @@ impl GenericArguments {
 }
 
 impl Element for Type {
-    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
-        visitor.visit_type(self, Source::Term)
-    }
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool { visitor.visit_type(self) }
 
     fn accept_one_level(
         &self,
         visitor: &mut impl Visitor,
-        mode: VisitMode<impl State>,
     ) -> Result<bool, VisitNonApplicationTermError> {
         match self {
             Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
@@ -231,67 +176,17 @@ impl Element for Type {
                     return Ok(false);
                 }
 
-                if let VisitMode::IncludeAdtStructure(table) = mode.clone() {
-                    match term.id {
-                        SymbolKindID::Struct(id) => {
-                            let Some(symbol) = table.get(id) else {
-                                return Ok(true);
-                            };
-
-                            for field_ty in symbol.fields.values().map(|x| {
-                                let mut x = x.r#type.clone();
-                                x.apply(&Substitution::from_generic_arguments(
-                                    term.generic_arguments.clone(),
-                                    id.into(),
-                                ));
-                                x
-                            }) {
-                                if !visitor.visit_type(&field_ty, Source::AdtStructure) {
-                                    return Ok(false);
-                                }
-                            }
-
-                            Ok(true)
-                        }
-                        SymbolKindID::Enum(id) => {
-                            let Some(symbol) = table.get(id) else {
-                                return Ok(true);
-                            };
-
-                            for variant_type in
-                                symbol.variant_ids_by_name.values().filter_map(|x| {
-                                    table.get(*x).and_then(|x| {
-                                        x.associated_type.as_ref().map(|x| {
-                                            let mut ty = x.clone();
-                                            ty.apply(&Substitution::from_generic_arguments(
-                                                term.generic_arguments.clone(),
-                                                id.into(),
-                                            ));
-                                            ty
-                                        })
-                                    })
-                                })
-                            {
-                                if !visitor.visit_type(&variant_type, Source::AdtStructure) {
-                                    return Ok(false);
-                                }
-                            }
-
-                            Ok(true)
-                        }
-                        SymbolKindID::Type(_) => Ok(true),
-                    }
-                } else {
-                    Ok(true)
-                }
+                Ok(true)
             }
-            Self::Pointer(term) => Ok(visitor.visit_type(&term.pointee, Source::Term)),
-            Self::Reference(term) => Ok(visitor.visit_lifetime(&term.lifetime, Source::Term)
-                && visitor.visit_type(&term.pointee, Source::Term)),
-            Self::Array(term) => Ok(visitor.visit_type(&term.r#type, Source::Term)
-                && visitor.visit_constant(&term.length, Source::Term)),
+            Self::Pointer(term) => Ok(visitor.visit_type(&term.pointee)),
+            Self::Reference(term) => {
+                Ok(visitor.visit_lifetime(&term.lifetime) && visitor.visit_type(&term.pointee))
+            }
+            Self::Array(term) => {
+                Ok(visitor.visit_type(&term.r#type) && visitor.visit_constant(&term.length))
+            }
             Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
-            Self::Local(local) => Ok(visitor.visit_type(&local.0, Source::Term)),
+            Self::Local(local) => Ok(visitor.visit_type(&local.0)),
             Self::MemberSymbol(implementation) => Ok(implementation
                 .member_generic_arguments
                 .accept_one_level(visitor)
@@ -303,28 +198,19 @@ impl Element for Type {
 }
 
 impl Element for Lifetime {
-    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
-        visitor.visit_lifetime(self, Source::Term)
-    }
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool { visitor.visit_lifetime(self) }
 
-    fn accept_one_level(
-        &self,
-        _: &mut impl Visitor,
-        _: VisitMode<impl State>,
-    ) -> Result<bool, VisitNonApplicationTermError> {
+    fn accept_one_level(&self, _: &mut impl Visitor) -> Result<bool, VisitNonApplicationTermError> {
         Err(VisitNonApplicationTermError)
     }
 }
 
 impl Element for Constant {
-    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
-        visitor.visit_constant(self, Source::Term)
-    }
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool { visitor.visit_constant(self) }
 
     fn accept_one_level(
         &self,
         visitor: &mut impl Visitor,
-        _: VisitMode<impl State>,
     ) -> Result<bool, VisitNonApplicationTermError> {
         match self {
             Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {
@@ -333,7 +219,7 @@ impl Element for Constant {
 
             Self::Struct(term) => {
                 for field in &term.fields {
-                    if !visitor.visit_constant(field, Source::Term) {
+                    if !visitor.visit_constant(field) {
                         return Ok(false);
                     }
                 }
@@ -343,13 +229,10 @@ impl Element for Constant {
             Self::Enum(term) => Ok(term
                 .associated_value
                 .as_ref()
-                .map_or(true, |x| visitor.visit_constant(x, Source::Term))),
-            Self::Array(term) => Ok(term
-                .elements
-                .iter()
-                .all(|x| visitor.visit_constant(x, Source::Term))),
+                .map_or(true, |x| visitor.visit_constant(x))),
+            Self::Array(term) => Ok(term.elements.iter().all(|x| visitor.visit_constant(x))),
 
-            Self::Local(local) => Ok(visitor.visit_constant(&local.0, Source::Term)),
+            Self::Local(local) => Ok(visitor.visit_constant(&local.0)),
             Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
             Self::Symbol(symbol) => Ok(symbol.generic_arguments.accept_one_level(visitor)),
             Self::MemberSymbol(term) => Ok(term.member_generic_arguments.accept_one_level(visitor)
