@@ -303,7 +303,10 @@ where
         .apply(&mut table, &mut premise)
         .map_err(|x| match x {
             ApplyPropertyError::ExceedLimitError(_) => {
-                TestCaseError::fail("too complex property to test")
+                TestCaseError::reject("too complex property to test")
+            }
+            ApplyPropertyError::TypeAliasIDCollision => {
+                TestCaseError::reject("type alias id collision")
             }
         })?;
 
