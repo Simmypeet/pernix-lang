@@ -795,12 +795,13 @@ impl Display for ConstantTypePredicate {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TuplePredicate {
-    pub types: BoundList<r#type::tests::Type>,
+    pub qualified_identifiers: BoundList<QualifiedIdentifier>,
 }
 
 impl Input<&super::TuplePredicate> for &TuplePredicate {
     fn assert(self, output: &super::TuplePredicate) -> TestCaseResult {
-        self.types.assert(output.types())
+        self.qualified_identifiers
+            .assert(output.qualified_identifiers())
     }
 }
 
@@ -809,15 +810,17 @@ impl Arbitrary for TuplePredicate {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        BoundList::arbitrary_with(r#type::tests::Type::arbitrary())
-            .prop_map(|types| Self { types })
+        BoundList::arbitrary_with(QualifiedIdentifier::arbitrary())
+            .prop_map(|qualified_identifiers| Self {
+                qualified_identifiers,
+            })
             .boxed()
     }
 }
 
 impl Display for TuplePredicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "tuple {}", self.types)
+        write!(f, "tuple {}", self.qualified_identifiers)
     }
 }
 

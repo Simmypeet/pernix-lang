@@ -513,17 +513,24 @@ pub struct TuplePredicate {
     #[get = "pub"]
     pub(super) tuple_keyword: Keyword,
     #[get = "pub"]
-    pub(super) types: BoundList<r#type::Type>,
+    pub(super) qualified_identifiers: BoundList<QualifiedIdentifier>,
 }
 
 impl SourceElement for TuplePredicate {
-    fn span(&self) -> Span { self.tuple_keyword.span.join(&self.types.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.tuple_keyword
+            .span
+            .join(&self.qualified_identifiers.span())
+            .unwrap()
+    }
 }
 
 impl TuplePredicate {
     /// Dissolves the [`TuplePredicate`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Keyword, BoundList<r#type::Type>) { (self.tuple_keyword, self.types) }
+    pub fn dissolve(self) -> (Keyword, BoundList<QualifiedIdentifier>) {
+        (self.tuple_keyword, self.qualified_identifiers)
+    }
 }
 
 /// Syntax Synopsis:
@@ -2225,11 +2232,12 @@ impl<'a> Parser<'a> {
                 // eat token keyword
                 self.forward();
 
-                let types = self.parse_bound_list(|parser| parser.parse_type(handler))?;
+                let qualified_identifiers =
+                    self.parse_bound_list(|parser| parser.parse_qualified_identifier(handler))?;
 
                 Some(Predicate::Tuple(TuplePredicate {
                     tuple_keyword,
-                    types,
+                    qualified_identifiers,
                 }))
             }
 
