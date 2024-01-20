@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -8,7 +8,7 @@ use proptest::{
 };
 
 use crate::{
-    arena::ID,
+    arena::{Arena, ID},
     semantic::{
         self,
         mapping::{self, Map},
@@ -21,7 +21,10 @@ use crate::{
         },
         Premise, Semantic,
     },
-    symbol::{self, ConstantParameterID, TypeParameterID},
+    symbol::{
+        self, ConstantParameterID, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
+        TypeParameterID,
+    },
     table::{Success, Table},
 };
 
@@ -29,6 +32,9 @@ use crate::{
 pub enum ApplyPropertyError {
     #[error("{0}")]
     ExceedLimitError(#[from] ExceedLimitError),
+
+    #[error("type alias id collision")]
+    TypeAliasIDCollision,
 }
 
 /// A trait for generating term for checking definite predicate satisfiability.
@@ -239,6 +245,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
                     Some(inner.clone()),
                     Some(const_strat.clone())
                 )).prop_map(|x| Box::new(x) as _),
+                1 => TypeAlias::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
@@ -269,6 +276,107 @@ impl Arbitrary for Box<dyn Property<Constant>> {
             ]
         })
         .boxed()
+    }
+}
+
+#[derive(Debug)]
+pub struct TypeAlias {
+    property: Box<dyn Property<Type>>,
+    type_id: ID<symbol::Type>,
+    type_parameter: TypeParameterID,
+}
+
+impl Arbitrary for TypeAlias {
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary),
+            ID::arbitrary(),
+            TypeParameterID::arbitrary(),
+        )
+            .prop_map(|(property, type_id, type_parameter)| Self {
+                property,
+                type_id,
+                type_parameter,
+            })
+            .boxed()
+    }
+}
+
+impl Property<Type> for TypeAlias {
+    fn apply(
+        &self,
+        table: &mut Table<Success>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
+        self.property.apply(table, premise)?;
+
+        let type_symbol = symbol::Type {
+            id: self.type_id,
+            generic_declaration: GenericDeclaration {
+                parameters: GenericParameters {
+                    lifetimes: Arena::new(),
+                    types: {
+                        let mut arena = Arena::new();
+
+                        arena
+                            .insert_with_id(ID::new(0), TypeParameter {
+                                name: "T".to_string(),
+                                parent_generic_id: GenericID::Type(self.type_id),
+                                span: None,
+                            })
+                            .unwrap();
+
+                        arena
+                    },
+                    constants: Arena::new(),
+                    lifetime_parameter_ids_by_name: HashMap::new(),
+                    type_parameter_ids_by_name: {
+                        let mut map = HashMap::new();
+                        map.insert("T".to_string(), ID::new(0));
+                        map
+                    },
+                    constant_parameter_ids_by_name: HashMap::new(),
+                    default_type_parameters: Vec::new(),
+                    default_constant_parameters: Vec::new(),
+                    lifetime_order: Vec::new(),
+                    type_order: vec![ID::new(0)],
+                    constant_order: Vec::new(),
+                },
+                predicates: Vec::new(),
+            },
+            parent_id: ID::new(0),
+            span: None,
+            name: "Test".to_string(),
+            data: symbol::TypeData {
+                accessibility: symbol::Accessibility::Public,
+                r#type: self.property.generate(),
+            },
+        };
+
+        if table
+            .representation
+            .types
+            .insert_with_id(self.type_id, type_symbol)
+            .is_err()
+        {
+            return Err(ApplyPropertyError::TypeAliasIDCollision);
+        }
+
+        Ok(())
+    }
+
+    fn generate(&self) -> Type {
+        Type::Symbol(Symbol {
+            id: SymbolKindID::Type(self.type_id),
+            generic_arguments: GenericArguments {
+                lifetimes: Vec::new(),
+                types: vec![Type::Parameter(self.type_parameter)],
+                constants: Vec::new(),
+            },
+        })
     }
 }
 
