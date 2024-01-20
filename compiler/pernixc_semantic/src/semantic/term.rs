@@ -112,7 +112,7 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
     /// Returns `None` if the terms cannot be substructurally matched.
     fn substructural_match(&self, other: &Self) -> Option<Substructural>;
 
-    /// Gets the satisfiability of definite predicates of the term.
+    #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
