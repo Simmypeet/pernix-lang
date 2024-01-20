@@ -3,7 +3,7 @@ use crate::{
     semantic::{
         equality,
         mapping::Map,
-        session::{self, ExceedLimitError, Limit, Session},
+        session::{self, ExceedLimitError, Limit, Satisfied, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor::{self, VisitMode},
         Premise, Semantic,
@@ -116,12 +116,12 @@ pub fn definite<
 
     // trivially satisfiable
     if satisfiability == Satisfiability::Satisfied {
-        session.mark_as_done(Query(term), true);
+        session.mark_as_done(Query(term), Satisfied);
         return Ok(true);
     }
 
     match session.mark_as_in_progress(Query(term))? {
-        Some(session::Cached::Done(result)) => return Ok(result),
+        Some(session::Cached::Done(Satisfied)) => return Ok(true),
         Some(session::Cached::InProgress) => {
             return Ok(false);
         }
@@ -141,7 +141,7 @@ pub fn definite<
         let _ = term.accept_one_level(&mut visitor, VisitMode::<Success>::OnlySubTerms);
 
         if visitor.definite? {
-            session.mark_as_done(Query(term), true);
+            session.mark_as_done(Query(term), Satisfied);
             return Ok(true);
         }
     }
@@ -149,7 +149,7 @@ pub fn definite<
     // satisfiable with normalization
     if let Some(normalized) = semantic.normalize(term, premise, table, session)? {
         if definite(&normalized, premise, table, semantic, session)? {
-            session.mark_as_done(Query(term), true);
+            session.mark_as_done(Query(term), Satisfied);
             return Ok(true);
         }
     }
@@ -158,7 +158,7 @@ pub fn definite<
         if equality::equals(term, key, premise, table, semantic, session)? {
             for value in values {
                 if definite(value, premise, table, semantic, session)? {
-                    session.mark_as_done(Query(term), true);
+                    session.mark_as_done(Query(term), Satisfied);
                     return Ok(true);
                 }
             }

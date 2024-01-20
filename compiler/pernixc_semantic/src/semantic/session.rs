@@ -8,6 +8,10 @@ use super::{
     unification::{self, Unification},
 };
 
+/// Describes a satisfiability of a certain predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Satisfied;
+
 /// The result of a query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Cached<T> {
@@ -139,15 +143,15 @@ pub trait Cache<Query> {
 ///
 /// Most of the time, you should use [`Default`] as the implementation of this trait.
 pub trait Session<T>:
-    for<'a> Cache<equality::Query<'a, T>, Result = bool>
-    + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = bool>
+    for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
+    + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
     + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
 {
 }
 
 impl<T, U> Session<T> for U where
-    U: for<'a> Cache<equality::Query<'a, T>, Result = bool>
-        + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = bool>
+    U: for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
+        + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
         + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
 {
 }
@@ -155,13 +159,13 @@ impl<T, U> Session<T> for U where
 /// Default and preferred implementation of [`Session`].
 #[derive(Debug, Clone, Default)]
 pub struct Default {
-    lifetime_equals: HashMap<(Lifetime, Lifetime), Cached<bool>>,
-    type_equals: HashMap<(Type, Type), Cached<bool>>,
-    constant_equals: HashMap<(Constant, Constant), Cached<bool>>,
+    lifetime_equals: HashMap<(Lifetime, Lifetime), Cached<Satisfied>>,
+    type_equals: HashMap<(Type, Type), Cached<Satisfied>>,
+    constant_equals: HashMap<(Constant, Constant), Cached<Satisfied>>,
 
-    lifetime_definites: HashMap<Lifetime, Cached<bool>>,
-    type_definites: HashMap<Type, Cached<bool>>,
-    constant_definites: HashMap<Constant, Cached<bool>>,
+    lifetime_definites: HashMap<Lifetime, Cached<Satisfied>>,
+    type_definites: HashMap<Type, Cached<Satisfied>>,
+    constant_definites: HashMap<Constant, Cached<Satisfied>>,
 
     lifetime_unifies: HashMap<(Lifetime, Lifetime), Cached<Unification>>,
     type_unifies: HashMap<(Type, Type), Cached<Unification>>,
@@ -212,7 +216,7 @@ macro_rules! implements_cache {
 
 implements_cache!(
     equality::Query<'a, Lifetime>,
-    bool,
+    Satisfied,
     query,
     lifetime_equals,
     (*query.lhs, *query.rhs),
@@ -221,7 +225,7 @@ implements_cache!(
 
 implements_cache!(
     equality::Query<'a, Type>,
-    bool,
+    Satisfied,
     query,
     type_equals,
     (query.lhs.clone(), query.rhs.clone()),
@@ -230,7 +234,7 @@ implements_cache!(
 
 implements_cache!(
     equality::Query<'a, Constant>,
-    bool,
+    Satisfied,
     query,
     constant_equals,
     (query.lhs.clone(), query.rhs.clone()),
@@ -239,7 +243,7 @@ implements_cache!(
 
 implements_cache!(
     predicate::DefiniteQuery<'a, Lifetime>,
-    bool,
+    Satisfied,
     record,
     lifetime_definites,
     *record.0,
@@ -248,7 +252,7 @@ implements_cache!(
 
 implements_cache!(
     predicate::DefiniteQuery<'a, Type>,
-    bool,
+    Satisfied,
     record,
     type_definites,
     record.0.clone(),
@@ -257,7 +261,7 @@ implements_cache!(
 
 implements_cache!(
     predicate::DefiniteQuery<'a, Constant>,
-    bool,
+    Satisfied,
     record,
     constant_definites,
     record.0.clone(),

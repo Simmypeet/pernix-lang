@@ -2,7 +2,7 @@
 
 use super::{
     mapping::Map,
-    session::{self, ExceedLimitError, Limit, Session},
+    session::{self, ExceedLimitError, Limit, Satisfied, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Premise, Semantic,
 };
@@ -96,7 +96,7 @@ fn equals_withour_mapping<
         || equals_by_unification(lhs, rhs, premise, table, semantic, session)?
         || equals_by_normalization(lhs, rhs, premise, table, semantic, session)?
     {
-        session.mark_as_done(Query { lhs, rhs }, true);
+        session.mark_as_done(Query { lhs, rhs }, Satisfied);
         return Ok(true);
     }
 
@@ -147,7 +147,7 @@ pub fn equals<
     }
 
     match session.mark_as_in_progress(query.clone())? {
-        Some(session::Cached::Done(result)) => return Ok(result),
+        Some(session::Cached::Done(Satisfied)) => return Ok(true),
         Some(session::Cached::InProgress) => {
             return Ok(false);
         }
@@ -157,7 +157,7 @@ pub fn equals<
     if equals_by_unification(lhs, rhs, premise, table, semantic, session)?
         || equals_by_normalization(lhs, rhs, premise, table, semantic, session)?
     {
-        session.mark_as_done(Query { lhs, rhs }, true);
+        session.mark_as_done(Query { lhs, rhs }, Satisfied);
         return Ok(true);
     }
 
@@ -165,7 +165,7 @@ pub fn equals<
         if equals_withour_mapping(lhs, key, premise, table, semantic, session)? {
             for value in values {
                 if equals(value, rhs, premise, table, semantic, session)? {
-                    session.mark_as_done(Query { lhs, rhs }, true);
+                    session.mark_as_done(Query { lhs, rhs }, Satisfied);
                     return Ok(true);
                 }
             }
@@ -174,7 +174,7 @@ pub fn equals<
         if equals_withour_mapping(key, rhs, premise, table, semantic, session)? {
             for value in values {
                 if equals(lhs, value, premise, table, semantic, session)? {
-                    session.mark_as_done(Query { lhs, rhs }, true);
+                    session.mark_as_done(Query { lhs, rhs }, Satisfied);
                     return Ok(true);
                 }
             }
