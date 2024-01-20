@@ -766,10 +766,39 @@ impl Display for TraitMemberPredicate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConstantTypePredicate {
+    pub types: BoundList<r#type::tests::Type>,
+}
+
+impl Input<&super::ConstantTypePredicate> for &ConstantTypePredicate {
+    fn assert(self, output: &super::ConstantTypePredicate) -> TestCaseResult {
+        self.types.assert(output.types())
+    }
+}
+
+impl Arbitrary for ConstantTypePredicate {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        BoundList::arbitrary_with(r#type::tests::Type::arbitrary())
+            .prop_map(|types| Self { types })
+            .boxed()
+    }
+}
+
+impl Display for ConstantTypePredicate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "const type {}", self.types)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Predicate {
     Trait(TraitPredicate),
     Lifetime(LifetimePredicate),
     TraitMember(TraitMemberPredicate),
+    ConstantType(ConstantTypePredicate),
 }
 
 impl Input<&super::Predicate> for &Predicate {
@@ -778,6 +807,7 @@ impl Input<&super::Predicate> for &Predicate {
             (Predicate::Trait(i), super::Predicate::Trait(o)) => i.assert(o),
             (Predicate::Lifetime(i), super::Predicate::Lifetime(o)) => i.assert(o),
             (Predicate::TraitMember(i), super::Predicate::TraitMember(o)) => i.assert(o),
+            (Predicate::ConstantType(i), super::Predicate::ConstantType(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -794,6 +824,7 @@ impl Arbitrary for Predicate {
             TraitPredicate::arbitrary().prop_map(Self::Trait),
             LifetimePredicate::arbitrary().prop_map(Self::Lifetime),
             TraitMemberPredicate::arbitrary().prop_map(Self::TraitMember),
+            ConstantTypePredicate::arbitrary().prop_map(Self::ConstantType),
         ]
         .boxed()
     }
@@ -805,6 +836,7 @@ impl Display for Predicate {
             Self::Trait(i) => Display::fmt(i, f),
             Self::Lifetime(i) => Display::fmt(i, f),
             Self::TraitMember(i) => Display::fmt(i, f),
+            Self::ConstantType(i) => Display::fmt(i, f),
         }
     }
 }
