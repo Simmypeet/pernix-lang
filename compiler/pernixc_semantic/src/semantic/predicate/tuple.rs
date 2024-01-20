@@ -9,7 +9,7 @@ use crate::{
     table::{State, Table},
 };
 
-/// A query for checking definite predicate satisfiability.
+/// A query for checking [`Tuple`] predicate satisfiability.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Query<'a, T>(pub &'a T);
 
