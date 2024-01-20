@@ -504,11 +504,36 @@ impl SourceElement for ConstantTypePredicate {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// ConstantPredicate:
+///     'tuple' Type ('+' Type)*
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct TuplePredicate {
+    #[get = "pub"]
+    pub(super) tuple_keyword: Keyword,
+    #[get = "pub"]
+    pub(super) types: BoundList<r#type::Type>,
+}
+
+impl SourceElement for TuplePredicate {
+    fn span(&self) -> Span { self.tuple_keyword.span.join(&self.types.span()).unwrap() }
+}
+
+impl TuplePredicate {
+    /// Dissolves the [`TuplePredicate`] into a tuple of its fields.
+    #[must_use]
+    pub fn dissolve(self) -> (Keyword, BoundList<r#type::Type>) { (self.tuple_keyword, self.types) }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Predicate:
 ///     TraitMemberPredicate
 ///     | TraitPredicate
 ///     | LifetimePredicate
 ///     | ConstantTypePredicate
+///     | TuplePredicate
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
@@ -517,6 +542,7 @@ pub enum Predicate {
     Trait(TraitPredicate),
     Lifetime(LifetimePredicate),
     ConstantType(ConstantTypePredicate),
+    Tuple(TuplePredicate),
 }
 
 impl SourceElement for Predicate {
@@ -526,6 +552,7 @@ impl SourceElement for Predicate {
             Self::Trait(s) => s.span(),
             Self::Lifetime(s) => s.span(),
             Self::ConstantType(s) => s.span(),
+            Self::Tuple(s) => s.span(),
         }
     }
 }
@@ -2189,6 +2216,20 @@ impl<'a> Parser<'a> {
                     trait_keyword,
                     qualified_identifiers: self
                         .parse_bound_list(|parser| parser.parse_qualified_identifier(handler))?,
+                }))
+            }
+
+            Reading::Unit(Token::Keyword(tuple_keyword))
+                if tuple_keyword.kind == KeywordKind::Tuple =>
+            {
+                // eat token keyword
+                self.forward();
+
+                let types = self.parse_bound_list(|parser| parser.parse_type(handler))?;
+
+                Some(Predicate::Tuple(TuplePredicate {
+                    tuple_keyword,
+                    types,
                 }))
             }
 

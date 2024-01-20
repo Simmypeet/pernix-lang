@@ -794,11 +794,40 @@ impl Display for ConstantTypePredicate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TuplePredicate {
+    pub types: BoundList<r#type::tests::Type>,
+}
+
+impl Input<&super::TuplePredicate> for &TuplePredicate {
+    fn assert(self, output: &super::TuplePredicate) -> TestCaseResult {
+        self.types.assert(output.types())
+    }
+}
+
+impl Arbitrary for TuplePredicate {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        BoundList::arbitrary_with(r#type::tests::Type::arbitrary())
+            .prop_map(|types| Self { types })
+            .boxed()
+    }
+}
+
+impl Display for TuplePredicate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "tuple {}", self.types)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Predicate {
     Trait(TraitPredicate),
     Lifetime(LifetimePredicate),
     TraitMember(TraitMemberPredicate),
     ConstantType(ConstantTypePredicate),
+    Tuple(TuplePredicate),
 }
 
 impl Input<&super::Predicate> for &Predicate {
@@ -808,6 +837,8 @@ impl Input<&super::Predicate> for &Predicate {
             (Predicate::Lifetime(i), super::Predicate::Lifetime(o)) => i.assert(o),
             (Predicate::TraitMember(i), super::Predicate::TraitMember(o)) => i.assert(o),
             (Predicate::ConstantType(i), super::Predicate::ConstantType(o)) => i.assert(o),
+            (Predicate::Tuple(i), super::Predicate::Tuple(o)) => i.assert(o),
+
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?}, got {output:?}"
             ))),
@@ -825,6 +856,7 @@ impl Arbitrary for Predicate {
             LifetimePredicate::arbitrary().prop_map(Self::Lifetime),
             TraitMemberPredicate::arbitrary().prop_map(Self::TraitMember),
             ConstantTypePredicate::arbitrary().prop_map(Self::ConstantType),
+            TuplePredicate::arbitrary().prop_map(Self::Tuple),
         ]
         .boxed()
     }
@@ -837,6 +869,7 @@ impl Display for Predicate {
             Self::Lifetime(i) => Display::fmt(i, f),
             Self::TraitMember(i) => Display::fmt(i, f),
             Self::ConstantType(i) => Display::fmt(i, f),
+            Self::Tuple(i) => Display::fmt(i, f),
         }
     }
 }
