@@ -2,12 +2,13 @@
 
 use self::{
     mapping::Mapping,
+    predicate::Satisfiability,
     session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant,
         lifetime::Lifetime,
-        r#type::{SymbolKindID, Type},
-        Symbol, Term,
+        r#type::{self, SymbolKindID, Type},
+        MemberSymbol, Symbol, Term,
     },
 };
 use crate::{
@@ -55,6 +56,22 @@ pub trait Semantic<T: Term> {
         table: &Table<impl State>,
         session: &mut Limit<R>,
     ) -> Result<Option<T>, ExceedLimitError>;
+
+    /// Checks if the given term outlives the given lifetime.
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`] for more information.
+    fn outlives_satisfiability<
+        R: Session<T> + Session<Type> + Session<Lifetime> + Session<Constant>,
+    >(
+        &mut self,
+        term: &T,
+        lifetime: &Lifetime,
+        premise: &Premise,
+        table: &Table<impl State>,
+        session: &mut Limit<R>,
+    ) -> Result<Satisfiability, ExceedLimitError>;
 }
 
 /// The basic implementation of the semantic logic.
@@ -72,6 +89,21 @@ impl Semantic<Lifetime> for Default {
         _: &mut Limit<R>,
     ) -> Result<Option<Lifetime>, ExceedLimitError> {
         Ok(None)
+    }
+
+    fn outlives_satisfiability<R: Session<Type> + Session<Lifetime> + Session<Constant>>(
+        &mut self,
+        term: &Lifetime,
+        _: &Lifetime,
+        _: &Premise,
+        _: &Table<impl State>,
+        _: &mut Limit<R>,
+    ) -> Result<Satisfiability, ExceedLimitError> {
+        if term.is_static() {
+            Ok(Satisfiability::Satisfied)
+        } else {
+            Ok(Satisfiability::Unsatisfied)
+        }
     }
 }
 
@@ -110,6 +142,34 @@ impl Semantic<Type> for Default {
             _ => Ok(None),
         }
     }
+
+    fn outlives_satisfiability<R: Session<Type> + Session<Lifetime> + Session<Constant>>(
+        &mut self,
+        term: &Type,
+        _: &Lifetime,
+        _: &Premise,
+        _: &Table<impl State>,
+        _: &mut Limit<R>,
+    ) -> Result<Satisfiability, ExceedLimitError> {
+        match term {
+            Type::Primitive(_) => Ok(Satisfiability::Satisfied),
+
+            Type::Inference(_)
+            | Type::Parameter(_)
+            | Type::MemberSymbol(MemberSymbol {
+                id: r#type::MemberSymbolKindID::Trait(..),
+                ..
+            }) => Ok(Satisfiability::Unsatisfied),
+
+            Type::Local(_)
+            | Type::Symbol(_)
+            | Type::Pointer(_)
+            | Type::Reference(_)
+            | Type::Array(_)
+            | Type::Tuple(_)
+            | Type::MemberSymbol(_) => Ok(Satisfiability::Congruent),
+        }
+    }
 }
 
 impl Semantic<Constant> for Default {
@@ -124,5 +184,17 @@ impl Semantic<Constant> for Default {
     ) -> Result<Option<Constant>, ExceedLimitError> {
         // TODO: Implement this.
         Ok(None)
+    }
+
+    fn outlives_satisfiability<R: Session<Type> + Session<Lifetime> + Session<Constant>>(
+        &mut self,
+        _: &Constant,
+        _: &Lifetime,
+        _: &Premise,
+        _: &Table<impl State>,
+        _: &mut Limit<R>,
+    ) -> Result<Satisfiability, ExceedLimitError> {
+        // constants value do not have lifetimes
+        Ok(Satisfiability::Satisfied)
     }
 }
