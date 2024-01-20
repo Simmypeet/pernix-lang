@@ -50,6 +50,8 @@ pub enum Lifetime {
 impl Term for Lifetime {
     fn substructural_match(&self, _: &Self) -> Option<Substructural> { None }
 
+    fn is_tuple(&self) -> bool { false }
+
     fn definite_satisfiability(&self) -> Satisfiability { Satisfiability::Satisfied }
 
     fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {

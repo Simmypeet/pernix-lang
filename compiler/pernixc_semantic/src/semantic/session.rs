@@ -146,6 +146,7 @@ pub trait Session<T>:
     for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
     + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
     + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
+    + for<'a> Cache<predicate::TupleQuery<'a, T>, Result = Satisfied>
 {
 }
 
@@ -153,6 +154,7 @@ impl<T, U> Session<T> for U where
     U: for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
         + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
         + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
+        + for<'a> Cache<predicate::TupleQuery<'a, T>, Result = Satisfied>
 {
 }
 
@@ -170,6 +172,10 @@ pub struct Default {
     lifetime_unifies: HashMap<(Lifetime, Lifetime), Cached<Unification>>,
     type_unifies: HashMap<(Type, Type), Cached<Unification>>,
     constant_unifies: HashMap<(Constant, Constant), Cached<Unification>>,
+
+    lifetime_is_tuple: HashMap<Lifetime, Cached<Satisfied>>,
+    type_is_tuple: HashMap<Type, Cached<Satisfied>>,
+    constant_is_tuple: HashMap<Constant, Cached<Satisfied>>,
 }
 
 macro_rules! implements_cache {
@@ -293,4 +299,31 @@ implements_cache!(
     constant_unifies,
     (record.lhs.clone(), record.rhs.clone()),
     &(record.lhs.clone(), record.rhs.clone())
+);
+
+implements_cache!(
+    predicate::TupleQuery<'a, Lifetime>,
+    Satisfied,
+    record,
+    lifetime_is_tuple,
+    *record.0,
+    record.0
+);
+
+implements_cache!(
+    predicate::TupleQuery<'a, Type>,
+    Satisfied,
+    record,
+    type_is_tuple,
+    record.0.clone(),
+    record.0
+);
+
+implements_cache!(
+    predicate::TupleQuery<'a, Constant>,
+    Satisfied,
+    record,
+    constant_is_tuple,
+    record.0.clone(),
+    record.0
 );

@@ -197,6 +197,8 @@ impl Term for Constant {
         }
     }
 
+    fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
+
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
             Self::Parameter(_) | Self::Inference(_) => Satisfiability::Unsatisfied,

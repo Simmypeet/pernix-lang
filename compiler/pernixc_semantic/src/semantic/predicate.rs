@@ -1,8 +1,10 @@
 //! Contains various definition of predicates.
 
 mod definite;
+mod tuple;
 
 pub use definite::{definite, Query as DefiniteQuery};
+pub use tuple::{Query as TupleQuery, Tuple};
 
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

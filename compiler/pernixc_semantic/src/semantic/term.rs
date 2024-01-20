@@ -113,6 +113,9 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
     fn substructural_match(&self, other: &Self) -> Option<Substructural>;
 
     #[doc(hidden)]
+    fn is_tuple(&self) -> bool;
+
+    #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
