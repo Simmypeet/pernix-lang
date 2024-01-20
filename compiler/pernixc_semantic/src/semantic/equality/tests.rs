@@ -743,7 +743,7 @@ pub struct TypeAlias {
     type_id: ID<symbol::Type>,
     argument: Type,
     aliased_at_lhs: bool,
-    type_alias_at_lhs: bool,
+    at_lhs: bool,
 }
 
 impl Arbitrary for TypeAlias {
@@ -773,7 +773,7 @@ impl Arbitrary for TypeAlias {
                     type_id,
                     argument,
                     aliased_at_lhs,
-                    type_alias_at_lhs,
+                    at_lhs: type_alias_at_lhs,
                 },
             )
             .boxed()
@@ -901,7 +901,7 @@ impl Property<Type> for TypeAlias {
             },
         });
 
-        if self.type_alias_at_lhs {
+        if self.at_lhs {
             (aliased, non_aliased)
         } else {
             (non_aliased, aliased)
@@ -1039,19 +1039,19 @@ where
     }
 
     // adding unrelated equalities should not affect the result.
-    for decoy_lifetime_equalities in decoy.decoy_lifetime_equalities {
+    for decoy_lifetime_equalities in decoy.lifetimes {
         premise
             .equalities_mapping
             .insert(decoy_lifetime_equalities.lhs, decoy_lifetime_equalities.rhs);
     }
 
-    for decoy_type_equalities in decoy.decoy_type_equalities {
+    for decoy_type_equalities in decoy.types {
         premise
             .equalities_mapping
             .insert(decoy_type_equalities.lhs, decoy_type_equalities.rhs);
     }
 
-    for decoy_constant_equalities in decoy.decoy_constant_equalities {
+    for decoy_constant_equalities in decoy.constants {
         premise
             .equalities_mapping
             .insert(decoy_constant_equalities.lhs, decoy_constant_equalities.rhs);
@@ -1081,9 +1081,9 @@ where
 
 #[derive(Debug, Default)]
 pub struct Decoy {
-    decoy_lifetime_equalities: Vec<DecoyEquality<Lifetime>>,
-    decoy_type_equalities: Vec<DecoyEquality<Type>>,
-    decoy_constant_equalities: Vec<DecoyEquality<Constant>>,
+    lifetimes: Vec<DecoyEquality<Lifetime>>,
+    types: Vec<DecoyEquality<Type>>,
+    constants: Vec<DecoyEquality<Constant>>,
 }
 
 impl Arbitrary for Decoy {
@@ -1097,9 +1097,9 @@ impl Arbitrary for Decoy {
             proptest::collection::vec(DecoyEquality::arbitrary(), 0..=2),
         )
             .prop_map(|(lts, tys, consts)| Self {
-                decoy_lifetime_equalities: lts,
-                decoy_type_equalities: tys,
-                decoy_constant_equalities: consts,
+                lifetimes: lts,
+                types: tys,
+                constants: consts,
             })
             .boxed()
     }
