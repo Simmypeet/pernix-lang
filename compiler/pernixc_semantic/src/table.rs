@@ -233,6 +233,7 @@ pub struct Representation<T: State> {
         ID<AdtImplementationConstant>,
     >,
 
+    #[allow(unused)]
     root_module_ids_by_name: HashMap<String, ID<Module>>,
 }
 
@@ -241,10 +242,13 @@ pub struct Representation<T: State> {
 pub struct Table<T: State> {
     #[deref]
     pub(crate) representation: Representation<T>,
+
+    #[allow(unused)]
     state: T,
 }
 
 impl<T: State> Table<T> {
+    #[allow(unused)]
     pub(crate) fn default() -> Self {
         Self {
             representation: Representation {
