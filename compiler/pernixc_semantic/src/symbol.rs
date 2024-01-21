@@ -335,6 +335,9 @@ pub struct LifetimeParameter {
 
     /// Location of where the lifetime parameter is declared.
     pub span: Option<Span>,
+
+    /// The variance of the lifetime parameter.
+    pub variance: Variance,
 }
 
 /// An ID used to refer to a particular symbol defined in a particular **parent** symbol.
@@ -356,6 +359,17 @@ pub type ConstantParameterID = MemberID<ID<ConstantParameter>, GenericID>;
 /// An ID to a lifetime parameter.
 pub type LifetimeParameterID = MemberID<ID<LifetimeParameter>, GenericID>;
 
+/// An enumeration of either an invariant or covariant variance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum Variance {
+    /// The term is invariant and cannot be changed.
+    #[default]
+    Invariant,
+
+    /// The term is covariant and can be changed to a subtype.
+    Covariant,
+}
+
 /// Represents a type parameter, denoted by `T` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeParameter {
@@ -367,6 +381,9 @@ pub struct TypeParameter {
 
     /// The kind of the type parameter.
     pub span: Option<Span>,
+
+    /// The variance of the type parameter.
+    pub variance: Variance,
 }
 
 /// Represents a constant parameter, denoted by `const C: TYPE` syntax.
