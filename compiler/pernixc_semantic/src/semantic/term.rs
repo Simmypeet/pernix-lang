@@ -101,6 +101,75 @@ where
 
 /// Contains the functionality for determining the properties of a term.
 pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substitute {
+    /// The type used to retrieve the sub-type term of a term.
+    type SubTypeLocation: Debug
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + PartialOrd
+        + Ord
+        + Hash
+        + Send
+        + Sync
+        + 'static;
+
+    /// The type used to retrieve the sub-lifetime term of a term.
+    type SubLifetimeLocation: Debug
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + PartialOrd
+        + Ord
+        + Hash
+        + Send
+        + Sync
+        + 'static;
+
+    /// The type used to retrieve the sub-constant term of a term.
+    type SubConstantLocation: Debug
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + PartialOrd
+        + Ord
+        + Hash
+        + Send
+        + Sync
+        + 'static;
+
+    /// Returns the reference to the sub-type term of `self` at `location`.
+    #[must_use]
+    fn get_sub_type(&self, location: Self::SubTypeLocation) -> Option<&Type>;
+
+    /// Returns the mutable reference to the sub-type term of `self` at `location`.
+    #[must_use]
+    fn get_sub_type_mut(&mut self, location: Self::SubTypeLocation) -> Option<&mut Type>;
+
+    /// Returns the reference to the sub-lifetime term of `self` at `location`.
+    #[must_use]
+    fn get_sub_lifetime(&self, location: Self::SubLifetimeLocation) -> Option<&Lifetime>;
+
+    /// Returns the mutable reference to the sub-lifetime term of `self` at `location`.
+    #[must_use]
+    fn get_sub_lifetime_mut(
+        &mut self,
+        location: Self::SubLifetimeLocation,
+    ) -> Option<&mut Lifetime>;
+
+    /// Returns the reference to the sub-constant term of `self` at `location`.
+    #[must_use]
+    fn get_sub_constant(&self, location: Self::SubConstantLocation) -> Option<&Constant>;
+
+    /// Returns the mutable reference to the sub-constant term of `self` at `location`.
+    #[must_use]
+    fn get_sub_constant_mut(
+        &mut self,
+        location: Self::SubConstantLocation,
+    ) -> Option<&mut Constant>;
+
     /// Returns the matching substructural matches between `self` and `other`.
     ///
     /// # Example

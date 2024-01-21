@@ -2,15 +2,22 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    ops::Deref,
+    ops::{Deref, DerefMut},
 };
 
 use enum_as_inner::EnumAsInner;
 
-use super::{Local, MemberSymbol, Never, Substructural, Symbol, Term};
+use super::{
+    lifetime::Lifetime, r#type::Type, Local, MemberSymbol, Never, Substructural, Symbol, Term,
+    TupleElement,
+};
 use crate::{
     arena::ID,
-    semantic::{predicate::Satisfiability, unification::Unification},
+    semantic::{
+        predicate::{Outlives, Satisfiability},
+        unification::Unification,
+        Premise,
+    },
     symbol::{self, ConstantParameterID, GenericID, GlobalID, Variant},
 };
 
@@ -93,6 +100,38 @@ pub type Tuple = super::Tuple<Constant>;
 /// Represents a constant inference variable in hindley-milner type inference.
 pub type Inference = Never; /* will be changed */
 
+/// The location pointing to a sub-constant term in a constant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SubConstantLocation {
+    /// The index of the element in a [`Tuple`] constant.
+    Tuple(usize),
+
+    /// The index of the field in a [`Struct`] constant.
+    Struct(usize),
+
+    /// The value in a [`Enum::associated_value`] field (if any).
+    AssociatedEnum,
+
+    /// The index of the element in an [`Array`] constant.
+    Array(usize),
+
+    /// The index of the constant argument in a [`Symbol`] constant.
+    Symbol(usize),
+
+    /// A constant argument in a [`MemberSymbol`] constant.
+    MemberSymbol {
+        /// True if the constant is in the parent part, false if the constant is in the member
+        /// part.
+        from_parent: bool,
+
+        /// The index of the constant argument.
+        index: usize,
+    },
+
+    /// The inner constant of a [`Local`] constant.
+    Local,
+}
+
 /// Represents a compile-time constant term.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
 #[allow(missing_docs)]
@@ -138,7 +177,70 @@ impl Default for Constant {
     }
 }
 
+macro_rules! get_sub_constant_impl {
+    ($location:ident, $self:ident, $get:ident, $as_deref:ident, $deref:ident) => {
+        match ($location, $self) {
+            (SubConstantLocation::Tuple(index), Self::Tuple(tuple)) => {
+                tuple.elements.$get(index).map(|x| match x {
+                    TupleElement::Regular(x) => x,
+                    TupleElement::Unpacked(x) => x,
+                })
+            }
+            (SubConstantLocation::Struct(index), Self::Struct(val)) => val.fields.$get(index),
+            (SubConstantLocation::AssociatedEnum, Self::Enum(val)) => {
+                val.associated_value.$as_deref()
+            }
+            (SubConstantLocation::Array(index), Self::Array(val)) => val.elements.$get(index),
+            (SubConstantLocation::Symbol(index), Self::Symbol(val)) => {
+                val.generic_arguments.constants.$get(index)
+            }
+            (SubConstantLocation::MemberSymbol { from_parent, index }, Self::MemberSymbol(val)) => {
+                if from_parent {
+                    val.parent_generic_arguments.constants.$get(index)
+                } else {
+                    val.member_generic_arguments.constants.$get(index)
+                }
+            }
+            (SubConstantLocation::Local, Self::Local(val)) => Some(val.0.$deref()),
+
+            _ => None,
+        }
+    };
+}
+
 impl Term for Constant {
+    type SubConstantLocation = SubConstantLocation;
+    type SubLifetimeLocation = Never;
+    type SubTypeLocation = Never;
+
+    fn get_sub_type(&self, location: Self::SubTypeLocation) -> Option<&Type> { match location {} }
+
+    fn get_sub_type_mut(&mut self, location: Self::SubTypeLocation) -> Option<&mut Type> {
+        match location {}
+    }
+
+    fn get_sub_lifetime(&self, location: Self::SubLifetimeLocation) -> Option<&Lifetime> {
+        match location {}
+    }
+
+    fn get_sub_lifetime_mut(
+        &mut self,
+        location: Self::SubLifetimeLocation,
+    ) -> Option<&mut Lifetime> {
+        match location {}
+    }
+
+    fn get_sub_constant(&self, location: Self::SubConstantLocation) -> Option<&Constant> {
+        get_sub_constant_impl!(location, self, get, as_deref, deref)
+    }
+
+    fn get_sub_constant_mut(
+        &mut self,
+        location: Self::SubConstantLocation,
+    ) -> Option<&mut Constant> {
+        get_sub_constant_impl!(location, self, get_mut, as_deref_mut, deref_mut)
+    }
+
     fn substructural_match(&self, other: &Self) -> Option<Substructural> {
         match (self, other) {
             (Self::Struct(lhs), Self::Struct(rhs))
@@ -199,6 +301,13 @@ impl Term for Constant {
 
     fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
 
+    fn outlives_predicates<'a>(_: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
+    where
+        Self: 'a,
+    {
+        std::iter::empty()
+    }
+
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
             Self::Parameter(_) | Self::Inference(_) => Satisfiability::Unsatisfied,
@@ -229,15 +338,6 @@ impl Term for Constant {
 
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.constants
-    }
-
-    fn outlives_predicates<'a>(
-        _: &'a crate::semantic::Premise,
-    ) -> impl Iterator<Item = &'a crate::semantic::predicate::Outlives<Self>>
-    where
-        Self: 'a,
-    {
-        std::iter::empty()
     }
 }
 

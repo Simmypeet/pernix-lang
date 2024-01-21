@@ -1,17 +1,22 @@
 //! Contains the definition of [`Type`].
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::{Deref, DerefMut},
+};
 
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, Local, MemberSymbol, Never, Substructural, Symbol, Term,
+    constant::Constant, lifetime::Lifetime, Local, MemberSymbol, Never, Substructural, Symbol,
+    Term, TupleElement,
 };
 use crate::{
     arena::ID,
     semantic::{
-        predicate::{NonEquality, Satisfiability},
+        predicate::{NonEquality, Outlives, Satisfiability},
         unification::Unification,
+        Premise,
     },
     symbol::{self, Enum, GenericID, GlobalID, Struct, TypeParameterID},
 };
@@ -145,6 +150,78 @@ pub type Tuple = super::Tuple<Type>;
 /// Represents a type inference variable in hindley-milner type inference.
 pub type Inference = Never; /* will be changed */
 
+/// The location pointing to a sub-lifetime term in a type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SubLifetimeLocation {
+    /// The index of lifetime argument in a [`Symbol`] type.
+    Symbol(usize),
+
+    /// The lifetime of a reference.
+    Reference,
+
+    /// A lifetime argument in a [`MemberSymbol`] type.
+    MemberSymbol {
+        /// True if the lifetime argument is in the parent part, false if the lifetime argument is
+        /// in the member part.
+        from_parent: bool,
+
+        /// The index of the lifetime argument.
+        index: usize,
+    },
+}
+
+/// The location pointing to a sub-type term in a type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SubTypeLocation {
+    /// The index of the type argument in a [`Symbol`] type.
+    Symbol(usize),
+
+    /// The [`Pointer::pointee`] of a pointer.
+    Pointer,
+
+    /// The [`Reference::pointee`] of a reference.
+    Reference,
+
+    /// The [`Array::r#type`] of an array.
+    Array,
+
+    /// The index of the type element in a [`Tuple`] type.
+    Tuple(usize),
+
+    /// The inner type of a [`Local`] type.
+    Local,
+
+    /// The type argument in a [`MemberSymbol`] type.
+    MemberSymbol {
+        /// True if the type argument is in the parent part, false if the type argument is in the
+        /// member part.
+        from_parent: bool,
+
+        /// The index of the type argument.
+        index: usize,
+    },
+}
+
+/// The location pointing to a sub-constant term in a type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SubConstantLocation {
+    /// The index of the constant argument in a [`Symbol`] type.
+    Symbol(usize),
+
+    /// The constant argument in a [`MemberSymbol`] type.
+    MemberSymbol {
+        /// True if the constant argument is in the parent part, false if the constant argument is
+        /// in the member part.
+        from_parent: bool,
+
+        /// The index of the constant argument.
+        index: usize,
+    },
+
+    /// The [`Array::length`] of an array.
+    Array,
+}
+
 /// Represents a type term.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
 #[allow(missing_docs)]
@@ -189,7 +266,131 @@ impl Default for Type {
     }
 }
 
+macro_rules! get_sub_type_impl {
+    ($location:ident, $self:ident, $get:ident, $deref:ident) => {
+        match ($location, $self) {
+            (SubTypeLocation::Symbol(index), Self::Symbol(symbol)) => {
+                symbol.generic_arguments.types.$get(index)
+            }
+
+            (SubTypeLocation::Pointer, Self::Pointer(pointer)) => Some(pointer.pointee.$deref()),
+
+            (SubTypeLocation::Reference, Self::Reference(reference)) => {
+                Some(reference.pointee.$deref())
+            }
+
+            (SubTypeLocation::Array, Self::Array(array)) => Some(array.r#type.$deref()),
+
+            (SubTypeLocation::Tuple(index), Self::Tuple(tuple)) => {
+                tuple.elements.$get(index).map(|element| match element {
+                    TupleElement::Regular(x) => x,
+                    TupleElement::Unpacked(x) => x,
+                })
+            }
+
+            (SubTypeLocation::Local, Self::Local(local)) => Some(local.0.$deref()),
+
+            (
+                SubTypeLocation::MemberSymbol { from_parent, index },
+                Self::MemberSymbol(member_symbol),
+            ) => {
+                if from_parent {
+                    member_symbol.parent_generic_arguments.types.$get(index)
+                } else {
+                    member_symbol.member_generic_arguments.types.$get(index)
+                }
+            }
+
+            _ => None,
+        }
+    };
+}
+
+macro_rules! get_sub_lifetime_impl {
+    ($location:ident, $self:ident, $get:ident, |$reference:ident| $reference_lt:expr) => {
+        match ($location, $self) {
+            (SubLifetimeLocation::Symbol(index), Self::Symbol(symbol)) => {
+                symbol.generic_arguments.lifetimes.$get(index)
+            }
+
+            (SubLifetimeLocation::Reference, Self::Reference($reference)) => Some($reference_lt),
+
+            (
+                SubLifetimeLocation::MemberSymbol { from_parent, index },
+                Self::MemberSymbol(member_symbol),
+            ) => {
+                if from_parent {
+                    member_symbol.parent_generic_arguments.lifetimes.$get(index)
+                } else {
+                    member_symbol.member_generic_arguments.lifetimes.$get(index)
+                }
+            }
+
+            _ => None,
+        }
+    };
+}
+
+macro_rules! get_sub_constant_impl {
+    ($location:ident, $self:ident, $get:ident, |$array:ident| $array_length:expr) => {
+        match ($location, $self) {
+            (SubConstantLocation::Symbol(index), Self::Symbol(symbol)) => {
+                symbol.generic_arguments.constants.$get(index)
+            }
+
+            (SubConstantLocation::Array, Self::Array($array)) => Some($array_length),
+
+            (
+                SubConstantLocation::MemberSymbol { from_parent, index },
+                Self::MemberSymbol(member_symbol),
+            ) => {
+                if from_parent {
+                    member_symbol.parent_generic_arguments.constants.$get(index)
+                } else {
+                    member_symbol.member_generic_arguments.constants.$get(index)
+                }
+            }
+
+            _ => None,
+        }
+    };
+}
+
 impl Term for Type {
+    type SubConstantLocation = SubConstantLocation;
+    type SubLifetimeLocation = SubLifetimeLocation;
+    type SubTypeLocation = SubTypeLocation;
+
+    fn get_sub_type(&self, location: Self::SubTypeLocation) -> Option<&Type> {
+        get_sub_type_impl!(location, self, get, deref)
+    }
+
+    fn get_sub_type_mut(&mut self, location: Self::SubTypeLocation) -> Option<&mut Type> {
+        get_sub_type_impl!(location, self, get_mut, deref_mut)
+    }
+
+    fn get_sub_lifetime(&self, location: Self::SubLifetimeLocation) -> Option<&Lifetime> {
+        get_sub_lifetime_impl!(location, self, get, |reference| &reference.lifetime)
+    }
+
+    fn get_sub_lifetime_mut(
+        &mut self,
+        location: Self::SubLifetimeLocation,
+    ) -> Option<&mut Lifetime> {
+        get_sub_lifetime_impl!(location, self, get_mut, |reference| &mut reference.lifetime)
+    }
+
+    fn get_sub_constant(&self, location: Self::SubConstantLocation) -> Option<&Constant> {
+        get_sub_constant_impl!(location, self, get, |array| &array.length)
+    }
+
+    fn get_sub_constant_mut(
+        &mut self,
+        location: Self::SubConstantLocation,
+    ) -> Option<&mut Constant> {
+        get_sub_constant_impl!(location, self, get_mut, |array| &mut array.length)
+    }
+
     fn substructural_match(&self, other: &Self) -> Option<Substructural> {
         match (self, other) {
             (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => lhs
@@ -240,6 +441,16 @@ impl Term for Type {
 
     fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
 
+    fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
+    where
+        Self: 'a,
+    {
+        premise
+            .non_equalitiy_predicates
+            .iter()
+            .filter_map(NonEquality::as_type_outlives)
+    }
+
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
             Self::Parameter(_) | Self::Inference(_) => Satisfiability::Unsatisfied,
@@ -270,18 +481,6 @@ impl Term for Type {
 
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.types
-    }
-
-    fn outlives_predicates<'a>(
-        premise: &'a crate::semantic::Premise,
-    ) -> impl Iterator<Item = &'a crate::semantic::predicate::Outlives<Self>>
-    where
-        Self: 'a,
-    {
-        premise
-            .non_equalitiy_predicates
-            .iter()
-            .filter_map(NonEquality::as_type_outlives)
     }
 }
 

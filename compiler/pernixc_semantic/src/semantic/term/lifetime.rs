@@ -7,7 +7,7 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 
-use super::{Never, Substructural, Term};
+use super::{constant::Constant, r#type::Type, Never, Substructural, Term};
 use crate::{
     semantic::{
         predicate::{NonEquality, Outlives, Satisfiability},
@@ -52,9 +52,52 @@ pub enum Lifetime {
 }
 
 impl Term for Lifetime {
+    // lifetime doesn't have any sub-term
+    type SubConstantLocation = Never;
+    type SubLifetimeLocation = Never;
+    type SubTypeLocation = Never;
+
+    fn get_sub_type(&self, location: Self::SubTypeLocation) -> Option<&Type> { match location {} }
+
+    fn get_sub_type_mut(&mut self, location: Self::SubTypeLocation) -> Option<&mut Type> {
+        match location {}
+    }
+
+    fn get_sub_lifetime(&self, location: Self::SubLifetimeLocation) -> Option<&Lifetime> {
+        match location {}
+    }
+
+    fn get_sub_lifetime_mut(
+        &mut self,
+        location: Self::SubLifetimeLocation,
+    ) -> Option<&mut Lifetime> {
+        match location {}
+    }
+
+    fn get_sub_constant(&self, location: Self::SubConstantLocation) -> Option<&Constant> {
+        match location {}
+    }
+
+    fn get_sub_constant_mut(
+        &mut self,
+        location: Self::SubConstantLocation,
+    ) -> Option<&mut Constant> {
+        match location {}
+    }
+
     fn substructural_match(&self, _: &Self) -> Option<Substructural> { None }
 
     fn is_tuple(&self) -> bool { false }
+
+    fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
+    where
+        Self: 'a,
+    {
+        premise
+            .non_equalitiy_predicates
+            .iter()
+            .filter_map(NonEquality::as_lifetime_outlives)
+    }
 
     fn definite_satisfiability(&self) -> Satisfiability { Satisfiability::Satisfied }
 
@@ -72,16 +115,6 @@ impl Term for Lifetime {
 
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.lifetimes
-    }
-
-    fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
-    where
-        Self: 'a,
-    {
-        premise
-            .non_equalitiy_predicates
-            .iter()
-            .filter_map(NonEquality::as_lifetime_outlives)
     }
 }
 
