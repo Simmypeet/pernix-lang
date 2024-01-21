@@ -128,10 +128,15 @@ impl Semantic<Type> for Default {
                 };
 
                 let mut type_aliased = type_sym.r#type.clone();
-                type_aliased.apply(&Substitution::from_generic_arguments(
+                let Ok(subst) = Substitution::from_generic_arguments(
                     generic_arguments.clone(),
                     (*id).into(),
-                ));
+                    &type_sym.generic_declaration.parameters,
+                ) else {
+                    return Ok(None);
+                };
+
+                type_aliased.apply(&subst);
 
                 Ok(Some(type_aliased))
             }

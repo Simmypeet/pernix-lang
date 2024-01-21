@@ -1,13 +1,18 @@
 //! Contains the code related to applying substitutions to terms.
 
-use std::collections::HashMap;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    hash::Hash,
+};
 
 use super::term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Tuple, TupleElement,
 };
 use crate::{
     arena::ID,
-    symbol::{ConstantParameterID, GenericID, LifetimeParameterID, TypeParameterID},
+    symbol::{
+        ConstantParameter, GenericID, GenericParameters, LifetimeParameter, MemberID, TypeParameter,
+    },
 };
 
 /// Represents a substitution of terms.
@@ -20,7 +25,7 @@ pub struct Substitution {
 }
 
 /// Represents a substitution of terms.
-pub trait Substitute: Sized {
+pub trait Substitute: Sized + Eq + Hash {
     /// Applies the given substitution to the term.
     fn apply(&mut self, substitution: &Substitution);
 
@@ -162,77 +167,118 @@ fn apply_generic_arguments(generic_arguments: &mut GenericArguments, substitutio
     }
 }
 
+/// Error that occurs when converting a [`GenericArguments`] into a [`Substitution`] but the
+/// number of generic arguments supplied does not match the number of generic parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[error("the number of generic arguments supplied does not match the number of generic parameters")]
+pub struct MismatchedGenericParameterCount;
+
+/// An error that occurs when converting generic arguments into a substitution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum FromGenericArgumentsError {
+    #[error("lifetime parameter collision with {0:?}")]
+    LifetimeParameterCollision(ID<LifetimeParameter>),
+    #[error("type parameter collision with {0:?}")]
+    TypeParameterCollision(ID<TypeParameter>),
+    #[error("constant parameter collision with {0:?}")]
+    ConstantParameterCollision(ID<ConstantParameter>),
+    #[error(transparent)]
+    MismatchedGenericParameterCount(MismatchedGenericParameterCount),
+}
+
 impl Substitution {
+    fn append_from_arguments<T: Substitute, U: Copy>(
+        &mut self,
+        terms: impl Iterator<Item = T>,
+        term_parameter_order: impl Iterator<Item = U>,
+        generic_id: GenericID,
+        to_error: impl Fn(U) -> FromGenericArgumentsError,
+    ) -> Result<(), FromGenericArgumentsError>
+    where
+        MemberID<U, GenericID>: Into<T>,
+    {
+        for (term, term_id) in terms.zip(term_parameter_order) {
+            let parameter_id = MemberID {
+                parent: generic_id,
+                id: term_id,
+            };
+
+            match <T as Substitute>::get_mut(self).entry(parameter_id.into()) {
+                Entry::Occupied(..) => {
+                    return Err(to_error(term_id));
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(term);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Appends the given generic arguments as a substitution.
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// Returns `None` if the substitution already contains the given generic arguments.
-    #[must_use]
+    /// See [`FromGenericArgumentsError`]. If an error occurs, the substitution might be partially
+    /// modified.
     pub fn append_from_generic_arguments(
-        mut self,
+        &mut self,
         generic_arguments: GenericArguments,
         generic_id: GenericID,
-    ) -> Option<Self> {
-        for (index, term) in generic_arguments.types.into_iter().enumerate() {
-            if self
-                .types
-                .insert(
-                    Type::Parameter(TypeParameterID {
-                        parent: generic_id,
-                        id: ID::new(index),
-                    }),
-                    term,
-                )
-                .is_some()
-            {
-                return None;
-            }
+        generic_parameters: &GenericParameters,
+    ) -> Result<(), FromGenericArgumentsError> {
+        if generic_arguments.types.len() != generic_parameters.type_order.len()
+            || generic_arguments.lifetimes.len() != generic_parameters.lifetime_order.len()
+            || generic_arguments.constants.len() != generic_parameters.constant_order.len()
+        {
+            return Err(FromGenericArgumentsError::MismatchedGenericParameterCount(
+                MismatchedGenericParameterCount,
+            ));
         }
 
-        for (index, term) in generic_arguments.constants.into_iter().enumerate() {
-            if self
-                .constants
-                .insert(
-                    Constant::Parameter(ConstantParameterID {
-                        parent: generic_id,
-                        id: ID::new(index),
-                    }),
-                    term,
-                )
-                .is_some()
-            {
-                return None;
-            }
-        }
+        self.append_from_arguments(
+            generic_arguments.lifetimes.into_iter(),
+            generic_parameters.lifetime_order.iter().copied(),
+            generic_id,
+            FromGenericArgumentsError::LifetimeParameterCollision,
+        )?;
 
-        for (index, term) in generic_arguments.lifetimes.into_iter().enumerate() {
-            if self
-                .lifetimes
-                .insert(
-                    Lifetime::Parameter(LifetimeParameterID {
-                        parent: generic_id,
-                        id: ID::new(index),
-                    }),
-                    term,
-                )
-                .is_some()
-            {
-                return None;
-            }
-        }
+        self.append_from_arguments(
+            generic_arguments.types.into_iter(),
+            generic_parameters.type_order.iter().copied(),
+            generic_id,
+            FromGenericArgumentsError::TypeParameterCollision,
+        )?;
 
-        Some(self)
+        self.append_from_arguments(
+            generic_arguments.constants.into_iter(),
+            generic_parameters.constant_order.iter().copied(),
+            generic_id,
+            FromGenericArgumentsError::ConstantParameterCollision,
+        )?;
+
+        Ok(())
     }
 
     /// Converts the given generic arguments into a substitution.
-    #[must_use]
+    ///
+    /// # Errors
     pub fn from_generic_arguments(
         generic_arguments: GenericArguments,
         generic_id: GenericID,
-    ) -> Self {
-        Self::default()
-            .append_from_generic_arguments(generic_arguments, generic_id)
-            .unwrap()
+        generic_parameters: &GenericParameters,
+    ) -> Result<Self, MismatchedGenericParameterCount> {
+        let mut substitution = Self::default();
+
+        substitution
+            .append_from_generic_arguments(generic_arguments, generic_id, generic_parameters)
+            .map_err(|x| match x {
+                FromGenericArgumentsError::MismatchedGenericParameterCount(x) => x,
+                _ => unreachable!(),
+            })?;
+
+        Ok(substitution)
     }
 }
