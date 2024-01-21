@@ -3,3 +3,4 @@ proptest-regressions/
 .vs/
 .DS_Store
 .idea/
+Cargo.lock
