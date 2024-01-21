@@ -13,7 +13,7 @@ use pernixc_syntax::syntax_tree::AccessModifier;
 
 use crate::{
     arena::{Arena, Map, ID},
-    semantic::term::{constant, lifetime, r#type, GenericArguments, Never},
+    semantic::term::{constant, r#type, GenericArguments, Never},
 };
 
 /// Represents an accessibility of a symbol.
@@ -420,82 +420,6 @@ pub struct GenericParameters {
 
     /// List of default constant parameters to be used when the generic parameters are not
     pub default_constant_parameters: Vec<constant::Constant>,
-}
-
-impl GenericParameters {
-    /// Creates a new [`GenericArguments`] that contains the generic parameters as its arguments.
-    #[must_use]
-    pub fn create_identity_generic_arguments(&self, parent: GenericID) -> GenericArguments {
-        GenericArguments {
-            lifetimes: {
-                (0..self.lifetimes.len())
-                    .map(|id| {
-                        lifetime::Lifetime::Parameter(LifetimeParameterID {
-                            parent,
-                            id: ID::new(id),
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            },
-            types: {
-                (0..self.types.len())
-                    .map(|id| {
-                        r#type::Type::Parameter(TypeParameterID {
-                            parent,
-                            id: ID::new(id),
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            },
-            constants: {
-                (0..self.constants.len())
-                    .map(|id| {
-                        constant::Constant::Parameter(ConstantParameterID {
-                            parent,
-                            id: ID::new(id),
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            },
-        }
-    }
-
-    // Creates a new [`Substitution`] that maps all the generic parameters to itself.
-    // #[must_use]
-    // pub fn create_identity_substitution(&self, parent_generic_id: GenericID) -> Substitution {
-    //     Substitution {
-    //         types: (0..self.types.len())
-    //             .map(|idx| {
-    //                 let type_parameter = r#type::Type::Parameter(TypeParameterID {
-    //                     parent: parent_generic_id,
-    //                     id: ID::new(idx),
-    //                 });
-
-    //                 (type_parameter.clone(), type_parameter)
-    //             })
-    //             .collect(),
-    //         constants: (0..self.constants.len())
-    //             .map(|idx| {
-    //                 let constant_parameter = constant::Constant::Parameter(ConstantParameterID {
-    //                     parent: parent_generic_id,
-    //                     id: ID::new(idx),
-    //                 });
-
-    //                 (constant_parameter.clone(), constant_parameter)
-    //             })
-    //             .collect(),
-    //         lifetimes: (0..self.lifetimes.len())
-    //             .map(|idx| {
-    //                 let lifetime_parameter = lifetime::Lifetime::Parameter(LifetimeParameterID {
-    //                     parent: parent_generic_id,
-    //                     id: ID::new(idx),
-    //                 });
-
-    //                 (lifetime_parameter.clone(), lifetime_parameter)
-    //             })
-    //             .collect(),
-    //     }
-    // }
 }
 
 /// Represents a field declaration in the struct, denoted by `NAME: TYPE` syntax.
