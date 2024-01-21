@@ -9,7 +9,10 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::{predicate::Satisfiability, unification::Unification},
+    semantic::{
+        predicate::{NonEquality, Satisfiability},
+        unification::Unification,
+    },
     symbol::{self, Enum, GenericID, GlobalID, Struct, TypeParameterID},
 };
 
@@ -267,6 +270,18 @@ impl Term for Type {
 
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.types
+    }
+
+    fn outlives_predicates<'a>(
+        premise: &'a crate::semantic::Premise,
+    ) -> impl Iterator<Item = &'a crate::semantic::predicate::Outlives<Self>>
+    where
+        Self: 'a,
+    {
+        premise
+            .non_equalitiy_predicates
+            .iter()
+            .filter_map(NonEquality::as_type_outlives)
     }
 }
 

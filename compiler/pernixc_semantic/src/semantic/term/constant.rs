@@ -230,6 +230,15 @@ impl Term for Constant {
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.constants
     }
+
+    fn outlives_predicates<'a>(
+        _: &'a crate::semantic::Premise,
+    ) -> impl Iterator<Item = &'a crate::semantic::predicate::Outlives<Self>>
+    where
+        Self: 'a,
+    {
+        std::iter::empty()
+    }
 }
 
 #[cfg(test)]

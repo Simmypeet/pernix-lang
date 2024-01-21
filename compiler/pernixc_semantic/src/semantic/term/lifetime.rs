@@ -9,7 +9,11 @@ use enum_as_inner::EnumAsInner;
 
 use super::{Never, Substructural, Term};
 use crate::{
-    semantic::{predicate::Satisfiability, unification::Unification},
+    semantic::{
+        predicate::{NonEquality, Outlives, Satisfiability},
+        unification::Unification,
+        Premise,
+    },
     symbol::LifetimeParameterID,
 };
 
@@ -68,6 +72,16 @@ impl Term for Lifetime {
 
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.lifetimes
+    }
+
+    fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
+    where
+        Self: 'a,
+    {
+        premise
+            .non_equalitiy_predicates
+            .iter()
+            .filter_map(NonEquality::as_lifetime_outlives)
     }
 }
 

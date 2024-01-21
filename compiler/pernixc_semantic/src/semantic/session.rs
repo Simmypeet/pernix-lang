@@ -147,6 +147,7 @@ pub trait Session<T>:
     + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
     + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
     + for<'a> Cache<predicate::TupleQuery<'a, T>, Result = Satisfied>
+    + for<'a> Cache<predicate::OutlivesQuery<'a, T>, Result = Satisfied>
 {
 }
 
@@ -155,6 +156,7 @@ impl<T, U> Session<T> for U where
         + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
         + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
         + for<'a> Cache<predicate::TupleQuery<'a, T>, Result = Satisfied>
+        + for<'a> Cache<predicate::OutlivesQuery<'a, T>, Result = Satisfied>
 {
 }
 
@@ -176,8 +178,11 @@ pub struct Default {
     lifetime_is_tuple: HashMap<Lifetime, Cached<Satisfied>>,
     type_is_tuple: HashMap<Type, Cached<Satisfied>>,
     constant_is_tuple: HashMap<Constant, Cached<Satisfied>>,
-}
 
+    lifetime_outlives: HashMap<(Lifetime, Lifetime), Cached<Satisfied>>,
+    type_outlives: HashMap<(Type, Lifetime), Cached<Satisfied>>,
+    constant_outlives: HashMap<(Constant, Lifetime), Cached<Satisfied>>,
+}
 macro_rules! implements_cache {
     ($query:path, $result_t:path, $param:ident, $field_name:ident, $expr_in:expr, $expr_out:expr) => {
         impl<'a> Cache<$query> for Default {
@@ -326,4 +331,31 @@ implements_cache!(
     constant_is_tuple,
     record.0.clone(),
     record.0
+);
+
+implements_cache!(
+    predicate::OutlivesQuery<'a, Lifetime>,
+    Satisfied,
+    record,
+    lifetime_outlives,
+    (*record.operand, *record.bound),
+    &(*record.operand, *record.bound)
+);
+
+implements_cache!(
+    predicate::OutlivesQuery<'a, Type>,
+    Satisfied,
+    record,
+    type_outlives,
+    (record.operand.clone(), *record.bound),
+    &(record.operand.clone(), *record.bound)
+);
+
+implements_cache!(
+    predicate::OutlivesQuery<'a, Constant>,
+    Satisfied,
+    record,
+    constant_outlives,
+    (record.operand.clone(), *record.bound),
+    &(record.operand.clone(), *record.bound)
 );

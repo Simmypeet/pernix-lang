@@ -2,7 +2,7 @@
 
 use self::{
     mapping::Mapping,
-    predicate::Satisfiability,
+    predicate::{NonEquality, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant,
@@ -31,6 +31,9 @@ pub mod visitor;
 pub struct Premise {
     /// The mapping of predefined equalities.
     pub equalities_mapping: Mapping,
+
+    /// The list of non-equality predicates.
+    pub non_equalitiy_predicates: Vec<NonEquality>,
 }
 
 /// A customization point for the semantic logic.

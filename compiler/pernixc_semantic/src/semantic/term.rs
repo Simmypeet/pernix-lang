@@ -12,8 +12,12 @@ use lifetime::Lifetime;
 use r#type::Type;
 
 use super::{
-    mapping::Map, predicate::Satisfiability, substitution::Substitute, unification::Unification,
+    mapping::Map,
+    predicate::{Outlives, Satisfiability},
+    substitution::Substitute,
+    unification::Unification,
     visitor::Element,
+    Premise,
 };
 
 pub mod constant;
@@ -114,6 +118,11 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
 
     #[doc(hidden)]
     fn is_tuple(&self) -> bool;
+
+    #[doc(hidden)]
+    fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
+    where
+        Self: 'a;
 
     #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
