@@ -70,10 +70,7 @@ pub enum TupleElement<Term> {
 
 /// Represents a tuple of terms.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Tuple<Term: Clone>
-where
-    Self: TryFrom<Term, Error = Term> + Into<Term>,
-{
+pub struct Tuple<Term: Clone> {
     /// The elements of the tuple.
     pub elements: Vec<TupleElement<Term>>,
 }
