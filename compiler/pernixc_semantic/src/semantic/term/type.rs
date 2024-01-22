@@ -90,7 +90,7 @@ pub enum Qualifier {
     Restrict,
 }
 
-/// Represents a pointer type, denoted by `*QUALIFIDER TYPE` syntax.
+/// Represents a pointer type, denoted by `*QUALIFIER TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pointer {
     /// The qualifier applied to the pointer.
@@ -145,7 +145,7 @@ pub enum Primitive {
 /// Represents a tuple type, denoted by `(type, type, ...type)` syntax.
 pub type Tuple = super::Tuple<Type>;
 
-/// Represents a type inference variable in hindley-milner type inference.
+/// Represents a type inference variable in Hindley Milner type inference.
 pub type Inference = Never; /* will be changed */
 
 /// The location pointing to a sub-lifetime term in a type.
@@ -220,7 +220,7 @@ pub enum Type {
     Tuple(Tuple),
     Local(Local<Self>),
 
-    /// Pleace notice this differences
+    /// Please notice this differences
     ///
     /// In the **AdtImplementation** case, the `parent_generic_arguments` field is **not** deduced
     /// from the implementation directly, bur rather from the ADT that the implementation is for.
@@ -363,7 +363,7 @@ impl Term for Type {
         Self: 'a,
     {
         premise
-            .non_equalitiy_predicates
+            .non_equality_predicates
             .iter()
             .filter_map(NonEquality::as_type_outlives)
     }

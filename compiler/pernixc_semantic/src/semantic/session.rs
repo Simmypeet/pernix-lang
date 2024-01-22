@@ -167,9 +167,9 @@ pub struct Default {
     type_equals: HashMap<(Type, Type), Cached<Satisfied>>,
     constant_equals: HashMap<(Constant, Constant), Cached<Satisfied>>,
 
-    lifetime_definites: HashMap<Lifetime, Cached<Satisfied>>,
-    type_definites: HashMap<Type, Cached<Satisfied>>,
-    constant_definites: HashMap<Constant, Cached<Satisfied>>,
+    lifetime_is_definite: HashMap<Lifetime, Cached<Satisfied>>,
+    type_is_definite: HashMap<Type, Cached<Satisfied>>,
+    constant_is_definite: HashMap<Constant, Cached<Satisfied>>,
 
     lifetime_unifies: HashMap<(Lifetime, Lifetime), Cached<Unification>>,
     type_unifies: HashMap<(Type, Type), Cached<Unification>>,
@@ -256,7 +256,7 @@ implements_cache!(
     predicate::DefiniteQuery<'a, Lifetime>,
     Satisfied,
     record,
-    lifetime_definites,
+    lifetime_is_definite,
     *record.0,
     record.0
 );
@@ -265,7 +265,7 @@ implements_cache!(
     predicate::DefiniteQuery<'a, Type>,
     Satisfied,
     record,
-    type_definites,
+    type_is_definite,
     record.0.clone(),
     record.0
 );
@@ -274,7 +274,7 @@ implements_cache!(
     predicate::DefiniteQuery<'a, Constant>,
     Satisfied,
     record,
-    constant_definites,
+    constant_is_definite,
     record.0.clone(),
     record.0
 );

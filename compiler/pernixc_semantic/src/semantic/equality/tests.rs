@@ -34,7 +34,7 @@ use crate::{
 fn reflexive() {
     let premise = Premise {
         equalities_mapping: mapping::Mapping::default(),
-        non_equalitiy_predicates: Vec::new(),
+        non_equality_predicates: Vec::new(),
     };
     let table = Table::<Success>::default();
 
@@ -62,7 +62,7 @@ fn symmetric() {
             )),
             std::iter::empty(),
         ),
-        non_equalitiy_predicates: Vec::new(),
+        non_equality_predicates: Vec::new(),
     };
     let table = Table::<Success>::default();
     let lhs = Type::Primitive(Primitive::Bool);
@@ -104,7 +104,7 @@ fn transitivity() {
             ],
             std::iter::empty(),
         ),
-        non_equalitiy_predicates: Vec::new(),
+        non_equality_predicates: Vec::new(),
     };
     let table = Table::<Success>::default();
     let lhs = Type::Primitive(Primitive::Bool);
@@ -147,7 +147,7 @@ fn congruence() {
             ],
             std::iter::empty(),
         ),
-        non_equalitiy_predicates: Vec::new(),
+        non_equality_predicates: Vec::new(),
     };
     let table = Table::<Success>::default();
     let lhs = Type::Symbol(Symbol {
@@ -212,7 +212,7 @@ fn recursive() {
             )],
             std::iter::empty(),
         ),
-        non_equalitiy_predicates: Vec::new(),
+        non_equality_predicates: Vec::new(),
     };
     let table = Table::<Success>::default();
     let lhs = Type::Primitive(Primitive::Int32);

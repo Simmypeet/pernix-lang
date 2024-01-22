@@ -80,7 +80,7 @@ fn equals_by_normalization<
     Ok(false)
 }
 
-fn equals_withour_mapping<
+fn equals_without_mapping<
     T: Term,
     S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
@@ -162,7 +162,7 @@ pub fn equals<
     }
 
     for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
-        if equals_withour_mapping(lhs, key, premise, table, semantic, session)? {
+        if equals_without_mapping(lhs, key, premise, table, semantic, session)? {
             for value in values {
                 if equals(value, rhs, premise, table, semantic, session)? {
                     session.mark_as_done(Query { lhs, rhs }, Satisfied);
@@ -171,7 +171,7 @@ pub fn equals<
             }
         }
 
-        if equals_withour_mapping(key, rhs, premise, table, semantic, session)? {
+        if equals_without_mapping(key, rhs, premise, table, semantic, session)? {
             for value in values {
                 if equals(lhs, value, premise, table, semantic, session)? {
                     session.mark_as_done(Query { lhs, rhs }, Satisfied);

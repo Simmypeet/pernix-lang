@@ -109,7 +109,7 @@ impl<
 }
 
 impl<T: Term> Outlives<T> {
-    /// Determines wheter a predicate of the term and the bound is satisfiable.
+    /// Determines whether a predicate of the term and the bound is satisfiable.
     ///
     /// # Errors
     ///

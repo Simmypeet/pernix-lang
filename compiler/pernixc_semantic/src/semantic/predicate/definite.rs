@@ -93,7 +93,7 @@ impl<
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Query<'a, T>(pub &'a T);
 
-/// Determines wheter a term is definite.
+/// Determines whether a term is definite.
 ///
 /// A term is definite if the term doesn't contain any generic parameters.
 ///

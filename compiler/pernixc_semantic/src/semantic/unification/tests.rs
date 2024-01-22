@@ -268,10 +268,10 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
             ),
             ID::arbitrary(),
         )
-            .prop_map(|(tys, lts, consts, id)| Self {
+            .prop_map(|(tys, lts, constant_properties, id)| Self {
                 lifetime_properties: lts,
                 type_properties: tys,
-                constant_properties: consts,
+                constant_properties,
                 id,
             })
             .boxed()
@@ -328,10 +328,10 @@ where
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
-        let strat = strat.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+    fn arbitrary_with(strategy: Self::Parameters) -> Self::Strategy {
+        let strategy = strategy.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
-        (strat, Param::arbitrary())
+        (strategy, Param::arbitrary())
             .prop_map(|(property, mapping)| Self { property, mapping })
             .boxed()
     }

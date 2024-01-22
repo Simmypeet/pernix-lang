@@ -33,7 +33,7 @@ pub struct Premise {
     pub equalities_mapping: Mapping,
 
     /// The list of non-equality predicates.
-    pub non_equalitiy_predicates: Vec<NonEquality>,
+    pub non_equality_predicates: Vec<NonEquality>,
 }
 
 /// A customization point for the semantic logic.

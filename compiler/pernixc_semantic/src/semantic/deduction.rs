@@ -18,9 +18,9 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct DeductionUnifingConfig;
+struct DeductionUnifyingConfig;
 
-impl unification::Config<Type> for DeductionUnifingConfig {
+impl unification::Config<Type> for DeductionUnifyingConfig {
     fn unifiable(&mut self, lhs: &Type, _: &Type) -> bool {
         matches!(
             lhs,
@@ -33,11 +33,11 @@ impl unification::Config<Type> for DeductionUnifingConfig {
     }
 }
 
-impl unification::Config<Lifetime> for DeductionUnifingConfig {
+impl unification::Config<Lifetime> for DeductionUnifyingConfig {
     fn unifiable(&mut self, lhs: &Lifetime, _: &Lifetime) -> bool { lhs.is_parameter() }
 }
 
-impl unification::Config<Constant> for DeductionUnifingConfig {
+impl unification::Config<Constant> for DeductionUnifyingConfig {
     fn unifiable(&mut self, lhs: &Constant, _: &Constant) -> bool {
         matches!(
             lhs,
@@ -64,7 +64,7 @@ fn unify<
     mut existing: unification::Unification,
 ) -> Result<Option<unification::Unification>, ExceedLimitError>
 where
-    DeductionUnifingConfig: unification::Config<T>,
+    DeductionUnifyingConfig: unification::Config<T>,
 {
     for (lhs, rhs) in lhs.iter().zip(rhs.iter()) {
         let Some(new) = unification::unify(
@@ -72,7 +72,7 @@ where
             rhs,
             premise,
             table,
-            &mut DeductionUnifingConfig,
+            &mut DeductionUnifyingConfig,
             semantic,
             session,
         )?

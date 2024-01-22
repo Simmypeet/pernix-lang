@@ -18,7 +18,7 @@ pub struct Query<'a, T>(pub &'a T);
 pub struct Tuple<T>(T);
 
 impl<T: Term> Tuple<T> {
-    /// Determines wheter a predicate of the term is satisfiable.
+    /// Determines whether a predicate of the term is satisfiable.
     ///
     /// # Errors
     ///

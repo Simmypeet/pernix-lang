@@ -168,7 +168,7 @@ pub enum Constant {
     Tuple(Tuple),
     Symbol(Symbol<ID<symbol::Constant>>),
 
-    /// Pleace notice the differences
+    /// Please notice the differences
     ///
     /// In the **AdtImplementation** case, the `parent_generic_arguments` field is **not** deduced
     /// from the implementation directly, bur rather from the ADT that the implementation is for.

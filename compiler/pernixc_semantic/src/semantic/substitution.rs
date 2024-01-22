@@ -112,8 +112,8 @@ impl Substitute for Constant {
                     variant.apply(substitution);
                 }
             }
-            Self::Array(arraay) => {
-                for element in &mut arraay.elements {
+            Self::Array(array) => {
+                for element in &mut array.elements {
                     element.apply(substitution);
                 }
             }

@@ -166,7 +166,7 @@ mod private {
 
 /// Represents a state object for the [`Table`].
 ///
-/// This is used to distiguish between the states of the symbols in the table.
+/// This is used to distinguish between the states of the symbols in the table.
 #[doc(hidden)]
 pub trait State: Default + Debug + private::Sealed + 'static + Send + Sync {
     /// The container type used to wrap the symbols in the table.

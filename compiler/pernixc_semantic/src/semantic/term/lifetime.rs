@@ -74,7 +74,7 @@ impl Term for Lifetime {
         Self: 'a,
     {
         premise
-            .non_equalitiy_predicates
+            .non_equality_predicates
             .iter()
             .filter_map(NonEquality::as_lifetime_outlives)
     }

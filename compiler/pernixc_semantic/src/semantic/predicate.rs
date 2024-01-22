@@ -20,7 +20,6 @@ pub enum Satisfiability {
     Congruent,
 }
 
-// REXPORTS
 pub use definite::{definite, Query as DefiniteQuery};
 pub use outlives::{Outlives, Query as OutlivesQuery};
 pub use tuple::{Query as TupleQuery, Tuple};

@@ -98,7 +98,7 @@ pub enum SubTupleTermLocation {
     Single(usize),
 
     /// The sub-term ranges into multiple elements of the tuple.
-    Rane {
+    Range {
         /// The index of the first element of the tuple.
         begin: usize,
 
@@ -418,7 +418,7 @@ where
             unpacked.clone(),
             to_unpack,
             SubTupleTermLocation::Single(unpacked_position),
-            SubTupleTermLocation::Rane {
+            SubTupleTermLocation::Range {
                 begin: to_unpack_range.start,
                 end: to_unpack_range.end,
             },
