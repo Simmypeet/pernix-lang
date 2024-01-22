@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use super::{
     equality::equals,
     session::{ExceedLimitError, Limit, Session},
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Match, Term},
     Premise, Semantic,
 };
 use crate::{
@@ -76,7 +76,7 @@ fn substructural_unify<
 
     let mut unification = Unification::default();
 
-    for (lhs, rhs) in substructural.types {
+    for Match { lhs, rhs, .. } in substructural.types {
         let Some(new) = unify(&lhs, &rhs, premise, table, config, semantic, session)? else {
             return Ok(None);
         };
@@ -84,7 +84,7 @@ fn substructural_unify<
         unification.combine(new);
     }
 
-    for (lhs, rhs) in substructural.lifetimes {
+    for Match { lhs, rhs, .. } in substructural.lifetimes {
         let Some(new) = unify(&lhs, &rhs, premise, table, config, semantic, session)? else {
             return Ok(None);
         };
@@ -92,7 +92,7 @@ fn substructural_unify<
         unification.combine(new);
     }
 
-    for (lhs, rhs) in substructural.constants {
+    for Match { lhs, rhs, .. } in substructural.constants {
         let Some(new) = unify(&lhs, &rhs, premise, table, config, semantic, session)? else {
             return Ok(None);
         };

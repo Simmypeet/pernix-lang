@@ -3,7 +3,7 @@
 use super::{
     mapping::Map,
     session::{self, ExceedLimitError, Limit, Satisfied, Session},
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Match, Term},
     Premise, Semantic,
 };
 use crate::table::{State, Table};
@@ -32,19 +32,19 @@ fn equals_by_unification<
         return Ok(false);
     };
 
-    for (lhs, rhs) in matching.lifetimes {
+    for Match { lhs, rhs, .. } in matching.lifetimes {
         if !equals(&lhs, &rhs, premise, table, semantic, session)? {
             return Ok(false);
         }
     }
 
-    for (lhs, rhs) in matching.types {
+    for Match { lhs, rhs, .. } in matching.types {
         if !equals(&lhs, &rhs, premise, table, semantic, session)? {
             return Ok(false);
         }
     }
 
-    for (lhs, rhs) in matching.constants {
+    for Match { lhs, rhs, .. } in matching.constants {
         if !equals(&lhs, &rhs, premise, table, semantic, session)? {
             return Ok(false);
         }

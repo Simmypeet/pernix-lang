@@ -45,6 +45,12 @@ pub struct Symbol<ID> {
     pub generic_arguments: GenericArguments,
 }
 
+/// Represents a sub-term location where the sub-term is stored as a generic arguments.
+///
+/// The `usize` represents the index of the sub-term in the generic arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubSymbolTermLocation(pub usize);
+
 /// Represents a term where its value is stored as a member of a particular symbol
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MemberSymbol<ID> {
@@ -56,6 +62,16 @@ pub struct MemberSymbol<ID> {
 
     /// The generic arguments supplied to the parent scope.
     pub parent_generic_arguments: GenericArguments,
+}
+
+/// Represents a sub-term location where the sub-term is stored as a generic arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubMemberSymbolTermLocation {
+    /// The index of the sub-term in the generic arguments.
+    pub index: usize,
+
+    /// True if the sub-term is in the parent's generic arguments part, otherwise false.
+    pub from_parent: bool,
 }
 
 /// Represents a single element of a tuple.
@@ -75,19 +91,61 @@ pub struct Tuple<Term: Clone> {
     pub elements: Vec<TupleElement<Term>>,
 }
 
+/// Represents a sub-term location where the sub-term is stored as an element of a tuple.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SubTupleTermLocation {
+    /// The sub-term is stored as a regular element of the tuple.
+    Single(usize),
+
+    /// The sub-term ranges into multiple elements of the tuple.
+    Rane {
+        /// The index of the first element of the tuple.
+        begin: usize,
+
+        /// The index of the after the last element of the tuple.
+        end: usize,
+    },
+}
+
 /// A type that can't never be instantiated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Never {}
 
+/// Represents a match between two terms.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Match<T, Location> {
+    /// The left-hand side of the match.
+    pub lhs: T,
+
+    /// The right-hand side of the match.
+    pub rhs: T,
+
+    /// The location in lhs where the match occurred
+    pub lhs_location: Location,
+
+    /// The location in rhs where the match occurred
+    pub rhs_location: Location,
+}
+
 /// Represents a substructural matching between two terms.
 ///
 /// See [`Term::substructural_match`] for more information.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub struct Substructural {
-    pub lifetimes: Vec<(Lifetime, Lifetime)>,
-    pub types: Vec<(Type, Type)>,
-    pub constants: Vec<(Constant, Constant)>,
+pub struct Substructural<SubLifetimeLocation, SubTypeLocation, SubConstantLocation> {
+    pub lifetimes: Vec<Match<Lifetime, SubLifetimeLocation>>,
+    pub types: Vec<Match<Type, SubTypeLocation>>,
+    pub constants: Vec<Match<Constant, SubConstantLocation>>,
+}
+
+impl<L, T, C> Default for Substructural<L, T, C> {
+    fn default() -> Self {
+        Self {
+            lifetimes: Vec::new(),
+            types: Vec::new(),
+            constants: Vec::new(),
+        }
+    }
 }
 
 /// The term under the `local` modifier.
@@ -137,35 +195,18 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
         + Sync
         + 'static;
 
-    /// Returns the reference to the sub-type term of `self` at `location`.
-    #[must_use]
-    fn get_sub_type(&self, location: Self::SubTypeLocation) -> Option<&Type>;
-
-    /// Returns the mutable reference to the sub-type term of `self` at `location`.
-    #[must_use]
-    fn get_sub_type_mut(&mut self, location: Self::SubTypeLocation) -> Option<&mut Type>;
-
-    /// Returns the reference to the sub-lifetime term of `self` at `location`.
-    #[must_use]
-    fn get_sub_lifetime(&self, location: Self::SubLifetimeLocation) -> Option<&Lifetime>;
-
-    /// Returns the mutable reference to the sub-lifetime term of `self` at `location`.
-    #[must_use]
-    fn get_sub_lifetime_mut(
-        &mut self,
-        location: Self::SubLifetimeLocation,
-    ) -> Option<&mut Lifetime>;
-
-    /// Returns the reference to the sub-constant term of `self` at `location`.
-    #[must_use]
-    fn get_sub_constant(&self, location: Self::SubConstantLocation) -> Option<&Constant>;
-
-    /// Returns the mutable reference to the sub-constant term of `self` at `location`.
-    #[must_use]
-    fn get_sub_constant_mut(
-        &mut self,
-        location: Self::SubConstantLocation,
-    ) -> Option<&mut Constant>;
+    /// The type used to retrieve the sub-tern of this type.
+    type ThisSubTermLocation: Debug
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + PartialOrd
+        + Ord
+        + Hash
+        + Send
+        + Sync
+        + 'static;
 
     /// Returns the matching substructural matches between `self` and `other`.
     ///
@@ -180,7 +221,12 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
     /// # Returns
     ///
     /// Returns `None` if the terms cannot be substructurally matched.
-    fn substructural_match(&self, other: &Self) -> Option<Substructural>;
+    fn substructural_match(
+        &self,
+        other: &Self,
+    ) -> Option<
+        Substructural<Self::SubLifetimeLocation, Self::SubTypeLocation, Self::SubConstantLocation>,
+    >;
 
     #[doc(hidden)]
     fn is_tuple(&self) -> bool;
@@ -194,32 +240,76 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
     fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
-    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)>;
+    fn get_substructural(
+        substructural: &Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &Vec<Match<Self, Self::ThisSubTermLocation>>;
 
     #[doc(hidden)]
-    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)>;
+    fn get_substructural_mut(
+        substructural: &mut Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>>;
 
     #[doc(hidden)]
     fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>>;
 
     #[doc(hidden)]
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>>;
+
+    #[doc(hidden)]
+    fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self];
+
+    #[doc(hidden)]
+    fn get_generic_arguments_mut(generic_arguments: &mut GenericArguments) -> &mut Vec<Self>;
 }
 
 impl<T: Term> Tuple<T>
 where
     Self: TryFrom<T, Error = T> + Into<T>,
+    T::ThisSubTermLocation: From<SubTupleTermLocation>,
 {
+    #[allow(clippy::too_many_lines)]
     fn substructural_match_internal<'a>(
         from: &'a Self,
         to: &'a Self,
         swap: bool,
-    ) -> Option<Substructural> {
-        fn push<T: Term>(lhs: T, rhs: T, existing: &mut Substructural, swap: bool) {
+    ) -> Option<Substructural<T::SubLifetimeLocation, T::SubTypeLocation, T::SubConstantLocation>>
+    {
+        fn push<T: Term>(
+            lhs: T,
+            rhs: T,
+            lhs_location: SubTupleTermLocation,
+            rhs_location: SubTupleTermLocation,
+            existing: &mut Substructural<
+                T::SubLifetimeLocation,
+                T::SubTypeLocation,
+                T::SubConstantLocation,
+            >,
+            swap: bool,
+        ) where
+            T::ThisSubTermLocation: From<SubTupleTermLocation>,
+        {
             if swap {
-                T::get_substructural_mut(existing).push((rhs, lhs));
+                T::get_substructural_mut(existing).push(Match {
+                    lhs: rhs,
+                    rhs: lhs,
+                    lhs_location: rhs_location.into(),
+                    rhs_location: lhs_location.into(),
+                });
             } else {
-                T::get_substructural_mut(existing).push((lhs, rhs));
+                T::get_substructural_mut(existing).push(Match {
+                    lhs,
+                    rhs,
+                    lhs_location: lhs_location.into(),
+                    rhs_location: rhs_location.into(),
+                });
             }
         }
 
@@ -234,13 +324,17 @@ where
 
                 let mut existing = Substructural::default();
 
-                for (from_element, to_element) in from.elements.iter().zip(&to.elements) {
+                for (idx, (from_element, to_element)) in
+                    from.elements.iter().zip(&to.elements).enumerate()
+                {
                     let from_element = from_element.as_regular().unwrap();
                     let to_element = to_element.as_regular().unwrap();
 
                     push(
                         from_element.clone(),
                         to_element.clone(),
+                        SubTupleTermLocation::Single(idx),
+                        SubTupleTermLocation::Single(idx),
                         &mut existing,
                         swap,
                     );
@@ -273,9 +367,10 @@ where
         let to_unpack_range = unpacked_position..to_tail_range.start;
 
         // unify head
-        for (from_element, to_element) in from.elements[head_range.clone()]
+        for (idx, (from_element, to_element)) in from.elements[head_range.clone()]
             .iter()
             .zip(&to.elements[head_range])
+            .enumerate()
         {
             let from_element = from_element.as_regular().unwrap();
             let TupleElement::Regular(to_element) = to_element else {
@@ -285,15 +380,18 @@ where
             push(
                 from_element.clone(),
                 to_element.clone(),
+                SubTupleTermLocation::Single(idx),
+                SubTupleTermLocation::Single(idx),
                 &mut existing,
                 swap,
             );
         }
 
         // unify tail
-        for (from_element, to_element) in from.elements[from_tail_range]
+        for (idx, (from_element, to_element)) in from.elements[from_tail_range.clone()]
             .iter()
-            .zip(&to.elements[to_tail_range])
+            .zip(&to.elements[to_tail_range.clone()])
+            .enumerate()
         {
             let from_element = from_element.as_regular().unwrap();
             let TupleElement::Regular(to_element) = to_element else {
@@ -303,34 +401,54 @@ where
             push(
                 from_element.clone(),
                 to_element.clone(),
+                SubTupleTermLocation::Single(idx + from_tail_range.start),
+                SubTupleTermLocation::Single(idx + to_tail_range.start),
                 &mut existing,
                 swap,
             );
         }
 
         let to_unpack = Self {
-            elements: to.elements[to_unpack_range].to_vec(),
+            elements: to.elements[to_unpack_range.clone()].to_vec(),
         }
         .into();
 
         let unpacked = from.elements[unpacked_position].as_unpacked().unwrap();
-        push(unpacked.clone(), to_unpack, &mut existing, swap);
+        push(
+            unpacked.clone(),
+            to_unpack,
+            SubTupleTermLocation::Single(unpacked_position),
+            SubTupleTermLocation::Rane {
+                begin: to_unpack_range.start,
+                end: to_unpack_range.end,
+            },
+            &mut existing,
+            swap,
+        );
 
         Some(existing)
     }
 
-    fn substructural_match<'a>(&'a self, to: &'a Self) -> Option<Substructural> {
+    fn substructural_match<'a>(
+        &'a self,
+        to: &'a Self,
+    ) -> Option<Substructural<T::SubLifetimeLocation, T::SubTypeLocation, T::SubConstantLocation>>
+    {
         Self::substructural_match_internal(self, to, false)
             .or_else(|| Self::substructural_match_internal(to, self, true))
     }
 }
 
 impl GenericArguments {
-    fn substructural_match(
+    fn substructural_match<L, T, C, Y>(
         &self,
         other: &Self,
-        mut existing: Substructural,
-    ) -> Option<Substructural> {
+        mut existing: Substructural<L, T, C>,
+        to_location: impl Fn(usize) -> Y,
+    ) -> Option<Substructural<L, T, C>>
+    where
+        Y: Into<L> + Into<T> + Into<C> + Copy,
+    {
         if self.lifetimes.len() != other.lifetimes.len()
             || self.types.len() != other.types.len()
             || self.constants.len() != other.constants.len()
@@ -338,16 +456,52 @@ impl GenericArguments {
             return None;
         }
 
-        for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
-            existing.lifetimes.push((*lhs, *rhs));
+        for (idx, (lhs, rhs)) in self
+            .lifetimes
+            .iter()
+            .copied()
+            .zip(other.lifetimes.iter().copied())
+            .enumerate()
+        {
+            let location = to_location(idx);
+            existing.lifetimes.push(Match {
+                lhs,
+                rhs,
+                lhs_location: location.into(),
+                rhs_location: location.into(),
+            });
         }
 
-        for (lhs, rhs) in self.types.iter().zip(&other.types) {
-            existing.types.push((lhs.clone(), rhs.clone()));
+        for (idx, (lhs, rhs)) in self
+            .types
+            .iter()
+            .cloned()
+            .zip(other.types.iter().cloned())
+            .enumerate()
+        {
+            let location = to_location(idx);
+            existing.types.push(Match {
+                lhs,
+                rhs,
+                lhs_location: location.into(),
+                rhs_location: location.into(),
+            });
         }
 
-        for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
-            existing.constants.push((lhs.clone(), rhs.clone()));
+        for (idx, (lhs, rhs)) in self
+            .constants
+            .iter()
+            .cloned()
+            .zip(other.constants.iter().cloned())
+            .enumerate()
+        {
+            let location = to_location(idx);
+            existing.constants.push(Match {
+                lhs,
+                rhs,
+                lhs_location: location.into(),
+                rhs_location: location.into(),
+            });
         }
 
         Some(existing)

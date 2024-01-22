@@ -1,15 +1,13 @@
 //! Contains the definition of [`Type`].
 
-use std::{
-    collections::{HashMap, HashSet},
-    ops::{Deref, DerefMut},
-};
+use std::collections::{HashMap, HashSet};
 
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, Local, MemberSymbol, Never, Substructural, Symbol,
-    Term, TupleElement,
+    constant::Constant, lifetime::Lifetime, GenericArguments, Local, Match, MemberSymbol, Never,
+    SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTupleTermLocation, Substructural,
+    Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -151,30 +149,26 @@ pub type Tuple = super::Tuple<Type>;
 pub type Inference = Never; /* will be changed */
 
 /// The location pointing to a sub-lifetime term in a type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
 pub enum SubLifetimeLocation {
     /// The index of lifetime argument in a [`Symbol`] type.
-    Symbol(usize),
+    #[from]
+    Symbol(SubSymbolTermLocation),
 
     /// The lifetime of a reference.
     Reference,
 
     /// A lifetime argument in a [`MemberSymbol`] type.
-    MemberSymbol {
-        /// True if the lifetime argument is in the parent part, false if the lifetime argument is
-        /// in the member part.
-        from_parent: bool,
-
-        /// The index of the lifetime argument.
-        index: usize,
-    },
+    #[from]
+    MemberSymbol(SubMemberSymbolTermLocation),
 }
 
 /// The location pointing to a sub-type term in a type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
 pub enum SubTypeLocation {
     /// The index of the type argument in a [`Symbol`] type.
-    Symbol(usize),
+    #[from]
+    Symbol(SubSymbolTermLocation),
 
     /// The [`Pointer::pointee`] of a pointer.
     Pointer,
@@ -186,37 +180,27 @@ pub enum SubTypeLocation {
     Array,
 
     /// The index of the type element in a [`Tuple`] type.
-    Tuple(usize),
+    #[from]
+    Tuple(SubTupleTermLocation),
 
     /// The inner type of a [`Local`] type.
     Local,
 
     /// The type argument in a [`MemberSymbol`] type.
-    MemberSymbol {
-        /// True if the type argument is in the parent part, false if the type argument is in the
-        /// member part.
-        from_parent: bool,
-
-        /// The index of the type argument.
-        index: usize,
-    },
+    #[from]
+    MemberSymbol(SubMemberSymbolTermLocation),
 }
 
 /// The location pointing to a sub-constant term in a type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
 pub enum SubConstantLocation {
     /// The index of the constant argument in a [`Symbol`] type.
-    Symbol(usize),
+    #[from]
+    Symbol(SubSymbolTermLocation),
 
     /// The constant argument in a [`MemberSymbol`] type.
-    MemberSymbol {
-        /// True if the constant argument is in the parent part, false if the constant argument is
-        /// in the member part.
-        from_parent: bool,
-
-        /// The index of the constant argument.
-        index: usize,
-    },
+    #[from]
+    MemberSymbol(SubMemberSymbolTermLocation),
 
     /// The [`Array::length`] of an array.
     Array,
@@ -266,162 +250,82 @@ impl Default for Type {
     }
 }
 
-macro_rules! get_sub_type_impl {
-    ($location:ident, $self:ident, $get:ident, $deref:ident) => {
-        match ($location, $self) {
-            (SubTypeLocation::Symbol(index), Self::Symbol(symbol)) => {
-                symbol.generic_arguments.types.$get(index)
-            }
-
-            (SubTypeLocation::Pointer, Self::Pointer(pointer)) => Some(pointer.pointee.$deref()),
-
-            (SubTypeLocation::Reference, Self::Reference(reference)) => {
-                Some(reference.pointee.$deref())
-            }
-
-            (SubTypeLocation::Array, Self::Array(array)) => Some(array.r#type.$deref()),
-
-            (SubTypeLocation::Tuple(index), Self::Tuple(tuple)) => {
-                tuple.elements.$get(index).map(|element| match element {
-                    TupleElement::Regular(x) => x,
-                    TupleElement::Unpacked(x) => x,
-                })
-            }
-
-            (SubTypeLocation::Local, Self::Local(local)) => Some(local.0.$deref()),
-
-            (
-                SubTypeLocation::MemberSymbol { from_parent, index },
-                Self::MemberSymbol(member_symbol),
-            ) => {
-                if from_parent {
-                    member_symbol.parent_generic_arguments.types.$get(index)
-                } else {
-                    member_symbol.member_generic_arguments.types.$get(index)
-                }
-            }
-
-            _ => None,
-        }
-    };
-}
-
-macro_rules! get_sub_lifetime_impl {
-    ($location:ident, $self:ident, $get:ident, |$reference:ident| $reference_lt:expr) => {
-        match ($location, $self) {
-            (SubLifetimeLocation::Symbol(index), Self::Symbol(symbol)) => {
-                symbol.generic_arguments.lifetimes.$get(index)
-            }
-
-            (SubLifetimeLocation::Reference, Self::Reference($reference)) => Some($reference_lt),
-
-            (
-                SubLifetimeLocation::MemberSymbol { from_parent, index },
-                Self::MemberSymbol(member_symbol),
-            ) => {
-                if from_parent {
-                    member_symbol.parent_generic_arguments.lifetimes.$get(index)
-                } else {
-                    member_symbol.member_generic_arguments.lifetimes.$get(index)
-                }
-            }
-
-            _ => None,
-        }
-    };
-}
-
-macro_rules! get_sub_constant_impl {
-    ($location:ident, $self:ident, $get:ident, |$array:ident| $array_length:expr) => {
-        match ($location, $self) {
-            (SubConstantLocation::Symbol(index), Self::Symbol(symbol)) => {
-                symbol.generic_arguments.constants.$get(index)
-            }
-
-            (SubConstantLocation::Array, Self::Array($array)) => Some($array_length),
-
-            (
-                SubConstantLocation::MemberSymbol { from_parent, index },
-                Self::MemberSymbol(member_symbol),
-            ) => {
-                if from_parent {
-                    member_symbol.parent_generic_arguments.constants.$get(index)
-                } else {
-                    member_symbol.member_generic_arguments.constants.$get(index)
-                }
-            }
-
-            _ => None,
-        }
-    };
-}
-
 impl Term for Type {
     type SubConstantLocation = SubConstantLocation;
     type SubLifetimeLocation = SubLifetimeLocation;
     type SubTypeLocation = SubTypeLocation;
+    type ThisSubTermLocation = SubTypeLocation;
 
-    fn get_sub_type(&self, location: Self::SubTypeLocation) -> Option<&Type> {
-        get_sub_type_impl!(location, self, get, deref)
-    }
-
-    fn get_sub_type_mut(&mut self, location: Self::SubTypeLocation) -> Option<&mut Type> {
-        get_sub_type_impl!(location, self, get_mut, deref_mut)
-    }
-
-    fn get_sub_lifetime(&self, location: Self::SubLifetimeLocation) -> Option<&Lifetime> {
-        get_sub_lifetime_impl!(location, self, get, |reference| &reference.lifetime)
-    }
-
-    fn get_sub_lifetime_mut(
-        &mut self,
-        location: Self::SubLifetimeLocation,
-    ) -> Option<&mut Lifetime> {
-        get_sub_lifetime_impl!(location, self, get_mut, |reference| &mut reference.lifetime)
-    }
-
-    fn get_sub_constant(&self, location: Self::SubConstantLocation) -> Option<&Constant> {
-        get_sub_constant_impl!(location, self, get, |array| &array.length)
-    }
-
-    fn get_sub_constant_mut(
-        &mut self,
-        location: Self::SubConstantLocation,
-    ) -> Option<&mut Constant> {
-        get_sub_constant_impl!(location, self, get_mut, |array| &mut array.length)
-    }
-
-    fn substructural_match(&self, other: &Self) -> Option<Substructural> {
+    fn substructural_match(
+        &self,
+        other: &Self,
+    ) -> Option<
+        Substructural<Self::SubLifetimeLocation, Self::SubTypeLocation, Self::SubConstantLocation>,
+    > {
         match (self, other) {
-            (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => lhs
-                .generic_arguments
-                .substructural_match(&rhs.generic_arguments, Substructural::default()),
+            (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => {
+                lhs.generic_arguments.substructural_match(
+                    &rhs.generic_arguments,
+                    Substructural::default(),
+                    SubSymbolTermLocation,
+                )
+            }
 
             (Self::Pointer(lhs), Self::Pointer(rhs)) if lhs.qualifier == rhs.qualifier => {
                 Some(Substructural {
                     lifetimes: Vec::new(),
-                    types: vec![((*lhs.pointee).clone(), (*rhs.pointee).clone())],
+                    types: vec![Match {
+                        lhs: (*lhs.pointee).clone(),
+                        rhs: (*rhs.pointee).clone(),
+                        lhs_location: SubTypeLocation::Pointer,
+                        rhs_location: SubTypeLocation::Pointer,
+                    }],
                     constants: Vec::new(),
                 })
             }
 
             (Self::Reference(lhs), Self::Reference(rhs)) if lhs.qualifier == rhs.qualifier => {
                 Some(Substructural {
-                    lifetimes: vec![(lhs.lifetime, rhs.lifetime)],
-                    types: vec![((*lhs.pointee).clone(), (*rhs.pointee).clone())],
+                    lifetimes: vec![Match {
+                        lhs: lhs.lifetime,
+                        rhs: rhs.lifetime,
+                        lhs_location: SubLifetimeLocation::Reference,
+                        rhs_location: SubLifetimeLocation::Reference,
+                    }],
+                    types: vec![Match {
+                        lhs: (*lhs.pointee).clone(),
+                        rhs: (*rhs.pointee).clone(),
+                        lhs_location: SubTypeLocation::Reference,
+                        rhs_location: SubTypeLocation::Reference,
+                    }],
                     constants: Vec::new(),
                 })
             }
 
             (Self::Array(lhs), Self::Array(rhs)) => Some(Substructural {
                 lifetimes: Vec::new(),
-                types: vec![((*lhs.r#type).clone(), (*rhs.r#type).clone())],
-                constants: vec![(lhs.length.clone(), rhs.length.clone())],
+                types: vec![Match {
+                    lhs: (*lhs.r#type).clone(),
+                    rhs: (*rhs.r#type).clone(),
+                    lhs_location: SubTypeLocation::Array,
+                    rhs_location: SubTypeLocation::Array,
+                }],
+                constants: vec![Match {
+                    lhs: lhs.length.clone(),
+                    rhs: rhs.length.clone(),
+                    lhs_location: SubConstantLocation::Array,
+                    rhs_location: SubConstantLocation::Array,
+                }],
             }),
 
             (Self::Local(lhs), Self::Local(rhs)) => Some(Substructural {
                 lifetimes: Vec::new(),
-                types: vec![((*lhs.0).clone(), (*rhs.0).clone())],
+                types: vec![Match {
+                    lhs: (*lhs.0).clone(),
+                    rhs: (*rhs.0).clone(),
+                    lhs_location: SubTypeLocation::Local,
+                    rhs_location: SubTypeLocation::Local,
+                }],
                 constants: Vec::new(),
             }),
 
@@ -429,10 +333,23 @@ impl Term for Type {
 
             (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs)) if lhs.id == rhs.id => lhs
                 .parent_generic_arguments
-                .substructural_match(&rhs.parent_generic_arguments, Substructural::default())
+                .substructural_match(
+                    &rhs.parent_generic_arguments,
+                    Substructural::default(),
+                    |x| SubMemberSymbolTermLocation {
+                        index: x,
+                        from_parent: true,
+                    },
+                )
                 .and_then(|x| {
-                    lhs.member_generic_arguments
-                        .substructural_match(&rhs.member_generic_arguments, x)
+                    lhs.member_generic_arguments.substructural_match(
+                        &rhs.member_generic_arguments,
+                        x,
+                        |x| SubMemberSymbolTermLocation {
+                            index: x,
+                            from_parent: false,
+                        },
+                    )
                 }),
 
             _ => None,
@@ -467,20 +384,40 @@ impl Term for Type {
         }
     }
 
-    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {
-        &substructural.types
-    }
-
-    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
-        &mut substructural.types
-    }
-
     fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
         &unification.types
     }
 
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.types
+    }
+
+    fn get_substructural(
+        substructural: &Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &Vec<Match<Self, Self::ThisSubTermLocation>> {
+        &substructural.types
+    }
+
+    fn get_substructural_mut(
+        substructural: &mut Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>> {
+        &mut substructural.types
+    }
+
+    fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {
+        &generic_arguments.types
+    }
+
+    fn get_generic_arguments_mut(generic_arguments: &mut GenericArguments) -> &mut Vec<Self> {
+        &mut generic_arguments.types
     }
 }
 

@@ -7,7 +7,7 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 
-use super::{constant::Constant, r#type::Type, Never, Substructural, Term};
+use super::{GenericArguments, Match, Never, Substructural, Term};
 use crate::{
     semantic::{
         predicate::{NonEquality, Outlives, Satisfiability},
@@ -56,36 +56,16 @@ impl Term for Lifetime {
     type SubConstantLocation = Never;
     type SubLifetimeLocation = Never;
     type SubTypeLocation = Never;
+    type ThisSubTermLocation = Never;
 
-    fn get_sub_type(&self, location: Self::SubTypeLocation) -> Option<&Type> { match location {} }
-
-    fn get_sub_type_mut(&mut self, location: Self::SubTypeLocation) -> Option<&mut Type> {
-        match location {}
+    fn substructural_match(
+        &self,
+        _: &Self,
+    ) -> Option<
+        Substructural<Self::SubLifetimeLocation, Self::SubTypeLocation, Self::SubConstantLocation>,
+    > {
+        None
     }
-
-    fn get_sub_lifetime(&self, location: Self::SubLifetimeLocation) -> Option<&Lifetime> {
-        match location {}
-    }
-
-    fn get_sub_lifetime_mut(
-        &mut self,
-        location: Self::SubLifetimeLocation,
-    ) -> Option<&mut Lifetime> {
-        match location {}
-    }
-
-    fn get_sub_constant(&self, location: Self::SubConstantLocation) -> Option<&Constant> {
-        match location {}
-    }
-
-    fn get_sub_constant_mut(
-        &mut self,
-        location: Self::SubConstantLocation,
-    ) -> Option<&mut Constant> {
-        match location {}
-    }
-
-    fn substructural_match(&self, _: &Self) -> Option<Substructural> { None }
 
     fn is_tuple(&self) -> bool { false }
 
@@ -101,11 +81,23 @@ impl Term for Lifetime {
 
     fn definite_satisfiability(&self) -> Satisfiability { Satisfiability::Satisfied }
 
-    fn get_substructural(substructural: &Substructural) -> &Vec<(Self, Self)> {
+    fn get_substructural(
+        substructural: &Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &Vec<Match<Self, Self::ThisSubTermLocation>> {
         &substructural.lifetimes
     }
 
-    fn get_substructural_mut(substructural: &mut Substructural) -> &mut Vec<(Self, Self)> {
+    fn get_substructural_mut(
+        substructural: &mut Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>> {
         &mut substructural.lifetimes
     }
 
@@ -115,6 +107,14 @@ impl Term for Lifetime {
 
     fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.lifetimes
+    }
+
+    fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {
+        &generic_arguments.lifetimes
+    }
+
+    fn get_generic_arguments_mut(generic_arguments: &mut GenericArguments) -> &mut Vec<Self> {
+        &mut generic_arguments.lifetimes
     }
 }
 
