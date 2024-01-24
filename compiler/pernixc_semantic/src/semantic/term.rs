@@ -29,8 +29,10 @@ pub mod r#type;
 pub struct GenericArguments {
     /// The lifetimes supplied to the term.
     pub lifetimes: Vec<Lifetime>,
+    
     /// The types supplied to the term.
     pub types: Vec<Type>,
+
     /// The constants supplied to the term.
     pub constants: Vec<Constant>,
 }
