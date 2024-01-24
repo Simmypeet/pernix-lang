@@ -52,6 +52,7 @@ pub enum Lifetime {
     Parameter(LifetimeParameterID),
     Inference(Inference),
     Local(Local),
+    Forall(Forall),
 }
 
 impl Term for Lifetime {
