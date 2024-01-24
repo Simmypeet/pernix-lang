@@ -34,7 +34,7 @@ impl Forall {
     }
 }
 
-/// Represents a lifetime inference variable in hindley-milner type inference.
+/// Represents a lifetime inference variable in Hindley Milner type inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Inference(Never); /* will be changed */
 
@@ -42,7 +42,7 @@ pub struct Inference(Never); /* will be changed */
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Local(Never); /* will be changed */
 
-/// Represents a lifetiem annotation term.
+/// Represents a lifetime annotation term.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
 )]
