@@ -275,7 +275,6 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
 impl<T: Term> Tuple<T>
 where
     Self: TryFrom<T, Error = T> + Into<T>,
-    T::ThisSubTermLocation: From<SubTupleTermLocation>,
 {
     #[allow(clippy::too_many_lines)]
     fn substructural_match_internal<'a>(
@@ -283,6 +282,8 @@ where
         to: &'a Self,
         swap: bool,
     ) -> Option<Substructural<T::SubLifetimeLocation, T::SubTypeLocation, T::SubConstantLocation>>
+    where
+        T::ThisSubTermLocation: From<SubTupleTermLocation>,
     {
         fn push<T: Term>(
             lhs: T,
@@ -435,6 +436,8 @@ where
         &'a self,
         to: &'a Self,
     ) -> Option<Substructural<T::SubLifetimeLocation, T::SubTypeLocation, T::SubConstantLocation>>
+    where
+        T::ThisSubTermLocation: From<SubTupleTermLocation>,
     {
         Self::substructural_match_internal(self, to, false)
             .or_else(|| Self::substructural_match_internal(to, self, true))
