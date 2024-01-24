@@ -5,9 +5,9 @@ use std::collections::{HashMap, HashSet};
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, GenericArguments, Local, Match, MemberSymbol, Never,
-    SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTupleTermLocation, Substructural,
-    Symbol, Term,
+    constant::Constant, lifetime::Lifetime, AssignSubTermError, GenericArguments, Local, Match,
+    MemberSymbol, Never, SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTupleTermLocation,
+    Substructural, Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -356,6 +356,85 @@ impl Term for Type {
         }
     }
 
+    fn assign_sub_lifetime(
+        &mut self,
+        location: Self::SubLifetimeLocation,
+        sub_lifetime: Lifetime,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (self, location) {
+            (Self::Reference(reference), SubLifetimeLocation::Reference) => &mut reference.lifetime,
+            (Self::Symbol(symbol), SubLifetimeLocation::Symbol(location)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+            (Self::MemberSymbol(member_symbol), SubLifetimeLocation::MemberSymbol(location)) => {
+                member_symbol
+                    .get_term_mut(location)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_lifetime;
+        Ok(())
+    }
+
+    fn assign_sub_type(
+        &mut self,
+        location: Self::SubTypeLocation,
+        sub_type: Type,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (location, self) {
+            (SubTypeLocation::Symbol(location), Self::Symbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (SubTypeLocation::Pointer, Self::Pointer(pointer)) => &mut *pointer.pointee,
+
+            (SubTypeLocation::Reference, Self::Reference(reference)) => &mut *reference.pointee,
+
+            (SubTypeLocation::Array, Self::Array(array)) => &mut *array.r#type,
+
+            (SubTypeLocation::Tuple(location), Self::Tuple(tuple)) => {
+                return tuple.assign_sub_term(location, sub_type)
+            }
+
+            (SubTypeLocation::Local, Self::Local(local)) => &mut *local.0,
+
+            (SubTypeLocation::MemberSymbol(location), Self::MemberSymbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_type;
+        Ok(())
+    }
+
+    fn assign_sub_constant(
+        &mut self,
+        location: Self::SubConstantLocation,
+        sub_constant: Constant,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (location, self) {
+            (SubConstantLocation::Symbol(location), Self::Symbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (SubConstantLocation::MemberSymbol(location), Self::MemberSymbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (SubConstantLocation::Array, Self::Array(array)) => &mut array.length,
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_constant;
+        Ok(())
+    }
+
     fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
 
     fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
@@ -384,14 +463,6 @@ impl Term for Type {
         }
     }
 
-    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
-        &unification.types
-    }
-
-    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut unification.types
-    }
-
     fn get_substructural(
         substructural: &Substructural<
             Self::SubLifetimeLocation,
@@ -410,6 +481,14 @@ impl Term for Type {
         >,
     ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>> {
         &mut substructural.types
+    }
+
+    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
+        &unification.types
+    }
+
+    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut unification.types
     }
 
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {

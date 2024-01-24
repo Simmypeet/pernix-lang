@@ -7,7 +7,10 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 
-use super::{GenericArguments, Match, Never, Substructural, Term};
+use super::{
+    constant::Constant, r#type::Type, AssignSubTermError, GenericArguments, Match, Never,
+    Substructural, Term,
+};
 use crate::{
     semantic::{
         predicate::{NonEquality, Outlives, Satisfiability},
@@ -65,6 +68,30 @@ impl Term for Lifetime {
         Substructural<Self::SubLifetimeLocation, Self::SubTypeLocation, Self::SubConstantLocation>,
     > {
         None
+    }
+
+    fn assign_sub_lifetime(
+        &mut self,
+        location: Self::SubLifetimeLocation,
+        _: Lifetime,
+    ) -> Result<(), AssignSubTermError> {
+        match location {}
+    }
+
+    fn assign_sub_type(
+        &mut self,
+        location: Self::SubTypeLocation,
+        _: Type,
+    ) -> Result<(), AssignSubTermError> {
+        match location {}
+    }
+
+    fn assign_sub_constant(
+        &mut self,
+        location: Self::SubConstantLocation,
+        _: Constant,
+    ) -> Result<(), AssignSubTermError> {
+        match location {}
     }
 
     fn is_tuple(&self) -> bool { false }

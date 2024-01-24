@@ -29,7 +29,7 @@ pub mod r#type;
 pub struct GenericArguments {
     /// The lifetimes supplied to the term.
     pub lifetimes: Vec<Lifetime>,
-    
+
     /// The types supplied to the term.
     pub types: Vec<Type>,
 
@@ -45,6 +45,15 @@ pub struct Symbol<ID> {
 
     /// The generic arguments supplied to the symbol.
     pub generic_arguments: GenericArguments,
+}
+
+impl<ID> Symbol<ID> {
+    /// Returns a mutable reference to a particular sub-term of this generic arguments.
+    pub fn get_term_mut<T: Term>(&mut self, location: SubSymbolTermLocation) -> Option<&mut T> {
+        let generic_arguments = T::get_generic_arguments_mut(&mut self.generic_arguments);
+
+        generic_arguments.get_mut(location.0)
+    }
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic arguments.
@@ -66,6 +75,22 @@ pub struct MemberSymbol<ID> {
     pub parent_generic_arguments: GenericArguments,
 }
 
+impl<ID> MemberSymbol<ID> {
+    /// Returns a mutable reference to a particular sub-term of this generic arguments.
+    pub fn get_term_mut<T: Term>(
+        &mut self,
+        location: SubMemberSymbolTermLocation,
+    ) -> Option<&mut T> {
+        let generic_arguments = if location.from_parent {
+            T::get_generic_arguments_mut(&mut self.parent_generic_arguments)
+        } else {
+            T::get_generic_arguments_mut(&mut self.member_generic_arguments)
+        };
+
+        generic_arguments.get_mut(location.index)
+    }
+}
+
 /// Represents a sub-term location where the sub-term is stored as a generic arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubMemberSymbolTermLocation {
@@ -84,6 +109,32 @@ pub enum TupleElement<Term> {
 
     /// A term that can be unpacked into multiple terms.
     Unpacked(Term),
+}
+
+impl<Term> TupleElement<Term> {
+    /// Returns a reference to the term in this element.
+    #[must_use]
+    pub const fn as_term(&self) -> &Term {
+        match self {
+            Self::Unpacked(term) | Self::Regular(term) => term,
+        }
+    }
+
+    /// Returns a mutable reference to the term stored in this element.
+    #[must_use]
+    pub fn as_term_mut(&mut self) -> &mut Term {
+        match self {
+            Self::Unpacked(term) | Self::Regular(term) => term,
+        }
+    }
+
+    /// Returns the term stored in this element.
+    #[must_use]
+    pub fn into_term(self) -> Term {
+        match self {
+            Self::Unpacked(term) | Self::Regular(term) => term,
+        }
+    }
 }
 
 /// Represents a tuple of terms.
@@ -155,6 +206,18 @@ impl<L, T, C> Default for Substructural<L, T, C> {
 pub struct Local<T>(pub Box<T>)
 where
     Self: Into<T>;
+
+/// An error that occurs when assigning a sub-term to a term.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum AssignSubTermError {
+    #[error("the given location is invalid for this term")]
+    InvalidLocation,
+    #[error("the given term to assign was expected to be a tuple")]
+    TupleExpected,
+    #[error("the given tuple term to assign had a mismatched length")]
+    InvalidTupleRange,
+}
 
 /// Contains the functionality for determining the properties of a term.
 pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substitute {
@@ -230,6 +293,39 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
         Substructural<Self::SubLifetimeLocation, Self::SubTypeLocation, Self::SubConstantLocation>,
     >;
 
+    /// Assigns a sub-lifetime to a term.
+    ///
+    /// # Errors
+    ///
+    /// See [`AssignSubTermError`] for more information.
+    fn assign_sub_lifetime(
+        &mut self,
+        location: Self::SubLifetimeLocation,
+        sub_lifetime: Lifetime,
+    ) -> Result<(), AssignSubTermError>;
+
+    /// Assigns a sub-type to a term.
+    ///
+    /// # Errors
+    ///
+    /// See [`AssignSubTermError`] for more information.
+    fn assign_sub_type(
+        &mut self,
+        location: Self::SubTypeLocation,
+        sub_type: Type,
+    ) -> Result<(), AssignSubTermError>;
+
+    /// Assigns a sub-constant to a term.
+    ///
+    /// # Errors
+    ///
+    /// See [`AssignSubTermError`] for more information.
+    fn assign_sub_constant(
+        &mut self,
+        location: Self::SubConstantLocation,
+        sub_constant: Constant,
+    ) -> Result<(), AssignSubTermError>;
+
     #[doc(hidden)]
     fn is_tuple(&self) -> bool;
 
@@ -276,6 +372,46 @@ impl<T: Term> Tuple<T>
 where
     Self: TryFrom<T, Error = T> + Into<T>,
 {
+    fn assign_sub_term(
+        &mut self,
+        location: SubTupleTermLocation,
+        sub_term: T,
+    ) -> Result<(), AssignSubTermError> {
+        match location {
+            SubTupleTermLocation::Single(idx) => {
+                let element = self
+                    .elements
+                    .get_mut(idx)
+                    .map(TupleElement::as_term_mut)
+                    .ok_or(AssignSubTermError::InvalidLocation)?;
+
+                *element = sub_term;
+
+                Ok(())
+            }
+            SubTupleTermLocation::Range { begin, end } => {
+                let Ok(sub_constant_tuple) = Self::try_from(sub_term) else {
+                    return Err(AssignSubTermError::TupleExpected);
+                };
+
+                let tuple_elements = self
+                    .elements
+                    .get_mut(begin..end)
+                    .ok_or(AssignSubTermError::InvalidLocation)?;
+
+                if sub_constant_tuple.elements.len() != tuple_elements.len() {
+                    return Err(AssignSubTermError::InvalidLocation);
+                }
+
+                for (lhs, rhs) in tuple_elements.iter_mut().zip(sub_constant_tuple.elements) {
+                    *lhs = rhs;
+                }
+
+                Ok(())
+            }
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn substructural_match_internal<'a>(
         from: &'a Self,

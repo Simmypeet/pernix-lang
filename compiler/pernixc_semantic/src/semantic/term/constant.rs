@@ -9,8 +9,9 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    GenericArguments, Local, Match, MemberSymbol, Never, SubMemberSymbolTermLocation,
-    SubSymbolTermLocation, SubTupleTermLocation, Substructural, Symbol, Term,
+    lifetime::Lifetime, r#type::Type, AssignSubTermError, GenericArguments, Local, Match,
+    MemberSymbol, Never, SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTupleTermLocation,
+    Substructural, Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -315,6 +316,95 @@ impl Term for Constant {
         }
     }
 
+    fn assign_sub_lifetime(
+        &mut self,
+        location: Self::SubLifetimeLocation,
+        sub_lifetime: Lifetime,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (location, self) {
+            (SubLifetimeLocation::Symbol(location), Self::Symbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+            (SubLifetimeLocation::MemberSymbol(location), Self::MemberSymbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_lifetime;
+
+        Ok(())
+    }
+
+    fn assign_sub_type(
+        &mut self,
+        location: Self::SubTypeLocation,
+        sub_type: Type,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (location, self) {
+            (SubTypeLocation::Symbol(location), Self::Symbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (SubTypeLocation::MemberSymbol(location), Self::MemberSymbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_type;
+
+        Ok(())
+    }
+
+    fn assign_sub_constant(
+        &mut self,
+        location: Self::SubConstantLocation,
+        sub_constant: Constant,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (location, self) {
+            (SubConstantLocation::Tuple(location), Self::Tuple(tuple)) => {
+                return tuple.assign_sub_term(location, sub_constant)
+            }
+
+            (SubConstantLocation::Struct(location), Self::Struct(constant)) => constant
+                .fields
+                .get_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (
+                SubConstantLocation::Enum,
+                Self::Enum(Enum {
+                    associated_value: Some(constant),
+                    ..
+                }),
+            ) => constant,
+
+            (SubConstantLocation::Array(location), Self::Array(constant)) => constant
+                .elements
+                .get_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (SubConstantLocation::Symbol(location), Self::Symbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (SubConstantLocation::MemberSymbol(location), Self::MemberSymbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (SubConstantLocation::Local, Self::Local(local)) => &mut local.0,
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_constant;
+
+        Ok(())
+    }
+
     fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
 
     fn outlives_predicates<'a>(_: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
@@ -340,14 +430,6 @@ impl Term for Constant {
         }
     }
 
-    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
-        &unification.constants
-    }
-
-    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut unification.constants
-    }
-
     fn get_substructural(
         substructural: &Substructural<
             Self::SubLifetimeLocation,
@@ -366,6 +448,14 @@ impl Term for Constant {
         >,
     ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>> {
         &mut substructural.constants
+    }
+
+    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
+        &unification.constants
+    }
+
+    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut unification.constants
     }
 
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {
