@@ -185,7 +185,7 @@ pub fn unify<
         }
     }
 
-    // try to look for equivalent terms in the preimse
+    // try to look for equivalent terms in the premise
     for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
         if equals(lhs, key, premise, table, semantic, session)? {
             for value in values {
