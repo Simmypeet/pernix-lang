@@ -245,12 +245,6 @@ pub trait Global {
     fn get_member(&self, name: &str) -> Option<GlobalID>;
 
     /// Location of where the symbol is declared.
-
-    /// Gets the list of [`GlobalID`] that this symbol depends on.
-    ///
-    /// For something to be considered as a *dependency*, it must appear in the
-    /// declaration or definition of the symbol.
-    fn dependencies(&self) -> HashSet<GlobalID>;
     fn span(&self) -> Option<&Span>;
 }
 
@@ -324,13 +318,6 @@ impl Global for Module {
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
-    fn dependencies(&self) -> HashSet<GlobalID> {
-        self.module_child_ids_by_name
-            .values()
-            .copied()
-            .map(Into::into)
-            .collect()
-    }
 }
 
 /// Represents a lifetime parameter, denoted by `'a` syntax.
@@ -520,7 +507,6 @@ impl Global for Struct {
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -555,7 +541,6 @@ impl Global for Variant {
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -612,7 +597,6 @@ impl Global for Enum {
         self.variant_ids_by_name.get(name).copied().map(GlobalID::Variant)
     }
 
-    fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -673,7 +657,6 @@ where
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -734,7 +717,6 @@ where
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -832,7 +814,6 @@ where
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -972,7 +953,6 @@ where
         self.data.get_member(name).map(Into::into)
     }
 
-    fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -1240,7 +1220,6 @@ impl Global for Trait {
         })
     }
 
-    fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
