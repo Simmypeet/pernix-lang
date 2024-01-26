@@ -21,8 +21,8 @@ use super::{
     Premise,
 };
 use crate::{
-    arena::Arena,
-    symbol::{GenericParameters, Variance},
+    arena::{Arena, ID},
+    symbol::{GenericID, GenericParameters, MemberID, Variance},
     table::{State, Table},
 };
 
@@ -436,6 +436,11 @@ pub trait Term:
     fn get_generic_parameters(
         parameters: &GenericParameters,
     ) -> &Arena<Self::GenericParameter>;
+
+    #[doc(hidden)]
+    fn get_generic_parameter_order(
+        parameters: &GenericParameters,
+    ) -> &[ID<Self::GenericParameter>];
 
     #[doc(hidden)]
     fn get_unification(

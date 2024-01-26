@@ -12,7 +12,7 @@ use super::{
     GetVarianceError, Match, Never, Substructural, Term,
 };
 use crate::{
-    arena::Arena,
+    arena::{Arena, ID},
     semantic::{
         predicate::{NonEquality, Outlives, Satisfiability},
         unification::Unification,
@@ -69,11 +69,11 @@ pub enum Lifetime {
 }
 
 impl Term for Lifetime {
-    type GenericParameter = LifetimeParameter;
-    type SubConstantLocation = Never;
-    type SubLifetimeLocation = Never;
     type SubTypeLocation = Never;
+    type SubLifetimeLocation = Never;
+    type SubConstantLocation = Never;
     type ThisSubTermLocation = Never;
+    type GenericParameter = LifetimeParameter;
 
     fn substructural_match(
         &self,
@@ -178,6 +178,12 @@ impl Term for Lifetime {
         parameters: &GenericParameters,
     ) -> &Arena<Self::GenericParameter> {
         &parameters.lifetimes
+    }
+
+    fn get_generic_parameter_order(
+        parameters: &GenericParameters,
+    ) -> &[ID<Self::GenericParameter>] {
+        &parameters.lifetime_order
     }
 
     fn get_unification(

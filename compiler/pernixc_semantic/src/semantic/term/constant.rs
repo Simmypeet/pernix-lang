@@ -226,11 +226,11 @@ impl Default for Constant {
 }
 
 impl Term for Constant {
-    type GenericParameter = ConstantParameter;
-    type SubConstantLocation = SubConstantLocation;
-    type SubLifetimeLocation = SubLifetimeLocation;
     type SubTypeLocation = SubTypeLocation;
+    type SubLifetimeLocation = SubLifetimeLocation;
+    type SubConstantLocation = SubConstantLocation;
     type ThisSubTermLocation = SubConstantLocation;
+    type GenericParameter = ConstantParameter;
 
     #[allow(clippy::too_many_lines)]
     fn substructural_match(
@@ -533,6 +533,18 @@ impl Term for Constant {
         &mut substructural.constants
     }
 
+    fn get_generic_parameters(
+        parameters: &GenericParameters,
+    ) -> &Arena<Self::GenericParameter> {
+        &parameters.constants
+    }
+
+    fn get_generic_parameter_order(
+        parameters: &GenericParameters,
+    ) -> &[ID<Self::GenericParameter>] {
+        &parameters.constant_order
+    }
+
     fn get_unification(
         unification: &Unification,
     ) -> &HashMap<Self, HashSet<Self>> {
@@ -553,12 +565,6 @@ impl Term for Constant {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.constants
-    }
-
-    fn get_generic_parameters(
-        parameters: &GenericParameters,
-    ) -> &Arena<Self::GenericParameter> {
-        &parameters.constants
     }
 }
 

@@ -292,11 +292,11 @@ impl Default for Type {
 }
 
 impl Term for Type {
-    type GenericParameter = TypeParameter;
-    type SubConstantLocation = SubConstantLocation;
-    type SubLifetimeLocation = SubLifetimeLocation;
     type SubTypeLocation = SubTypeLocation;
+    type SubLifetimeLocation = SubLifetimeLocation;
+    type SubConstantLocation = SubConstantLocation;
     type ThisSubTermLocation = SubTypeLocation;
+    type GenericParameter = TypeParameter;
 
     fn substructural_match(
         &self,
@@ -663,6 +663,12 @@ impl Term for Type {
         parameters: &GenericParameters,
     ) -> &Arena<Self::GenericParameter> {
         &parameters.types
+    }
+
+    fn get_generic_parameter_order(
+        parameters: &GenericParameters,
+    ) -> &[ID<Self::GenericParameter>] {
+        &parameters.type_order
     }
 
     fn get_unification(
