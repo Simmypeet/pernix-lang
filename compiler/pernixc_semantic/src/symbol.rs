@@ -245,13 +245,13 @@ pub trait Global {
     fn get_member(&self, name: &str) -> Option<GlobalID>;
 
     /// Location of where the symbol is declared.
-    fn span(&self) -> Option<Span>;
 
     /// Gets the list of [`GlobalID`] that this symbol depends on.
     ///
     /// For something to be considered as a *dependency*, it must appear in the
     /// declaration or definition of the symbol.
     fn dependencies(&self) -> HashSet<GlobalID>;
+    fn span(&self) -> Option<&Span>;
 }
 
 /// An ID to all kinds of symbols that can be defined in a module.
@@ -321,7 +321,8 @@ impl Global for Module {
         self.module_child_ids_by_name.get(name).copied().map(Into::into)
     }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
+}
 
     fn dependencies(&self) -> HashSet<GlobalID> {
         self.module_child_ids_by_name
@@ -519,9 +520,8 @@ impl Global for Struct {
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
-
     fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 /// Represents an enum variant declaration, denoted by `NAME(ASSOC_TYPE)`
@@ -555,9 +555,8 @@ impl Global for Variant {
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
-
     fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 /// Represents an enum declaration, denoted by `enum NAME { ... }` syntax.
@@ -613,9 +612,8 @@ impl Global for Enum {
         self.variant_ids_by_name.get(name).copied().map(GlobalID::Variant)
     }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
-
     fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 /// A template struct representing all kinds of type alias declarations.
@@ -675,9 +673,8 @@ where
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
-
     fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 impl<ParentID, Data> Generic for TypeTemplate<ParentID, Data>
@@ -737,9 +734,8 @@ where
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
-
     fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 impl<ParentID, Data> Generic for ConstantTemplate<ParentID, Data>
@@ -836,9 +832,8 @@ where
 
     fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
-
     fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 impl<ParentID, Data> Generic for FunctionTemplate<ParentID, Data>
@@ -977,9 +972,8 @@ where
         self.data.get_member(name).map(Into::into)
     }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
-
     fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 impl<ImplementedID, Data: ImplementationData> Generic
@@ -1246,9 +1240,8 @@ impl Global for Trait {
         })
     }
 
-    fn span(&self) -> Option<Span> { self.span.clone() }
-
     fn dependencies(&self) -> HashSet<GlobalID> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 /// Enumeration of all kinds of generic parameters.
