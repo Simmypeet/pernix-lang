@@ -7,7 +7,9 @@ use proptest::{
 use super::{Array, Constant, Enum, MemberSymbolKindID, Primitive, Struct};
 use crate::{
     arena::ID,
-    semantic::term::{lifetime::Lifetime, r#type::Type, Local, MemberSymbol, Symbol, Tuple},
+    semantic::term::{
+        lifetime::Lifetime, r#type::Type, Local, MemberSymbol, Symbol, Tuple,
+    },
     symbol::ConstantParameterID,
 };
 
@@ -54,7 +56,10 @@ impl Arbitrary for Struct {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             ID::arbitrary(),
-            proptest::collection::vec(args.unwrap_or_else(Constant::arbitrary), 0..=2),
+            proptest::collection::vec(
+                args.unwrap_or_else(Constant::arbitrary),
+                0..=2,
+            ),
         )
             .prop_map(|(id, fields)| Self { id, fields })
             .boxed()
@@ -83,14 +88,18 @@ impl Arbitrary for Array {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(args.unwrap_or_else(Constant::arbitrary), 0..=2)
-            .prop_map(|elements| Self { elements })
-            .boxed()
+        proptest::collection::vec(
+            args.unwrap_or_else(Constant::arbitrary),
+            0..=2,
+        )
+        .prop_map(|elements| Self { elements })
+        .boxed()
     }
 }
 
 impl Arbitrary for Constant {
-    type Parameters = (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Type>>);
+    type Parameters =
+        (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Type>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(param: Self::Parameters) -> Self::Strategy {

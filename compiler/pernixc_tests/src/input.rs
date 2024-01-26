@@ -1,4 +1,5 @@
-//! This module provides a trait [`Input`] for representing inputs generated for testing purposes
+//! This module provides a trait [`Input`] for representing inputs generated for
+//! testing purposes
 
 use std::fmt::Debug;
 
@@ -21,7 +22,9 @@ where
     for<'a, 'b> &'a U: Input<&'b T>,
     Self: Debug,
 {
-    fn assert(self, output: &Box<T>) -> TestCaseResult { self.as_ref().assert(output.as_ref()) }
+    fn assert(self, output: &Box<T>) -> TestCaseResult {
+        self.as_ref().assert(output.as_ref())
+    }
 }
 
 impl<T: Debug, U: Debug + Input<T>> Input<Option<T>> for Option<U> {

@@ -3,26 +3,30 @@
 use thiserror::Error;
 
 use super::term::{
-    constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Tuple, TupleElement,
+    constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
+    Tuple, TupleElement,
 };
 
 /// Represents a visitor that visits a term.
 pub trait Visitor {
     /// Visits a type.
     ///
-    /// Returns `true` if the visitor should continue visiting the sub-terms of the type.
+    /// Returns `true` if the visitor should continue visiting the sub-terms of
+    /// the type.
     #[must_use]
     fn visit_type(&mut self, ty: &Type) -> bool;
 
     /// Visits a lifetime.
     ///
-    /// Returns `true` if the visitor should continue visiting the sub-terms of the lifetime.
+    /// Returns `true` if the visitor should continue visiting the sub-terms of
+    /// the lifetime.
     #[must_use]
     fn visit_lifetime(&mut self, lifetime: &Lifetime) -> bool;
 
     /// Visits a constant.  
     ///
-    /// Returns `true` if the visitor should continue visiting the sub-terms of the constant.
+    /// Returns `true` if the visitor should continue visiting the sub-terms of
+    /// the constant.
     #[must_use]
     fn visit_constant(&mut self, constant: &Constant) -> bool;
 }
@@ -76,13 +80,15 @@ pub trait Element {
     ///
     /// # Example
     ///
-    /// When a term `Type[int32, Vec[float32]]` got called, the visitor will be visiting only
-    /// `int32` and `Vec[int32]` (i.e. the sub-terms of the term), which is unlike the `accept`
-    /// method that will also visit the term itself and `float32`.
+    /// When a term `Type[int32, Vec[float32]]` got called, the visitor will be
+    /// visiting only `int32` and `Vec[int32]` (i.e. the sub-terms of the
+    /// term), which is unlike the `accept` method that will also visit the
+    /// term itself and `float32`.
     ///
     /// # Returns
     ///
-    /// If returns boolean false, the visitor will early stop visiting the sub-terms of the term.
+    /// If returns boolean false, the visitor will early stop visiting the
+    /// sub-terms of the term.
     ///
     /// # Errors
     ///
@@ -97,13 +103,17 @@ pub trait Element {
 ///
 /// # Example
 ///
-/// When a term `Type[int32, Vec[float32]]` got called, the visitor will be visiting
-/// `Type[int32, Vec[float32]]`, `int32`, `Vec[float32]`, and `float32`.
+/// When a term `Type[int32, Vec[float32]]` got called, the visitor will be
+/// visiting `Type[int32, Vec[float32]]`, `int32`, `Vec[float32]`, and
+/// `float32`.
 ///
 /// # Returns
 ///
 /// Returns `true` if the visitor has visited all of the sub-terms of the term.
-pub fn accept_recursive(element: &impl Element, visitor: &mut impl Visitor) -> bool {
+pub fn accept_recursive(
+    element: &impl Element,
+    visitor: &mut impl Visitor,
+) -> bool {
     if !element.accept_single(visitor) {
         return false;
     }
@@ -160,7 +170,9 @@ impl GenericArguments {
 }
 
 impl Element for Type {
-    fn accept_single(&self, visitor: &mut impl Visitor) -> bool { visitor.visit_type(self) }
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
+        visitor.visit_type(self)
+    }
 
     fn accept_one_level(
         &self,
@@ -179,12 +191,10 @@ impl Element for Type {
                 Ok(true)
             }
             Self::Pointer(term) => Ok(visitor.visit_type(&term.pointee)),
-            Self::Reference(term) => {
-                Ok(visitor.visit_lifetime(&term.lifetime) && visitor.visit_type(&term.pointee))
-            }
-            Self::Array(term) => {
-                Ok(visitor.visit_type(&term.r#type) && visitor.visit_constant(&term.length))
-            }
+            Self::Reference(term) => Ok(visitor.visit_lifetime(&term.lifetime)
+                && visitor.visit_type(&term.pointee)),
+            Self::Array(term) => Ok(visitor.visit_type(&term.r#type)
+                && visitor.visit_constant(&term.length)),
             Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
             Self::Local(local) => Ok(visitor.visit_type(&local.0)),
             Self::MemberSymbol(implementation) => Ok(implementation
@@ -198,15 +208,22 @@ impl Element for Type {
 }
 
 impl Element for Lifetime {
-    fn accept_single(&self, visitor: &mut impl Visitor) -> bool { visitor.visit_lifetime(self) }
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
+        visitor.visit_lifetime(self)
+    }
 
-    fn accept_one_level(&self, _: &mut impl Visitor) -> Result<bool, VisitNonApplicationTermError> {
+    fn accept_one_level(
+        &self,
+        _: &mut impl Visitor,
+    ) -> Result<bool, VisitNonApplicationTermError> {
         Err(VisitNonApplicationTermError)
     }
 }
 
 impl Element for Constant {
-    fn accept_single(&self, visitor: &mut impl Visitor) -> bool { visitor.visit_constant(self) }
+    fn accept_single(&self, visitor: &mut impl Visitor) -> bool {
+        visitor.visit_constant(self)
+    }
 
     fn accept_one_level(
         &self,
@@ -230,13 +247,19 @@ impl Element for Constant {
                 .associated_value
                 .as_ref()
                 .map_or(true, |x| visitor.visit_constant(x))),
-            Self::Array(term) => Ok(term.elements.iter().all(|x| visitor.visit_constant(x))),
+            Self::Array(term) => {
+                Ok(term.elements.iter().all(|x| visitor.visit_constant(x)))
+            }
 
             Self::Local(local) => Ok(visitor.visit_constant(&local.0)),
             Self::Tuple(tuple) => Ok(tuple.accept_one_level(visitor)),
-            Self::Symbol(symbol) => Ok(symbol.generic_arguments.accept_one_level(visitor)),
-            Self::MemberSymbol(term) => Ok(term.member_generic_arguments.accept_one_level(visitor)
-                && term.parent_generic_arguments.accept_one_level(visitor)),
+            Self::Symbol(symbol) => {
+                Ok(symbol.generic_arguments.accept_one_level(visitor))
+            }
+            Self::MemberSymbol(term) => {
+                Ok(term.member_generic_arguments.accept_one_level(visitor)
+                    && term.parent_generic_arguments.accept_one_level(visitor))
+            }
         }
     }
 }

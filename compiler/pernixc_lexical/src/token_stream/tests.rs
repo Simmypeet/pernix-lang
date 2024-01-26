@@ -23,15 +23,9 @@ impl Arbitrary for Delimiter {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Just(Self {
-                delimiter: super::Delimiter::Parenthesis
-            }),
-            Just(Self {
-                delimiter: super::Delimiter::Brace
-            }),
-            Just(Self {
-                delimiter: super::Delimiter::Bracket
-            }),
+            Just(Self { delimiter: super::Delimiter::Parenthesis }),
+            Just(Self { delimiter: super::Delimiter::Brace }),
+            Just(Self { delimiter: super::Delimiter::Bracket }),
         ]
         .boxed()
     }
@@ -51,7 +45,9 @@ impl Arbitrary for Delimited {
     type Parameters = Option<BoxedStrategy<TokenStream>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(token_stream_strategy: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(
+        token_stream_strategy: Self::Parameters,
+    ) -> Self::Strategy {
         (
             Delimiter::arbitrary(),
             token_stream_strategy.unwrap_or_else(TokenStream::arbitrary),
@@ -134,8 +130,12 @@ impl Input<&super::TokenTree> for &TokenTree {
     fn assert(self, output: &super::TokenTree) -> TestCaseResult {
         match (self, output) {
             (TokenTree::Token(i), super::TokenTree::Token(o)) => i.assert(o)?,
-            (TokenTree::Delimited(i), super::TokenTree::Delimited(o)) => i.assert(o)?,
-            _ => return Err(TestCaseError::fail("token tree variant mismatch")),
+            (TokenTree::Delimited(i), super::TokenTree::Delimited(o)) => {
+                i.assert(o)?;
+            }
+            _ => {
+                return Err(TestCaseError::fail("token tree variant mismatch"))
+            }
         }
 
         Ok(())
@@ -209,9 +209,13 @@ impl Arbitrary for SignificantToken {
             token::tests::Keyword::arbitrary().prop_map(Self::Keyword),
             token::tests::Numeric::arbitrary().prop_map(Self::NumericLiteral),
             token::tests::Punctuation::arbitrary().prop_filter_map(
-                "filters out the punctuation that might collide with the delimiters",
+                "filters out the punctuation that might collide with the \
+                 delimiters",
                 |p| {
-                    if matches!(p.punctuation, '(' | ')' | '{' | '}' | '[' | ']') {
+                    if matches!(
+                        p.punctuation,
+                        '(' | ')' | '{' | '}' | '[' | ']'
+                    ) {
                         None
                     } else {
                         Some(Self::Punctuation(p))
@@ -239,9 +243,7 @@ impl Arbitrary for TokenStream {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let leaf = Just(Self {
-            token_trees: vec![],
-        });
+        let leaf = Just(Self { token_trees: vec![] });
         leaf.prop_recursive(4, 24, 6, |inner| {
             proptest::collection::vec(
                 prop_oneof![
@@ -257,11 +259,14 @@ impl Arbitrary for TokenStream {
                                         SignificantToken::Punctuation(p),
                                         InsignificantToken::Comment(..),
                                     ) if p.punctuation == '/' => None,
-                                    (s, i) => Some(TokenStreamPart::Tokens(s, i)),
+                                    (s, i) => {
+                                        Some(TokenStreamPart::Tokens(s, i))
+                                    }
                                 }
                             }
                         ),
-                    Delimited::arbitrary_with(Some(inner)).prop_map(TokenStreamPart::Delimited),
+                    Delimited::arbitrary_with(Some(inner))
+                        .prop_map(TokenStreamPart::Delimited),
                 ],
                 0..=6,
             )
@@ -269,9 +274,9 @@ impl Arbitrary for TokenStream {
                 let mut tokens = Vec::new();
                 for token_part in token_parts {
                     match token_part {
-                        TokenStreamPart::Tokens(sig, insig) => {
+                        TokenStreamPart::Tokens(sig, insignificant) => {
                             tokens.push(TokenTree::Token(sig.into()));
-                            tokens.push(TokenTree::Token(insig.into()));
+                            tokens.push(TokenTree::Token(insignificant.into()));
                         }
                         TokenStreamPart::Delimited(delimited) => {
                             tokens.push(TokenTree::Delimited(delimited));
@@ -279,9 +284,7 @@ impl Arbitrary for TokenStream {
                     }
                 }
 
-                Self {
-                    token_trees: tokens,
-                }
+                Self { token_trees: tokens }
             })
         })
         .boxed()

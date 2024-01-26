@@ -7,7 +7,9 @@ use pernixc_base::log::{Message, Severity, SourceCodeDisplay};
 use pernixc_lexical::token::{KeywordKind, Token};
 
 /// Enumeration of all possible syntax kinds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 #[allow(missing_docs)]
 pub enum SyntaxKind {
     RefutablePattern,
@@ -31,8 +33,12 @@ pub enum SyntaxKind {
 impl SyntaxKind {
     fn get_expected_string(self) -> String {
         match self {
-            Self::IrrefutablePattern => "an irrefutable pattern syntax".to_string(),
-            Self::HigherRankedBound => "a higher ranked bound syntax".to_string(),
+            Self::IrrefutablePattern => {
+                "an irrefutable pattern syntax".to_string()
+            }
+            Self::HigherRankedBound => {
+                "a higher ranked bound syntax".to_string()
+            }
             Self::GenericParameter => "a generic parameter syntax".to_string(),
             Self::Identifier => "an identifier token".to_string(),
             Self::Predicate => "a predicate syntax".to_string(),
@@ -42,9 +48,13 @@ impl SyntaxKind {
             Self::Item => "an item syntax".to_string(),
             Self::AccessModifier => "an access modifier syntax".to_string(),
             Self::Punctuation(char) => format!("a punctuation token `{char}`"),
-            Self::Keyword(keyword) => format!("a keyword token `{}`", keyword.as_str()),
+            Self::Keyword(keyword) => {
+                format!("a keyword token `{}`", keyword.as_str())
+            }
             Self::TraitMember => "a trait member syntax".to_string(),
-            Self::ImplementationMember => "an implements member syntax".to_string(),
+            Self::ImplementationMember => {
+                "an implements member syntax".to_string()
+            }
             Self::RefutablePattern => "a refutable pattern syntax".to_string(),
             Self::Numeric => "a numeric token".to_string(),
         }
@@ -68,11 +78,13 @@ impl Error {
     fn get_expected_string(&self) -> String {
         match self.alternatives.len() {
             0 => self.expected.get_expected_string(),
-            1 => format!(
-                "{} or {}",
-                self.expected.get_expected_string(),
-                self.alternatives[0].get_expected_string()
-            ),
+            1 => {
+                format!(
+                    "{} or {}",
+                    self.expected.get_expected_string(),
+                    self.alternatives[0].get_expected_string()
+                )
+            }
             _ => {
                 format!(
                     "{}, or {}",
@@ -108,7 +120,8 @@ impl Display for Error {
             None => "EOF".to_string(),
         };
 
-        let message = format!("expected {expected_string}, but found {found_string}");
+        let message =
+            format!("expected {expected_string}, but found {found_string}");
 
         write!(f, "{}", Message::new(Severity::Error, message))?;
 

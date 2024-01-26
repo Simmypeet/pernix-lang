@@ -15,8 +15,9 @@ use pernixc_lexical::{
 };
 
 use super::{
-    expression::Expression, pattern, r#type, statement::Statement, AccessModifier, ConnectedList,
-    ConstantArgument, Lifetime, LifetimeIdentifier, QualifiedIdentifier, ScopeSeparator,
+    expression::Expression, pattern, r#type, statement::Statement,
+    AccessModifier, ConnectedList, ConstantArgument, Lifetime,
+    LifetimeIdentifier, QualifiedIdentifier, ScopeSeparator,
 };
 use crate::{
     error::{Error, SyntaxKind},
@@ -61,7 +62,9 @@ pub struct Using {
 }
 
 impl SourceElement for Using {
-    fn span(&self) -> Span { self.using_keyword.span.join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.using_keyword.span.join(&self.semicolon.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -80,10 +83,7 @@ pub struct ModuleSignature {
 
 impl SourceElement for ModuleSignature {
     fn span(&self) -> Span {
-        self.module_keyword
-            .span
-            .join(&self.identifier.span)
-            .unwrap()
+        self.module_keyword.span.join(&self.identifier.span).unwrap()
     }
 }
 
@@ -112,7 +112,9 @@ impl Module {
 }
 
 impl SourceElement for Module {
-    fn span(&self) -> Span { self.access_modifier.span().join(&self.kind.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.access_modifier.span().join(&self.kind.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -133,7 +135,9 @@ pub struct ModuleContent {
 impl ModuleContent {
     /// Dissolves the [`ModuleContent`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Vec<Using>, Vec<Item>) { (self.usings, self.items) }
+    pub fn dissolve(self) -> (Vec<Using>, Vec<Item>) {
+        (self.usings, self.items)
+    }
 }
 
 /// Syntax Synopsis:
@@ -183,7 +187,9 @@ impl ModuleBody {
 }
 
 impl SourceElement for ModuleBody {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -201,7 +207,9 @@ pub struct LifetimeParameter {
 }
 
 impl SourceElement for LifetimeParameter {
-    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span).unwrap() }
+    fn span(&self) -> Span {
+        self.apostrophe.span.join(&self.identifier.span).unwrap()
+    }
 }
 
 /// Represents a syntax tree node for a default generic parameter.
@@ -214,7 +222,9 @@ pub struct DefaultGenericParameter<Value: SourceElement> {
 }
 
 impl<Value: SourceElement> SourceElement for DefaultGenericParameter<Value> {
-    fn span(&self) -> Span { self.equals.span.join(&self.value.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.equals.span.join(&self.value.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -259,12 +269,10 @@ impl SourceElement for TypeParameter {
     fn span(&self) -> Span {
         self.identifier
             .span
-            .join(
-                &self
-                    .default
-                    .as_ref()
-                    .map_or_else(|| self.identifier.span.clone(), SourceElement::span),
-            )
+            .join(&self.default.as_ref().map_or_else(
+                || self.identifier.span.clone(),
+                SourceElement::span,
+            ))
             .unwrap()
     }
 }
@@ -333,7 +341,9 @@ impl SourceElement for ConstantParameter {
 ///     | ConstantParameter
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 pub enum GenericParameter {
     Lifetime(LifetimeParameter),
     Type(TypeParameter),
@@ -377,17 +387,16 @@ pub struct GenericParameters {
 impl GenericParameters {
     /// Dissolves the [`GenericParameters`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Option<GenericParameterList>, Punctuation) {
+    pub fn dissolve(
+        self,
+    ) -> (Punctuation, Option<GenericParameterList>, Punctuation) {
         (self.left_bracket, self.parameter_list, self.right_bracket)
     }
 }
 
 impl SourceElement for GenericParameters {
     fn span(&self) -> Span {
-        self.left_bracket
-            .span
-            .join(&self.right_bracket.span)
-            .unwrap()
+        self.left_bracket.span.join(&self.right_bracket.span).unwrap()
     }
 }
 
@@ -412,17 +421,16 @@ impl LifetimePredicate {
     #[must_use]
     pub fn dissolve(
         self,
-    ) -> (
-        BoundList<LifetimePredicateOperand>,
-        Punctuation,
-        BoundList<Lifetime>,
-    ) {
+    ) -> (BoundList<LifetimePredicateOperand>, Punctuation, BoundList<Lifetime>)
+    {
         (self.operands, self.colon, self.bounds)
     }
 }
 
 impl SourceElement for LifetimePredicate {
-    fn span(&self) -> Span { self.operands.span().join(&self.bounds.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.operands.span().join(&self.bounds.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -441,14 +449,16 @@ pub enum LifetimePredicateOperand {
 impl SourceElement for LifetimePredicateOperand {
     fn span(&self) -> Span {
         match self {
-            Self::LifetimeParameter(lifetime_parameter) => lifetime_parameter.span(),
+            Self::LifetimeParameter(lifetime_parameter) => {
+                lifetime_parameter.span()
+            }
             Self::Type(ty) => ty.span(),
         }
     }
 }
 
-/// Similar to [`ConnectedList`] but specifically for list of constraints separated by plus sings
-/// and has no trailing separator.
+/// Similar to [`ConnectedList`] but specifically for list of constraints
+/// separated by plus sings and has no trailing separator.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct BoundList<T> {
     /// The first element of the list.
@@ -499,7 +509,9 @@ pub struct ConstantTypePredicate {
 }
 
 impl SourceElement for ConstantTypePredicate {
-    fn span(&self) -> Span { self.const_keyword.span.join(&self.types.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.const_keyword.span.join(&self.types.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -543,7 +555,9 @@ impl TuplePredicate {
 ///     | TuplePredicate
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 pub enum Predicate {
     TraitMember(TraitMemberPredicate),
     Trait(TraitPredicate),
@@ -605,17 +619,16 @@ pub struct TraitMemberPredicate {
 impl TraitMemberPredicate {
     /// Dissolves the [`TraitMemberBound`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (QualifiedIdentifier, Punctuation, TraitMemberBound) {
+    pub fn dissolve(
+        self,
+    ) -> (QualifiedIdentifier, Punctuation, TraitMemberBound) {
         (self.qualified_identifier, self.equals, self.bound)
     }
 }
 
 impl SourceElement for TraitMemberPredicate {
     fn span(&self) -> Span {
-        self.qualified_identifier
-            .span()
-            .join(&self.bound.span())
-            .unwrap()
+        self.qualified_identifier.span().join(&self.bound.span()).unwrap()
     }
 }
 
@@ -632,17 +645,15 @@ pub struct HigherRankedLifetimeParameters {
     #[get = "pub"]
     left_bracket: Punctuation,
     #[get = "pub"]
-    lifetime_parameter_list: Option<ConnectedList<LifetimeParameter, Punctuation>>,
+    lifetime_parameter_list:
+        Option<ConnectedList<LifetimeParameter, Punctuation>>,
     #[get = "pub"]
     right_bracket: Punctuation,
 }
 
 impl SourceElement for HigherRankedLifetimeParameters {
     fn span(&self) -> Span {
-        self.for_keyword
-            .span
-            .join(&self.right_bracket.span)
-            .unwrap()
+        self.for_keyword.span.join(&self.right_bracket.span).unwrap()
     }
 }
 
@@ -667,15 +678,16 @@ pub struct TraitPredicate {
 
 impl SourceElement for TraitPredicate {
     fn span(&self) -> Span {
-        let begin = self.higher_ranked_lifetime_parameters.as_ref().map_or_else(
-            || {
-                self.const_keyword.as_ref().map_or_else(
-                    || self.trait_keyword.span.clone(),
-                    |const_keyword| const_keyword.span.clone(),
-                )
-            },
-            SourceElement::span,
-        );
+        let begin =
+            self.higher_ranked_lifetime_parameters.as_ref().map_or_else(
+                || {
+                    self.const_keyword.as_ref().map_or_else(
+                        || self.trait_keyword.span.clone(),
+                        |const_keyword| const_keyword.span.clone(),
+                    )
+                },
+                SourceElement::span,
+            );
 
         begin.join(&self.qualified_identifiers.span()).unwrap()
     }
@@ -706,15 +718,14 @@ pub struct WhereClause {
 impl WhereClause {
     /// Dissolves the [`WhereClause`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Keyword, PredicateList) { (self.where_keyword, self.predicate_list) }
+    pub fn dissolve(self) -> (Keyword, PredicateList) {
+        (self.where_keyword, self.predicate_list)
+    }
 }
 
 impl SourceElement for WhereClause {
     fn span(&self) -> Span {
-        self.where_keyword
-            .span
-            .join(&self.predicate_list.span())
-            .unwrap()
+        self.where_keyword.span.join(&self.predicate_list.span()).unwrap()
     }
 }
 
@@ -742,12 +753,8 @@ impl TraitSignature {
     #[allow(clippy::type_complexity)]
     pub fn dissolve(
         self,
-    ) -> (
-        Keyword,
-        Identifier,
-        Option<GenericParameters>,
-        Option<WhereClause>,
-    ) {
+    ) -> (Keyword, Identifier, Option<GenericParameters>, Option<WhereClause>)
+    {
         (
             self.trait_keyword,
             self.identifier,
@@ -764,7 +771,9 @@ impl SourceElement for TraitSignature {
             || {
                 self.generic_parameters.as_ref().map_or_else(
                     || start.join(&self.identifier.span).unwrap(),
-                    |generic_parameters| start.join(&generic_parameters.span()).unwrap(),
+                    |generic_parameters| {
+                        start.join(&generic_parameters.span()).unwrap()
+                    },
                 )
             },
             |where_clause| start.join(&where_clause.span()).unwrap(),
@@ -797,7 +806,9 @@ impl TraitBody {
 }
 
 impl SourceElement for TraitBody {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -825,7 +836,9 @@ impl Trait {
 }
 
 impl SourceElement for Trait {
-    fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.access_modifier.span().join(&self.body.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -845,11 +858,15 @@ pub struct TraitFunction {
 impl TraitFunction {
     /// Dissolves the [`TraitFunction`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (FunctionSignature, Punctuation) { (self.signature, self.semicolon) }
+    pub fn dissolve(self) -> (FunctionSignature, Punctuation) {
+        (self.signature, self.semicolon)
+    }
 }
 
 impl SourceElement for TraitFunction {
-    fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.signature.span().join(&self.semicolon.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -877,7 +894,9 @@ impl TraitType {
 }
 
 impl SourceElement for TraitType {
-    fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.signature.span().join(&self.semicolon.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -897,7 +916,9 @@ pub struct TraitConstant {
 }
 
 impl SourceElement for TraitConstant {
-    fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.signature.span().join(&self.semicolon.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -907,7 +928,9 @@ impl SourceElement for TraitConstant {
 ///     | TraitType
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(clippy::large_enum_variant)]
 pub enum TraitMember {
     Function(TraitFunction),
@@ -943,10 +966,7 @@ pub struct Parameter {
 
 impl SourceElement for Parameter {
     fn span(&self) -> Span {
-        self.irrefutable_pattern
-            .span()
-            .join(&self.ty.span())
-            .unwrap()
+        self.irrefutable_pattern.span().join(&self.ty.span()).unwrap()
     }
 }
 
@@ -983,7 +1003,9 @@ impl Parameters {
 }
 
 impl SourceElement for Parameters {
-    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_paren.span.join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Represents a syntax tree node for a return type in a function signature.
@@ -1086,7 +1108,9 @@ pub struct FunctionBody {
 }
 
 impl SourceElement for FunctionBody {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1112,23 +1136,16 @@ impl Function {
     #[must_use]
     pub fn dissolve(
         self,
-    ) -> (
-        AccessModifier,
-        Option<Keyword>,
-        FunctionSignature,
-        FunctionBody,
-    ) {
-        (
-            self.access_modifier,
-            self.const_keyword,
-            self.signature,
-            self.body,
-        )
+    ) -> (AccessModifier, Option<Keyword>, FunctionSignature, FunctionBody)
+    {
+        (self.access_modifier, self.const_keyword, self.signature, self.body)
     }
 }
 
 impl SourceElement for Function {
-    fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.access_modifier.span().join(&self.body.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1158,17 +1175,9 @@ impl TypeSignature {
 impl SourceElement for TypeSignature {
     fn span(&self) -> Span {
         self.generic_parameters.as_ref().map_or_else(
-            || {
-                self.type_keyword
-                    .span
-                    .join(&self.identifier.span())
-                    .unwrap()
-            },
+            || self.type_keyword.span.join(&self.identifier.span()).unwrap(),
             |generic_parameters| {
-                self.type_keyword
-                    .span
-                    .join(&generic_parameters.span())
-                    .unwrap()
+                self.type_keyword.span.join(&generic_parameters.span()).unwrap()
             },
         )
     }
@@ -1233,22 +1242,16 @@ pub struct Type {
 impl Type {
     /// Dissolves the [`Type`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (AccessModifier, TypeSignature, TypeDefinition, Punctuation) {
-        (
-            self.access_modifier,
-            self.signature,
-            self.definition,
-            self.semicolon,
-        )
+    pub fn dissolve(
+        self,
+    ) -> (AccessModifier, TypeSignature, TypeDefinition, Punctuation) {
+        (self.access_modifier, self.signature, self.definition, self.semicolon)
     }
 }
 
 impl SourceElement for Type {
     fn span(&self) -> Span {
-        self.access_modifier
-            .span()
-            .join(&self.semicolon.span)
-            .unwrap()
+        self.access_modifier.span().join(&self.semicolon.span).unwrap()
     }
 }
 
@@ -1275,12 +1278,8 @@ impl StructSignature {
     #[must_use]
     pub fn dissolve(
         self,
-    ) -> (
-        Keyword,
-        Identifier,
-        Option<GenericParameters>,
-        Option<WhereClause>,
-    ) {
+    ) -> (Keyword, Identifier, Option<GenericParameters>, Option<WhereClause>)
+    {
         (
             self.struct_keyword,
             self.identifier,
@@ -1292,10 +1291,7 @@ impl StructSignature {
 
 impl SourceElement for StructSignature {
     fn span(&self) -> Span {
-        self.struct_keyword
-            .span
-            .join(&self.identifier.span)
-            .unwrap()
+        self.struct_keyword.span.join(&self.identifier.span).unwrap()
     }
 }
 
@@ -1326,13 +1322,17 @@ pub struct StructBody {
 impl StructBody {
     /// Dissolves the [`StructBody`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Option<StructMemberList>, Punctuation) {
+    pub fn dissolve(
+        self,
+    ) -> (Punctuation, Option<StructMemberList>, Punctuation) {
         (self.left_brace, self.struct_member_list, self.right_brace)
     }
 }
 
 impl SourceElement for StructBody {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1360,7 +1360,9 @@ impl Struct {
 }
 
 impl SourceElement for Struct {
-    fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.access_modifier.span().join(&self.body.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1382,7 +1384,9 @@ pub struct StructField {
 }
 
 impl SourceElement for StructField {
-    fn span(&self) -> Span { self.access_modifier.span().join(&self.ty.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.access_modifier.span().join(&self.ty.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1391,7 +1395,9 @@ impl SourceElement for StructField {
 ///     StructField
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 pub enum StructMember {
     Field(StructField),
 }
@@ -1472,11 +1478,15 @@ pub struct ImplementationFunction {
 impl ImplementationFunction {
     /// Dissolves the [`ImplementationFunction`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (FunctionSignature, FunctionBody) { (self.signature, self.body) }
+    pub fn dissolve(self) -> (FunctionSignature, FunctionBody) {
+        (self.signature, self.body)
+    }
 }
 
 impl SourceElement for ImplementationFunction {
-    fn span(&self) -> Span { self.signature.span().join(&self.body.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.signature.span().join(&self.body.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1504,7 +1514,9 @@ impl ImplementationType {
 }
 
 impl SourceElement for ImplementationType {
-    fn span(&self) -> Span { self.signature.span().join(&self.semicolon.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.signature.span().join(&self.semicolon.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1522,7 +1534,9 @@ pub struct ImplementationConstant {
 }
 
 impl SourceElement for ImplementationConstant {
-    fn span(&self) -> Span { self.signature.span().join(&self.definition.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.signature.span().join(&self.definition.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1533,7 +1547,9 @@ impl SourceElement for ImplementationConstant {
 ///     | Constant
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 pub enum ImplementationMember {
     Type(Type),
     Function(Function),
@@ -1565,7 +1581,9 @@ pub struct NegativeImplementation {
 }
 
 impl SourceElement for NegativeImplementation {
-    fn span(&self) -> Span { self.delete_keyword.span.join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.delete_keyword.span.join(&self.semicolon.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1587,13 +1605,17 @@ pub struct ImplementationBody {
 impl ImplementationBody {
     /// Dissolves the [`ImplementationBody`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Vec<ImplementationMember>, Punctuation) {
+    pub fn dissolve(
+        self,
+    ) -> (Punctuation, Vec<ImplementationMember>, Punctuation) {
         (self.left_brace, self.members, self.right_brace)
     }
 }
 
 impl SourceElement for ImplementationBody {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1641,7 +1663,9 @@ impl Implementation {
 }
 
 impl SourceElement for Implementation {
-    fn span(&self) -> Span { self.signature.span().join(&self.kind.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.signature.span().join(&self.kind.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1667,12 +1691,8 @@ impl EnumSignature {
     #[must_use]
     pub fn dissolve(
         self,
-    ) -> (
-        Keyword,
-        Identifier,
-        Option<GenericParameters>,
-        Option<WhereClause>,
-    ) {
+    ) -> (Keyword, Identifier, Option<GenericParameters>, Option<WhereClause>)
+    {
         (
             self.enum_keyword,
             self.identifier,
@@ -1683,7 +1703,9 @@ impl EnumSignature {
 }
 
 impl SourceElement for EnumSignature {
-    fn span(&self) -> Span { self.enum_keyword.span.join(&self.identifier.span).unwrap() }
+    fn span(&self) -> Span {
+        self.enum_keyword.span.join(&self.identifier.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1711,7 +1733,9 @@ impl VariantAssociation {
 }
 
 impl SourceElement for VariantAssociation {
-    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_paren.span.join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1774,13 +1798,17 @@ pub struct EnumBody {
 impl EnumBody {
     /// Dissolves the [`EnumBody`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Punctuation, Option<EnumVariantList>, Punctuation) {
+    pub fn dissolve(
+        self,
+    ) -> (Punctuation, Option<EnumVariantList>, Punctuation) {
         (self.left_brace, self.variant_list, self.right_brace)
     }
 }
 
 impl SourceElement for EnumBody {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1808,7 +1836,9 @@ impl Enum {
 }
 
 impl SourceElement for Enum {
-    fn span(&self) -> Span { self.access_modifier.span().join(&self.body.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.access_modifier.span().join(&self.body.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1832,13 +1862,15 @@ pub struct ConstantSignature {
 }
 
 impl SourceElement for ConstantSignature {
-    fn span(&self) -> Span { self.const_keyword.span.join(&self.ty.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.const_keyword.span.join(&self.ty.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
 /// ConstDefinition:
-///     '=' Expression WhereCaluse? ';'
+///     '=' Expression WhereClause? ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1854,11 +1886,13 @@ pub struct ConstantDefinition {
 }
 
 impl SourceElement for ConstantDefinition {
-    fn span(&self) -> Span { self.equals.span.join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.equals.span.join(&self.semicolon.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
-/// ``` ebnf
+/// ```
 /// Constant:
 ///     '=' Expression ';'
 ///     ;
@@ -1875,10 +1909,7 @@ pub struct Constant {
 
 impl SourceElement for Constant {
     fn span(&self) -> Span {
-        self.access_modifier
-            .span()
-            .join(&self.definition.span())
-            .unwrap()
+        self.access_modifier.span().join(&self.definition.span()).unwrap()
     }
 }
 
@@ -1895,7 +1926,9 @@ impl SourceElement for Constant {
 ///     | Const
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(clippy::large_enum_variant)]
 pub enum Item {
     Trait(Trait),
@@ -1931,13 +1964,19 @@ impl<'a> Parser<'a> {
         handler: &dyn Handler<Error>,
     ) -> Option<AccessModifier> {
         match self.next_significant_token() {
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Public => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Public =>
+            {
                 Some(AccessModifier::Public(k))
             }
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Private => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Private =>
+            {
                 Some(AccessModifier::Private(k))
             }
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Internal => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Internal =>
+            {
                 Some(AccessModifier::Internal(k))
             }
             found => {
@@ -1958,70 +1997,82 @@ impl<'a> Parser<'a> {
         let tree = self.parse_enclosed_list(
             Delimiter::Bracket,
             ',',
-            |parser| match parser.next_significant_token() {
-                Reading::Unit(Token::Identifier(identifier)) => {
-                    Some(GenericParameter::Type(TypeParameter {
-                        identifier,
-                        default: match parser.stop_at_significant() {
-                            Reading::Unit(Token::Punctuation(equals))
-                                if equals.punctuation == '=' =>
-                            {
-                                // eat equals
-                                parser.forward();
+            |parser| {
+                match parser.next_significant_token() {
+                    Reading::Unit(Token::Identifier(identifier)) => {
+                        Some(GenericParameter::Type(TypeParameter {
+                            identifier,
+                            default: match parser.stop_at_significant() {
+                                Reading::Unit(Token::Punctuation(equals))
+                                    if equals.punctuation == '=' =>
+                                {
+                                    // eat equals
+                                    parser.forward();
 
-                                let value = parser.parse_type(handler)?;
+                                    let value = parser.parse_type(handler)?;
 
-                                Some(DefaultGenericParameter { equals, value })
-                            }
-                            _ => None,
-                        },
-                    }))
-                }
+                                    Some(DefaultGenericParameter {
+                                        equals,
+                                        value,
+                                    })
+                                }
+                                _ => None,
+                            },
+                        }))
+                    }
 
-                Reading::Unit(Token::Punctuation(punc)) if punc.punctuation == '\'' => {
-                    let identifier = parser.parse_identifier(handler)?;
+                    Reading::Unit(Token::Punctuation(apostrophe))
+                        if apostrophe.punctuation == '\'' =>
+                    {
+                        let identifier = parser.parse_identifier(handler)?;
 
-                    Some(GenericParameter::Lifetime(LifetimeParameter {
-                        apostrophe: punc,
-                        identifier,
-                    }))
-                }
+                        Some(GenericParameter::Lifetime(LifetimeParameter {
+                            apostrophe,
+                            identifier,
+                        }))
+                    }
 
-                Reading::Unit(Token::Keyword(const_keyword))
-                    if const_keyword.kind == KeywordKind::Const =>
-                {
-                    let identifier = parser.parse_identifier(handler)?;
-                    let colon = parser.parse_punctuation(':', true, handler)?;
-                    let r#type = parser.parse_type(handler)?;
+                    Reading::Unit(Token::Keyword(const_keyword))
+                        if const_keyword.kind == KeywordKind::Const =>
+                    {
+                        let identifier = parser.parse_identifier(handler)?;
+                        let colon =
+                            parser.parse_punctuation(':', true, handler)?;
+                        let r#type = parser.parse_type(handler)?;
 
-                    Some(GenericParameter::Constant(ConstantParameter {
-                        const_keyword,
-                        identifier,
-                        colon,
-                        r#type,
-                        default: match parser.stop_at_significant() {
-                            Reading::Unit(Token::Punctuation(equals))
-                                if equals.punctuation == '=' =>
-                            {
-                                // eat equals
-                                parser.forward();
+                        Some(GenericParameter::Constant(ConstantParameter {
+                            const_keyword,
+                            identifier,
+                            colon,
+                            r#type,
+                            default: match parser.stop_at_significant() {
+                                Reading::Unit(Token::Punctuation(equals))
+                                    if equals.punctuation == '=' =>
+                                {
+                                    // eat equals
+                                    parser.forward();
 
-                                let value = parser.parse_expression(handler)?;
+                                    let value =
+                                        parser.parse_expression(handler)?;
 
-                                Some(DefaultGenericParameter { equals, value })
-                            }
-                            _ => None,
-                        },
-                    }))
-                }
+                                    Some(DefaultGenericParameter {
+                                        equals,
+                                        value,
+                                    })
+                                }
+                                _ => None,
+                            },
+                        }))
+                    }
 
-                found => {
-                    handler.receive(Error {
-                        expected: SyntaxKind::GenericParameter,
-                        alternatives: Vec::new(),
-                        found: found.into_token(),
-                    });
-                    None
+                    found => {
+                        handler.receive(Error {
+                            expected: SyntaxKind::GenericParameter,
+                            alternatives: Vec::new(),
+                            found: found.into_token(),
+                        });
+                        None
+                    }
                 }
             },
             handler,
@@ -2034,7 +2085,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_lifetime_argument(&mut self, handler: &dyn Handler<Error>) -> Option<Lifetime> {
+    fn parse_lifetime_argument(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Lifetime> {
         let apostrophe = self.parse_punctuation('\'', true, handler)?;
         let identifier = match self.next_token() {
             Reading::Unit(Token::Identifier(identifier)) => {
@@ -2048,17 +2102,16 @@ impl<'a> Parser<'a> {
             found => {
                 handler.receive(Error {
                     expected: SyntaxKind::Identifier,
-                    alternatives: vec![SyntaxKind::Keyword(KeywordKind::Static)],
+                    alternatives: vec![SyntaxKind::Keyword(
+                        KeywordKind::Static,
+                    )],
                     found: found.into_token(),
                 });
                 return None;
             }
         };
 
-        Some(Lifetime {
-            apostrophe,
-            identifier,
-        })
+        Some(Lifetime { apostrophe, identifier })
     }
 
     fn parse_lifetime_bound_list(
@@ -2068,7 +2121,8 @@ impl<'a> Parser<'a> {
         let first = self.parse_lifetime_argument(handler)?;
         let mut rest = Vec::new();
 
-        while let Some(plus) = self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
+        while let Some(plus) =
+            self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
         {
             rest.push((plus, self.parse_lifetime_argument(handler)?));
         }
@@ -2081,7 +2135,9 @@ impl<'a> Parser<'a> {
         handler: &dyn Handler<Error>,
     ) -> Option<LifetimePredicateOperand> {
         match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+            Reading::Unit(Token::Punctuation(apostrophe))
+                if apostrophe.punctuation == '\'' =>
+            {
                 self.forward();
 
                 Some(LifetimePredicateOperand::LifetimeParameter(
@@ -2102,7 +2158,9 @@ impl<'a> Parser<'a> {
                 ))
             }
 
-            _ => Some(LifetimePredicateOperand::Type(self.parse_type(handler)?)),
+            _ => {
+                Some(LifetimePredicateOperand::Type(self.parse_type(handler)?))
+            }
         }
     }
 
@@ -2113,7 +2171,8 @@ impl<'a> Parser<'a> {
         let first = parser(self)?;
         let mut rest = Vec::new();
 
-        while let Some(plus) = self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
+        while let Some(plus) =
+            self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
         {
             rest.push((plus, parser(self)?));
         }
@@ -2122,7 +2181,10 @@ impl<'a> Parser<'a> {
     }
 
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    fn parse_predicate(&mut self, handler: &dyn Handler<Error>) -> Option<Predicate> {
+    fn parse_predicate(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Predicate> {
         match self.stop_at_significant() {
             Reading::Unit(Token::Keyword(const_keyword))
                 if const_keyword.kind == KeywordKind::Const =>
@@ -2141,9 +2203,11 @@ impl<'a> Parser<'a> {
                             higher_ranked_lifetime_parameters: None,
                             const_keyword: Some(const_keyword),
                             trait_keyword,
-                            qualified_identifiers: self.parse_bound_list(|parser| {
-                                parser.parse_qualified_identifier(handler)
-                            })?,
+                            qualified_identifiers: self.parse_bound_list(
+                                |parser| {
+                                    parser.parse_qualified_identifier(handler)
+                                },
+                            )?,
                         }))
                     }
 
@@ -2156,14 +2220,18 @@ impl<'a> Parser<'a> {
                         Some(Predicate::ConstantType(ConstantTypePredicate {
                             const_keyword,
                             type_keyword,
-                            types: self.parse_bound_list(|parser| parser.parse_type(handler))?,
+                            types: self.parse_bound_list(|parser| {
+                                parser.parse_type(handler)
+                            })?,
                         }))
                     }
 
                     found => {
                         handler.receive(Error {
                             expected: SyntaxKind::Keyword(KeywordKind::Trait),
-                            alternatives: vec![SyntaxKind::Keyword(KeywordKind::Type)],
+                            alternatives: vec![SyntaxKind::Keyword(
+                                KeywordKind::Type,
+                            )],
                             found: found.into_token(),
                         });
                         None
@@ -2171,7 +2239,9 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            Reading::Unit(Token::Keyword(for_keyword)) if for_keyword.kind == KeywordKind::For => {
+            Reading::Unit(Token::Keyword(for_keyword))
+                if for_keyword.kind == KeywordKind::For =>
+            {
                 // eat for keyword
                 self.forward();
 
@@ -2179,13 +2249,11 @@ impl<'a> Parser<'a> {
                     Delimiter::Bracket,
                     ',',
                     |parser| {
-                        let apostrophe = parser.parse_punctuation('\'', true, handler)?;
+                        let apostrophe =
+                            parser.parse_punctuation('\'', true, handler)?;
                         let identifier = parser.parse_identifier(handler)?;
 
-                        Some(LifetimeParameter {
-                            apostrophe,
-                            identifier,
-                        })
+                        Some(LifetimeParameter { apostrophe, identifier })
                     },
                     handler,
                 )?;
@@ -2197,17 +2265,22 @@ impl<'a> Parser<'a> {
                     right_bracket: lifetimes.close,
                 };
 
-                let const_keyword =
-                    self.try_parse(|parser| parser.parse_keyword(KeywordKind::Const, &Dummy));
+                let const_keyword = self.try_parse(|parser| {
+                    parser.parse_keyword(KeywordKind::Const, &Dummy)
+                });
 
-                let trait_keyword = self.parse_keyword(KeywordKind::Trait, handler)?;
+                let trait_keyword =
+                    self.parse_keyword(KeywordKind::Trait, handler)?;
 
                 Some(Predicate::Trait(TraitPredicate {
-                    higher_ranked_lifetime_parameters: Some(higher_ranked_lifetime),
+                    higher_ranked_lifetime_parameters: Some(
+                        higher_ranked_lifetime,
+                    ),
                     const_keyword,
                     trait_keyword,
-                    qualified_identifiers: self
-                        .parse_bound_list(|parser| parser.parse_qualified_identifier(handler))?,
+                    qualified_identifiers: self.parse_bound_list(|parser| {
+                        parser.parse_qualified_identifier(handler)
+                    })?,
                 }))
             }
 
@@ -2221,8 +2294,9 @@ impl<'a> Parser<'a> {
                     higher_ranked_lifetime_parameters: None,
                     const_keyword: None,
                     trait_keyword,
-                    qualified_identifiers: self
-                        .parse_bound_list(|parser| parser.parse_qualified_identifier(handler))?,
+                    qualified_identifiers: self.parse_bound_list(|parser| {
+                        parser.parse_qualified_identifier(handler)
+                    })?,
                 }))
             }
 
@@ -2233,7 +2307,9 @@ impl<'a> Parser<'a> {
                 self.forward();
 
                 let qualified_identifiers =
-                    self.parse_bound_list(|parser| parser.parse_qualified_identifier(handler))?;
+                    self.parse_bound_list(|parser| {
+                        parser.parse_qualified_identifier(handler)
+                    })?;
 
                 Some(Predicate::Tuple(TuplePredicate {
                     tuple_keyword,
@@ -2241,9 +2317,12 @@ impl<'a> Parser<'a> {
                 }))
             }
 
-            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
-                let operands = self
-                    .parse_bound_list(|parser| parser.parse_lifetime_predicate_operand(handler))?;
+            Reading::Unit(Token::Punctuation(apostrophe))
+                if apostrophe.punctuation == '\'' =>
+            {
+                let operands = self.parse_bound_list(|parser| {
+                    parser.parse_lifetime_predicate_operand(handler)
+                })?;
                 let colon = self.parse_punctuation(':', true, handler)?;
                 let bounds = self.parse_lifetime_bound_list(handler)?;
 
@@ -2280,7 +2359,9 @@ impl<'a> Parser<'a> {
                                     right_brace: expr.close,
                                 })
                             }
-                            _ => TraitMemberBound::Type(self.parse_type(handler)?),
+                            _ => TraitMemberBound::Type(
+                                self.parse_type(handler)?,
+                            ),
                         };
 
                         Some(Predicate::TraitMember(TraitMemberPredicate {
@@ -2293,17 +2374,21 @@ impl<'a> Parser<'a> {
                     (first_ty, _) => {
                         let mut rest = Vec::new();
 
-                        while let Some(plus) =
-                            self.try_parse(|parser| parser.parse_punctuation('+', true, &Dummy))
-                        {
-                            rest.push((plus, self.parse_lifetime_predicate_operand(handler)?));
+                        while let Some(plus) = self.try_parse(|parser| {
+                            parser.parse_punctuation('+', true, &Dummy)
+                        }) {
+                            rest.push((
+                                plus,
+                                self.parse_lifetime_predicate_operand(handler)?,
+                            ));
                         }
 
                         let operands = BoundList {
                             first: LifetimePredicateOperand::Type(first_ty),
                             rest,
                         };
-                        let colon = self.parse_punctuation(':', true, handler)?;
+                        let colon =
+                            self.parse_punctuation(':', true, handler)?;
                         let bounds = self.parse_lifetime_bound_list(handler)?;
 
                         Some(Predicate::Lifetime(LifetimePredicate {
@@ -2317,14 +2402,18 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_where_clause(&mut self, handler: &dyn Handler<Error>) -> Option<WhereClause> {
+    fn parse_where_clause(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<WhereClause> {
         let where_keyword = self.parse_keyword(KeywordKind::Where, handler)?;
 
         let first = self.parse_predicate(handler)?;
         let mut rest = Vec::new();
         let mut trailing_separator = None;
 
-        while let Some(comma) = self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy))
+        while let Some(comma) =
+            self.try_parse(|parser| parser.parse_punctuation(',', true, &Dummy))
         {
             if matches!(
                 self.stop_at_significant(),
@@ -2346,11 +2435,7 @@ impl<'a> Parser<'a> {
 
         Some(WhereClause {
             where_keyword,
-            predicate_list: ConnectedList {
-                first,
-                rest,
-                trailing_separator,
-            },
+            predicate_list: ConnectedList { first, rest, trailing_separator },
         })
     }
 
@@ -2369,7 +2454,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_function_body(&mut self, handler: &dyn Handler<Error>) -> Option<FunctionBody> {
+    fn parse_function_body(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<FunctionBody> {
         let delimited_tree = self.step_into(
             Delimiter::Brace,
             |parser| {
@@ -2415,7 +2503,8 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<FunctionSignature> {
-        let function_keyword = self.parse_keyword(KeywordKind::Function, handler)?;
+        let function_keyword =
+            self.parse_keyword(KeywordKind::Function, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
 
@@ -2423,15 +2512,12 @@ impl<'a> Parser<'a> {
             Delimiter::Parenthesis,
             ',',
             |parser| {
-                let irrefutable_pattern = parser.parse_irrefutable_pattern(handler)?;
+                let irrefutable_pattern =
+                    parser.parse_irrefutable_pattern(handler)?;
                 let colon = parser.parse_punctuation(':', true, handler)?;
                 let ty = parser.parse_type(handler)?;
 
-                Some(Parameter {
-                    irrefutable_pattern,
-                    colon,
-                    ty,
-                })
+                Some(Parameter { irrefutable_pattern, colon, ty })
             },
             handler,
         )?;
@@ -2443,10 +2529,12 @@ impl<'a> Parser<'a> {
         };
 
         let return_type = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ':' => Some(ReturnType {
-                colon: self.parse_punctuation(':', true, handler)?,
-                ty: self.parse_type(handler)?,
-            }),
+            Reading::Unit(Token::Punctuation(p)) if p.punctuation == ':' => {
+                Some(ReturnType {
+                    colon: self.parse_punctuation(':', true, handler)?,
+                    ty: self.parse_type(handler)?,
+                })
+            }
             _ => None,
         };
 
@@ -2523,7 +2611,8 @@ impl<'a> Parser<'a> {
                     Reading::Unit(Token::Keyword(function_keyword))
                         if function_keyword.kind == KeywordKind::Function =>
                     {
-                        let signature = self.parse_function_signature(handler)?;
+                        let signature =
+                            self.parse_function_signature(handler)?;
                         let body = self.parse_function_body(handler)?;
 
                         Some(ImplementationMember::Function(Function {
@@ -2535,8 +2624,12 @@ impl<'a> Parser<'a> {
                     }
 
                     Reading::Unit(Token::Identifier(..)) => {
-                        let signature = self.parse_const_signature(Some(const_keyword), handler)?;
-                        let definition = self.parse_const_definition(handler)?;
+                        let signature = self.parse_const_signature(
+                            Some(const_keyword),
+                            handler,
+                        )?;
+                        let definition =
+                            self.parse_const_definition(handler)?;
 
                         Some(ImplementationMember::Constant(Constant {
                             access_modifier,
@@ -2577,14 +2670,19 @@ impl<'a> Parser<'a> {
                 let mut implements_members = Vec::new();
 
                 while !parser.is_exhausted() {
-                    if let Some(member) = parser.parse_implements_member(handler) {
+                    if let Some(member) =
+                        parser.parse_implements_member(handler)
+                    {
                         implements_members.push(member);
                         continue;
                     }
 
                     // try to stop at next function signature
                     parser.stop_at(|token| {
-                        matches!(token, Reading::IntoDelimited(Delimiter::Brace, _))
+                        matches!(
+                            token,
+                            Reading::IntoDelimited(Delimiter::Brace, _)
+                        )
                     });
                     parser.forward();
                 }
@@ -2601,8 +2699,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_implements(&mut self, handler: &dyn Handler<Error>) -> Option<Implementation> {
-        let implements_keyword = self.parse_keyword(KeywordKind::Implements, handler)?;
+    fn parse_implements(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Implementation> {
+        let implements_keyword =
+            self.parse_keyword(KeywordKind::Implements, handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let const_keyword = match self.stop_at_significant() {
             Reading::Unit(Token::Keyword(const_keyword))
@@ -2632,7 +2734,9 @@ impl<'a> Parser<'a> {
                     semicolon,
                 })
             }
-            _ => ImplementationKind::Positive(self.parse_implements_body(handler)?),
+            _ => ImplementationKind::Positive(
+                self.parse_implements_body(handler)?,
+            ),
         };
 
         Some(Implementation {
@@ -2647,7 +2751,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_trait_signature(&mut self, handler: &dyn Handler<Error>) -> Option<TraitSignature> {
+    fn parse_trait_signature(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<TraitSignature> {
         let trait_keyword = self.parse_keyword(KeywordKind::Trait, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
@@ -2661,12 +2768,16 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_trait_member(&mut self, handler: &dyn Handler<Error>) -> Option<TraitMember> {
+    fn parse_trait_member(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<TraitMember> {
         match self.stop_at_significant() {
             Reading::Unit(Token::Keyword(function_keyword))
                 if function_keyword.kind == KeywordKind::Function =>
             {
-                let function_signature = self.parse_function_signature(handler)?;
+                let function_signature =
+                    self.parse_function_signature(handler)?;
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Some(TraitMember::Function(TraitFunction {
@@ -2678,9 +2789,11 @@ impl<'a> Parser<'a> {
             Reading::Unit(Token::Keyword(const_keyword))
                 if const_keyword.kind == KeywordKind::Const =>
             {
-                let const_keyword = self.parse_keyword(KeywordKind::Const, handler)?;
+                let const_keyword =
+                    self.parse_keyword(KeywordKind::Const, handler)?;
                 let identifier = self.parse_identifier(handler)?;
-                let generic_parameters = self.try_parse_generic_parameters(handler)?;
+                let generic_parameters =
+                    self.try_parse_generic_parameters(handler)?;
                 let colon = self.parse_punctuation(':', true, handler)?;
                 let ty = self.parse_type(handler)?;
                 let where_clause = self.try_parse_where_clause(handler)?;
@@ -2725,7 +2838,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_trait_body(&mut self, handler: &dyn Handler<Error>) -> Option<TraitBody> {
+    fn parse_trait_body(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<TraitBody> {
         let delimited_tree = self.step_into(
             Delimiter::Brace,
             |parser| {
@@ -2760,31 +2876,32 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_type_signature(&mut self, handler: &dyn Handler<Error>) -> Option<TypeSignature> {
+    fn parse_type_signature(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<TypeSignature> {
         let type_keyword = self.parse_keyword(KeywordKind::Type, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
 
-        Some(TypeSignature {
-            type_keyword,
-            identifier,
-            generic_parameters,
-        })
+        Some(TypeSignature { type_keyword, identifier, generic_parameters })
     }
 
-    fn parse_type_definition(&mut self, handler: &dyn Handler<Error>) -> Option<TypeDefinition> {
+    fn parse_type_definition(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<TypeDefinition> {
         let equals = self.parse_punctuation('=', true, handler)?;
         let ty = self.parse_type(handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
 
-        Some(TypeDefinition {
-            equals,
-            ty,
-            where_clause,
-        })
+        Some(TypeDefinition { equals, ty, where_clause })
     }
 
-    fn parse_struct_body(&mut self, handler: &dyn Handler<Error>) -> Option<StructBody> {
+    fn parse_struct_body(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<StructBody> {
         let enclosed_list = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
@@ -2811,8 +2928,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_struct_signature(&mut self, handler: &dyn Handler<Error>) -> Option<StructSignature> {
-        let struct_keyword = self.parse_keyword(KeywordKind::Struct, handler)?;
+    fn parse_struct_signature(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<StructSignature> {
+        let struct_keyword =
+            self.parse_keyword(KeywordKind::Struct, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
         let where_clause = self.try_parse_where_clause(handler)?;
@@ -2825,7 +2946,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum_signature(&mut self, handler: &dyn Handler<Error>) -> Option<EnumSignature> {
+    fn parse_enum_signature(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<EnumSignature> {
         let enum_keyword = self.parse_keyword(KeywordKind::Enum, handler)?;
         let identifier = self.parse_identifier(handler)?;
         let generic_parameters = self.try_parse_generic_parameters(handler)?;
@@ -2839,7 +2963,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum_body(&mut self, handler: &dyn Handler<Error>) -> Option<EnumBody> {
+    fn parse_enum_body(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<EnumBody> {
         let body = self.parse_enclosed_list(
             Delimiter::Brace,
             ',',
@@ -2866,10 +2993,7 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-                Some(Variant {
-                    identifier,
-                    association: associated_value,
-                })
+                Some(Variant { identifier, association: associated_value })
             },
             handler,
         )?;
@@ -2881,32 +3005,34 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_module_signature(&mut self, handler: &dyn Handler<Error>) -> Option<ModuleSignature> {
-        let module_keyword = self.parse_keyword(KeywordKind::Module, handler)?;
+    fn parse_module_signature(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<ModuleSignature> {
+        let module_keyword =
+            self.parse_keyword(KeywordKind::Module, handler)?;
         let identifier = self.parse_identifier(handler)?;
 
-        Some(ModuleSignature {
-            module_keyword,
-            identifier,
-        })
+        Some(ModuleSignature { module_keyword, identifier })
     }
 
     /// Parses a [`ModulePath`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_module_path(&mut self, handler: &dyn Handler<Error>) -> Option<ModulePath> {
+    pub fn parse_module_path(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<ModulePath> {
         let first_identifier = self.parse_identifier(handler)?;
         let mut rest = Vec::new();
 
-        while let Some(scope_separator) = self.try_parse(|this| this.parse_scope_separator(&Dummy))
+        while let Some(scope_separator) =
+            self.try_parse(|this| this.parse_scope_separator(&Dummy))
         {
             let identifier = self.parse_identifier(handler)?;
             rest.push((scope_separator, identifier));
         }
 
-        Some(ModulePath {
-            first: first_identifier,
-            rest,
-        })
+        Some(ModulePath { first: first_identifier, rest })
     }
 
     fn parse_using(&mut self, handler: &dyn Handler<Error>) -> Option<Using> {
@@ -2914,15 +3040,14 @@ impl<'a> Parser<'a> {
         let module_path = self.parse_module_path(handler)?;
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
-        Some(Using {
-            using_keyword,
-            module_path,
-            semicolon,
-        })
+        Some(Using { using_keyword, module_path, semicolon })
     }
 
     /// Parses a [`ModuleContent`]
-    pub fn parse_module_content(&mut self, handler: &dyn Handler<Error>) -> ModuleContent {
+    pub fn parse_module_content(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> ModuleContent {
         let mut items = Vec::new();
         let mut usings = Vec::new();
 
@@ -2964,7 +3089,10 @@ impl<'a> Parser<'a> {
         ModuleContent { usings, items }
     }
 
-    fn parse_module_body(&mut self, handler: &dyn Handler<Error>) -> Option<ModuleBody> {
+    fn parse_module_body(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<ModuleBody> {
         let delimited_tree = self.step_into(
             Delimiter::Brace,
             |parser| {
@@ -2973,14 +3101,17 @@ impl<'a> Parser<'a> {
 
                 while !parser.is_exhausted() {
                     match (items.is_empty(), parser.stop_at_significant()) {
-                        (true, Reading::Unit(Token::Keyword(using_keyword)))
-                            if using_keyword.kind == KeywordKind::Using =>
-                        {
+                        (
+                            true,
+                            Reading::Unit(Token::Keyword(using_keyword)),
+                        ) if using_keyword.kind == KeywordKind::Using => {
                             // eat using keyword
                             parser.forward();
 
-                            let module_path = parser.parse_module_path(handler)?;
-                            let semicolon = parser.parse_punctuation(';', true, handler)?;
+                            let module_path =
+                                parser.parse_module_path(handler)?;
+                            let semicolon =
+                                parser.parse_punctuation(';', true, handler)?;
 
                             usings.push(Using {
                                 using_keyword,
@@ -3062,22 +3193,23 @@ impl<'a> Parser<'a> {
         let where_clause = self.try_parse_where_clause(handler)?;
         let semicolon = self.parse_punctuation(';', true, handler)?;
 
-        Some(ConstantDefinition {
-            equals,
-            expression,
-            where_clause,
-            semicolon,
-        })
+        Some(ConstantDefinition { equals, expression, where_clause, semicolon })
     }
 
     #[allow(clippy::too_many_lines)]
-    fn parse_item_with_access_modifier(&mut self, handler: &dyn Handler<Error>) -> Option<Item> {
+    fn parse_item_with_access_modifier(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Item> {
         let access_modifier = self.parse_access_modifier(handler)?;
 
         match self.stop_at_significant() {
             // parse function
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Function => {
-                let function_signature = self.parse_function_signature(handler)?;
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Function =>
+            {
+                let function_signature =
+                    self.parse_function_signature(handler)?;
                 let function_body = self.parse_function_body(handler)?;
 
                 Some(Item::Function(Function {
@@ -3088,7 +3220,9 @@ impl<'a> Parser<'a> {
                 }))
             }
 
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Const => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Const =>
+            {
                 // eat const keyword
                 self.forward();
 
@@ -3096,8 +3230,10 @@ impl<'a> Parser<'a> {
                     Reading::Unit(Token::Keyword(function_keyword))
                         if function_keyword.kind == KeywordKind::Function =>
                     {
-                        let function_signature = self.parse_function_signature(handler)?;
-                        let function_body = self.parse_function_body(handler)?;
+                        let function_signature =
+                            self.parse_function_signature(handler)?;
+                        let function_body =
+                            self.parse_function_body(handler)?;
 
                         Some(Item::Function(Function {
                             access_modifier,
@@ -3108,8 +3244,10 @@ impl<'a> Parser<'a> {
                     }
 
                     Reading::Unit(Token::Identifier(_)) => {
-                        let const_signature = self.parse_const_signature(Some(k), handler)?;
-                        let const_definition = self.parse_const_definition(handler)?;
+                        let const_signature =
+                            self.parse_const_signature(Some(k), handler)?;
+                        let const_definition =
+                            self.parse_const_definition(handler)?;
 
                         Some(Item::Constant(Constant {
                             access_modifier,
@@ -3121,7 +3259,9 @@ impl<'a> Parser<'a> {
                     found => {
                         self.forward();
                         handler.receive(Error {
-                            expected: SyntaxKind::Keyword(KeywordKind::Function),
+                            expected: SyntaxKind::Keyword(
+                                KeywordKind::Function,
+                            ),
                             alternatives: vec![SyntaxKind::Identifier],
                             found: found.into_token(),
                         });
@@ -3131,11 +3271,15 @@ impl<'a> Parser<'a> {
             }
 
             // parse module
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Module => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Module =>
+            {
                 let signature = self.parse_module_signature(handler)?;
 
                 let content = match self.stop_at_significant() {
-                    Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';' => {
+                    Reading::Unit(Token::Punctuation(p))
+                        if p.punctuation == ';' =>
+                    {
                         // eat semi colon
                         self.forward();
                         ModuleKind::File(p)
@@ -3151,7 +3295,9 @@ impl<'a> Parser<'a> {
             }
 
             // parse trait
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Trait => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Trait =>
+            {
                 let trait_signature = self.parse_trait_signature(handler)?;
                 let trait_body = self.parse_trait_body(handler)?;
 
@@ -3163,7 +3309,9 @@ impl<'a> Parser<'a> {
             }
 
             // parse struct
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Struct => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Struct =>
+            {
                 let struct_signature = self.parse_struct_signature(handler)?;
                 let struct_body = self.parse_struct_body(handler)?;
 
@@ -3220,14 +3368,18 @@ impl<'a> Parser<'a> {
             Reading::Unit(Token::Keyword(access_modifier))
                 if matches!(
                     access_modifier.kind,
-                    KeywordKind::Public | KeywordKind::Private | KeywordKind::Internal
+                    KeywordKind::Public
+                        | KeywordKind::Private
+                        | KeywordKind::Internal
                 ) =>
             {
                 self.parse_item_with_access_modifier(handler)
             }
 
             // parses an implements
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Implements => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Implements =>
+            {
                 self.parse_implements(handler).map(Item::Implementation)
             }
 

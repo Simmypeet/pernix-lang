@@ -1,4 +1,5 @@
-//! Contains all kinds of lexical errors that can occur while tokenizing the source code.
+//! Contains all kinds of lexical errors that can occur while tokenizing the
+//! source code.
 
 use std::fmt::Display;
 
@@ -48,14 +49,17 @@ impl Display for UndelimitedDelimiter {
             Message::new(Severity::Error, "found an undelimited delimiter"),
             SourceCodeDisplay::new(
                 &self.opening_span,
-                Some("this delimiter is not closed by its corresponding closing pair")
+                Some(
+                    "this delimiter is not closed by its corresponding \
+                     closing pair"
+                )
             )
         )
     }
 }
 
-/// Is an enumeration containing all kinds of lexical errors that can occur while tokenizing the
-/// source code.
+/// Is an enumeration containing all kinds of lexical errors that can occur
+/// while tokenizing the source code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, EnumAsInner, From)]
 #[allow(missing_docs)]
 pub enum Error {

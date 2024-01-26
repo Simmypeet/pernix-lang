@@ -17,10 +17,12 @@ use crate::error::{self, UnterminatedDelimitedComment};
 
 /// Is an enumeration representing keywords in the Pernix programming language.
 ///
-/// Most enum variants names are the same as the keyword they represent, except that the name is
-/// capitalized while the keyword is not. For example, the `function` keyword is represented by the
-/// `Function` variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter)]
+/// Most enum variants names are the same as the keyword they represent, except
+/// that the name is capitalized while the keyword is not. For example, the
+/// `function` keyword is represented by the `Function` variant.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter,
+)]
 pub enum KeywordKind {
     /// `match` keyword.
     Match,
@@ -128,9 +130,11 @@ impl ToString for KeywordKind {
     fn to_string(&self) -> String { self.as_str().to_string() }
 }
 
-/// Is an error that is returned when a string cannot be parsed into a [`Keyword`] in [`FromStr`]
-/// trait implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Error)]
+/// Is an error that is returned when a string cannot be parsed into a
+/// [`Keyword`] in [`FromStr`] trait implementation.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Error,
+)]
 #[error("invalid string representation of keyword.")]
 pub struct KeywordParseError;
 
@@ -212,8 +216,11 @@ impl KeywordKind {
     }
 }
 
-/// Is an enumeration containing all kinds of tokens in the Pernix programming language.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+/// Is an enumeration containing all kinds of tokens in the Pernix programming
+/// language.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(missing_docs)]
 pub enum Token {
     WhiteSpaces(WhiteSpaces),
@@ -263,7 +270,8 @@ impl SourceElement for WhiteSpaces {
     fn span(&self) -> Span { self.span.clone() }
 }
 
-/// Represents a contiguous sequence of characters that are valid in an identifier.
+/// Represents a contiguous sequence of characters that are valid in an
+/// identifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier {
     /// Is the span that makes up the token.
@@ -274,7 +282,8 @@ impl SourceElement for Identifier {
     fn span(&self) -> Span { self.span.clone() }
 }
 
-/// Represents a contiguous sequence of characters that are reserved for a keyword.
+/// Represents a contiguous sequence of characters that are reserved for a
+/// keyword.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Keyword {
     /// Is the span that makes up the token.
@@ -313,7 +322,8 @@ impl SourceElement for Numeric {
     fn span(&self) -> Span { self.span.clone() }
 }
 
-/// Is an enumeration representing the two kinds of comments in the Pernix programming language.
+/// Is an enumeration representing the two kinds of comments in the Pernix
+/// programming language.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CommentKind {
     /// A comment that starts with `//` and ends at the end of the line.
@@ -339,11 +349,23 @@ impl SourceElement for Comment {
 
 /// Is an error that can occur when invoking the [`Token::lex`] method.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, thiserror::Error, From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    thiserror::Error,
+    From,
 )]
 #[allow(missing_docs)]
 pub enum Error {
-    #[error("encountered a fatal lexical error that causes the process to stop.")]
+    #[error(
+        "encountered a fatal lexical error that causes the process to stop."
+    )]
     FatalLexicalError,
 
     #[error("the iterator argument is at the end of the source code.")]
@@ -352,7 +374,10 @@ pub enum Error {
 
 impl Token {
     /// Increments the iterator until the predicate returns false.
-    fn walk_iter(iter: &mut source_file::Iterator, predicate: impl Fn(char) -> bool) {
+    fn walk_iter(
+        iter: &mut source_file::Iterator,
+        predicate: impl Fn(char) -> bool,
+    ) {
         while let Some((_, character)) = iter.peek() {
             if !predicate(character) {
                 break;
@@ -362,15 +387,19 @@ impl Token {
         }
     }
 
-    /// Creates a span from the given start location to the current location of the iterator.
+    /// Creates a span from the given start location to the current location of
+    /// the iterator.
     fn create_span(start: ByteIndex, iter: &mut source_file::Iterator) -> Span {
         iter.peek().map_or_else(
             || Span::to_end(iter.source_file().clone(), start).unwrap(),
-            |(index, _)| Span::new(iter.source_file().clone(), start, index).unwrap(),
+            |(index, _)| {
+                Span::new(iter.source_file().clone(), start, index).unwrap()
+            },
         )
     }
 
-    /// Checks if the given character is a valid first character of an identifier.
+    /// Checks if the given character is a valid first character of an
+    /// identifier.
     fn is_first_identifier_character(character: char) -> bool {
         character == '_'
             || (!character.is_control()
@@ -387,16 +416,19 @@ impl Token {
                 && !character.is_ascii_punctuation())
     }
 
-    fn handle_whitespace(iter: &mut source_file::Iterator, start: ByteIndex) -> Self {
+    fn handle_whitespace(
+        iter: &mut source_file::Iterator,
+        start: ByteIndex,
+    ) -> Self {
         Self::walk_iter(iter, char::is_whitespace);
 
-        WhiteSpaces {
-            span: Self::create_span(start, iter),
-        }
-        .into()
+        WhiteSpaces { span: Self::create_span(start, iter) }.into()
     }
 
-    fn handle_identifier_and_keyword(iter: &mut source_file::Iterator, start: ByteIndex) -> Self {
+    fn handle_identifier_and_keyword(
+        iter: &mut source_file::Iterator,
+        start: ByteIndex,
+    ) -> Self {
         Self::walk_iter(iter, Self::is_identifier_character);
 
         let span = Self::create_span(start, iter);
@@ -405,13 +437,7 @@ impl Token {
         // Checks if the word is a keyword
         KeywordKind::from_str(word).ok().map_or_else(
             || Identifier { span: span.clone() }.into(),
-            |kw| {
-                Keyword {
-                    span: span.clone(),
-                    kind: kw,
-                }
-                .into()
-            },
+            |kw| Keyword { span: span.clone(), kind: kw }.into(),
         )
     }
 
@@ -425,11 +451,12 @@ impl Token {
         if let Some((_, '/')) = iter.peek() {
             iter.next();
 
-            Self::walk_iter(iter, |character| !(character == '\n' || character == '\r'));
+            Self::walk_iter(iter, |character| {
+                !(character == '\n' || character == '\r')
+            });
 
-            let is_cr = iter
-                .peek()
-                .map_or(false, |(_, character)| character == '\r');
+            let is_cr =
+                iter.peek().map_or(false, |(_, character)| character == '\r');
 
             if let (true, Some((_, '\n'))) = (is_cr, iter.next()) {
                 // skips the crlf
@@ -470,7 +497,12 @@ impl Token {
             } else {
                 handler.receive(
                     UnterminatedDelimitedComment {
-                        span: Span::new(iter.source_file().clone(), start, start + 2).unwrap(),
+                        span: Span::new(
+                            iter.source_file().clone(),
+                            start,
+                            start + 2,
+                        )
+                        .unwrap(),
                     }
                     .into(),
                 );
@@ -487,32 +519,34 @@ impl Token {
         }
     }
 
-    fn handle_numeric_literal(iter: &mut source_file::Iterator, start: ByteIndex) -> Self {
+    fn handle_numeric_literal(
+        iter: &mut source_file::Iterator,
+        start: ByteIndex,
+    ) -> Self {
         // Tokenizes the whole number part
         Self::walk_iter(iter, |character| character.is_ascii_digit());
 
-        Numeric {
-            span: Self::create_span(start, iter),
-        }
-        .into()
+        Numeric { span: Self::create_span(start, iter) }.into()
     }
 
     /// Lexes the source code from the given iterator.
     ///
-    /// The tokenization starts at the current location of the iterator. The function moves the
-    /// iterator at least once and forwards it until it makes a token. After the token is made, the
-    /// iterator is left at the next character that is not part of the token.
+    /// The tokenization starts at the current location of the iterator. The
+    /// function moves the iterator at least once and forwards it until it
+    /// makes a token. After the token is made, the iterator is left at the
+    /// next character that is not part of the token.
     ///
     /// # Errors
-    /// - [`Error::EndOfSourceCodeIteratorArgument`] - The iterator argument is at the end of the
-    ///   source code.
+    /// - [`Error::EndOfSourceCodeIteratorArgument`] - The iterator argument is
+    ///   at the end of the source code.
     /// - [`Error::FatalLexicalError`] - A fatal lexical error occurred.
     pub fn lex(
         iter: &mut source_file::Iterator,
         handler: &dyn Handler<error::Error>,
     ) -> Result<Self, Error> {
         // Gets the first character
-        let (start, character) = iter.next().ok_or(Error::EndOfSourceCodeIteratorArgument)?;
+        let (start, character) =
+            iter.next().ok_or(Error::EndOfSourceCodeIteratorArgument)?;
 
         // Found white spaces
         if character.is_whitespace() {

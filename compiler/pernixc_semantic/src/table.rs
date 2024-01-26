@@ -9,12 +9,14 @@ use crate::{
     arena::{Arena, ID},
     semantic::term::{constant, lifetime::Lifetime, r#type, GenericArguments},
     symbol::{
-        Accessibility, AdtImplementation, AdtImplementationConstant, AdtImplementationFunction,
-        AdtImplementationType, Constant, Enum, Function, Generic, GenericID, Global, GlobalID,
-        ImplementationSignature, Module, NegativeTraitImplementation, Struct, Trait, TraitConstant,
-        TraitFunction, TraitImplementation, TraitImplementationConstant,
-        TraitImplementationFunction, TraitImplementationKindID, TraitImplementationType, TraitType,
-        Type, Variant,
+        Accessibility, AdtImplementation, AdtImplementationConstant,
+        AdtImplementationFunction, AdtImplementationType, Constant, Enum,
+        Function, Generic, GenericID, Global, GlobalID,
+        ImplementationSignature, Module, NegativeTraitImplementation, Struct,
+        Trait, TraitConstant, TraitFunction, TraitImplementation,
+        TraitImplementationConstant, TraitImplementationFunction,
+        TraitImplementationKindID, TraitImplementationType, TraitType, Type,
+        Variant,
     },
 };
 
@@ -42,11 +44,23 @@ where
 
 /// A trait used to wrap a symbol in a container.
 ///
-/// This is primarily used to either wrap a symbol in a [`RwLock`] or not at all.
+/// This is primarily used to either wrap a symbol in a [`RwLock`] or not at
+/// all.
 ///
 /// See [`RwLockContainer`] for an example.
 pub trait Container:
-    Debug + Clone + Copy + PartialEq + Eq + PartialOrd + Ord + Hash + Default + 'static + Send + Sync
+    Debug
+    + Clone
+    + Copy
+    + PartialEq
+    + Eq
+    + PartialOrd
+    + Ord
+    + Hash
+    + Default
+    + 'static
+    + Send
+    + Sync
 {
     /// The type of the wrapped value.
     type Wrap<T: Debug + 'static + Send + Sync>: Debug + 'static + Send + Sync;
@@ -63,7 +77,9 @@ pub trait Container:
     fn wrap<T: Debug + 'static + Send + Sync>(value: T) -> Self::Wrap<T>;
 
     /// Reads the given value.
-    fn read<T: Debug + 'static + Send + Sync>(value: &Self::Wrap<T>) -> Self::Read<'_, T>;
+    fn read<T: Debug + 'static + Send + Sync>(
+        value: &Self::Wrap<T>,
+    ) -> Self::Read<'_, T>;
 
     /// Maps the given value into another sub-field value.
     fn map_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
@@ -78,7 +94,8 @@ pub trait Container:
     ) -> Self::MappedRead<'a, U>;
 }
 
-/// A struct which implements [`Container`] by wrapping the value in a [`RwLock`].
+/// A struct which implements [`Container`] by wrapping the value in a
+/// [`RwLock`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct RwLockContainer;
 
@@ -87,9 +104,13 @@ impl Container for RwLockContainer {
     type Read<'a, T: ?Sized + 'a> = RwLockReadGuard<'a, T>;
     type Wrap<T: Debug + 'static + Send + Sync> = RwLock<T>;
 
-    fn wrap<T: Debug + 'static + Send + Sync>(value: T) -> Self::Wrap<T> { RwLock::new(value) }
+    fn wrap<T: Debug + 'static + Send + Sync>(value: T) -> Self::Wrap<T> {
+        RwLock::new(value)
+    }
 
-    fn read<T: Debug + 'static + Send + Sync>(value: &Self::Wrap<T>) -> Self::Read<'_, T> {
+    fn read<T: Debug + 'static + Send + Sync>(
+        value: &Self::Wrap<T>,
+    ) -> Self::Read<'_, T> {
         value.read()
     }
 
@@ -117,9 +138,15 @@ impl Container for NoContainer {
     type Read<'a, T: ?Sized + 'a> = &'a T;
     type Wrap<T: Debug + 'static + Send + Sync> = T;
 
-    fn wrap<T: Debug + 'static + Send + Sync>(value: T) -> Self::Wrap<T> { value }
+    fn wrap<T: Debug + 'static + Send + Sync>(value: T) -> Self::Wrap<T> {
+        value
+    }
 
-    fn read<T: Debug + 'static + Send + Sync>(value: &Self::Wrap<T>) -> Self::Read<'_, T> { value }
+    fn read<T: Debug + 'static + Send + Sync>(
+        value: &Self::Wrap<T>,
+    ) -> Self::Read<'_, T> {
+        value
+    }
 
     fn map_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
         value: Self::Read<'a, T>,
@@ -136,8 +163,9 @@ impl Container for NoContainer {
     }
 }
 
-/// A struct which implements [`State`] used to signify that the table is built with some errors
-/// and is not suitable for the next phase (i.e. code generation).
+/// A struct which implements [`State`] used to signify that the table is built
+/// with some errors and is not suitable for the next phase (i.e. code
+/// generation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Suboptimal;
 
@@ -149,8 +177,9 @@ impl State for Suboptimal {
     fn on_global_id_resolved(_: &Table<Self>, _: GlobalID, _: GlobalID) {}
 }
 
-/// A struct which implements [`State`] used to signify that the table is built successfully and
-/// is ready to be used for the next phase (i.e. code generation).
+/// A struct which implements [`State`] used to signify that the table is built
+/// successfully and is ready to be used for the next phase (i.e. code
+/// generation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Success;
 
@@ -170,14 +199,17 @@ mod private {
 ///
 /// This is used to distinguish between the states of the symbols in the table.
 #[doc(hidden)]
-pub trait State: Default + Debug + private::Sealed + 'static + Send + Sync {
+pub trait State:
+    Default + Debug + private::Sealed + 'static + Send + Sync
+{
     /// The container type used to wrap the symbols in the table.
     type Container: Container;
 
-    /// Gets notified when the table performs a symbol resolution and resolves the given
-    /// [`GlobalID`]
+    /// Gets notified when the table performs a symbol resolution and resolves
+    /// the given [`GlobalID`]
     ///
-    /// This is notified before the generic arguments are resolved for the given [`GlobalID`].
+    /// This is notified before the generic arguments are resolved for the given
+    /// [`GlobalID`].
     fn on_global_id_resolved(
         table: &Table<Self>,
         referring_site: GlobalID,
@@ -197,12 +229,21 @@ pub struct Representation<T: State> {
     constants: Arena<<T::Container as Container>::Wrap<Constant>, ID<Constant>>,
 
     traits: Arena<<T::Container as Container>::Wrap<Trait>, ID<Trait>>,
-    trait_types: Arena<<T::Container as Container>::Wrap<TraitType>, ID<TraitType>>,
-    trait_functions: Arena<<T::Container as Container>::Wrap<TraitFunction>, ID<TraitFunction>>,
-    trait_constants: Arena<<T::Container as Container>::Wrap<TraitConstant>, ID<TraitConstant>>,
+    trait_types:
+        Arena<<T::Container as Container>::Wrap<TraitType>, ID<TraitType>>,
+    trait_functions: Arena<
+        <T::Container as Container>::Wrap<TraitFunction>,
+        ID<TraitFunction>,
+    >,
+    trait_constants: Arena<
+        <T::Container as Container>::Wrap<TraitConstant>,
+        ID<TraitConstant>,
+    >,
 
-    trait_implementations:
-        Arena<<T::Container as Container>::Wrap<TraitImplementation>, ID<TraitImplementation>>,
+    trait_implementations: Arena<
+        <T::Container as Container>::Wrap<TraitImplementation>,
+        ID<TraitImplementation>,
+    >,
     negative_trait_implementations: Arena<
         <T::Container as Container>::Wrap<NegativeTraitImplementation>,
         ID<NegativeTraitImplementation>,
@@ -221,11 +262,15 @@ pub struct Representation<T: State> {
         ID<TraitImplementationConstant>,
     >,
 
-    adt_implementations:
-        Arena<<T::Container as Container>::Wrap<AdtImplementation>, ID<AdtImplementation>>,
+    adt_implementations: Arena<
+        <T::Container as Container>::Wrap<AdtImplementation>,
+        ID<AdtImplementation>,
+    >,
 
-    adt_implementation_types:
-        Arena<<T::Container as Container>::Wrap<AdtImplementationType>, ID<AdtImplementationType>>,
+    adt_implementation_types: Arena<
+        <T::Container as Container>::Wrap<AdtImplementationType>,
+        ID<AdtImplementationType>,
+    >,
     adt_implementation_functions: Arena<
         <T::Container as Container>::Wrap<AdtImplementationFunction>,
         ID<AdtImplementationFunction>,
@@ -307,10 +352,12 @@ macro_rules! implements_symbol {
                 }
             }
 
-            /// Gets the mutable arena reference containing *this* kind of symbol.
+            /// Gets the mutable arena reference containing *this* kind of
+            /// symbol.
             fn get_arena_mut<T: State>(
                 table: &mut Representation<T>,
-            ) -> &mut Arena<<T::Container as Container>::Wrap<Self>, ID<Self>> {
+            ) -> &mut Arena<<T::Container as Container>::Wrap<Self>, ID<Self>>
+            {
                 paste! {
                     &mut table.[<$symbol:snake s>]
                 }
@@ -351,7 +398,9 @@ macro_rules! get {
 }
 
 /// The error type returned by [`Table::get_by_qualified_name()`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
 #[allow(missing_docs)]
 pub enum GetByQualifiedNameError<'a> {
     #[error(
@@ -359,7 +408,8 @@ pub enum GetByQualifiedNameError<'a> {
          `{searched_in_global_id:?}`)"
     )]
     SymbolNotFound {
-        /// The global ID that was searched in. If `None`, the search was started from the root.
+        /// The global ID that was searched in. If `None`, the search was
+        /// started from the root.
         searched_in_global_id: Option<GlobalID>,
 
         /// The name that was searched.
@@ -376,7 +426,11 @@ impl<T: State> Representation<T> {
     ///
     /// Returns `None` if `referred` or `referring_site` is not a valid ID.
     #[must_use]
-    pub fn symbol_accessible(&self, referring_site: GlobalID, referred: GlobalID) -> Option<bool> {
+    pub fn symbol_accessible(
+        &self,
+        referring_site: GlobalID,
+        referred: GlobalID,
+    ) -> Option<bool> {
         match self.get_accessibility(referred)? {
             Accessibility::Public => {
                 // PEDANTIC: check if the referring site is a valid ID.
@@ -385,7 +439,8 @@ impl<T: State> Representation<T> {
                 Some(true)
             }
             Accessibility::Private => {
-                let mut referring_module_id = self.get_closet_module_id(referring_site)?;
+                let mut referring_module_id =
+                    self.get_closet_module_id(referring_site)?;
                 let referred_module_id = self.get_closet_module_id(referred)?;
 
                 loop {
@@ -393,7 +448,9 @@ impl<T: State> Representation<T> {
                         return Some(true);
                     }
 
-                    let Some(next) = self.get(referring_module_id)?.parent_module_id else {
+                    let Some(next) =
+                        self.get(referring_module_id)?.parent_module_id
+                    else {
                         return Some(false);
                     };
 
@@ -401,15 +458,22 @@ impl<T: State> Representation<T> {
                 }
             }
             Accessibility::Internal => Some(
-                self.get_root_module_id(referred)? == self.get_root_module_id(referring_site)?,
+                self.get_root_module_id(referred)?
+                    == self.get_root_module_id(referring_site)?,
             ),
         }
     }
 
-    /// Returns the root [`Module`] ID that contains the given [`GlobalID`] (including itself).
+    /// Returns the root [`Module`] ID that contains the given [`GlobalID`]
+    /// (including itself).
     #[must_use]
-    pub fn get_root_module_id(&self, mut global_id: GlobalID) -> Option<ID<Module>> {
-        while let Some(parent_id) = self.get_global(global_id)?.parent_global_id() {
+    pub fn get_root_module_id(
+        &self,
+        mut global_id: GlobalID,
+    ) -> Option<ID<Module>> {
+        while let Some(parent_id) =
+            self.get_global(global_id)?.parent_global_id()
+        {
             global_id = parent_id;
         }
 
@@ -420,13 +484,18 @@ impl<T: State> Representation<T> {
         )
     }
 
-    /// Returns the [`ImplementationSignature`] of the given [`TraitImplementationKindID`].
+    /// Returns the [`ImplementationSignature`] of the given
+    /// [`TraitImplementationKindID`].
     #[must_use]
     pub fn get_trait_implementation_signature(
         &self,
         trait_implementation_kind: TraitImplementationKindID,
-    ) -> Option<<T::Container as Container>::MappedRead<'_, ImplementationSignature<ID<Trait>>>>
-    {
+    ) -> Option<
+        <T::Container as Container>::MappedRead<
+            '_,
+            ImplementationSignature<ID<Trait>>,
+        >,
+    > {
         match trait_implementation_kind {
             TraitImplementationKindID::Positive(id) => self
                 .get(id)
@@ -437,9 +506,13 @@ impl<T: State> Representation<T> {
         }
     }
 
-    /// Returns the [`Module`] ID that is the closest to the given [`GlobalID`] (including itself).
+    /// Returns the [`Module`] ID that is the closest to the given [`GlobalID`]
+    /// (including itself).
     #[must_use]
-    pub fn get_closet_module_id(&self, mut global_id: GlobalID) -> Option<ID<Module>> {
+    pub fn get_closet_module_id(
+        &self,
+        mut global_id: GlobalID,
+    ) -> Option<ID<Module>> {
         // including itself
         loop {
             if let GlobalID::Module(module_id) = global_id {
@@ -458,8 +531,10 @@ impl<T: State> Representation<T> {
     ///
     /// # Errors
     ///
-    /// - [`GetByQualifiedNameError::SymbolNotFound`]: if the symbol is not found.
-    /// - [`GetByQualifiedNameError::EmptyIterator`]: if the given iterator is empty.
+    /// - [`GetByQualifiedNameError::SymbolNotFound`]: if the symbol is not
+    ///   found.
+    /// - [`GetByQualifiedNameError::EmptyIterator`]: if the given iterator is
+    ///   empty.
     pub fn get_by_qualified_name<'a>(
         &self,
         qualified_names: impl Iterator<Item = &'a str>,
@@ -474,19 +549,22 @@ impl<T: State> Representation<T> {
                             .unwrap()
                             .get_member(name)
                             .ok_or(GetByQualifiedNameError::SymbolNotFound {
-                                searched_in_global_id: Some(searched_in_global_id),
+                                searched_in_global_id: Some(
+                                    searched_in_global_id,
+                                ),
                                 name,
                             })?,
                     );
                 }
                 None => {
-                    current_id = Some(self.root_module_ids_by_name.get(name).map_or(
-                        Err(GetByQualifiedNameError::SymbolNotFound {
-                            searched_in_global_id: None,
-                            name,
-                        }),
-                        |some| Ok(GlobalID::Module(*some)),
-                    )?);
+                    current_id =
+                        Some(self.root_module_ids_by_name.get(name).map_or(
+                            Err(GetByQualifiedNameError::SymbolNotFound {
+                                searched_in_global_id: None,
+                                name,
+                            }),
+                            |some| Ok(GlobalID::Module(*some)),
+                        )?);
                 }
             }
         }
@@ -502,12 +580,13 @@ impl<T: State> Representation<T> {
     #[must_use]
     pub fn get_qualified_name(&self, global_id: GlobalID) -> Option<String> {
         match global_id {
-            GlobalID::TraitImplementation(id) => {
-                self.get_qualified_name(self.get(id)?.signature.implemented_id.into())
-            }
-            GlobalID::NegativeTraitImplementation(id) => {
-                self.get_qualified_name(self.get(id)?.signature.implemented_id.into())
-            }
+            GlobalID::TraitImplementation(id) => self.get_qualified_name(
+                self.get(id)?.signature.implemented_id.into(),
+            ),
+            GlobalID::NegativeTraitImplementation(id) => self
+                .get_qualified_name(
+                    self.get(id)?.signature.implemented_id.into(),
+                ),
 
             GlobalID::TraitImplementationType(id) => {
                 let mut qualified_name = self.get_qualified_name(
@@ -573,8 +652,8 @@ impl<T: State> Representation<T> {
 
     /// Gets overall accessibility of the given [`r#type::Type`].
     ///
-    /// **Overall Accessibility** describes the **least** accessibility of the least accessible
-    /// type component of the given [`r#type::Type`].
+    /// **Overall Accessibility** describes the **least** accessibility of the
+    /// least accessible type component of the given [`r#type::Type`].
     ///
     /// Example:
     ///
@@ -589,31 +668,48 @@ impl<T: State> Representation<T> {
     ///
     /// `None` if the type contains an invalid id as its component.
     #[must_use]
-    pub fn get_type_overall_accessibility(&self, ty: &r#type::Type) -> Option<Accessibility> {
+    pub fn get_type_overall_accessibility(
+        &self,
+        ty: &r#type::Type,
+    ) -> Option<Accessibility> {
         match ty {
-            r#type::Type::Local(local) => self.get_type_overall_accessibility(&local.0),
+            r#type::Type::Local(local) => {
+                self.get_type_overall_accessibility(&local.0)
+            }
             r#type::Type::Inference(never) => match *never {},
-            r#type::Type::Symbol(adt) => Some(
-                self.get_accessibility(adt.id.into())?
-                    .min(self.get_generic_arguments_overall_accessibility(&adt.generic_arguments)?),
-            ),
-            r#type::Type::Pointer(pointer) => self.get_type_overall_accessibility(&pointer.pointee),
+            r#type::Type::Symbol(adt) => {
+                Some(self.get_accessibility(adt.id.into())?.min(
+                    self.get_generic_arguments_overall_accessibility(
+                        &adt.generic_arguments,
+                    )?,
+                ))
+            }
+            r#type::Type::Pointer(pointer) => {
+                self.get_type_overall_accessibility(&pointer.pointee)
+            }
             r#type::Type::Reference(reference) => Some(
                 self.get_lifetime_overall_accessibility(&reference.lifetime)?
-                    .min(self.get_type_overall_accessibility(&reference.pointee)?),
+                    .min(
+                        self.get_type_overall_accessibility(
+                            &reference.pointee,
+                        )?,
+                    ),
             ),
             r#type::Type::Array(array) => Some(
                 self.get_constant_overall_accessibility(&array.length)?
                     .min(self.get_type_overall_accessibility(&array.r#type)?),
             ),
-            r#type::Type::Parameter(parameter) => self.get_accessibility(parameter.parent.into()),
+            r#type::Type::Parameter(parameter) => {
+                self.get_accessibility(parameter.parent.into())
+            }
             r#type::Type::Primitive(_) => Some(Accessibility::Public),
             r#type::Type::Tuple(tuple) => {
                 let mut current_min = Accessibility::Public;
 
                 for element in &tuple.elements {
-                    current_min =
-                        current_min.min(self.get_type_overall_accessibility(element.as_term())?);
+                    current_min = current_min.min(
+                        self.get_type_overall_accessibility(element.as_term())?,
+                    );
                 }
 
                 Some(current_min)
@@ -632,8 +728,8 @@ impl<T: State> Representation<T> {
 
     /// Gets overall accessibility of the given [`constant::Constant`].
     ///
-    /// **Overall Accessibility** describes the **least** accessibility of the least accessible
-    /// component of the given [`constant::Constant`].
+    /// **Overall Accessibility** describes the **least** accessibility of the
+    /// least accessible component of the given [`constant::Constant`].
     ///
     /// # Returns
     ///
@@ -644,14 +740,18 @@ impl<T: State> Representation<T> {
         constant: &constant::Constant,
     ) -> Option<Accessibility> {
         match constant {
-            constant::Constant::Local(local) => self.get_constant_overall_accessibility(&local.0),
+            constant::Constant::Local(local) => {
+                self.get_constant_overall_accessibility(&local.0)
+            }
             constant::Constant::Inference(never) => match *never {},
 
             constant::Constant::Struct(constant) => {
-                let mut current_min = self.get_accessibility(constant.id.into())?;
+                let mut current_min =
+                    self.get_accessibility(constant.id.into())?;
 
                 for field in &constant.fields {
-                    current_min = current_min.min(self.get_constant_overall_accessibility(field)?);
+                    current_min = current_min
+                        .min(self.get_constant_overall_accessibility(field)?);
                 }
 
                 Some(current_min)
@@ -663,9 +763,8 @@ impl<T: State> Representation<T> {
                 .map(|x| self.get_constant_overall_accessibility(x))
                 .try_fold(Accessibility::Public, |acc, x| Some(acc.min(x?))),
 
-            constant::Constant::Parameter(_) | constant::Constant::Primitive(_) => {
-                Some(Accessibility::Public)
-            }
+            constant::Constant::Parameter(_)
+            | constant::Constant::Primitive(_) => Some(Accessibility::Public),
 
             constant::Constant::MemberSymbol(member_symbol) => Some(
                 self.get_accessibility(member_symbol.id.into())?
@@ -678,11 +777,15 @@ impl<T: State> Representation<T> {
             ),
 
             constant::Constant::Enum(constant) => {
-                let mut current_min = self.get_accessibility(constant.variant_id.into())?;
+                let mut current_min =
+                    self.get_accessibility(constant.variant_id.into())?;
 
                 if let Some(associated_value) = &constant.associated_value {
-                    current_min =
-                        current_min.min(self.get_constant_overall_accessibility(associated_value)?);
+                    current_min = current_min.min(
+                        self.get_constant_overall_accessibility(
+                            associated_value,
+                        )?,
+                    );
                 }
 
                 Some(current_min)
@@ -690,7 +793,9 @@ impl<T: State> Representation<T> {
 
             constant::Constant::Symbol(symbol) => {
                 Some(self.get_accessibility(symbol.id.into())?.min(
-                    self.get_generic_arguments_overall_accessibility(&symbol.generic_arguments)?,
+                    self.get_generic_arguments_overall_accessibility(
+                        &symbol.generic_arguments,
+                    )?,
                 ))
             }
 
@@ -698,8 +803,11 @@ impl<T: State> Representation<T> {
                 let mut current_min = Accessibility::Public;
 
                 for element in &tuple.elements {
-                    current_min = current_min
-                        .min(self.get_constant_overall_accessibility(element.as_term())?);
+                    current_min = current_min.min(
+                        self.get_constant_overall_accessibility(
+                            element.as_term(),
+                        )?,
+                    );
                 }
 
                 Some(current_min)
@@ -713,7 +821,10 @@ impl<T: State> Representation<T> {
     ///
     /// `None` if the lifetime contains an invalid id as its component.
     #[must_use]
-    pub fn get_lifetime_overall_accessibility(&self, lifetime: &Lifetime) -> Option<Accessibility> {
+    pub fn get_lifetime_overall_accessibility(
+        &self,
+        lifetime: &Lifetime,
+    ) -> Option<Accessibility> {
         match lifetime {
             Lifetime::Parameter(lifetime_parameter_id) => {
                 self.get_accessibility(lifetime_parameter_id.parent.into())
@@ -722,19 +833,22 @@ impl<T: State> Representation<T> {
             Lifetime::Inference(never) => match never.0 {},
             Lifetime::Local(local) => match local.0 {},
 
-            Lifetime::Forall(_) | Lifetime::Static => Some(Accessibility::Public),
+            Lifetime::Forall(_) | Lifetime::Static => {
+                Some(Accessibility::Public)
+            }
         }
     }
 
     /// Gets overall accessibility of the given [`GenericArguments`].
     ///
-    /// **Overall Accessibility** describes the **least** accessibility of the least accessible
-    /// component of the given [`GenericArguments`].
+    /// **Overall Accessibility** describes the **least** accessibility of the
+    /// least accessible component of the given [`GenericArguments`].
     ///
     /// # Returns
     ///
     /// `None` if the generic arguments contains an invalid id as its component.
-    /// If the generic arguments is empty, returns `Some(Accessibility::Public)`.
+    /// If the generic arguments is empty, returns
+    /// `Some(Accessibility::Public)`.
     #[must_use]
     pub fn get_generic_arguments_overall_accessibility(
         &self,
@@ -743,31 +857,32 @@ impl<T: State> Representation<T> {
         let mut current_min = Accessibility::Public;
 
         for lifetime in &generic_arguments.lifetimes {
-            current_min = current_min.min(self.get_lifetime_overall_accessibility(lifetime)?);
+            current_min = current_min
+                .min(self.get_lifetime_overall_accessibility(lifetime)?);
         }
 
         for ty in &generic_arguments.types {
-            current_min = current_min.min(self.get_type_overall_accessibility(ty)?);
+            current_min =
+                current_min.min(self.get_type_overall_accessibility(ty)?);
         }
 
         for constant in &generic_arguments.constants {
-            current_min = current_min.min(self.get_constant_overall_accessibility(constant)?);
+            current_min = current_min
+                .min(self.get_constant_overall_accessibility(constant)?);
         }
 
         Some(current_min)
     }
 
-    /// Gets the [`ScopeWalker`] that walks through the scope hierarchy of the given [`GlobalID`].
+    /// Gets the [`ScopeWalker`] that walks through the scope hierarchy of the
+    /// given [`GlobalID`].
     ///
     /// See [`ScopeWalker`] for more information.
     #[must_use]
     pub fn scope_walker(&self, global_id: GlobalID) -> Option<ScopeWalker<T>> {
         drop(self.get_global(global_id)?);
 
-        Some(ScopeWalker {
-            table: self,
-            current_id: Some(global_id),
-        })
+        Some(ScopeWalker { table: self, current_id: Some(global_id) })
     }
 
     /// Gets the accessibility of the given [`GlobalID`].
@@ -776,7 +891,11 @@ impl<T: State> Representation<T> {
     ///
     /// Returns `None` if the given [`GlobalID`] is not a valid ID.
     #[must_use]
-    pub fn get_accessibility(&self, global_id: GlobalID) -> Option<Accessibility> {
+    #[allow(clippy::too_many_lines)]
+    pub fn get_accessibility(
+        &self,
+        global_id: GlobalID,
+    ) -> Option<Accessibility> {
         macro_rules! arm_expression {
             ($table:ident, $id:ident, $kind:ident) => {
                 paste! {
@@ -816,19 +935,27 @@ impl<T: State> Representation<T> {
             (AdtImplementationConstant),
             (
                 Variant,
-                self.get_accessibility(T::Container::read(global_id).parent_enum_id.into())
+                self.get_accessibility(
+                    T::Container::read(global_id).parent_enum_id.into()
+                )
             ),
             (
                 TraitType,
-                self.get_accessibility(T::Container::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::Container::read(global_id).parent_id.into()
+                )
             ),
             (
                 TraitConstant,
-                self.get_accessibility(T::Container::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::Container::read(global_id).parent_id.into()
+                )
             ),
             (
                 TraitFunction,
-                self.get_accessibility(T::Container::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::Container::read(global_id).parent_id.into()
+                )
             ),
             (
                 TraitImplementation,
@@ -841,15 +968,21 @@ impl<T: State> Representation<T> {
             ),
             (
                 TraitImplementationType,
-                self.get_accessibility(T::Container::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::Container::read(global_id).parent_id.into()
+                )
             ),
             (
                 TraitImplementationFunction,
-                self.get_accessibility(T::Container::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::Container::read(global_id).parent_id.into()
+                )
             ),
             (
                 TraitImplementationConstant,
-                self.get_accessibility(T::Container::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::Container::read(global_id).parent_id.into()
+                )
             ),
             (
                 NegativeTraitImplementation,
@@ -861,10 +994,15 @@ impl<T: State> Representation<T> {
                 )
             ),
             (AdtImplementation, {
-                let implemented_id = T::Container::read(global_id).signature.implemented_id;
+                let implemented_id =
+                    T::Container::read(global_id).signature.implemented_id;
                 match implemented_id {
-                    crate::symbol::AlgebraicKindID::Struct(id) => self.get_accessibility(id.into()),
-                    crate::symbol::AlgebraicKindID::Enum(id) => self.get_accessibility(id.into()),
+                    crate::symbol::AdtKindID::Struct(id) => {
+                        self.get_accessibility(id.into())
+                    }
+                    crate::symbol::AdtKindID::Enum(id) => {
+                        self.get_accessibility(id.into())
+                    }
                 }
             })
         )
@@ -935,8 +1073,8 @@ impl<T: State> Representation<T> {
     }
 }
 
-/// Represents an iterator that walks through the scope of the given symbol. It goes through all
-/// the parent symbols until it reaches the root.
+/// Represents an iterator that walks through the scope of the given symbol. It
+/// goes through all the parent symbols until it reaches the root.
 ///
 /// The iterator iterates through the scope in id-to-parent order.
 #[derive(Debug, Clone)]

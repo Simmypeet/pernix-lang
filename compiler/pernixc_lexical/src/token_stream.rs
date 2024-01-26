@@ -37,7 +37,9 @@ pub struct Delimited {
 }
 
 /// Is an enumeration of either a [`Token`] or a [`Delimited`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(missing_docs)]
 pub enum TokenTree {
     Token(Token),
@@ -46,8 +48,8 @@ pub enum TokenTree {
 
 /// Is a list of well structured [`TokenTree`]s.
 ///
-/// This struct is the final output of the lexical analysis phase and is meant to be used by the
-/// next stage of the compilation process.
+/// This struct is the final output of the lexical analysis phase and is meant
+/// to be used by the next stage of the compilation process.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref)]
 pub struct TokenStream {
     #[deref]
@@ -61,13 +63,17 @@ impl TokenStream {
     /// [`Token::lex()`] repeatedly until the iterator is exhausted.
     ///
     /// # Parameters
-    /// - `source_file_iterator`: The iterator that iterates over the source code.
+    /// - `source_file_iterator`: The iterator that iterates over the source
+    ///   code.
     ///
     /// # Returns
-    /// A tuple containing the stream of successfully tokenized tokens and a list of lexical errors
-    /// encountered during tokenization.
+    /// A tuple containing the stream of successfully tokenized tokens and a
+    /// list of lexical errors encountered during tokenization.
     #[must_use]
-    pub fn tokenize(source_file: &Arc<SourceFile>, handler: &dyn Handler<error::Error>) -> Self {
+    pub fn tokenize(
+        source_file: &Arc<SourceFile>,
+        handler: &dyn Handler<error::Error>,
+    ) -> Self {
         // list of tokens to return
         let mut tokens = Vec::new();
         let mut source_file_iterator = source_file.iter();
@@ -83,10 +89,11 @@ impl TokenStream {
             }
         }
 
-        // reverse the tokens so that the `pop` method can be used to get the next token
+        // reverse the tokens so that the `pop` method can be used to get the
+        // next token
         tokens.reverse();
 
-        // stucture the tokens into a token stream
+        // structure the tokens into a token stream
         let mut token_trees = Vec::new();
         while let Some(token_tree) = Self::handle_token(&mut tokens, handler) {
             token_trees.push(token_tree);
@@ -99,9 +106,7 @@ impl TokenStream {
         tokens: &mut Vec<Token>,
         handler: &dyn Handler<error::Error>,
     ) -> Option<TokenTree> {
-        tokens
-            .pop()
-            .and_then(|x| Self::handle_popped_token(tokens, x, handler))
+        tokens.pop().and_then(|x| Self::handle_popped_token(tokens, x, handler))
     }
 
     fn handle_popped_token(
@@ -110,17 +115,22 @@ impl TokenStream {
         handler: &dyn Handler<error::Error>,
     ) -> Option<TokenTree> {
         match popped_token {
-            Token::Punctuation(punc) if punc.punctuation == '{' => {
-                Self::handle_delimited(tokens, punc, Delimiter::Brace, handler)
+            Token::Punctuation(pun) if pun.punctuation == '{' => {
+                Self::handle_delimited(tokens, pun, Delimiter::Brace, handler)
                     .map(TokenTree::Delimited)
             }
-            Token::Punctuation(punc) if punc.punctuation == '[' => {
-                Self::handle_delimited(tokens, punc, Delimiter::Bracket, handler)
+            Token::Punctuation(pun) if pun.punctuation == '[' => {
+                Self::handle_delimited(tokens, pun, Delimiter::Bracket, handler)
                     .map(TokenTree::Delimited)
             }
-            Token::Punctuation(punc) if punc.punctuation == '(' => {
-                Self::handle_delimited(tokens, punc, Delimiter::Parenthesis, handler)
-                    .map(TokenTree::Delimited)
+            Token::Punctuation(pun) if pun.punctuation == '(' => {
+                Self::handle_delimited(
+                    tokens,
+                    pun,
+                    Delimiter::Parenthesis,
+                    handler,
+                )
+                .map(TokenTree::Delimited)
             }
             token => Some(TokenTree::Token(token)),
         }
@@ -136,32 +146,40 @@ impl TokenStream {
 
         while let Some(token) = tokens.pop() {
             match (token, delimiter) {
-                (Token::Punctuation(punc), Delimiter::Brace) if punc.punctuation == '}' => {
+                (Token::Punctuation(close), Delimiter::Brace)
+                    if close.punctuation == '}' =>
+                {
                     return Some(Delimited {
                         open,
                         token_stream: Self { token_trees },
-                        close: punc,
+                        close,
                         delimiter,
                     })
                 }
-                (Token::Punctuation(punc), Delimiter::Bracket) if punc.punctuation == ']' => {
+                (Token::Punctuation(close), Delimiter::Bracket)
+                    if close.punctuation == ']' =>
+                {
                     return Some(Delimited {
                         open,
                         token_stream: Self { token_trees },
-                        close: punc,
+                        close,
                         delimiter,
                     })
                 }
-                (Token::Punctuation(punc), Delimiter::Parenthesis) if punc.punctuation == ')' => {
+                (Token::Punctuation(close), Delimiter::Parenthesis)
+                    if close.punctuation == ')' =>
+                {
                     return Some(Delimited {
                         open,
                         token_stream: Self { token_trees },
-                        close: punc,
+                        close,
                         delimiter,
                     })
                 }
                 (token, _) => {
-                    let Some(token_tree) = Self::handle_popped_token(tokens, token, handler) else {
+                    let Some(token_tree) =
+                        Self::handle_popped_token(tokens, token, handler)
+                    else {
                         break;
                     };
 
@@ -170,10 +188,9 @@ impl TokenStream {
             }
         }
 
-        handler.receive(error::Error::UndelimitedDelimiter(UndelimitedDelimiter {
-            opening_span: open.span,
-            delimiter,
-        }));
+        handler.receive(error::Error::UndelimitedDelimiter(
+            UndelimitedDelimiter { opening_span: open.span, delimiter },
+        ));
 
         None
     }

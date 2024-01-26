@@ -43,16 +43,19 @@ pub trait Semantic<T: Term> {
 
     /// Normalizes the given term.
     ///
-    /// The normalization allows the term to transform into a new equivalent term. Sometimes, it's
-    /// not trivial to list all the possible equivalent terms into the premise.
+    /// The normalization allows the term to transform into a new equivalent
+    /// term. Sometimes, it's not trivial to list all the possible
+    /// equivalent terms into the premise.
     ///
-    /// It's primarily used to resolve the trait-member terms or obtain the inferred term from an
-    /// inference variable.
+    /// It's primarily used to resolve the trait-member terms or obtain the
+    /// inferred term from an inference variable.
     ///
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    fn normalize<R: Session<T> + Session<Type> + Session<Lifetime> + Session<Constant>>(
+    fn normalize<
+        R: Session<T> + Session<Type> + Session<Lifetime> + Session<Constant>,
+    >(
         &mut self,
         term: &T,
         premise: &Premise,
@@ -82,7 +85,9 @@ pub trait Semantic<T: Term> {
 pub struct Default;
 
 impl Semantic<Lifetime> for Default {
-    fn trivially_equals(&mut self, lhs: &Lifetime, rhs: &Lifetime) -> bool { lhs == rhs }
+    fn trivially_equals(&mut self, lhs: &Lifetime, rhs: &Lifetime) -> bool {
+        lhs == rhs
+    }
 
     fn normalize<R: Session<Lifetime> + Session<Type> + Session<Constant>>(
         &mut self,
@@ -94,7 +99,9 @@ impl Semantic<Lifetime> for Default {
         Ok(None)
     }
 
-    fn outlives_satisfiability<R: Session<Type> + Session<Lifetime> + Session<Constant>>(
+    fn outlives_satisfiability<
+        R: Session<Type> + Session<Lifetime> + Session<Constant>,
+    >(
         &mut self,
         term: &Lifetime,
         _: &Lifetime,
@@ -111,7 +118,9 @@ impl Semantic<Lifetime> for Default {
 }
 
 impl Semantic<Type> for Default {
-    fn trivially_equals(&mut self, lhs: &Type, rhs: &Type) -> bool { lhs == rhs }
+    fn trivially_equals(&mut self, lhs: &Type, rhs: &Type) -> bool {
+        lhs == rhs
+    }
 
     fn normalize<R: Session<Lifetime> + Session<Type> + Session<Constant>>(
         &mut self,
@@ -144,14 +153,17 @@ impl Semantic<Type> for Default {
                 Ok(Some(type_aliased))
             }
 
-            // TODO: Transform trait-type into the trait-implementation type equivalent.
-            // TODO: Transform ADT-member-type into the aliased type equivalent.
-            // TODO: Normalize the unpacked tuple type.
+            // TODO: Transform trait-type into the trait-implementation type
+            // equivalent. TODO: Transform ADT-member-type into the
+            // aliased type equivalent. TODO: Normalize the unpacked
+            // tuple type.
             _ => Ok(None),
         }
     }
 
-    fn outlives_satisfiability<R: Session<Type> + Session<Lifetime> + Session<Constant>>(
+    fn outlives_satisfiability<
+        R: Session<Type> + Session<Lifetime> + Session<Constant>,
+    >(
         &mut self,
         term: &Type,
         _: &Lifetime,
@@ -181,7 +193,9 @@ impl Semantic<Type> for Default {
 }
 
 impl Semantic<Constant> for Default {
-    fn trivially_equals(&mut self, lhs: &Constant, rhs: &Constant) -> bool { lhs == rhs }
+    fn trivially_equals(&mut self, lhs: &Constant, rhs: &Constant) -> bool {
+        lhs == rhs
+    }
 
     fn normalize<R: Session<Lifetime> + Session<Type> + Session<Constant>>(
         &mut self,
@@ -194,7 +208,9 @@ impl Semantic<Constant> for Default {
         Ok(None)
     }
 
-    fn outlives_satisfiability<R: Session<Type> + Session<Lifetime> + Session<Constant>>(
+    fn outlives_satisfiability<
+        R: Session<Type> + Session<Lifetime> + Session<Constant>,
+    >(
         &mut self,
         _: &Constant,
         _: &Lifetime,

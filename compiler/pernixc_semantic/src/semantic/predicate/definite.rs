@@ -38,7 +38,13 @@ impl<
     > visitor::Visitor for Visitor<'a, 's, 'r, 'l, T, S, R>
 {
     fn visit_type(&mut self, ty: &Type) -> bool {
-        match definite(ty, self.premise, self.table, self.semantic, self.session) {
+        match definite(
+            ty,
+            self.premise,
+            self.table,
+            self.semantic,
+            self.session,
+        ) {
             result @ (Err(_) | Ok(false)) => {
                 self.definite = result;
                 return false;
@@ -129,13 +135,8 @@ pub fn definite<
 
     // satisfiable with congruence
     if satisfiability == Satisfiability::Congruent {
-        let mut visitor = Visitor {
-            definite: Ok(true),
-            premise,
-            table,
-            semantic,
-            session,
-        };
+        let mut visitor =
+            Visitor { definite: Ok(true), premise, table, semantic, session };
 
         let _ = term.accept_one_level(&mut visitor);
 
@@ -146,7 +147,9 @@ pub fn definite<
     }
 
     // satisfiable with normalization
-    if let Some(normalized) = semantic.normalize(term, premise, table, session)? {
+    if let Some(normalized) =
+        semantic.normalize(term, premise, table, session)?
+    {
         if definite(&normalized, premise, table, semantic, session)? {
             session.mark_as_done(Query(term), Satisfied);
             return Ok(true);

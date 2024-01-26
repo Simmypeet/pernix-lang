@@ -8,20 +8,24 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, r#type::Type, AssignSubTermError, GenericArguments, Match, Never,
-    Substructural, Term,
+    constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
+    GetVarianceError, Match, Never, Substructural, Term,
 };
 use crate::{
+    arena::Arena,
     semantic::{
         predicate::{NonEquality, Outlives, Satisfiability},
         unification::Unification,
         Premise,
     },
-    symbol::LifetimeParameterID,
+    symbol::{
+        GenericParameters, LifetimeParameter, LifetimeParameterID, Variance,
+    },
+    table::{State, Table},
 };
 
-/// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used in higher-ranked
-/// trait bounds.
+/// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used
+/// in higher-ranked trait bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Forall(pub(crate) usize);
 
@@ -44,7 +48,16 @@ pub struct Local(pub Never); /* will be changed */
 
 /// Represents a lifetime annotation term.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum Lifetime {
@@ -56,7 +69,7 @@ pub enum Lifetime {
 }
 
 impl Term for Lifetime {
-    // lifetime doesn't have any sub-term
+    type GenericParameter = LifetimeParameter;
     type SubConstantLocation = Never;
     type SubLifetimeLocation = Never;
     type SubTypeLocation = Never;
@@ -66,7 +79,11 @@ impl Term for Lifetime {
         &self,
         _: &Self,
     ) -> Option<
-        Substructural<Self::SubLifetimeLocation, Self::SubTypeLocation, Self::SubConstantLocation>,
+        Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
     > {
         None
     }
@@ -95,9 +112,35 @@ impl Term for Lifetime {
         match location {}
     }
 
+    fn get_sub_lifetime_variance(
+        &self,
+        location: Self::SubLifetimeLocation,
+        _: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        match location {}
+    }
+
+    fn get_sub_type_variance(
+        &self,
+        location: Self::SubTypeLocation,
+        _: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        match location {}
+    }
+
+    fn get_sub_constant_variance(
+        &self,
+        location: Self::SubConstantLocation,
+        _: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        match location {}
+    }
+
     fn is_tuple(&self) -> bool { false }
 
-    fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
+    fn outlives_predicates<'a>(
+        premise: &'a Premise,
+    ) -> impl Iterator<Item = &'a Outlives<Self>>
     where
         Self: 'a,
     {
@@ -107,7 +150,9 @@ impl Term for Lifetime {
             .filter_map(NonEquality::as_lifetime_outlives)
     }
 
-    fn definite_satisfiability(&self) -> Satisfiability { Satisfiability::Satisfied }
+    fn definite_satisfiability(&self) -> Satisfiability {
+        Satisfiability::Satisfied
+    }
 
     fn get_substructural(
         substructural: &Substructural<
@@ -129,11 +174,21 @@ impl Term for Lifetime {
         &mut substructural.lifetimes
     }
 
-    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
+    fn get_generic_parameters(
+        parameters: &GenericParameters,
+    ) -> &Arena<Self::GenericParameter> {
+        &parameters.lifetimes
+    }
+
+    fn get_unification(
+        unification: &Unification,
+    ) -> &HashMap<Self, HashSet<Self>> {
         &unification.lifetimes
     }
 
-    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
+    fn get_unification_mut(
+        unification: &mut Unification,
+    ) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.lifetimes
     }
 
@@ -141,7 +196,9 @@ impl Term for Lifetime {
         &generic_arguments.lifetimes
     }
 
-    fn get_generic_arguments_mut(generic_arguments: &mut GenericArguments) -> &mut Vec<Self> {
+    fn get_generic_arguments_mut(
+        generic_arguments: &mut GenericArguments,
+    ) -> &mut Vec<Self> {
         &mut generic_arguments.lifetimes
     }
 }

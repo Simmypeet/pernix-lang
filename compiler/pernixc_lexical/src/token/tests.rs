@@ -25,7 +25,9 @@ pub struct Identifier {
 }
 
 impl Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.string) }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.string)
+    }
 }
 
 impl Arbitrary for Identifier {
@@ -74,7 +76,8 @@ impl Arbitrary for Keyword {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         lazy_static! {
-            static ref KEYWORDS: Vec<KeywordKind> = KeywordKind::iter().collect();
+            static ref KEYWORDS: Vec<KeywordKind> =
+                KeywordKind::iter().collect();
         }
 
         proptest::sample::select(KEYWORDS.as_slice())
@@ -125,7 +128,9 @@ impl Numeric {
 }
 
 /// Represents an input for the delimited [`super::Comment`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut,
+)]
 pub struct DelimitedComment {
     /// The content of the delimited comment (without the `/*` and `*/`).
     pub comment_body: String,
@@ -159,7 +164,8 @@ impl Display for DelimitedComment {
 /// Represents an input for the line [`super::Comment`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LineComment {
-    /// The content of the line comment (without the `//` and new line terminator).
+    /// The content of the line comment (without the `//` and new line
+    /// terminator).
     pub comment_body: String,
 }
 
@@ -168,9 +174,7 @@ impl Arbitrary for LineComment {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        "[^\\n\\r]*"
-            .prop_map(|body| Self { comment_body: body })
-            .boxed()
+        "[^\\n\\r]*".prop_map(|body| Self { comment_body: body }).boxed()
     }
 }
 
@@ -250,7 +254,7 @@ impl Arbitrary for Punctuation {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::char::any()
-            .prop_filter_map("allows only ascii puncutation", |x| {
+            .prop_filter_map("allows only ascii punctuation", |x| {
                 if x.is_ascii_punctuation() && x != '_' && x != '@' {
                     Some(Self { punctuation: x })
                 } else {
@@ -424,7 +428,9 @@ impl Input<&super::Token> for &Token {
     }
 }
 
-fn tokenize(source: String) -> Result<super::Token, proptest::test_runner::TestCaseError> {
+fn tokenize(
+    source: String,
+) -> Result<super::Token, proptest::test_runner::TestCaseError> {
     let source_file = SourceFile::temp(source)?;
     let mut iterator = source_file.iter();
 

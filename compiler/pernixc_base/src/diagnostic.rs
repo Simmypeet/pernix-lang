@@ -11,7 +11,8 @@ pub trait Handler<T>: Send + Sync {
     fn receive(&self, error: T);
 }
 
-/// Is a struct that implements [`Handler`] trait by storing all errors in a vector.
+/// Is a struct that implements [`Handler`] trait by storing all errors in a
+/// vector.
 #[derive(Debug, Deref, DerefMut)]
 pub struct Storage<T: Send + Sync> {
     errors: RwLock<Vec<T>>,
@@ -20,11 +21,7 @@ pub struct Storage<T: Send + Sync> {
 impl<T: Send + Sync> Storage<T> {
     /// Creates a new empty [`Storage`]
     #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            errors: RwLock::new(Vec::new()),
-        }
-    }
+    pub const fn new() -> Self { Self { errors: RwLock::new(Vec::new()) } }
 
     /// Consumes the [`Storage`] and returns the underlying vector of errors.
     pub fn into_vec(self) -> Vec<T> { self.errors.into_inner() }
@@ -46,7 +43,8 @@ where
     fn receive(&self, error: U) { self.errors.write().push(error.into()); }
 }
 
-/// Is a struct that implements [`Handler`] trait by doing nothing with the errors.
+/// Is a struct that implements [`Handler`] trait by doing nothing with the
+/// errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Dummy;
 
@@ -54,7 +52,8 @@ impl<T> Handler<T> for Dummy {
     fn receive(&self, _error: T) {}
 }
 
-/// Is a struct that implements [`Handler`] trait by counting the number of diagnostics received.
+/// Is a struct that implements [`Handler`] trait by counting the number of
+/// diagnostics received.
 #[derive(Debug, Default)]
 pub struct Counter {
     counter: AtomicUsize,
@@ -63,15 +62,18 @@ pub struct Counter {
 impl Counter {
     /// Returns the number of diagnostics received.
     #[must_use]
-    pub fn count(&self) -> usize { self.counter.load(std::sync::atomic::Ordering::Relaxed) }
+    pub fn count(&self) -> usize {
+        self.counter.load(std::sync::atomic::Ordering::Relaxed)
+    }
 
     /// Resets the counter to zero.
-    pub fn reset(&self) { self.counter.store(0, std::sync::atomic::Ordering::Relaxed) }
+    pub fn reset(&self) {
+        self.counter.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl<T> Handler<T> for Counter {
     fn receive(&self, _error: T) {
-        self.counter
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }

@@ -105,25 +105,27 @@ fn equals_without_mapping<
 
 /// Checks if the two given terms are equal.
 ///
-/// Equality is one of the most important parts of the type system. The equality model is based on
-/// the first-order logic of equality.
+/// Equality is one of the most important parts of the type system. The equality
+/// model is based on the first-order logic of equality.
 ///
 /// These are the axioms of equality:
 ///
 /// - Reflexivity: for all `x`, `x = x`.
 /// - Symmetry: for all `x` and `y`, if `x = y`, then `y = x`.
-/// - Transitivity: for all `x`, `y`, and `z`, if `x = y` and `y = z`, then `x = z`.
-/// - Congruence: for all `x, ..., xn` and `y, ..., yn`, if `x = y`, ..., and `xn = yn`, then `f(x,
-///   ..., xn) = f(y, ..., yn)`.
+/// - Transitivity: for all `x`, `y`, and `z`, if `x = y` and `y = z`, then `x =
+///   z`.
+/// - Congruence: for all `x, ..., xn` and `y, ..., yn`, if `x = y`, ..., and
+///   `xn = yn`, then `f(x, ..., xn) = f(y, ..., yn)`.
 ///
 /// # Decidability
 ///
-/// Equality is **partially-decidable**. In other words, the function can halt in the case of
-/// equal terms, but it might output `false` or never halt in the case of unequal terms.
+/// Equality is **partially-decidable**. In other words, the function can halt
+/// in the case of equal terms, but it might output `false` or never halt in the
+/// case of unequal terms.
 ///
-/// However, the function has a **soundness** guarantee. In other words, the function will never
-/// output `true` in the case of unequal terms. Also, the algorithm has a hard-limit on the number
-/// of recursive calls.
+/// However, the function has a **soundness** guarantee. In other words, the
+/// function will never output `true` in the case of unequal terms. Also, the
+/// algorithm has a hard-limit on the number of recursive calls.
 ///
 /// # Errors
 ///
@@ -162,7 +164,8 @@ pub fn equals<
     }
 
     for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
-        if equals_without_mapping(lhs, key, premise, table, semantic, session)? {
+        if equals_without_mapping(lhs, key, premise, table, semantic, session)?
+        {
             for value in values {
                 if equals(value, rhs, premise, table, semantic, session)? {
                     session.mark_as_done(Query { lhs, rhs }, Satisfied);
@@ -171,7 +174,8 @@ pub fn equals<
             }
         }
 
-        if equals_without_mapping(key, rhs, premise, table, semantic, session)? {
+        if equals_without_mapping(key, rhs, premise, table, semantic, session)?
+        {
             for value in values {
                 if equals(lhs, value, premise, table, semantic, session)? {
                     session.mark_as_done(Query { lhs, rhs }, Satisfied);

@@ -91,11 +91,7 @@ impl MappedSource {
 impl SourceFile {
     fn new(full_path: PathBuf, source: MappedSource) -> Arc<Self> {
         let lines = get_line_byte_positions(source.content());
-        Arc::new(Self {
-            source,
-            full_path,
-            lines,
-        })
+        Arc::new(Self { source, full_path, lines })
     }
 
     /// Gets the content of the source file.
@@ -112,9 +108,7 @@ impl SourceFile {
         }
 
         let line = line - 1;
-        self.lines
-            .get(line)
-            .map(|range| &self.source.content()[range.clone()])
+        self.lines.get(line).map(|range| &self.source.content()[range.clone()])
     }
 
     /// Gets the [`Iterator`] for the source file.
@@ -134,18 +128,21 @@ impl SourceFile {
     ///
     /// # Errors
     /// - [`Error::IoError`]: Error occurred when mapping the file to memory.
-    /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes to a string.
+    /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes
+    ///   to a string.
     pub fn load(file: File, path: PathBuf) -> Result<Arc<Self>, Error> {
         let source = MappedSource::create(file)?;
         Ok(Self::new(path, source))
     }
 
-    /// Creates a temporary source file and writes the given displayable object to it.
+    /// Creates a temporary source file and writes the given displayable object
+    /// to it.
     ///
     /// # Errors
-    /// - [`Error::IoError`]: Error occurred when creating the temporary file, writing to, and
-    ///   mapping it to memory.
-    /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes to a string.
+    /// - [`Error::IoError`]: Error occurred when creating the temporary file,
+    ///   writing to, and mapping it to memory.
+    /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes
+    ///   to a string.
     pub fn temp(display: impl Display) -> Result<Arc<Self>, Error> {
         use std::io::Write;
 
@@ -185,17 +182,15 @@ impl SourceFile {
         let line_starting_byte_index = self.lines[line].start;
         let line_str = self.get_line(line + 1).unwrap();
 
-        // gets the column number by iterating through the utf-8 characters (starts at 1)
+        // gets the column number by iterating through the utf-8 characters
+        // (starts at 1)
         let column = line_str
             .char_indices()
             .take_while(|(i, _)| *i + line_starting_byte_index < byte_index)
             .count()
             + 1;
 
-        Some(Location {
-            line: line + 1,
-            column,
-        })
+        Some(Location { line: line + 1, column })
     }
 }
 
@@ -240,7 +235,9 @@ impl PartialEq for Span {
 impl Eq for Span {}
 
 impl PartialOrd for Span {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Ord for Span {
@@ -274,13 +271,18 @@ pub struct Location {
 }
 
 impl Span {
-    /// Creates a span from the given start and end byte indices in the source file.
+    /// Creates a span from the given start and end byte indices in the source
+    /// file.
     ///
     /// # Parameters
     /// - `start`: The start byte index of the span.
     /// - `end`: The end byte index of the span (exclusive).
     #[must_use]
-    pub fn new(source_file: Arc<SourceFile>, start: ByteIndex, end: ByteIndex) -> Option<Self> {
+    pub fn new(
+        source_file: Arc<SourceFile>,
+        start: ByteIndex,
+        end: ByteIndex,
+    ) -> Option<Self> {
         if start > end
             || !source_file.source.content().is_char_boundary(start)
             || source_file.source.content().len() < end
@@ -290,16 +292,16 @@ impl Span {
             return None;
         }
 
-        Some(Self {
-            start,
-            end,
-            source_file,
-        })
+        Some(Self { start, end, source_file })
     }
 
-    /// Creates a span from the given start byte index to the end of the source file.
+    /// Creates a span from the given start byte index to the end of the source
+    /// file.
     #[must_use]
-    pub fn to_end(source_file: Arc<SourceFile>, start: ByteIndex) -> Option<Self> {
+    pub fn to_end(
+        source_file: Arc<SourceFile>,
+        start: ByteIndex,
+    ) -> Option<Self> {
         if !source_file.source.content().is_char_boundary(start) {
             return None;
         }
@@ -312,23 +314,32 @@ impl Span {
 
     /// Gets the string slice of the source code that the span represents.
     #[must_use]
-    pub fn str(&self) -> &str { &self.source_file.source.content()[self.start..self.end] }
+    pub fn str(&self) -> &str {
+        &self.source_file.source.content()[self.start..self.end]
+    }
 
     /// Gets the starting [`Location`] of the span.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn start_location(&self) -> Location { self.source_file.get_location(self.start).unwrap() }
+    pub fn start_location(&self) -> Location {
+        self.source_file.get_location(self.start).unwrap()
+    }
 
     /// Gets the ending [`Location`] of the span.
     ///
     /// Returns [`None`] if the end of the span is the end of the source file.
     #[must_use]
-    pub fn end_location(&self) -> Option<Location> { self.source_file.get_location(self.end) }
+    pub fn end_location(&self) -> Option<Location> {
+        self.source_file.get_location(self.end)
+    }
 
-    /// Joins the starting position of this span with the end position of the given span.
+    /// Joins the starting position of this span with the end position of the
+    /// given span.
     #[must_use]
     pub fn join(&self, end: &Self) -> Option<Self> {
-        if !Arc::ptr_eq(&self.source_file, &end.source_file) || self.start > end.end {
+        if !Arc::ptr_eq(&self.source_file, &end.source_file)
+            || self.start > end.end
+        {
             return None;
         }
 
@@ -350,7 +361,8 @@ impl<T: SourceElement> SourceElement for Box<T> {
     fn span(&self) -> Span { self.as_ref().span() }
 }
 
-/// Is an iterator iterating over the characters in a source file that can be peeked at.
+/// Is an iterator iterating over the characters in a source file that can be
+/// peeked at.
 #[derive(Debug, Clone, CopyGetters)]
 pub struct Iterator<'a> {
     /// Gets the source file that the iterator is iterating over.
@@ -361,7 +373,9 @@ pub struct Iterator<'a> {
 
 impl<'a> Iterator<'a> {
     /// Peeks at the next character in the source file.
-    pub fn peek(&mut self) -> Option<(ByteIndex, char)> { self.iterator.peek().copied() }
+    pub fn peek(&mut self) -> Option<(ByteIndex, char)> {
+        self.iterator.peek().copied()
+    }
 }
 
 impl<'a> std::iter::Iterator for Iterator<'a> {

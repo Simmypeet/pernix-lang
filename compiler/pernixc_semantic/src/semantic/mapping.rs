@@ -52,7 +52,11 @@ impl Mapping {
     }
 
     /// Inserts a new pair of equalities into the mapping.
-    pub fn insert<T: Map + Clone + Ord + Hash + Eq>(&mut self, first: T, second: T) {
+    pub fn insert<T: Map + Clone + Ord + Hash + Eq>(
+        &mut self,
+        first: T,
+        second: T,
+    ) {
         T::get_mut(self)
             .entry(first.clone())
             .or_default()
@@ -61,7 +65,10 @@ impl Mapping {
     }
 
     /// Removes all the equalities that are associated with the given term.
-    pub fn remove_equality<T: Map + Ord + Hash + Eq>(&mut self, term: &T) -> Option<HashSet<T>> {
+    pub fn remove_equality<T: Map + Ord + Hash + Eq>(
+        &mut self,
+        term: &T,
+    ) -> Option<HashSet<T>> {
         let map = T::get_mut(self);
 
         let Some(terms) = map.remove(term) else {
@@ -107,7 +114,9 @@ pub trait Map: Sized {
 }
 
 impl Map for Lifetime {
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.lifetimes }
+    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+        &mapping.lifetimes
+    }
 
     fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.lifetimes
@@ -115,7 +124,9 @@ impl Map for Lifetime {
 }
 
 impl Map for Constant {
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.constants }
+    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+        &mapping.constants
+    }
 
     fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.constants
@@ -123,7 +134,11 @@ impl Map for Constant {
 }
 
 impl Map for Type {
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> { &mapping.types }
+    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+        &mapping.types
+    }
 
-    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> { &mut mapping.types }
+    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut mapping.types
+    }
 }

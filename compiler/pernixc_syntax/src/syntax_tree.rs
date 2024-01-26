@@ -27,11 +27,13 @@ pub mod statement;
 pub mod target;
 pub mod r#type;
 
-/// Represents a syntax tree node with a pattern of syntax tree nodes separated by a separator.
+/// Represents a syntax tree node with a pattern of syntax tree nodes separated
+/// by a separator.
 ///
-/// This struct is useful for representing syntax tree nodes that are separated by a separator.
-/// For example, a comma separated list of expressions such as `1, 2, 3` can be represented by a
-/// [`ConnectedList`] with the separator being a comma token and the elements being the expressions.
+/// This struct is useful for representing syntax tree nodes that are separated
+/// by a separator. For example, a comma separated list of expressions such as
+/// `1, 2, 3` can be represented by a [`ConnectedList`] with the separator being
+/// a comma token and the elements being the expressions.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ConnectedList<Element, Separator> {
     /// The first element of the list.
@@ -40,8 +42,9 @@ pub struct ConnectedList<Element, Separator> {
 
     /// The rest of the elements of the list.
     ///
-    /// Each element of the list is a tuple containing the separator and the element. The separator
-    /// is the token/syntax tree node that separates the current element from the prior one.
+    /// Each element of the list is a tuple containing the separator and the
+    /// element. The separator is the token/syntax tree node that separates
+    /// the current element from the prior one.
     #[get = "pub"]
     rest: Vec<(Separator, Element)>,
 
@@ -50,14 +53,15 @@ pub struct ConnectedList<Element, Separator> {
     trailing_separator: Option<Separator>,
 }
 
-/// Represents a syntax tree pattern of a list of elements enclosed by a pair of delimiters.
+/// Represents a syntax tree pattern of a list of elements enclosed by a pair of
+/// delimiters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DelimitedList<T> {
     /// The opening delimiter.
     pub open: Punctuation,
 
-    /// The list of elements inside the delimiter. If `None`, then the list is empty (immediately
-    /// closed).
+    /// The list of elements inside the delimiter. If `None`, then the list is
+    /// empty (immediately closed).
     pub list: Option<ConnectedList<T, Punctuation>>,
 
     /// The closing delimiter.
@@ -65,13 +69,16 @@ pub struct DelimitedList<T> {
 }
 
 impl<'a> Parser<'a> {
-    /// Parses a list of elements enclosed by a pair of delimiters, separated by a separator.
+    /// Parses a list of elements enclosed by a pair of delimiters, separated by
+    /// a separator.
     ///
-    /// The parser position must be at the delimited list of the given delimiter. It will
-    /// consume the whole delimited list and move the next token after the list.
+    /// The parser position must be at the delimited list of the given
+    /// delimiter. It will consume the whole delimited list and move the
+    /// next token after the list.
     ///
     /// # Errors
-    /// - if the parser position is not at the delimited list of the given delimiter.
+    /// - if the parser position is not at the delimited list of the given
+    ///   delimiter.
     /// - any error returned by the given parser function.
     pub fn parse_enclosed_list<T: std::fmt::Debug>(
         &mut self,
@@ -80,15 +87,20 @@ impl<'a> Parser<'a> {
         mut f: impl FnMut(&mut Self) -> Option<T>,
         handler: &dyn Handler<error::Error>,
     ) -> Option<DelimitedList<T>> {
-        fn skip_to_next_separator(this: &mut Parser, separator: char) -> Option<Punctuation> {
-            if let Reading::Unit(Token::Punctuation(punc)) = this.stop_at(|token| {
-                matches!(
-                    token, Reading::Unit(Token::Punctuation(punc))
-                    if punc.punctuation == separator
-                )
-            }) {
+        fn skip_to_next_separator(
+            this: &mut Parser,
+            separator: char,
+        ) -> Option<Punctuation> {
+            if let Reading::Unit(Token::Punctuation(pun)) =
+                this.stop_at(|token| {
+                    matches!(
+                        token, Reading::Unit(Token::Punctuation(pun))
+                        if pun.punctuation == separator
+                    )
+                })
+            {
                 this.forward();
-                Some(punc)
+                Some(pun)
             } else {
                 None
             }
@@ -123,9 +135,12 @@ impl<'a> Parser<'a> {
 
                     // expect separator if not exhausted
                     if !parser.is_exhausted() {
-                        let Some(separator) = parser.parse_punctuation(separator, true, handler)
+                        let Some(separator) =
+                            parser.parse_punctuation(separator, true, handler)
                         else {
-                            if let Some(punctuation) = skip_to_next_separator(parser, separator) {
+                            if let Some(punctuation) =
+                                skip_to_next_separator(parser, separator)
+                            {
                                 trailing_separator = Some(punctuation);
                             }
 
@@ -159,9 +174,10 @@ impl<Element: SourceElement, Separator: SourceElement> SourceElement
     fn span(&self) -> Span {
         let end = self.trailing_separator.as_ref().map_or_else(
             || {
-                self.rest
-                    .last()
-                    .map_or_else(|| self.first.span(), |(_, element)| element.span())
+                self.rest.last().map_or_else(
+                    || self.first.span(),
+                    |(_, element)| element.span(),
+                )
             },
             SourceElement::span,
         );
@@ -173,12 +189,14 @@ impl<Element: SourceElement, Separator: SourceElement> SourceElement
 impl<Element, Separator> ConnectedList<Element, Separator> {
     /// Returns an iterator over the elements of the list.
     pub fn elements(&self) -> impl Iterator<Item = &Element> {
-        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, element)| element))
+        std::iter::once(&self.first)
+            .chain(self.rest.iter().map(|(_, element)| element))
     }
 
     /// Returns an iterator over the elements of the list.
     pub fn into_elements(self) -> impl Iterator<Item = Element> {
-        std::iter::once(self.first).chain(self.rest.into_iter().map(|(_, element)| element))
+        std::iter::once(self.first)
+            .chain(self.rest.into_iter().map(|(_, element)| element))
     }
 
     /// Gets the number of elements in the list.
@@ -209,15 +227,17 @@ pub enum AccessModifier {
 impl SourceElement for AccessModifier {
     fn span(&self) -> Span {
         match self {
-            Self::Public(k) | Self::Private(k) | Self::Internal(k) => k.span.clone(),
+            Self::Public(k) | Self::Private(k) | Self::Internal(k) => {
+                k.span.clone()
+            }
         }
     }
 }
 
 /// Represents a syntax tree node of two consecutive colon tokens.
 ///
-/// This syntax tree is used to represent the scope separator `::` in the qualified identifier
-/// syntax
+/// This syntax tree is used to represent the scope separator `::` in the
+/// qualified identifier syntax
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
 pub struct ScopeSeparator {
@@ -238,7 +258,9 @@ impl SourceElement for ScopeSeparator {
 ///     | 'static'
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(missing_docs)]
 pub enum LifetimeIdentifier {
     Identifier(Identifier),
@@ -270,7 +292,9 @@ pub struct Lifetime {
 }
 
 impl SourceElement for Lifetime {
-    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.apostrophe.span.join(&self.identifier.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -290,7 +314,9 @@ pub struct ConstantArgument {
 }
 
 impl SourceElement for ConstantArgument {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -301,7 +327,9 @@ impl SourceElement for ConstantArgument {
 ///     | Lifetime
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(missing_docs)]
 pub enum GenericArgument {
     Type(Box<Type>),
@@ -346,10 +374,7 @@ pub struct GenericArguments {
 
 impl SourceElement for GenericArguments {
     fn span(&self) -> Span {
-        self.left_bracket
-            .span
-            .join(&self.right_bracket.span())
-            .unwrap()
+        self.left_bracket.span.join(&self.right_bracket.span()).unwrap()
     }
 }
 
@@ -373,10 +398,7 @@ impl SourceElement for GenericIdentifier {
         self.generic_arguments.as_ref().map_or_else(
             || self.identifier.span(),
             |generic_arguments| {
-                self.identifier
-                    .span
-                    .join(&generic_arguments.span())
-                    .unwrap()
+                self.identifier.span.join(&generic_arguments.span()).unwrap()
             },
         )
     }
@@ -400,9 +422,13 @@ pub struct QualifiedIdentifier {
 }
 
 impl QualifiedIdentifier {
-    /// Returns an iterator over the generic identifiers in this qualified identifier.
-    pub fn generic_identifiers(&self) -> impl Iterator<Item = &GenericIdentifier> {
-        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, ident)| ident))
+    /// Returns an iterator over the generic identifiers in this qualified
+    /// identifier.
+    pub fn generic_identifiers(
+        &self,
+    ) -> impl Iterator<Item = &GenericIdentifier> {
+        std::iter::once(&self.first)
+            .chain(self.rest.iter().map(|(_, ident)| ident))
     }
 }
 
@@ -438,7 +464,9 @@ pub struct Label {
 }
 
 impl SourceElement for Label {
-    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span).unwrap() }
+    fn span(&self) -> Span {
+        self.apostrophe.span.join(&self.identifier.span).unwrap()
+    }
 }
 
 impl<'a> Frame<'a> {
@@ -490,7 +518,7 @@ impl<'a> Parser<'a> {
         let parse_generic_arguments = {
             self.peek()
                 .into_into_delimited()
-                .map_or(false, |punc| punc.0 == Delimiter::Bracket)
+                .map_or(false, |pun| pun.0 == Delimiter::Bracket)
         };
 
         let generic_arguments = if parse_generic_arguments {
@@ -499,10 +527,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Some(GenericIdentifier {
-            identifier,
-            generic_arguments,
-        })
+        Some(GenericIdentifier { identifier, generic_arguments })
     }
 
     /// Parses a [`QualifiedIdentifier`]
@@ -534,17 +559,15 @@ impl<'a> Parser<'a> {
         let mut rest = Vec::new();
 
         // parses the identifier chain
-        while let Some(token) = self.try_parse(|frame| frame.parse_scope_separator(&Dummy)) {
+        while let Some(token) =
+            self.try_parse(|frame| frame.parse_scope_separator(&Dummy))
+        {
             let another_identifier = self.parse_generic_identifier(handler)?;
 
             rest.push((token, another_identifier));
         }
 
-        Some(QualifiedIdentifier {
-            leading_scope_separator,
-            first,
-            rest,
-        })
+        Some(QualifiedIdentifier { leading_scope_separator, first, rest })
     }
 
     /// Parses a [`GenericArgument`]
@@ -555,7 +578,9 @@ impl<'a> Parser<'a> {
     ) -> Option<GenericArgument> {
         match self.stop_at_significant() {
             // parse lifetime argument
-            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+            Reading::Unit(Token::Punctuation(apostrophe))
+                if apostrophe.punctuation == '\'' =>
+            {
                 // eat apostrophe
                 self.forward();
 
@@ -572,7 +597,9 @@ impl<'a> Parser<'a> {
                     found => {
                         handler.receive(Error {
                             expected: SyntaxKind::Identifier,
-                            alternatives: vec![SyntaxKind::Keyword(KeywordKind::Static)],
+                            alternatives: vec![SyntaxKind::Keyword(
+                                KeywordKind::Static,
+                            )],
                             found: found.into_token(),
                         });
                         return None;
@@ -601,7 +628,9 @@ impl<'a> Parser<'a> {
             }
 
             // parse type argument
-            _ => Some(GenericArgument::Type(Box::new(self.parse_type(handler)?))),
+            _ => {
+                Some(GenericArgument::Type(Box::new(self.parse_type(handler)?)))
+            }
         }
     }
 

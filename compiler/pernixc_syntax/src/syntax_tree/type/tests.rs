@@ -12,7 +12,10 @@ use proptest::{
 use crate::syntax_tree::{
     self,
     expression::tests::Expression,
-    tests::{ConnectedList, ConstantPunctuation, Lifetime, QualifiedIdentifier, Qualifier},
+    tests::{
+        ConnectedList, ConstantPunctuation, Lifetime, QualifiedIdentifier,
+        Qualifier,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -44,9 +47,7 @@ impl Arbitrary for Reference {
 impl Input<&super::Reference> for &Reference {
     fn assert(self, output: &super::Reference) -> TestCaseResult {
         self.lifetime.as_ref().assert(output.lifetime().as_ref())?;
-        self.qualifier
-            .as_ref()
-            .assert(output.qualifier().as_ref())?;
+        self.qualifier.as_ref().assert(output.qualifier().as_ref())?;
         self.operand_type.assert(output.operand())
     }
 }
@@ -162,10 +163,8 @@ pub struct Array {
 }
 
 impl Arbitrary for Array {
-    type Parameters = (
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<Expression>>,
-    );
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -209,9 +208,7 @@ pub struct Pointer {
 impl Input<&super::Pointer> for &Pointer {
     fn assert(self, output: &super::Pointer) -> TestCaseResult {
         self.operand.assert(output.operand())?;
-        self.qualifier
-            .as_ref()
-            .assert(output.qualifier().as_ref())?;
+        self.qualifier.as_ref().assert(output.qualifier().as_ref())?;
         Ok(())
     }
 }
@@ -284,14 +281,13 @@ impl Display for Unpackable {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple {
-    pub unpackable_list: Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
+    pub unpackable_list:
+        Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
 }
 
 impl Input<&super::Tuple> for &Tuple {
     fn assert(self, output: &super::Tuple) -> TestCaseResult {
-        self.unpackable_list
-            .as_ref()
-            .assert(output.unpackable_list().as_ref())
+        self.unpackable_list.as_ref().assert(output.unpackable_list().as_ref())
     }
 }
 
@@ -329,7 +325,9 @@ pub struct Local {
 }
 
 impl Input<&super::Local> for &Local {
-    fn assert(self, output: &super::Local) -> TestCaseResult { self.ty.assert(output.ty()) }
+    fn assert(self, output: &super::Local) -> TestCaseResult {
+        self.ty.assert(output.ty())
+    }
 }
 
 impl Arbitrary for Local {
@@ -349,7 +347,17 @@ impl Display for Local {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum Type {
     Primitive(Primitive),
@@ -367,7 +375,10 @@ impl Input<&super::Type> for &Type {
             (Type::Primitive(i), super::Type::Primitive(o)) => i.assert(o),
             (Type::Reference(i), super::Type::Reference(o)) => i.assert(o),
             (Type::Local(i), super::Type::Local(o)) => i.assert(o),
-            (Type::QualifiedIdentifier(i), super::Type::QualifiedIdentifier(o)) => i.assert(o),
+            (
+                Type::QualifiedIdentifier(i),
+                super::Type::QualifiedIdentifier(o),
+            ) => i.assert(o),
             (Type::Array(i), super::Type::Array(o)) => i.assert(o),
             (Type::Pointer(i), super::Type::Pointer(o)) => i.assert(o),
             (Type::Tuple(i), super::Type::Tuple(o)) => i.assert(o),
@@ -390,16 +401,22 @@ impl Arbitrary for Type {
 
         leaf.prop_recursive(4, 24, 6, move |inner| {
             prop_oneof![
-                Reference::arbitrary_with(Some(inner.clone())).prop_map(Self::Reference),
-                Local::arbitrary_with(Some(inner.clone())).prop_map(Self::Local),
-                Pointer::arbitrary_with(Some(inner.clone())).prop_map(Self::Pointer),
-                Tuple::arbitrary_with(Some(inner.clone())).prop_map(Self::Tuple),
+                Reference::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Reference),
+                Local::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Local),
+                Pointer::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Pointer),
+                Tuple::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Tuple),
                 args.1
                     .clone()
-                    .unwrap_or_else(|| QualifiedIdentifier::arbitrary_with((
-                        Some(inner),
-                        args.0.clone(),
-                    )))
+                    .unwrap_or_else(|| {
+                        QualifiedIdentifier::arbitrary_with((
+                            Some(inner),
+                            args.0.clone(),
+                        ))
+                    })
                     .prop_map(Self::QualifiedIdentifier)
             ]
         })

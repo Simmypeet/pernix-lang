@@ -41,7 +41,9 @@ pub struct FieldAssociation<Pattern> {
 }
 
 impl<Pattern: SourceElement> SourceElement for FieldAssociation<Pattern> {
-    fn span(&self) -> Span { self.identifier.span().join(&self.pattern().span()).unwrap() }
+    fn span(&self) -> Span {
+        self.identifier.span().join(&self.pattern().span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -60,8 +62,12 @@ pub enum Field<Pattern> {
 impl<Pattern: SourceElement> SourceElement for Field<Pattern> {
     fn span(&self) -> Span {
         match self {
-            Self::Association(field_with_association) => field_with_association.span(),
-            Self::Named(field_without_association) => field_without_association.span(),
+            Self::Association(field_with_association) => {
+                field_with_association.span()
+            }
+            Self::Named(field_without_association) => {
+                field_without_association.span()
+            }
         }
     }
 }
@@ -83,7 +89,9 @@ pub struct Structural<Pattern> {
 }
 
 impl<Pattern> SourceElement for Structural<Pattern> {
-    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span.join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -105,7 +113,9 @@ pub struct Enum<Pattern> {
 }
 
 impl<Pattern> SourceElement for Enum<Pattern> {
-    fn span(&self) -> Span { self.identifier.span().join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.identifier.span().join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -125,7 +135,9 @@ pub struct Unpack {
 }
 
 impl SourceElement for Unpack {
-    fn span(&self) -> Span { self.ellipsis.0.span.join(&self.identifier.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.ellipsis.0.span.join(&self.identifier.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -167,7 +179,9 @@ pub struct Tuple<Pattern> {
 }
 
 impl<Pattern> SourceElement for Tuple<Pattern> {
-    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_paren.span.join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -203,7 +217,17 @@ impl SourceElement for Named {
 ///     | Named
 ///     | Tuple
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
 pub enum Refutable {
     BooleanLiteral(BooleanLiteral),
     NumericLiteral(NumericLiteral),
@@ -235,7 +259,17 @@ impl SourceElement for Refutable {
 ///     | Tuple
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
 pub enum Irrefutable {
     Structural(Structural<Self>),
     Named(Named),
@@ -253,7 +287,10 @@ impl SourceElement for Irrefutable {
 }
 
 trait Pattern {
-    fn parse(parser: &mut Parser, handler: &dyn Handler<error::Error>) -> Option<Self>
+    fn parse(
+        parser: &mut Parser,
+        handler: &dyn Handler<error::Error>,
+    ) -> Option<Self>
     where
         Self: Sized;
 }
@@ -279,14 +316,16 @@ impl<'a> Parser<'a> {
 
                 let identifier = parser.parse_identifier(handler)?;
 
-                match (mutable_keyword.is_none(), parser.stop_at_significant()) {
+                match (mutable_keyword.is_none(), parser.stop_at_significant())
+                {
                     (true, Reading::Unit(Token::Punctuation(colon)))
                         if colon.punctuation == ':' =>
                     {
                         // eat colon
                         parser.forward();
 
-                        let pattern = T::parse(parser, handler).map(Box::new)?;
+                        let pattern =
+                            T::parse(parser, handler).map(Box::new)?;
 
                         Some(Field::Association(FieldAssociation {
                             identifier,
@@ -320,22 +359,20 @@ impl<'a> Parser<'a> {
             |parser| {
                 parser.stop_at_significant();
 
-                match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
+                match (
+                    parser.peek(),
+                    parser.peek_offset(1),
+                    parser.peek_offset(2),
+                ) {
                     (
                         Reading::Unit(Token::Punctuation(
-                            p1 @ Punctuation {
-                                punctuation: '.', ..
-                            },
+                            p1 @ Punctuation { punctuation: '.', .. },
                         )),
                         Some(Reading::Unit(Token::Punctuation(
-                            p2 @ Punctuation {
-                                punctuation: '.', ..
-                            },
+                            p2 @ Punctuation { punctuation: '.', .. },
                         ))),
                         Some(Reading::Unit(Token::Punctuation(
-                            p3 @ Punctuation {
-                                punctuation: '.', ..
-                            },
+                            p3 @ Punctuation { punctuation: '.', .. },
                         ))),
                     ) => {
                         let ellipsis = (p1, p2, p3);
@@ -349,7 +386,9 @@ impl<'a> Parser<'a> {
                             .into_unit()
                             .ok()
                             .and_then(|token| match token {
-                                Token::Keyword(keyword) if keyword.kind == KeywordKind::Mutable => {
+                                Token::Keyword(keyword)
+                                    if keyword.kind == KeywordKind::Mutable =>
+                                {
                                     parser.forward();
                                     Some(keyword)
                                 }
@@ -379,7 +418,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_identifier_pattern<T>(&mut self, handler: &dyn Handler<error::Error>) -> Option<T>
+    fn parse_identifier_pattern<T>(
+        &mut self,
+        handler: &dyn Handler<error::Error>,
+    ) -> Option<T>
     where
         T: Pattern + From<Named> + From<Enum<T>>,
     {
@@ -405,19 +447,16 @@ impl<'a> Parser<'a> {
                 )
             }
             // parse named pattern
-            _ => Some(
-                Named {
-                    mutable_keyword: None,
-                    identifier,
-                }
-                .into(),
-            ),
+            _ => Some(Named { mutable_keyword: None, identifier }.into()),
         }
     }
 }
 
 impl Pattern for Irrefutable {
-    fn parse(parser: &mut Parser, handler: &dyn Handler<error::Error>) -> Option<Self> {
+    fn parse(
+        parser: &mut Parser,
+        handler: &dyn Handler<error::Error>,
+    ) -> Option<Self> {
         match parser.stop_at_significant() {
             // parse named pattern
             Reading::Unit(Token::Keyword(mutable_keyword))
@@ -439,10 +478,7 @@ impl Pattern for Irrefutable {
                 // eat identifier
                 parser.forward();
 
-                Some(Self::Named(Named {
-                    mutable_keyword: None,
-                    identifier,
-                }))
+                Some(Self::Named(Named { mutable_keyword: None, identifier }))
             }
 
             // parse tuple pattern
@@ -451,9 +487,9 @@ impl Pattern for Irrefutable {
             }
 
             // parse structural pattern
-            Reading::IntoDelimited(Delimiter::Brace, _) => parser
-                .parse_structural_pattern(handler)
-                .map(Self::Structural),
+            Reading::IntoDelimited(Delimiter::Brace, _) => {
+                parser.parse_structural_pattern(handler).map(Self::Structural)
+            }
 
             found => {
                 handler.receive(Error {
@@ -472,7 +508,10 @@ impl Pattern for Irrefutable {
 }
 
 impl Pattern for Refutable {
-    fn parse(parser: &mut Parser, handler: &dyn Handler<error::Error>) -> Option<Self> {
+    fn parse(
+        parser: &mut Parser,
+        handler: &dyn Handler<error::Error>,
+    ) -> Option<Self> {
         match parser.stop_at_significant() {
             // parse named pattern
             Reading::Unit(Token::Keyword(mutable_keyword))
@@ -490,7 +529,9 @@ impl Pattern for Refutable {
             }
 
             // parse named pattern
-            Reading::Unit(Token::Identifier(..)) => parser.parse_identifier_pattern(handler),
+            Reading::Unit(Token::Identifier(..)) => {
+                parser.parse_identifier_pattern(handler)
+            }
 
             // parse tuple pattern
             Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
@@ -498,9 +539,9 @@ impl Pattern for Refutable {
             }
 
             // parse structural pattern
-            Reading::IntoDelimited(Delimiter::Brace, _) => parser
-                .parse_structural_pattern(handler)
-                .map(Self::Structural),
+            Reading::IntoDelimited(Delimiter::Brace, _) => {
+                parser.parse_structural_pattern(handler).map(Self::Structural)
+            }
 
             // parse numeric literal pattern
             Reading::Unit(Token::Numeric(_)) => {
@@ -509,7 +550,10 @@ impl Pattern for Refutable {
 
             // parse boolean literal pattern
             Reading::Unit(Token::Keyword(boolean_keyword))
-                if matches!(boolean_keyword.kind, KeywordKind::True | KeywordKind::False) =>
+                if matches!(
+                    boolean_keyword.kind,
+                    KeywordKind::True | KeywordKind::False
+                ) =>
             {
                 parser.forward();
                 let constructor = match boolean_keyword.kind {

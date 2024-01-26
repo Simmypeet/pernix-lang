@@ -45,8 +45,11 @@ impl<T: Term> Tuple<T> {
         }
 
         // normalize the term
-        if let Some(normalized) = semantic.normalize(term, premise, table, session)? {
-            if Self::satisfied(&normalized, premise, table, semantic, session)? {
+        if let Some(normalized) =
+            semantic.normalize(term, premise, table, session)?
+        {
+            if Self::satisfied(&normalized, premise, table, semantic, session)?
+            {
                 session.mark_as_done(Query(term), Satisfied);
                 return Ok(true);
             }
@@ -56,7 +59,9 @@ impl<T: Term> Tuple<T> {
         for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
             if equality::equals(term, key, premise, table, semantic, session)? {
                 for value in values {
-                    if Self::satisfied(value, premise, table, semantic, session)? {
+                    if Self::satisfied(
+                        value, premise, table, semantic, session,
+                    )? {
                         session.mark_as_done(Query(term), Satisfied);
                         return Ok(true);
                     }

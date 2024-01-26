@@ -14,8 +14,8 @@ use crate::syntax_tree::{
     r#type::tests::Type,
     statement::tests::Statement,
     tests::{
-        parse, ConnectedList, ConstantPunctuation, Identifier, Label, Numeric, QualifiedIdentifier,
-        Qualifier,
+        parse, ConnectedList, ConstantPunctuation, Identifier, Label, Numeric,
+        QualifiedIdentifier, Qualifier,
     },
 };
 
@@ -29,11 +29,16 @@ pub enum Expression {
 impl Input<&super::Expression> for &Expression {
     fn assert(self, output: &super::Expression) -> TestCaseResult {
         match (self, output) {
-            (Expression::Binary(input), super::Expression::Binary(output)) => input.assert(output),
-            (Expression::Terminator(input), super::Expression::Terminator(output)) => {
+            (Expression::Binary(input), super::Expression::Binary(output)) => {
                 input.assert(output)
             }
-            (Expression::Brace(input), super::Expression::Brace(output)) => input.assert(output),
+            (
+                Expression::Terminator(input),
+                super::Expression::Terminator(output),
+            ) => input.assert(output),
+            (Expression::Brace(input), super::Expression::Brace(output)) => {
+                input.assert(output)
+            }
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -52,26 +57,38 @@ impl Arbitrary for Expression {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let leaf = prop_oneof![
-            BooleanLiteral::arbitrary().prop_map(|x| Self::Binary(Binary {
-                first: Box::new(Prefixable::Postfixable(Postfixable::Unit(
-                    Unit::BooleanLiteral(x)
-                ))),
-                chain: Vec::new(),
-            })),
-            NumericLiteral::arbitrary().prop_map(|x| Self::Binary(Binary {
-                first: Box::new(Prefixable::Postfixable(Postfixable::Unit(
-                    Unit::NumericLiteral(x)
-                ))),
-                chain: Vec::new(),
-            })),
+            BooleanLiteral::arbitrary().prop_map(|x| {
+                Self::Binary(Binary {
+                    first: Box::new(Prefixable::Postfixable(
+                        Postfixable::Unit(Unit::BooleanLiteral(x)),
+                    )),
+                    chain: Vec::new(),
+                })
+            }),
+            NumericLiteral::arbitrary().prop_map(|x| {
+                Self::Binary(Binary {
+                    first: Box::new(Prefixable::Postfixable(
+                        Postfixable::Unit(Unit::NumericLiteral(x)),
+                    )),
+                    chain: Vec::new(),
+                })
+            }),
         ];
 
         leaf.prop_recursive(4, 64, 16, move |inner| {
             prop_oneof![
-                Binary::arbitrary_with((Some(inner.clone()), args.0.clone(), args.1.clone()))
-                    .prop_map(Expression::Binary),
-                Terminator::arbitrary_with((Some(inner.clone()), args.0.clone(), args.1.clone()))
-                    .prop_map(Expression::Terminator),
+                Binary::arbitrary_with((
+                    Some(inner.clone()),
+                    args.0.clone(),
+                    args.1.clone()
+                ))
+                .prop_map(Expression::Binary),
+                Terminator::arbitrary_with((
+                    Some(inner.clone()),
+                    args.0.clone(),
+                    args.1.clone()
+                ))
+                .prop_map(Expression::Terminator),
                 Brace::arbitrary_with((
                     Some(inner),
                     args.0.clone(),
@@ -223,7 +240,9 @@ pub struct Loop {
 }
 
 impl Input<&super::Loop> for &Loop {
-    fn assert(self, output: &super::Loop) -> TestCaseResult { self.block.assert(output.block()) }
+    fn assert(self, output: &super::Loop) -> TestCaseResult {
+        self.block.assert(output.block())
+    }
 }
 
 impl Arbitrary for Loop {
@@ -236,9 +255,7 @@ impl Arbitrary for Loop {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        Block::arbitrary_with(args)
-            .prop_map(|block| Self { block })
-            .boxed()
+        Block::arbitrary_with(args).prop_map(|block| Self { block }).boxed()
     }
 }
 
@@ -268,35 +285,40 @@ impl Arbitrary for IfElse {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression = args.0.clone().unwrap_or_else(|| {
-            Expression::arbitrary_with((args.1.clone(), args.2.clone(), args.3.clone()))
+            Expression::arbitrary_with((
+                args.1.clone(),
+                args.2.clone(),
+                args.3.clone(),
+            ))
         });
 
-        let leaf = (expression.clone(), Block::arbitrary_with(args.clone())).prop_map(
-            |(condition, then_expression)| Self {
+        let leaf = (expression.clone(), Block::arbitrary_with(args.clone()))
+            .prop_map(|(condition, then_expression)| Self {
                 condition: Box::new(condition),
                 then_expression,
                 else_expression: None,
-            },
-        );
+            });
 
         leaf.prop_recursive(4, 24, 6, move |inner| {
             (
                 expression.clone(),
                 Block::arbitrary_with(args.clone()),
                 proptest::option::of(prop_oneof![
-                    Block::arbitrary_with(args.clone()).prop_map(|x| Else {
-                        expression: Box::new(BlockOrIfElse::Block(x))
+                    Block::arbitrary_with(args.clone()).prop_map(|x| {
+                        Else { expression: Box::new(BlockOrIfElse::Block(x)) }
                     }),
-                    inner.prop_map(|x| Else {
-                        expression: Box::new(BlockOrIfElse::IfElse(x))
+                    inner.prop_map(|x| {
+                        Else { expression: Box::new(BlockOrIfElse::IfElse(x)) }
                     })
                 ]),
             )
-                .prop_map(|(condition, then_expression, else_expression)| Self {
-                    condition: Box::new(condition),
-                    then_expression,
-                    else_expression,
-                })
+                .prop_map(
+                    |(condition, then_expression, else_expression)| Self {
+                        condition: Box::new(condition),
+                        then_expression,
+                        else_expression,
+                    },
+                )
         })
         .boxed()
     }
@@ -306,9 +328,7 @@ impl Input<&super::IfElse> for &IfElse {
     fn assert(self, output: &super::IfElse) -> TestCaseResult {
         self.condition.assert(output.condition())?;
         self.then_expression.assert(output.then_expression())?;
-        self.else_expression
-            .as_ref()
-            .assert(output.else_expression().as_ref())
+        self.else_expression.as_ref().assert(output.else_expression().as_ref())
     }
 }
 
@@ -334,8 +354,12 @@ pub enum BlockOrIfElse {
 impl Input<&super::BlockOrIfElse> for &BlockOrIfElse {
     fn assert(self, output: &super::BlockOrIfElse) -> TestCaseResult {
         match (self, output) {
-            (BlockOrIfElse::Block(i), super::BlockOrIfElse::Block(o)) => i.assert(o),
-            (BlockOrIfElse::IfElse(i), super::BlockOrIfElse::IfElse(o)) => i.assert(o),
+            (BlockOrIfElse::Block(i), super::BlockOrIfElse::Block(o)) => {
+                i.assert(o)
+            }
+            (BlockOrIfElse::IfElse(i), super::BlockOrIfElse::IfElse(o)) => {
+                i.assert(o)
+            }
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} to be {output:?}"
             ))),
@@ -387,10 +411,10 @@ impl Arbitrary for MatchArmGuard {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         args.0
-            .unwrap_or_else(|| Expression::arbitrary_with((args.1, args.2, args.3)))
-            .prop_map(|expression| Self {
-                expression: Box::new(expression),
+            .unwrap_or_else(|| {
+                Expression::arbitrary_with((args.1, args.2, args.3))
             })
+            .prop_map(|expression| Self { expression: Box::new(expression) })
             .boxed()
     }
 }
@@ -482,7 +506,11 @@ impl Arbitrary for Match {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let expression = args.0.clone().unwrap_or_else(|| {
-            Expression::arbitrary_with((args.1.clone(), args.2.clone(), args.3.clone()))
+            Expression::arbitrary_with((
+                args.1.clone(),
+                args.2.clone(),
+                args.3.clone(),
+            ))
         });
 
         (
@@ -518,10 +546,18 @@ pub enum Brace {
 impl Input<&super::Brace> for &Brace {
     fn assert(self, output: &super::Brace) -> TestCaseResult {
         match (self, output) {
-            (Brace::Block(input), super::Brace::Block(output)) => input.assert(output),
-            (Brace::Loop(input), super::Brace::Loop(output)) => input.assert(output),
-            (Brace::IfElse(input), super::Brace::IfElse(output)) => input.assert(output),
-            (Brace::Match(input), super::Brace::Match(output)) => input.assert(output),
+            (Brace::Block(input), super::Brace::Block(output)) => {
+                input.assert(output)
+            }
+            (Brace::Loop(input), super::Brace::Loop(output)) => {
+                input.assert(output)
+            }
+            (Brace::IfElse(input), super::Brace::IfElse(output)) => {
+                input.assert(output)
+            }
+            (Brace::Match(input), super::Brace::Match(output)) => {
+                input.assert(output)
+            }
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -572,14 +608,20 @@ pub enum Terminator {
 impl Input<&super::Terminator> for &Terminator {
     fn assert(self, output: &super::Terminator) -> TestCaseResult {
         match (self, output) {
-            (Terminator::Return(input), super::Terminator::Return(output)) => input.assert(output),
-            (Terminator::Continue(input), super::Terminator::Continue(output)) => {
+            (Terminator::Return(input), super::Terminator::Return(output)) => {
                 input.assert(output)
             }
-            (Terminator::Express(input), super::Terminator::Express(output)) => {
+            (
+                Terminator::Continue(input),
+                super::Terminator::Continue(output),
+            ) => input.assert(output),
+            (
+                Terminator::Express(input),
+                super::Terminator::Express(output),
+            ) => input.assert(output),
+            (Terminator::Break(input), super::Terminator::Break(output)) => {
                 input.assert(output)
             }
-            (Terminator::Break(input), super::Terminator::Break(output)) => input.assert(output),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -807,9 +849,8 @@ impl Display for BooleanLiteral {
 impl Input<&super::BooleanLiteral> for &BooleanLiteral {
     fn assert(self, output: &super::BooleanLiteral) -> TestCaseResult {
         match (self.value, output) {
-            (true, super::BooleanLiteral::True(_)) | (false, super::BooleanLiteral::False(_)) => {
-                Ok(())
-            }
+            (true, super::BooleanLiteral::True(_))
+            | (false, super::BooleanLiteral::False(_)) => Ok(()),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -834,9 +875,7 @@ impl Arbitrary for Decimal {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Numeric::arbitrary_with(())
-            .prop_map(|numeric| Self { numeric })
-            .boxed()
+        Numeric::arbitrary_with(()).prop_map(|numeric| Self { numeric }).boxed()
     }
 }
 
@@ -927,24 +966,20 @@ impl Arbitrary for Unpackable {
         let expression_strategy = args.unwrap_or_else(Expression::arbitrary);
 
         (proptest::bool::ANY, expression_strategy.prop_map(Box::new))
-            .prop_map(|(ellipsis, expression)| Self {
-                ellipsis,
-                expression,
-            })
+            .prop_map(|(ellipsis, expression)| Self { ellipsis, expression })
             .boxed()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parenthesized {
-    pub expressions: Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
+    pub expressions:
+        Option<ConnectedList<Unpackable, ConstantPunctuation<','>>>,
 }
 
 impl Input<&super::Parenthesized> for &Parenthesized {
     fn assert(self, output: &super::Parenthesized) -> TestCaseResult {
-        self.expressions
-            .as_ref()
-            .assert(output.expression().as_ref())
+        self.expressions.as_ref().assert(output.expression().as_ref())
     }
 }
 
@@ -1012,13 +1047,13 @@ impl Display for FieldInitializer {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructLiteral {
     pub qualified_identifier: QualifiedIdentifier,
-    pub field_initializers: Option<ConnectedList<FieldInitializer, ConstantPunctuation<','>>>,
+    pub field_initializers:
+        Option<ConnectedList<FieldInitializer, ConstantPunctuation<','>>>,
 }
 
 impl Input<&super::StructLiteral> for &StructLiteral {
     fn assert(self, output: &super::StructLiteral) -> TestCaseResult {
-        self.qualified_identifier
-            .assert(output.qualified_identifier())?;
+        self.qualified_identifier.assert(output.qualified_identifier())?;
         self.field_initializers
             .as_ref()
             .assert(output.field_initializers().as_ref())
@@ -1036,7 +1071,10 @@ impl Arbitrary for StructLiteral {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             args.2.clone().unwrap_or_else(|| {
-                QualifiedIdentifier::arbitrary_with((args.0.clone(), args.1.clone()))
+                QualifiedIdentifier::arbitrary_with((
+                    args.0.clone(),
+                    args.1.clone(),
+                ))
             }),
             proptest::option::of(ConnectedList::arbitrary_with(
                 FieldInitializer::arbitrary_with(args.1),
@@ -1067,14 +1105,13 @@ impl Display for StructLiteral {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArrayLiteral {
-    pub expressions: Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
+    pub expressions:
+        Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
 }
 
 impl Input<&super::ArrayLiteral> for &ArrayLiteral {
     fn assert(self, output: &super::ArrayLiteral) -> TestCaseResult {
-        self.expressions
-            .as_ref()
-            .assert(output.arguments().as_ref())
+        self.expressions.as_ref().assert(output.arguments().as_ref())
     }
 }
 
@@ -1124,21 +1161,31 @@ impl Arbitrary for Unit {
     );
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((expr_strat, ty_strat, qualified_strat): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(
+        (expr_strategy, ty_strategy, qualified_strategy): Self::Parameters,
+    ) -> Self::Strategy {
         prop_oneof![
             BooleanLiteral::arbitrary_with(()).prop_map(Unit::BooleanLiteral),
             NumericLiteral::arbitrary_with(()).prop_map(Unit::NumericLiteral),
-            qualified_strat
+            qualified_strategy
                 .clone()
-                .unwrap_or_else(|| QualifiedIdentifier::arbitrary_with((
-                    ty_strat.clone(),
-                    expr_strat.clone()
-                )))
+                .unwrap_or_else(|| {
+                    QualifiedIdentifier::arbitrary_with((
+                        ty_strategy.clone(),
+                        expr_strategy.clone(),
+                    ))
+                })
                 .prop_map(Unit::QualifiedIdentifier),
-            Parenthesized::arbitrary_with(expr_strat.clone()).prop_map(Unit::Parenthesized),
-            StructLiteral::arbitrary_with((ty_strat, expr_strat.clone(), qualified_strat))
-                .prop_map(Unit::StructLiteral),
-            ArrayLiteral::arbitrary_with(expr_strat).prop_map(Unit::ArrayLiteral),
+            Parenthesized::arbitrary_with(expr_strategy.clone())
+                .prop_map(Unit::Parenthesized),
+            StructLiteral::arbitrary_with((
+                ty_strategy,
+                expr_strategy.clone(),
+                qualified_strategy
+            ))
+            .prop_map(Unit::StructLiteral),
+            ArrayLiteral::arbitrary_with(expr_strategy)
+                .prop_map(Unit::ArrayLiteral),
         ]
         .boxed()
     }
@@ -1147,22 +1194,29 @@ impl Arbitrary for Unit {
 impl Input<&super::Unit> for &Unit {
     fn assert(self, output: &super::Unit) -> TestCaseResult {
         match (self, output) {
-            (Unit::BooleanLiteral(input), super::Unit::BooleanLiteral(output)) => {
+            (
+                Unit::BooleanLiteral(input),
+                super::Unit::BooleanLiteral(output),
+            ) => input.assert(output),
+            (
+                Unit::NumericLiteral(input),
+                super::Unit::NumericLiteral(output),
+            ) => input.assert(output),
+            (
+                Unit::QualifiedIdentifier(input),
+                super::Unit::QualifiedIdentifier(output),
+            ) => input.assert(output),
+            (
+                Unit::Parenthesized(input),
+                super::Unit::Parenthesized(output),
+            ) => input.assert(output),
+            (
+                Unit::StructLiteral(input),
+                super::Unit::StructLiteral(output),
+            ) => input.assert(output),
+            (Unit::ArrayLiteral(input), super::Unit::ArrayLiteral(output)) => {
                 input.assert(output)
             }
-            (Unit::NumericLiteral(input), super::Unit::NumericLiteral(output)) => {
-                input.assert(output)
-            }
-            (Unit::QualifiedIdentifier(input), super::Unit::QualifiedIdentifier(output)) => {
-                input.assert(output)
-            }
-            (Unit::Parenthesized(input), super::Unit::Parenthesized(output)) => {
-                input.assert(output)
-            }
-            (Unit::StructLiteral(input), super::Unit::StructLiteral(output)) => {
-                input.assert(output)
-            }
-            (Unit::ArrayLiteral(input), super::Unit::ArrayLiteral(output)) => input.assert(output),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -1174,13 +1228,21 @@ impl Input<&super::Unit> for &Unit {
 impl Display for Unit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BooleanLiteral(boolean_literal) => Display::fmt(boolean_literal, f),
-            Self::NumericLiteral(numeric_literal) => Display::fmt(numeric_literal, f),
+            Self::BooleanLiteral(boolean_literal) => {
+                Display::fmt(boolean_literal, f)
+            }
+            Self::NumericLiteral(numeric_literal) => {
+                Display::fmt(numeric_literal, f)
+            }
             Self::QualifiedIdentifier(qualified_identifier) => {
                 Display::fmt(qualified_identifier, f)
             }
-            Self::Parenthesized(parenthesized) => Display::fmt(parenthesized, f),
-            Self::StructLiteral(struct_literal) => Display::fmt(struct_literal, f),
+            Self::Parenthesized(parenthesized) => {
+                Display::fmt(parenthesized, f)
+            }
+            Self::StructLiteral(struct_literal) => {
+                Display::fmt(struct_literal, f)
+            }
             Self::ArrayLiteral(array_literal) => Display::fmt(array_literal, f),
         }
     }
@@ -1188,7 +1250,8 @@ impl Display for Unit {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Call {
-    pub arguments: Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
+    pub arguments:
+        Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
 }
 
 impl Input<&super::Call> for &Call {
@@ -1231,7 +1294,9 @@ pub struct Cast {
 }
 
 impl Input<&super::Cast> for &Cast {
-    fn assert(self, output: &super::Cast) -> TestCaseResult { self.r#type.assert(output.r#type()) }
+    fn assert(self, output: &super::Cast) -> TestCaseResult {
+        self.r#type.assert(output.r#type())
+    }
 }
 
 impl Arbitrary for Cast {
@@ -1243,9 +1308,8 @@ impl Arbitrary for Cast {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let type_strategy = args
-            .1
-            .unwrap_or_else(|| Type::arbitrary_with((args.0, args.2)));
+        let type_strategy =
+            args.1.unwrap_or_else(|| Type::arbitrary_with((args.0, args.2)));
 
         type_strategy.prop_map(|r#type| Self { r#type }).boxed()
     }
@@ -1267,7 +1331,9 @@ impl Input<&super::AccessOperator> for &AccessOperator {
     fn assert(self, output: &super::AccessOperator) -> TestCaseResult {
         match (self, output) {
             (AccessOperator::Dot, super::AccessOperator::Dot(_))
-            | (AccessOperator::Arrow, super::AccessOperator::Arrow(_, _)) => Ok(()),
+            | (AccessOperator::Arrow, super::AccessOperator::Arrow(_, _)) => {
+                Ok(())
+            }
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -1303,10 +1369,13 @@ pub enum AccessKind {
 impl Input<&super::AccessKind> for &AccessKind {
     fn assert(self, output: &super::AccessKind) -> TestCaseResult {
         match (self, output) {
-            (AccessKind::Identifier(input), super::AccessKind::Identifier(output)) => {
+            (
+                AccessKind::Identifier(input),
+                super::AccessKind::Identifier(output),
+            ) => input.assert(output),
+            (AccessKind::Tuple(input), super::AccessKind::Tuple(output)) => {
                 input.assert(output)
             }
-            (AccessKind::Tuple(input), super::AccessKind::Tuple(output)) => input.assert(output),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -1355,10 +1424,7 @@ impl Arbitrary for Access {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            AccessOperator::arbitrary_with(()),
-            AccessKind::arbitrary_with(()),
-        )
+        (AccessOperator::arbitrary_with(()), AccessKind::arbitrary_with(()))
             .prop_map(|(operator, kind)| Self { operator, kind })
             .boxed()
     }
@@ -1384,15 +1450,18 @@ impl Input<&super::PostfixOperator> for &PostfixOperator {
     fn assert(self, output: &super::PostfixOperator) -> TestCaseResult {
         match (self, output) {
             (PostfixOperator::Copy, super::PostfixOperator::Copy(_)) => Ok(()),
-            (PostfixOperator::Call(input), super::PostfixOperator::Call(output)) => {
-                input.assert(output)
-            }
-            (PostfixOperator::Cast(input), super::PostfixOperator::Cast(output)) => {
-                input.assert(output)
-            }
-            (PostfixOperator::Access(input), super::PostfixOperator::Access(output)) => {
-                input.assert(output)
-            }
+            (
+                PostfixOperator::Call(input),
+                super::PostfixOperator::Call(output),
+            ) => input.assert(output),
+            (
+                PostfixOperator::Cast(input),
+                super::PostfixOperator::Cast(output),
+            ) => input.assert(output),
+            (
+                PostfixOperator::Access(input),
+                super::PostfixOperator::Access(output),
+            ) => input.assert(output),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -1456,7 +1525,11 @@ impl Arbitrary for Postfix {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             args.0.clone().unwrap_or_else(|| {
-                Postfixable::arbitrary_with((args.1.clone(), args.2.clone(), args.3.clone()))
+                Postfixable::arbitrary_with((
+                    args.1.clone(),
+                    args.2.clone(),
+                    args.3.clone(),
+                ))
             }),
             PostfixOperator::arbitrary_with((args.1, args.2, args.3)),
         )
@@ -1468,11 +1541,9 @@ impl Arbitrary for Postfix {
                 !matches!(
                     (&*x.postfixable, &x.operator),
                     (
-                        Postfixable::Unit(Unit::NumericLiteral(NumericLiteral {
-                            decimal: None,
-                            suffix: None,
-                            ..
-                        })),
+                        Postfixable::Unit(Unit::NumericLiteral(
+                            NumericLiteral { decimal: None, suffix: None, .. }
+                        )),
                         PostfixOperator::Access(Access {
                             operator: AccessOperator::Dot,
                             kind: AccessKind::Tuple(..)
@@ -1500,10 +1571,13 @@ pub enum Postfixable {
 impl Input<&super::Postfixable> for &Postfixable {
     fn assert(self, output: &super::Postfixable) -> TestCaseResult {
         match (self, output) {
-            (Postfixable::Unit(input), super::Postfixable::Unit(output)) => input.assert(output),
-            (Postfixable::Postfix(input), super::Postfixable::Postfix(output)) => {
+            (Postfixable::Unit(input), super::Postfixable::Unit(output)) => {
                 input.assert(output)
             }
+            (
+                Postfixable::Postfix(input),
+                super::Postfixable::Postfix(output),
+            ) => input.assert(output),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -1555,7 +1629,9 @@ impl Input<&super::ReferenceOfKind> for &ReferenceOfKind {
     fn assert(self, output: &super::ReferenceOfKind) -> TestCaseResult {
         match (self, output) {
             (ReferenceOfKind::Local, super::ReferenceOfKind::Local(_))
-            | (ReferenceOfKind::Regular, super::ReferenceOfKind::Regular(_)) => Ok(()),
+            | (ReferenceOfKind::Regular, super::ReferenceOfKind::Regular(_)) => {
+                Ok(())
+            }
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -1635,16 +1711,28 @@ pub enum PrefixOperator {
 impl Input<&super::PrefixOperator> for &PrefixOperator {
     fn assert(self, output: &super::PrefixOperator) -> TestCaseResult {
         match (self, output) {
-            (PrefixOperator::LogicalNot, super::PrefixOperator::LogicalNot(_))
+            (
+                PrefixOperator::LogicalNot,
+                super::PrefixOperator::LogicalNot(_),
+            )
             | (PrefixOperator::Negate, super::PrefixOperator::Negate(_))
-            | (PrefixOperator::BitwiseNot, super::PrefixOperator::BitwiseNot(_))
-            | (PrefixOperator::Dereference, super::PrefixOperator::Dereference(_))
+            | (
+                PrefixOperator::BitwiseNot,
+                super::PrefixOperator::BitwiseNot(_),
+            )
+            | (
+                PrefixOperator::Dereference,
+                super::PrefixOperator::Dereference(_),
+            )
             | (PrefixOperator::Local, super::PrefixOperator::Local(_))
-            | (PrefixOperator::Unlocal, super::PrefixOperator::Unlocal(_)) => Ok(()),
-
-            (PrefixOperator::ReferenceOf(input), super::PrefixOperator::ReferenceOf(output)) => {
-                input.assert(output)
+            | (PrefixOperator::Unlocal, super::PrefixOperator::Unlocal(_)) => {
+                Ok(())
             }
+
+            (
+                PrefixOperator::ReferenceOf(input),
+                super::PrefixOperator::ReferenceOf(output),
+            ) => input.assert(output),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -1710,7 +1798,11 @@ impl Arbitrary for Prefix {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             args.0.clone().unwrap_or_else(|| {
-                Prefixable::arbitrary_with((args.1.clone(), args.2.clone(), args.3.clone()))
+                Prefixable::arbitrary_with((
+                    args.1.clone(),
+                    args.2.clone(),
+                    args.3.clone(),
+                ))
             }),
             PrefixOperator::arbitrary(),
         )
@@ -1738,10 +1830,13 @@ pub enum Prefixable {
 impl Input<&super::Prefixable> for &Prefixable {
     fn assert(self, output: &super::Prefixable) -> TestCaseResult {
         match (self, output) {
-            (Prefixable::Postfixable(input), super::Prefixable::Postfixable(output)) => {
+            (
+                Prefixable::Postfixable(input),
+                super::Prefixable::Postfixable(output),
+            ) => input.assert(output),
+            (Prefixable::Prefix(input), super::Prefixable::Prefix(output)) => {
                 input.assert(output)
             }
-            (Prefixable::Prefix(input), super::Prefixable::Prefix(output)) => input.assert(output),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -1826,32 +1921,89 @@ impl Input<&super::BinaryOperator> for &BinaryOperator {
             | (BinaryOperator::Divide, super::BinaryOperator::Divide(_))
             | (BinaryOperator::Modulo, super::BinaryOperator::Modulo(_))
             | (BinaryOperator::Assign, super::BinaryOperator::Assign(_))
-            | (BinaryOperator::CompoundAdd, super::BinaryOperator::CompoundAdd(..))
-            | (BinaryOperator::CompoundSubtract, super::BinaryOperator::CompoundSubtract(..))
-            | (BinaryOperator::CompoundMultiply, super::BinaryOperator::CompoundMultiply(..))
-            | (BinaryOperator::CompoundDivide, super::BinaryOperator::CompoundDivide(..))
-            | (BinaryOperator::CompoundModulo, super::BinaryOperator::CompoundModulo(..))
+            | (
+                BinaryOperator::CompoundAdd,
+                super::BinaryOperator::CompoundAdd(..),
+            )
+            | (
+                BinaryOperator::CompoundSubtract,
+                super::BinaryOperator::CompoundSubtract(..),
+            )
+            | (
+                BinaryOperator::CompoundMultiply,
+                super::BinaryOperator::CompoundMultiply(..),
+            )
+            | (
+                BinaryOperator::CompoundDivide,
+                super::BinaryOperator::CompoundDivide(..),
+            )
+            | (
+                BinaryOperator::CompoundModulo,
+                super::BinaryOperator::CompoundModulo(..),
+            )
             | (BinaryOperator::Equal, super::BinaryOperator::Equal(..))
             | (BinaryOperator::NotEqual, super::BinaryOperator::NotEqual(..))
             | (BinaryOperator::LessThan, super::BinaryOperator::LessThan(_))
-            | (BinaryOperator::LessThanOrEqual, super::BinaryOperator::LessThanOrEqual(..))
-            | (BinaryOperator::GreaterThan, super::BinaryOperator::GreaterThan(_))
-            | (BinaryOperator::GreaterThanOrEqual, super::BinaryOperator::GreaterThanOrEqual(..))
-            | (BinaryOperator::RestrictAssign, super::BinaryOperator::RestrictAssign(..))
-            | (BinaryOperator::LogicalAnd, super::BinaryOperator::LogicalAnd(_))
-            | (BinaryOperator::LogicalOr, super::BinaryOperator::LogicalOr(_))
-            | (BinaryOperator::BitwiseAnd, super::BinaryOperator::BitwiseAnd(_))
-            | (BinaryOperator::CompoundBitwiseAnd, super::BinaryOperator::CompoundBitwiseAnd(..))
-            | (BinaryOperator::BitwiseOr, super::BinaryOperator::BitwiseOr(_))
-            | (BinaryOperator::CompoundBitwiseOr, super::BinaryOperator::CompoundBitwiseOr(..))
-            | (BinaryOperator::BitwiseXor, super::BinaryOperator::BitwiseXor(_))
-            | (BinaryOperator::CompoundBitwiseXor, super::BinaryOperator::CompoundBitwiseXor(..))
-            | (BinaryOperator::BitwiseLeftShift, super::BinaryOperator::BitwiseLeftShift(..))
+            | (
+                BinaryOperator::LessThanOrEqual,
+                super::BinaryOperator::LessThanOrEqual(..),
+            )
+            | (
+                BinaryOperator::GreaterThan,
+                super::BinaryOperator::GreaterThan(_),
+            )
+            | (
+                BinaryOperator::GreaterThanOrEqual,
+                super::BinaryOperator::GreaterThanOrEqual(..),
+            )
+            | (
+                BinaryOperator::RestrictAssign,
+                super::BinaryOperator::RestrictAssign(..),
+            )
+            | (
+                BinaryOperator::LogicalAnd,
+                super::BinaryOperator::LogicalAnd(_),
+            )
+            | (
+                BinaryOperator::LogicalOr,
+                super::BinaryOperator::LogicalOr(_),
+            )
+            | (
+                BinaryOperator::BitwiseAnd,
+                super::BinaryOperator::BitwiseAnd(_),
+            )
+            | (
+                BinaryOperator::CompoundBitwiseAnd,
+                super::BinaryOperator::CompoundBitwiseAnd(..),
+            )
+            | (
+                BinaryOperator::BitwiseOr,
+                super::BinaryOperator::BitwiseOr(_),
+            )
+            | (
+                BinaryOperator::CompoundBitwiseOr,
+                super::BinaryOperator::CompoundBitwiseOr(..),
+            )
+            | (
+                BinaryOperator::BitwiseXor,
+                super::BinaryOperator::BitwiseXor(_),
+            )
+            | (
+                BinaryOperator::CompoundBitwiseXor,
+                super::BinaryOperator::CompoundBitwiseXor(..),
+            )
+            | (
+                BinaryOperator::BitwiseLeftShift,
+                super::BinaryOperator::BitwiseLeftShift(..),
+            )
             | (
                 BinaryOperator::CompoundBitwiseLeftShift,
                 super::BinaryOperator::CompoundBitwiseLeftShift(..),
             )
-            | (BinaryOperator::BitwiseRightShift, super::BinaryOperator::BitwiseRightShift(..))
+            | (
+                BinaryOperator::BitwiseRightShift,
+                super::BinaryOperator::BitwiseRightShift(..),
+            )
             | (
                 BinaryOperator::CompoundBitwiseRightShift,
                 super::BinaryOperator::CompoundBitwiseRightShift(..),
@@ -1960,12 +2112,12 @@ impl Arbitrary for Binary {
         let prefixable = Prefixable::arbitrary_with((args.0, args.1, args.2));
         (
             prefixable.clone(),
-            proptest::collection::vec((BinaryOperator::arbitrary(), prefixable), 0..=3),
+            proptest::collection::vec(
+                (BinaryOperator::arbitrary(), prefixable),
+                0..=3,
+            ),
         )
-            .prop_map(|(first, chain)| Self {
-                first: Box::new(first),
-                chain,
-            })
+            .prop_map(|(first, chain)| Self { first: Box::new(first), chain })
             .boxed()
     }
 }

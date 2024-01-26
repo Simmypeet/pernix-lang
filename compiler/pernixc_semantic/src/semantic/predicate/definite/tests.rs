@@ -22,13 +22,15 @@ use crate::{
         Premise, Semantic,
     },
     symbol::{
-        self, ConstantParameterID, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
-        TypeParameterID,
+        self, ConstantParameterID, GenericDeclaration, GenericID,
+        GenericParameters, TypeParameter, TypeParameterID,
     },
     table::{Success, Table},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
 pub enum ApplyPropertyError {
     #[error("{0}")]
     ExceedLimitError(#[from] ExceedLimitError),
@@ -55,7 +57,7 @@ pub trait Property<T>: 'static + Debug {
     fn generate(&self) -> T;
 }
 
-/// The term is trivially satisifiable without the environment.
+/// The term is trivially satisfiable without the environment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TriviallySatisfiable<T>(pub T);
 
@@ -71,8 +73,14 @@ where
     }
 }
 
-impl<T: Into<U> + Clone + Debug + 'static, U> Property<U> for TriviallySatisfiable<T> {
-    fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> Result<(), ApplyPropertyError> {
+impl<T: Into<U> + Clone + Debug + 'static, U> Property<U>
+    for TriviallySatisfiable<T>
+{
+    fn apply(
+        &self,
+        _: &mut Table<Success>,
+        _: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
         Ok(())
     }
 
@@ -85,9 +93,11 @@ pub struct Mapping<Param, T> {
     property: Box<dyn Property<T>>,
 }
 
-impl<Param: Debug + Arbitrary, T: Debug + 'static> Arbitrary for Mapping<Param, T>
+impl<Param: Debug + Arbitrary, T: Debug + 'static> Arbitrary
+    for Mapping<Param, T>
 where
-    Box<dyn Property<T>>: Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+    Box<dyn Property<T>>:
+        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
     Param::Strategy: 'static,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
@@ -105,8 +115,8 @@ where
     }
 }
 
-impl<Param: Debug + Into<T> + Clone + 'static, T: Term + Debug + 'static> Property<T>
-    for Mapping<Param, T>
+impl<Param: Debug + Into<T> + Clone + 'static, T: Term + Debug + 'static>
+    Property<T> for Mapping<Param, T>
 where
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
@@ -156,8 +166,8 @@ pub struct SymbolCongruence<ID> {
     id: ID,
 }
 
-impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbitrary
-    for SymbolCongruence<ID>
+impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
+    Arbitrary for SymbolCongruence<ID>
 {
     type Parameters = (
         Option<BoxedStrategy<Box<dyn Property<Type>>>>,
@@ -172,8 +182,7 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
                 0..=2,
             ),
             proptest::collection::vec(
-                args.1
-                    .unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
+                args.1.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
                 0..=2,
             ),
             ID::arbitrary(),
@@ -187,7 +196,8 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
     }
 }
 
-impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T> for SymbolCongruence<ID>
+impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
+    for SymbolCongruence<ID>
 where
     Symbol<ID>: Into<T>,
 {
@@ -212,7 +222,11 @@ where
             id: self.id.clone(),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
-                types: self.type_strategies.iter().map(|x| x.generate()).collect(),
+                types: self
+                    .type_strategies
+                    .iter()
+                    .map(|x| x.generate())
+                    .collect(),
                 constants: self
                     .constant_strategies
                     .iter()
@@ -257,9 +271,10 @@ impl Arbitrary for Box<dyn Property<Constant>> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let leaf =
-            prop_oneof![TriviallySatisfiable::<constant::Primitive>::arbitrary()
-                .prop_map(|x| Box::new(x) as _),];
+        let leaf = prop_oneof![
+            TriviallySatisfiable::<constant::Primitive>::arbitrary()
+                .prop_map(|x| Box::new(x) as _),
+        ];
 
         leaf.prop_recursive(16, 64, 4, move |inner| {
             let ty_strat = args
@@ -324,7 +339,9 @@ impl Property<Type> for TypeAlias {
                         arena
                             .insert_with_id(ID::new(0), TypeParameter {
                                 name: "T".to_string(),
-                                parent_generic_id: GenericID::Type(self.type_id),
+                                parent_generic_id: GenericID::Type(
+                                    self.type_id,
+                                ),
                                 span: None,
                                 variance: symbol::Variance::Invariant,
                             })
@@ -399,7 +416,9 @@ fn remove_sampled<T: Term>(equalities: &mut mapping::Mapping) -> bool {
     }
 }
 
-fn property_based_testing<T: Term + 'static>(property: &dyn Property<T>) -> TestCaseResult
+fn property_based_testing<T: Term + 'static>(
+    property: &dyn Property<T>,
+) -> TestCaseResult
 where
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
@@ -408,16 +427,14 @@ where
     let mut premise = Premise::default();
     let mut table = Table::<Success>::default();
 
-    property
-        .apply(&mut table, &mut premise)
-        .map_err(|x| match x {
-            ApplyPropertyError::ExceedLimitError(_) => {
-                TestCaseError::reject("too complex property to test")
-            }
-            ApplyPropertyError::TypeAliasIDCollision => {
-                TestCaseError::reject("type alias id collision")
-            }
-        })?;
+    property.apply(&mut table, &mut premise).map_err(|x| match x {
+        ApplyPropertyError::ExceedLimitError(_) => {
+            TestCaseError::reject("too complex property to test")
+        }
+        ApplyPropertyError::TypeAliasIDCollision => {
+            TestCaseError::reject("type alias id collision")
+        }
+    })?;
 
     prop_assert!(definite(
         &term,
@@ -441,7 +458,9 @@ where
                 &mut semantic::Default,
                 &mut Limit::new(&mut session::Default::default())
             )
-            .map_err(|_| TestCaseError::reject("too complex property to test"))?);
+            .map_err(|_| TestCaseError::reject(
+                "too complex property to test"
+            ))?);
         }
     }
 

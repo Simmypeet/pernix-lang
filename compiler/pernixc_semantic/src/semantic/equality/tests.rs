@@ -25,7 +25,8 @@ use crate::{
         Premise, Semantic,
     },
     symbol::{
-        self, GenericDeclaration, GenericID, GenericParameters, TypeParameter, TypeParameterID,
+        self, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
+        TypeParameterID,
     },
     table::{Success, Table},
 };
@@ -232,7 +233,9 @@ fn recursive() {
                                 id: SymbolKindID::Enum(ID::new(0)),
                                 generic_arguments: GenericArguments {
                                     lifetimes: Vec::new(),
-                                    types: vec![Type::Primitive(Primitive::Int32)],
+                                    types: vec![Type::Primitive(
+                                        Primitive::Int32,
+                                    )],
                                     constants: Vec::new(),
                                 },
                             })],
@@ -281,7 +284,9 @@ fn recursive() {
                                 id: SymbolKindID::Enum(ID::new(0)),
                                 generic_arguments: GenericArguments {
                                     lifetimes: Vec::new(),
-                                    types: vec![Type::Primitive(Primitive::Uint32)],
+                                    types: vec![Type::Primitive(
+                                        Primitive::Uint32,
+                                    )],
                                     constants: Vec::new(),
                                 },
                             })],
@@ -315,7 +320,9 @@ fn recursive() {
     .unwrap());
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
 pub enum ApplyPropertyError {
     #[error("{0}")]
     ExceedLimitError(#[from] ExceedLimitError),
@@ -388,7 +395,8 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
         leaf.prop_recursive(10, 20, 2, |inner| {
-            prop_oneof![Mapping::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _)]
+            prop_oneof![Mapping::arbitrary_with(Some(inner))
+                .prop_map(|x| Box::new(x) as _)]
         })
         .boxed()
     }
@@ -448,7 +456,11 @@ where
 }
 
 impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
-    fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> Result<(), ApplyPropertyError> {
+    fn apply(
+        &self,
+        _: &mut Table<Success>,
+        _: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
         Ok(())
     }
 
@@ -462,9 +474,11 @@ pub struct Mapping<T> {
     target_at_lhs: bool,
 }
 
-impl<T: 'static + Debug + Term + Arbitrary<Strategy = BoxedStrategy<T>>> Arbitrary for Mapping<T>
+impl<T: 'static + Debug + Term + Arbitrary<Strategy = BoxedStrategy<T>>>
+    Arbitrary for Mapping<T>
 where
-    Box<dyn Property<T>>: Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+    Box<dyn Property<T>>:
+        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
@@ -509,11 +523,8 @@ where
 
         let (property_lhs, property_rhs) = self.property.generate();
 
-        let to_be_mapped = if self.target_at_lhs {
-            property_lhs
-        } else {
-            property_rhs
-        };
+        let to_be_mapped =
+            if self.target_at_lhs { property_lhs } else { property_rhs };
         self.property.apply(table, premise)?;
 
         if equals(
@@ -534,9 +545,7 @@ where
             return Ok(());
         }
 
-        premise
-            .equalities_mapping
-            .insert(to_be_mapped, self.target.clone());
+        premise.equalities_mapping.insert(to_be_mapped, self.target.clone());
 
         Ok(())
     }
@@ -550,7 +559,8 @@ where
     }
 }
 
-/// A property that generates `local` terms which will be used to test the congruence.
+/// A property that generates `local` terms which will be used to test the
+/// congruence.
 #[derive(Debug)]
 pub struct LocalCongruence<T> {
     strategy: Box<dyn Property<T>>,
@@ -559,7 +569,8 @@ pub struct LocalCongruence<T> {
 impl<T: 'static + Debug + Term> Arbitrary for LocalCongruence<T>
 where
     Local<T>: Into<T>,
-    Box<dyn Property<T>>: Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+    Box<dyn Property<T>>:
+        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
@@ -615,8 +626,8 @@ pub struct SymbolCongruence<ID> {
     id: ID,
 }
 
-impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbitrary
-    for SymbolCongruence<ID>
+impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
+    Arbitrary for SymbolCongruence<ID>
 {
     type Parameters = (
         Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
@@ -632,13 +643,11 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
                 0..=2,
             ),
             proptest::collection::vec(
-                args.0
-                    .unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary),
+                args.0.unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary),
                 0..=2,
             ),
             proptest::collection::vec(
-                args.2
-                    .unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
+                args.2.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
                 0..=2,
             ),
             ID::arbitrary(),
@@ -653,7 +662,8 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
     }
 }
 
-impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T> for SymbolCongruence<ID>
+impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
+    for SymbolCongruence<ID>
 where
     Symbol<ID>: Into<T>,
     semantic::Default: Semantic<T>,
@@ -759,26 +769,35 @@ impl Arbitrary for TypeAlias {
         let strat = args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
 
         (
-            (proptest::bool::ANY, strat).prop_ind_flat_map2(|(aliased_at_lhs, prop)| {
-                let (lhs, rhs) = prop.generate();
-                let sampled = if aliased_at_lhs { lhs } else { rhs };
+            (proptest::bool::ANY, strat).prop_ind_flat_map2(
+                |(aliased_at_lhs, prop)| {
+                    let (lhs, rhs) = prop.generate();
+                    let sampled = if aliased_at_lhs { lhs } else { rhs };
 
-                let mut term_collector = TermCollector { terms: Vec::new() };
+                    let mut term_collector =
+                        TermCollector { terms: Vec::new() };
 
-                visitor::accept_recursive(&sampled, &mut term_collector);
+                    visitor::accept_recursive(&sampled, &mut term_collector);
 
-                proptest::sample::select(term_collector.terms)
-            }),
+                    proptest::sample::select(term_collector.terms)
+                },
+            ),
             ID::arbitrary(),
             proptest::bool::ANY,
         )
             .prop_map(
-                |(((aliased_at_lhs, ty_strat), argument), type_id, type_alias_at_lhs)| Self {
-                    property: ty_strat,
+                |(
+                    ((aliased_at_lhs, ty_strat), argument),
                     type_id,
-                    argument,
-                    aliased_at_lhs,
-                    at_lhs: type_alias_at_lhs,
+                    type_alias_at_lhs,
+                )| {
+                    Self {
+                        property: ty_strat,
+                        type_id,
+                        argument,
+                        aliased_at_lhs,
+                        at_lhs: type_alias_at_lhs,
+                    }
                 },
             )
             .boxed()
@@ -825,7 +844,9 @@ impl Property<Type> for TypeAlias {
                             arena
                                 .insert_with_id(ID::new(0), TypeParameter {
                                     name: "T".to_string(),
-                                    parent_generic_id: GenericID::Type(self.type_id),
+                                    parent_generic_id: GenericID::Type(
+                                        self.type_id,
+                                    ),
                                     span: None,
                                     variance: symbol::Variance::Invariant,
                                 })
@@ -857,7 +878,8 @@ impl Property<Type> for TypeAlias {
                     r#type: {
                         let (lhs, rhs) = self.property.generate();
 
-                        let mut sampled = if self.aliased_at_lhs { lhs } else { rhs };
+                        let mut sampled =
+                            if self.aliased_at_lhs { lhs } else { rhs };
 
                         sampled.apply(&Substitution {
                             types: {
@@ -946,16 +968,14 @@ where
     let mut premise = Premise::default();
     let mut table = Table::<Success>::default();
 
-    property
-        .apply(&mut table, &mut premise)
-        .map_err(|x| match x {
-            ApplyPropertyError::ExceedLimitError(_) => {
-                TestCaseError::reject("too complex property")
-            }
-            ApplyPropertyError::TypeAliasIDCollision => {
-                TestCaseError::reject("type alias id collision")
-            }
-        })?;
+    property.apply(&mut table, &mut premise).map_err(|x| match x {
+        ApplyPropertyError::ExceedLimitError(_) => {
+            TestCaseError::reject("too complex property")
+        }
+        ApplyPropertyError::TypeAliasIDCollision => {
+            TestCaseError::reject("type alias id collision")
+        }
+    })?;
 
     prop_assert!(equals(
         &term1,
@@ -987,8 +1007,12 @@ where
         let mut premise_removed = premise.clone();
 
         if remove_sampled::<Type>(&mut premise_removed.equalities_mapping)
-            || remove_sampled::<Lifetime>(&mut premise_removed.equalities_mapping)
-            || remove_sampled::<Constant>(&mut premise_removed.equalities_mapping)
+            || remove_sampled::<Lifetime>(
+                &mut premise_removed.equalities_mapping,
+            )
+            || remove_sampled::<Constant>(
+                &mut premise_removed.equalities_mapping,
+            )
         {
             prop_assert!(!equals(
                 &term1,
@@ -1036,19 +1060,16 @@ where
             )
             .map_err(|_| TestCaseError::reject("too complex property"))?);
 
-            table
-                .representation
-                .types
-                .insert_with_id(id, removed)
-                .unwrap();
+            table.representation.types.insert_with_id(id, removed).unwrap();
         }
     }
 
     // adding unrelated equalities should not affect the result.
     for decoy_lifetime_equalities in decoy.lifetimes {
-        premise
-            .equalities_mapping
-            .insert(decoy_lifetime_equalities.lhs, decoy_lifetime_equalities.rhs);
+        premise.equalities_mapping.insert(
+            decoy_lifetime_equalities.lhs,
+            decoy_lifetime_equalities.rhs,
+        );
     }
 
     for decoy_type_equalities in decoy.types {
@@ -1058,9 +1079,10 @@ where
     }
 
     for decoy_constant_equalities in decoy.constants {
-        premise
-            .equalities_mapping
-            .insert(decoy_constant_equalities.lhs, decoy_constant_equalities.rhs);
+        premise.equalities_mapping.insert(
+            decoy_constant_equalities.lhs,
+            decoy_constant_equalities.rhs,
+        );
     }
 
     prop_assert!(equals(
@@ -1117,7 +1139,9 @@ pub struct DecoyEquality<T> {
     rhs: T,
 }
 
-impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary for DecoyEquality<T> {
+impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary
+    for DecoyEquality<T>
+{
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 

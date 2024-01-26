@@ -12,7 +12,8 @@ use crate::{
 };
 
 impl Arbitrary for Lifetime {
-    type Parameters = (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Constant>>);
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Constant>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((_, _): Self::Parameters) -> Self::Strategy {

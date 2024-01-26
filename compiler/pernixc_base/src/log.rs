@@ -18,7 +18,8 @@ pub enum Severity {
     Warning,
 }
 
-/// Is a struct implementing [`Display`] that represents a log message to be displayed to the user.
+/// Is a struct implementing [`Display`] that represents a log message to be
+/// displayed to the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct Message<T> {
     /// The severity of the log message.
@@ -53,7 +54,8 @@ const fn get_digit(mut number: usize) -> usize {
     digit
 }
 
-/// Structure implementing [`Display`] that prints the particular span of the source code.
+/// Structure implementing [`Display`] that prints the particular span of the
+/// source code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct SourceCodeDisplay<'a, T> {
     /// The span of the source code to be printed.
@@ -76,7 +78,8 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
         );
         let is_multiline = start_line != end_line;
 
-        // when printing the source code, show the line before the span and the line after the span
+        // when printing the source code, show the line before the span and the
+        // line after the span
         let largest_line_number_digits = get_digit(end_line + 1);
 
         // prints the source location
@@ -105,10 +108,8 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
         }
 
         // prints previous line
-        if let Some(line) = self
-            .span
-            .source_file()
-            .get_line(start_line.saturating_sub(1))
+        if let Some(line) =
+            self.span.source_file().get_line(start_line.saturating_sub(1))
         {
             // prints the line number
             write!(
@@ -118,7 +119,9 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                 format_args!(
                     "{:width$}",
                     "",
-                    width = largest_line_number_digits - get_digit(start_line - 1) + 1
+                    width = largest_line_number_digits
+                        - get_digit(start_line - 1)
+                        + 1
                 ),
                 Style::Bold.with(Color::Cyan.with("┃")),
             )?;
@@ -144,7 +147,8 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                 format_args!(
                     "{:width$}",
                     "",
-                    width = largest_line_number_digits - get_digit(line_number) + 1
+                    width =
+                        largest_line_number_digits - get_digit(line_number) + 1
                 ),
                 Style::Bold.with(Color::Cyan.with("┃")),
             )?;
@@ -165,18 +169,24 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                     let is_in_span = {
                         let index = index + 1;
                         if is_multiline {
-                            (line_number == start_line && index >= start_location.column)
+                            (line_number == start_line
+                                && index >= start_location.column)
                                 || (line_number == end_line
                                     && (index + 1)
-                                        < end_location
-                                            .map_or(usize::MAX, |end_location| end_location.column))
-                                || (line_number > start_line && line_number < end_line)
+                                        < end_location.map_or(
+                                            usize::MAX,
+                                            |end_location| end_location.column,
+                                        ))
+                                || (line_number > start_line
+                                    && line_number < end_line)
                         } else {
                             line_number == start_line
                                 && index >= start_location.column
                                 && index
                                     < end_location
-                                        .map_or(usize::MAX, |end_location| end_location.column)
+                                        .map_or(usize::MAX, |end_location| {
+                                            end_location.column
+                                        })
                         }
                     };
 
@@ -184,7 +194,8 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                         write!(
                             f,
                             "{}",
-                            Style::Underline.with(Style::Bold.with(Color::Red.with(char)))
+                            Style::Underline
+                                .with(Style::Bold.with(Color::Red.with(char)))
                         )?;
                     } else {
                         write!(f, "{char}")?;
@@ -219,7 +230,11 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                         }
 
                         // if the char is tab, print 4 spaces
-                        write!(f, "{}", if char == '\t' { "    " } else { " " })?;
+                        write!(
+                            f,
+                            "{}",
+                            if char == '\t' { "    " } else { " " }
+                        )?;
                     }
                 }
 
@@ -229,7 +244,9 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
         }
 
         // prints the post line
-        if let Some(line) = self.span.source_file().get_line(end_line.saturating_add(1)) {
+        if let Some(line) =
+            self.span.source_file().get_line(end_line.saturating_add(1))
+        {
             // prints the line number
             write!(
                 f,
@@ -238,7 +255,9 @@ impl<'a, T: Display> Display for SourceCodeDisplay<'a, T> {
                 format_args!(
                     "{:width$}",
                     "",
-                    width = largest_line_number_digits - get_digit(end_line + 1) + 1
+                    width = largest_line_number_digits
+                        - get_digit(end_line + 1)
+                        + 1
                 ),
                 Style::Bold.with(Color::Cyan.with("┃")),
             )?;

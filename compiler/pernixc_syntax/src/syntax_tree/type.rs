@@ -14,8 +14,8 @@ use pernixc_lexical::{
 };
 
 use super::{
-    expression::Expression, ConnectedList, Lifetime, LifetimeIdentifier, QualifiedIdentifier,
-    Qualifier,
+    expression::Expression, ConnectedList, Lifetime, LifetimeIdentifier,
+    QualifiedIdentifier, Qualifier,
 };
 use crate::{
     error::{Error, SyntaxKind},
@@ -96,7 +96,9 @@ pub struct Reference {
 }
 
 impl SourceElement for Reference {
-    fn span(&self) -> Span { self.ampersand.span.join(&self.operand.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.ampersand.span.join(&self.operand.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -124,7 +126,9 @@ pub struct Tuple {
 }
 
 impl SourceElement for Tuple {
-    fn span(&self) -> Span { self.left_paren.span.join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_paren.span.join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -149,10 +153,7 @@ pub struct Array {
 
 impl SourceElement for Array {
     fn span(&self) -> Span {
-        self.left_bracket
-            .span
-            .join(&self.right_bracket.span)
-            .unwrap()
+        self.left_bracket.span.join(&self.right_bracket.span).unwrap()
     }
 }
 
@@ -173,7 +174,9 @@ pub struct Pointer {
 }
 
 impl SourceElement for Pointer {
-    fn span(&self) -> Span { self.asterisk.span.join(&self.operand.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.asterisk.span.join(&self.operand.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -192,7 +195,9 @@ pub struct Local {
 }
 
 impl SourceElement for Local {
-    fn span(&self) -> Span { self.local_keyword.span.join(&self.ty.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.local_keyword.span.join(&self.ty.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -204,7 +209,17 @@ impl SourceElement for Local {
 ///     | Pointer
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum Type {
     Primitive(Primitive),
@@ -254,10 +269,15 @@ impl SourceElement for Unpackable {
 }
 
 impl<'a> Parser<'a> {
-    fn parse_reference_type(&mut self, handler: &dyn Handler<Error>) -> Option<Reference> {
+    fn parse_reference_type(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Reference> {
         let ampersand = self.parse_punctuation('&', true, handler)?;
         let lifetime_argument = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+            Reading::Unit(Token::Punctuation(apostrophe))
+                if apostrophe.punctuation == '\'' =>
+            {
                 // eat apostrophe
                 self.forward();
 
@@ -274,7 +294,9 @@ impl<'a> Parser<'a> {
                     found => {
                         handler.receive(Error {
                             expected: SyntaxKind::Identifier,
-                            alternatives: vec![SyntaxKind::Keyword(KeywordKind::Static)],
+                            alternatives: vec![SyntaxKind::Keyword(
+                                KeywordKind::Static,
+                            )],
                             found: found.into_token(),
                         });
 
@@ -282,21 +304,22 @@ impl<'a> Parser<'a> {
                     }
                 };
 
-                Some(Lifetime {
-                    apostrophe,
-                    identifier: lifetime_identifier,
-                })
+                Some(Lifetime { apostrophe, identifier: lifetime_identifier })
             }
 
             _ => None,
         };
         let reference_qualifier = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Mutable => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Mutable =>
+            {
                 self.forward();
                 Some(Qualifier::Mutable(k))
             }
 
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Restrict => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Restrict =>
+            {
                 self.forward();
                 Some(Qualifier::Restrict(k))
             }
@@ -313,16 +336,23 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_pointer_type(&mut self, handler: &dyn Handler<Error>) -> Option<Pointer> {
+    fn parse_pointer_type(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Pointer> {
         let asterisk = self.parse_punctuation('*', true, handler)?;
 
         let qualifier = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Mutable => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Mutable =>
+            {
                 self.forward();
                 Some(Qualifier::Mutable(k))
             }
 
-            Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Restrict => {
+            Reading::Unit(Token::Keyword(k))
+                if k.kind == KeywordKind::Restrict =>
+            {
                 self.forward();
                 Some(Qualifier::Restrict(k))
             }
@@ -332,14 +362,13 @@ impl<'a> Parser<'a> {
 
         let operand_type = Box::new(self.parse_type(handler)?);
 
-        Some(Pointer {
-            asterisk,
-            qualifier,
-            operand: operand_type,
-        })
+        Some(Pointer { asterisk, qualifier, operand: operand_type })
     }
 
-    fn parse_array_type(&mut self, handler: &dyn Handler<Error>) -> Option<Array> {
+    fn parse_array_type(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Array> {
         let delimited_tree = self.step_into(
             Delimiter::Bracket,
             |parser| {
@@ -362,7 +391,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_tuple_type(&mut self, handler: &dyn Handler<Error>) -> Option<Tuple> {
+    fn parse_tuple_type(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Tuple> {
         let type_specifiers = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
@@ -370,7 +402,11 @@ impl<'a> Parser<'a> {
                 // stop at significant token
                 parser.stop_at_significant();
 
-                let ellipsis = match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
+                let ellipsis = match (
+                    parser.peek(),
+                    parser.peek_offset(1),
+                    parser.peek_offset(2),
+                ) {
                     (
                         Reading::Unit(Token::Punctuation(p1)),
                         Some(Reading::Unit(Token::Punctuation(p2))),
@@ -392,10 +428,7 @@ impl<'a> Parser<'a> {
 
                 let ty = parser.parse_type(handler)?;
 
-                Some(Unpackable {
-                    ellipsis,
-                    ty: Box::new(ty),
-                })
+                Some(Unpackable { ellipsis, ty: Box::new(ty) })
             },
             handler,
         )?;

@@ -22,7 +22,9 @@ pub enum Cached<T> {
     Done(T),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
 #[error("exceeded the limit of the number of queries")]
 #[allow(missing_docs)]
 pub struct ExceedLimitError;
@@ -41,20 +43,12 @@ impl<'a, R> Limit<'a, R> {
 
     /// Creates a new limit.
     pub fn new(session: &'a mut R) -> Self {
-        Self {
-            session,
-            limit: Self::DEFAULT_LIMIT,
-            count: 0,
-        }
+        Self { session, limit: Self::DEFAULT_LIMIT, count: 0 }
     }
 
     /// Creates a new [`Limit`] with the given limit number.
     pub fn with_limit(session: &'a mut R, limit: usize) -> Self {
-        Self {
-            session,
-            limit,
-            count: 0,
-        }
+        Self { session, limit, count: 0 }
     }
 
     /// Marks the given query as working on.
@@ -120,7 +114,10 @@ pub trait Cache<Query> {
     type Result;
 
     /// Marks the given query as working on.
-    fn mark_as_in_progress(&mut self, query: Query) -> Option<Cached<Self::Result>>;
+    fn mark_as_in_progress(
+        &mut self,
+        query: Query,
+    ) -> Option<Cached<Self::Result>>;
 
     /// Marks the given query as done and stores the result.
     fn mark_as_done(&mut self, record: Query, result: Self::Result);
@@ -137,11 +134,12 @@ pub trait Cache<Query> {
 
 /// The session of semantic queries.
 ///
-/// Most of the semantic queries (i.e., equals, unification, etc) are recursive in nature. This
-/// means that they can be circular. This trait is used to detect the circular reasoning in the
-/// system.
+/// Most of the semantic queries (i.e., equals, unification, etc) are recursive
+/// in nature. This means that they can be circular. This trait is used to
+/// detect the circular reasoning in the system.
 ///
-/// Most of the time, you should use [`Default`] as the implementation of this trait.
+/// Most of the time, you should use [`Default`] as the implementation of this
+/// trait.
 pub trait Session<T>:
     for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
     + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
@@ -188,7 +186,10 @@ macro_rules! implements_cache {
         impl<'a> Cache<$query> for Default {
             type Result = $result_t;
 
-            fn mark_as_in_progress(&mut self, $param: $query) -> Option<Cached<Self::Result>> {
+            fn mark_as_in_progress(
+                &mut self,
+                $param: $query,
+            ) -> Option<Cached<Self::Result>> {
                 match self.$field_name.entry($expr_in) {
                     Entry::Vacant(entry) => {
                         entry.insert(Cached::InProgress);
@@ -204,11 +205,17 @@ macro_rules! implements_cache {
                     .map(|x| *x = Cached::Done(result));
             }
 
-            fn clear_query(&mut self, $param: $query) -> Option<Cached<Self::Result>> {
+            fn clear_query(
+                &mut self,
+                $param: $query,
+            ) -> Option<Cached<Self::Result>> {
                 self.$field_name.remove($expr_out)
             }
 
-            fn get_result(&self, $param: $query) -> Option<&Cached<Self::Result>> {
+            fn get_result(
+                &self,
+                $param: $query,
+            ) -> Option<&Cached<Self::Result>> {
                 self.$field_name.get($expr_out)
             }
 

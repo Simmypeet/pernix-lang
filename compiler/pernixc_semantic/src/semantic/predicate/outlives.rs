@@ -125,17 +125,14 @@ impl<T: Term> Outlives<T> {
         semantic: &mut S,
         session: &mut Limit<R>,
     ) -> Result<bool, ExceedLimitError> {
-        let satisfiability =
-            semantic.outlives_satisfiability(term, bound, premise, table, session)?;
+        let satisfiability = semantic
+            .outlives_satisfiability(term, bound, premise, table, session)?;
 
         if satisfiability == Satisfiability::Satisfied {
             return Ok(true);
         }
 
-        match session.mark_as_in_progress(Query {
-            operand: term,
-            bound,
-        })? {
+        match session.mark_as_in_progress(Query { operand: term, bound })? {
             Some(Cached::Done(Satisfied)) => return Ok(true),
             Some(Cached::InProgress) => return Ok(false),
             None => {}
@@ -155,13 +152,7 @@ impl<T: Term> Outlives<T> {
             let _ = term.accept_one_level(&mut visitor);
 
             if visitor.outlives? {
-                session.mark_as_done(
-                    Query {
-                        operand: term,
-                        bound,
-                    },
-                    Satisfied,
-                );
+                session.mark_as_done(Query { operand: term, bound }, Satisfied);
                 return Ok(true);
             }
         }
@@ -183,13 +174,7 @@ impl<T: Term> Outlives<T> {
                 semantic,
                 session,
             )? {
-                session.mark_as_done(
-                    Query {
-                        operand: term,
-                        bound,
-                    },
-                    Satisfied,
-                );
+                session.mark_as_done(Query { operand: term, bound }, Satisfied);
                 return Ok(true);
             }
         }

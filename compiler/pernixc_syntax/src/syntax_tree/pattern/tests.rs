@@ -57,7 +57,8 @@ pub struct FieldAssociation<Pattern> {
     pattern: Box<Pattern>,
 }
 
-impl<I: Debug, O: Debug> Input<&super::FieldAssociation<O>> for &FieldAssociation<I>
+impl<I: Debug, O: Debug> Input<&super::FieldAssociation<O>>
+    for &FieldAssociation<I>
 where
     for<'i, 'o> &'i I: Input<&'o O>,
 {
@@ -103,8 +104,12 @@ where
 {
     fn assert(self, output: &super::Field<O>) -> TestCaseResult {
         match (self, output) {
-            (Field::Association(input), super::Field::Association(output)) => input.assert(output),
-            (Field::Named(input), super::Field::Named(output)) => input.assert(output),
+            (Field::Association(input), super::Field::Association(output)) => {
+                input.assert(output)
+            }
+            (Field::Named(input), super::Field::Named(output)) => {
+                input.assert(output)
+            }
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -112,7 +117,9 @@ where
     }
 }
 
-impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary for Field<Pattern> {
+impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
+    for Field<Pattern>
+{
     type Parameters = Option<BoxedStrategy<Pattern>>;
     type Strategy = BoxedStrategy<Self>;
 
@@ -224,10 +231,13 @@ where
 {
     fn assert(self, output: &super::Unpackable<O>) -> TestCaseResult {
         match (self, output) {
-            (Unpackable::Unpack(input), super::Unpackable::Unpack(output)) => input.assert(output),
-            (Unpackable::Pattern(input), super::Unpackable::Pattern(output)) => {
+            (Unpackable::Unpack(input), super::Unpackable::Unpack(output)) => {
                 input.assert(output)
             }
+            (
+                Unpackable::Pattern(input),
+                super::Unpackable::Pattern(output),
+            ) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -263,7 +273,8 @@ impl<Pattern: Display> Display for Unpackable<Pattern> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple<Pattern> {
-    pub patterns: Option<ConnectedList<Unpackable<Pattern>, ConstantPunctuation<','>>>,
+    pub patterns:
+        Option<ConnectedList<Unpackable<Pattern>, ConstantPunctuation<','>>>,
 }
 
 impl<I: Debug, O: Debug> Input<&super::Tuple<O>> for &Tuple<I>
@@ -275,7 +286,9 @@ where
     }
 }
 
-impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary for Tuple<Pattern> {
+impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
+    for Tuple<Pattern>
+{
     type Parameters = Option<BoxedStrategy<Pattern>>;
     type Strategy = BoxedStrategy<Self>;
 
@@ -309,11 +322,16 @@ pub enum Irrefutable {
 impl Input<&super::Irrefutable> for &Irrefutable {
     fn assert(self, output: &super::Irrefutable) -> TestCaseResult {
         match (self, output) {
-            (Irrefutable::Structural(input), super::Irrefutable::Structural(output)) => {
+            (
+                Irrefutable::Structural(input),
+                super::Irrefutable::Structural(output),
+            ) => input.assert(output),
+            (Irrefutable::Tuple(input), super::Irrefutable::Tuple(output)) => {
                 input.assert(output)
             }
-            (Irrefutable::Tuple(input), super::Irrefutable::Tuple(output)) => input.assert(output),
-            (Irrefutable::Named(input), super::Irrefutable::Named(output)) => input.assert(output),
+            (Irrefutable::Named(input), super::Irrefutable::Named(output)) => {
+                input.assert(output)
+            }
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -330,7 +348,8 @@ impl Arbitrary for Irrefutable {
 
         leaf.prop_recursive(4, 24, 6, |inner| {
             prop_oneof![
-                Structural::arbitrary_with(Some(inner.clone())).prop_map(Self::Structural),
+                Structural::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Structural),
                 Tuple::arbitrary_with(Some(inner)).prop_map(Self::Tuple),
             ]
         })
@@ -364,15 +383,14 @@ where
     }
 }
 
-impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary for Enum<Pattern> {
+impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
+    for Enum<Pattern>
+{
     type Parameters = Option<BoxedStrategy<Pattern>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        (
-            Identifier::arbitrary(),
-            args.unwrap_or_else(Pattern::arbitrary),
-        )
+        (Identifier::arbitrary(), args.unwrap_or_else(Pattern::arbitrary))
             .prop_map(|(identifier, pattern)| Self {
                 identifier,
                 pattern: Box::new(pattern),
@@ -400,18 +418,27 @@ pub enum Refutable {
 impl Input<&super::Refutable> for &Refutable {
     fn assert(self, output: &super::Refutable) -> TestCaseResult {
         match (self, output) {
-            (Refutable::BooleanLiteral(input), super::Refutable::BooleanLiteral(output)) => {
+            (
+                Refutable::BooleanLiteral(input),
+                super::Refutable::BooleanLiteral(output),
+            ) => input.assert(output),
+            (
+                Refutable::NumericLiteral(input),
+                super::Refutable::NumericLiteral(output),
+            ) => input.assert(output),
+            (
+                Refutable::Structural(input),
+                super::Refutable::Structural(output),
+            ) => input.assert(output),
+            (Refutable::Tuple(input), super::Refutable::Tuple(output)) => {
                 input.assert(output)
             }
-            (Refutable::NumericLiteral(input), super::Refutable::NumericLiteral(output)) => {
+            (Refutable::Enum(input), super::Refutable::Enum(output)) => {
                 input.assert(output)
             }
-            (Refutable::Structural(input), super::Refutable::Structural(output)) => {
+            (Refutable::Named(input), super::Refutable::Named(output)) => {
                 input.assert(output)
             }
-            (Refutable::Tuple(input), super::Refutable::Tuple(output)) => input.assert(output),
-            (Refutable::Enum(input), super::Refutable::Enum(output)) => input.assert(output),
-            (Refutable::Named(input), super::Refutable::Named(output)) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -432,8 +459,10 @@ impl Arbitrary for Refutable {
 
         leaf.prop_recursive(4, 24, 6, |inner| {
             prop_oneof![
-                Structural::arbitrary_with(Some(inner.clone())).prop_map(Self::Structural),
-                Tuple::arbitrary_with(Some(inner.clone())).prop_map(Self::Tuple),
+                Structural::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Structural),
+                Tuple::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Tuple),
                 Enum::arbitrary_with(Some(inner)).prop_map(Self::Enum),
             ]
         })

@@ -47,14 +47,19 @@ impl Arbitrary for Identifier {
 }
 
 impl Input<&pernixc_lexical::token::Identifier> for &Identifier {
-    fn assert(self, output: &pernixc_lexical::token::Identifier) -> TestCaseResult {
+    fn assert(
+        self,
+        output: &pernixc_lexical::token::Identifier,
+    ) -> TestCaseResult {
         prop_assert_eq!(&self.string, output.span.str());
         Ok(())
     }
 }
 
 impl Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.string) }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.string)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -88,13 +93,17 @@ impl Display for LifetimeIdentifier {
 impl Input<&super::LifetimeIdentifier> for &LifetimeIdentifier {
     fn assert(self, output: &super::LifetimeIdentifier) -> TestCaseResult {
         match (self, output) {
-            (LifetimeIdentifier::Static, super::LifetimeIdentifier::Static(..)) => Ok(()),
-            (LifetimeIdentifier::Identifier(i), super::LifetimeIdentifier::Identifier(o)) => {
-                i.assert(o)
-            }
-            (i, o) => Err(TestCaseError::fail(
-                format!("Expected {i:?} but got {o:?}",),
-            )),
+            (
+                LifetimeIdentifier::Static,
+                super::LifetimeIdentifier::Static(..),
+            ) => Ok(()),
+            (
+                LifetimeIdentifier::Identifier(i),
+                super::LifetimeIdentifier::Identifier(o),
+            ) => i.assert(o),
+            (i, o) => Err(TestCaseError::fail(format!(
+                "Expected {i:?} but got {o:?}",
+            ))),
         }
     }
 }
@@ -147,7 +156,9 @@ impl<const CHAR: char> Input<&Punctuation> for &ConstantPunctuation<CHAR> {
 }
 
 impl<const CHAR: char> Display for ConstantPunctuation<CHAR> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_char(CHAR) }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char(CHAR)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -199,7 +210,10 @@ impl<T: Debug, U: Debug> ConnectedList<T, U> {
     ) -> impl Strategy<Value = Self> {
         (
             element_strategy.clone(),
-            proptest::collection::vec((punctuation.clone(), element_strategy), 0..=7),
+            proptest::collection::vec(
+                (punctuation.clone(), element_strategy),
+                0..=7,
+            ),
             proptest::option::of(punctuation),
         )
             .prop_map(|(first, rest, trailing_separator)| Self {
@@ -221,9 +235,7 @@ impl Arbitrary for ConstantArgument {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         args.unwrap_or_else(|| Expression::arbitrary().boxed())
-            .prop_map(|expression| Self {
-                expression: Box::new(expression),
-            })
+            .prop_map(|expression| Self { expression: Box::new(expression) })
             .boxed()
     }
 }
@@ -250,24 +262,28 @@ pub enum GenericArgument {
 }
 
 impl Arbitrary for GenericArgument {
-    type Parameters = (
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<Expression>>,
-    );
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((type_arg, expr_arg): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(
+        (type_arg, expr_arg): Self::Parameters,
+    ) -> Self::Strategy {
         prop_oneof![
             Lifetime::arbitrary().prop_map(Self::Lifetime),
             type_arg
                 .clone()
-                .unwrap_or_else(|| Type::arbitrary_with((expr_arg.clone(), None)))
+                .unwrap_or_else(|| {
+                    Type::arbitrary_with((expr_arg.clone(), None))
+                })
                 .prop_map(|x| Self::Type(Box::new(x))),
             expr_arg
-                .unwrap_or_else(|| Expression::arbitrary_with((type_arg, None, None)))
-                .prop_map(|x| Self::Constant(ConstantArgument {
-                    expression: Box::new(x)
-                })),
+                .unwrap_or_else(|| {
+                    Expression::arbitrary_with((type_arg, None, None))
+                })
+                .prop_map(|x| {
+                    Self::Constant(ConstantArgument { expression: Box::new(x) })
+                }),
         ]
         .boxed()
     }
@@ -276,9 +292,17 @@ impl Arbitrary for GenericArgument {
 impl Input<&super::GenericArgument> for &GenericArgument {
     fn assert(self, output: &super::GenericArgument) -> TestCaseResult {
         match (self, output) {
-            (GenericArgument::Lifetime(i), super::GenericArgument::Lifetime(o)) => i.assert(o),
-            (GenericArgument::Type(i), super::GenericArgument::Type(o)) => i.assert(o),
-            (GenericArgument::Constant(i), super::GenericArgument::Constant(o)) => i.assert(o),
+            (
+                GenericArgument::Lifetime(i),
+                super::GenericArgument::Lifetime(o),
+            ) => i.assert(o),
+            (GenericArgument::Type(i), super::GenericArgument::Type(o)) => {
+                i.assert(o)
+            }
+            (
+                GenericArgument::Constant(i),
+                super::GenericArgument::Constant(o),
+            ) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -298,7 +322,8 @@ impl Display for GenericArgument {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericArguments {
-    pub argument_list: Option<ConnectedList<GenericArgument, ConstantPunctuation<','>>>,
+    pub argument_list:
+        Option<ConnectedList<GenericArgument, ConstantPunctuation<','>>>,
 }
 
 impl Arbitrary for GenericArguments {
@@ -317,9 +342,7 @@ impl Arbitrary for GenericArguments {
 
 impl Input<&super::GenericArguments> for &GenericArguments {
     fn assert(self, output: &super::GenericArguments) -> TestCaseResult {
-        self.argument_list
-            .as_ref()
-            .assert(output.argument_list().as_ref())?;
+        self.argument_list.as_ref().assert(output.argument_list().as_ref())?;
 
         Ok(())
     }
@@ -344,10 +367,8 @@ pub struct GenericIdentifier {
 }
 
 impl Arbitrary for GenericIdentifier {
-    type Parameters = (
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<Expression>>,
-    );
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
@@ -430,14 +451,13 @@ pub struct QualifiedIdentifier {
 }
 
 impl Arbitrary for QualifiedIdentifier {
-    type Parameters = (
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<Expression>>,
-    );
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let generic_identifier_strategy = GenericIdentifier::arbitrary_with(args).boxed();
+        let generic_identifier_strategy =
+            GenericIdentifier::arbitrary_with(args).boxed();
         (
             proptest::bool::ANY,
             generic_identifier_strategy.clone(),
@@ -499,13 +519,22 @@ impl Input<&super::AccessModifier> for &AccessModifier {
     fn assert(self, output: &super::AccessModifier) -> TestCaseResult {
         match (self, output) {
             (AccessModifier::Public, super::AccessModifier::Public(k)) => {
-                prop_assert_eq!(k.kind, pernixc_lexical::token::KeywordKind::Public);
+                prop_assert_eq!(
+                    k.kind,
+                    pernixc_lexical::token::KeywordKind::Public
+                );
             }
             (AccessModifier::Private, super::AccessModifier::Private(k)) => {
-                prop_assert_eq!(k.kind, pernixc_lexical::token::KeywordKind::Private);
+                prop_assert_eq!(
+                    k.kind,
+                    pernixc_lexical::token::KeywordKind::Private
+                );
             }
             (AccessModifier::Internal, super::AccessModifier::Internal(k)) => {
-                prop_assert_eq!(k.kind, pernixc_lexical::token::KeywordKind::Internal);
+                prop_assert_eq!(
+                    k.kind,
+                    pernixc_lexical::token::KeywordKind::Internal
+                );
             }
             _ => {
                 return Err(TestCaseError::fail(format!(
@@ -635,9 +664,7 @@ impl Arbitrary for Numeric {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        proptest::num::u64::ANY
-            .prop_map(|integer| Self { integer })
-            .boxed()
+        proptest::num::u64::ANY.prop_map(|integer| Self { integer }).boxed()
     }
 }
 

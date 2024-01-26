@@ -16,7 +16,8 @@ pub enum Satisfiability {
     /// The predicate is unsatisfiable.
     Unsatisfied,
 
-    /// If all the sub-term of the predicate are satisfiable, then the predicate is satisfiable.
+    /// If all the sub-term of the predicate are satisfiable, then the
+    /// predicate is satisfiable.
     Congruent,
 }
 

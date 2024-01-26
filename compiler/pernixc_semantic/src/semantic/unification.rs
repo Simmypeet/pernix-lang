@@ -29,8 +29,8 @@ pub trait Config<T> {
 
 /// The result of unification.
 ///
-/// The terms on the left-hand side are stored as the keys, and the terms on the right-hand side are
-/// stored as the values.
+/// The terms on the left-hand side are stored as the keys, and the terms on the
+/// right-hand side are stored as the values.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
 pub struct Unification {
@@ -77,7 +77,9 @@ fn substructural_unify<
     let mut unification = Unification::default();
 
     for Match { lhs, rhs, .. } in substructural.types {
-        let Some(new) = unify(&lhs, &rhs, premise, table, config, semantic, session)? else {
+        let Some(new) =
+            unify(&lhs, &rhs, premise, table, config, semantic, session)?
+        else {
             return Ok(None);
         };
 
@@ -85,7 +87,9 @@ fn substructural_unify<
     }
 
     for Match { lhs, rhs, .. } in substructural.lifetimes {
-        let Some(new) = unify(&lhs, &rhs, premise, table, config, semantic, session)? else {
+        let Some(new) =
+            unify(&lhs, &rhs, premise, table, config, semantic, session)?
+        else {
             return Ok(None);
         };
 
@@ -93,7 +97,9 @@ fn substructural_unify<
     }
 
     for Match { lhs, rhs, .. } in substructural.constants {
-        let Some(new) = unify(&lhs, &rhs, premise, table, config, semantic, session)? else {
+        let Some(new) =
+            unify(&lhs, &rhs, premise, table, config, semantic, session)?
+        else {
             return Ok(None);
         };
 
@@ -147,15 +153,17 @@ pub fn unify<
         return Ok(Some(unification));
     }
 
-    if let Some(unification) =
-        substructural_unify(lhs, rhs, premise, table, config, semantic, session)?
-    {
+    if let Some(unification) = substructural_unify(
+        lhs, rhs, premise, table, config, semantic, session,
+    )? {
         session.mark_as_done(query, unification.clone());
         return Ok(Some(unification));
     }
 
     // try to normalize lhs, rhs
-    if let Some(normalized_lhs) = semantic.normalize(lhs, premise, table, session)? {
+    if let Some(normalized_lhs) =
+        semantic.normalize(lhs, premise, table, session)?
+    {
         if let Some(unification) = unify(
             &normalized_lhs,
             rhs,
@@ -170,7 +178,9 @@ pub fn unify<
         }
     }
 
-    if let Some(normalized_rhs) = semantic.normalize(rhs, premise, table, session)? {
+    if let Some(normalized_rhs) =
+        semantic.normalize(rhs, premise, table, session)?
+    {
         if let Some(unification) = unify(
             lhs,
             &normalized_rhs,
@@ -189,9 +199,9 @@ pub fn unify<
     for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
         if equals(lhs, key, premise, table, semantic, session)? {
             for value in values {
-                if let Some(unification) =
-                    unify(value, rhs, premise, table, config, semantic, session)?
-                {
+                if let Some(unification) = unify(
+                    value, rhs, premise, table, config, semantic, session,
+                )? {
                     session.mark_as_done(query, unification.clone());
                     return Ok(Some(unification));
                 }
@@ -200,9 +210,9 @@ pub fn unify<
 
         if equals(key, rhs, premise, table, semantic, session)? {
             for value in values {
-                if let Some(unification) =
-                    unify(lhs, value, premise, table, config, semantic, session)?
-                {
+                if let Some(unification) = unify(
+                    lhs, value, premise, table, config, semantic, session,
+                )? {
                     session.mark_as_done(query, unification.clone());
                     return Ok(Some(unification));
                 }

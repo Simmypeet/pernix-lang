@@ -46,8 +46,9 @@ pub struct ModuleTree {
 
     /// Contains the content of this module.
     ///
-    /// The [`ModuleContent::items`] field will not contain any [`super::item::Module`]s as they
-    /// are stored in the [`Self::submodules_by_name`] field instead.
+    /// The [`ModuleContent::items`] field will not contain any
+    /// [`super::item::Module`]s as they are stored in the
+    /// [`Self::submodules_by_name`] field instead.
     #[get = "pub"]
     module_content: ModuleContent,
 
@@ -85,10 +86,13 @@ pub struct Target {
 impl Target {
     /// Dissolves the target into its module tree and target name.
     #[must_use]
-    pub fn dissolve(self) -> (ModuleTree, String) { (self.module_tree, self.name) }
+    pub fn dissolve(self) -> (ModuleTree, String) {
+        (self.module_tree, self.name)
+    }
 }
 
-/// The submodule of the root source file ends up pointing to the root source file itself.
+/// The submodule of the root source file ends up pointing to the root source
+/// file itself.
 #[derive(Debug, Clone)]
 pub struct RootSubmoduleConflict {
     /// The root source file.
@@ -102,8 +106,8 @@ impl std::fmt::Display for RootSubmoduleConflict {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}", Message {
             severity: Severity::Error,
-            display: "the submodule of the root source file ends up pointing to the root source \
-                      file itself",
+            display: "the submodule of the root source file ends up pointing \
+                      to the root source file itself",
         })?;
         write!(
             f,
@@ -157,7 +161,7 @@ pub struct ModuleRedefinition {
     pub existing_module_span: Span,
 
     /// The submodule that redefines the module.
-    pub redifinition_submodule_span: Span,
+    pub redefinition_submodule_span: Span,
 }
 
 impl std::fmt::Display for ModuleRedefinition {
@@ -169,19 +173,26 @@ impl std::fmt::Display for ModuleRedefinition {
         writeln!(
             f,
             "{}",
-            SourceCodeDisplay::new(&self.existing_module_span, Some("existing module"))
+            SourceCodeDisplay::new(
+                &self.existing_module_span,
+                Some("existing module")
+            )
         )?;
         write!(
             f,
             "{}",
-            SourceCodeDisplay::new(&self.redifinition_submodule_span, Some("redefinition"))
+            SourceCodeDisplay::new(
+                &self.redefinition_submodule_span,
+                Some("redefinition")
+            )
         )?;
 
         Ok(())
     }
 }
 
-/// Contains all possible errors that can occur when parsing a module tree for the target program.
+/// Contains all possible errors that can occur when parsing a module tree for
+/// the target program.
 #[derive(Debug, EnumAsInner, From)]
 pub enum Error {
     ModuleRedefinition(ModuleRedefinition),
@@ -215,46 +226,49 @@ enum Input {
 impl Target {
     #[allow(clippy::too_many_lines)]
     fn parse_input<
-        T: Handler<error::Error> + Handler<pernixc_lexical::error::Error> + Handler<Error>,
+        T: Handler<error::Error>
+            + Handler<pernixc_lexical::error::Error>
+            + Handler<Error>,
     >(
         input: Input,
         current_directory: &Path,
         handler: &T,
     ) -> ModuleTree {
-        let (mut module_content, source_file, current_module_name, signature) = match input {
-            Input::Inline {
-                module_content,
-                module_name,
-                signature: access_modifier,
-            } => (module_content, None, module_name, Some(access_modifier)),
-            Input::File {
-                source_file,
-                signature: access_modifier,
-            } => {
-                let token_stream = TokenStream::tokenize(&source_file, handler);
-                let mut parser = Parser::new(&token_stream);
+        let (mut module_content, source_file, current_module_name, signature) =
+            match input {
+                Input::Inline {
+                    module_content,
+                    module_name,
+                    signature: access_modifier,
+                } => (module_content, None, module_name, Some(access_modifier)),
+                Input::File { source_file, signature: access_modifier } => {
+                    let token_stream =
+                        TokenStream::tokenize(&source_file, handler);
+                    let mut parser = Parser::new(&token_stream);
 
-                (
-                    parser.parse_module_content(handler),
-                    Some((access_modifier.is_none(), source_file.clone())),
-                    source_file
-                        .full_path()
-                        .file_stem()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string(),
-                    access_modifier,
-                )
-            }
-        };
-        let submodule_current_directory = if source_file.as_ref().map_or(false, |x| x.0) {
-            current_directory.to_path_buf()
-        } else {
-            current_directory.join(&current_module_name)
-        };
+                    (
+                        parser.parse_module_content(handler),
+                        Some((access_modifier.is_none(), source_file.clone())),
+                        source_file
+                            .full_path()
+                            .file_stem()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string(),
+                        access_modifier,
+                    )
+                }
+            };
+        let submodule_current_directory =
+            if source_file.as_ref().map_or(false, |x| x.0) {
+                current_directory.to_path_buf()
+            } else {
+                current_directory.join(&current_module_name)
+            };
 
-        let module_contents_by_name = RwLock::new(HashMap::<String, ModuleTree>::new());
+        let module_contents_by_name =
+            RwLock::new(HashMap::<String, ModuleTree>::new());
 
         module_content
             .items
@@ -263,7 +277,7 @@ impl Target {
             .for_each(|item| {
                 let submodule = item.into_module().unwrap();
 
-                // check for redifinitions
+                // check for redefinitions
                 if let Some(existing) = module_contents_by_name
                     .read()
                     .get(submodule.signature().identifier().span.str())
@@ -277,7 +291,7 @@ impl Target {
                             .identifier()
                             .span
                             .clone(),
-                        redifinition_submodule_span: submodule
+                        redefinition_submodule_span: submodule
                             .signature()
                             .identifier()
                             .span
@@ -286,23 +300,23 @@ impl Target {
                     return;
                 }
 
-                let moduel_name = submodule.signature().identifier().span.str().to_owned();
+                let module_name = submodule.signature().identifier().span.str().to_owned();
                 let module_tree = if let ModuleKind::Inline(inline_module_content) = submodule.kind
                 {
-                    let signature_wtih_access_modifier = ModuleSignatureWithAccessModifier {
+                    let signature_with_access_modifier = ModuleSignatureWithAccessModifier {
                         access_modifier: submodule.access_modifier,
                         signature: submodule.signature,
                     };
                     Self::parse_input(
                         Input::Inline {
                             module_content: inline_module_content.content,
-                            module_name: signature_wtih_access_modifier
+                            module_name: signature_with_access_modifier
                                 .signature
                                 .identifier()
                                 .span
                                 .str()
                                 .to_string(),
-                            signature: signature_wtih_access_modifier,
+                            signature: signature_with_access_modifier,
                         },
                         &submodule_current_directory,
                         handler,
@@ -363,7 +377,7 @@ impl Target {
 
                 module_contents_by_name
                     .write()
-                    .insert(moduel_name, module_tree);
+                    .insert(module_name, module_tree);
             });
 
         ModuleTree {
@@ -373,7 +387,8 @@ impl Target {
         }
     }
 
-    /// Parses the whole module tree for the target program from the given root source file.
+    /// Parses the whole module tree for the target program from the given root
+    /// source file.
     pub fn parse<
         T: Handler<error::Error>
             + Handler<pernixc_lexical::error::Error>
@@ -397,10 +412,7 @@ impl Target {
             handler,
         );
 
-        Self {
-            module_tree,
-            name: target_name,
-        }
+        Self { module_tree, name: target_name }
     }
 }
 

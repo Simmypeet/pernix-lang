@@ -11,7 +11,9 @@ use pernixc_lexical::{
 use crate::error::{Error, SyntaxKind};
 
 /// Provides a way to iterate over a token stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 pub enum TokenProvider<'a> {
     /// Iterating at the top level of the token stream.
     TokenStream(&'a TokenStream),
@@ -31,8 +33,8 @@ impl<'a> TokenProvider<'a> {
     }
 }
 
-/// Represents a single frame of the parser's stack, responsible for reading a token stream in
-/// that given token stream level.
+/// Represents a single frame of the parser's stack, responsible for reading a
+/// token stream in that given token stream level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Frame<'a> {
     token_provider: TokenProvider<'a>,
@@ -45,12 +47,12 @@ pub enum Reading {
     /// A singular token.
     Unit(Token),
 
-    /// Found an openning delimiter token, which means that the parser can step into a new
-    /// delimited frame.
+    /// Found an opening delimiter token, which means that the parser can step
+    /// into a new delimited frame.
     IntoDelimited(Delimiter, Punctuation),
 
-    /// Found a closing delimiter token, which means that the parser should step out of the current
-    /// delimited frame.
+    /// Found a closing delimiter token, which means that the parser should
+    /// step out of the current delimited frame.
     DelimitedEnd(Delimiter, Punctuation),
 
     /// End of file.
@@ -67,8 +69,8 @@ impl Reading {
     pub fn into_token(self) -> Option<Token> {
         match self {
             Self::Unit(token) => Some(token),
-            Self::IntoDelimited(_, punc) | Self::DelimitedEnd(_, punc) => {
-                Some(Token::Punctuation(punc))
+            Self::IntoDelimited(_, pun) | Self::DelimitedEnd(_, pun) => {
+                Some(Token::Punctuation(pun))
             }
             Self::Eof => None,
         }
@@ -76,8 +78,8 @@ impl Reading {
 }
 
 impl<'a> Frame<'a> {
-    /// Checks if the current [`Frame`] doesn't have any more significant [`TokenTree`]s to
-    /// parse.
+    /// Checks if the current [`Frame`] doesn't have any more significant
+    /// [`TokenTree`]s to parse.
     #[must_use]
     pub fn is_exhausted(&self) -> bool {
         let token_stream = self.token_provider.token_stream();
@@ -94,24 +96,33 @@ impl<'a> Frame<'a> {
         true
     }
 
-    /// Checks if the current [`Frame`] has reached the end of the [`TokenStream`].
+    /// Checks if the current [`Frame`] has reached the end of the
+    /// [`TokenStream`].
     #[must_use]
-    pub fn is_end(&self) -> bool { self.current_index >= self.token_provider.token_stream().len() }
+    pub fn is_end(&self) -> bool {
+        self.current_index >= self.token_provider.token_stream().len()
+    }
 
     fn get_reading(&self, token: Option<&TokenTree>) -> Reading {
         token.map_or_else(
-            || match self.token_provider {
-                // end of file
-                TokenProvider::TokenStream(..) => Reading::Eof,
-                TokenProvider::Delimited(delimited) => {
-                    Reading::DelimitedEnd(delimited.delimiter, delimited.close.clone())
+            || {
+                match self.token_provider {
+                    // end of file
+                    TokenProvider::TokenStream(..) => Reading::Eof,
+                    TokenProvider::Delimited(delimited) => {
+                        Reading::DelimitedEnd(
+                            delimited.delimiter,
+                            delimited.close.clone(),
+                        )
+                    }
                 }
             },
             |token| match token {
                 TokenTree::Token(token) => Reading::Unit(token.clone()),
-                TokenTree::Delimited(delimited) => {
-                    Reading::IntoDelimited(delimited.delimiter, delimited.open.clone())
-                }
+                TokenTree::Delimited(delimited) => Reading::IntoDelimited(
+                    delimited.delimiter,
+                    delimited.open.clone(),
+                ),
             },
         )
     }
@@ -119,15 +130,17 @@ impl<'a> Frame<'a> {
     /// Returns a [`Token`] pointing by the `current_index` of the [`Frame`].
     #[must_use]
     pub fn peek(&self) -> Reading {
-        self.get_reading(self.token_provider.token_stream().get(self.current_index))
+        self.get_reading(
+            self.token_provider.token_stream().get(self.current_index),
+        )
     }
 
-    /// Returns a [`Token`] pointing by the `current_index` with the given index offset of the
-    /// [`Frame`].
+    /// Returns a [`Token`] pointing by the `current_index` with the given index
+    /// offset of the [`Frame`].
     ///
     /// # Returns
     ///
-    /// `None` if `offset + current_index` is less than zero or greter than
+    /// `None` if `offset + current_index` is less than zero or greer than
     /// `self.token_provider.token_stream().len() + 1`
     #[must_use]
     pub fn peek_offset(&self, offset: isize) -> Option<Reading> {
@@ -140,10 +153,10 @@ impl<'a> Frame<'a> {
         Some(self.get_reading(self.token_provider.token_stream().get(index)))
     }
 
-    /// Returns a [`Token`] pointing by the `current_index` of the [`Frame`] and increments the
-    /// `current_index` by 1.
-    #[must_use = "use `forward` instead if you don't need the token and just want to increment the \
-                  index"]
+    /// Returns a [`Token`] pointing by the `current_index` of the [`Frame`] and
+    /// increments the `current_index` by 1.
+    #[must_use = "use `forward` instead if you don't need the token and just \
+                  want to increment the index"]
     pub fn next_token(&mut self) -> Reading {
         let token = self.peek();
 
@@ -161,8 +174,8 @@ impl<'a> Frame<'a> {
         }
     }
 
-    /// Skips any insignificant [`Token`]s, returns the next significant [`Token`] found, and
-    /// increments the `current_index` afterward.
+    /// Skips any insignificant [`Token`]s, returns the next significant
+    /// [`Token`] found, and increments the `current_index` afterward.
     pub fn next_significant_token(&mut self) -> Reading {
         let token = self.stop_at_significant();
 
@@ -172,7 +185,8 @@ impl<'a> Frame<'a> {
         token
     }
 
-    /// Makes the current [`Frame`] point to the significant [`Token`] if currently not.
+    /// Makes the current [`Frame`] point to the significant [`Token`] if
+    /// currently not.
     ///
     /// # Returns
     /// The significant [`Token`] if found, otherwise `None`.
@@ -192,13 +206,15 @@ impl<'a> Frame<'a> {
 
         match self.token_provider {
             TokenProvider::TokenStream(..) => Reading::Eof,
-            TokenProvider::Delimited(delimited) => {
-                Reading::DelimitedEnd(delimited.delimiter, delimited.close.clone())
-            }
+            TokenProvider::Delimited(delimited) => Reading::DelimitedEnd(
+                delimited.delimiter,
+                delimited.close.clone(),
+            ),
         }
     }
 
-    /// Makes the current position stops at the first token that satisfies the predicate.
+    /// Makes the current position stops at the first token that satisfies the
+    /// predicate.
     pub fn stop_at(&mut self, predicate: impl Fn(&Reading) -> bool) -> Reading {
         while !self.is_end() {
             let token = self.peek();
@@ -212,9 +228,10 @@ impl<'a> Frame<'a> {
 
         match self.token_provider {
             TokenProvider::TokenStream(..) => Reading::Eof,
-            TokenProvider::Delimited(delimited) => {
-                Reading::DelimitedEnd(delimited.delimiter, delimited.close.clone())
-            }
+            TokenProvider::Delimited(delimited) => Reading::DelimitedEnd(
+                delimited.delimiter,
+                delimited.close.clone(),
+            ),
         }
     }
 
@@ -222,7 +239,10 @@ impl<'a> Frame<'a> {
     ///
     /// # Errors
     /// If the next [`Token`] is not an [`Identifier`].
-    pub fn parse_identifier(&mut self, handler: &dyn Handler<Error>) -> Option<Identifier> {
+    pub fn parse_identifier(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Identifier> {
         match self.next_significant_token() {
             Reading::Unit(Token::Identifier(ident)) => Some(ident),
             found => {
@@ -240,7 +260,10 @@ impl<'a> Frame<'a> {
     ///
     /// # Errors
     /// If the next [`Token`] is not an [`Identifier`].
-    pub fn parse_numeric(&mut self, handler: &dyn Handler<Error>) -> Option<Numeric> {
+    pub fn parse_numeric(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Numeric> {
         match self.next_significant_token() {
             Reading::Unit(Token::Numeric(ident)) => Some(ident),
             found => {
@@ -254,7 +277,8 @@ impl<'a> Frame<'a> {
         }
     }
 
-    /// Expects the next [`Token`] to be a [`Keyword`] of specific kind, and returns it.
+    /// Expects the next [`Token`] to be a [`Keyword`] of specific kind, and
+    /// returns it.
     ///
     /// # Errors
     /// If the next [`Token`] is not a [`Keyword`] of specific kind.
@@ -264,7 +288,9 @@ impl<'a> Frame<'a> {
         handler: &dyn Handler<Error>,
     ) -> Option<Keyword> {
         match self.next_significant_token() {
-            Reading::Unit(Token::Keyword(keyword_token)) if keyword_token.kind == expected => {
+            Reading::Unit(Token::Keyword(keyword_token))
+                if keyword_token.kind == expected =>
+            {
                 Some(keyword_token)
             }
             found => {
@@ -278,7 +304,8 @@ impl<'a> Frame<'a> {
         }
     }
 
-    /// Expects the next [`Token`] to be a [`Punctuation`] of specific kind, and returns it.
+    /// Expects the next [`Token`] to be a [`Punctuation`] of specific kind, and
+    /// returns it.
     ///
     /// # Errors
     /// If the next [`Token`] is not a [`Punctuation`] of specific kind.
@@ -309,9 +336,12 @@ impl<'a> Frame<'a> {
         }
     }
 
-    /// Tries to parse the given function, and if it fails, resets the current index to the
-    /// `current_index` before the function call.
-    pub fn try_parse<T>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+    /// Tries to parse the given function, and if it fails, resets the current
+    /// index to the `current_index` before the function call.
+    pub fn try_parse<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Option<T>,
+    ) -> Option<T> {
         let current_index = self.current_index;
 
         let result = f(self);
@@ -359,7 +389,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Steps into the [`Delimited`] token stream and parses the content within the delimiters.
+    /// Steps into the [`Delimited`] token stream and parses the content within
+    /// the delimiters.
     ///
     /// The parser's position must be at the delimited token stream.
     pub fn step_into<T>(
@@ -386,7 +417,9 @@ impl<'a> Parser<'a> {
 
         let delimited_stream = if let Some(token_tree) = raw_token_tree {
             match token_tree {
-                TokenTree::Delimited(delimited_tree) if delimited_tree.delimiter == delimiter => {
+                TokenTree::Delimited(delimited_tree)
+                    if delimited_tree.delimiter == delimiter =>
+                {
                     delimited_tree
                 }
                 found => {
@@ -420,9 +453,9 @@ impl<'a> Parser<'a> {
             current_index: 0,
         };
 
-        // pushes the current frame onto the stack and replaces the current frame with the new one
-        self.stack
-            .push(std::mem::replace(&mut self.current_frame, new_frame));
+        // pushes the current frame onto the stack and replaces the current
+        // frame with the new one
+        self.stack.push(std::mem::replace(&mut self.current_frame, new_frame));
 
         let open = delimited_stream.open.clone();
 
@@ -465,16 +498,15 @@ impl<'a> Parser<'a> {
         // replaces the current frame with the popped one
         self.current_frame = new_frame;
 
-        Some(DelimitedTree {
-            open,
-            tree,
-            close: close_punctuation,
-        })
+        Some(DelimitedTree { open, tree, close: close_punctuation })
     }
 
-    /// Tries to parse the given function, and if it fails, resets the current index to the
-    /// `current_index` before the function call.
-    pub fn try_parse<T>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+    /// Tries to parse the given function, and if it fails, resets the current
+    /// index to the `current_index` before the function call.
+    pub fn try_parse<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Option<T>,
+    ) -> Option<T> {
         let current_frame_index = self.current_frame.current_index;
 
         let result = f(self);

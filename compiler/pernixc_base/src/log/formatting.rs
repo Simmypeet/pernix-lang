@@ -14,14 +14,12 @@ impl Style {
     /// Applies the style to the given displayable object.
     #[allow(missing_docs)]
     pub const fn with<T>(self, display: T) -> WithStyle<T> {
-        WithStyle {
-            style: self,
-            display,
-        }
+        WithStyle { style: self, display }
     }
 }
 
-/// Is a struct implementing [`Display`] that represents a displayable object with a style applied.
+/// Is a struct implementing [`Display`] that represents a displayable object
+/// with a style applied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WithStyle<T> {
     /// The style applied to the displayable object.
@@ -59,14 +57,12 @@ pub enum Color {
 impl Color {
     /// Applies the color to the given displayable object.
     pub const fn with<T>(self, display: T) -> WithColor<T> {
-        WithColor {
-            color: self,
-            display,
-        }
+        WithColor { color: self, display }
     }
 }
 
-/// Is a struct implementing [`Display`] that represents a displayable object with a color applied.
+/// Is a struct implementing [`Display`] that represents a displayable object
+/// with a color applied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WithColor<T> {
     /// The color applied to the displayable object.

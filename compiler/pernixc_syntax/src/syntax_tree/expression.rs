@@ -13,8 +13,8 @@ use pernixc_lexical::{
 };
 
 use super::{
-    pattern::Refutable, r#type::Type, statement::Statement, ConnectedList, Label,
-    QualifiedIdentifier, Qualifier,
+    pattern::Refutable, r#type::Type, statement::Statement, ConnectedList,
+    Label, QualifiedIdentifier, Qualifier,
 };
 use crate::{
     error::{Error, SyntaxKind},
@@ -112,7 +112,9 @@ pub struct Statements {
 }
 
 impl SourceElement for Statements {
-    fn span(&self) -> Span { self.left_brace.span().join(&self.right_brace.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_brace.span().join(&self.right_brace.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -133,7 +135,9 @@ pub struct MatchArmGuard {
 }
 
 impl SourceElement for MatchArmGuard {
-    fn span(&self) -> Span { self.if_keyword.span.join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.if_keyword.span.join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -156,10 +160,7 @@ pub struct MatchArm {
 
 impl SourceElement for MatchArm {
     fn span(&self) -> Span {
-        self.refutable_pattern
-            .span()
-            .join(&self.block.span())
-            .unwrap()
+        self.refutable_pattern.span().join(&self.block.span()).unwrap()
     }
 }
 
@@ -189,10 +190,7 @@ pub struct Match {
 
 impl SourceElement for Match {
     fn span(&self) -> Span {
-        self.match_keyword
-            .span
-            .join(&self.right_brace.span)
-            .unwrap()
+        self.match_keyword.span.join(&self.right_brace.span).unwrap()
     }
 }
 
@@ -268,10 +266,7 @@ pub struct Else {
 
 impl SourceElement for Else {
     fn span(&self) -> Span {
-        self.else_keyword
-            .span()
-            .join(&self.expression.span())
-            .unwrap()
+        self.else_keyword.span().join(&self.expression.span()).unwrap()
     }
 }
 
@@ -328,7 +323,9 @@ pub struct Loop {
 }
 
 impl SourceElement for Loop {
-    fn span(&self) -> Span { self.loop_keyword.span.join(&self.block.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.loop_keyword.span.join(&self.block.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -379,7 +376,9 @@ impl SourceElement for Return {
     fn span(&self) -> Span {
         self.binary.as_ref().map_or_else(
             || self.return_keyword.span(),
-            |expression| self.return_keyword.span().join(&expression.span()).unwrap(),
+            |expression| {
+                self.return_keyword.span().join(&expression.span()).unwrap()
+            },
         )
     }
 }
@@ -412,7 +411,7 @@ impl SourceElement for Continue {
 ///
 /// ``` txt
 /// Express:
-///     'express' Label? Bianry?
+///     'express' Label? Binary?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -431,14 +430,13 @@ impl SourceElement for Express {
             || {
                 self.label.as_ref().map_or_else(
                     || self.express_keyword.span(),
-                    |label| self.express_keyword.span().join(&label.span()).unwrap(),
+                    |label| {
+                        self.express_keyword.span().join(&label.span()).unwrap()
+                    },
                 )
             },
             |expression| {
-                self.express_keyword
-                    .span()
-                    .join(&expression.span())
-                    .unwrap()
+                self.express_keyword.span().join(&expression.span()).unwrap()
             },
         )
     }
@@ -448,7 +446,7 @@ impl SourceElement for Express {
 ///
 /// ``` txt
 /// Break:
-///     'express' Label? Bianry?
+///     'express' Label? Binary?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -467,10 +465,14 @@ impl SourceElement for Break {
             || {
                 self.label.as_ref().map_or_else(
                     || self.break_keyword.span(),
-                    |label| self.break_keyword.span().join(&label.span()).unwrap(),
+                    |label| {
+                        self.break_keyword.span().join(&label.span()).unwrap()
+                    },
                 )
             },
-            |expression| self.break_keyword.span().join(&expression.span()).unwrap(),
+            |expression| {
+                self.break_keyword.span().join(&expression.span()).unwrap()
+            },
         )
     }
 }
@@ -536,9 +538,10 @@ impl SourceElement for NumericLiteral {
     fn span(&self) -> Span {
         let end = self.suffix.as_ref().map_or_else(
             || {
-                self.decimal
-                    .as_ref()
-                    .map_or_else(|| self.numeric.span.clone(), SourceElement::span)
+                self.decimal.as_ref().map_or_else(
+                    || self.numeric.span.clone(),
+                    SourceElement::span,
+                )
             },
             SourceElement::span,
         );
@@ -564,7 +567,9 @@ pub struct Unpackable {
 impl SourceElement for Unpackable {
     fn span(&self) -> Span {
         match &self.ellipsis {
-            Some((start, ..)) => start.span().join(&self.expression.span()).unwrap(),
+            Some((start, ..)) => {
+                start.span().join(&self.expression.span()).unwrap()
+            }
             None => self.expression.span(),
         }
     }
@@ -588,7 +593,9 @@ pub struct Parenthesized {
 }
 
 impl SourceElement for Parenthesized {
-    fn span(&self) -> Span { self.left_paren.span().join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_paren.span().join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -610,10 +617,7 @@ pub struct FieldInitializer {
 
 impl SourceElement for FieldInitializer {
     fn span(&self) -> Span {
-        self.identifier
-            .span()
-            .join(&self.expression.span())
-            .unwrap()
+        self.identifier.span().join(&self.expression.span()).unwrap()
     }
 }
 
@@ -646,10 +650,7 @@ pub struct StructLiteral {
 
 impl SourceElement for StructLiteral {
     fn span(&self) -> Span {
-        self.qualified_identifier
-            .span()
-            .join(&self.right_brace.span)
-            .unwrap()
+        self.qualified_identifier.span().join(&self.right_brace.span).unwrap()
     }
 }
 
@@ -679,10 +680,7 @@ pub struct ArrayLiteral {
 
 impl SourceElement for ArrayLiteral {
     fn span(&self) -> Span {
-        self.left_bracket
-            .span
-            .join(&self.right_bracket.span)
-            .unwrap()
+        self.left_bracket.span.join(&self.right_bracket.span).unwrap()
     }
 }
 
@@ -739,7 +737,9 @@ pub struct Call {
 }
 
 impl SourceElement for Call {
-    fn span(&self) -> Span { self.left_paren.span().join(&self.right_paren.span).unwrap() }
+    fn span(&self) -> Span {
+        self.left_paren.span().join(&self.right_paren.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -758,7 +758,9 @@ pub struct Cast {
 }
 
 impl SourceElement for Cast {
-    fn span(&self) -> Span { self.as_keyword.span().join(&self.r#type.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.as_keyword.span().join(&self.r#type.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -823,7 +825,9 @@ pub struct Access {
 }
 
 impl SourceElement for Access {
-    fn span(&self) -> Span { self.operator.span().join(&self.kind.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.operator.span().join(&self.kind.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -871,7 +875,9 @@ pub struct Postfix {
 }
 
 impl SourceElement for Postfix {
-    fn span(&self) -> Span { self.postfixable.span().join(&self.operator.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.postfixable.span().join(&self.operator.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -970,9 +976,10 @@ pub enum PrefixOperator {
 impl SourceElement for PrefixOperator {
     fn span(&self) -> Span {
         match self {
-            Self::Negate(p) | Self::BitwiseNot(p) | Self::Dereference(p) | Self::LogicalNot(p) => {
-                p.span.clone()
-            }
+            Self::Negate(p)
+            | Self::BitwiseNot(p)
+            | Self::Dereference(p)
+            | Self::LogicalNot(p) => p.span.clone(),
             Self::Local(k) | Self::Unlocal(k) => k.span(),
             Self::ReferenceOf(k) => k.span(),
         }
@@ -995,7 +1002,9 @@ pub struct Prefix {
 }
 
 impl SourceElement for Prefix {
-    fn span(&self) -> Span { self.operator.span().join(&self.prefixable.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.operator.span().join(&self.prefixable.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -1111,7 +1120,8 @@ impl BinaryOperator {
         )
     }
 
-    /// Gets the precedence of the operator (the higher the number, the first it will be evaluated)
+    /// Gets the precedence of the operator (the higher the number, the first it
+    /// will be evaluated)
     ///
     /// The least operator has precedence 1.
     #[must_use]
@@ -1180,22 +1190,25 @@ impl Parser<'_> {
     fn try_parse_label(&mut self) -> Option<Label> {
         self.try_parse(|parser| {
             let apostrophe = parser.parse_punctuation('\'', true, &Dummy)?;
-            let Reading::Unit(Token::Identifier(identifier)) = parser.next_token() else {
+            let Reading::Unit(Token::Identifier(identifier)) =
+                parser.next_token()
+            else {
                 return None;
             };
 
-            Some(Label {
-                apostrophe,
-                identifier,
-            })
+            Some(Label { apostrophe, identifier })
         })
     }
 
-    fn parse_statements(&mut self, handler: &dyn Handler<Error>) -> Option<Statements> {
+    fn parse_statements(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Statements> {
         fn skip_to_next_statement(this: &mut Parser) {
             this.stop_at(|token| matches!(token, Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';'));
 
-            if matches!(this.peek(), Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';') {
+            if matches!(this.peek(), Reading::Unit(Token::Punctuation(p)) if p.punctuation == ';')
+            {
                 this.forward();
             }
         }
@@ -1207,7 +1220,8 @@ impl Parser<'_> {
 
                 while !parser.is_exhausted() {
                     // parse the statement
-                    let Some(statement) = parser.parse_statement(handler) else {
+                    let Some(statement) = parser.parse_statement(handler)
+                    else {
                         skip_to_next_statement(parser);
                         continue;
                     };
@@ -1229,7 +1243,9 @@ impl Parser<'_> {
 
     fn parse_block(&mut self, handler: &dyn Handler<Error>) -> Option<Block> {
         let label_specifier = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(apostrophe)) if apostrophe.punctuation == '\'' => {
+            Reading::Unit(Token::Punctuation(apostrophe))
+                if apostrophe.punctuation == '\'' =>
+            {
                 // eat apostrophe
                 self.forward();
 
@@ -1237,10 +1253,7 @@ impl Parser<'_> {
                 let colon = self.parse_punctuation(':', true, handler)?;
 
                 Some(LabelSpecifier {
-                    label: Label {
-                        apostrophe,
-                        identifier,
-                    },
+                    label: Label { apostrophe, identifier },
                     colon,
                 })
             }
@@ -1259,11 +1272,7 @@ impl Parser<'_> {
         let statements = self.parse_statements(handler)?;
 
         // parse block
-        Some(Block {
-            label_specifier,
-            unsafe_keyword,
-            statements,
-        })
+        Some(Block { label_specifier, unsafe_keyword, statements })
     }
 
     fn parse_else(&mut self, handler: &dyn Handler<Error>) -> Option<Else> {
@@ -1277,13 +1286,13 @@ impl Parser<'_> {
             },
         );
 
-        Some(Else {
-            else_keyword,
-            expression,
-        })
+        Some(Else { else_keyword, expression })
     }
 
-    fn parse_if_else(&mut self, handler: &dyn Handler<Error>) -> Option<IfElse> {
+    fn parse_if_else(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<IfElse> {
         let if_keyword = self.parse_keyword(KeywordKind::If, handler)?;
 
         let delimited_tree_condition = self.step_into(
@@ -1313,11 +1322,16 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_match_arm(&mut self, handler: &dyn Handler<Error>) -> Option<MatchArm> {
+    fn parse_match_arm(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<MatchArm> {
         let refutable_pattern = self.parse_refutable_pattern(handler)?;
 
         let guard = match self.stop_at_significant() {
-            Reading::Unit(Token::Keyword(if_keyword)) if if_keyword.kind == KeywordKind::If => {
+            Reading::Unit(Token::Keyword(if_keyword))
+                if if_keyword.kind == KeywordKind::If =>
+            {
                 // eat if keyword
                 self.forward();
 
@@ -1340,12 +1354,7 @@ impl Parser<'_> {
         let colon = self.parse_punctuation(':', true, handler)?;
         let block = self.parse_block(handler)?;
 
-        Some(MatchArm {
-            refutable_pattern,
-            guard,
-            colon,
-            block,
-        })
+        Some(MatchArm { refutable_pattern, guard, colon, block })
     }
 
     fn parse_match(&mut self, handler: &dyn Handler<Error>) -> Option<Match> {
@@ -1396,7 +1405,10 @@ impl Parser<'_> {
     }
 
     /// Parses a binary expression.
-    pub fn parse_expression(&mut self, handler: &dyn Handler<Error>) -> Option<Expression> {
+    pub fn parse_expression(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Expression> {
         match self.stop_at_significant() {
             // parse continue
             Reading::Unit(Token::Keyword(continue_keyword))
@@ -1420,7 +1432,8 @@ impl Parser<'_> {
                 // eat return keyword
                 self.forward();
 
-                let binary = self.try_parse(|parser| parser.parse_binary(&Dummy));
+                let binary =
+                    self.try_parse(|parser| parser.parse_binary(&Dummy));
 
                 Some(Expression::Terminator(Terminator::Return(Return {
                     return_keyword,
@@ -1436,7 +1449,8 @@ impl Parser<'_> {
                 self.forward();
 
                 let label = self.try_parse_label();
-                let binary = self.try_parse(|parser| parser.parse_binary(&Dummy));
+                let binary =
+                    self.try_parse(|parser| parser.parse_binary(&Dummy));
 
                 Some(Expression::Terminator(Terminator::Express(Express {
                     express_keyword,
@@ -1453,7 +1467,8 @@ impl Parser<'_> {
                 self.forward();
 
                 let label = self.try_parse_label();
-                let binary = self.try_parse(|parser| parser.parse_binary(&Dummy));
+                let binary =
+                    self.try_parse(|parser| parser.parse_binary(&Dummy));
 
                 Some(Expression::Terminator(Terminator::Break(Break {
                     break_keyword,
@@ -1463,14 +1478,18 @@ impl Parser<'_> {
             }
 
             // parse block
-            Reading::Unit(Token::Punctuation(p)) if p.punctuation == '\'' => self
-                .parse_block(handler)
-                .map(|x| Expression::Brace(Brace::Block(x))),
+            Reading::Unit(Token::Punctuation(p)) if p.punctuation == '\'' => {
+                self.parse_block(handler)
+                    .map(|x| Expression::Brace(Brace::Block(x)))
+            }
 
             // parse block
-            Reading::Unit(Token::Keyword(keyword)) if keyword.kind == KeywordKind::Unsafe => self
-                .parse_block(handler)
-                .map(|x| Expression::Brace(Brace::Block(x))),
+            Reading::Unit(Token::Keyword(keyword))
+                if keyword.kind == KeywordKind::Unsafe =>
+            {
+                self.parse_block(handler)
+                    .map(|x| Expression::Brace(Brace::Block(x)))
+            }
 
             // parse block
             Reading::IntoDelimited(Delimiter::Brace, _) => self
@@ -1478,14 +1497,20 @@ impl Parser<'_> {
                 .map(|x| Expression::Brace(Brace::Block(x))),
 
             // parse if
-            Reading::Unit(Token::Keyword(keyword)) if keyword.kind == KeywordKind::If => self
-                .parse_if_else(handler)
-                .map(|x| Expression::Brace(Brace::IfElse(x))),
+            Reading::Unit(Token::Keyword(keyword))
+                if keyword.kind == KeywordKind::If =>
+            {
+                self.parse_if_else(handler)
+                    .map(|x| Expression::Brace(Brace::IfElse(x)))
+            }
 
             // parse match
-            Reading::Unit(Token::Keyword(keyword)) if keyword.kind == KeywordKind::Match => self
-                .parse_match(handler)
-                .map(|x| Expression::Brace(Brace::Match(x))),
+            Reading::Unit(Token::Keyword(keyword))
+                if keyword.kind == KeywordKind::Match =>
+            {
+                self.parse_match(handler)
+                    .map(|x| Expression::Brace(Brace::Match(x)))
+            }
 
             // parse loop
             Reading::Unit(Token::Keyword(loop_keyword))
@@ -1506,43 +1531,49 @@ impl Parser<'_> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn try_parse_binary_operator(&mut self) -> Option<BinaryOperator> {
-        let first_level = self.try_parse(|parser| match parser.next_significant_token() {
-            Reading::Unit(Token::Punctuation(p)) => match p.punctuation {
-                '+' => Some(BinaryOperator::Add(p)),
-                '-' => Some(BinaryOperator::Subtract(p)),
-                '*' => Some(BinaryOperator::Multiply(p)),
-                '/' => Some(BinaryOperator::Divide(p)),
-                '%' => Some(BinaryOperator::Modulo(p)),
-                '=' => Some(BinaryOperator::Assign(p)),
-                '&' => Some(BinaryOperator::BitwiseAnd(p)),
-                '|' => Some(BinaryOperator::BitwiseOr(p)),
-                '^' => Some(BinaryOperator::BitwiseXor(p)),
-                ':' => {
-                    let equal = parser.parse_punctuation('=', false, &Dummy)?;
-                    Some(BinaryOperator::RestrictAssign(p, equal))
-                }
-                '!' => {
-                    let equal = parser.parse_punctuation('=', false, &Dummy)?;
-                    Some(BinaryOperator::NotEqual(p, equal))
-                }
-                '>' => Some(BinaryOperator::GreaterThan(p)),
-                '<' => Some(BinaryOperator::LessThan(p)),
+        let first_level =
+            self.try_parse(|parser| match parser.next_significant_token() {
+                Reading::Unit(Token::Punctuation(p)) => match p.punctuation {
+                    '+' => Some(BinaryOperator::Add(p)),
+                    '-' => Some(BinaryOperator::Subtract(p)),
+                    '*' => Some(BinaryOperator::Multiply(p)),
+                    '/' => Some(BinaryOperator::Divide(p)),
+                    '%' => Some(BinaryOperator::Modulo(p)),
+                    '=' => Some(BinaryOperator::Assign(p)),
+                    '&' => Some(BinaryOperator::BitwiseAnd(p)),
+                    '|' => Some(BinaryOperator::BitwiseOr(p)),
+                    '^' => Some(BinaryOperator::BitwiseXor(p)),
+                    ':' => {
+                        let equal =
+                            parser.parse_punctuation('=', false, &Dummy)?;
+                        Some(BinaryOperator::RestrictAssign(p, equal))
+                    }
+                    '!' => {
+                        let equal =
+                            parser.parse_punctuation('=', false, &Dummy)?;
+                        Some(BinaryOperator::NotEqual(p, equal))
+                    }
+                    '>' => Some(BinaryOperator::GreaterThan(p)),
+                    '<' => Some(BinaryOperator::LessThan(p)),
+                    _ => None,
+                },
+                Reading::Unit(Token::Keyword(k)) => match k.kind {
+                    KeywordKind::And => Some(BinaryOperator::LogicalAnd(k)),
+                    KeywordKind::Or => Some(BinaryOperator::LogicalOr(k)),
+                    _ => None,
+                },
                 _ => None,
-            },
-            Reading::Unit(Token::Keyword(k)) => match k.kind {
-                KeywordKind::And => Some(BinaryOperator::LogicalAnd(k)),
-                KeywordKind::Or => Some(BinaryOperator::LogicalOr(k)),
-                _ => None,
-            },
-            _ => None,
-        })?;
+            })?;
 
-        let Some(second_level) =
-            self.try_parse(|parser| match (first_level.clone(), parser.next_token()) {
+        let Some(second_level) = self.try_parse(|parser| {
+            match (first_level.clone(), parser.next_token()) {
                 (first_level, Reading::Unit(Token::Punctuation(s))) => {
                     match (first_level, s.punctuation) {
-                        (BinaryOperator::Add(p), '=') => Some(BinaryOperator::CompoundAdd(p, s)),
+                        (BinaryOperator::Add(p), '=') => {
+                            Some(BinaryOperator::CompoundAdd(p, s))
+                        }
                         (BinaryOperator::Subtract(p), '=') => {
                             Some(BinaryOperator::CompoundSubtract(p, s))
                         }
@@ -1565,7 +1596,9 @@ impl Parser<'_> {
                             Some(BinaryOperator::CompoundBitwiseXor(p, s))
                         }
 
-                        (BinaryOperator::Assign(p), '=') => Some(BinaryOperator::Equal(p, s)),
+                        (BinaryOperator::Assign(p), '=') => {
+                            Some(BinaryOperator::Equal(p, s))
+                        }
 
                         (BinaryOperator::GreaterThan(p), '=') => {
                             Some(BinaryOperator::GreaterThanOrEqual(p, s))
@@ -1584,32 +1617,44 @@ impl Parser<'_> {
                     }
                 }
                 _ => None,
-            })
-        else {
+            }
+        }) else {
             return Some(first_level);
         };
 
         Some(
-            self.try_parse(|parser| match (second_level.clone(), parser.next_token()) {
-                (second_level, Reading::Unit(Token::Punctuation(s))) => {
-                    match (second_level, s.punctuation) {
-                        (BinaryOperator::BitwiseLeftShift(p1, p2), '=') => {
-                            Some(BinaryOperator::CompoundBitwiseLeftShift(p1, p2, s))
+            self.try_parse(|parser| {
+                match (second_level.clone(), parser.next_token()) {
+                    (second_level, Reading::Unit(Token::Punctuation(s))) => {
+                        match (second_level, s.punctuation) {
+                            (BinaryOperator::BitwiseLeftShift(p1, p2), '=') => {
+                                Some(BinaryOperator::CompoundBitwiseLeftShift(
+                                    p1, p2, s,
+                                ))
+                            }
+                            (
+                                BinaryOperator::BitwiseRightShift(p1, p2),
+                                '=',
+                            ) => {
+                                Some(BinaryOperator::CompoundBitwiseRightShift(
+                                    p1, p2, s,
+                                ))
+                            }
+                            _ => None,
                         }
-                        (BinaryOperator::BitwiseRightShift(p1, p2), '=') => {
-                            Some(BinaryOperator::CompoundBitwiseRightShift(p1, p2, s))
-                        }
-                        _ => None,
                     }
+                    _ => None,
                 }
-                _ => None,
             })
             .unwrap_or(second_level),
         )
     }
 
     /// Parses [`Binary`]
-    pub fn parse_binary(&mut self, handler: &dyn Handler<Error>) -> Option<Binary> {
+    pub fn parse_binary(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Binary> {
         let first = self.parse_prefixable(handler)?;
         let mut chain = Vec::new();
 
@@ -1618,14 +1663,13 @@ impl Parser<'_> {
             chain.push((operator, right));
         }
 
-        Some(Binary {
-            first: Box::new(first),
-            chain,
-        })
+        Some(Binary { first: Box::new(first), chain })
     }
 
     pub fn parse_numeric_literal(&mut self) -> Option<NumericLiteral> {
-        let Reading::Unit(Token::Numeric(numeric)) = self.next_significant_token() else {
+        let Reading::Unit(Token::Numeric(numeric)) =
+            self.next_significant_token()
+        else {
             return None;
         };
 
@@ -1641,18 +1685,15 @@ impl Parser<'_> {
             _ => None,
         };
 
-        let suffix = if let Reading::Unit(Token::Identifier(identifier)) = self.peek() {
-            self.forward();
-            Some(identifier)
-        } else {
-            None
-        };
+        let suffix =
+            if let Reading::Unit(Token::Identifier(identifier)) = self.peek() {
+                self.forward();
+                Some(identifier)
+            } else {
+                None
+            };
 
-        Some(NumericLiteral {
-            numeric,
-            decimal,
-            suffix,
-        })
+        Some(NumericLiteral { numeric, decimal, suffix })
     }
 
     fn parse_parenthesized_expression(
@@ -1665,7 +1706,11 @@ impl Parser<'_> {
             |parser| {
                 parser.stop_at_significant();
 
-                let ellipsis = match (parser.peek(), parser.peek_offset(1), parser.peek_offset(2)) {
+                let ellipsis = match (
+                    parser.peek(),
+                    parser.peek_offset(1),
+                    parser.peek_offset(2),
+                ) {
                     (
                         Reading::Unit(Token::Punctuation(p1)),
                         Some(Reading::Unit(Token::Punctuation(p2))),
@@ -1687,10 +1732,7 @@ impl Parser<'_> {
 
                 let expression = Box::new(parser.parse_expression(handler)?);
 
-                Some(Unpackable {
-                    ellipsis,
-                    expression,
-                })
+                Some(Unpackable { ellipsis, expression })
             },
             handler,
         )?;
@@ -1702,7 +1744,10 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_identifier_expression(&mut self, handler: &dyn Handler<Error>) -> Option<Unit> {
+    fn parse_identifier_expression(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Unit> {
         let qualified_identifier = self.parse_qualified_identifier(handler)?;
 
         match self.stop_at_significant() {
@@ -1714,15 +1759,13 @@ impl Parser<'_> {
                     ',',
                     |this| {
                         let identifier = this.parse_identifier(handler)?;
-                        let colon = this.parse_punctuation(':', true, handler)?;
-                        let expression = Box::new(this.parse_expression(handler)?);
+                        let colon =
+                            this.parse_punctuation(':', true, handler)?;
+                        let expression =
+                            Box::new(this.parse_expression(handler)?);
 
                         // field initializer
-                        Some(FieldInitializer {
-                            identifier,
-                            colon,
-                            expression,
-                        })
+                        Some(FieldInitializer { identifier, colon, expression })
                     },
                     handler,
                 )?;
@@ -1739,7 +1782,10 @@ impl Parser<'_> {
         }
     }
 
-    pub fn parse_prefixable(&mut self, handler: &dyn Handler<Error>) -> Option<Prefixable> {
+    pub fn parse_prefixable(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Prefixable> {
         let prefix_op = match self.stop_at_significant() {
             Reading::Unit(Token::Punctuation(p))
                 if matches!(p.punctuation, '!' | '-' | '~' | '*') =>
@@ -1757,7 +1803,10 @@ impl Parser<'_> {
             }
 
             Reading::Unit(Token::Keyword(k))
-                if matches!(k.kind, KeywordKind::Local | KeywordKind::Unlocal) =>
+                if matches!(
+                    k.kind,
+                    KeywordKind::Local | KeywordKind::Unlocal
+                ) =>
             {
                 // eat the token
                 self.forward();
@@ -1769,7 +1818,9 @@ impl Parser<'_> {
                 }
             }
 
-            Reading::Unit(Token::Punctuation(p)) if matches!(p.punctuation, '&' | '@') => {
+            Reading::Unit(Token::Punctuation(p))
+                if matches!(p.punctuation, '&' | '@') =>
+            {
                 // eat the token
                 self.forward();
 
@@ -1791,7 +1842,9 @@ impl Parser<'_> {
 
                         Some(match keyword.kind {
                             KeywordKind::Mutable => Qualifier::Mutable(keyword),
-                            KeywordKind::Restrict => Qualifier::Restrict(keyword),
+                            KeywordKind::Restrict => {
+                                Qualifier::Restrict(keyword)
+                            }
                             _ => unreachable!(),
                         })
                     }
@@ -1805,24 +1858,30 @@ impl Parser<'_> {
                 })
             }
 
-            _ => return self.parse_postfixable(handler).map(Prefixable::Postfixable),
+            _ => {
+                return self
+                    .parse_postfixable(handler)
+                    .map(Prefixable::Postfixable)
+            }
         };
 
         let prefixable = Box::new(self.parse_prefixable(handler)?);
 
-        Some(Prefixable::Prefix(Prefix {
-            prefixable,
-            operator: prefix_op,
-        }))
+        Some(Prefixable::Prefix(Prefix { prefixable, operator: prefix_op }))
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn parse_postfixable(&mut self, handler: &dyn Handler<Error>) -> Option<Postfixable> {
+    pub fn parse_postfixable(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Postfixable> {
         let mut current = Postfixable::Unit(self.parse_unit(handler)?);
 
         loop {
             match self.stop_at_significant() {
-                Reading::Unit(Token::Punctuation(p)) if p.punctuation == '\'' => {
+                Reading::Unit(Token::Punctuation(p))
+                    if p.punctuation == '\'' =>
+                {
                     // eat the token
                     self.forward();
 
@@ -1832,13 +1891,19 @@ impl Parser<'_> {
                     });
                 }
 
-                Reading::Unit(Token::Punctuation(p)) if p.punctuation == '.' => {
+                Reading::Unit(Token::Punctuation(p))
+                    if p.punctuation == '.' =>
+                {
                     // eat the token
                     self.forward();
 
                     let kind = match self.stop_at_significant() {
-                        Reading::Unit(Token::Numeric(n)) => AccessKind::Tuple(n),
-                        Reading::Unit(Token::Identifier(i)) => AccessKind::Identifier(i),
+                        Reading::Unit(Token::Numeric(n)) => {
+                            AccessKind::Tuple(n)
+                        }
+                        Reading::Unit(Token::Identifier(i)) => {
+                            AccessKind::Identifier(i)
+                        }
                         found => {
                             handler.receive(Error {
                                 expected: SyntaxKind::Identifier,
@@ -1879,8 +1944,12 @@ impl Parser<'_> {
                         .unwrap();
 
                     let kind = match self.stop_at_significant() {
-                        Reading::Unit(Token::Numeric(n)) => AccessKind::Tuple(n),
-                        Reading::Unit(Token::Identifier(i)) => AccessKind::Identifier(i),
+                        Reading::Unit(Token::Numeric(n)) => {
+                            AccessKind::Tuple(n)
+                        }
+                        Reading::Unit(Token::Identifier(i)) => {
+                            AccessKind::Identifier(i)
+                        }
                         found => {
                             handler.receive(Error {
                                 expected: SyntaxKind::Identifier,
@@ -1897,7 +1966,10 @@ impl Parser<'_> {
                     current = Postfixable::Postfix(Postfix {
                         postfixable: Box::new(current),
                         operator: PostfixOperator::Access(Access {
-                            operator: AccessOperator::Arrow(hyphen, right_angle),
+                            operator: AccessOperator::Arrow(
+                                hyphen,
+                                right_angle,
+                            ),
                             kind,
                         }),
                     });
@@ -1922,7 +1994,9 @@ impl Parser<'_> {
                     });
                 }
 
-                Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::As => {
+                Reading::Unit(Token::Keyword(k))
+                    if k.kind == KeywordKind::As =>
+                {
                     // eat the token
                     self.forward();
 
@@ -1946,7 +2020,10 @@ impl Parser<'_> {
     pub fn parse_unit(&mut self, handler: &dyn Handler<Error>) -> Option<Unit> {
         match self.stop_at_significant() {
             Reading::Unit(Token::Keyword(bool_keyword))
-                if matches!(bool_keyword.kind, KeywordKind::True | KeywordKind::False) =>
+                if matches!(
+                    bool_keyword.kind,
+                    KeywordKind::True | KeywordKind::False
+                ) =>
             {
                 // eat the token
                 self.forward();
@@ -1962,7 +2039,9 @@ impl Parser<'_> {
                 Some(Unit::NumericLiteral(self.parse_numeric_literal()?))
             }
 
-            Reading::Unit(Token::Identifier(_)) => self.parse_identifier_expression(handler),
+            Reading::Unit(Token::Identifier(_)) => {
+                self.parse_identifier_expression(handler)
+            }
 
             Reading::Unit(Token::Punctuation(p))
                 if p.punctuation == ':'
@@ -1980,7 +2059,8 @@ impl Parser<'_> {
                     Delimiter::Bracket,
                     ',',
                     |this| {
-                        let expression = Box::new(this.parse_expression(handler)?);
+                        let expression =
+                            Box::new(this.parse_expression(handler)?);
                         Some(expression)
                     },
                     handler,

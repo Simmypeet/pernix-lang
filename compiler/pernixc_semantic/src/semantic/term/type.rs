@@ -5,23 +5,37 @@ use std::collections::{HashMap, HashSet};
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, AssignSubTermError, GenericArguments, Local, Match,
-    MemberSymbol, Never, SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTupleTermLocation,
+    constant::Constant, lifetime::Lifetime, AssignSubTermError,
+    GenericArguments, GetVarianceError, Local, Match, MemberSymbol, Never,
+    SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTupleTermLocation,
     Substructural, Symbol, Term,
 };
 use crate::{
-    arena::ID,
+    arena::{Arena, ID},
     semantic::{
         predicate::{NonEquality, Outlives, Satisfiability},
         unification::Unification,
         Premise,
     },
-    symbol::{self, Enum, GenericID, GlobalID, Struct, TypeParameterID},
+    symbol::{
+        self, Enum, GenericID, GenericParameters, GlobalID, Struct,
+        TypeParameter, TypeParameterID, Variance,
+    },
+    table::{Index, State, Table},
 };
 
 /// Enumeration of all symbol kinds (as a type term).
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum SymbolKindID {
@@ -50,9 +64,19 @@ impl From<SymbolKindID> for GenericID {
     }
 }
 
-/// Enumeration of either a trait implementation constant or an ADT implementation constant.
+/// Enumeration of either a trait implementation constant or an ADT
+/// implementation constant.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum MemberSymbolKindID {
@@ -124,7 +148,9 @@ pub struct Array {
 }
 
 /// Contains all primitive types in the language.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 #[allow(missing_docs)]
 pub enum Primitive {
     Int8,
@@ -149,7 +175,9 @@ pub type Tuple = super::Tuple<Type>;
 pub type Inference = Never; /* will be changed */
 
 /// The location pointing to a sub-lifetime term in a type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
 pub enum SubLifetimeLocation {
     /// The index of lifetime argument in a [`Symbol`] type.
     #[from]
@@ -164,7 +192,9 @@ pub enum SubLifetimeLocation {
 }
 
 /// The location pointing to a sub-type term in a type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
 pub enum SubTypeLocation {
     /// The index of the type argument in a [`Symbol`] type.
     #[from]
@@ -192,7 +222,9 @@ pub enum SubTypeLocation {
 }
 
 /// The location pointing to a sub-constant term in a type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
 pub enum SubConstantLocation {
     /// The index of the constant argument in a [`Symbol`] type.
     #[from]
@@ -207,7 +239,17 @@ pub enum SubConstantLocation {
 }
 
 /// Represents a type term.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum Type {
     Primitive(Primitive),
@@ -222,11 +264,12 @@ pub enum Type {
 
     /// Please notice this differences
     ///
-    /// In the **AdtImplementation** case, the `parent_generic_arguments` field is **not** deduced
-    /// from the implementation directly, bur rather from the ADT that the implementation is for.
+    /// In the **AdtImplementation** case, the `parent_generic_arguments` field
+    /// is **not** deduced from the implementation directly, bur rather
+    /// from the ADT that the implementation is for.
     ///
-    /// In the **TraitImplementation** case, the `parent_generic_arguments` field **is** deduced
-    /// from the implementation.
+    /// In the **TraitImplementation** case, the `parent_generic_arguments`
+    /// field **is** deduced from the implementation.
     MemberSymbol(MemberSymbol<MemberSymbolKindID>),
 }
 
@@ -239,18 +282,17 @@ impl TryFrom<Type> for Tuple {
 impl TryFrom<Type> for TypeParameterID {
     type Error = Type;
 
-    fn try_from(value: Type) -> Result<Self, Self::Error> { value.into_parameter() }
-}
-
-impl Default for Type {
-    fn default() -> Self {
-        Self::Tuple(Tuple {
-            elements: Vec::new(),
-        })
+    fn try_from(value: Type) -> Result<Self, Self::Error> {
+        value.into_parameter()
     }
 }
 
+impl Default for Type {
+    fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
+}
+
 impl Term for Type {
+    type GenericParameter = TypeParameter;
     type SubConstantLocation = SubConstantLocation;
     type SubLifetimeLocation = SubLifetimeLocation;
     type SubTypeLocation = SubTypeLocation;
@@ -260,7 +302,11 @@ impl Term for Type {
         &self,
         other: &Self,
     ) -> Option<
-        Substructural<Self::SubLifetimeLocation, Self::SubTypeLocation, Self::SubConstantLocation>,
+        Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
     > {
         match (self, other) {
             (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => {
@@ -271,7 +317,9 @@ impl Term for Type {
                 )
             }
 
-            (Self::Pointer(lhs), Self::Pointer(rhs)) if lhs.qualifier == rhs.qualifier => {
+            (Self::Pointer(lhs), Self::Pointer(rhs))
+                if lhs.qualifier == rhs.qualifier =>
+            {
                 Some(Substructural {
                     lifetimes: Vec::new(),
                     types: vec![Match {
@@ -284,7 +332,9 @@ impl Term for Type {
                 })
             }
 
-            (Self::Reference(lhs), Self::Reference(rhs)) if lhs.qualifier == rhs.qualifier => {
+            (Self::Reference(lhs), Self::Reference(rhs))
+                if lhs.qualifier == rhs.qualifier =>
+            {
                 Some(Substructural {
                     lifetimes: vec![Match {
                         lhs: lhs.lifetime,
@@ -329,28 +379,33 @@ impl Term for Type {
                 constants: Vec::new(),
             }),
 
-            (Self::Tuple(lhs), Self::Tuple(rhs)) => lhs.substructural_match(rhs),
+            (Self::Tuple(lhs), Self::Tuple(rhs)) => {
+                lhs.substructural_match(rhs)
+            }
 
-            (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs)) if lhs.id == rhs.id => lhs
-                .parent_generic_arguments
-                .substructural_match(
-                    &rhs.parent_generic_arguments,
-                    Substructural::default(),
-                    |x| SubMemberSymbolTermLocation {
-                        index: x,
-                        from_parent: true,
-                    },
-                )
-                .and_then(|x| {
-                    lhs.member_generic_arguments.substructural_match(
-                        &rhs.member_generic_arguments,
-                        x,
+            (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
+                if lhs.id == rhs.id =>
+            {
+                lhs.parent_generic_arguments
+                    .substructural_match(
+                        &rhs.parent_generic_arguments,
+                        Substructural::default(),
                         |x| SubMemberSymbolTermLocation {
                             index: x,
-                            from_parent: false,
+                            from_parent: true,
                         },
                     )
-                }),
+                    .and_then(|x| {
+                        lhs.member_generic_arguments.substructural_match(
+                            &rhs.member_generic_arguments,
+                            x,
+                            |x| SubMemberSymbolTermLocation {
+                                index: x,
+                                from_parent: false,
+                            },
+                        )
+                    })
+            }
 
             _ => None,
         }
@@ -362,15 +417,20 @@ impl Term for Type {
         sub_lifetime: Lifetime,
     ) -> Result<(), AssignSubTermError> {
         let reference = match (self, location) {
-            (Self::Reference(reference), SubLifetimeLocation::Reference) => &mut reference.lifetime,
-            (Self::Symbol(symbol), SubLifetimeLocation::Symbol(location)) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-            (Self::MemberSymbol(member_symbol), SubLifetimeLocation::MemberSymbol(location)) => {
-                member_symbol
+            (Self::Reference(reference), SubLifetimeLocation::Reference) => {
+                &mut reference.lifetime
+            }
+            (Self::Symbol(symbol), SubLifetimeLocation::Symbol(location)) => {
+                symbol
                     .get_term_mut(location)
                     .ok_or(AssignSubTermError::InvalidLocation)?
             }
+            (
+                Self::MemberSymbol(member_symbol),
+                SubLifetimeLocation::MemberSymbol(location),
+            ) => member_symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
 
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
@@ -389,9 +449,13 @@ impl Term for Type {
                 .get_term_mut(location)
                 .ok_or(AssignSubTermError::InvalidLocation)?,
 
-            (SubTypeLocation::Pointer, Self::Pointer(pointer)) => &mut *pointer.pointee,
+            (SubTypeLocation::Pointer, Self::Pointer(pointer)) => {
+                &mut *pointer.pointee
+            }
 
-            (SubTypeLocation::Reference, Self::Reference(reference)) => &mut *reference.pointee,
+            (SubTypeLocation::Reference, Self::Reference(reference)) => {
+                &mut *reference.pointee
+            }
 
             (SubTypeLocation::Array, Self::Array(array)) => &mut *array.r#type,
 
@@ -401,7 +465,10 @@ impl Term for Type {
 
             (SubTypeLocation::Local, Self::Local(local)) => &mut *local.0,
 
-            (SubTypeLocation::MemberSymbol(location), Self::MemberSymbol(symbol)) => symbol
+            (
+                SubTypeLocation::MemberSymbol(location),
+                Self::MemberSymbol(symbol),
+            ) => symbol
                 .get_term_mut(location)
                 .ok_or(AssignSubTermError::InvalidLocation)?,
 
@@ -418,15 +485,22 @@ impl Term for Type {
         sub_constant: Constant,
     ) -> Result<(), AssignSubTermError> {
         let reference = match (location, self) {
-            (SubConstantLocation::Symbol(location), Self::Symbol(symbol)) => symbol
+            (SubConstantLocation::Symbol(location), Self::Symbol(symbol)) => {
+                symbol
+                    .get_term_mut(location)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
+
+            (
+                SubConstantLocation::MemberSymbol(location),
+                Self::MemberSymbol(symbol),
+            ) => symbol
                 .get_term_mut(location)
                 .ok_or(AssignSubTermError::InvalidLocation)?,
 
-            (SubConstantLocation::MemberSymbol(location), Self::MemberSymbol(symbol)) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-
-            (SubConstantLocation::Array, Self::Array(array)) => &mut array.length,
+            (SubConstantLocation::Array, Self::Array(array)) => {
+                &mut array.length
+            }
 
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
@@ -435,9 +509,109 @@ impl Term for Type {
         Ok(())
     }
 
+    fn get_sub_lifetime_variance(
+        &self,
+        location: Self::SubLifetimeLocation,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        match (location, self) {
+            (SubLifetimeLocation::Symbol(location), Self::Symbol(symbol)) => {
+                let generic_sym = table
+                    .get_generic(symbol.id.into())
+                    .ok_or(GetVarianceError::InvalidID)?;
+
+                Ok(generic_sym.generic_declaration().parameters.lifetimes
+                    [generic_sym
+                        .generic_declaration()
+                        .parameters
+                        .lifetime_order
+                        .get(location.0)
+                        .copied()
+                        .ok_or(GetVarianceError::InvalidLocation)?]
+                .variance)
+            }
+
+            (SubLifetimeLocation::Reference, _) => Ok(Variance::Covariant),
+
+            (
+                SubLifetimeLocation::MemberSymbol(location),
+                Self::MemberSymbol(symbol),
+            ) => {
+                let id = match symbol.id {
+                    MemberSymbolKindID::Trait(_)
+                    | MemberSymbolKindID::TraitImplementation(_) => {
+                        return Ok(Variance::Invariant);
+                    }
+
+                    MemberSymbolKindID::AdtImplementation(id) => id,
+                };
+
+                let generic_id = if location.from_parent {
+                    let implementation_id = table
+                        .get(id)
+                        .ok_or(GetVarianceError::InvalidID)?
+                        .parent_id;
+                    let adt_kind_id = table
+                        .get(implementation_id)
+                        .unwrap()
+                        .signature
+                        .implemented_id;
+
+                    adt_kind_id.into()
+                } else {
+                    id.into()
+                };
+
+                let generic_sym = table
+                    .get_generic(generic_id)
+                    .ok_or(GetVarianceError::InvalidID)?;
+
+                Ok(generic_sym.generic_declaration().parameters.types
+                    [generic_sym
+                        .generic_declaration()
+                        .parameters
+                        .type_order
+                        .get(location.index)
+                        .copied()
+                        .ok_or(GetVarianceError::InvalidLocation)?]
+                .variance)
+            }
+
+            _ => Err(GetVarianceError::InvalidLocation),
+        }
+    }
+
+    fn get_sub_type_variance(
+        &self,
+        location: Self::SubTypeLocation,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        match (location, self) {
+            (SubTypeLocation::Symbol(location), Self::Symbol(symbol)) => {
+                match symbol.id {
+                    SymbolKindID::Struct(_) => todo!(),
+                    SymbolKindID::Enum(_) => todo!(),
+                    SymbolKindID::Type(_) => todo!(),
+                }
+            }
+
+            _ => Err(GetVarianceError::InvalidLocation),
+        }
+    }
+
+    fn get_sub_constant_variance(
+        &self,
+        location: Self::SubConstantLocation,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        todo!()
+    }
+
     fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
 
-    fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
+    fn outlives_predicates<'a>(
+        premise: &'a Premise,
+    ) -> impl Iterator<Item = &'a Outlives<Self>>
     where
         Self: 'a,
     {
@@ -449,7 +623,9 @@ impl Term for Type {
 
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
-            Self::Parameter(_) | Self::Inference(_) => Satisfiability::Unsatisfied,
+            Self::Parameter(_) | Self::Inference(_) => {
+                Satisfiability::Unsatisfied
+            }
 
             Self::Primitive(_) => Satisfiability::Satisfied,
 
@@ -483,11 +659,21 @@ impl Term for Type {
         &mut substructural.types
     }
 
-    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>> {
+    fn get_generic_parameters(
+        parameters: &GenericParameters,
+    ) -> &Arena<Self::GenericParameter> {
+        &parameters.types
+    }
+
+    fn get_unification(
+        unification: &Unification,
+    ) -> &HashMap<Self, HashSet<Self>> {
         &unification.types
     }
 
-    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>> {
+    fn get_unification_mut(
+        unification: &mut Unification,
+    ) -> &mut HashMap<Self, HashSet<Self>> {
         &mut unification.types
     }
 
@@ -495,7 +681,9 @@ impl Term for Type {
         &generic_arguments.types
     }
 
-    fn get_generic_arguments_mut(generic_arguments: &mut GenericArguments) -> &mut Vec<Self> {
+    fn get_generic_arguments_mut(
+        generic_arguments: &mut GenericArguments,
+    ) -> &mut Vec<Self> {
         &mut generic_arguments.types
     }
 }

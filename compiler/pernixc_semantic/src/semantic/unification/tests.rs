@@ -14,7 +14,8 @@ use crate::{
         equality::equals,
         session::{self, ExceedLimitError, Limit, Session},
         term::{
-            constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Symbol, Term,
+            constant::Constant, lifetime::Lifetime, r#type::Type,
+            GenericArguments, Symbol, Term,
         },
         Premise, Semantic,
     },
@@ -26,7 +27,9 @@ use crate::{
 pub struct GenericParameterUnifyConfig;
 
 impl Config<Lifetime> for GenericParameterUnifyConfig {
-    fn unifiable(&mut self, lhs: &Lifetime, _: &Lifetime) -> bool { lhs.is_parameter() }
+    fn unifiable(&mut self, lhs: &Lifetime, _: &Lifetime) -> bool {
+        lhs.is_parameter()
+    }
 }
 
 impl Config<Type> for GenericParameterUnifyConfig {
@@ -34,10 +37,14 @@ impl Config<Type> for GenericParameterUnifyConfig {
 }
 
 impl Config<Constant> for GenericParameterUnifyConfig {
-    fn unifiable(&mut self, lhs: &Constant, _: &Constant) -> bool { lhs.is_parameter() }
+    fn unifiable(&mut self, lhs: &Constant, _: &Constant) -> bool {
+        lhs.is_parameter()
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
 pub enum ApplyPropertyError {
     #[error("{0}")]
     ExceedLimitError(#[from] ExceedLimitError),
@@ -60,19 +67,31 @@ pub struct Basic<Param, T> {
     pub rhs: T,
 }
 
-impl<Param: Debug + Clone + 'static, T: Debug + Clone + Term + From<Param> + 'static> Property<T>
-    for Basic<Param, T>
+impl<
+        Param: Debug + Clone + 'static,
+        T: Debug + Clone + Term + From<Param> + 'static,
+    > Property<T> for Basic<Param, T>
 {
-    fn apply(&self, _: &mut Table<Success>, _: &mut Premise) -> Result<(), ApplyPropertyError> {
+    fn apply(
+        &self,
+        _: &mut Table<Success>,
+        _: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
         Ok(())
     }
 
-    fn generate(&self) -> (T, T) { (T::from(self.parameter.clone()), self.rhs.clone()) }
+    fn generate(&self) -> (T, T) {
+        (T::from(self.parameter.clone()), self.rhs.clone())
+    }
 }
 
 impl<
         Param: Debug + Arbitrary<Strategy = BoxedStrategy<Param>> + Clone + 'static,
-        T: Debug + Term + From<Param> + Arbitrary<Strategy = BoxedStrategy<T>> + 'static,
+        T: Debug
+            + Term
+            + From<Param>
+            + Arbitrary<Strategy = BoxedStrategy<T>>
+            + 'static,
     > Arbitrary for Basic<Param, T>
 {
     type Parameters = ();
@@ -171,7 +190,8 @@ pub struct SymbolCongruence<ID> {
     id: ID,
 }
 
-impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T> for SymbolCongruence<ID>
+impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
+    for SymbolCongruence<ID>
 where
     Symbol<ID>: Into<T>,
     semantic::Default: Semantic<T>,
@@ -240,8 +260,8 @@ where
     }
 }
 
-impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbitrary
-    for SymbolCongruence<ID>
+impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
+    Arbitrary for SymbolCongruence<ID>
 {
     type Parameters = (
         Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
@@ -257,13 +277,11 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone> Arbi
                 1..=2,
             ),
             proptest::collection::vec(
-                args.0
-                    .unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary),
+                args.0.unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary),
                 1..=2,
             ),
             proptest::collection::vec(
-                args.2
-                    .unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
+                args.2.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
                 1..=2,
             ),
             ID::arbitrary(),
@@ -284,8 +302,10 @@ pub struct Mapping<T, Param> {
     pub mapping: Param,
 }
 
-impl<T: Debug + Term + From<Param> + 'static, Param: Debug + Clone + 'static> Property<T>
-    for Mapping<T, Param>
+impl<
+        T: Debug + Term + From<Param> + 'static,
+        Param: Debug + Clone + 'static,
+    > Property<T> for Mapping<T, Param>
 where
     GenericParameterUnifyConfig: Config<T>,
 {
@@ -323,13 +343,15 @@ impl<
         Param: Debug + Arbitrary<Strategy = BoxedStrategy<Param>> + 'static,
     > Arbitrary for Mapping<T, Param>
 where
-    Box<dyn Property<T>>: Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+    Box<dyn Property<T>>:
+        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(strategy: Self::Parameters) -> Self::Strategy {
-        let strategy = strategy.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+        let strategy =
+            strategy.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
         (strategy, Param::arbitrary())
             .prop_map(|(property, mapping)| Self { property, mapping })
@@ -337,9 +359,12 @@ where
     }
 }
 
-pub fn property_based_testing<T: Term + 'static>(property: &dyn Property<T>) -> TestCaseResult
+pub fn property_based_testing<T: Term + 'static>(
+    property: &dyn Property<T>,
+) -> TestCaseResult
 where
-    GenericParameterUnifyConfig: Config<T> + Config<Lifetime> + Config<Type> + Config<Constant>,
+    GenericParameterUnifyConfig:
+        Config<T> + Config<Lifetime> + Config<Type> + Config<Constant>,
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
@@ -376,15 +401,15 @@ where
 
     for (key, values) in Type::get_unification(&unification) {
         for value in values {
-            prop_assert!(<GenericParameterUnifyConfig as Config<Type>>::unifiable(
-                &mut config,
-                key,
-                value
-            ));
+            prop_assert!(
+                <GenericParameterUnifyConfig as Config<Type>>::unifiable(
+                    &mut config,
+                    key,
+                    value
+                )
+            );
 
-            premise
-                .equalities_mapping
-                .insert(key.clone(), value.clone());
+            premise.equalities_mapping.insert(key.clone(), value.clone());
         }
     }
 
@@ -412,9 +437,7 @@ where
                 )
             );
 
-            premise
-                .equalities_mapping
-                .insert(key.clone(), value.clone());
+            premise.equalities_mapping.insert(key.clone(), value.clone());
         }
     }
 

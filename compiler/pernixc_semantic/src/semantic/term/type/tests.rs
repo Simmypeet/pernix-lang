@@ -7,11 +7,15 @@ use proptest::{
 };
 
 use super::{
-    Array, MemberSymbolKindID, Pointer, Primitive, Qualifier, Reference, SymbolKindID, Type,
+    Array, MemberSymbolKindID, Pointer, Primitive, Qualifier, Reference,
+    SymbolKindID, Type,
 };
 use crate::{
     arena::ID,
-    semantic::term::{constant::Constant, lifetime::Lifetime, Local, MemberSymbol, Symbol, Tuple},
+    semantic::term::{
+        constant::Constant, lifetime::Lifetime, Local, MemberSymbol, Symbol,
+        Tuple,
+    },
     symbol::TypeParameterID,
 };
 
@@ -69,10 +73,13 @@ impl Arbitrary for Pointer {
 }
 
 impl Arbitrary for Reference {
-    type Parameters = (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Type>>);
+    type Parameters =
+        (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Type>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((lt_strategy, type_strategy): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(
+        (lt_strategy, type_strategy): Self::Parameters,
+    ) -> Self::Strategy {
         let type_strategy = type_strategy.unwrap_or_else(Type::arbitrary);
         let lt_strategy = lt_strategy.unwrap_or_else(Lifetime::arbitrary);
 
@@ -115,27 +122,25 @@ impl Arbitrary for MemberSymbolKindID {
 }
 
 impl Arbitrary for Array {
-    type Parameters = (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Constant>>);
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Constant>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((ty_strat, const_strat): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(
+        (ty_strat, const_strat): Self::Parameters,
+    ) -> Self::Strategy {
         let ty_strat = ty_strat.unwrap_or_else(Type::arbitrary);
         let const_strat = const_strat.unwrap_or_else(Constant::arbitrary);
 
         (ty_strat, const_strat)
-            .prop_map(|(ty, length)| Self {
-                r#type: Box::new(ty),
-                length,
-            })
+            .prop_map(|(ty, length)| Self { r#type: Box::new(ty), length })
             .boxed()
     }
 }
 
 impl Arbitrary for Type {
-    type Parameters = (
-        Option<BoxedStrategy<Lifetime>>,
-        Option<BoxedStrategy<Constant>>,
-    );
+    type Parameters =
+        (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Constant>>);
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(param: Self::Parameters) -> Self::Strategy {

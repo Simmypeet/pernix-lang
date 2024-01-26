@@ -1,4 +1,5 @@
-//! Contains the three fundamental terms of the language: [`Type`], [`Constant`], and [`Lifetime`].
+//! Contains the three fundamental terms of the language: [`Type`],
+//! [`Constant`], and [`Lifetime`].
 
 use std::{
     collections::{HashMap, HashSet},
@@ -19,6 +20,11 @@ use super::{
     visitor::Element,
     Premise,
 };
+use crate::{
+    arena::Arena,
+    symbol::{GenericParameters, Variance},
+    table::{State, Table},
+};
 
 pub mod constant;
 pub mod lifetime;
@@ -37,7 +43,8 @@ pub struct GenericArguments {
     pub constants: Vec<Constant>,
 }
 
-/// Represents a term where its value is stored as a symbol (i.e., `type` or `const` declaration).
+/// Represents a term where its value is stored as a symbol (i.e., `type` or
+/// `const` declaration).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Symbol<ID> {
     /// The ID of the symbol that contains the value of the term.
@@ -48,21 +55,28 @@ pub struct Symbol<ID> {
 }
 
 impl<ID> Symbol<ID> {
-    /// Returns a mutable reference to a particular sub-term of this generic arguments.
-    pub fn get_term_mut<T: Term>(&mut self, location: SubSymbolTermLocation) -> Option<&mut T> {
-        let generic_arguments = T::get_generic_arguments_mut(&mut self.generic_arguments);
+    /// Returns a mutable reference to a particular sub-term of this generic
+    /// arguments.
+    pub fn get_term_mut<T: Term>(
+        &mut self,
+        location: SubSymbolTermLocation,
+    ) -> Option<&mut T> {
+        let generic_arguments =
+            T::get_generic_arguments_mut(&mut self.generic_arguments);
 
         generic_arguments.get_mut(location.0)
     }
 }
 
-/// Represents a sub-term location where the sub-term is stored as a generic arguments.
+/// Represents a sub-term location where the sub-term is stored as a generic
+/// arguments.
 ///
 /// The `usize` represents the index of the sub-term in the generic arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubSymbolTermLocation(pub usize);
 
-/// Represents a term where its value is stored as a member of a particular symbol
+/// Represents a term where its value is stored as a member of a particular
+/// symbol
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MemberSymbol<ID> {
     /// The ID of the symbol that contains the value of the term.
@@ -76,7 +90,8 @@ pub struct MemberSymbol<ID> {
 }
 
 impl<ID> MemberSymbol<ID> {
-    /// Returns a mutable reference to a particular sub-term of this generic arguments.
+    /// Returns a mutable reference to a particular sub-term of this generic
+    /// arguments.
     pub fn get_term_mut<T: Term>(
         &mut self,
         location: SubMemberSymbolTermLocation,
@@ -91,13 +106,15 @@ impl<ID> MemberSymbol<ID> {
     }
 }
 
-/// Represents a sub-term location where the sub-term is stored as a generic arguments.
+/// Represents a sub-term location where the sub-term is stored as a generic
+/// arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubMemberSymbolTermLocation {
     /// The index of the sub-term in the generic arguments.
     pub index: usize,
 
-    /// True if the sub-term is in the parent's generic arguments part, otherwise false.
+    /// True if the sub-term is in the parent's generic arguments part,
+    /// otherwise false.
     pub from_parent: bool,
 }
 
@@ -144,7 +161,8 @@ pub struct Tuple<Term: Clone> {
     pub elements: Vec<TupleElement<Term>>,
 }
 
-/// Represents a sub-term location where the sub-term is stored as an element of a tuple.
+/// Represents a sub-term location where the sub-term is stored as an element of
+/// a tuple.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SubTupleTermLocation {
     /// The sub-term is stored as a regular element of the tuple.
@@ -185,7 +203,11 @@ pub struct Match<T, Location> {
 /// See [`Term::substructural_match`] for more information.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub struct Substructural<SubLifetimeLocation, SubTypeLocation, SubConstantLocation> {
+pub struct Substructural<
+    SubLifetimeLocation,
+    SubTypeLocation,
+    SubConstantLocation,
+> {
     pub lifetimes: Vec<Match<Lifetime, SubLifetimeLocation>>,
     pub types: Vec<Match<Type, SubTypeLocation>>,
     pub constants: Vec<Match<Constant, SubConstantLocation>>,
@@ -193,11 +215,7 @@ pub struct Substructural<SubLifetimeLocation, SubTypeLocation, SubConstantLocati
 
 impl<L, T, C> Default for Substructural<L, T, C> {
     fn default() -> Self {
-        Self {
-            lifetimes: Vec::new(),
-            types: Vec::new(),
-            constants: Vec::new(),
-        }
+        Self { lifetimes: Vec::new(), types: Vec::new(), constants: Vec::new() }
     }
 }
 
@@ -208,7 +226,9 @@ where
     Self: Into<T>;
 
 /// An error that occurs when assigning a sub-term to a term.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
 #[allow(missing_docs)]
 pub enum AssignSubTermError {
     #[error("the given location is invalid for this term")]
@@ -219,8 +239,23 @@ pub enum AssignSubTermError {
     InvalidTupleRange,
 }
 
+/// An error that occurs when getting the variance of a sub-term.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum GetVarianceError {
+    #[error("the given location is invalid for this term")]
+    InvalidLocation,
+
+    #[error("the term contains an ID that is invalid to the given table")]
+    InvalidID,
+}
+
 /// Contains the functionality for determining the properties of a term.
-pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substitute {
+pub trait Term:
+    Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substitute
+{
     /// The type used to retrieve the sub-type term of a term.
     type SubTypeLocation: Debug
         + Clone
@@ -273,6 +308,9 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
         + Sync
         + 'static;
 
+    /// The type of generic parameters of this term kind.
+    type GenericParameter: 'static;
+
     /// Returns the matching substructural matches between `self` and `other`.
     ///
     /// # Example
@@ -290,7 +328,11 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
         &self,
         other: &Self,
     ) -> Option<
-        Substructural<Self::SubLifetimeLocation, Self::SubTypeLocation, Self::SubConstantLocation>,
+        Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
     >;
 
     /// Assigns a sub-lifetime to a term.
@@ -326,11 +368,46 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
         sub_constant: Constant,
     ) -> Result<(), AssignSubTermError>;
 
+    /// Gets the [`Variance`] of the sub-lifetime at the given location.
+    ///
+    /// # Errors
+    ///
+    /// See [`GetVarianceError`] for more information.
+    fn get_sub_lifetime_variance(
+        &self,
+        location: Self::SubLifetimeLocation,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError>;
+
+    /// Gets the [`Variance`] of the sub-type at the given location.
+    ///
+    /// # Errors
+    ///
+    /// See [`GetVarianceError`] for more information.
+    fn get_sub_type_variance(
+        &self,
+        location: Self::SubTypeLocation,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError>;
+
+    /// Gets the [`Variance`] of the sub-constant at the given location.
+    ///
+    /// # Errors
+    ///
+    /// See [`GetVarianceError`] for more information.
+    fn get_sub_constant_variance(
+        &self,
+        location: Self::SubConstantLocation,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError>;
+
     #[doc(hidden)]
     fn is_tuple(&self) -> bool;
 
     #[doc(hidden)]
-    fn outlives_predicates<'a>(premise: &'a Premise) -> impl Iterator<Item = &'a Outlives<Self>>
+    fn outlives_predicates<'a>(
+        premise: &'a Premise,
+    ) -> impl Iterator<Item = &'a Outlives<Self>>
     where
         Self: 'a;
 
@@ -356,16 +433,27 @@ pub trait Term: Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substi
     ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>>;
 
     #[doc(hidden)]
-    fn get_unification(unification: &Unification) -> &HashMap<Self, HashSet<Self>>;
+    fn get_generic_parameters(
+        parameters: &GenericParameters,
+    ) -> &Arena<Self::GenericParameter>;
 
     #[doc(hidden)]
-    fn get_unification_mut(unification: &mut Unification) -> &mut HashMap<Self, HashSet<Self>>;
+    fn get_unification(
+        unification: &Unification,
+    ) -> &HashMap<Self, HashSet<Self>>;
+
+    #[doc(hidden)]
+    fn get_unification_mut(
+        unification: &mut Unification,
+    ) -> &mut HashMap<Self, HashSet<Self>>;
 
     #[doc(hidden)]
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self];
 
     #[doc(hidden)]
-    fn get_generic_arguments_mut(generic_arguments: &mut GenericArguments) -> &mut Vec<Self>;
+    fn get_generic_arguments_mut(
+        generic_arguments: &mut GenericArguments,
+    ) -> &mut Vec<Self>;
 }
 
 impl<T: Term> Tuple<T>
@@ -403,7 +491,9 @@ where
                     return Err(AssignSubTermError::InvalidLocation);
                 }
 
-                for (lhs, rhs) in tuple_elements.iter_mut().zip(sub_constant_tuple.elements) {
+                for (lhs, rhs) in
+                    tuple_elements.iter_mut().zip(sub_constant_tuple.elements)
+                {
                     *lhs = rhs;
                 }
 
@@ -417,7 +507,13 @@ where
         from: &'a Self,
         to: &'a Self,
         swap: bool,
-    ) -> Option<Substructural<T::SubLifetimeLocation, T::SubTypeLocation, T::SubConstantLocation>>
+    ) -> Option<
+        Substructural<
+            T::SubLifetimeLocation,
+            T::SubTypeLocation,
+            T::SubConstantLocation,
+        >,
+    >
     where
         T::ThisSubTermLocation: From<SubTupleTermLocation>,
     {
@@ -493,23 +589,22 @@ where
             return None;
         }
 
-        let unpacked_position = from
-            .elements
-            .iter()
-            .position(TupleElement::is_unpacked)
-            .unwrap();
+        let unpacked_position =
+            from.elements.iter().position(TupleElement::is_unpacked).unwrap();
 
         let head_range = 0..unpacked_position;
         let from_tail_range = (unpacked_position + 1)..from.elements.len();
-        let to_tail_range =
-            (to.elements.len() - from_tail_range.clone().count())..to.elements.len();
+        let to_tail_range = (to.elements.len()
+            - from_tail_range.clone().count())
+            ..to.elements.len();
         let to_unpack_range = unpacked_position..to_tail_range.start;
 
         // unify head
-        for (idx, (from_element, to_element)) in from.elements[head_range.clone()]
-            .iter()
-            .zip(&to.elements[head_range])
-            .enumerate()
+        for (idx, (from_element, to_element)) in from.elements
+            [head_range.clone()]
+        .iter()
+        .zip(&to.elements[head_range])
+        .enumerate()
         {
             let from_element = from_element.as_regular().unwrap();
             let TupleElement::Regular(to_element) = to_element else {
@@ -527,10 +622,11 @@ where
         }
 
         // unify tail
-        for (idx, (from_element, to_element)) in from.elements[from_tail_range.clone()]
-            .iter()
-            .zip(&to.elements[to_tail_range.clone()])
-            .enumerate()
+        for (idx, (from_element, to_element)) in from.elements
+            [from_tail_range.clone()]
+        .iter()
+        .zip(&to.elements[to_tail_range.clone()])
+        .enumerate()
         {
             let from_element = from_element.as_regular().unwrap();
             let TupleElement::Regular(to_element) = to_element else {
@@ -547,10 +643,9 @@ where
             );
         }
 
-        let to_unpack = Self {
-            elements: to.elements[to_unpack_range.clone()].to_vec(),
-        }
-        .into();
+        let to_unpack =
+            Self { elements: to.elements[to_unpack_range.clone()].to_vec() }
+                .into();
 
         let unpacked = from.elements[unpacked_position].as_unpacked().unwrap();
         push(
@@ -571,7 +666,13 @@ where
     fn substructural_match<'a>(
         &'a self,
         to: &'a Self,
-    ) -> Option<Substructural<T::SubLifetimeLocation, T::SubTypeLocation, T::SubConstantLocation>>
+    ) -> Option<
+        Substructural<
+            T::SubLifetimeLocation,
+            T::SubTypeLocation,
+            T::SubConstantLocation,
+        >,
+    >
     where
         T::ThisSubTermLocation: From<SubTupleTermLocation>,
     {

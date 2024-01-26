@@ -7,8 +7,8 @@ use proptest::{
 };
 
 use super::{
-    constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Local, MemberSymbol,
-    Symbol, Tuple,
+    constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
+    Local, MemberSymbol, Symbol, Tuple,
 };
 use crate::{
     arena::ID,
@@ -25,7 +25,8 @@ impl<T: 'static> Arbitrary for ID<T> {
     }
 }
 
-impl<ChildID: Arbitrary, ParentID: Arbitrary> Arbitrary for MemberID<ChildID, ParentID>
+impl<ChildID: Arbitrary, ParentID: Arbitrary> Arbitrary
+    for MemberID<ChildID, ParentID>
 where
     ChildID::Strategy: 'static,
     ParentID::Strategy: 'static,
@@ -80,7 +81,9 @@ where
     );
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((lt_strat, ty_start, const_strat): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(
+        (lt_strat, ty_start, const_strat): Self::Parameters,
+    ) -> Self::Strategy {
         let lt_strat = lt_strat.unwrap_or_else(Lifetime::arbitrary);
         let ty_start = ty_start.unwrap_or_else(Type::arbitrary);
         let const_strat = const_strat.unwrap_or_else(Constant::arbitrary);
@@ -158,7 +161,8 @@ where
     }
 }
 
-impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Debug + Clone + 'static> Arbitrary for Tuple<T>
+impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Debug + Clone + 'static>
+    Arbitrary for Tuple<T>
 where
     Self: TryFrom<T, Error = T> + Into<T>,
 {

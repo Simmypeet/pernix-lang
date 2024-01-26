@@ -27,7 +27,9 @@ use crate::{
 ///     VariableDeclaration
 ///     | Expressive
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(missing_docs)]
 pub enum Statement {
     VariableDeclaration(VariableDeclaration),
@@ -98,7 +100,9 @@ pub struct VariableDeclaration {
 }
 
 impl SourceElement for VariableDeclaration {
-    fn span(&self) -> Span { self.let_keyword.span().join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.let_keyword.span().join(&self.semicolon.span).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -108,7 +112,9 @@ impl SourceElement for VariableDeclaration {
 ///     | Imperative
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(missing_docs)]
 pub enum Expressive {
     Semi(Semi),
@@ -131,7 +137,9 @@ impl SourceElement for Expressive {
 ///     | Terminator
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
 #[allow(missing_docs)]
 pub enum SemiExpression {
     Binary(Binary),
@@ -163,13 +171,18 @@ pub struct Semi {
 }
 
 impl SourceElement for Semi {
-    fn span(&self) -> Span { self.expression.span().join(&self.semicolon.span).unwrap() }
+    fn span(&self) -> Span {
+        self.expression.span().join(&self.semicolon.span).unwrap()
+    }
 }
 
 impl<'a> Parser<'a> {
     /// Parses a [`Statement`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn parse_statement(&mut self, handler: &dyn Handler<Error>) -> Option<Statement> {
+    pub fn parse_statement(
+        &mut self,
+        handler: &dyn Handler<Error>,
+    ) -> Option<Statement> {
         if matches!(
             self.stop_at_significant(),
             Reading::Unit(Token::Keyword(k)) if k.kind == KeywordKind::Let
@@ -179,10 +192,14 @@ impl<'a> Parser<'a> {
         } else {
             let semi_expression = match self.parse_expression(handler)? {
                 Expression::Brace(brace) => {
-                    return Some(Statement::Expressive(Expressive::Brace(brace)));
+                    return Some(Statement::Expressive(Expressive::Brace(
+                        brace,
+                    )));
                 }
                 Expression::Binary(binary) => SemiExpression::Binary(binary),
-                Expression::Terminator(terminator) => SemiExpression::Terminator(terminator),
+                Expression::Terminator(terminator) => {
+                    SemiExpression::Terminator(terminator)
+                }
             };
 
             let semicolon = self.parse_punctuation(';', true, handler)?;
@@ -205,7 +222,9 @@ impl<'a> Parser<'a> {
 
         // parse optional type annotation
         let type_annotation = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(colon)) if colon.punctuation == ':' => {
+            Reading::Unit(Token::Punctuation(colon))
+                if colon.punctuation == ':' =>
+            {
                 self.forward();
                 let ty = self.parse_type(handler)?;
                 Some(TypeAnnotation { colon, ty })
@@ -214,7 +233,9 @@ impl<'a> Parser<'a> {
         };
 
         let initializer = match self.stop_at_significant() {
-            Reading::Unit(Token::Punctuation(equals)) if equals.punctuation == '=' => {
+            Reading::Unit(Token::Punctuation(equals))
+                if equals.punctuation == '=' =>
+            {
                 // eat the '='
                 self.forward();
                 let expression = self.parse_expression(handler)?;

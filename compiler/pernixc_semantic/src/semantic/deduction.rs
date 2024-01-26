@@ -9,7 +9,10 @@ use super::{
     equality,
     session::{ExceedLimitError, Limit, Session},
     substitution::Substitution,
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments, Term},
+    term::{
+        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
+        Term,
+    },
     unification, Premise, Semantic,
 };
 use crate::{
@@ -34,7 +37,9 @@ impl unification::Config<Type> for DeductionUnifyingConfig {
 }
 
 impl unification::Config<Lifetime> for DeductionUnifyingConfig {
-    fn unifiable(&mut self, lhs: &Lifetime, _: &Lifetime) -> bool { lhs.is_parameter() }
+    fn unifiable(&mut self, lhs: &Lifetime, _: &Lifetime) -> bool {
+        lhs.is_parameter()
+    }
 }
 
 impl unification::Config<Constant> for DeductionUnifyingConfig {
@@ -120,7 +125,9 @@ fn mapping_equals<
         key.apply(substitution);
 
         for value in values {
-            if !equality::equals(&key, &value, premise, table, semantic, session)? {
+            if !equality::equals(
+                &key, &value, premise, table, semantic, session,
+            )? {
                 return Ok(false);
             }
         }
@@ -147,7 +154,9 @@ fn from_unification_to_substitution<
         let sampled = values.next().expect("should at least have one element");
 
         for value in values {
-            if !equality::equals(&sampled, &value, premise, table, semantic, session)? {
+            if !equality::equals(
+                &sampled, &value, premise, table, semantic, session,
+            )? {
                 return Ok(None);
             }
         }
@@ -222,9 +231,11 @@ impl GenericArguments {
             return Ok(None);
         };
 
-        // seperate out the unification between generic parameters and trait members
+        // separate out the unification between generic parameters and trait
+        // members
         let (base_unification, trait_type_map, trait_constant_map) = {
-            let (type_param_map, trait_type_map) = extract(unification.types, Type::is_parameter);
+            let (type_param_map, trait_type_map) =
+                extract(unification.types, Type::is_parameter);
             let (constant_param_map, trait_constant_map) =
                 extract(unification.constants, Constant::is_parameter);
 
@@ -260,11 +271,7 @@ impl GenericArguments {
             };
 
             (
-                Substitution {
-                    lifetimes,
-                    types,
-                    constants,
-                },
+                Substitution { lifetimes, types, constants },
                 trait_type_map,
                 trait_constant_map,
             )
