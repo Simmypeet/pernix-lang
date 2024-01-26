@@ -22,7 +22,7 @@ use super::{
 };
 use crate::{
     arena::{Arena, ID},
-    symbol::{GenericParameters, Variance},
+    symbol::{self, GenericID, GenericParameter, GenericParameters, Variance},
     table::{State, Table},
 };
 
@@ -309,7 +309,7 @@ pub trait Term:
         + 'static;
 
     /// The type of generic parameters of this term kind.
-    type GenericParameter: 'static;
+    type GenericParameter: GenericParameter + 'static;
 
     /// Returns the matching substructural matches between `self` and `other`.
     ///

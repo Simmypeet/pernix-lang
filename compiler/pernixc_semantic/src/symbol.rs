@@ -318,23 +318,20 @@ impl Global for Module {
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
-}
+/// Implemented by all generic parameters [`LifetimeParameter`],
+/// [`TypeParameter`], and [`ConstantParameter`].
+pub trait GenericParameter {
+    /// Gets the [`Variance`] of the generic parameter.
+    fn variance(&self) -> Variance;
 
-/// Represents a lifetime parameter, denoted by `'a` syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LifetimeParameter {
-    /// The name of the lifetime parameter (if none, then it is anonymous
-    /// lifetime parameter )
-    pub name: Option<String>,
+    /// Gets the name of the generic parameter.
+    ///
+    /// If the generic parameter is anonymous, (i.e. elided lifetime parameter),
+    /// then this method returns `None`.
+    fn name(&self) -> Option<&str>;
 
-    /// The ID where the lifetime parameter is declared.
-    pub parent_generic_id: GenericID,
-
-    /// Location of where the lifetime parameter is declared.
-    pub span: Option<Span>,
-
-    /// The variance of the lifetime parameter.
-    pub variance: Variance,
+    /// Gets the span where the generic parameter is declared.
+    fn span(&self) -> Option<&Span>;
 }
 
 /// An ID used to refer to a particular symbol defined in a particular
@@ -368,6 +365,31 @@ pub enum Variance {
     Covariant,
 }
 
+/// Represents a lifetime parameter, denoted by `'a` syntax.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LifetimeParameter {
+    /// The name of the lifetime parameter (if none, then it is anonymous
+    /// lifetime parameter )
+    pub name: Option<String>,
+
+    /// The ID where the lifetime parameter is declared.
+    pub parent_generic_id: GenericID,
+
+    /// Location of where the lifetime parameter is declared.
+    pub span: Option<Span>,
+
+    /// The variance of the lifetime parameter.
+    pub variance: Variance,
+}
+
+impl GenericParameter for LifetimeParameter {
+    fn variance(&self) -> Variance { self.variance }
+
+    fn name(&self) -> Option<&str> { self.name.as_ref().map(AsRef::as_ref) }
+
+    fn span(&self) -> Option<&Span> { todo!() }
+}
+
 /// Represents a type parameter, denoted by `T` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeParameter {
@@ -384,6 +406,14 @@ pub struct TypeParameter {
     pub variance: Variance,
 }
 
+impl GenericParameter for TypeParameter {
+    fn variance(&self) -> Variance { self.variance }
+
+    fn name(&self) -> Option<&str> { Some(&self.name) }
+
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
+}
+
 /// Represents a constant parameter, denoted by `const C: TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantParameter {
@@ -398,6 +428,14 @@ pub struct ConstantParameter {
 
     /// The type of the constant parameter.
     pub span: Option<Span>,
+}
+
+impl GenericParameter for ConstantParameter {
+    fn variance(&self) -> Variance { Variance::Invariant }
+
+    fn name(&self) -> Option<&str> { Some(&self.name) }
+
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
 /// Represents a list of generic parameters.
