@@ -755,5 +755,30 @@ impl GenericArguments {
     }
 }
 
+impl<S: State> Table<S> {
+    fn get_generic_parameter_variance<T: Term>(
+        &self,
+        generic_id: GenericID,
+        generic_parameter_order: usize,
+    ) -> Result<Variance, GetVarianceError> {
+        let generic_sym =
+            self.get_generic(generic_id).ok_or(GetVarianceError::InvalidID)?;
+
+        let id = T::get_generic_parameter_order(
+            &generic_sym.generic_declaration().parameters,
+        )
+        .get(generic_parameter_order)
+        .copied()
+        .ok_or(GetVarianceError::InvalidLocation)?;
+
+        Ok(T::get_generic_parameters(
+            &generic_sym.generic_declaration().parameters,
+        )
+        .get(id)
+        .unwrap()
+        .variance())
+    }
+}
+
 #[cfg(test)]
 mod tests;

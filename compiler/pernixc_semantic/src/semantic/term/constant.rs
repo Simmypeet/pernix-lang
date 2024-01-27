@@ -25,7 +25,7 @@ use crate::{
         self, ConstantParameter, ConstantParameterID, GenericID,
         GenericParameters, GlobalID, Variance, Variant,
     },
-    table::{State, Table},
+    table::{Index, State, Table},
 };
 
 /// Enumeration of either a trait implementation constant or an ADT
@@ -462,26 +462,171 @@ impl Term for Constant {
 
     fn get_sub_lifetime_variance(
         &self,
-        _: Self::SubLifetimeLocation,
-        _: &Table<impl State>,
+        location: Self::SubLifetimeLocation,
+        table: &Table<impl State>,
     ) -> Result<Variance, GetVarianceError> {
-        Ok(symbol::Variance::Invariant)
+        match (location, self) {
+            (SubLifetimeLocation::Symbol(location), Self::Symbol(symbol)) => {
+                table.get_generic_parameter_variance::<Lifetime>(
+                    symbol.id.into(),
+                    location.0,
+                )
+            }
+
+            (
+                SubLifetimeLocation::MemberSymbol(location),
+                Self::MemberSymbol(symbol),
+            ) => {
+                let id = match (symbol.id, location.from_parent) {
+                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                        let implementation_id = table
+                            .get(id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .parent_id;
+
+                        let adt_kind_id = table
+                            .get(implementation_id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .signature
+                            .implemented_id;
+
+                        adt_kind_id.into()
+                    }
+                    (MemberSymbolKindID::AdtImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::TraitImplementation(_), true)
+                    | (MemberSymbolKindID::Trait(_), _) => {
+                        return Ok(symbol::Variance::Invariant)
+                    }
+                };
+
+                table.get_generic_parameter_variance::<Lifetime>(
+                    id,
+                    location.index,
+                )
+            }
+
+            _ => Err(GetVarianceError::InvalidLocation),
+        }
     }
 
     fn get_sub_type_variance(
         &self,
-        _: Self::SubTypeLocation,
-        _: &Table<impl State>,
+        location: Self::SubTypeLocation,
+        table: &Table<impl State>,
     ) -> Result<Variance, GetVarianceError> {
-        Ok(symbol::Variance::Invariant)
+        match (location, self) {
+            (SubTypeLocation::Symbol(location), Self::Symbol(symbol)) => table
+                .get_generic_parameter_variance::<Type>(
+                symbol.id.into(),
+                location.0,
+            ),
+
+            (
+                SubTypeLocation::MemberSymbol(location),
+                Self::MemberSymbol(symbol),
+            ) => {
+                let id = match (symbol.id, location.from_parent) {
+                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                        let implementation_id = table
+                            .get(id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .parent_id;
+
+                        let adt_kind_id = table
+                            .get(implementation_id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .signature
+                            .implemented_id;
+
+                        adt_kind_id.into()
+                    }
+                    (MemberSymbolKindID::AdtImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::TraitImplementation(_), true)
+                    | (MemberSymbolKindID::Trait(_), _) => {
+                        return Ok(symbol::Variance::Invariant)
+                    }
+                };
+
+                table.get_generic_parameter_variance::<Type>(id, location.index)
+            }
+
+            _ => Err(GetVarianceError::InvalidLocation),
+        }
     }
 
     fn get_sub_constant_variance(
         &self,
-        _: Self::SubConstantLocation,
-        _: &Table<impl State>,
+        location: Self::SubConstantLocation,
+        table: &Table<impl State>,
     ) -> Result<Variance, GetVarianceError> {
-        Ok(symbol::Variance::Invariant)
+        match (location, self) {
+            (SubConstantLocation::Local, Self::Local(_))
+            | (SubConstantLocation::Array(_), Self::Array(_))
+            | (SubConstantLocation::Enum, Self::Enum(_))
+            | (SubConstantLocation::Struct(_), Self::Struct(_))
+            | (SubConstantLocation::Tuple(_), Self::Tuple(_)) => {
+                Ok(Variance::Covariant)
+            }
+
+            (SubConstantLocation::Symbol(location), Self::Symbol(symbol)) => {
+                table.get_generic_parameter_variance::<Self>(
+                    symbol.id.into(),
+                    location.0,
+                )
+            }
+
+            (
+                SubConstantLocation::MemberSymbol(location),
+                Self::MemberSymbol(symbol),
+            ) => {
+                let id = match (symbol.id, location.from_parent) {
+                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                        let implementation_id = table
+                            .get(id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .parent_id;
+
+                        let adt_kind_id = table
+                            .get(implementation_id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .signature
+                            .implemented_id;
+
+                        adt_kind_id.into()
+                    }
+                    (MemberSymbolKindID::AdtImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::TraitImplementation(_), true)
+                    | (MemberSymbolKindID::Trait(_), _) => {
+                        return Ok(symbol::Variance::Invariant)
+                    }
+                };
+
+                table.get_generic_parameter_variance::<Self>(id, location.index)
+            }
+
+            _ => Err(GetVarianceError::InvalidLocation),
+        }
     }
 
     fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
