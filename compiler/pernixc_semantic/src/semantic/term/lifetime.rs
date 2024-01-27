@@ -71,16 +71,16 @@ pub enum Lifetime {
 impl SubTermLocation<Lifetime, Lifetime> for Never {
     fn assign_sub_term(
         self,
-        term: &mut Lifetime,
-        sub_term: Lifetime,
+        _: &mut Lifetime,
+        _: Lifetime,
     ) -> Result<(), super::AssignSubTermError> {
         match self {}
     }
 
     fn get_sub_variance(
         self,
-        term: &Lifetime,
-        table: &Table<impl State>,
+        _: &Lifetime,
+        _: &Table<impl State>,
     ) -> Result<Variance, super::GetVarianceError> {
         match self {}
     }
@@ -89,16 +89,16 @@ impl SubTermLocation<Lifetime, Lifetime> for Never {
 impl SubTermLocation<Lifetime, Type> for Never {
     fn assign_sub_term(
         self,
-        term: &mut Lifetime,
-        sub_term: Type,
+        _: &mut Lifetime,
+        _: Type,
     ) -> Result<(), super::AssignSubTermError> {
         match self {}
     }
 
     fn get_sub_variance(
         self,
-        term: &Lifetime,
-        table: &Table<impl State>,
+        _: &Lifetime,
+        _: &Table<impl State>,
     ) -> Result<Variance, super::GetVarianceError> {
         match self {}
     }
@@ -107,16 +107,16 @@ impl SubTermLocation<Lifetime, Type> for Never {
 impl SubTermLocation<Lifetime, Constant> for Never {
     fn assign_sub_term(
         self,
-        term: &mut Lifetime,
-        sub_term: Constant,
+        _: &mut Lifetime,
+        _: Constant,
     ) -> Result<(), super::AssignSubTermError> {
         match self {}
     }
 
     fn get_sub_variance(
         self,
-        term: &Lifetime,
-        table: &Table<impl State>,
+        _: &Lifetime,
+        _: &Table<impl State>,
     ) -> Result<Variance, super::GetVarianceError> {
         match self {}
     }
