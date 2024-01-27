@@ -104,7 +104,7 @@ fn substructural_unify<
             return Ok(None);
         };
 
-        result.types.insert(lhs_location, new).unwrap();
+        assert!(result.types.insert(lhs_location, new).is_none());
     }
 
     for term::Match { lhs, rhs, lhs_location, .. } in substructural.lifetimes {
@@ -114,7 +114,7 @@ fn substructural_unify<
             return Ok(None);
         };
 
-        result.lifetimes.insert(lhs_location, new).unwrap();
+        assert!(result.lifetimes.insert(lhs_location, new).is_none());
     }
 
     for term::Match { lhs, rhs, lhs_location, .. } in substructural.constants {
@@ -124,7 +124,7 @@ fn substructural_unify<
             return Ok(None);
         };
 
-        result.constants.insert(lhs_location, new).unwrap();
+        assert!(result.constants.insert(lhs_location, new).is_none());
     }
 
     Ok(Some(Unification {
