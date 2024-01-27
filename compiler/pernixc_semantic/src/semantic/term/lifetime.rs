@@ -8,8 +8,8 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    GetVarianceError, Match, Never, Substructural, Term,
+    constant::Constant, r#type::Type, GenericArguments, Match, Never,
+    SubTermLocation, Substructural, Term,
 };
 use crate::{
     arena::{Arena, ID},
@@ -68,6 +68,60 @@ pub enum Lifetime {
     Forall(Forall),
 }
 
+impl SubTermLocation<Lifetime, Lifetime> for Never {
+    fn assign_sub_term(
+        self,
+        term: &mut Lifetime,
+        sub_term: Lifetime,
+    ) -> Result<(), super::AssignSubTermError> {
+        match self {}
+    }
+
+    fn get_sub_variance(
+        self,
+        term: &Lifetime,
+        table: &Table<impl State>,
+    ) -> Result<Variance, super::GetVarianceError> {
+        match self {}
+    }
+}
+
+impl SubTermLocation<Lifetime, Type> for Never {
+    fn assign_sub_term(
+        self,
+        term: &mut Lifetime,
+        sub_term: Type,
+    ) -> Result<(), super::AssignSubTermError> {
+        match self {}
+    }
+
+    fn get_sub_variance(
+        self,
+        term: &Lifetime,
+        table: &Table<impl State>,
+    ) -> Result<Variance, super::GetVarianceError> {
+        match self {}
+    }
+}
+
+impl SubTermLocation<Lifetime, Constant> for Never {
+    fn assign_sub_term(
+        self,
+        term: &mut Lifetime,
+        sub_term: Constant,
+    ) -> Result<(), super::AssignSubTermError> {
+        match self {}
+    }
+
+    fn get_sub_variance(
+        self,
+        term: &Lifetime,
+        table: &Table<impl State>,
+    ) -> Result<Variance, super::GetVarianceError> {
+        match self {}
+    }
+}
+
 impl Term for Lifetime {
     type SubTypeLocation = Never;
     type SubLifetimeLocation = Never;
@@ -86,54 +140,6 @@ impl Term for Lifetime {
         >,
     > {
         None
-    }
-
-    fn assign_sub_lifetime(
-        &mut self,
-        location: Self::SubLifetimeLocation,
-        _: Lifetime,
-    ) -> Result<(), AssignSubTermError> {
-        match location {}
-    }
-
-    fn assign_sub_type(
-        &mut self,
-        location: Self::SubTypeLocation,
-        _: Type,
-    ) -> Result<(), AssignSubTermError> {
-        match location {}
-    }
-
-    fn assign_sub_constant(
-        &mut self,
-        location: Self::SubConstantLocation,
-        _: Constant,
-    ) -> Result<(), AssignSubTermError> {
-        match location {}
-    }
-
-    fn get_sub_lifetime_variance(
-        &self,
-        location: Self::SubLifetimeLocation,
-        _: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match location {}
-    }
-
-    fn get_sub_type_variance(
-        &self,
-        location: Self::SubTypeLocation,
-        _: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match location {}
-    }
-
-    fn get_sub_constant_variance(
-        &self,
-        location: Self::SubConstantLocation,
-        _: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match location {}
     }
 
     fn is_tuple(&self) -> bool { false }

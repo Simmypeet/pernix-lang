@@ -11,8 +11,8 @@ use enum_as_inner::EnumAsInner;
 use super::{
     lifetime::Lifetime, r#type::Type, AssignSubTermError, GenericArguments,
     GetVarianceError, Local, Match, MemberSymbol, Never,
-    SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTupleTermLocation,
-    Substructural, Symbol, Term,
+    SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTermLocation,
+    SubTupleTermLocation, Substructural, Symbol, Term,
 };
 use crate::{
     arena::{Arena, ID},
@@ -141,6 +141,113 @@ pub enum SubConstantLocation {
     Local,
 }
 
+impl SubTermLocation<Constant, Constant> for SubConstantLocation {
+    fn assign_sub_term(
+        self,
+        term: &mut Constant,
+        sub_term: Constant,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (self, term) {
+            (Self::Tuple(location), Constant::Tuple(tuple)) => {
+                return tuple.assign_sub_term(location, sub_term)
+            }
+
+            (Self::Struct(location), Constant::Struct(constant)) => constant
+                .fields
+                .get_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (
+                Self::Enum,
+                Constant::Enum(Enum {
+                    associated_value: Some(constant), ..
+                }),
+            ) => constant,
+
+            (Self::Array(location), Constant::Array(constant)) => constant
+                .elements
+                .get_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (Self::Symbol(location), Constant::Symbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                symbol
+                    .get_term_mut(location)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
+
+            (Self::Local, Constant::Local(local)) => &mut local.0,
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_term;
+
+        Ok(())
+    }
+
+    fn get_sub_variance(
+        self,
+        term: &Constant,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        match (self, term) {
+            (Self::Local, Constant::Local(_))
+            | (Self::Array(_), Constant::Array(_))
+            | (Self::Enum, Constant::Enum(_))
+            | (Self::Struct(_), Constant::Struct(_))
+            | (Self::Tuple(_), Constant::Tuple(_)) => Ok(Variance::Covariant),
+
+            (Self::Symbol(location), Constant::Symbol(symbol)) => table
+                .get_generic_parameter_variance::<Constant>(
+                    symbol.id.into(),
+                    location.0,
+                ),
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                let id = match (symbol.id, location.from_parent) {
+                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                        let implementation_id = table
+                            .get(id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .parent_id;
+
+                        let adt_kind_id = table
+                            .get(implementation_id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .signature
+                            .implemented_id;
+
+                        adt_kind_id.into()
+                    }
+                    (MemberSymbolKindID::AdtImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::TraitImplementation(_), true)
+                    | (MemberSymbolKindID::Trait(_), _) => {
+                        return Ok(symbol::Variance::Invariant)
+                    }
+                };
+
+                table.get_generic_parameter_variance::<Constant>(
+                    id,
+                    location.index,
+                )
+            }
+
+            _ => Err(GetVarianceError::InvalidLocation),
+        }
+    }
+}
+
 /// The location pointing to a sub-type term in a constant.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
@@ -155,6 +262,81 @@ pub enum SubTypeLocation {
     MemberSymbol(SubMemberSymbolTermLocation),
 }
 
+impl SubTermLocation<Constant, Type> for SubTypeLocation {
+    fn assign_sub_term(
+        self,
+        term: &mut Constant,
+        sub_term: Type,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (self, term) {
+            (Self::Symbol(location), Constant::Symbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                symbol
+                    .get_term_mut(location)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_term;
+
+        Ok(())
+    }
+
+    fn get_sub_variance(
+        self,
+        term: &Constant,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        match (self, term) {
+            (Self::Symbol(location), Constant::Symbol(symbol)) => table
+                .get_generic_parameter_variance::<Type>(
+                    symbol.id.into(),
+                    location.0,
+                ),
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                let id = match (symbol.id, location.from_parent) {
+                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                        let implementation_id = table
+                            .get(id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .parent_id;
+
+                        let adt_kind_id = table
+                            .get(implementation_id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .signature
+                            .implemented_id;
+
+                        adt_kind_id.into()
+                    }
+                    (MemberSymbolKindID::AdtImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::TraitImplementation(_), true)
+                    | (MemberSymbolKindID::Trait(_), _) => {
+                        return Ok(symbol::Variance::Invariant)
+                    }
+                };
+
+                table.get_generic_parameter_variance::<Type>(id, location.index)
+            }
+
+            _ => Err(GetVarianceError::InvalidLocation),
+        }
+    }
+}
+
 /// The location pointing to a sub-lifetime term in a constant.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
@@ -167,6 +349,84 @@ pub enum SubLifetimeLocation {
     /// A constant argument in a [`MemberSymbol`] constant.
     #[from]
     MemberSymbol(SubMemberSymbolTermLocation),
+}
+
+impl SubTermLocation<Constant, Lifetime> for SubLifetimeLocation {
+    fn assign_sub_term(
+        self,
+        term: &mut Constant,
+        sub_term: Lifetime,
+    ) -> Result<(), AssignSubTermError> {
+        let reference = match (self, term) {
+            (Self::Symbol(location), Constant::Symbol(symbol)) => symbol
+                .get_term_mut(location)
+                .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                symbol
+                    .get_term_mut(location)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
+
+            _ => return Err(AssignSubTermError::InvalidLocation),
+        };
+
+        *reference = sub_term;
+
+        Ok(())
+    }
+
+    fn get_sub_variance(
+        self,
+        term: &Constant,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError> {
+        match (self, term) {
+            (Self::Symbol(location), Constant::Symbol(symbol)) => table
+                .get_generic_parameter_variance::<Lifetime>(
+                    symbol.id.into(),
+                    location.0,
+                ),
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                let id = match (symbol.id, location.from_parent) {
+                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                        let implementation_id = table
+                            .get(id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .parent_id;
+
+                        let adt_kind_id = table
+                            .get(implementation_id)
+                            .ok_or(GetVarianceError::InvalidLocation)?
+                            .signature
+                            .implemented_id;
+
+                        adt_kind_id.into()
+                    }
+                    (MemberSymbolKindID::AdtImplementation(id), false) => {
+                        id.into()
+                    }
+
+                    (MemberSymbolKindID::TraitImplementation(_), true)
+                    | (MemberSymbolKindID::Trait(_), _) => {
+                        return Ok(symbol::Variance::Invariant)
+                    }
+                };
+
+                table.get_generic_parameter_variance::<Lifetime>(
+                    id,
+                    location.index,
+                )
+            }
+
+            _ => Err(GetVarianceError::InvalidLocation),
+        }
+    }
 }
 
 /// Represents a compile-time constant term.
@@ -354,278 +614,6 @@ impl Term for Constant {
             }
 
             _ => None,
-        }
-    }
-
-    fn assign_sub_lifetime(
-        &mut self,
-        location: Self::SubLifetimeLocation,
-        sub_lifetime: Lifetime,
-    ) -> Result<(), AssignSubTermError> {
-        let reference = match (location, self) {
-            (SubLifetimeLocation::Symbol(location), Self::Symbol(symbol)) => {
-                symbol
-                    .get_term_mut(location)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-            (
-                SubLifetimeLocation::MemberSymbol(location),
-                Self::MemberSymbol(symbol),
-            ) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-
-            _ => return Err(AssignSubTermError::InvalidLocation),
-        };
-
-        *reference = sub_lifetime;
-
-        Ok(())
-    }
-
-    fn assign_sub_type(
-        &mut self,
-        location: Self::SubTypeLocation,
-        sub_type: Type,
-    ) -> Result<(), AssignSubTermError> {
-        let reference = match (location, self) {
-            (SubTypeLocation::Symbol(location), Self::Symbol(symbol)) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-
-            (
-                SubTypeLocation::MemberSymbol(location),
-                Self::MemberSymbol(symbol),
-            ) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-
-            _ => return Err(AssignSubTermError::InvalidLocation),
-        };
-
-        *reference = sub_type;
-
-        Ok(())
-    }
-
-    fn assign_sub_constant(
-        &mut self,
-        location: Self::SubConstantLocation,
-        sub_constant: Constant,
-    ) -> Result<(), AssignSubTermError> {
-        let reference = match (location, self) {
-            (SubConstantLocation::Tuple(location), Self::Tuple(tuple)) => {
-                return tuple.assign_sub_term(location, sub_constant)
-            }
-
-            (SubConstantLocation::Struct(location), Self::Struct(constant)) => {
-                constant
-                    .fields
-                    .get_mut(location)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-
-            (
-                SubConstantLocation::Enum,
-                Self::Enum(Enum { associated_value: Some(constant), .. }),
-            ) => constant,
-
-            (SubConstantLocation::Array(location), Self::Array(constant)) => {
-                constant
-                    .elements
-                    .get_mut(location)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-
-            (SubConstantLocation::Symbol(location), Self::Symbol(symbol)) => {
-                symbol
-                    .get_term_mut(location)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-
-            (
-                SubConstantLocation::MemberSymbol(location),
-                Self::MemberSymbol(symbol),
-            ) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-
-            (SubConstantLocation::Local, Self::Local(local)) => &mut local.0,
-
-            _ => return Err(AssignSubTermError::InvalidLocation),
-        };
-
-        *reference = sub_constant;
-
-        Ok(())
-    }
-
-    fn get_sub_lifetime_variance(
-        &self,
-        location: Self::SubLifetimeLocation,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match (location, self) {
-            (SubLifetimeLocation::Symbol(location), Self::Symbol(symbol)) => {
-                table.get_generic_parameter_variance::<Lifetime>(
-                    symbol.id.into(),
-                    location.0,
-                )
-            }
-
-            (
-                SubLifetimeLocation::MemberSymbol(location),
-                Self::MemberSymbol(symbol),
-            ) => {
-                let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
-                        let implementation_id = table
-                            .get(id)
-                            .ok_or(GetVarianceError::InvalidLocation)?
-                            .parent_id;
-
-                        let adt_kind_id = table
-                            .get(implementation_id)
-                            .ok_or(GetVarianceError::InvalidLocation)?
-                            .signature
-                            .implemented_id;
-
-                        adt_kind_id.into()
-                    }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolKindID::TraitImplementation(_), true)
-                    | (MemberSymbolKindID::Trait(_), _) => {
-                        return Ok(symbol::Variance::Invariant)
-                    }
-                };
-
-                table.get_generic_parameter_variance::<Lifetime>(
-                    id,
-                    location.index,
-                )
-            }
-
-            _ => Err(GetVarianceError::InvalidLocation),
-        }
-    }
-
-    fn get_sub_type_variance(
-        &self,
-        location: Self::SubTypeLocation,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match (location, self) {
-            (SubTypeLocation::Symbol(location), Self::Symbol(symbol)) => table
-                .get_generic_parameter_variance::<Type>(
-                symbol.id.into(),
-                location.0,
-            ),
-
-            (
-                SubTypeLocation::MemberSymbol(location),
-                Self::MemberSymbol(symbol),
-            ) => {
-                let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
-                        let implementation_id = table
-                            .get(id)
-                            .ok_or(GetVarianceError::InvalidLocation)?
-                            .parent_id;
-
-                        let adt_kind_id = table
-                            .get(implementation_id)
-                            .ok_or(GetVarianceError::InvalidLocation)?
-                            .signature
-                            .implemented_id;
-
-                        adt_kind_id.into()
-                    }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolKindID::TraitImplementation(_), true)
-                    | (MemberSymbolKindID::Trait(_), _) => {
-                        return Ok(symbol::Variance::Invariant)
-                    }
-                };
-
-                table.get_generic_parameter_variance::<Type>(id, location.index)
-            }
-
-            _ => Err(GetVarianceError::InvalidLocation),
-        }
-    }
-
-    fn get_sub_constant_variance(
-        &self,
-        location: Self::SubConstantLocation,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match (location, self) {
-            (SubConstantLocation::Local, Self::Local(_))
-            | (SubConstantLocation::Array(_), Self::Array(_))
-            | (SubConstantLocation::Enum, Self::Enum(_))
-            | (SubConstantLocation::Struct(_), Self::Struct(_))
-            | (SubConstantLocation::Tuple(_), Self::Tuple(_)) => {
-                Ok(Variance::Covariant)
-            }
-
-            (SubConstantLocation::Symbol(location), Self::Symbol(symbol)) => {
-                table.get_generic_parameter_variance::<Self>(
-                    symbol.id.into(),
-                    location.0,
-                )
-            }
-
-            (
-                SubConstantLocation::MemberSymbol(location),
-                Self::MemberSymbol(symbol),
-            ) => {
-                let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
-                        let implementation_id = table
-                            .get(id)
-                            .ok_or(GetVarianceError::InvalidLocation)?
-                            .parent_id;
-
-                        let adt_kind_id = table
-                            .get(implementation_id)
-                            .ok_or(GetVarianceError::InvalidLocation)?
-                            .signature
-                            .implemented_id;
-
-                        adt_kind_id.into()
-                    }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolKindID::TraitImplementation(_), true)
-                    | (MemberSymbolKindID::Trait(_), _) => {
-                        return Ok(symbol::Variance::Invariant)
-                    }
-                };
-
-                table.get_generic_parameter_variance::<Self>(id, location.index)
-            }
-
-            _ => Err(GetVarianceError::InvalidLocation),
         }
     }
 

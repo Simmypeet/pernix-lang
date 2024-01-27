@@ -252,61 +252,47 @@ pub enum GetVarianceError {
     InvalidID,
 }
 
+pub trait SubTermLocation<Term, SubTerm>:
+    Debug
+    + Clone
+    + Copy
+    + PartialEq
+    + Eq
+    + PartialOrd
+    + Ord
+    + Hash
+    + Send
+    + Sync
+    + 'static
+{
+    fn assign_sub_term(
+        self,
+        term: &mut Term,
+        sub_term: SubTerm,
+    ) -> Result<(), AssignSubTermError>;
+
+    fn get_sub_variance(
+        self,
+        term: &Term,
+        table: &Table<impl State>,
+    ) -> Result<Variance, GetVarianceError>;
+}
+
 /// Contains the functionality for determining the properties of a term.
 pub trait Term:
     Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substitute
 {
     /// The type used to retrieve the sub-type term of a term.
-    type SubTypeLocation: Debug
-        + Clone
-        + Copy
-        + PartialEq
-        + Eq
-        + PartialOrd
-        + Ord
-        + Hash
-        + Send
-        + Sync
-        + 'static;
+    type SubTypeLocation: SubTermLocation<Self, Type>;
 
     /// The type used to retrieve the sub-lifetime term of a term.
-    type SubLifetimeLocation: Debug
-        + Clone
-        + Copy
-        + PartialEq
-        + Eq
-        + PartialOrd
-        + Ord
-        + Hash
-        + Send
-        + Sync
-        + 'static;
+    type SubLifetimeLocation: SubTermLocation<Self, Lifetime>;
 
     /// The type used to retrieve the sub-constant term of a term.
-    type SubConstantLocation: Debug
-        + Clone
-        + Copy
-        + PartialEq
-        + Eq
-        + PartialOrd
-        + Ord
-        + Hash
-        + Send
-        + Sync
-        + 'static;
+    type SubConstantLocation: SubTermLocation<Self, Constant>;
 
     /// The type used to retrieve the sub-tern of this type.
-    type ThisSubTermLocation: Debug
-        + Clone
-        + Copy
-        + PartialEq
-        + Eq
-        + PartialOrd
-        + Ord
-        + Hash
-        + Send
-        + Sync
-        + 'static;
+    type ThisSubTermLocation: SubTermLocation<Self, Self>;
 
     /// The type of generic parameters of this term kind.
     type GenericParameter: GenericParameter + 'static;
@@ -334,72 +320,6 @@ pub trait Term:
             Self::SubConstantLocation,
         >,
     >;
-
-    /// Assigns a sub-lifetime to a term.
-    ///
-    /// # Errors
-    ///
-    /// See [`AssignSubTermError`] for more information.
-    fn assign_sub_lifetime(
-        &mut self,
-        location: Self::SubLifetimeLocation,
-        sub_lifetime: Lifetime,
-    ) -> Result<(), AssignSubTermError>;
-
-    /// Assigns a sub-type to a term.
-    ///
-    /// # Errors
-    ///
-    /// See [`AssignSubTermError`] for more information.
-    fn assign_sub_type(
-        &mut self,
-        location: Self::SubTypeLocation,
-        sub_type: Type,
-    ) -> Result<(), AssignSubTermError>;
-
-    /// Assigns a sub-constant to a term.
-    ///
-    /// # Errors
-    ///
-    /// See [`AssignSubTermError`] for more information.
-    fn assign_sub_constant(
-        &mut self,
-        location: Self::SubConstantLocation,
-        sub_constant: Constant,
-    ) -> Result<(), AssignSubTermError>;
-
-    /// Gets the [`Variance`] of the sub-lifetime at the given location.
-    ///
-    /// # Errors
-    ///
-    /// See [`GetVarianceError`] for more information.
-    fn get_sub_lifetime_variance(
-        &self,
-        location: Self::SubLifetimeLocation,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError>;
-
-    /// Gets the [`Variance`] of the sub-type at the given location.
-    ///
-    /// # Errors
-    ///
-    /// See [`GetVarianceError`] for more information.
-    fn get_sub_type_variance(
-        &self,
-        location: Self::SubTypeLocation,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError>;
-
-    /// Gets the [`Variance`] of the sub-constant at the given location.
-    ///
-    /// # Errors
-    ///
-    /// See [`GetVarianceError`] for more information.
-    fn get_sub_constant_variance(
-        &self,
-        location: Self::SubConstantLocation,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError>;
 
     #[doc(hidden)]
     fn is_tuple(&self) -> bool;
