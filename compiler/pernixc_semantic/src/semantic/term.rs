@@ -22,7 +22,7 @@ use super::{
 };
 use crate::{
     arena::{Arena, ID},
-    symbol::{self, GenericID, GenericParameter, GenericParameters, Variance},
+    symbol::{GenericID, GenericParameter, GenericParameters, Variance},
     table::{State, Table},
 };
 
