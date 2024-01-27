@@ -252,6 +252,7 @@ pub enum GetVarianceError {
     InvalidID,
 }
 
+/// Represents a type used to retrieve a sub-term of a particular term.
 pub trait SubTermLocation<Term, SubTerm>:
     Debug
     + Clone
@@ -265,12 +266,22 @@ pub trait SubTermLocation<Term, SubTerm>:
     + Sync
     + 'static
 {
+    /// Assigns the `sub_term` to the given `term` at this location.
+    ///
+    /// # Errors
+    ///
+    /// See [`AssignSubTermError`] for more information.
     fn assign_sub_term(
         self,
         term: &mut Term,
         sub_term: SubTerm,
     ) -> Result<(), AssignSubTermError>;
 
+    /// Returns the variance of the sub-term at this location.
+    ///
+    /// # Errors
+    ///
+    /// See [`GetVarianceError`] for more information.
     fn get_sub_variance(
         self,
         term: &Term,
