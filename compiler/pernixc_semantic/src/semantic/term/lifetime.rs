@@ -1,9 +1,6 @@
 //! Contains the definition of [`Lifetime`].
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use enum_as_inner::EnumAsInner;
 
@@ -15,7 +12,6 @@ use crate::{
     arena::{Arena, ID},
     semantic::{
         predicate::{NonEquality, Outlives, Satisfiability},
-        unification::Unification,
         Premise,
     },
     symbol::{
@@ -190,18 +186,6 @@ impl Term for Lifetime {
         parameters: &GenericParameters,
     ) -> &[ID<Self::GenericParameter>] {
         &parameters.lifetime_order
-    }
-
-    fn get_unification(
-        unification: &Unification,
-    ) -> &HashMap<Self, HashSet<Self>> {
-        &unification.lifetimes
-    }
-
-    fn get_unification_mut(
-        unification: &mut Unification,
-    ) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut unification.lifetimes
     }
 
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {

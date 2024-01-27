@@ -4,7 +4,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use super::{
     equality, predicate,
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type},
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     unification::{self, Unification},
 };
 
@@ -140,19 +140,19 @@ pub trait Cache<Query> {
 ///
 /// Most of the time, you should use [`Default`] as the implementation of this
 /// trait.
-pub trait Session<T>:
+pub trait Session<T: Term>:
     for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
     + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
-    + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
+    + for<'a> Cache<unification::Query<'a, T>, Result = Unification<T>>
     + for<'a> Cache<predicate::TupleQuery<'a, T>, Result = Satisfied>
     + for<'a> Cache<predicate::OutlivesQuery<'a, T>, Result = Satisfied>
 {
 }
 
-impl<T, U> Session<T> for U where
+impl<T: Term, U> Session<T> for U where
     U: for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
         + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
-        + for<'a> Cache<unification::Query<'a, T>, Result = Unification>
+        + for<'a> Cache<unification::Query<'a, T>, Result = Unification<T>>
         + for<'a> Cache<predicate::TupleQuery<'a, T>, Result = Satisfied>
         + for<'a> Cache<predicate::OutlivesQuery<'a, T>, Result = Satisfied>
 {
@@ -169,9 +169,11 @@ pub struct Default {
     type_is_definite: HashMap<Type, Cached<Satisfied>>,
     constant_is_definite: HashMap<Constant, Cached<Satisfied>>,
 
-    lifetime_unifies: HashMap<(Lifetime, Lifetime), Cached<Unification>>,
-    type_unifies: HashMap<(Type, Type), Cached<Unification>>,
-    constant_unifies: HashMap<(Constant, Constant), Cached<Unification>>,
+    lifetime_unifies:
+        HashMap<(Lifetime, Lifetime), Cached<Unification<Lifetime>>>,
+    type_unifies: HashMap<(Type, Type), Cached<Unification<Type>>>,
+    constant_unifies:
+        HashMap<(Constant, Constant), Cached<Unification<Constant>>>,
 
     lifetime_is_tuple: HashMap<Lifetime, Cached<Satisfied>>,
     type_is_tuple: HashMap<Type, Cached<Satisfied>>,
@@ -288,7 +290,7 @@ implements_cache!(
 
 implements_cache!(
     unification::Query<'a, Lifetime>,
-    Unification,
+    Unification<Lifetime>,
     record,
     lifetime_unifies,
     (*record.lhs, *record.rhs),
@@ -297,7 +299,7 @@ implements_cache!(
 
 implements_cache!(
     unification::Query<'a, Type>,
-    Unification,
+    Unification<Type>,
     record,
     type_unifies,
     (record.lhs.clone(), record.rhs.clone()),
@@ -306,7 +308,7 @@ implements_cache!(
 
 implements_cache!(
     unification::Query<'a, Constant>,
-    Unification,
+    Unification<Constant>,
     record,
     constant_unifies,
     (record.lhs.clone(), record.rhs.clone()),

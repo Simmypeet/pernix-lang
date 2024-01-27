@@ -1,10 +1,6 @@
 //! Contains the definition of [`Constant`].
 
-use std::{
-    self,
-    collections::{HashMap, HashSet},
-    ops::Deref,
-};
+use std::{self, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
 
@@ -18,7 +14,6 @@ use crate::{
     arena::{Arena, ID},
     semantic::{
         predicate::{Outlives, Satisfiability},
-        unification::Unification,
         Premise,
     },
     symbol::{
@@ -676,18 +671,6 @@ impl Term for Constant {
         parameters: &GenericParameters,
     ) -> &[ID<Self::GenericParameter>] {
         &parameters.constant_order
-    }
-
-    fn get_unification(
-        unification: &Unification,
-    ) -> &HashMap<Self, HashSet<Self>> {
-        &unification.constants
-    }
-
-    fn get_unification_mut(
-        unification: &mut Unification,
-    ) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut unification.constants
     }
 
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {

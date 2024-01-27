@@ -1,11 +1,7 @@
 //! Contains the three fundamental terms of the language: [`Type`],
 //! [`Constant`], and [`Lifetime`].
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    hash::Hash,
-};
+use std::{fmt::Debug, hash::Hash};
 
 use constant::Constant;
 use enum_as_inner::EnumAsInner;
@@ -16,7 +12,6 @@ use super::{
     mapping::Map,
     predicate::{Outlives, Satisfiability},
     substitution::Substitute,
-    unification::Unification,
     visitor::Element,
     Premise,
 };
@@ -372,16 +367,6 @@ pub trait Term:
     fn get_generic_parameter_order(
         parameters: &GenericParameters,
     ) -> &[ID<Self::GenericParameter>];
-
-    #[doc(hidden)]
-    fn get_unification(
-        unification: &Unification,
-    ) -> &HashMap<Self, HashSet<Self>>;
-
-    #[doc(hidden)]
-    fn get_unification_mut(
-        unification: &mut Unification,
-    ) -> &mut HashMap<Self, HashSet<Self>>;
 
     #[doc(hidden)]
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self];

@@ -1,17 +1,15 @@
 //! Contains the the unification logic.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use super::{
-    equality::equals,
-    session::{ExceedLimitError, Limit, Session},
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Match, Term},
+    equality,
+    mapping::Map,
+    session::{self, ExceedLimitError, Limit, Session},
+    term::{self, constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Premise, Semantic,
 };
-use crate::{
-    semantic::{mapping::Map, session},
-    table::{State, Table},
-};
+use crate::table::{State, Table};
 
 /// Represents a record of unifying two terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -27,33 +25,56 @@ pub trait Config<T> {
     fn unifiable(&mut self, lhs: &T, rhs: &T) -> bool;
 }
 
-/// The result of unification.
-///
-/// The terms on the left-hand side are stored as the keys, and the terms on the
-/// right-hand side are stored as the values.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Contains all the unification of substructural components.
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
-pub struct Unification {
-    pub lifetimes: HashMap<Lifetime, HashSet<Lifetime>>,
-    pub types: HashMap<Type, HashSet<Type>>,
-    pub constants: HashMap<Constant, HashSet<Constant>>,
+pub struct Substructural<T: Term> {
+    pub lifetimes: HashMap<T::SubLifetimeLocation, Unification<Lifetime>>,
+    pub types: HashMap<T::SubTypeLocation, Unification<Type>>,
+    pub constants: HashMap<T::SubConstantLocation, Unification<Constant>>,
 }
 
-impl Unification {
-    /// Combines the other unification into this unification.
-    pub fn combine(&mut self, other: Self) {
-        for (lhs, rhs) in other.lifetimes {
-            self.lifetimes.entry(lhs).or_default().extend(rhs);
-        }
-
-        for (lhs, rhs) in other.types {
-            self.types.entry(lhs).or_default().extend(rhs);
-        }
-
-        for (lhs, rhs) in other.constants {
-            self.constants.entry(lhs).or_default().extend(rhs);
+impl<T> Default for Substructural<T>
+where
+    T: Term,
+{
+    fn default() -> Self {
+        Self {
+            lifetimes: HashMap::new(),
+            types: HashMap::new(),
+            constants: HashMap::new(),
         }
     }
+}
+
+/// Specifies how a term matches another term.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Match<T: Term> {
+    /// The two terms are unified by passing the predicate check in the
+    /// [`Config`].
+    Unifiable(T, T),
+
+    /// The two terms are substructural and can be unified by unifying their
+    /// substructural components.
+    Substructural(Substructural<T>),
+
+    /// The two terms are equal, no unification is needed.
+    Equality,
+}
+
+/// Represents a unification between two terms.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unification<T: Term> {
+    /// If the `lhs` has been rewritten into another form, this field will be
+    /// `Some` of the rewritten term.
+    pub rewritten_lhs: Option<T>,
+
+    /// If the `rhs` has been rewritten into another form, this field will be
+    /// `Some` of the rewritten term.
+    pub rewritten_rhs: Option<T>,
+
+    /// The unification of the `lhs` and `rhs` terms.
+    pub r#match: Match<T>,
 }
 
 fn substructural_unify<
@@ -69,44 +90,48 @@ fn substructural_unify<
     config: &mut C,
     semantic: &mut S,
     session: &mut Limit<R>,
-) -> Result<Option<Unification>, ExceedLimitError> {
+) -> Result<Option<Unification<T>>, ExceedLimitError> {
     let Some(substructural) = lhs.substructural_match(rhs) else {
         return Ok(None);
     };
 
-    let mut unification = Unification::default();
+    let mut result = Substructural::default();
 
-    for Match { lhs, rhs, .. } in substructural.types {
+    for term::Match { lhs, rhs, lhs_location, .. } in substructural.types {
         let Some(new) =
             unify(&lhs, &rhs, premise, table, config, semantic, session)?
         else {
             return Ok(None);
         };
 
-        unification.combine(new);
+        result.types.insert(lhs_location, new).unwrap();
     }
 
-    for Match { lhs, rhs, .. } in substructural.lifetimes {
+    for term::Match { lhs, rhs, lhs_location, .. } in substructural.lifetimes {
         let Some(new) =
             unify(&lhs, &rhs, premise, table, config, semantic, session)?
         else {
             return Ok(None);
         };
 
-        unification.combine(new);
+        result.lifetimes.insert(lhs_location, new).unwrap();
     }
 
-    for Match { lhs, rhs, .. } in substructural.constants {
+    for term::Match { lhs, rhs, lhs_location, .. } in substructural.constants {
         let Some(new) =
             unify(&lhs, &rhs, premise, table, config, semantic, session)?
         else {
             return Ok(None);
         };
 
-        unification.combine(new);
+        result.constants.insert(lhs_location, new).unwrap();
     }
 
-    Ok(Some(unification))
+    Ok(Some(Unification {
+        rewritten_lhs: None,
+        rewritten_rhs: None,
+        r#match: Match::Substructural(result),
+    }))
 }
 
 /// Unifies the two given terms.
@@ -127,9 +152,13 @@ pub fn unify<
     config: &mut C,
     semantic: &mut S,
     session: &mut Limit<R>,
-) -> Result<Option<Unification>, ExceedLimitError> {
-    if equals(lhs, rhs, premise, table, semantic, session)? {
-        return Ok(Some(Unification::default()));
+) -> Result<Option<Unification<T>>, ExceedLimitError> {
+    if equality::equals(lhs, rhs, premise, table, semantic, session)? {
+        return Ok(Some(Unification {
+            rewritten_lhs: None,
+            rewritten_rhs: None,
+            r#match: Match::Equality,
+        }));
     }
 
     let query = Query { lhs, rhs };
@@ -143,13 +172,13 @@ pub fn unify<
     }
 
     if config.unifiable(lhs, rhs) {
-        let mut unification = Unification::default();
+        let unification = Unification {
+            rewritten_lhs: None,
+            rewritten_rhs: None,
+            r#match: Match::Unifiable(lhs.clone(), rhs.clone()),
+        };
 
-        T::get_unification_mut(&mut unification)
-            .entry(lhs.clone())
-            .or_default()
-            .insert(rhs.clone());
-
+        session.mark_as_done(query, unification.clone());
         return Ok(Some(unification));
     }
 
@@ -164,7 +193,7 @@ pub fn unify<
     if let Some(normalized_lhs) =
         semantic.normalize(lhs, premise, table, session)?
     {
-        if let Some(unification) = unify(
+        if let Some(mut unification) = unify(
             &normalized_lhs,
             rhs,
             premise,
@@ -173,6 +202,9 @@ pub fn unify<
             semantic,
             session,
         )? {
+            unification.rewritten_lhs =
+                unification.rewritten_lhs.or(Some(normalized_lhs));
+
             session.mark_as_done(query, unification.clone());
             return Ok(Some(unification));
         }
@@ -181,7 +213,7 @@ pub fn unify<
     if let Some(normalized_rhs) =
         semantic.normalize(rhs, premise, table, session)?
     {
-        if let Some(unification) = unify(
+        if let Some(mut unification) = unify(
             lhs,
             &normalized_rhs,
             premise,
@@ -190,6 +222,9 @@ pub fn unify<
             semantic,
             session,
         )? {
+            unification.rewritten_rhs =
+                unification.rewritten_rhs.or(Some(normalized_rhs));
+
             session.mark_as_done(query, unification.clone());
             return Ok(Some(unification));
         }
@@ -197,22 +232,28 @@ pub fn unify<
 
     // try to look for equivalent terms in the premise
     for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
-        if equals(lhs, key, premise, table, semantic, session)? {
+        if equality::equals(lhs, key, premise, table, semantic, session)? {
             for value in values {
-                if let Some(unification) = unify(
+                if let Some(mut unification) = unify(
                     value, rhs, premise, table, config, semantic, session,
                 )? {
+                    unification.rewritten_lhs =
+                        unification.rewritten_lhs.or(Some(value.clone()));
+
                     session.mark_as_done(query, unification.clone());
                     return Ok(Some(unification));
                 }
             }
         }
 
-        if equals(key, rhs, premise, table, semantic, session)? {
+        if equality::equals(key, rhs, premise, table, semantic, session)? {
             for value in values {
-                if let Some(unification) = unify(
+                if let Some(mut unification) = unify(
                     lhs, value, premise, table, config, semantic, session,
                 )? {
+                    unification.rewritten_rhs =
+                        unification.rewritten_rhs.or(Some(value.clone()));
+
                     session.mark_as_done(query, unification.clone());
                     return Ok(Some(unification));
                 }
