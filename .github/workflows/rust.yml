@@ -21,4 +21,4 @@ jobs:
           crate: cargo-nextest
           locked: true
       - name: Run cargo nextest
-        run: cargo nextest --verbose --release
+        run: cargo nextest run --verbose --release
