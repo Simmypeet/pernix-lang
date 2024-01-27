@@ -12,11 +12,18 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: [
+      ubuntu-latest,
+      macos-latest,
+      windows-latest
+    ]
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --verbose --release
-    - name: Run tests
-      run: cargo test --verbose --release
+    - name: Install cargo-nextest
+      uses: baptiste0928/cargo-install@v1
+      with:
+        crate: cargo-nextest
+        locked: true
+    - name: Run cargo nextest
+      run: cargo nextest --verbose --release
