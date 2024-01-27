@@ -16,7 +16,7 @@ use crate::{
     table::{Index, State, Table},
 };
 
-pub mod deduction;
+// pub mod deduction;
 pub mod equality;
 pub mod mapping;
 pub mod predicate;
