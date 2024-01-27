@@ -365,6 +365,17 @@ pub enum Variance {
     Covariant,
 }
 
+impl Variance {
+    /// Chains two variance together.
+    #[must_use]
+    pub const fn chain(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Covariant, other) => other,
+            (Self::Invariant, _) => Self::Invariant,
+        }
+    }
+}
+
 /// Represents a lifetime parameter, denoted by `'a` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeParameter {
