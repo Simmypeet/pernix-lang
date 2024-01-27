@@ -52,6 +52,9 @@ pub struct Symbol<ID> {
 impl<ID> Symbol<ID> {
     /// Returns a mutable reference to a particular sub-term of this generic
     /// arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
     pub fn get_term_mut<T: Term>(
         &mut self,
         location: SubSymbolTermLocation,
@@ -60,6 +63,20 @@ impl<ID> Symbol<ID> {
             T::get_generic_arguments_mut(&mut self.generic_arguments);
 
         generic_arguments.get_mut(location.0)
+    }
+
+    /// Returns a reference to a particular sub-term of this generic arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
+    pub fn get_term<T: Term>(
+        &self,
+        location: SubSymbolTermLocation,
+    ) -> Option<&T> {
+        let generic_arguments =
+            T::get_generic_arguments(&self.generic_arguments);
+
+        generic_arguments.get(location.0)
     }
 }
 
@@ -87,6 +104,9 @@ pub struct MemberSymbol<ID> {
 impl<ID> MemberSymbol<ID> {
     /// Returns a mutable reference to a particular sub-term of this generic
     /// arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
     pub fn get_term_mut<T: Term>(
         &mut self,
         location: SubMemberSymbolTermLocation,
@@ -98,6 +118,23 @@ impl<ID> MemberSymbol<ID> {
         };
 
         generic_arguments.get_mut(location.index)
+    }
+
+    /// Returns a reference to a particular sub-term of this generic arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
+    pub fn get_term<T: Term>(
+        &self,
+        location: SubMemberSymbolTermLocation,
+    ) -> Option<&T> {
+        let generic_arguments = if location.from_parent {
+            T::get_generic_arguments(&self.parent_generic_arguments)
+        } else {
+            T::get_generic_arguments(&self.member_generic_arguments)
+        };
+
+        generic_arguments.get(location.index)
     }
 }
 
@@ -271,6 +308,10 @@ pub trait SubTermLocation<Term, SubTerm>:
         term: &mut Term,
         sub_term: SubTerm,
     ) -> Result<(), AssignSubTermError>;
+
+    /// Returns the sub-term at this location.
+    #[must_use]
+    fn get_sub_term(self, term: &Term) -> Option<SubTerm>;
 
     /// Returns the variance of the sub-term at this location.
     ///

@@ -184,6 +184,49 @@ impl SubTermLocation<Constant, Constant> for SubConstantLocation {
         Ok(())
     }
 
+    fn get_sub_term(self, term: &Constant) -> Option<Constant> {
+        match (self, term) {
+            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
+                SubTupleTermLocation::Single(single) => {
+                    tuple.elements.get(single).map(|x| x.as_term().clone())
+                }
+                SubTupleTermLocation::Range { begin, end } => tuple
+                    .elements
+                    .get(begin..end)
+                    .map(|x| Constant::Tuple(Tuple { elements: x.to_vec() })),
+            },
+
+            (Self::Struct(location), Constant::Struct(constant)) => {
+                constant.fields.get(location).cloned()
+            }
+
+            (
+                Self::Enum,
+                Constant::Enum(Enum {
+                    associated_value: Some(constant), ..
+                }),
+            ) => Some(constant.deref().clone()),
+
+            (Self::Array(location), Constant::Array(constant)) => {
+                constant.elements.get(location).cloned()
+            }
+
+            (Self::Symbol(location), Constant::Symbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (Self::Local, Constant::Local(local)) => {
+                Some(local.0.deref().clone())
+            }
+
+            _ => None,
+        }
+    }
+
     fn get_sub_variance(
         self,
         term: &Constant,
@@ -280,6 +323,20 @@ impl SubTermLocation<Constant, Type> for SubTypeLocation {
         *reference = sub_term;
 
         Ok(())
+    }
+
+    fn get_sub_term(self, term: &Constant) -> Option<Type> {
+        match (self, term) {
+            (Self::Symbol(location), Constant::Symbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            _ => None,
+        }
     }
 
     fn get_sub_variance(
@@ -420,6 +477,20 @@ impl SubTermLocation<Constant, Lifetime> for SubLifetimeLocation {
             }
 
             _ => Err(GetVarianceError::InvalidLocation),
+        }
+    }
+
+    fn get_sub_term(self, term: &Constant) -> Option<Lifetime> {
+        match (self, term) {
+            (Self::Symbol(location), Constant::Symbol(symbol)) => {
+                symbol.get_term(location).copied()
+            }
+
+            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
+                symbol.get_term(location).copied()
+            }
+
+            _ => None,
         }
     }
 }

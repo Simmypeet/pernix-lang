@@ -73,6 +73,8 @@ impl SubTermLocation<Lifetime, Lifetime> for Never {
         match self {}
     }
 
+    fn get_sub_term(self, _: &Lifetime) -> Option<Lifetime> { match self {} }
+
     fn get_sub_variance(
         self,
         _: &Lifetime,
@@ -91,6 +93,8 @@ impl SubTermLocation<Lifetime, Type> for Never {
         match self {}
     }
 
+    fn get_sub_term(self, _: &Lifetime) -> Option<Type> { match self {} }
+
     fn get_sub_variance(
         self,
         _: &Lifetime,
@@ -108,6 +112,8 @@ impl SubTermLocation<Lifetime, Constant> for Never {
     ) -> Result<(), super::AssignSubTermError> {
         match self {}
     }
+
+    fn get_sub_term(self, _: &Lifetime) -> Option<Constant> { match self {} }
 
     fn get_sub_variance(
         self,
