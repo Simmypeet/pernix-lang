@@ -10,8 +10,7 @@ use proptest::{
 use crate::{
     arena::{Arena, ID},
     semantic::{
-        self,
-        mapping::{self, Map},
+        self, mapping,
         predicate::definite,
         session::{self, ExceedLimitError, Limit, Session},
         term::{
@@ -398,18 +397,10 @@ impl Property<Type> for TypeAlias {
     }
 }
 
-fn remove<T: Term>(equalities: &mut mapping::Mapping, term: &T) {
-    let removed_terms = equalities.remove_equality(term);
-
-    for removed_term in removed_terms.into_iter().flatten() {
-        remove(equalities, &removed_term);
-    }
-}
-
 fn remove_sampled<T: Term>(equalities: &mut mapping::Mapping) -> bool {
     #[allow(clippy::option_if_let_else)]
-    if let Some(sampled) = <T as Map>::get(equalities).keys().next() {
-        remove(equalities, &sampled.clone());
+    if let Some(sampled) = T::get_mapping(equalities).keys().next() {
+        equalities.remove_recursive(&sampled.clone());
         true
     } else {
         false

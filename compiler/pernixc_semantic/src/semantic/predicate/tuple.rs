@@ -1,7 +1,6 @@
 use crate::{
     semantic::{
         equality,
-        mapping::Map,
         session::{Cached, ExceedLimitError, Limit, Satisfied, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         Premise, Semantic,
@@ -56,7 +55,7 @@ impl<T: Term> Tuple<T> {
         }
 
         // check for equivalence
-        for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
+        for (key, values) in T::get_mapping(&premise.equalities_mapping) {
             if equality::equals(term, key, premise, table, semantic, session)? {
                 for value in values {
                     if Self::satisfied(

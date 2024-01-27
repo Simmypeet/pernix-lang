@@ -1,7 +1,11 @@
 //! Contains the three fundamental terms of the language: [`Type`],
 //! [`Constant`], and [`Lifetime`].
 
-use std::{fmt::Debug, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
+};
 
 use constant::Constant;
 use enum_as_inner::EnumAsInner;
@@ -9,7 +13,7 @@ use lifetime::Lifetime;
 use r#type::Type;
 
 use super::{
-    mapping::Map,
+    mapping::Mapping,
     predicate::{Outlives, Satisfiability},
     substitution::Substitute,
     unification::{self, Unification},
@@ -328,7 +332,7 @@ pub trait SubTermLocation<Term, SubTerm>:
 
 /// Contains the functionality for determining the properties of a term.
 pub trait Term:
-    Debug + Eq + Hash + Map + Sized + Clone + Ord + Element + Substitute
+    Debug + Eq + Hash + Sized + Clone + Ord + Element + Substitute
 {
     /// The type used to retrieve the sub-type term of a term.
     type SubTypeLocation: SubTermLocation<Self, Type>;
@@ -406,6 +410,14 @@ pub trait Term:
     ) -> impl Iterator<Item = &'a Unification<Self>>
     where
         Self: 'a;
+
+    #[doc(hidden)]
+    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>>;
+
+    #[doc(hidden)]
+    fn get_mapping_mut(
+        mapping: &mut Mapping,
+    ) -> &mut HashMap<Self, HashSet<Self>>;
 
     #[doc(hidden)]
     fn get_generic_parameters(

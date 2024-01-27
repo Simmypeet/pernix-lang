@@ -1,5 +1,7 @@
 //! Contains the definition of [`Type`].
 
+use std::collections::{HashMap, HashSet};
+
 use enum_as_inner::EnumAsInner;
 
 use super::{
@@ -11,6 +13,7 @@ use super::{
 use crate::{
     arena::{Arena, ID},
     semantic::{
+        mapping::Mapping,
         predicate::{NonEquality, Outlives, Satisfiability},
         unification::{Substructural, Unification},
         Premise,
@@ -811,6 +814,16 @@ impl Term for Type {
         Self: 'a,
     {
         substructural.types.values()
+    }
+
+    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+        &mapping.types
+    }
+
+    fn get_mapping_mut(
+        mapping: &mut Mapping,
+    ) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut mapping.types
     }
 
     fn get_generic_parameters(

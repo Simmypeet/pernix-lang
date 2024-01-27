@@ -1,6 +1,10 @@
 //! Contains the definition of [`Constant`].
 
-use std::{self, ops::Deref};
+use std::{
+    self,
+    collections::{HashMap, HashSet},
+    ops::Deref,
+};
 
 use enum_as_inner::EnumAsInner;
 
@@ -13,6 +17,7 @@ use super::{
 use crate::{
     arena::{Arena, ID},
     semantic::{
+        mapping::Mapping,
         predicate::{Outlives, Satisfiability},
         unification::{Substructural, Unification},
         Premise,
@@ -764,6 +769,16 @@ impl Term for Constant {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.constants
+    }
+
+    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+        &mapping.constants
+    }
+
+    fn get_mapping_mut(
+        mapping: &mut Mapping,
+    ) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut mapping.constants
     }
 }
 

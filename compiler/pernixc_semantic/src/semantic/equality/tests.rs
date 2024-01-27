@@ -11,8 +11,7 @@ use super::equals;
 use crate::{
     arena::{Arena, ID},
     semantic::{
-        self,
-        mapping::{self, Map},
+        self, mapping,
         session::{self, ExceedLimitError, Limit, Session},
         substitution::{Substitute, Substitution},
         term::{
@@ -937,18 +936,10 @@ impl Property<Type> for TypeAlias {
     }
 }
 
-fn remove<T: Term>(equalities: &mut mapping::Mapping, term: &T) {
-    let removeds = equalities.remove_equality(term);
-
-    for removed in removeds.into_iter().flatten() {
-        remove(equalities, &removed);
-    }
-}
-
 fn remove_sampled<T: Term>(equalities: &mut mapping::Mapping) -> bool {
     #[allow(clippy::option_if_let_else)]
-    if let Some(sampled) = <T as Map>::get(equalities).keys().next() {
-        remove(equalities, &sampled.clone());
+    if let Some(sampled) = T::get_mapping(equalities).keys().next() {
+        equalities.remove_recursive(&sampled.clone());
         true
     } else {
         false

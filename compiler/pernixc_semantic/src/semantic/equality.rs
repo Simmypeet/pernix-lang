@@ -1,7 +1,6 @@
 //! Implements the logic for equality checking.
 
 use super::{
-    mapping::Map,
     session::{self, ExceedLimitError, Limit, Satisfied, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Match, Term},
     Premise, Semantic,
@@ -163,7 +162,7 @@ pub fn equals<
         return Ok(true);
     }
 
-    for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
+    for (key, values) in T::get_mapping(&premise.equalities_mapping) {
         if equals_without_mapping(lhs, key, premise, table, semantic, session)?
         {
             for value in values {
@@ -181,6 +180,24 @@ pub fn equals<
                     session.mark_as_done(Query { lhs, rhs }, Satisfied);
                     return Ok(true);
                 }
+            }
+        }
+
+        for value in values {
+            if equals_without_mapping(
+                lhs, value, premise, table, semantic, session,
+            )? && equals(key, rhs, premise, table, semantic, session)?
+            {
+                session.mark_as_done(Query { lhs, rhs }, Satisfied);
+                return Ok(true);
+            }
+
+            if equals_without_mapping(
+                value, rhs, premise, table, semantic, session,
+            )? && equals(lhs, key, premise, table, semantic, session)?
+            {
+                session.mark_as_done(Query { lhs, rhs }, Satisfied);
+                return Ok(true);
             }
         }
     }

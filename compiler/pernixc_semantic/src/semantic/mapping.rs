@@ -1,38 +1,18 @@
 //! Contains the definition of [`Mapping`]
 
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-};
+use std::collections::{HashMap, HashSet};
 
 use getset::Getters;
 
-use super::term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use super::term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term};
 
 /// Represents an equality mapping between two terms.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]
 #[allow(missing_docs)]
 pub struct Mapping {
-    /// The list of lifetimes that are equal to each other.
-    #[get = "pub"]
-    lifetimes: HashMap<Lifetime, HashSet<Lifetime>>,
-
-    /// The list of types that are equal to each other.
-    #[get = "pub"]
-    types: HashMap<Type, HashSet<Type>>,
-
-    /// The list of constants that are equal to each other.
-    #[get = "pub"]
-    constants: HashMap<Constant, HashSet<Constant>>,
-}
-
-macro_rules! insert_item {
-    ($map:expr, $expr:expr) => {{
-        for (lhs, rhs) in $expr {
-            $map.entry(lhs.clone()).or_default().insert(rhs.clone());
-            $map.entry(rhs).or_default().insert(lhs);
-        }
-    }};
+    pub lifetimes: HashMap<Lifetime, HashSet<Lifetime>>,
+    pub types: HashMap<Type, HashSet<Type>>,
+    pub constants: HashMap<Constant, HashSet<Constant>>,
 }
 
 impl Mapping {
@@ -44,48 +24,56 @@ impl Mapping {
     ) -> Self {
         let mut mappings = Self::default();
 
-        insert_item!(mappings.lifetimes, lifetimes);
-        insert_item!(mappings.types, types);
-        insert_item!(mappings.constants, constants);
+        for (first, second) in lifetimes {
+            mappings.insert(first, second);
+        }
+        for (first, second) in types {
+            mappings.insert(first, second);
+        }
+        for (first, second) in constants {
+            mappings.insert(first, second);
+        }
 
         mappings
     }
 
     /// Inserts a new pair of equalities into the mapping.
-    pub fn insert<T: Map + Clone + Ord + Hash + Eq>(
-        &mut self,
-        first: T,
-        second: T,
-    ) {
-        T::get_mut(self)
-            .entry(first.clone())
-            .or_default()
-            .insert(second.clone());
-        T::get_mut(self).entry(second).or_default().insert(first);
+    pub fn insert<T: Term>(&mut self, first: T, second: T) {
+        T::get_mapping_mut(self).entry(first).or_default().insert(second);
     }
 
-    /// Removes all the equalities that are associated with the given term.
-    pub fn remove_equality<T: Map + Ord + Hash + Eq>(
-        &mut self,
-        term: &T,
-    ) -> Option<HashSet<T>> {
-        let map = T::get_mut(self);
+    fn remove_recursive_internal<T: Term>(&mut self, term: &T) -> HashSet<T> {
+        let map = T::get_mapping_mut(self);
 
-        let Some(terms) = map.remove(term) else {
-            return None;
-        };
+        let mut terms = map.remove(term).unwrap_or_default();
+        let mut results = terms.clone();
 
-        for t in &terms {
-            if let Some(x) = map.get_mut(t) {
-                x.remove(term);
+        let mut to_be_removed = Vec::<T>::new();
 
-                if x.is_empty() {
-                    map.remove(t);
-                }
+        for (key, values) in map.iter_mut() {
+            if values.remove(term) {
+                terms.insert(key.clone());
+            }
+
+            if values.is_empty() {
+                to_be_removed.push(key.clone());
             }
         }
 
-        Some(terms)
+        for key in to_be_removed {
+            map.remove(&key);
+        }
+
+        for term in terms {
+            results.extend(self.remove_recursive_internal(&term));
+        }
+
+        results
+    }
+
+    /// Removes all the equalities that are associated with the given term.
+    pub fn remove_recursive<T: Term>(&mut self, term: &T) {
+        self.remove_recursive_internal(term);
     }
 
     /// Gets the number of equalities in this mapping.
@@ -101,44 +89,5 @@ impl Mapping {
                     .chain(self.constants.values().map(HashSet::len)),
             )
             .sum()
-    }
-}
-
-/// Used to map a value to a set of equivalent values.
-pub trait Map: Sized {
-    /// Gets a reference to the mapping of this kind of term.
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>>;
-
-    /// Gets a mutable reference to the mapping of this kind of term.
-    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>>;
-}
-
-impl Map for Lifetime {
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
-        &mapping.lifetimes
-    }
-
-    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut mapping.lifetimes
-    }
-}
-
-impl Map for Constant {
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
-        &mapping.constants
-    }
-
-    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut mapping.constants
-    }
-}
-
-impl Map for Type {
-    fn get(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
-        &mapping.types
-    }
-
-    fn get_mut(mapping: &mut Mapping) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut mapping.types
     }
 }

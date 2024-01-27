@@ -2,7 +2,6 @@ use super::Satisfiability;
 use crate::{
     semantic::{
         equality,
-        mapping::Map,
         session::{self, ExceedLimitError, Limit, Satisfied, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Premise, Semantic,
@@ -156,7 +155,7 @@ pub fn definite<
         }
     }
 
-    for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
+    for (key, values) in T::get_mapping(&premise.equalities_mapping) {
         if equality::equals(term, key, premise, table, semantic, session)? {
             for value in values {
                 if definite(value, premise, table, semantic, session)? {

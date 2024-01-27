@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use super::{
     equality,
-    mapping::Map,
     session::{self, ExceedLimitError, Limit, Session},
     term::{self, constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Premise, Semantic,
@@ -231,7 +230,7 @@ pub fn unify<
     }
 
     // try to look for equivalent terms in the premise
-    for (key, values) in <T as Map>::get(&premise.equalities_mapping) {
+    for (key, values) in T::get_mapping(&premise.equalities_mapping) {
         if equality::equals(lhs, key, premise, table, semantic, session)? {
             for value in values {
                 if let Some(mut unification) = unify(
