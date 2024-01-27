@@ -2,20 +2,21 @@ use std::{fmt::Debug, result::Result};
 
 use proptest::{
     arbitrary::Arbitrary,
-    prop_assert, prop_oneof, proptest,
+    prop_assert, prop_assert_eq, prop_oneof, proptest,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{unify, Config};
+use super::{unify, Config, Unification};
 use crate::{
     semantic::{
         self,
         equality::equals,
+        mapping,
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
-            GenericArguments, Symbol, Term,
+            GenericArguments, SubTermLocation, Symbol, Term,
         },
         Premise, Semantic,
     },
@@ -359,6 +360,112 @@ where
     }
 }
 
+fn add_equality_mapping_from_unification<T: Term>(
+    unification: &Unification<T>,
+    equality_mapping: &mut mapping::Mapping,
+) -> TestCaseResult
+where
+    GenericParameterUnifyConfig:
+        Config<T> + Config<Lifetime> + Config<Type> + Config<Constant>,
+{
+    match &unification.r#match {
+        super::Match::Unifiable(lhs, rhs) => {
+            let mut config = GenericParameterUnifyConfig;
+
+            prop_assert!(config.unifiable(lhs, rhs));
+            equality_mapping.insert(lhs.clone(), rhs.clone());
+
+            Ok(())
+        }
+        super::Match::Substructural(substructural) => {
+            for lifetime_unification in substructural.lifetimes.values() {
+                add_equality_mapping_from_unification::<Lifetime>(
+                    lifetime_unification,
+                    equality_mapping,
+                )?;
+            }
+
+            for type_unification in substructural.types.values() {
+                add_equality_mapping_from_unification::<Type>(
+                    type_unification,
+                    equality_mapping,
+                )?;
+            }
+
+            for constant_unification in substructural.constants.values() {
+                add_equality_mapping_from_unification::<Constant>(
+                    constant_unification,
+                    equality_mapping,
+                )?;
+            }
+
+            Ok(())
+        }
+        super::Match::Equality => Ok(()),
+    }
+}
+
+fn rewrite_term<T: Term + 'static>(
+    lhs: &mut T,
+    unification: Unification<T>,
+) -> TestCaseResult {
+    if let Some(rewritten) = unification.rewritten_lhs {
+        *lhs = rewritten;
+    }
+
+    match unification.r#match {
+        super::Match::Unifiable(new_lhs, rhs) => {
+            prop_assert_eq!(&*lhs, &new_lhs);
+            *lhs = rhs;
+            Ok(())
+        }
+        super::Match::Substructural(substructural) => {
+            for (lifetime_location, lifetime_unification) in
+                substructural.lifetimes
+            {
+                let mut sub_lifetime = lifetime_location
+                    .get_sub_term(lhs)
+                    .ok_or_else(|| TestCaseError::fail("invalid location"))?;
+
+                rewrite_term(&mut sub_lifetime, lifetime_unification)?;
+
+                lifetime_location
+                    .assign_sub_term(lhs, sub_lifetime)
+                    .map_err(|_| TestCaseError::fail("invalid location"))?;
+            }
+
+            for (type_location, type_unification) in substructural.types {
+                let mut sub_type = type_location
+                    .get_sub_term(lhs)
+                    .ok_or_else(|| TestCaseError::fail("invalid location"))?;
+
+                rewrite_term(&mut sub_type, type_unification)?;
+
+                type_location
+                    .assign_sub_term(lhs, sub_type)
+                    .map_err(|_| TestCaseError::fail("invalid location"))?;
+            }
+
+            for (constant_location, constant_unification) in
+                substructural.constants
+            {
+                let mut sub_constant = constant_location
+                    .get_sub_term(lhs)
+                    .ok_or_else(|| TestCaseError::fail("invalid location"))?;
+
+                rewrite_term(&mut sub_constant, constant_unification)?;
+
+                constant_location
+                    .assign_sub_term(lhs, sub_constant)
+                    .map_err(|_| TestCaseError::fail("invalid location"))?;
+            }
+
+            Ok(())
+        }
+        super::Match::Equality => Ok(()),
+    }
+}
+
 pub fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
@@ -372,7 +479,7 @@ where
     let mut premise = Premise::default();
     let mut config = GenericParameterUnifyConfig;
 
-    let (lhs, rhs) = property.generate();
+    let (mut lhs, rhs) = property.generate();
 
     if equals(
         &lhs,
@@ -399,57 +506,37 @@ where
     .map_err(|_| TestCaseError::reject("too complex property"))?
     .unwrap();
 
-    for (key, values) in Type::get_unification(&unification) {
-        for value in values {
-            prop_assert!(
-                <GenericParameterUnifyConfig as Config<Type>>::unifiable(
-                    &mut config,
-                    key,
-                    value
-                )
-            );
+    // the terms will equal when adding the equality mapping
+    {
+        let mut premise_cloned = premise.clone();
+        add_equality_mapping_from_unification(
+            &unification,
+            &mut premise_cloned.equalities_mapping,
+        )?;
 
-            premise.equalities_mapping.insert(key.clone(), value.clone());
-        }
+        prop_assert!(equals(
+            &lhs,
+            &rhs,
+            &premise_cloned,
+            &table,
+            &mut semantic::Default,
+            &mut Limit::new(&mut session::Default::default()),
+        )?);
     }
 
-    for (key, values) in Lifetime::get_unification(&unification) {
-        for value in values {
-            prop_assert!(
-                <GenericParameterUnifyConfig as Config<Lifetime>>::unifiable(
-                    &mut config,
-                    key,
-                    value
-                )
-            );
+    // the terms will equal by rewriting the lhs
+    {
+        rewrite_term(&mut lhs, unification)?;
 
-            premise.equalities_mapping.insert(*key, *value);
-        }
+        prop_assert!(equals(
+            &lhs,
+            &rhs,
+            &premise,
+            &table,
+            &mut semantic::Default,
+            &mut Limit::new(&mut session::Default::default()),
+        )?);
     }
-
-    for (key, values) in Constant::get_unification(&unification) {
-        for value in values {
-            prop_assert!(
-                <GenericParameterUnifyConfig as Config<Constant>>::unifiable(
-                    &mut config,
-                    key,
-                    value
-                )
-            );
-
-            premise.equalities_mapping.insert(key.clone(), value.clone());
-        }
-    }
-
-    prop_assert!(equals(
-        &lhs,
-        &rhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .map_err(|_| TestCaseError::reject("too complex property"))?);
 
     Ok(())
 }
