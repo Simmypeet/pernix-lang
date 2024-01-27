@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, r#type::Type, GenericArguments, Match, Never,
-    SubTermLocation, Substructural, Term,
+    SubTermLocation, SubstructuralMatching, Term,
 };
 use crate::{
     arena::{Arena, ID},
@@ -135,7 +135,7 @@ impl Term for Lifetime {
         &self,
         _: &Self,
     ) -> Option<
-        Substructural<
+        SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -162,8 +162,8 @@ impl Term for Lifetime {
         Satisfiability::Satisfied
     }
 
-    fn get_substructural(
-        substructural: &Substructural<
+    fn get_substructural_matching(
+        substructural: &SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -172,8 +172,8 @@ impl Term for Lifetime {
         &substructural.lifetimes
     }
 
-    fn get_substructural_mut(
-        substructural: &mut Substructural<
+    fn get_substructural_matching_mut(
+        substructural: &mut SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,

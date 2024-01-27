@@ -235,7 +235,7 @@ pub struct Match<T, Location> {
 /// See [`Term::substructural_match`] for more information.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub struct Substructural<
+pub struct SubstructuralMatching<
     SubLifetimeLocation,
     SubTypeLocation,
     SubConstantLocation,
@@ -245,7 +245,7 @@ pub struct Substructural<
     pub constants: Vec<Match<Constant, SubConstantLocation>>,
 }
 
-impl<L, T, C> Default for Substructural<L, T, C> {
+impl<L, T, C> Default for SubstructuralMatching<L, T, C> {
     fn default() -> Self {
         Self { lifetimes: Vec::new(), types: Vec::new(), constants: Vec::new() }
     }
@@ -361,7 +361,7 @@ pub trait Term:
         &self,
         other: &Self,
     ) -> Option<
-        Substructural<
+        SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -382,8 +382,8 @@ pub trait Term:
     fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
-    fn get_substructural(
-        substructural: &Substructural<
+    fn get_substructural_matching(
+        substructural: &SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -391,8 +391,8 @@ pub trait Term:
     ) -> &Vec<Match<Self, Self::ThisSubTermLocation>>;
 
     #[doc(hidden)]
-    fn get_substructural_mut(
-        substructural: &mut Substructural<
+    fn get_substructural_matching_mut(
+        substructural: &mut SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -470,7 +470,7 @@ where
         to: &'a Self,
         swap: bool,
     ) -> Option<
-        Substructural<
+        SubstructuralMatching<
             T::SubLifetimeLocation,
             T::SubTypeLocation,
             T::SubConstantLocation,
@@ -484,7 +484,7 @@ where
             rhs: T,
             lhs_location: SubTupleTermLocation,
             rhs_location: SubTupleTermLocation,
-            existing: &mut Substructural<
+            existing: &mut SubstructuralMatching<
                 T::SubLifetimeLocation,
                 T::SubTypeLocation,
                 T::SubConstantLocation,
@@ -494,14 +494,14 @@ where
             T::ThisSubTermLocation: From<SubTupleTermLocation>,
         {
             if swap {
-                T::get_substructural_mut(existing).push(Match {
+                T::get_substructural_matching_mut(existing).push(Match {
                     lhs: rhs,
                     rhs: lhs,
                     lhs_location: rhs_location.into(),
                     rhs_location: lhs_location.into(),
                 });
             } else {
-                T::get_substructural_mut(existing).push(Match {
+                T::get_substructural_matching_mut(existing).push(Match {
                     lhs,
                     rhs,
                     lhs_location: lhs_location.into(),
@@ -519,7 +519,7 @@ where
                     return None;
                 }
 
-                let mut existing = Substructural::default();
+                let mut existing = SubstructuralMatching::default();
 
                 for (idx, (from_element, to_element)) in
                     from.elements.iter().zip(&to.elements).enumerate()
@@ -545,7 +545,7 @@ where
             (_, _) => return None,
         }
 
-        let mut existing = Substructural::default();
+        let mut existing = SubstructuralMatching::default();
 
         if from.elements.len() > to.elements.len() + 1 {
             return None;
@@ -629,7 +629,7 @@ where
         &'a self,
         to: &'a Self,
     ) -> Option<
-        Substructural<
+        SubstructuralMatching<
             T::SubLifetimeLocation,
             T::SubTypeLocation,
             T::SubConstantLocation,
@@ -647,9 +647,9 @@ impl GenericArguments {
     fn substructural_match<L, T, C, Y>(
         &self,
         other: &Self,
-        mut existing: Substructural<L, T, C>,
+        mut existing: SubstructuralMatching<L, T, C>,
         to_location: impl Fn(usize) -> Y,
-    ) -> Option<Substructural<L, T, C>>
+    ) -> Option<SubstructuralMatching<L, T, C>>
     where
         Y: Into<L> + Into<T> + Into<C> + Copy,
     {

@@ -8,7 +8,7 @@ use super::{
     lifetime::Lifetime, r#type::Type, AssignSubTermError, GenericArguments,
     GetVarianceError, Local, Match, MemberSymbol, Never,
     SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTermLocation,
-    SubTupleTermLocation, Substructural, Symbol, Term,
+    SubTupleTermLocation, SubstructuralMatching, Symbol, Term,
 };
 use crate::{
     arena::{Arena, ID},
@@ -563,7 +563,7 @@ impl Term for Constant {
         &self,
         other: &Self,
     ) -> Option<
-        Substructural<
+        SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -573,7 +573,7 @@ impl Term for Constant {
             (Self::Struct(lhs), Self::Struct(rhs))
                 if lhs.id == rhs.id && lhs.fields.len() == rhs.fields.len() =>
             {
-                Some(Substructural {
+                Some(SubstructuralMatching {
                     lifetimes: Vec::new(),
                     types: Vec::new(),
                     constants: lhs
@@ -595,7 +595,7 @@ impl Term for Constant {
                 if lhs.variant_id == rhs.variant_id =>
             {
                 match (&lhs.associated_value, &rhs.associated_value) {
-                    (Some(lhs), Some(rhs)) => Some(Substructural {
+                    (Some(lhs), Some(rhs)) => Some(SubstructuralMatching {
                         lifetimes: Vec::new(),
                         types: Vec::new(),
                         constants: vec![Match {
@@ -605,7 +605,7 @@ impl Term for Constant {
                             rhs_location: SubConstantLocation::Enum,
                         }],
                     }),
-                    (None, None) => Some(Substructural::default()),
+                    (None, None) => Some(SubstructuralMatching::default()),
                     _ => None,
                 }
             }
@@ -613,7 +613,7 @@ impl Term for Constant {
             (Self::Array(lhs), Self::Array(rhs))
                 if lhs.elements.len() == rhs.elements.len() =>
             {
-                Some(Substructural {
+                Some(SubstructuralMatching {
                     lifetimes: Vec::new(),
                     types: Vec::new(),
                     constants: lhs
@@ -632,16 +632,18 @@ impl Term for Constant {
                 })
             }
 
-            (Self::Local(lhs), Self::Local(rhs)) => Some(Substructural {
-                lifetimes: Vec::new(),
-                types: Vec::new(),
-                constants: vec![Match {
-                    lhs: lhs.0.deref().clone(),
-                    rhs: rhs.0.deref().clone(),
-                    lhs_location: SubConstantLocation::Local,
-                    rhs_location: SubConstantLocation::Local,
-                }],
-            }),
+            (Self::Local(lhs), Self::Local(rhs)) => {
+                Some(SubstructuralMatching {
+                    lifetimes: Vec::new(),
+                    types: Vec::new(),
+                    constants: vec![Match {
+                        lhs: lhs.0.deref().clone(),
+                        rhs: rhs.0.deref().clone(),
+                        lhs_location: SubConstantLocation::Local,
+                        rhs_location: SubConstantLocation::Local,
+                    }],
+                })
+            }
 
             (Self::Tuple(lhs), Self::Tuple(rhs)) => {
                 lhs.substructural_match(rhs)
@@ -650,7 +652,7 @@ impl Term for Constant {
             (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => {
                 lhs.generic_arguments.substructural_match(
                     &rhs.generic_arguments,
-                    Substructural::default(),
+                    SubstructuralMatching::default(),
                     SubSymbolTermLocation,
                 )
             }
@@ -661,7 +663,7 @@ impl Term for Constant {
                 lhs.parent_generic_arguments
                     .substructural_match(
                         &rhs.parent_generic_arguments,
-                        Substructural::default(),
+                        SubstructuralMatching::default(),
                         |index| SubMemberSymbolTermLocation {
                             index,
                             from_parent: true,
@@ -712,8 +714,8 @@ impl Term for Constant {
         }
     }
 
-    fn get_substructural(
-        substructural: &Substructural<
+    fn get_substructural_matching(
+        substructural: &SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -722,8 +724,8 @@ impl Term for Constant {
         &substructural.constants
     }
 
-    fn get_substructural_mut(
-        substructural: &mut Substructural<
+    fn get_substructural_matching_mut(
+        substructural: &mut SubstructuralMatching<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
