@@ -12,6 +12,7 @@ use super::{
     mapping::Map,
     predicate::{Outlives, Satisfiability},
     substitution::Substitute,
+    unification::{self, Unification},
     visitor::Element,
     Premise,
 };
@@ -398,6 +399,13 @@ pub trait Term:
             Self::SubConstantLocation,
         >,
     ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>>;
+
+    #[doc(hidden)]
+    fn get_substructural_unification<'a, T: Term>(
+        substructural: &'a unification::Substructural<T>,
+    ) -> impl Iterator<Item = &'a Unification<Self>>
+    where
+        Self: 'a;
 
     #[doc(hidden)]
     fn get_generic_parameters(

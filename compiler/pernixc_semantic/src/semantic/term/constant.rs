@@ -14,6 +14,7 @@ use crate::{
     arena::{Arena, ID},
     semantic::{
         predicate::{Outlives, Satisfiability},
+        unification::{Substructural, Unification},
         Premise,
     },
     symbol::{
@@ -732,6 +733,15 @@ impl Term for Constant {
         >,
     ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>> {
         &mut substructural.constants
+    }
+
+    fn get_substructural_unification<'a, T: Term>(
+        substructural: &'a Substructural<T>,
+    ) -> impl Iterator<Item = &'a Unification<Self>>
+    where
+        Self: 'a,
+    {
+        substructural.constants.values()
     }
 
     fn get_generic_parameters(
