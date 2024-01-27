@@ -1892,7 +1892,7 @@ impl SourceElement for ConstantDefinition {
 }
 
 /// Syntax Synopsis:
-/// ```
+/// ``` txt
 /// Constant:
 ///     '=' Expression ';'
 ///     ;
