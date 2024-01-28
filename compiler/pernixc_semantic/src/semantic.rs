@@ -218,27 +218,13 @@ impl Semantic<Constant> for Default {
         R: Session<Type> + Session<Lifetime> + Session<Constant>,
     >(
         &mut self,
-        constant: &Constant,
+        _: &Constant,
         _: &Lifetime,
         _: &Premise,
         _: &Table<impl State>,
         _: &mut Limit<R>,
     ) -> Result<Satisfiability, ExceedLimitError> {
         // constants value do not have lifetimes
-        match constant {
-            Constant::Primitive(_) => Ok(Satisfiability::Satisfied),
-
-            Constant::Parameter(_) | Constant::Inference(_) => {
-                Ok(Satisfiability::Unsatisfied)
-            }
-
-            Constant::Struct(_)
-            | Constant::Enum(_)
-            | Constant::Array(_)
-            | Constant::Local(_)
-            | Constant::Tuple(_)
-            | Constant::Symbol(_)
-            | Constant::MemberSymbol(_) => Ok(Satisfiability::Congruent),
-        }
+        Ok(Satisfiability::Satisfied)
     }
 }
