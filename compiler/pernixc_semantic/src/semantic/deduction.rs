@@ -7,13 +7,15 @@ use std::{
 
 use super::{
     equality,
+    mapping::Mapping,
     session::{ExceedLimitError, Limit, Session},
     substitution::Substitution,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
-    unification, Premise, Semantic,
+    unification::{self, Unification},
+    Premise, Semantic,
 };
 use crate::{
     semantic::term::{constant, r#type, MemberSymbol},
@@ -55,6 +57,31 @@ impl unification::Config<Constant> for DeductionUnifyingConfig {
     }
 }
 
+fn unification_to_mapping<T: Term>(
+    unification: Unification<T>,
+    mapping: &mut Mapping,
+) {
+    match unification.r#match {
+        unification::Match::Unifiable(lhs, rhs) => {
+            T::get_mapping_mut(mapping).entry(lhs).or_default().insert(rhs);
+        }
+        unification::Match::Substructural(substructural) => {
+            for (_, unification) in substructural.lifetimes {
+                unification_to_mapping(unification, mapping);
+            }
+
+            for (_, unification) in substructural.types {
+                unification_to_mapping(unification, mapping);
+            }
+
+            for (_, unification) in substructural.constants {
+                unification_to_mapping(unification, mapping);
+            }
+        }
+        unification::Match::Equality => {}
+    }
+}
+
 fn unify<
     T: Term,
     S: Semantic<T> + Semantic<Type> + Semantic<Lifetime> + Semantic<Constant>,
@@ -66,8 +93,8 @@ fn unify<
     table: &Table<impl State>,
     semantic: &mut S,
     session: &mut Limit<R>,
-    mut existing: unification::Unification,
-) -> Result<Option<unification::Unification>, ExceedLimitError>
+    mut existing: Mapping,
+) -> Result<Option<Mapping>, ExceedLimitError>
 where
     DeductionUnifyingConfig: unification::Config<T>,
 {
@@ -85,7 +112,7 @@ where
             return Ok(None);
         };
 
-        existing.combine(new);
+        unification_to_mapping(new, &mut existing);
     }
 
     Ok(Some(existing))
@@ -201,7 +228,7 @@ impl GenericArguments {
             table,
             semantic,
             session,
-            unification::Unification::default(),
+            Mapping::default(),
         )?
         else {
             return Ok(None);
@@ -267,9 +294,7 @@ impl GenericArguments {
                 session,
             )?
             else {
-                return Ok(None);
-            };
-
+                return Ok(None); };
             (
                 Substitution { lifetimes, types, constants },
                 trait_type_map,
