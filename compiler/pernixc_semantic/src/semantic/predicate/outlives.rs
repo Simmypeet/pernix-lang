@@ -229,7 +229,7 @@ impl<T: Term> Outlives<T> {
             }
 
             if Outlives::satisfied(
-                bound, next_bound, premise, table, semantic, session,
+                next_bound, bound, premise, table, semantic, session,
             )? {
                 session.mark_as_done(Query { operand, bound }, Satisfied);
                 return Ok(true);
