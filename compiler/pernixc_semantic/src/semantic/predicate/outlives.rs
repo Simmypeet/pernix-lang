@@ -240,3 +240,6 @@ impl<T: Term> Outlives<T> {
         Ok(false)
     }
 }
+
+#[cfg(test)]
+mod tests;
