@@ -10,9 +10,10 @@ use proptest::{
 use crate::{
     semantic::{
         self, equality,
+        mapping::Mapping,
         predicate::{NonEquality, Outlives},
         session::{self, ExceedLimitError, Limit, Session},
-        term::{constant::Constant, lifetime::Lifetime, Term},
+        term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         Premise, Semantic,
     },
     table::{Success, Table},
@@ -66,6 +67,19 @@ impl Property<Lifetime> for Reflexive {
         table: &mut Table<Success>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
+        let (lhs, rhs) = self.generate();
+
+        if Outlives::satisfied(
+            &lhs,
+            &rhs,
+            premise,
+            table,
+            &mut semantic::Default,
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
+        }
+
         self.term.apply(table, premise)?;
         Ok(())
     }
@@ -184,6 +198,16 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
     }
 }
 
+fn remove_sampled<T: Term>(mapping: &mut Mapping) -> bool {
+    #[allow(clippy::option_if_let_else)]
+    if let Some(sampled) = T::get_mapping(mapping).keys().next() {
+        mapping.remove_recursive(&sampled.clone());
+        true
+    } else {
+        false
+    }
+}
+
 fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
@@ -213,6 +237,27 @@ where
         &mut Limit::new(&mut session::Default::default())
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?);
+
+    {
+        let mut premise_cloned = premise.clone();
+
+        if remove_sampled::<Lifetime>(&mut premise_cloned.equalities_mapping)
+            || remove_sampled::<Type>(&mut premise_cloned.equalities_mapping)
+            || remove_sampled::<Constant>(
+                &mut premise_cloned.equalities_mapping,
+            )
+        {
+            prop_assert!(!Outlives::satisfied(
+                &term1,
+                &term2,
+                &premise_cloned,
+                &table,
+                &mut semantic::Default,
+                &mut Limit::new(&mut session::Default::default())
+            )
+            .map_err(|_| TestCaseError::reject("too complex property"))?);
+        }
+    }
 
     Ok(())
 }
