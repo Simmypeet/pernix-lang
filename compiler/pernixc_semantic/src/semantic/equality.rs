@@ -207,4 +207,4 @@ pub fn equals<
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
