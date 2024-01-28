@@ -22,7 +22,7 @@ impl<T: Term> Tuple<T> {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn satisfied<
+    pub fn satisfies<
         S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
     >(
@@ -47,7 +47,7 @@ impl<T: Term> Tuple<T> {
         if let Some(normalized) =
             semantic.normalize(term, premise, table, session)?
         {
-            if Self::satisfied(&normalized, premise, table, semantic, session)?
+            if Self::satisfies(&normalized, premise, table, semantic, session)?
             {
                 session.mark_as_done(Query(term), Satisfied);
                 return Ok(true);
@@ -58,7 +58,7 @@ impl<T: Term> Tuple<T> {
         for (key, values) in T::get_mapping(&premise.equalities_mapping) {
             if equality::equals(term, key, premise, table, semantic, session)? {
                 for value in values {
-                    if Self::satisfied(
+                    if Self::satisfies(
                         value, premise, table, semantic, session,
                     )? {
                         session.mark_as_done(Query(term), Satisfied);

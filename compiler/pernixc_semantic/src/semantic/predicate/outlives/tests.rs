@@ -69,7 +69,7 @@ impl Property<Lifetime> for Reflexive {
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
 
-        if Outlives::satisfied(
+        if Outlives::satisfies(
             &lhs,
             &rhs,
             premise,
@@ -117,7 +117,7 @@ impl Property<Lifetime> for Transitive {
         let (lhs, rhs) = self.generate();
         let (inner_lhs, inner_rhs) = self.inner_property.generate();
 
-        if Outlives::satisfied(
+        if Outlives::satisfies(
             &lhs,
             &rhs,
             premise,
@@ -138,7 +138,7 @@ impl Property<Lifetime> for Transitive {
             .non_equality_predicates
             .push(NonEquality::LifetimeOutlives(outlives_premise));
 
-        if Outlives::satisfied(
+        if Outlives::satisfies(
             &lhs,
             &rhs,
             premise,
@@ -228,7 +228,7 @@ where
         }
     })?;
 
-    prop_assert!(Outlives::satisfied(
+    prop_assert!(Outlives::satisfies(
         &term1,
         &term2,
         &premise,
@@ -247,7 +247,7 @@ where
                 &mut premise_cloned.equalities_mapping,
             )
         {
-            prop_assert!(!Outlives::satisfied(
+            prop_assert!(!Outlives::satisfies(
                 &term1,
                 &term2,
                 &premise_cloned,
@@ -283,7 +283,7 @@ proptest! {
         lifetime in Lifetime::arbitrary()
     ) {
         prop_assert!(
-            Outlives::satisfied(
+            Outlives::satisfies(
                 &constant,
                 &lifetime,
                 &Premise::default(),

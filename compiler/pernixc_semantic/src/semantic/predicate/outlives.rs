@@ -58,7 +58,7 @@ impl<
     > visitor::Visitor for Visitor<'a, 's, 'r, 'l, T, S, R>
 {
     fn visit_type(&mut self, ty: &Type) -> bool {
-        match Outlives::satisfied(
+        match Outlives::satisfies(
             ty,
             self.bound,
             self.premise,
@@ -75,7 +75,7 @@ impl<
     }
 
     fn visit_lifetime(&mut self, lifetime: &Lifetime) -> bool {
-        match Outlives::satisfied(
+        match Outlives::satisfies(
             lifetime,
             self.bound,
             self.premise,
@@ -92,7 +92,7 @@ impl<
     }
 
     fn visit_constant(&mut self, constant: &Constant) -> bool {
-        match Outlives::satisfied(
+        match Outlives::satisfies(
             constant,
             self.bound,
             self.premise,
@@ -125,7 +125,7 @@ impl unification::Config for OutlivesUnifyingConfig {
 }
 
 impl<T: Term> Outlives<T> {
-    fn satisfied_by_lifetime_matching<
+    fn satisfies_by_lifetime_matching<
         S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
     >(
@@ -159,7 +159,7 @@ impl<T: Term> Outlives<T> {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn satisfied<
+    pub fn satisfies<
         S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
     >(
@@ -218,7 +218,7 @@ impl<T: Term> Outlives<T> {
                 continue;
             };
 
-            if !Self::satisfied_by_lifetime_matching(
+            if !Self::satisfies_by_lifetime_matching(
                 unification,
                 premise,
                 table,
@@ -228,7 +228,7 @@ impl<T: Term> Outlives<T> {
                 continue;
             }
 
-            if Outlives::satisfied(
+            if Outlives::satisfies(
                 next_bound, bound, premise, table, semantic, session,
             )? {
                 session.mark_as_done(Query { operand, bound }, Satisfied);
