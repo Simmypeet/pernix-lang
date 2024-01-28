@@ -27,19 +27,17 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct GenericParameterUnifyConfig;
 
-impl Config<Lifetime> for GenericParameterUnifyConfig {
-    fn unifiable(&mut self, lhs: &Lifetime, _: &Lifetime) -> bool {
-        lhs.is_parameter()
+impl Config for GenericParameterUnifyConfig {
+    fn lifetime_unifiable(&mut self, from: &Lifetime, _: &Lifetime) -> bool {
+        from.is_parameter()
     }
-}
 
-impl Config<Type> for GenericParameterUnifyConfig {
-    fn unifiable(&mut self, lhs: &Type, _: &Type) -> bool { lhs.is_parameter() }
-}
+    fn type_unifiable(&mut self, from: &Type, _: &Type) -> bool {
+        from.is_parameter()
+    }
 
-impl Config<Constant> for GenericParameterUnifyConfig {
-    fn unifiable(&mut self, lhs: &Constant, _: &Constant) -> bool {
-        lhs.is_parameter()
+    fn constant_unifiable(&mut self, from: &Constant, _: &Constant) -> bool {
+        from.is_parameter()
     }
 }
 
@@ -307,8 +305,6 @@ impl<
         T: Debug + Term + From<Param> + 'static,
         Param: Debug + Clone + 'static,
     > Property<T> for Mapping<T, Param>
-where
-    GenericParameterUnifyConfig: Config<T>,
 {
     fn apply(
         &self,
@@ -317,7 +313,7 @@ where
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
 
-        if GenericParameterUnifyConfig.unifiable(&lhs, &rhs) {
+        if T::unifiable(&lhs, &rhs, &mut GenericParameterUnifyConfig) {
             return Ok(());
         }
 
@@ -363,16 +359,12 @@ where
 fn add_equality_mapping_from_unification<T: Term>(
     unification: &Unification<T>,
     equality_mapping: &mut mapping::Mapping,
-) -> TestCaseResult
-where
-    GenericParameterUnifyConfig:
-        Config<T> + Config<Lifetime> + Config<Type> + Config<Constant>,
-{
+) -> TestCaseResult {
     match &unification.r#match {
         super::Match::Unifiable(lhs, rhs) => {
             let mut config = GenericParameterUnifyConfig;
 
-            prop_assert!(config.unifiable(lhs, rhs));
+            prop_assert!(T::unifiable(lhs, rhs, &mut config));
             equality_mapping.insert(lhs.clone(), rhs.clone());
 
             Ok(())
@@ -470,8 +462,6 @@ pub fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
 where
-    GenericParameterUnifyConfig:
-        Config<T> + Config<Lifetime> + Config<Type> + Config<Constant>,
     semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {

@@ -19,9 +19,42 @@ pub struct Query<'a, T> {
 }
 
 /// A customization point for the unification logic.
-pub trait Config<T> {
-    /// Determines if the two given terms are unifiable.
-    fn unifiable(&mut self, lhs: &T, rhs: &T) -> bool;
+pub trait Config {
+    /// Determines if the two given lifetimes are unifiable.
+    #[must_use]
+    fn lifetime_unifiable(&mut self, from: &Lifetime, to: &Lifetime) -> bool;
+
+    /// Determines if the two given types are unifiable.
+    #[must_use]
+    fn type_unifiable(&mut self, from: &Type, to: &Type) -> bool;
+
+    /// Determines if the two given constants are unifiable.
+    #[must_use]
+    fn constant_unifiable(&mut self, from: &Constant, to: &Constant) -> bool;
+}
+
+/// A trait implemented by terms that can be unified.
+pub trait Element {
+    /// Accepts a configuration and returns `true` if the term is unifiable.
+    fn unifiable(from: &Self, to: &Self, config: &mut impl Config) -> bool;
+}
+
+impl Element for Lifetime {
+    fn unifiable(from: &Self, to: &Self, config: &mut impl Config) -> bool {
+        config.lifetime_unifiable(from, to)
+    }
+}
+
+impl Element for Type {
+    fn unifiable(from: &Self, to: &Self, config: &mut impl Config) -> bool {
+        config.type_unifiable(from, to)
+    }
+}
+
+impl Element for Constant {
+    fn unifiable(from: &Self, to: &Self, config: &mut impl Config) -> bool {
+        config.constant_unifiable(from, to)
+    }
 }
 
 /// Contains all the unification of substructural components.
@@ -80,13 +113,12 @@ fn substructural_unify<
     T: Term,
     S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    C: Config<T> + Config<Lifetime> + Config<Type> + Config<Constant>,
 >(
     lhs: &T,
     rhs: &T,
     premise: &Premise,
     table: &Table<impl State>,
-    config: &mut C,
+    config: &mut impl Config,
     semantic: &mut S,
     session: &mut Limit<R>,
 ) -> Result<Option<Unification<T>>, ExceedLimitError> {
@@ -142,17 +174,16 @@ pub fn unify<
     T: Term,
     S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    C: Config<T> + Config<Lifetime> + Config<Type> + Config<Constant>,
 >(
-    lhs: &T,
-    rhs: &T,
+    from: &T,
+    to: &T,
     premise: &Premise,
     table: &Table<impl State>,
-    config: &mut C,
+    config: &mut impl Config,
     semantic: &mut S,
     session: &mut Limit<R>,
 ) -> Result<Option<Unification<T>>, ExceedLimitError> {
-    if equality::equals(lhs, rhs, premise, table, semantic, session)? {
+    if equality::equals(from, to, premise, table, semantic, session)? {
         return Ok(Some(Unification {
             rewritten_lhs: None,
             rewritten_rhs: None,
@@ -160,7 +191,7 @@ pub fn unify<
         }));
     }
 
-    let query = Query { lhs, rhs };
+    let query = Query { lhs: from, rhs: to };
 
     match session.mark_as_in_progress(query.clone())? {
         Some(session::Cached::Done(result)) => return Ok(Some(result)),
@@ -170,11 +201,11 @@ pub fn unify<
         None => {}
     }
 
-    if config.unifiable(lhs, rhs) {
+    if T::unifiable(from, to, config) {
         let unification = Unification {
             rewritten_lhs: None,
             rewritten_rhs: None,
-            r#match: Match::Unifiable(lhs.clone(), rhs.clone()),
+            r#match: Match::Unifiable(from.clone(), to.clone()),
         };
 
         session.mark_as_done(query, unification.clone());
@@ -182,7 +213,7 @@ pub fn unify<
     }
 
     if let Some(unification) = substructural_unify(
-        lhs, rhs, premise, table, config, semantic, session,
+        from, to, premise, table, config, semantic, session,
     )? {
         session.mark_as_done(query, unification.clone());
         return Ok(Some(unification));
@@ -190,11 +221,11 @@ pub fn unify<
 
     // try to normalize lhs, rhs
     if let Some(normalized_lhs) =
-        semantic.normalize(lhs, premise, table, session)?
+        semantic.normalize(from, premise, table, session)?
     {
         if let Some(mut unification) = unify(
             &normalized_lhs,
-            rhs,
+            to,
             premise,
             table,
             config,
@@ -210,10 +241,10 @@ pub fn unify<
     }
 
     if let Some(normalized_rhs) =
-        semantic.normalize(rhs, premise, table, session)?
+        semantic.normalize(to, premise, table, session)?
     {
         if let Some(mut unification) = unify(
-            lhs,
+            from,
             &normalized_rhs,
             premise,
             table,
@@ -231,11 +262,11 @@ pub fn unify<
 
     // try to look for equivalent terms in the premise
     for (key, values) in T::get_mapping(&premise.equalities_mapping) {
-        if equality::equals(lhs, key, premise, table, semantic, session)? {
+        if equality::equals(from, key, premise, table, semantic, session)? {
             for value in values {
-                if let Some(mut unification) = unify(
-                    value, rhs, premise, table, config, semantic, session,
-                )? {
+                if let Some(mut unification) =
+                    unify(value, to, premise, table, config, semantic, session)?
+                {
                     unification.rewritten_lhs =
                         unification.rewritten_lhs.or(Some(value.clone()));
 
@@ -245,10 +276,10 @@ pub fn unify<
             }
         }
 
-        if equality::equals(key, rhs, premise, table, semantic, session)? {
+        if equality::equals(key, to, premise, table, semantic, session)? {
             for value in values {
                 if let Some(mut unification) = unify(
-                    lhs, value, premise, table, config, semantic, session,
+                    from, value, premise, table, config, semantic, session,
                 )? {
                     unification.rewritten_rhs =
                         unification.rewritten_rhs.or(Some(value.clone()));

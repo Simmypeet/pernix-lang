@@ -25,10 +25,14 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct DeductionUnifyingConfig;
 
-impl unification::Config<Type> for DeductionUnifyingConfig {
-    fn unifiable(&mut self, lhs: &Type, _: &Type) -> bool {
+impl unification::Config for DeductionUnifyingConfig {
+    fn lifetime_unifiable(&mut self, from: &Lifetime, _: &Lifetime) -> bool {
+        from.is_parameter()
+    }
+
+    fn type_unifiable(&mut self, from: &Type, _: &Type) -> bool {
         matches!(
-            lhs,
+            from,
             Type::Parameter(_)
                 | Type::MemberSymbol(MemberSymbol {
                     id: r#type::MemberSymbolKindID::Trait(_),
@@ -36,18 +40,10 @@ impl unification::Config<Type> for DeductionUnifyingConfig {
                 })
         )
     }
-}
 
-impl unification::Config<Lifetime> for DeductionUnifyingConfig {
-    fn unifiable(&mut self, lhs: &Lifetime, _: &Lifetime) -> bool {
-        lhs.is_parameter()
-    }
-}
-
-impl unification::Config<Constant> for DeductionUnifyingConfig {
-    fn unifiable(&mut self, lhs: &Constant, _: &Constant) -> bool {
+    fn constant_unifiable(&mut self, from: &Constant, _: &Constant) -> bool {
         matches!(
-            lhs,
+            from,
             Constant::Parameter(_)
                 | Constant::MemberSymbol(MemberSymbol {
                     id: constant::MemberSymbolKindID::Trait(_),
@@ -94,10 +90,7 @@ fn unify<
     semantic: &mut S,
     session: &mut Limit<R>,
     mut existing: Mapping,
-) -> Result<Option<Mapping>, ExceedLimitError>
-where
-    DeductionUnifyingConfig: unification::Config<T>,
-{
+) -> Result<Option<Mapping>, ExceedLimitError> {
     for (lhs, rhs) in lhs.iter().zip(rhs.iter()) {
         let Some(new) = unification::unify(
             lhs,
@@ -294,7 +287,8 @@ impl GenericArguments {
                 session,
             )?
             else {
-                return Ok(None); };
+                return Ok(None);
+            };
             (
                 Substitution { lifetimes, types, constants },
                 trait_type_map,

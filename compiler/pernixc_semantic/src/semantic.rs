@@ -1,14 +1,15 @@
 //! Contains the semantic logic of the compiler (i.e. type checking/system).
 
 use self::{
+    equality::equals,
     mapping::Mapping,
     predicate::{NonEquality, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant,
         lifetime::Lifetime,
-        r#type::{self, SymbolKindID, Type},
-        MemberSymbol, Symbol, Term,
+        r#type::{SymbolKindID, Type},
+        Symbol, Term,
     },
 };
 use crate::{
@@ -104,15 +105,20 @@ impl Semantic<Lifetime> for Default {
     >(
         &mut self,
         term: &Lifetime,
-        _: &Lifetime,
-        _: &Premise,
-        _: &Table<impl State>,
-        _: &mut Limit<R>,
+        lifetime: &Lifetime,
+        premise: &Premise,
+        table: &Table<impl State>,
+        limit: &mut Limit<R>,
     ) -> Result<Satisfiability, ExceedLimitError> {
         if term.is_static() {
             Ok(Satisfiability::Satisfied)
         } else {
-            Ok(Satisfiability::Unsatisfied)
+            // reflexivity
+            if equals(term, lifetime, premise, table, self, limit)? {
+                Ok(Satisfiability::Satisfied)
+            } else {
+                Ok(Satisfiability::Unsatisfied)
+            }
         }
     }
 }
@@ -154,9 +160,12 @@ impl Semantic<Type> for Default {
             }
 
             // TODO: Transform trait-type into the trait-implementation type
-            // equivalent. TODO: Transform ADT-member-type into the
-            // aliased type equivalent. TODO: Normalize the unpacked
-            // tuple type.
+            // equivalent.
+
+            // TODO: Transform ADT-member-type into the aliased type
+            // equivalent.
+
+            // TODO: Normalize the unpacked tuple type.
             _ => Ok(None),
         }
     }
@@ -174,12 +183,9 @@ impl Semantic<Type> for Default {
         match term {
             Type::Primitive(_) => Ok(Satisfiability::Satisfied),
 
-            Type::Inference(_)
-            | Type::Parameter(_)
-            | Type::MemberSymbol(MemberSymbol {
-                id: r#type::MemberSymbolKindID::Trait(..),
-                ..
-            }) => Ok(Satisfiability::Unsatisfied),
+            Type::Inference(_) | Type::Parameter(_) => {
+                Ok(Satisfiability::Unsatisfied)
+            }
 
             Type::Local(_)
             | Type::Symbol(_)
@@ -212,13 +218,27 @@ impl Semantic<Constant> for Default {
         R: Session<Type> + Session<Lifetime> + Session<Constant>,
     >(
         &mut self,
-        _: &Constant,
+        constant: &Constant,
         _: &Lifetime,
         _: &Premise,
         _: &Table<impl State>,
         _: &mut Limit<R>,
     ) -> Result<Satisfiability, ExceedLimitError> {
         // constants value do not have lifetimes
-        Ok(Satisfiability::Satisfied)
+        match constant {
+            Constant::Primitive(_) => Ok(Satisfiability::Satisfied),
+
+            Constant::Parameter(_) | Constant::Inference(_) => {
+                Ok(Satisfiability::Unsatisfied)
+            }
+
+            Constant::Struct(_)
+            | Constant::Enum(_)
+            | Constant::Array(_)
+            | Constant::Local(_)
+            | Constant::Tuple(_)
+            | Constant::Symbol(_)
+            | Constant::MemberSymbol(_) => Ok(Satisfiability::Congruent),
+        }
     }
 }

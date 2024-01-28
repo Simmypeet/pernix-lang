@@ -17,8 +17,7 @@ use super::{
     predicate::{Outlives, Satisfiability},
     substitution::Substitute,
     unification::{self, Unification},
-    visitor::Element,
-    Premise,
+    visitor, Premise,
 };
 use crate::{
     arena::{Arena, ID},
@@ -332,7 +331,15 @@ pub trait SubTermLocation<Term, SubTerm>:
 
 /// Contains the functionality for determining the properties of a term.
 pub trait Term:
-    Debug + Eq + Hash + Sized + Clone + Ord + Element + Substitute
+    Debug
+    + Eq
+    + Hash
+    + Sized
+    + Clone
+    + Ord
+    + Substitute
+    + visitor::Element
+    + unification::Element
 {
     /// The type used to retrieve the sub-type term of a term.
     type SubTypeLocation: SubTermLocation<Self, Type>;
