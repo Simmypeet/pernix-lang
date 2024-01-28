@@ -350,29 +350,29 @@ impl Arbitrary for Box<dyn Property<Type>> {
     );
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(strategy: Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
         leaf.prop_recursive(10, 60, 6, move |inner| {
-            let constant_start = strat.1.clone().unwrap_or_else(|| {
+            let constant_strategy = strategy.1.clone().unwrap_or_else(|| {
                 Box::<dyn Property<Constant>>::arbitrary_with((
-                    strat.0.clone(),
+                    strategy.0.clone(),
                     Some(inner.clone()),
                 ))
             });
-            let lifetime_strat = strat.0.clone().unwrap_or_else(|| {
+            let lifetime_strategy = strategy.0.clone().unwrap_or_else(|| {
                 Box::<dyn Property<Lifetime>>::arbitrary_with((
                     Some(inner.clone()),
-                    strat.1.clone(),
+                    strategy.1.clone(),
                 ))
             });
 
             prop_oneof![
                 2 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
                 6 => SymbolCongruence::arbitrary_with((
-                    Some(lifetime_strat),
+                    Some(lifetime_strategy),
                     Some(inner.clone()),
-                    Some(constant_start)
+                    Some(constant_strategy)
                 ))
                 .prop_map(|x| Box::new(x) as _),
                 1 => LocalCongruence::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
@@ -408,16 +408,16 @@ impl Arbitrary for Box<dyn Property<Constant>> {
     );
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(strat: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(strategy: Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
         leaf.prop_recursive(10, 60, 6, move |inner| {
-            let type_strat = strat.1.clone().unwrap_or_else(|| {
-                Box::<dyn Property<Type>>::arbitrary_with((strat.0.clone(), Some(inner.clone())))
+            let type_strategy = strategy.1.clone().unwrap_or_else(|| {
+                Box::<dyn Property<Type>>::arbitrary_with((strategy.0.clone(), Some(inner.clone())))
             });
-            let lifetime_strat = strat.0.clone().unwrap_or_else(|| {
+            let lifetime_strategy = strategy.0.clone().unwrap_or_else(|| {
                 Box::<dyn Property<Lifetime>>::arbitrary_with((
-                    strat.1.clone(),
+                    strategy.1.clone(),
                     Some(inner.clone()),
                 ))
             });
@@ -425,8 +425,8 @@ impl Arbitrary for Box<dyn Property<Constant>> {
             prop_oneof![
                 2 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
                 6 => SymbolCongruence::arbitrary_with((
-                    Some(lifetime_strat),
-                    Some(type_strat),
+                    Some(lifetime_strategy),
+                    Some(type_strategy),
                     Some(inner.clone())
                 ))
                 .prop_map(|x| Box::new(x) as _),
@@ -485,9 +485,9 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let strat = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+        let strategy = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
-        (strat, T::arbitrary(), proptest::bool::ANY)
+        (strategy, T::arbitrary(), proptest::bool::ANY)
             .prop_map(|(property, target, target_at_lhs)| Self {
                 property,
                 target,
@@ -577,9 +577,9 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let strat = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+        let strategy = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
-        strat.prop_map(|strategy| Self { strategy }).boxed()
+        strategy.prop_map(|strategy| Self { strategy }).boxed()
     }
 }
 
@@ -651,12 +651,19 @@ impl<ID: 'static + Arbitrary<Strategy = BoxedStrategy<ID>> + Debug + Clone>
             ),
             ID::arbitrary(),
         )
-            .prop_map(|(tys, lts, consts, id)| Self {
-                lifetime_properties: lts,
-                type_properties: tys,
-                constant_properties: consts,
-                id,
-            })
+            .prop_map(
+                |(
+                    type_properties,
+                    lifetime_properties,
+                    constant_properties,
+                    id,
+                )| Self {
+                    lifetime_properties,
+                    type_properties,
+                    constant_properties,
+                    id,
+                },
+            )
             .boxed()
     }
 }
@@ -765,10 +772,11 @@ impl Arbitrary for TypeAlias {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let strat = args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
+        let strategy =
+            args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
 
         (
-            (proptest::bool::ANY, strat).prop_ind_flat_map2(
+            (proptest::bool::ANY, strategy).prop_ind_flat_map2(
                 |(aliased_at_lhs, prop)| {
                     let (lhs, rhs) = prop.generate();
                     let sampled = if aliased_at_lhs { lhs } else { rhs };
@@ -785,18 +793,8 @@ impl Arbitrary for TypeAlias {
             proptest::bool::ANY,
         )
             .prop_map(
-                |(
-                    ((aliased_at_lhs, ty_strat), argument),
-                    type_id,
-                    type_alias_at_lhs,
-                )| {
-                    Self {
-                        property: ty_strat,
-                        type_id,
-                        argument,
-                        aliased_at_lhs,
-                        at_lhs: type_alias_at_lhs,
-                    }
+                |(((aliased_at_lhs, property), argument), type_id, at_lhs)| {
+                    Self { property, type_id, argument, aliased_at_lhs, at_lhs }
                 },
             )
             .boxed()
@@ -1115,10 +1113,10 @@ impl Arbitrary for Decoy {
             proptest::collection::vec(DecoyEquality::arbitrary(), 0..=2),
             proptest::collection::vec(DecoyEquality::arbitrary(), 0..=2),
         )
-            .prop_map(|(lts, tys, consts)| Self {
-                lifetimes: lts,
-                types: tys,
-                constants: consts,
+            .prop_map(|(lifetimes, types, constants)| Self {
+                lifetimes,
+                types,
+                constants,
             })
             .boxed()
     }
