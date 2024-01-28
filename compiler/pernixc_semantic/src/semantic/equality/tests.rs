@@ -439,7 +439,7 @@ impl Arbitrary for Box<dyn Property<Constant>> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identity<T> {
-    term: T,
+    pub term: T,
 }
 
 impl<T: Arbitrary> Arbitrary for Identity<T>
@@ -468,9 +468,9 @@ impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
 
 #[derive(Debug)]
 pub struct Mapping<T> {
-    property: Box<dyn Property<T>>,
-    target: T,
-    target_at_lhs: bool,
+    pub property: Box<dyn Property<T>>,
+    pub target: T,
+    pub target_at_lhs: bool,
 }
 
 impl<T: 'static + Debug + Term + Arbitrary<Strategy = BoxedStrategy<T>>>
