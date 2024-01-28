@@ -4,7 +4,10 @@ use std::collections::{HashMap, HashSet};
 
 use getset::Getters;
 
-use super::term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term};
+use super::{
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    unification::{self, Unification},
+};
 
 /// Represents an equality mapping between two terms.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]
@@ -89,5 +92,42 @@ impl Mapping {
                     .chain(self.constants.values().map(HashSet::len)),
             )
             .sum()
+    }
+
+    /// Appends all the [`unification::Match::Unifiable`]s from the given
+    /// unification into this mapping recursively.
+    pub fn append_from_unification<T: Term>(
+        &mut self,
+        unification: Unification<T>,
+    ) {
+        match unification.r#match {
+            unification::Match::Unifiable(lhs, rhs) => {
+                T::get_mapping_mut(self).entry(lhs).or_default().insert(rhs);
+            }
+            unification::Match::Substructural(substructural) => {
+                for (_, unification) in substructural.lifetimes {
+                    self.append_from_unification(unification);
+                }
+
+                for (_, unification) in substructural.types {
+                    self.append_from_unification(unification);
+                }
+
+                for (_, unification) in substructural.constants {
+                    self.append_from_unification(unification);
+                }
+            }
+            unification::Match::Equality => {}
+        }
+    }
+
+    /// Creates a new mapping from all the [`unification::Match::Unifiable`]s in
+    /// the given unification.
+    pub fn from_unification<T: Term>(unification: Unification<T>) -> Self {
+        let mut mapping = Self::default();
+
+        mapping.append_from_unification(unification);
+
+        mapping
     }
 }

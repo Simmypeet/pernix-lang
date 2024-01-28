@@ -14,8 +14,7 @@ use super::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
-    unification::{self, Unification},
-    Premise, Semantic,
+    unification, Premise, Semantic,
 };
 use crate::{
     semantic::term::{constant, r#type, MemberSymbol},
@@ -53,31 +52,6 @@ impl unification::Config for DeductionUnifyingConfig {
     }
 }
 
-fn unification_to_mapping<T: Term>(
-    unification: Unification<T>,
-    mapping: &mut Mapping,
-) {
-    match unification.r#match {
-        unification::Match::Unifiable(lhs, rhs) => {
-            T::get_mapping_mut(mapping).entry(lhs).or_default().insert(rhs);
-        }
-        unification::Match::Substructural(substructural) => {
-            for (_, unification) in substructural.lifetimes {
-                unification_to_mapping(unification, mapping);
-            }
-
-            for (_, unification) in substructural.types {
-                unification_to_mapping(unification, mapping);
-            }
-
-            for (_, unification) in substructural.constants {
-                unification_to_mapping(unification, mapping);
-            }
-        }
-        unification::Match::Equality => {}
-    }
-}
-
 fn unify<
     T: Term,
     S: Semantic<T> + Semantic<Type> + Semantic<Lifetime> + Semantic<Constant>,
@@ -105,7 +79,7 @@ fn unify<
             return Ok(None);
         };
 
-        unification_to_mapping(new, &mut existing);
+        existing.append_from_unification(new);
     }
 
     Ok(Some(existing))
