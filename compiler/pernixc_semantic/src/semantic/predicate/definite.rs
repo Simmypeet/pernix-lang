@@ -124,9 +124,9 @@ pub fn definite<
         return Ok(true);
     }
 
-    match session.mark_as_in_progress(Query(term))? {
+    match session.mark_as_in_progress(Query(term), ())? {
         Some(session::Cached::Done(Satisfied)) => return Ok(true),
-        Some(session::Cached::InProgress) => {
+        Some(session::Cached::InProgress(())) => {
             return Ok(false);
         }
         None => {}

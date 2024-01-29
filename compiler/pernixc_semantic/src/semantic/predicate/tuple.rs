@@ -37,9 +37,9 @@ impl<T: Term> Tuple<T> {
             return Ok(true);
         }
 
-        match session.mark_as_in_progress(Query(term))? {
+        match session.mark_as_in_progress(Query(term), ())? {
             Some(Cached::Done(Satisfied)) => return Ok(true),
-            Some(Cached::InProgress) => return Ok(false),
+            Some(Cached::InProgress(())) => return Ok(false),
             None => {}
         }
 

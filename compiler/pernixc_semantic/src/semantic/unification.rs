@@ -193,9 +193,9 @@ pub fn unify<
 
     let query = Query { lhs: from, rhs: to };
 
-    match session.mark_as_in_progress(query.clone())? {
+    match session.mark_as_in_progress(query.clone(), ())? {
         Some(session::Cached::Done(result)) => return Ok(Some(result)),
-        Some(session::Cached::InProgress) => {
+        Some(session::Cached::InProgress(())) => {
             return Ok(None);
         }
         None => {}

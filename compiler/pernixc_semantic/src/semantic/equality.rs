@@ -147,9 +147,9 @@ pub fn equals<
         return Ok(true);
     }
 
-    match session.mark_as_in_progress(query.clone())? {
+    match session.mark_as_in_progress(query.clone(), ())? {
         Some(session::Cached::Done(Satisfied)) => return Ok(true),
-        Some(session::Cached::InProgress) => {
+        Some(session::Cached::InProgress(())) => {
             return Ok(false);
         }
         None => {}

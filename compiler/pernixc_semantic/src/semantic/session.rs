@@ -14,9 +14,9 @@ pub struct Satisfied;
 
 /// The result of a query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Cached<T> {
+pub enum Cached<I, T> {
     /// The query is in progress.
-    InProgress,
+    InProgress(I),
 
     /// The query is done and the result is stored.
     Done(T),
@@ -56,10 +56,12 @@ impl<'a, R> Limit<'a, R> {
     /// # Errors
     ///
     /// Returns an error if the number of queries exceeds the limit.
+    #[allow(clippy::type_complexity)]
     pub fn mark_as_in_progress<Q>(
         &mut self,
         query: Q,
-    ) -> Result<Option<Cached<R::Result>>, ExceedLimitError>
+        metadata: R::InProgress,
+    ) -> Result<Option<Cached<R::InProgress, R::Result>>, ExceedLimitError>
     where
         R: Cache<Q>,
     {
@@ -72,7 +74,7 @@ impl<'a, R> Limit<'a, R> {
 
         self.count += 1;
 
-        Ok(self.session.mark_as_in_progress(query))
+        Ok(self.session.mark_as_in_progress(query, metadata))
     }
 
     /// Marks the given query as done and stores the result.
@@ -84,7 +86,10 @@ impl<'a, R> Limit<'a, R> {
     }
 
     /// Clears the cached result of the given query.
-    pub fn clear_query<Q>(&mut self, query: Q) -> Option<Cached<R::Result>>
+    pub fn clear_query<Q>(
+        &mut self,
+        query: Q,
+    ) -> Option<Cached<R::InProgress, R::Result>>
     where
         R: Cache<Q>,
     {
@@ -92,7 +97,10 @@ impl<'a, R> Limit<'a, R> {
     }
 
     /// Returns the result of the given query.
-    pub fn get_result<Q>(&self, query: Q) -> Option<&Cached<R::Result>>
+    pub fn get_result<Q>(
+        &self,
+        query: Q,
+    ) -> Option<&Cached<R::InProgress, R::Result>>
     where
         R: Cache<Q>,
     {
@@ -113,20 +121,30 @@ pub trait Cache<Query> {
     /// The result type returned by the query.
     type Result;
 
+    /// The in-progress state metadata.
+    type InProgress;
+
     /// Marks the given query as working on.
     fn mark_as_in_progress(
         &mut self,
         query: Query,
-    ) -> Option<Cached<Self::Result>>;
+        metadata: Self::InProgress,
+    ) -> Option<Cached<Self::InProgress, Self::Result>>;
 
     /// Marks the given query as done and stores the result.
     fn mark_as_done(&mut self, record: Query, result: Self::Result);
 
     /// Clears the cached result of the given query.
-    fn clear_query(&mut self, query: Query) -> Option<Cached<Self::Result>>;
+    fn clear_query(
+        &mut self,
+        query: Query,
+    ) -> Option<Cached<Self::InProgress, Self::Result>>;
 
     /// Returns the result of the given query.
-    fn get_result(&self, query: Query) -> Option<&Cached<Self::Result>>;
+    fn get_result(
+        &self,
+        query: Query,
+    ) -> Option<&Cached<Self::InProgress, Self::Result>>;
 
     /// Clears all the queries that are in progress state.
     fn delete_all_work_in_progress(&mut self);
@@ -141,60 +159,91 @@ pub trait Cache<Query> {
 /// Most of the time, you should use [`Default`] as the implementation of this
 /// trait.
 pub trait Session<T: Term>:
-    for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
-    + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
-    + for<'a> Cache<unification::Query<'a, T>, Result = Unification<T>>
-    + for<'a> Cache<predicate::TupleQuery<'a, T>, Result = Satisfied>
-    + for<'a> Cache<predicate::OutlivesQuery<'a, T>, Result = Satisfied>
+    for<'a> Cache<equality::Query<'a, T>, Result = Satisfied, InProgress = ()>
+    + for<'a> Cache<
+        predicate::DefiniteQuery<'a, T>,
+        Result = Satisfied,
+        InProgress = (),
+    > + for<'a> Cache<
+        unification::Query<'a, T>,
+        Result = Unification<T>,
+        InProgress = (),
+    > + for<'a> Cache<
+        predicate::TupleQuery<'a, T>,
+        Result = Satisfied,
+        InProgress = (),
+    > + for<'a> Cache<
+        predicate::OutlivesQuery<'a, T>,
+        Result = Satisfied,
+        InProgress = (),
+    >
 {
 }
 
 impl<T: Term, U> Session<T> for U where
-    U: for<'a> Cache<equality::Query<'a, T>, Result = Satisfied>
-        + for<'a> Cache<predicate::DefiniteQuery<'a, T>, Result = Satisfied>
-        + for<'a> Cache<unification::Query<'a, T>, Result = Unification<T>>
-        + for<'a> Cache<predicate::TupleQuery<'a, T>, Result = Satisfied>
-        + for<'a> Cache<predicate::OutlivesQuery<'a, T>, Result = Satisfied>
+    U: for<'a> Cache<
+            equality::Query<'a, T>,
+            Result = Satisfied,
+            InProgress = (),
+        > + for<'a> Cache<
+            predicate::DefiniteQuery<'a, T>,
+            Result = Satisfied,
+            InProgress = (),
+        > + for<'a> Cache<
+            unification::Query<'a, T>,
+            Result = Unification<T>,
+            InProgress = (),
+        > + for<'a> Cache<
+            predicate::TupleQuery<'a, T>,
+            Result = Satisfied,
+            InProgress = (),
+        > + for<'a> Cache<
+            predicate::OutlivesQuery<'a, T>,
+            Result = Satisfied,
+            InProgress = (),
+        >
 {
 }
 
 /// Default and preferred implementation of [`Session`].
 #[derive(Debug, Clone, Default)]
 pub struct Default {
-    lifetime_equals: HashMap<(Lifetime, Lifetime), Cached<Satisfied>>,
-    type_equals: HashMap<(Type, Type), Cached<Satisfied>>,
-    constant_equals: HashMap<(Constant, Constant), Cached<Satisfied>>,
+    lifetime_equals: HashMap<(Lifetime, Lifetime), Cached<(), Satisfied>>,
+    type_equals: HashMap<(Type, Type), Cached<(), Satisfied>>,
+    constant_equals: HashMap<(Constant, Constant), Cached<(), Satisfied>>,
 
-    lifetime_is_definite: HashMap<Lifetime, Cached<Satisfied>>,
-    type_is_definite: HashMap<Type, Cached<Satisfied>>,
-    constant_is_definite: HashMap<Constant, Cached<Satisfied>>,
+    lifetime_is_definite: HashMap<Lifetime, Cached<(), Satisfied>>,
+    type_is_definite: HashMap<Type, Cached<(), Satisfied>>,
+    constant_is_definite: HashMap<Constant, Cached<(), Satisfied>>,
 
     lifetime_unifies:
-        HashMap<(Lifetime, Lifetime), Cached<Unification<Lifetime>>>,
-    type_unifies: HashMap<(Type, Type), Cached<Unification<Type>>>,
+        HashMap<(Lifetime, Lifetime), Cached<(), Unification<Lifetime>>>,
+    type_unifies: HashMap<(Type, Type), Cached<(), Unification<Type>>>,
     constant_unifies:
-        HashMap<(Constant, Constant), Cached<Unification<Constant>>>,
+        HashMap<(Constant, Constant), Cached<(), Unification<Constant>>>,
 
-    lifetime_is_tuple: HashMap<Lifetime, Cached<Satisfied>>,
-    type_is_tuple: HashMap<Type, Cached<Satisfied>>,
-    constant_is_tuple: HashMap<Constant, Cached<Satisfied>>,
+    lifetime_is_tuple: HashMap<Lifetime, Cached<(), Satisfied>>,
+    type_is_tuple: HashMap<Type, Cached<(), Satisfied>>,
+    constant_is_tuple: HashMap<Constant, Cached<(), Satisfied>>,
 
-    lifetime_outlives: HashMap<(Lifetime, Lifetime), Cached<Satisfied>>,
-    type_outlives: HashMap<(Type, Lifetime), Cached<Satisfied>>,
-    constant_outlives: HashMap<(Constant, Lifetime), Cached<Satisfied>>,
+    lifetime_outlives: HashMap<(Lifetime, Lifetime), Cached<(), Satisfied>>,
+    type_outlives: HashMap<(Type, Lifetime), Cached<(), Satisfied>>,
+    constant_outlives: HashMap<(Constant, Lifetime), Cached<(), Satisfied>>,
 }
 macro_rules! implements_cache {
-    ($query:path, $result_t:path, $param:ident, $field_name:ident, $expr_in:expr, $expr_out:expr) => {
+    ($query:path, $result_t:path, $in_progress_t:ty, $param:ident, $field_name:ident, $expr_in:expr, $expr_out:expr) => {
         impl<'a> Cache<$query> for Default {
             type Result = $result_t;
+            type InProgress = $in_progress_t;
 
             fn mark_as_in_progress(
                 &mut self,
                 $param: $query,
-            ) -> Option<Cached<Self::Result>> {
+                metadata: Self::InProgress,
+            ) -> Option<Cached<Self::InProgress, Self::Result>> {
                 match self.$field_name.entry($expr_in) {
                     Entry::Vacant(entry) => {
-                        entry.insert(Cached::InProgress);
+                        entry.insert(Cached::InProgress(metadata));
                         None
                     }
                     Entry::Occupied(entry) => Some(entry.get().clone()),
@@ -210,20 +259,20 @@ macro_rules! implements_cache {
             fn clear_query(
                 &mut self,
                 $param: $query,
-            ) -> Option<Cached<Self::Result>> {
+            ) -> Option<Cached<Self::InProgress, Self::Result>> {
                 self.$field_name.remove($expr_out)
             }
 
             fn get_result(
                 &self,
                 $param: $query,
-            ) -> Option<&Cached<Self::Result>> {
+            ) -> Option<&Cached<Self::InProgress, Self::Result>> {
                 self.$field_name.get($expr_out)
             }
 
             fn delete_all_work_in_progress(&mut self) {
                 self.$field_name.retain(|_, result| {
-                    if matches!(result, Cached::InProgress) {
+                    if matches!(result, Cached::InProgress(_)) {
                         false
                     } else {
                         true
@@ -237,6 +286,7 @@ macro_rules! implements_cache {
 implements_cache!(
     equality::Query<'a, Lifetime>,
     Satisfied,
+    (),
     query,
     lifetime_equals,
     (*query.lhs, *query.rhs),
@@ -246,6 +296,7 @@ implements_cache!(
 implements_cache!(
     equality::Query<'a, Type>,
     Satisfied,
+    (),
     query,
     type_equals,
     (query.lhs.clone(), query.rhs.clone()),
@@ -255,6 +306,7 @@ implements_cache!(
 implements_cache!(
     equality::Query<'a, Constant>,
     Satisfied,
+    (),
     query,
     constant_equals,
     (query.lhs.clone(), query.rhs.clone()),
@@ -264,6 +316,7 @@ implements_cache!(
 implements_cache!(
     predicate::DefiniteQuery<'a, Lifetime>,
     Satisfied,
+    (),
     record,
     lifetime_is_definite,
     *record.0,
@@ -273,6 +326,7 @@ implements_cache!(
 implements_cache!(
     predicate::DefiniteQuery<'a, Type>,
     Satisfied,
+    (),
     record,
     type_is_definite,
     record.0.clone(),
@@ -282,6 +336,7 @@ implements_cache!(
 implements_cache!(
     predicate::DefiniteQuery<'a, Constant>,
     Satisfied,
+    (),
     record,
     constant_is_definite,
     record.0.clone(),
@@ -291,6 +346,7 @@ implements_cache!(
 implements_cache!(
     unification::Query<'a, Lifetime>,
     Unification<Lifetime>,
+    (),
     record,
     lifetime_unifies,
     (*record.lhs, *record.rhs),
@@ -300,6 +356,7 @@ implements_cache!(
 implements_cache!(
     unification::Query<'a, Type>,
     Unification<Type>,
+    (),
     record,
     type_unifies,
     (record.lhs.clone(), record.rhs.clone()),
@@ -309,6 +366,7 @@ implements_cache!(
 implements_cache!(
     unification::Query<'a, Constant>,
     Unification<Constant>,
+    (),
     record,
     constant_unifies,
     (record.lhs.clone(), record.rhs.clone()),
@@ -318,6 +376,7 @@ implements_cache!(
 implements_cache!(
     predicate::TupleQuery<'a, Lifetime>,
     Satisfied,
+    (),
     record,
     lifetime_is_tuple,
     *record.0,
@@ -327,6 +386,7 @@ implements_cache!(
 implements_cache!(
     predicate::TupleQuery<'a, Type>,
     Satisfied,
+    (),
     record,
     type_is_tuple,
     record.0.clone(),
@@ -336,6 +396,7 @@ implements_cache!(
 implements_cache!(
     predicate::TupleQuery<'a, Constant>,
     Satisfied,
+    (),
     record,
     constant_is_tuple,
     record.0.clone(),
@@ -345,6 +406,7 @@ implements_cache!(
 implements_cache!(
     predicate::OutlivesQuery<'a, Lifetime>,
     Satisfied,
+    (),
     record,
     lifetime_outlives,
     (*record.operand, *record.bound),
@@ -354,6 +416,7 @@ implements_cache!(
 implements_cache!(
     predicate::OutlivesQuery<'a, Type>,
     Satisfied,
+    (),
     record,
     type_outlives,
     (record.operand.clone(), *record.bound),
@@ -363,6 +426,7 @@ implements_cache!(
 implements_cache!(
     predicate::OutlivesQuery<'a, Constant>,
     Satisfied,
+    (),
     record,
     constant_outlives,
     (record.operand.clone(), *record.bound),
