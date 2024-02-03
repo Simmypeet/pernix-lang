@@ -691,7 +691,7 @@ impl Term for Constant {
         }
     }
 
-    fn get_adt_components(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
+    fn get_adt_fields(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
         None
     }
 
@@ -700,6 +700,15 @@ impl Term for Constant {
     fn outlives_predicates<'a>(
         _: &'a Premise,
     ) -> impl Iterator<Item = &'a Outlives<Self>>
+    where
+        Self: 'a,
+    {
+        std::iter::empty()
+    }
+
+    fn constant_type_predicates<'a>(
+        _: &'a Premise,
+    ) -> impl Iterator<Item = &'a Self>
     where
         Self: 'a,
     {
@@ -722,6 +731,10 @@ impl Term for Constant {
             | Self::Symbol(_)
             | Self::MemberSymbol(_) => Satisfiability::Congruent,
         }
+    }
+
+    fn constant_type_satisfiability(&self) -> Satisfiability {
+        Satisfiability::Satisfied
     }
 
     fn get_substructural_matching(

@@ -3,7 +3,8 @@
 use std::collections::{hash_map::Entry, HashMap};
 
 use super::{
-    equality, predicate,
+    equality,
+    predicate::{self, ConstantTypeQuerySource},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     unification::{self, Unification},
 };
@@ -176,6 +177,10 @@ pub trait Session<T: Term>:
         predicate::OutlivesQuery<'a, T>,
         Result = Satisfied,
         InProgress = (),
+    > + for<'a> Cache<
+        predicate::ConstantTypeQuery<'a, T>,
+        Result = Satisfied,
+        InProgress = ConstantTypeQuerySource,
     >
 {
 }
@@ -201,6 +206,10 @@ impl<T: Term, U> Session<T> for U where
             predicate::OutlivesQuery<'a, T>,
             Result = Satisfied,
             InProgress = (),
+        > + for<'a> Cache<
+            predicate::ConstantTypeQuery<'a, T>,
+            Result = Satisfied,
+            InProgress = ConstantTypeQuerySource,
         >
 {
 }
@@ -229,6 +238,13 @@ pub struct Default {
     lifetime_outlives: HashMap<(Lifetime, Lifetime), Cached<(), Satisfied>>,
     type_outlives: HashMap<(Type, Lifetime), Cached<(), Satisfied>>,
     constant_outlives: HashMap<(Constant, Lifetime), Cached<(), Satisfied>>,
+
+    lifetime_constant_type:
+        HashMap<Lifetime, Cached<ConstantTypeQuerySource, Satisfied>>,
+    type_constant_type:
+        HashMap<Type, Cached<ConstantTypeQuerySource, Satisfied>>,
+    constant_constant_type:
+        HashMap<Constant, Cached<ConstantTypeQuerySource, Satisfied>>,
 }
 macro_rules! implements_cache {
     ($query:path, $result_t:path, $in_progress_t:ty, $param:ident, $field_name:ident, $expr_in:expr, $expr_out:expr) => {
@@ -431,4 +447,34 @@ implements_cache!(
     constant_outlives,
     (record.operand.clone(), *record.bound),
     &(record.operand.clone(), *record.bound)
+);
+
+implements_cache!(
+    predicate::ConstantTypeQuery<'a, Lifetime>,
+    Satisfied,
+    ConstantTypeQuerySource,
+    record,
+    lifetime_constant_type,
+    *record.0,
+    record.0
+);
+
+implements_cache!(
+    predicate::ConstantTypeQuery<'a, Type>,
+    Satisfied,
+    ConstantTypeQuerySource,
+    record,
+    type_constant_type,
+    record.0.clone(),
+    record.0
+);
+
+implements_cache!(
+    predicate::ConstantTypeQuery<'a, Constant>,
+    Satisfied,
+    ConstantTypeQuerySource,
+    record,
+    constant_constant_type,
+    record.0.clone(),
+    record.0
 );

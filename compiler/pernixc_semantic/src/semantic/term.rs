@@ -381,10 +381,7 @@ pub trait Term:
     >;
 
     #[doc(hidden)]
-    fn get_adt_components(
-        &self,
-        table: &Table<impl State>,
-    ) -> Option<Vec<Self>>;
+    fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;
 
     #[doc(hidden)]
     fn is_tuple(&self) -> bool;
@@ -397,7 +394,17 @@ pub trait Term:
         Self: 'a;
 
     #[doc(hidden)]
+    fn constant_type_predicates<'a>(
+        premise: &'a Premise,
+    ) -> impl Iterator<Item = &'a Self>
+    where
+        Self: 'a;
+
+    #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
+
+    #[doc(hidden)]
+    fn constant_type_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
     fn get_substructural_matching(

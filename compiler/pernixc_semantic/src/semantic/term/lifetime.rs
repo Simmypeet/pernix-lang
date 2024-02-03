@@ -149,7 +149,7 @@ impl Term for Lifetime {
         None
     }
 
-    fn get_adt_components(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
+    fn get_adt_fields(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
         None
     }
 
@@ -167,8 +167,28 @@ impl Term for Lifetime {
             .filter_map(NonEquality::as_lifetime_outlives)
     }
 
+    fn constant_type_predicates<'a>(
+        _: &'a Premise,
+    ) -> impl Iterator<Item = &'a Self>
+    where
+        Self: 'a,
+    {
+        std::iter::empty()
+    }
+
     fn definite_satisfiability(&self) -> Satisfiability {
         Satisfiability::Satisfied
+    }
+
+    fn constant_type_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::Static => Satisfiability::Satisfied,
+
+            Self::Parameter(_)
+            | Self::Inference(_)
+            | Self::Local(_)
+            | Self::Forall(_) => Satisfiability::Unsatisfied,
+        }
     }
 
     fn get_substructural_matching(

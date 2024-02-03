@@ -835,10 +835,7 @@ impl Term for Type {
         }
     }
 
-    fn get_adt_components(
-        &self,
-        table: &Table<impl State>,
-    ) -> Option<Vec<Self>> {
+    fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>> {
         match self {
             Self::Symbol(Symbol { id, generic_arguments }) => match *id {
                 SymbolKindID::Struct(struct_id) => {
@@ -933,6 +930,46 @@ impl Term for Type {
         }
     }
 
+    fn constant_type_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::Primitive(primitive_type) => match primitive_type {
+                Primitive::Int8
+                | Primitive::Int16
+                | Primitive::Int32
+                | Primitive::Int64
+                | Primitive::Uint8
+                | Primitive::Uint16
+                | Primitive::Uint32
+                | Primitive::Uint64
+                | Primitive::Bool
+                | Primitive::Usize
+                | Primitive::Isize => Satisfiability::Satisfied,
+
+                Primitive::Float32 | Primitive::Float64 => {
+                    Satisfiability::Unsatisfied
+                }
+            },
+
+            Self::Parameter(_) | Self::Inference(_) | Self::MemberSymbol(_) => {
+                Satisfiability::Unsatisfied
+            }
+
+            Self::Symbol(Symbol { id, .. }) => match id {
+                SymbolKindID::Struct(_) | SymbolKindID::Enum(_) => {
+                    Satisfiability::Congruent
+                }
+
+                SymbolKindID::Type(_) => Satisfiability::Unsatisfied,
+            },
+
+            Self::Pointer(_)
+            | Self::Reference(_)
+            | Self::Array(_)
+            | Self::Tuple(_)
+            | Self::Local(_) => Satisfiability::Congruent,
+        }
+    }
+
     fn get_substructural_matching(
         substructural: &SubstructuralMatching<
             Self::SubLifetimeLocation,
@@ -992,6 +1029,18 @@ impl Term for Type {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.types
+    }
+
+    fn constant_type_predicates<'a>(
+        premise: &'a Premise,
+    ) -> impl Iterator<Item = &'a Self>
+    where
+        Self: 'a,
+    {
+        premise
+            .non_equality_predicates
+            .iter()
+            .filter_map(|x| x.as_constant_type().map(|x| &x.0))
     }
 }
 

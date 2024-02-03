@@ -23,7 +23,10 @@ pub enum Satisfiability {
     Congruent,
 }
 
-pub use constant_type::ConstantType;
+pub use constant_type::{
+    ConstantType, Query as ConstantTypeQuery,
+    QuerySource as ConstantTypeQuerySource,
+};
 pub use definite::{definite, Query as DefiniteQuery};
 pub use outlives::{Outlives, Query as OutlivesQuery};
 pub use tuple::{Query as TupleQuery, Tuple};
@@ -62,4 +65,5 @@ pub enum NonEquality {
     TypeOutlives(Outlives<Type>),
     TupleType(Tuple<Type>),
     TupleConstant(Tuple<Constant>),
+    ConstantType(ConstantType),
 }
