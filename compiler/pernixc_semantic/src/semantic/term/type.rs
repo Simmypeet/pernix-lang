@@ -15,12 +15,14 @@ use crate::{
     semantic::{
         mapping::Mapping,
         predicate::{NonEquality, Outlives, Satisfiability},
+        substitution::{Substitute, Substitution},
         unification::{Substructural, Unification},
         Premise,
     },
     symbol::{
-        self, Enum, GenericID, GenericParameters, GlobalID, Struct,
-        TypeParameter, TypeParameterID, Variance,
+        self, ConstantParameterID, Enum, GenericID, GenericParameters,
+        GlobalID, LifetimeParameterID, Struct, TypeParameter, TypeParameterID,
+        Variance,
     },
     table::{Index, State, Table},
 };
@@ -631,6 +633,84 @@ impl Default for Type {
     fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
 }
 
+fn get_substitution_from_generic_arguments(
+    generic_id: GenericID,
+    generic_arguments: &GenericArguments,
+    table: &Table<impl State>,
+) -> Option<Substitution> {
+    let Some(generic_symbol) = table.get_generic(generic_id) else {
+        return None;
+    };
+
+    if generic_arguments.lifetimes.len()
+        != generic_symbol.generic_declaration().parameters.lifetime_order.len()
+        || generic_arguments.types.len()
+            != generic_symbol.generic_declaration().parameters.type_order.len()
+        || generic_arguments.constants.len()
+            != generic_symbol
+                .generic_declaration()
+                .parameters
+                .constant_order
+                .len()
+    {
+        return None;
+    }
+
+    Some(Substitution {
+        lifetimes: generic_arguments
+            .lifetimes
+            .iter()
+            .enumerate()
+            .map(|(idx, lt)| {
+                (
+                    Lifetime::Parameter(LifetimeParameterID {
+                        parent: generic_id,
+                        id: generic_symbol
+                            .generic_declaration()
+                            .parameters
+                            .lifetime_order[idx],
+                    }),
+                    *lt,
+                )
+            })
+            .collect(),
+        types: generic_arguments
+            .types
+            .iter()
+            .enumerate()
+            .map(|(idx, ty)| {
+                (
+                    Type::Parameter(TypeParameterID {
+                        parent: generic_id,
+                        id: generic_symbol
+                            .generic_declaration()
+                            .parameters
+                            .type_order[idx],
+                    }),
+                    ty.clone(),
+                )
+            })
+            .collect(),
+        constants: generic_arguments
+            .constants
+            .iter()
+            .enumerate()
+            .map(|(idx, c)| {
+                (
+                    Constant::Parameter(ConstantParameterID {
+                        parent: generic_id,
+                        id: generic_symbol
+                            .generic_declaration()
+                            .parameters
+                            .constant_order[idx],
+                    }),
+                    c.clone(),
+                )
+            })
+            .collect(),
+    })
+}
+
 impl Term for Type {
     type SubTypeLocation = SubTypeLocation;
     type SubLifetimeLocation = SubLifetimeLocation;
@@ -750,6 +830,72 @@ impl Term for Type {
                         )
                     })
             }
+
+            _ => None,
+        }
+    }
+
+    fn get_adt_components(
+        &self,
+        table: &Table<impl State>,
+    ) -> Option<Vec<Self>> {
+        match self {
+            Self::Symbol(Symbol { id, generic_arguments }) => match *id {
+                SymbolKindID::Struct(struct_id) => {
+                    let substitution = get_substitution_from_generic_arguments(
+                        struct_id.into(),
+                        generic_arguments,
+                        table,
+                    )?;
+
+                    let Some(struct_sym) = table.get(struct_id) else {
+                        return None;
+                    };
+
+                    Some(
+                        struct_sym
+                            .fields
+                            .values()
+                            .map(|field| {
+                                let mut ty = field.r#type.clone();
+                                ty.apply(&substitution);
+                                ty
+                            })
+                            .collect(),
+                    )
+                }
+                SymbolKindID::Enum(enum_id) => {
+                    let substitution = get_substitution_from_generic_arguments(
+                        enum_id.into(),
+                        generic_arguments,
+                        table,
+                    )?;
+
+                    let Some(enum_sym) = table.get(enum_id) else {
+                        return None;
+                    };
+
+                    Some(
+                        enum_sym
+                            .variant_ids_by_name
+                            .values()
+                            .copied()
+                            .filter_map(|variant| table.get(variant))
+                            .filter_map(|variant| {
+                                let Some(ty) = variant.associated_type.as_ref()
+                                else {
+                                    return None;
+                                };
+
+                                let mut ty = ty.clone();
+                                ty.apply(&substitution);
+                                Some(ty)
+                            })
+                            .collect(),
+                    )
+                }
+                SymbolKindID::Type(_) => None,
+            },
 
             _ => None,
         }

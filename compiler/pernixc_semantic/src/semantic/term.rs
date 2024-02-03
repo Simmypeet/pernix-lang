@@ -381,6 +381,12 @@ pub trait Term:
     >;
 
     #[doc(hidden)]
+    fn get_adt_components(
+        &self,
+        table: &Table<impl State>,
+    ) -> Option<Vec<Self>>;
+
+    #[doc(hidden)]
     fn is_tuple(&self) -> bool;
 
     #[doc(hidden)]

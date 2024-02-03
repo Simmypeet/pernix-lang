@@ -691,6 +691,10 @@ impl Term for Constant {
         }
     }
 
+    fn get_adt_components(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
+        None
+    }
+
     fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
 
     fn outlives_predicates<'a>(
@@ -749,6 +753,16 @@ impl Term for Constant {
         substructural.constants.values()
     }
 
+    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+        &mapping.constants
+    }
+
+    fn get_mapping_mut(
+        mapping: &mut Mapping,
+    ) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut mapping.constants
+    }
+
     fn get_generic_parameters(
         parameters: &GenericParameters,
     ) -> &Arena<Self::GenericParameter> {
@@ -769,16 +783,6 @@ impl Term for Constant {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.constants
-    }
-
-    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
-        &mapping.constants
-    }
-
-    fn get_mapping_mut(
-        mapping: &mut Mapping,
-    ) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut mapping.constants
     }
 }
 

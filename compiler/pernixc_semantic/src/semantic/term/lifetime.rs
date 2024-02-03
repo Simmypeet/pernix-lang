@@ -149,6 +149,10 @@ impl Term for Lifetime {
         None
     }
 
+    fn get_adt_components(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
+        None
+    }
+
     fn is_tuple(&self) -> bool { false }
 
     fn outlives_predicates<'a>(
@@ -196,6 +200,16 @@ impl Term for Lifetime {
         substructural.lifetimes.values()
     }
 
+    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
+        &mapping.lifetimes
+    }
+
+    fn get_mapping_mut(
+        mapping: &mut Mapping,
+    ) -> &mut HashMap<Self, HashSet<Self>> {
+        &mut mapping.lifetimes
+    }
+
     fn get_generic_parameters(
         parameters: &GenericParameters,
     ) -> &Arena<Self::GenericParameter> {
@@ -216,16 +230,6 @@ impl Term for Lifetime {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.lifetimes
-    }
-
-    fn get_mapping(mapping: &Mapping) -> &HashMap<Self, HashSet<Self>> {
-        &mapping.lifetimes
-    }
-
-    fn get_mapping_mut(
-        mapping: &mut Mapping,
-    ) -> &mut HashMap<Self, HashSet<Self>> {
-        &mut mapping.lifetimes
     }
 }
 
