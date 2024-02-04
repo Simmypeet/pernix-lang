@@ -13,7 +13,10 @@ use pernixc_syntax::syntax_tree::AccessModifier;
 
 use crate::{
     arena::{Arena, Map, ID},
-    semantic::term::{constant, r#type, GenericArguments, Never},
+    semantic::{
+        predicate,
+        term::{constant, r#type, GenericArguments, Never},
+    },
 };
 
 /// Represents an accessibility of a symbol.
@@ -69,7 +72,7 @@ impl Accessibility {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Predicate {
     /// The predicate itself.
-    // pub predicate: predicate::Predicate<Symbolic>,
+    pub predicate: predicate::Predicate,
 
     /// Location of where the predicate is declared.
     pub span: Option<Span>,

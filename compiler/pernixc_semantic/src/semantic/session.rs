@@ -4,10 +4,14 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use super::{
     equality,
-    predicate::{self, ConstantTypeQuerySource},
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    predicate::{self, ConstantTypeQuerySource, TraitSatisfiability},
+    term::{
+        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
+        Term,
+    },
     unification::{self, Unification},
 };
+use crate::{arena::ID, symbol};
 
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -181,6 +185,10 @@ pub trait Session<T: Term>:
         predicate::ConstantTypeQuery<'a, T>,
         Result = Satisfied,
         InProgress = ConstantTypeQuerySource,
+    > + for<'a> Cache<
+        predicate::TraitQuery<'a>,
+        Result = TraitSatisfiability,
+        InProgress = (),
     >
 {
 }
@@ -210,6 +218,10 @@ impl<T: Term, U> Session<T> for U where
             predicate::ConstantTypeQuery<'a, T>,
             Result = Satisfied,
             InProgress = ConstantTypeQuerySource,
+        > + for<'a> Cache<
+            predicate::TraitQuery<'a>,
+            Result = TraitSatisfiability,
+            InProgress = (),
         >
 {
 }
@@ -245,7 +257,13 @@ pub struct Default {
         HashMap<Type, Cached<ConstantTypeQuerySource, Satisfied>>,
     constant_constant_type:
         HashMap<Constant, Cached<ConstantTypeQuerySource, Satisfied>>,
+
+    trait_satisfiability: HashMap<
+        (ID<symbol::Trait>, bool, GenericArguments),
+        Cached<(), TraitSatisfiability>,
+    >,
 }
+
 macro_rules! implements_cache {
     ($query:path, $result_t:path, $in_progress_t:ty, $param:ident, $field_name:ident, $expr_in:expr, $expr_out:expr) => {
         impl<'a> Cache<$query> for Default {
@@ -477,4 +495,14 @@ implements_cache!(
     constant_constant_type,
     record.0.clone(),
     record.0
+);
+
+implements_cache!(
+    predicate::TraitQuery<'a>,
+    TraitSatisfiability,
+    (),
+    record,
+    trait_satisfiability,
+    (record.id, record.is_const, record.generic_arguments.clone()),
+    &(record.id, record.is_const, record.generic_arguments.clone())
 );

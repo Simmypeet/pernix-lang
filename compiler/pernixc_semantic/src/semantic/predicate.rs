@@ -3,11 +3,11 @@
 mod constant_type;
 mod definite;
 mod outlives;
+mod r#trait;
 mod tuple;
 
 use enum_as_inner::EnumAsInner;
 
-use super::term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use super::{
     substitution::Substitution,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
@@ -33,6 +33,11 @@ pub use constant_type::{
 };
 pub use definite::{definite, Query as DefiniteQuery};
 pub use outlives::{Outlives, Query as OutlivesQuery};
+pub use r#trait::{
+    Implementation, LifetimeConstraint, Query as TraitQuery,
+    ResolveError as TraitResolveError, Satisfiability as TraitSatisfiability,
+    Trait,
+};
 pub use tuple::{Query as TupleQuery, Tuple};
 
 /// A predicate that can appear in the where clause.
@@ -46,6 +51,8 @@ pub enum Predicate {
     TypeOutlives(Outlives<Type>),
     TupleType(Tuple<Type>),
     TupleConstant(Tuple<Constant>),
+    Trait(Trait),
+}
 
 impl Predicate {
     /// Applies the substitution to the predicate.
@@ -92,8 +99,10 @@ pub enum NonEquality {
     TypeOutlives(Outlives<Type>),
     TupleType(Tuple<Type>),
     TupleConstant(Tuple<Constant>),
+    Trait(Trait),
     ConstantType(ConstantType),
 }
+
 impl NonEquality {
     /// Applies the substitution to the predicate.
     pub fn apply(&mut self, substitution: &Substitution) {

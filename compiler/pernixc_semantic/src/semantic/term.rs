@@ -14,8 +14,7 @@ use r#type::Type;
 
 use super::{
     mapping::Mapping,
-    predicate::{Outlives, Satisfiability},
-    substitution::Substitute,
+    predicate::{self, Outlives, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
     substitution::{Substitute, Substitution},
     unification::{self, Unification},
@@ -699,6 +698,49 @@ impl GenericArguments {
         for constant in &mut self.constants {
             constant.apply(substitution);
         }
+    }
+
+    /// Checks if all the generic arguments are definite.
+    ///
+    /// See [`predicate::definite`] for more information.
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`] for more information.
+    pub fn definite<
+        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+        R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    >(
+        &self,
+        premise: &Premise,
+        table: &Table<impl State>,
+        semantic: &mut S,
+        session: &mut Limit<R>,
+    ) -> Result<bool, ExceedLimitError> {
+        for lifetime in &self.lifetimes {
+            if !predicate::definite(
+                lifetime, premise, table, semantic, session,
+            )? {
+                return Ok(true);
+            }
+        }
+
+        for r#type in &self.types {
+            if !predicate::definite(r#type, premise, table, semantic, session)?
+            {
+                return Ok(true);
+            }
+        }
+
+        for constant in &self.constants {
+            if !predicate::definite(
+                constant, premise, table, semantic, session,
+            )? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     fn substructural_match<L, T, C, Y>(
