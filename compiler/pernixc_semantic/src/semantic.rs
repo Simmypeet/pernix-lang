@@ -3,7 +3,7 @@
 use self::{
     equality::equals,
     mapping::Mapping,
-    predicate::{NonEquality, Satisfiability},
+    predicate::{NonEquality, Predicate, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
     term::{
         constant::Constant,
@@ -35,6 +35,56 @@ pub struct Premise {
 
     /// The list of non-equality predicates.
     pub non_equality_predicates: Vec<NonEquality>,
+}
+
+impl Premise {
+    /// Appends the given predicates to the premise.
+    pub fn append_from_predicates(
+        &mut self,
+        predicates: impl Iterator<Item = Predicate>,
+    ) {
+        for predicate in predicates {
+            let non_equality = match predicate {
+                Predicate::TypeEquality(ty_equality) => {
+                    self.equalities_mapping
+                        .insert(ty_equality.lhs, ty_equality.rhs);
+                    continue;
+                }
+                Predicate::ConstantEquality(constant_equality) => {
+                    self.equalities_mapping
+                        .insert(constant_equality.lhs, constant_equality.rhs);
+                    continue;
+                }
+                Predicate::ConstantType(constant_type) => {
+                    NonEquality::ConstantType(constant_type)
+                }
+                Predicate::LifetimeOutlives(lifetime_outlives) => {
+                    NonEquality::LifetimeOutlives(lifetime_outlives)
+                }
+                Predicate::TypeOutlives(type_outlives) => {
+                    NonEquality::TypeOutlives(type_outlives)
+                }
+                Predicate::TupleType(tuple_type) => {
+                    NonEquality::TupleType(tuple_type)
+                }
+                Predicate::TupleConstant(tuple_constant) => {
+                    NonEquality::TupleConstant(tuple_constant)
+                }
+                Predicate::Trait(tr) => NonEquality::Trait(tr),
+            };
+
+            self.non_equality_predicates.push(non_equality);
+        }
+    }
+
+    /// Creates a new [`Premise`] with the given predicates.
+    pub fn from_predicates(
+        predicates: impl Iterator<Item = Predicate>,
+    ) -> Self {
+        let mut premise = Self::default();
+        premise.append_from_predicates(predicates);
+        premise
+    }
 }
 
 /// A customization point for the semantic logic.
