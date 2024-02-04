@@ -20,6 +20,7 @@ use crate::{
 pub mod deduction;
 pub mod equality;
 pub mod mapping;
+pub mod order;
 pub mod predicate;
 pub mod session;
 pub mod substitution;
