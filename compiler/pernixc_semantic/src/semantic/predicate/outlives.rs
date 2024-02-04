@@ -3,6 +3,7 @@ use crate::{
         mapping::Mapping,
         predicate::Satisfiability,
         session::{Cached, ExceedLimitError, Limit, Satisfied, Session},
+        substitution::{Substitute, Substitution},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         unification::{self, Unification},
         visitor, Premise, Semantic,
@@ -28,6 +29,15 @@ pub struct Outlives<T> {
 
     /// The lifetime that the term must outlive.
     pub bound: Lifetime,
+}
+
+impl<T: Term> Outlives<T> {
+    /// Applies a substitution to the [`Outlives::operand`] and
+    /// [`Outlives::bound`].
+    pub fn apply(&mut self, substitution: &Substitution) {
+        self.operand.apply(substitution);
+        self.bound.apply(substitution);
+    }
 }
 
 struct Visitor<

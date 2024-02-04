@@ -3,6 +3,7 @@ use crate::{
     semantic::{
         equality,
         session::{self, ExceedLimitError, Limit, Satisfied, Session},
+        substitution::{Substitute, Substitution},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Premise, Semantic,
     },
@@ -115,6 +116,13 @@ pub enum QuerySource {
 /// Represents a type can be used as a type of a compile-time constant value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantType(pub Type);
+
+impl ConstantType {
+    /// Applies the substitution to the type.
+    pub fn apply(&mut self, substitution: &Substitution) {
+        self.0.apply(substitution);
+    }
+}
 
 fn satisfies_internal<
     T: Term,

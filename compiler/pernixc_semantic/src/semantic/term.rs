@@ -16,8 +16,10 @@ use super::{
     mapping::Mapping,
     predicate::{Outlives, Satisfiability},
     substitution::Substitute,
+    session::{ExceedLimitError, Limit, Session},
+    substitution::{Substitute, Substitution},
     unification::{self, Unification},
-    visitor, Premise,
+    visitor, Premise, Semantic,
 };
 use crate::{
     arena::{Arena, ID},
@@ -684,6 +686,21 @@ where
 }
 
 impl GenericArguments {
+    /// Applies the substitution to all the generic arguments.
+    pub fn apply(&mut self, substitution: &Substitution) {
+        for lifetime in &mut self.lifetimes {
+            lifetime.apply(substitution);
+        }
+
+        for r#type in &mut self.types {
+            r#type.apply(substitution);
+        }
+
+        for constant in &mut self.constants {
+            constant.apply(substitution);
+        }
+    }
+
     fn substructural_match<L, T, C, Y>(
         &self,
         other: &Self,

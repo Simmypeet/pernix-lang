@@ -8,6 +8,10 @@ mod tuple;
 use enum_as_inner::EnumAsInner;
 
 use super::term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use super::{
+    substitution::Substitution,
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+};
 
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -43,8 +47,22 @@ pub enum Predicate {
     TupleType(Tuple<Type>),
     TupleConstant(Tuple<Constant>),
 
-    /* To be implemented */
-    Trait,
+impl Predicate {
+    /// Applies the substitution to the predicate.
+    pub fn apply(&mut self, substitution: &Substitution) {
+        match self {
+            Self::TypeEquality(equality) => equality.apply(substitution),
+            Self::ConstantEquality(equality) => equality.apply(substitution),
+            Self::ConstantType(constant_type) => {
+                constant_type.apply(substitution);
+            }
+            Self::LifetimeOutlives(outlives) => outlives.apply(substitution),
+            Self::TypeOutlives(outlives) => outlives.apply(substitution),
+            Self::TupleType(tuple) => tuple.apply(substitution),
+            Self::TupleConstant(tuple) => tuple.apply(substitution),
+            Self::Trait(tr) => tr.apply(substitution),
+        }
+    }
 }
 
 /// A predicate that two terms are equal.
@@ -57,6 +75,15 @@ pub struct Equality<T> {
     pub rhs: T,
 }
 
+impl<T: Term> Equality<T> {
+    /// Applies the substitution to both [`Equality::lhs`] and
+    /// [`Equality::rhs`].
+    pub fn apply(&mut self, substitution: &Substitution) {
+        self.lhs.apply(substitution);
+        self.rhs.apply(substitution);
+    }
+}
+
 /// An enumeration of all predicates that doesn't include equality.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
@@ -66,4 +93,19 @@ pub enum NonEquality {
     TupleType(Tuple<Type>),
     TupleConstant(Tuple<Constant>),
     ConstantType(ConstantType),
+}
+impl NonEquality {
+    /// Applies the substitution to the predicate.
+    pub fn apply(&mut self, substitution: &Substitution) {
+        match self {
+            Self::LifetimeOutlives(outlives) => outlives.apply(substitution),
+            Self::TypeOutlives(outlives) => outlives.apply(substitution),
+            Self::TupleType(tuple) => tuple.apply(substitution),
+            Self::TupleConstant(tuple) => tuple.apply(substitution),
+            Self::Trait(tr) => tr.apply(substitution),
+            Self::ConstantType(constant_type) => {
+                constant_type.apply(substitution);
+            }
+        }
+    }
 }

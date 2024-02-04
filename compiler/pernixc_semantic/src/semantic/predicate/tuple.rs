@@ -2,6 +2,7 @@ use crate::{
     semantic::{
         equality,
         session::{Cached, ExceedLimitError, Limit, Satisfied, Session},
+        substitution::Substitution,
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         Premise, Semantic,
     },
@@ -14,7 +15,14 @@ pub struct Query<'a, T>(pub &'a T);
 
 /// The predicate meaning that the term is a tuple and is unpackable.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple<T>(T);
+pub struct Tuple<T>(pub T);
+
+impl<T: Term> Tuple<T> {
+    /// Applies a substitution to the [`Tuple`] term.
+    pub fn apply(&mut self, substitution: &Substitution) {
+        self.0.apply(substitution);
+    }
+}
 
 impl<T: Term> Tuple<T> {
     /// Determines whether a predicate of the term is satisfiable.
