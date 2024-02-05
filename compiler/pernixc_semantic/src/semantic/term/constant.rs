@@ -17,6 +17,7 @@ use super::{
 use crate::{
     arena::{Arena, ID},
     semantic::{
+        instantiation::Instantiation,
         mapping::Mapping,
         predicate::{Outlives, Satisfiability},
         unification::{Substructural, Unification},
@@ -24,7 +25,7 @@ use crate::{
     },
     symbol::{
         self, ConstantParameter, ConstantParameterID, GenericID,
-        GenericParameters, GlobalID, Variance, Variant,
+        GenericParameters, GlobalID, MemberID, Variance, Variant,
     },
     table::{Index, State, Table},
 };
@@ -691,6 +692,24 @@ impl Term for Constant {
         }
     }
 
+    fn as_generic_parameter(
+        &self,
+    ) -> Option<&MemberID<ID<Self::GenericParameter>, GenericID>> {
+        self.as_parameter()
+    }
+
+    fn as_generic_parameter_mut(
+        &mut self,
+    ) -> Option<&mut MemberID<ID<Self::GenericParameter>, GenericID>> {
+        self.as_parameter_mut()
+    }
+
+    fn into_generic_parameter(
+        self,
+    ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+        self.into_parameter()
+    }
+
     fn get_adt_fields(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
         None
     }
@@ -735,6 +754,19 @@ impl Term for Constant {
 
     fn constant_type_satisfiability(&self) -> Satisfiability {
         Satisfiability::Satisfied
+    }
+
+    fn get_instantiation(
+        instantitation: &Instantiation,
+    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+        &instantitation.constants
+    }
+
+    fn get_instantiation_mut(
+        instantitation: &mut Instantiation,
+    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
+    {
+        &mut instantitation.constants
     }
 
     fn get_substructural_matching(

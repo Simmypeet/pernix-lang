@@ -4,10 +4,11 @@ use super::Outlives;
 use crate::{
     arena::ID,
     semantic::{
-        equality, order,
+        equality,
+        instantiation::Instantiation,
+        order,
         predicate::{ConstantType, NonEquality, Predicate, Tuple},
         session::{Cached, ExceedLimitError, Limit, Session},
-        substitution::Substitution,
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
@@ -198,9 +199,9 @@ impl Trait {
 }
 
 impl Trait {
-    /// Applies a substitution to the generic arguments.
-    pub fn apply(&mut self, substitution: &Substitution) {
-        self.generic_arguments.apply(substitution);
+    /// Applies an instantiation to the generic arguments.
+    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+        self.generic_arguments.instantiate(instantiation);
     }
 }
 
@@ -209,7 +210,7 @@ impl Trait {
 pub struct Implementation {
     /// The deduced substitution for the generic arguments of the trait
     /// implementation.
-    pub deduced_substitution: Substitution,
+    pub deduced_substitution: Instantiation,
 
     /// The ID of the resolved trait implementation.
     pub id: ID<symbol::TraitImplementation>,
@@ -245,7 +246,7 @@ impl<T: State> Table<T> {
     >(
         &self,
         generic_symbol: &dyn Generic,
-        substitution: &Substitution,
+        substitution: &Instantiation,
         premise: &Premise,
         semantic: &mut S,
         session: &mut Limit<R>,
@@ -260,7 +261,7 @@ impl<T: State> Table<T> {
             .map(|x| &x.predicate)
             .cloned()
         {
-            predicate.apply(substitution);
+            predicate.instantiate(substitution);
 
             match predicate {
                 Predicate::TypeEquality(equality) => {
@@ -382,7 +383,7 @@ impl<T: State> Table<T> {
 
         let mut candidate: Option<(
             TraitImplementationKindID,
-            Substitution,
+            Instantiation,
             Vec<LifetimeConstraint>,
         )> = None;
 

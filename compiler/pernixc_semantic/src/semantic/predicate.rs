@@ -9,7 +9,7 @@ mod tuple;
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    substitution::Substitution,
+    instantiation::{self, Instantiation},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
 };
 
@@ -55,19 +55,23 @@ pub enum Predicate {
 }
 
 impl Predicate {
-    /// Applies the substitution to the predicate.
-    pub fn apply(&mut self, substitution: &Substitution) {
+    /// Applies the instantiate to the predicate.
+    pub fn instantiate(&mut self, substitution: &Instantiation) {
         match self {
-            Self::TypeEquality(equality) => equality.apply(substitution),
-            Self::ConstantEquality(equality) => equality.apply(substitution),
-            Self::ConstantType(constant_type) => {
-                constant_type.apply(substitution);
+            Self::TypeEquality(equality) => equality.instantiate(substitution),
+            Self::ConstantEquality(equality) => {
+                equality.instantiate(substitution);
             }
-            Self::LifetimeOutlives(outlives) => outlives.apply(substitution),
-            Self::TypeOutlives(outlives) => outlives.apply(substitution),
-            Self::TupleType(tuple) => tuple.apply(substitution),
-            Self::TupleConstant(tuple) => tuple.apply(substitution),
-            Self::Trait(tr) => tr.apply(substitution),
+            Self::ConstantType(constant_type) => {
+                constant_type.instantiate(substitution);
+            }
+            Self::LifetimeOutlives(outlives) => {
+                outlives.instantiate(substitution);
+            }
+            Self::TypeOutlives(outlives) => outlives.instantiate(substitution),
+            Self::TupleType(tuple) => tuple.instantiate(substitution),
+            Self::TupleConstant(tuple) => tuple.instantiate(substitution),
+            Self::Trait(tr) => tr.instantiate(substitution),
         }
     }
 }
@@ -83,11 +87,11 @@ pub struct Equality<T> {
 }
 
 impl<T: Term> Equality<T> {
-    /// Applies the substitution to both [`Equality::lhs`] and
+    /// Applies the instantiation to both [`Equality::lhs`] and
     /// [`Equality::rhs`].
-    pub fn apply(&mut self, substitution: &Substitution) {
-        self.lhs.apply(substitution);
-        self.rhs.apply(substitution);
+    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+        instantiation::instantiate(&mut self.lhs, instantiation);
+        instantiation::instantiate(&mut self.rhs, instantiation);
     }
 }
 
@@ -104,16 +108,18 @@ pub enum NonEquality {
 }
 
 impl NonEquality {
-    /// Applies the substitution to the predicate.
-    pub fn apply(&mut self, substitution: &Substitution) {
+    /// Applies the instantiation to the predicate.
+    pub fn instantiate(&mut self, substitution: &Instantiation) {
         match self {
-            Self::LifetimeOutlives(outlives) => outlives.apply(substitution),
-            Self::TypeOutlives(outlives) => outlives.apply(substitution),
-            Self::TupleType(tuple) => tuple.apply(substitution),
-            Self::TupleConstant(tuple) => tuple.apply(substitution),
-            Self::Trait(tr) => tr.apply(substitution),
+            Self::LifetimeOutlives(outlives) => {
+                outlives.instantiate(substitution);
+            }
+            Self::TypeOutlives(outlives) => outlives.instantiate(substitution),
+            Self::TupleType(tuple) => tuple.instantiate(substitution),
+            Self::TupleConstant(tuple) => tuple.instantiate(substitution),
+            Self::Trait(tr) => tr.instantiate(substitution),
             Self::ConstantType(constant_type) => {
-                constant_type.apply(substitution);
+                constant_type.instantiate(substitution);
             }
         }
     }

@@ -14,13 +14,15 @@ use super::{
 use crate::{
     arena::{Arena, ID},
     semantic::{
+        instantiation::Instantiation,
         mapping::Mapping,
         predicate::{NonEquality, Outlives, Satisfiability},
         unification::{Substructural, Unification},
         Premise,
     },
     symbol::{
-        GenericParameters, LifetimeParameter, LifetimeParameterID, Variance,
+        GenericID, GenericParameters, LifetimeParameter, LifetimeParameterID,
+        MemberID, Variance,
     },
     table::{State, Table},
 };
@@ -149,6 +151,24 @@ impl Term for Lifetime {
         None
     }
 
+    fn as_generic_parameter(
+        &self,
+    ) -> Option<&MemberID<ID<Self::GenericParameter>, GenericID>> {
+        self.as_parameter()
+    }
+
+    fn as_generic_parameter_mut(
+        &mut self,
+    ) -> Option<&mut MemberID<ID<Self::GenericParameter>, GenericID>> {
+        self.as_parameter_mut()
+    }
+
+    fn into_generic_parameter(
+        self,
+    ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+        self.into_parameter()
+    }
+
     fn get_adt_fields(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
         None
     }
@@ -189,6 +209,19 @@ impl Term for Lifetime {
             | Self::Local(_)
             | Self::Forall(_) => Satisfiability::Unsatisfied,
         }
+    }
+
+    fn get_instantiation(
+        instantitation: &Instantiation,
+    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+        &instantitation.lifetimes
+    }
+
+    fn get_instantiation_mut(
+        instantitation: &mut Instantiation,
+    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
+    {
+        &mut instantitation.lifetimes
     }
 
     fn get_substructural_matching(

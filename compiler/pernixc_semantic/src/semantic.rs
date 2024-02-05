@@ -13,17 +13,17 @@ use self::{
     },
 };
 use crate::{
-    semantic::substitution::{Substitute, Substitution},
+    semantic::instantiation::Instantiation,
     table::{Index, State, Table},
 };
 
 pub mod deduction;
 pub mod equality;
+pub mod instantiation;
 pub mod mapping;
 pub mod order;
 pub mod predicate;
 pub mod session;
-pub mod substitution;
 pub mod term;
 pub mod unification;
 pub mod visitor;
@@ -197,15 +197,14 @@ impl Semantic<Type> for Default {
                 };
 
                 let mut type_aliased = type_sym.r#type.clone();
-                let Ok(subst) = Substitution::from_generic_arguments(
+                let Ok(inst) = Instantiation::from_generic_arguments(
                     generic_arguments.clone(),
                     (*id).into(),
                     &type_sym.generic_declaration.parameters,
                 ) else {
                     return Ok(None);
                 };
-
-                type_aliased.apply(&subst);
+                instantiation::instantiate(&mut type_aliased, &inst);
 
                 Ok(Some(type_aliased))
             }

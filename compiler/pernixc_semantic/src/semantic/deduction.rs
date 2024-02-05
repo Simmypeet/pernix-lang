@@ -7,9 +7,9 @@ use std::{
 
 use super::{
     equality,
+    instantiation::{self, Instantiation},
     mapping::Mapping,
     session::{ExceedLimitError, Limit, Session},
-    substitution::Substitution,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
@@ -17,7 +17,9 @@ use super::{
     unification, Premise, Semantic,
 };
 use crate::{
+    arena::ID,
     semantic::term::{constant, r#type, MemberSymbol},
+    symbol::{GenericID, MemberID},
     table::{State, Table},
 };
 
@@ -109,14 +111,14 @@ fn mapping_equals<
     R: Session<T> + Session<Type> + Session<Lifetime> + Session<Constant>,
 >(
     unification: HashMap<T, HashSet<T>>,
-    substitution: &Substitution,
+    substitution: &Instantiation,
     premise: &Premise,
     table: &Table<impl State>,
     semantic: &mut S,
     session: &mut Limit<R>,
 ) -> Result<bool, ExceedLimitError> {
     for (mut key, values) in unification {
-        key.apply(substitution);
+        instantiation::instantiate(&mut key, substitution);
 
         for value in values {
             if !equality::equals(
@@ -130,6 +132,7 @@ fn mapping_equals<
     Ok(true)
 }
 
+#[allow(clippy::type_complexity)]
 fn from_unification_to_substitution<
     T: Term,
     S: Semantic<T> + Semantic<Type> + Semantic<Lifetime> + Semantic<Constant>,
@@ -140,7 +143,10 @@ fn from_unification_to_substitution<
     table: &Table<impl State>,
     semantic: &mut S,
     session: &mut Limit<R>,
-) -> Result<Option<HashMap<T, T>>, ExceedLimitError> {
+) -> Result<
+    Option<HashMap<MemberID<ID<T::GenericParameter>, GenericID>, T>>,
+    ExceedLimitError,
+> {
     let mut result = HashMap::new();
     for (key, values) in unification {
         let mut values = values.into_iter();
@@ -155,7 +161,13 @@ fn from_unification_to_substitution<
             }
         }
 
-        result.insert(key, sampled).unwrap();
+        result
+            .insert(
+                key.into_generic_parameter()
+                    .expect("should be a generic parameter"),
+                sampled,
+            )
+            .unwrap();
     }
 
     Ok(Some(result))
@@ -178,7 +190,7 @@ impl GenericArguments {
         table: &Table<impl State>,
         semantic: &mut S,
         session: &mut Limit<R>,
-    ) -> Result<Option<Substitution>, ExceedLimitError> {
+    ) -> Result<Option<Instantiation>, ExceedLimitError> {
         // arity check
         if self.lifetimes.len() != another.lifetimes.len()
             || self.types.len() != another.types.len()
@@ -264,7 +276,7 @@ impl GenericArguments {
                 return Ok(None);
             };
             (
-                Substitution { lifetimes, types, constants },
+                Instantiation { lifetimes, types, constants },
                 trait_type_map,
                 trait_constant_map,
             )

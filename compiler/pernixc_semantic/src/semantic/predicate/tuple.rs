@@ -1,8 +1,8 @@
 use crate::{
     semantic::{
         equality,
+        instantiation::{self, Instantiation},
         session::{Cached, ExceedLimitError, Limit, Satisfied, Session},
-        substitution::Substitution,
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         Premise, Semantic,
     },
@@ -18,9 +18,9 @@ pub struct Query<'a, T>(pub &'a T);
 pub struct Tuple<T>(pub T);
 
 impl<T: Term> Tuple<T> {
-    /// Applies a substitution to the [`Tuple`] term.
-    pub fn apply(&mut self, substitution: &Substitution) {
-        self.0.apply(substitution);
+    /// Applies a instantiation to the [`Tuple`] term.
+    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+        instantiation::instantiate(&mut self.0, instantiation);
     }
 }
 

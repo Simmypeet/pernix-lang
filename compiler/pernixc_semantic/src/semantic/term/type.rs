@@ -13,16 +13,16 @@ use super::{
 use crate::{
     arena::{Arena, ID},
     semantic::{
+        instantiation::{self, Instantiation},
         mapping::Mapping,
         predicate::{NonEquality, Outlives, Satisfiability},
-        substitution::{Substitute, Substitution},
         unification::{Substructural, Unification},
         Premise,
     },
     symbol::{
         self, ConstantParameterID, Enum, GenericID, GenericParameters,
-        GlobalID, LifetimeParameterID, Struct, TypeParameter, TypeParameterID,
-        Variance,
+        GlobalID, LifetimeParameterID, MemberID, Struct, TypeParameter,
+        TypeParameterID, Variance,
     },
     table::{Index, State, Table},
 };
@@ -637,7 +637,7 @@ fn get_substitution_from_generic_arguments(
     generic_id: GenericID,
     generic_arguments: &GenericArguments,
     table: &Table<impl State>,
-) -> Option<Substitution> {
+) -> Option<Instantiation> {
     let Some(generic_symbol) = table.get_generic(generic_id) else {
         return None;
     };
@@ -656,20 +656,20 @@ fn get_substitution_from_generic_arguments(
         return None;
     }
 
-    Some(Substitution {
+    Some(Instantiation {
         lifetimes: generic_arguments
             .lifetimes
             .iter()
             .enumerate()
             .map(|(idx, lt)| {
                 (
-                    Lifetime::Parameter(LifetimeParameterID {
+                    LifetimeParameterID {
                         parent: generic_id,
                         id: generic_symbol
                             .generic_declaration()
                             .parameters
                             .lifetime_order[idx],
-                    }),
+                    },
                     *lt,
                 )
             })
@@ -680,13 +680,13 @@ fn get_substitution_from_generic_arguments(
             .enumerate()
             .map(|(idx, ty)| {
                 (
-                    Type::Parameter(TypeParameterID {
+                    TypeParameterID {
                         parent: generic_id,
                         id: generic_symbol
                             .generic_declaration()
                             .parameters
                             .type_order[idx],
-                    }),
+                    },
                     ty.clone(),
                 )
             })
@@ -697,13 +697,13 @@ fn get_substitution_from_generic_arguments(
             .enumerate()
             .map(|(idx, c)| {
                 (
-                    Constant::Parameter(ConstantParameterID {
+                    ConstantParameterID {
                         parent: generic_id,
                         id: generic_symbol
                             .generic_declaration()
                             .parameters
                             .constant_order[idx],
-                    }),
+                    },
                     c.clone(),
                 )
             })
@@ -835,6 +835,24 @@ impl Term for Type {
         }
     }
 
+    fn as_generic_parameter(
+        &self,
+    ) -> Option<&MemberID<ID<Self::GenericParameter>, GenericID>> {
+        self.as_parameter()
+    }
+
+    fn as_generic_parameter_mut(
+        &mut self,
+    ) -> Option<&mut MemberID<ID<Self::GenericParameter>, GenericID>> {
+        self.as_parameter_mut()
+    }
+
+    fn into_generic_parameter(
+        self,
+    ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+        self.into_parameter()
+    }
+
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>> {
         match self {
             Self::Symbol(Symbol { id, generic_arguments }) => match *id {
@@ -855,7 +873,10 @@ impl Term for Type {
                             .values()
                             .map(|field| {
                                 let mut ty = field.r#type.clone();
-                                ty.apply(&substitution);
+                                instantiation::instantiate(
+                                    &mut ty,
+                                    &substitution,
+                                );
                                 ty
                             })
                             .collect(),
@@ -885,7 +906,10 @@ impl Term for Type {
                                 };
 
                                 let mut ty = ty.clone();
-                                ty.apply(&substitution);
+                                instantiation::instantiate(
+                                    &mut ty,
+                                    &substitution,
+                                );
                                 Some(ty)
                             })
                             .collect(),
@@ -910,6 +934,18 @@ impl Term for Type {
             .non_equality_predicates
             .iter()
             .filter_map(NonEquality::as_type_outlives)
+    }
+
+    fn constant_type_predicates<'a>(
+        premise: &'a Premise,
+    ) -> impl Iterator<Item = &'a Self>
+    where
+        Self: 'a,
+    {
+        premise
+            .non_equality_predicates
+            .iter()
+            .filter_map(|x| x.as_constant_type().map(|x| &x.0))
     }
 
     fn definite_satisfiability(&self) -> Satisfiability {
@@ -1031,16 +1067,17 @@ impl Term for Type {
         &mut generic_arguments.types
     }
 
-    fn constant_type_predicates<'a>(
-        premise: &'a Premise,
-    ) -> impl Iterator<Item = &'a Self>
-    where
-        Self: 'a,
+    fn get_instantiation(
+        instantitation: &Instantiation,
+    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+        &instantitation.types
+    }
+
+    fn get_instantiation_mut(
+        instantitation: &mut Instantiation,
+    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
     {
-        premise
-            .non_equality_predicates
-            .iter()
-            .filter_map(|x| x.as_constant_type().map(|x| &x.0))
+        &mut instantitation.types
     }
 }
 

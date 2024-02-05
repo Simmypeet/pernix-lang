@@ -222,3 +222,6 @@ impl GenericArguments {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

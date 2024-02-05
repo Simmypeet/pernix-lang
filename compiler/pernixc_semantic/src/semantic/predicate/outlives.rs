@@ -1,9 +1,9 @@
 use crate::{
     semantic::{
+        instantiation::{self, Instantiation},
         mapping::Mapping,
         predicate::Satisfiability,
         session::{Cached, ExceedLimitError, Limit, Satisfied, Session},
-        substitution::{Substitute, Substitution},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         unification::{self, Unification},
         visitor, Premise, Semantic,
@@ -32,11 +32,11 @@ pub struct Outlives<T> {
 }
 
 impl<T: Term> Outlives<T> {
-    /// Applies a substitution to the [`Outlives::operand`] and
+    /// Applies a instantiation to the [`Outlives::operand`] and
     /// [`Outlives::bound`].
-    pub fn apply(&mut self, substitution: &Substitution) {
-        self.operand.apply(substitution);
-        self.bound.apply(substitution);
+    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+        instantiation::instantiate(&mut self.operand, instantiation);
+        instantiation::instantiate(&mut self.bound, instantiation);
     }
 }
 
@@ -117,6 +117,12 @@ impl<
             Ok(true) => true,
         }
     }
+
+    fn visit_type_mut(&mut self, _: &mut Type) -> bool { todo!() }
+
+    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool { todo!() }
+
+    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { todo!() }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

@@ -13,7 +13,6 @@ use crate::{
     semantic::{
         self, mapping,
         session::{self, ExceedLimitError, Limit, Session},
-        substitution::{Substitute, Substitution},
         term::{
             constant::Constant,
             lifetime::Lifetime,
@@ -756,6 +755,12 @@ impl Visitor for TermCollector {
     fn visit_lifetime(&mut self, _: &Lifetime) -> bool { true }
 
     fn visit_constant(&mut self, _: &Constant) -> bool { true }
+
+    fn visit_type_mut(&mut self, _: &mut Type) -> bool { todo!() }
+
+    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool { todo!() }
+
+    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { todo!() }
 }
 
 #[derive(Debug)]
@@ -799,6 +804,31 @@ impl Arbitrary for TypeAlias {
             )
             .boxed()
     }
+}
+
+struct Subsitutor<'a> {
+    from: &'a Type,
+    to: &'a Type,
+}
+
+impl<'a> Visitor for Subsitutor<'a> {
+    fn visit_type(&mut self, _: &Type) -> bool { todo!() }
+
+    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { todo!() }
+
+    fn visit_constant(&mut self, _: &Constant) -> bool { todo!() }
+
+    fn visit_type_mut(&mut self, ty: &mut Type) -> bool {
+        if ty == self.from {
+            *ty = self.to.clone();
+        }
+
+        true
+    }
+
+    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool { true }
+
+    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { true }
 }
 
 impl Property<Type> for TypeAlias {
@@ -878,23 +908,18 @@ impl Property<Type> for TypeAlias {
                         let mut sampled =
                             if self.aliased_at_lhs { lhs } else { rhs };
 
-                        sampled.apply(&Substitution {
-                            types: {
-                                let mut map = HashMap::new();
+                        let mut subsitutor = Subsitutor {
+                            from: &self.argument,
+                            to: &Type::Parameter(TypeParameterID {
+                                parent: GenericID::Type(self.type_id),
+                                id: ID::new(0),
+                            }),
+                        };
 
-                                map.insert(
-                                    self.argument.clone(),
-                                    Type::Parameter(TypeParameterID {
-                                        parent: GenericID::Type(self.type_id),
-                                        id: ID::new(0),
-                                    }),
-                                );
-
-                                map
-                            },
-                            constants: HashMap::new(),
-                            lifetimes: HashMap::new(),
-                        });
+                        visitor::accept_recursive_mut(
+                            &mut sampled,
+                            &mut subsitutor,
+                        );
 
                         sampled
                     },

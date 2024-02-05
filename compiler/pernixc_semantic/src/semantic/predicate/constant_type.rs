@@ -2,8 +2,8 @@ use super::Satisfiability;
 use crate::{
     semantic::{
         equality,
+        instantiation::{self, Instantiation},
         session::{self, ExceedLimitError, Limit, Satisfied, Session},
-        substitution::{Substitute, Substitution},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Premise, Semantic,
     },
@@ -96,6 +96,12 @@ impl<
 
         true
     }
+
+    fn visit_type_mut(&mut self, _: &mut Type) -> bool { todo!() }
+
+    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool { todo!() }
+
+    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { todo!() }
 }
 
 /// A query for checking constant type predicate.
@@ -118,9 +124,9 @@ pub enum QuerySource {
 pub struct ConstantType(pub Type);
 
 impl ConstantType {
-    /// Applies the substitution to the type.
-    pub fn apply(&mut self, substitution: &Substitution) {
-        self.0.apply(substitution);
+    /// Applies the instantiation to the type.
+    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+        instantiation::instantiate(&mut self.0, instantiation);
     }
 }
 

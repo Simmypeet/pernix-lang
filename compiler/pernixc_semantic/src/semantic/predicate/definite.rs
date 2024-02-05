@@ -92,6 +92,12 @@ impl<
 
         true
     }
+
+    fn visit_type_mut(&mut self, _: &mut Type) -> bool { todo!() }
+
+    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool { todo!() }
+
+    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { todo!() }
 }
 
 /// A query for checking definite predicate satisfiability.

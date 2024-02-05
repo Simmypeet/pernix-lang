@@ -13,16 +13,18 @@ use lifetime::Lifetime;
 use r#type::Type;
 
 use super::{
+    instantiation::{self, Instantiation},
     mapping::Mapping,
     predicate::{self, Outlives, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
-    substitution::{Substitute, Substitution},
     unification::{self, Unification},
     visitor, Premise, Semantic,
 };
 use crate::{
     arena::{Arena, ID},
-    symbol::{GenericID, GenericParameter, GenericParameters, Variance},
+    symbol::{
+        GenericID, GenericParameter, GenericParameters, MemberID, Variance,
+    },
     table::{State, Table},
 };
 
@@ -338,7 +340,6 @@ pub trait Term:
     + Sized
     + Clone
     + Ord
-    + Substitute
     + visitor::Element
     + unification::Element
 {
@@ -382,6 +383,21 @@ pub trait Term:
     >;
 
     #[doc(hidden)]
+    fn as_generic_parameter(
+        &self,
+    ) -> Option<&MemberID<ID<Self::GenericParameter>, GenericID>>;
+
+    #[doc(hidden)]
+    fn as_generic_parameter_mut(
+        &mut self,
+    ) -> Option<&mut MemberID<ID<Self::GenericParameter>, GenericID>>;
+
+    #[doc(hidden)]
+    fn into_generic_parameter(
+        self,
+    ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
+
+    #[doc(hidden)]
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;
 
     #[doc(hidden)]
@@ -406,6 +422,16 @@ pub trait Term:
 
     #[doc(hidden)]
     fn constant_type_satisfiability(&self) -> Satisfiability;
+
+    #[doc(hidden)]
+    fn get_instantiation(
+        instantitation: &Instantiation,
+    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
+
+    #[doc(hidden)]
+    fn get_instantiation_mut(
+        instantitation: &mut Instantiation,
+    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
 
     #[doc(hidden)]
     fn get_substructural_matching(
@@ -748,18 +774,18 @@ impl GenericArguments {
         Ok(Some(mapping))
     }
 
-    /// Applies the substitution to all the generic arguments.
-    pub fn apply(&mut self, substitution: &Substitution) {
+    /// Applies the instantiation to all the generic arguments.
+    pub fn instantiate(&mut self, instantiation: &Instantiation) {
         for lifetime in &mut self.lifetimes {
-            lifetime.apply(substitution);
+            instantiation::instantiate(lifetime, instantiation);
         }
 
         for r#type in &mut self.types {
-            r#type.apply(substitution);
+            instantiation::instantiate(r#type, instantiation);
         }
 
         for constant in &mut self.constants {
-            constant.apply(substitution);
+            instantiation::instantiate(constant, instantiation);
         }
     }
 
