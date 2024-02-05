@@ -5,14 +5,14 @@ use crate::{
     arena::ID,
     semantic::{
         equality, order,
-        predicate::{ConstantType, Predicate, Tuple},
+        predicate::{ConstantType, NonEquality, Predicate, Tuple},
         session::{Cached, ExceedLimitError, Limit, Session},
         substitution::Substitution,
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
         },
-        Premise, Semantic,
+        unification, Premise, Semantic,
     },
     symbol::{self, Generic, TraitImplementationKindID},
     table::{Index, State, Table},
@@ -57,6 +57,21 @@ pub struct Query<'a> {
     pub generic_arguments: &'a GenericArguments,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct HigherRankedLifetimeUnifyingConfig;
+
+impl unification::Config for HigherRankedLifetimeUnifyingConfig {
+    fn lifetime_unifiable(&mut self, from: &Lifetime, _: &Lifetime) -> bool {
+        from.is_forall()
+    }
+
+    fn type_unifiable(&mut self, _: &Type, _: &Type) -> bool { false }
+
+    fn constant_unifiable(&mut self, _: &Constant, _: &Constant) -> bool {
+        false
+    }
+}
+
 impl Trait {
     /// Determines whether there exists an implementation for the given trait
     /// and generic arguments.
@@ -71,9 +86,9 @@ impl Trait {
         id: ID<symbol::Trait>,
         is_const: bool,
         generic_arguments: &GenericArguments,
-        _premise: &Premise,
-        _table: &Table<impl State>,
-        _semantic: &mut S,
+        premise: &Premise,
+        table: &Table<impl State>,
+        semantic: &mut S,
         session: &mut Limit<R>,
     ) -> Result<Option<Satisfiability>, ExceedLimitError> {
         match session.mark_as_in_progress(
@@ -92,7 +107,93 @@ impl Trait {
             None => {}
         }
 
-        todo!()
+        // look for the premise that matches
+        'outer: for trait_premise in premise
+            .non_equality_predicates
+            .iter()
+            .filter_map(NonEquality::as_trait)
+        {
+            if (is_const && !trait_premise.is_const) || (id != trait_premise.id)
+            {
+                continue;
+            }
+
+            let Some(unification_mapping) =
+                trait_premise.generic_arguments.unify_as_mapping(
+                    generic_arguments,
+                    premise,
+                    table,
+                    &mut HigherRankedLifetimeUnifyingConfig,
+                    semantic,
+                    session,
+                )?
+            else {
+                continue;
+            };
+
+            for lifetimes in unification_mapping.lifetimes.values() {
+                let mut lifetimes_iter = lifetimes.iter();
+
+                // get the first lifetime to compare with the rest
+                let Some(first_lifetime) = lifetimes_iter.next() else {
+                    continue 'outer;
+                };
+
+                for lifetime in lifetimes_iter {
+                    if !equality::equals(
+                        first_lifetime,
+                        lifetime,
+                        premise,
+                        table,
+                        semantic,
+                        session,
+                    )? {
+                        continue 'outer;
+                    }
+                }
+            }
+
+            // if all the lifetimes are equal, then the trait is satisfied
+            session.mark_as_done(
+                Query { id, is_const, generic_arguments },
+                Satisfiability { lifetime_constraints: Vec::new() },
+            );
+            return Ok(Some(Satisfiability {
+                lifetime_constraints: Vec::new(),
+            }));
+        }
+
+        // manually search for the trait implementation
+        match table.resolve_implementation(
+            id,
+            generic_arguments,
+            premise,
+            semantic,
+            session,
+        ) {
+            Ok(implementation) => {
+                session.mark_as_done(
+                    Query { id, is_const, generic_arguments },
+                    Satisfiability {
+                        lifetime_constraints: implementation
+                            .lifetime_constraints
+                            .clone(),
+                    },
+                );
+                Ok(Some(Satisfiability {
+                    lifetime_constraints: implementation.lifetime_constraints,
+                }))
+            }
+
+            Err(ResolveError::ExceedLimitError(exceed_limit_error)) => {
+                Err(exceed_limit_error)
+            }
+
+            Err(_) => {
+                session.clear_query(Query { id, is_const, generic_arguments });
+                Ok(None)
+            }
+        }
     }
 }
 
