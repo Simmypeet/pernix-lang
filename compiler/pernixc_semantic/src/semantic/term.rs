@@ -685,6 +685,69 @@ where
 }
 
 impl GenericArguments {
+    /// Returns a unification of `this` generic arguments to `other` generic
+    /// arguments.
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`] for more information.
+    pub fn unify_as_mapping<
+        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+        R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    >(
+        &self,
+        other: &Self,
+        premise: &Premise,
+        table: &Table<impl State>,
+        config: &mut impl unification::Config,
+        semantic: &mut S,
+        session: &mut Limit<R>,
+    ) -> Result<Option<Mapping>, ExceedLimitError> {
+        let mut mapping = Mapping::default();
+
+        if self.lifetimes.len() != other.lifetimes.len()
+            || self.types.len() != other.types.len()
+            || self.constants.len() != other.constants.len()
+        {
+            return Ok(None);
+        }
+
+        for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
+            let Some(unification) = unification::unify(
+                lhs, rhs, premise, table, config, semantic, session,
+            )?
+            else {
+                return Ok(None);
+            };
+
+            mapping.append_from_unification(unification);
+        }
+
+        for (lhs, rhs) in self.types.iter().zip(&other.types) {
+            let Some(unification) = unification::unify(
+                lhs, rhs, premise, table, config, semantic, session,
+            )?
+            else {
+                return Ok(None);
+            };
+
+            mapping.append_from_unification(unification);
+        }
+
+        for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
+            let Some(unification) = unification::unify(
+                lhs, rhs, premise, table, config, semantic, session,
+            )?
+            else {
+                return Ok(None);
+            };
+
+            mapping.append_from_unification(unification);
+        }
+
+        Ok(Some(mapping))
+    }
+
     /// Applies the substitution to all the generic arguments.
     pub fn apply(&mut self, substitution: &Substitution) {
         for lifetime in &mut self.lifetimes {
