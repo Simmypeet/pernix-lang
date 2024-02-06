@@ -24,6 +24,7 @@ pub mod mapping;
 pub mod order;
 pub mod predicate;
 pub mod session;
+pub mod subterm;
 pub mod term;
 pub mod unification;
 pub mod visitor;

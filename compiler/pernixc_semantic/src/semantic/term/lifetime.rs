@@ -8,8 +8,8 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, r#type::Type, GenericArguments, Match, Never,
-    SubTermLocation, SubstructuralMatching, Term,
+    constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
+    GetVarianceError, Match, Never, SubstructuralMatching, Term,
 };
 use crate::{
     arena::{Arena, ID},
@@ -17,6 +17,7 @@ use crate::{
         instantiation::Instantiation,
         mapping::Mapping,
         predicate::{NonEquality, Outlives, Satisfiability},
+        subterm::Location,
         unification::{Substructural, Unification},
         Premise,
     },
@@ -71,12 +72,12 @@ pub enum Lifetime {
     Forall(Forall),
 }
 
-impl SubTermLocation<Lifetime, Lifetime> for Never {
+impl Location<Lifetime, Lifetime> for Never {
     fn assign_sub_term(
         self,
         _: &mut Lifetime,
         _: Lifetime,
-    ) -> Result<(), super::AssignSubTermError> {
+    ) -> Result<(), AssignSubTermError> {
         match self {}
     }
 
@@ -86,17 +87,17 @@ impl SubTermLocation<Lifetime, Lifetime> for Never {
         self,
         _: &Lifetime,
         _: &Table<impl State>,
-    ) -> Result<Variance, super::GetVarianceError> {
+    ) -> Result<Variance, GetVarianceError> {
         match self {}
     }
 }
 
-impl SubTermLocation<Lifetime, Type> for Never {
+impl Location<Lifetime, Type> for Never {
     fn assign_sub_term(
         self,
         _: &mut Lifetime,
         _: Type,
-    ) -> Result<(), super::AssignSubTermError> {
+    ) -> Result<(), AssignSubTermError> {
         match self {}
     }
 
@@ -106,17 +107,17 @@ impl SubTermLocation<Lifetime, Type> for Never {
         self,
         _: &Lifetime,
         _: &Table<impl State>,
-    ) -> Result<Variance, super::GetVarianceError> {
+    ) -> Result<Variance, GetVarianceError> {
         match self {}
     }
 }
 
-impl SubTermLocation<Lifetime, Constant> for Never {
+impl Location<Lifetime, Constant> for Never {
     fn assign_sub_term(
         self,
         _: &mut Lifetime,
         _: Constant,
-    ) -> Result<(), super::AssignSubTermError> {
+    ) -> Result<(), AssignSubTermError> {
         match self {}
     }
 
@@ -126,7 +127,7 @@ impl SubTermLocation<Lifetime, Constant> for Never {
         self,
         _: &Lifetime,
         _: &Table<impl State>,
-    ) -> Result<Variance, super::GetVarianceError> {
+    ) -> Result<Variance, GetVarianceError> {
         match self {}
     }
 }

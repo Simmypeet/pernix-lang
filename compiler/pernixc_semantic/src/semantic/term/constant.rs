@@ -9,10 +9,10 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    lifetime::Lifetime, r#type::Type, AssignSubTermError, GenericArguments,
-    GetVarianceError, Local, Match, MemberSymbol, Never,
-    SubMemberSymbolTermLocation, SubSymbolTermLocation, SubTermLocation,
-    SubTupleTermLocation, SubstructuralMatching, Symbol, Term,
+    lifetime::Lifetime, r#type::Type, GenericArguments, GetVarianceError,
+    Local, Match, MemberSymbol, Never, SubMemberSymbolTermLocation,
+    SubSymbolTermLocation, SubTupleTermLocation, SubstructuralMatching, Symbol,
+    Term,
 };
 use crate::{
     arena::{Arena, ID},
@@ -20,6 +20,7 @@ use crate::{
         instantiation::Instantiation,
         mapping::Mapping,
         predicate::{Outlives, Satisfiability},
+        subterm::{AssignSubTermError, Location},
         unification::{Substructural, Unification},
         Premise,
     },
@@ -143,7 +144,7 @@ pub enum SubConstantLocation {
     Local,
 }
 
-impl SubTermLocation<Constant, Constant> for SubConstantLocation {
+impl Location<Constant, Constant> for SubConstantLocation {
     fn assign_sub_term(
         self,
         term: &mut Constant,
@@ -307,7 +308,7 @@ pub enum SubTypeLocation {
     MemberSymbol(SubMemberSymbolTermLocation),
 }
 
-impl SubTermLocation<Constant, Type> for SubTypeLocation {
+impl Location<Constant, Type> for SubTypeLocation {
     fn assign_sub_term(
         self,
         term: &mut Constant,
@@ -410,7 +411,7 @@ pub enum SubLifetimeLocation {
     MemberSymbol(SubMemberSymbolTermLocation),
 }
 
-impl SubTermLocation<Constant, Lifetime> for SubLifetimeLocation {
+impl Location<Constant, Lifetime> for SubLifetimeLocation {
     fn assign_sub_term(
         self,
         term: &mut Constant,
