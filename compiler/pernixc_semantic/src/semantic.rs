@@ -21,6 +21,7 @@ pub mod deduction;
 pub mod equality;
 pub mod instantiation;
 pub mod mapping;
+pub mod matching;
 pub mod order;
 pub mod predicate;
 pub mod session;

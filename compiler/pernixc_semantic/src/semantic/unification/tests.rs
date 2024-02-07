@@ -362,7 +362,7 @@ fn add_equality_mapping_from_unification<T: Term>(
     equality_mapping: &mut mapping::Mapping,
 ) -> TestCaseResult {
     match &unification.r#match {
-        super::Match::Unifiable(lhs, rhs) => {
+        super::Matching::Unifiable(lhs, rhs) => {
             let mut config = GenericParameterUnifyConfig;
 
             prop_assert!(T::unifiable(lhs, rhs, &mut config));
@@ -370,7 +370,7 @@ fn add_equality_mapping_from_unification<T: Term>(
 
             Ok(())
         }
-        super::Match::Substructural(substructural) => {
+        super::Matching::Substructural(substructural) => {
             for lifetime_unification in substructural.lifetimes.values() {
                 add_equality_mapping_from_unification::<Lifetime>(
                     lifetime_unification,
@@ -394,7 +394,7 @@ fn add_equality_mapping_from_unification<T: Term>(
 
             Ok(())
         }
-        super::Match::Equality => Ok(()),
+        super::Matching::Equality => Ok(()),
     }
 }
 
@@ -407,12 +407,12 @@ fn rewrite_term<T: Term + 'static>(
     }
 
     match unification.r#match {
-        super::Match::Unifiable(new_lhs, rhs) => {
+        super::Matching::Unifiable(new_lhs, rhs) => {
             prop_assert_eq!(&*lhs, &new_lhs);
             *lhs = rhs;
             Ok(())
         }
-        super::Match::Substructural(substructural) => {
+        super::Matching::Substructural(substructural) => {
             for (lifetime_location, lifetime_unification) in
                 substructural.lifetimes
             {
@@ -455,7 +455,7 @@ fn rewrite_term<T: Term + 'static>(
 
             Ok(())
         }
-        super::Match::Equality => Ok(()),
+        super::Matching::Equality => Ok(()),
     }
 }
 

@@ -9,13 +9,14 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    GetVarianceError, Match, Never, SubstructuralMatching, Term,
+    GetVarianceError, Never, Term,
 };
 use crate::{
     arena::{Arena, ID},
     semantic::{
         instantiation::Instantiation,
         mapping::Mapping,
+        matching::{self, Match, Matching},
         predicate::{NonEquality, Outlives, Satisfiability},
         subterm::Location,
         unification::{Substructural, Unification},
@@ -132,18 +133,17 @@ impl Location<Lifetime, Constant> for Never {
     }
 }
 
-impl Term for Lifetime {
+impl Match for Lifetime {
     type SubTypeLocation = Never;
     type SubLifetimeLocation = Never;
     type SubConstantLocation = Never;
-    type ThisSubTermLocation = Never;
-    type GenericParameter = LifetimeParameter;
+    type ThisSubTermLocation = Self::SubLifetimeLocation;
 
     fn substructural_match(
         &self,
         _: &Self,
     ) -> Option<
-        SubstructuralMatching<
+        matching::Substructural<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -151,6 +151,30 @@ impl Term for Lifetime {
     > {
         None
     }
+
+    fn get_substructural(
+        substructural: &matching::Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
+        &substructural.lifetimes
+    }
+
+    fn get_substructural_mut(
+        substructural: &mut matching::Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
+        &mut substructural.lifetimes
+    }
+}
+
+impl Term for Lifetime {
+    type GenericParameter = LifetimeParameter;
 
     fn as_generic_parameter(
         &self,
@@ -223,26 +247,6 @@ impl Term for Lifetime {
     ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
     {
         &mut instantitation.lifetimes
-    }
-
-    fn get_substructural_matching(
-        substructural: &SubstructuralMatching<
-            Self::SubLifetimeLocation,
-            Self::SubTypeLocation,
-            Self::SubConstantLocation,
-        >,
-    ) -> &Vec<Match<Self, Self::ThisSubTermLocation>> {
-        &substructural.lifetimes
-    }
-
-    fn get_substructural_matching_mut(
-        substructural: &mut SubstructuralMatching<
-            Self::SubLifetimeLocation,
-            Self::SubTypeLocation,
-            Self::SubConstantLocation,
-        >,
-    ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>> {
-        &mut substructural.lifetimes
     }
 
     fn get_substructural_unification<'a, T: Term>(

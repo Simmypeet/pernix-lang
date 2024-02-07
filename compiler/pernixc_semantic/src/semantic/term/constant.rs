@@ -10,18 +10,20 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     lifetime::Lifetime, r#type::Type, GenericArguments, GetVarianceError,
-    Local, Match, MemberSymbol, Never, SubMemberSymbolTermLocation,
-    SubSymbolTermLocation, SubTupleTermLocation, SubstructuralMatching, Symbol,
-    Term,
+    Local, MemberSymbol, Never, Symbol, Term,
 };
 use crate::{
     arena::{Arena, ID},
     semantic::{
         instantiation::Instantiation,
         mapping::Mapping,
+        matching::{self, Match},
         predicate::{Outlives, Satisfiability},
-        subterm::{AssignSubTermError, Location},
-        unification::{Substructural, Unification},
+        subterm::{
+            AssignSubTermError, Location, SubMemberSymbolLocation,
+            SubSymbolLocation, SubTupleLocation,
+        },
+        unification::{self, Unification},
         Premise,
     },
     symbol::{
@@ -121,7 +123,7 @@ pub type Inference = Never; /* will be changed */
 pub enum SubConstantLocation {
     /// The index of the element in a [`Tuple`] constant.
     #[from]
-    Tuple(SubTupleTermLocation),
+    Tuple(SubTupleLocation),
 
     /// The index of the field in a [`Struct`] constant.
     Struct(usize),
@@ -134,11 +136,11 @@ pub enum SubConstantLocation {
 
     /// The index of the constant argument in a [`Symbol`] constant.
     #[from]
-    Symbol(SubSymbolTermLocation),
+    Symbol(SubSymbolLocation),
 
     /// A constant argument in a [`MemberSymbol`] constant.
     #[from]
-    MemberSymbol(SubMemberSymbolTermLocation),
+    MemberSymbol(SubMemberSymbolLocation),
 
     /// The inner constant of a [`Local`] constant.
     Local,
@@ -195,10 +197,10 @@ impl Location<Constant, Constant> for SubConstantLocation {
     fn get_sub_term(self, term: &Constant) -> Option<Constant> {
         match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
-                SubTupleTermLocation::Single(single) => {
+                SubTupleLocation::Single(single) => {
                     tuple.elements.get(single).map(|x| x.as_term().clone())
                 }
-                SubTupleTermLocation::Range { begin, end } => tuple
+                SubTupleLocation::Range { begin, end } => tuple
                     .elements
                     .get(begin..end)
                     .map(|x| Constant::Tuple(Tuple { elements: x.to_vec() })),
@@ -301,11 +303,11 @@ impl Location<Constant, Constant> for SubConstantLocation {
 pub enum SubTypeLocation {
     /// The index of the element in a [`Symbol`] constant.
     #[from]
-    Symbol(SubSymbolTermLocation),
+    Symbol(SubSymbolLocation),
 
     /// A constant argument in a [`MemberSymbol`] constant.
     #[from]
-    MemberSymbol(SubMemberSymbolTermLocation),
+    MemberSymbol(SubMemberSymbolLocation),
 }
 
 impl Location<Constant, Type> for SubTypeLocation {
@@ -404,11 +406,11 @@ impl Location<Constant, Type> for SubTypeLocation {
 pub enum SubLifetimeLocation {
     /// The index of the element in a [`Symbol`] constant.
     #[from]
-    Symbol(SubSymbolTermLocation),
+    Symbol(SubSymbolLocation),
 
     /// A constant argument in a [`MemberSymbol`] constant.
     #[from]
-    MemberSymbol(SubMemberSymbolTermLocation),
+    MemberSymbol(SubMemberSymbolLocation),
 }
 
 impl Location<Constant, Lifetime> for SubLifetimeLocation {
@@ -559,19 +561,18 @@ impl Default for Constant {
     fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
 }
 
-impl Term for Constant {
+impl Match for Constant {
     type SubTypeLocation = SubTypeLocation;
     type SubLifetimeLocation = SubLifetimeLocation;
     type SubConstantLocation = SubConstantLocation;
-    type ThisSubTermLocation = SubConstantLocation;
-    type GenericParameter = ConstantParameter;
+    type ThisSubTermLocation = Self::SubConstantLocation;
 
     #[allow(clippy::too_many_lines)]
     fn substructural_match(
         &self,
         other: &Self,
     ) -> Option<
-        SubstructuralMatching<
+        matching::Substructural<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
@@ -581,7 +582,7 @@ impl Term for Constant {
             (Self::Struct(lhs), Self::Struct(rhs))
                 if lhs.id == rhs.id && lhs.fields.len() == rhs.fields.len() =>
             {
-                Some(SubstructuralMatching {
+                Some(matching::Substructural {
                     lifetimes: Vec::new(),
                     types: Vec::new(),
                     constants: lhs
@@ -589,7 +590,7 @@ impl Term for Constant {
                         .iter()
                         .zip(rhs.fields.iter())
                         .enumerate()
-                        .map(|(idx, (lhs, rhs))| Match {
+                        .map(|(idx, (lhs, rhs))| matching::Matching {
                             lhs: lhs.clone(),
                             rhs: rhs.clone(),
                             lhs_location: SubConstantLocation::Struct(idx),
@@ -603,17 +604,17 @@ impl Term for Constant {
                 if lhs.variant_id == rhs.variant_id =>
             {
                 match (&lhs.associated_value, &rhs.associated_value) {
-                    (Some(lhs), Some(rhs)) => Some(SubstructuralMatching {
+                    (Some(lhs), Some(rhs)) => Some(matching::Substructural {
                         lifetimes: Vec::new(),
                         types: Vec::new(),
-                        constants: vec![Match {
+                        constants: vec![matching::Matching {
                             lhs: lhs.deref().clone(),
                             rhs: rhs.deref().clone(),
                             lhs_location: SubConstantLocation::Enum,
                             rhs_location: SubConstantLocation::Enum,
                         }],
                     }),
-                    (None, None) => Some(SubstructuralMatching::default()),
+                    (None, None) => Some(matching::Substructural::default()),
                     _ => None,
                 }
             }
@@ -621,7 +622,7 @@ impl Term for Constant {
             (Self::Array(lhs), Self::Array(rhs))
                 if lhs.elements.len() == rhs.elements.len() =>
             {
-                Some(SubstructuralMatching {
+                Some(matching::Substructural {
                     lifetimes: Vec::new(),
                     types: Vec::new(),
                     constants: lhs
@@ -630,7 +631,7 @@ impl Term for Constant {
                         .cloned()
                         .zip(rhs.elements.iter().cloned())
                         .enumerate()
-                        .map(|(idx, (lhs, rhs))| Match {
+                        .map(|(idx, (lhs, rhs))| matching::Matching {
                             lhs,
                             rhs,
                             lhs_location: SubConstantLocation::Array(idx),
@@ -641,10 +642,10 @@ impl Term for Constant {
             }
 
             (Self::Local(lhs), Self::Local(rhs)) => {
-                Some(SubstructuralMatching {
+                Some(matching::Substructural {
                     lifetimes: Vec::new(),
                     types: Vec::new(),
-                    constants: vec![Match {
+                    constants: vec![matching::Matching {
                         lhs: lhs.0.deref().clone(),
                         rhs: rhs.0.deref().clone(),
                         lhs_location: SubConstantLocation::Local,
@@ -660,8 +661,8 @@ impl Term for Constant {
             (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => {
                 lhs.generic_arguments.substructural_match(
                     &rhs.generic_arguments,
-                    SubstructuralMatching::default(),
-                    SubSymbolTermLocation,
+                    matching::Substructural::default(),
+                    SubSymbolLocation,
                 )
             }
 
@@ -671,8 +672,8 @@ impl Term for Constant {
                 lhs.parent_generic_arguments
                     .substructural_match(
                         &rhs.parent_generic_arguments,
-                        SubstructuralMatching::default(),
-                        |index| SubMemberSymbolTermLocation {
+                        matching::Substructural::default(),
+                        |index| SubMemberSymbolLocation {
                             index,
                             from_parent: true,
                         },
@@ -681,7 +682,7 @@ impl Term for Constant {
                         lhs.member_generic_arguments.substructural_match(
                             &rhs.member_generic_arguments,
                             x,
-                            |index| SubMemberSymbolTermLocation {
+                            |index| SubMemberSymbolLocation {
                                 index,
                                 from_parent: false,
                             },
@@ -692,6 +693,30 @@ impl Term for Constant {
             _ => None,
         }
     }
+
+    fn get_substructural(
+        substructural: &matching::Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &Vec<matching::Matching<Self, Self::ThisSubTermLocation>> {
+        &substructural.constants
+    }
+
+    fn get_substructural_mut(
+        substructural: &mut matching::Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &mut Vec<matching::Matching<Self, Self::ThisSubTermLocation>> {
+        &mut substructural.constants
+    }
+}
+
+impl Term for Constant {
+    type GenericParameter = ConstantParameter;
 
     fn as_generic_parameter(
         &self,
@@ -770,28 +795,8 @@ impl Term for Constant {
         &mut instantitation.constants
     }
 
-    fn get_substructural_matching(
-        substructural: &SubstructuralMatching<
-            Self::SubLifetimeLocation,
-            Self::SubTypeLocation,
-            Self::SubConstantLocation,
-        >,
-    ) -> &Vec<Match<Self, Self::ThisSubTermLocation>> {
-        &substructural.constants
-    }
-
-    fn get_substructural_matching_mut(
-        substructural: &mut SubstructuralMatching<
-            Self::SubLifetimeLocation,
-            Self::SubTypeLocation,
-            Self::SubConstantLocation,
-        >,
-    ) -> &mut Vec<Match<Self, Self::ThisSubTermLocation>> {
-        &mut substructural.constants
-    }
-
     fn get_substructural_unification<'a, T: Term>(
-        substructural: &'a Substructural<T>,
+        substructural: &'a unification::Substructural<T>,
     ) -> impl Iterator<Item = &'a Unification<Self>>
     where
         Self: 'a,

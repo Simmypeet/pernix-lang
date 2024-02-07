@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 
 use super::{
-    equality,
+    equality, matching,
     session::{self, ExceedLimitError, Limit, Session},
-    term::{self, constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Premise, Semantic,
 };
 use crate::table::{State, Table};
@@ -81,7 +81,7 @@ where
 
 /// Specifies how a term matches another term.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Match<T: Term> {
+pub enum Matching<T: Term> {
     /// The two terms are unified by passing the predicate check in the
     /// [`Config`].
     Unifiable(T, T),
@@ -106,7 +106,7 @@ pub struct Unification<T: Term> {
     pub rewritten_rhs: Option<T>,
 
     /// The unification of the `lhs` and `rhs` terms.
-    pub r#match: Match<T>,
+    pub r#match: Matching<T>,
 }
 
 fn substructural_unify<
@@ -128,7 +128,8 @@ fn substructural_unify<
 
     let mut result = Substructural::default();
 
-    for term::Match { lhs, rhs, lhs_location, .. } in substructural.types {
+    for matching::Matching { lhs, rhs, lhs_location, .. } in substructural.types
+    {
         let Some(new) =
             unify(&lhs, &rhs, premise, table, config, semantic, session)?
         else {
@@ -138,7 +139,9 @@ fn substructural_unify<
         assert!(result.types.insert(lhs_location, new).is_none());
     }
 
-    for term::Match { lhs, rhs, lhs_location, .. } in substructural.lifetimes {
+    for matching::Matching { lhs, rhs, lhs_location, .. } in
+        substructural.lifetimes
+    {
         let Some(new) =
             unify(&lhs, &rhs, premise, table, config, semantic, session)?
         else {
@@ -148,7 +151,9 @@ fn substructural_unify<
         assert!(result.lifetimes.insert(lhs_location, new).is_none());
     }
 
-    for term::Match { lhs, rhs, lhs_location, .. } in substructural.constants {
+    for matching::Matching { lhs, rhs, lhs_location, .. } in
+        substructural.constants
+    {
         let Some(new) =
             unify(&lhs, &rhs, premise, table, config, semantic, session)?
         else {
@@ -161,7 +166,7 @@ fn substructural_unify<
     Ok(Some(Unification {
         rewritten_lhs: None,
         rewritten_rhs: None,
-        r#match: Match::Substructural(result),
+        r#match: Matching::Substructural(result),
     }))
 }
 
@@ -187,7 +192,7 @@ pub fn unify<
         return Ok(Some(Unification {
             rewritten_lhs: None,
             rewritten_rhs: None,
-            r#match: Match::Equality,
+            r#match: Matching::Equality,
         }));
     }
 
@@ -205,7 +210,7 @@ pub fn unify<
         let unification = Unification {
             rewritten_lhs: None,
             rewritten_rhs: None,
-            r#match: Match::Unifiable(from.clone(), to.clone()),
+            r#match: Matching::Unifiable(from.clone(), to.clone()),
         };
 
         session.mark_as_done(query, unification.clone());

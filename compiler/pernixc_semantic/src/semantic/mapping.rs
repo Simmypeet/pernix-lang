@@ -101,10 +101,10 @@ impl Mapping {
         unification: Unification<T>,
     ) {
         match unification.r#match {
-            unification::Match::Unifiable(lhs, rhs) => {
+            unification::Matching::Unifiable(lhs, rhs) => {
                 T::get_mapping_mut(self).entry(lhs).or_default().insert(rhs);
             }
-            unification::Match::Substructural(substructural) => {
+            unification::Matching::Substructural(substructural) => {
                 for (_, unification) in substructural.lifetimes {
                     self.append_from_unification(unification);
                 }
@@ -117,7 +117,7 @@ impl Mapping {
                     self.append_from_unification(unification);
                 }
             }
-            unification::Match::Equality => {}
+            unification::Matching::Equality => {}
         }
     }
 

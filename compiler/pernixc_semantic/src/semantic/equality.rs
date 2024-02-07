@@ -1,8 +1,9 @@
 //! Implements the logic for equality checking.
 
 use super::{
+    matching::Matching,
     session::{self, ExceedLimitError, Limit, Satisfied, Session},
-    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Match, Term},
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     Premise, Semantic,
 };
 use crate::table::{State, Table};
@@ -31,19 +32,19 @@ fn equals_by_unification<
         return Ok(false);
     };
 
-    for Match { lhs, rhs, .. } in matching.lifetimes {
+    for Matching { lhs, rhs, .. } in matching.lifetimes {
         if !equals(&lhs, &rhs, premise, table, semantic, session)? {
             return Ok(false);
         }
     }
 
-    for Match { lhs, rhs, .. } in matching.types {
+    for Matching { lhs, rhs, .. } in matching.types {
         if !equals(&lhs, &rhs, premise, table, semantic, session)? {
             return Ok(false);
         }
     }
 
-    for Match { lhs, rhs, .. } in matching.constants {
+    for Matching { lhs, rhs, .. } in matching.constants {
         if !equals(&lhs, &rhs, premise, table, semantic, session)? {
             return Ok(false);
         }

@@ -153,8 +153,10 @@ fn get_unification_matching_count<T: Term>(
     predicate: impl Fn(&T) -> bool,
 ) -> usize {
     match &unification.r#match {
-        unification::Match::Unifiable(from, _) => usize::from(predicate(from)),
-        unification::Match::Substructural(substructural) => {
+        unification::Matching::Unifiable(from, _) => {
+            usize::from(predicate(from))
+        }
+        unification::Matching::Substructural(substructural) => {
             substructural
                 .lifetimes
                 .values()
@@ -173,7 +175,7 @@ fn get_unification_matching_count<T: Term>(
                     })
                     .sum::<usize>()
         }
-        unification::Match::Equality => 0,
+        unification::Matching::Equality => 0,
     }
 }
 
