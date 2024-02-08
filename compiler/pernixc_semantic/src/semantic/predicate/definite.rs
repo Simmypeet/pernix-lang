@@ -93,11 +93,15 @@ impl<
         true
     }
 
-    fn visit_type_mut(&mut self, _: &mut Type) -> bool { todo!() }
+    fn visit_type_mut(&mut self, _: &mut Type) -> bool { unreachable!() }
 
-    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool { todo!() }
+    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool {
+        unreachable!()
+    }
 
-    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { todo!() }
+    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool {
+        unreachable!()
+    }
 }
 
 /// A query for checking definite predicate satisfiability.

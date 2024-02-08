@@ -35,11 +35,11 @@ struct Instantiator<'a> {
 }
 
 impl<'a> Visitor for Instantiator<'a> {
-    fn visit_type(&mut self, _: &Type) -> bool { todo!() }
+    fn visit_type(&mut self, _: &Type) -> bool { unreachable!() }
 
-    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { todo!() }
+    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { unreachable!() }
 
-    fn visit_constant(&mut self, _t: &Constant) -> bool { todo!() }
+    fn visit_constant(&mut self, _t: &Constant) -> bool { unreachable!() }
 
     fn visit_type_mut(&mut self, ty: &mut Type) -> bool {
         let Some(parameter) = ty.as_generic_parameter() else {

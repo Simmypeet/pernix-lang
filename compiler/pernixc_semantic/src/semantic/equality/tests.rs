@@ -756,11 +756,15 @@ impl Visitor for TermCollector {
 
     fn visit_constant(&mut self, _: &Constant) -> bool { true }
 
-    fn visit_type_mut(&mut self, _: &mut Type) -> bool { todo!() }
+    fn visit_type_mut(&mut self, _: &mut Type) -> bool { unreachable!() }
 
-    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool { todo!() }
+    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool {
+        unreachable!()
+    }
 
-    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { todo!() }
+    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool {
+        unreachable!()
+    }
 }
 
 #[derive(Debug)]
@@ -812,11 +816,11 @@ struct Subsitutor<'a> {
 }
 
 impl<'a> Visitor for Subsitutor<'a> {
-    fn visit_type(&mut self, _: &Type) -> bool { todo!() }
+    fn visit_type(&mut self, _: &Type) -> bool { unreachable!() }
 
-    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { todo!() }
+    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { unreachable!() }
 
-    fn visit_constant(&mut self, _: &Constant) -> bool { todo!() }
+    fn visit_constant(&mut self, _: &Constant) -> bool { unreachable!() }
 
     fn visit_type_mut(&mut self, ty: &mut Type) -> bool {
         if ty == self.from {
