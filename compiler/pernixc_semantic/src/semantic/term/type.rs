@@ -956,6 +956,27 @@ impl Term for Type {
         }
     }
 
+    fn as_tuple(&self) -> Option<&Tuple> {
+        match self {
+            Self::Tuple(tuple) => Some(tuple),
+            _ => None,
+        }
+    }
+
+    fn as_tuple_mut(&mut self) -> Option<&mut Tuple> {
+        match self {
+            Self::Tuple(tuple) => Some(tuple),
+            _ => None,
+        }
+    }
+
+    fn into_tuple(self) -> Result<Tuple, Self> {
+        match self {
+            Self::Tuple(tuple) => Ok(tuple),
+            _ => Err(self),
+        }
+    }
+
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>> {
         match self {
             Self::Symbol(Symbol { id, generic_arguments }) => match *id {
@@ -1024,8 +1045,6 @@ impl Term for Type {
             _ => None,
         }
     }
-
-    fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
 
     fn outlives_predicates<'a>(
         premise: &'a Premise,

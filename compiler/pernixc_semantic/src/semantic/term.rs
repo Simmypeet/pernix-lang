@@ -172,10 +172,16 @@ pub trait Term:
     ) -> Result<MemberSymbol<ID<Self::TraitMember>>, Self>;
 
     #[doc(hidden)]
-    fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;
+    fn as_tuple(&self) -> Option<&Tuple<Self>>;
 
     #[doc(hidden)]
-    fn is_tuple(&self) -> bool;
+    fn as_tuple_mut(&mut self) -> Option<&mut Tuple<Self>>;
+
+    #[doc(hidden)]
+    fn into_tuple(self) -> Result<Tuple<Self>, Self>;
+
+    #[doc(hidden)]
+    fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;
 
     #[doc(hidden)]
     fn outlives_predicates<'a>(

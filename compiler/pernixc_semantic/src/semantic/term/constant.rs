@@ -844,11 +844,30 @@ impl Term for Constant {
         }
     }
 
+    fn as_tuple(&self) -> Option<&Tuple> {
+        match self {
+            Self::Tuple(tuple) => Some(tuple),
+            _ => None,
+        }
+    }
+
+    fn as_tuple_mut(&mut self) -> Option<&mut Tuple> {
+        match self {
+            Self::Tuple(tuple) => Some(tuple),
+            _ => None,
+        }
+    }
+
+    fn into_tuple(self) -> Result<Tuple, Self> {
+        match self {
+            Self::Tuple(tuple) => Ok(tuple),
+            x => Err(x),
+        }
+    }
+
     fn get_adt_fields(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
         None
     }
-
-    fn is_tuple(&self) -> bool { matches!(self, Self::Tuple(..)) }
 
     fn outlives_predicates<'a>(
         _: &'a Premise,

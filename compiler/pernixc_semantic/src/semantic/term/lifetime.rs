@@ -9,7 +9,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    GetVarianceError, MemberSymbol, Never, Term,
+    GetVarianceError, MemberSymbol, Never, Term, Tuple,
 };
 use crate::{
     arena::{Arena, ID},
@@ -211,11 +211,15 @@ impl Term for Lifetime {
         Err(self)
     }
 
+    fn as_tuple(&self) -> Option<&Tuple<Self>> { None }
+
+    fn as_tuple_mut(&mut self) -> Option<&mut Tuple<Self>> { None }
+
+    fn into_tuple(self) -> Result<Tuple<Self>, Self> { Err(self) }
+
     fn get_adt_fields(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
         None
     }
-
-    fn is_tuple(&self) -> bool { false }
 
     fn outlives_predicates<'a>(
         premise: &'a Premise,

@@ -41,7 +41,7 @@ impl<T: Term> Tuple<T> {
         session: &mut Limit<R>,
     ) -> Result<bool, ExceedLimitError> {
         // trivially satisfied
-        if term.is_tuple() {
+        if term.as_tuple().is_some() {
             return Ok(true);
         }
 
