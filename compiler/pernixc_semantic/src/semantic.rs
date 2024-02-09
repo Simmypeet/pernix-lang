@@ -239,7 +239,8 @@ impl Semantic<Type> for Default {
                 Ok(Satisfiability::Unsatisfied)
             }
 
-            Type::Local(_)
+            Type::TraitMember(_)
+            | Type::Local(_)
             | Type::Symbol(_)
             | Type::Pointer(_)
             | Type::Reference(_)

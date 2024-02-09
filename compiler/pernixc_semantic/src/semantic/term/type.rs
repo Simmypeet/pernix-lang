@@ -17,7 +17,7 @@ use crate::{
         predicate::{NonEquality, Outlives, Satisfiability},
         subterm::{
             AssignSubTermError, Location, SubMemberSymbolLocation,
-            SubSymbolLocation, SubTupleLocation,
+            SubSymbolLocation, SubTraitMemberLocation, SubTupleLocation,
         },
         unification::{self, Unification},
         Premise,
@@ -88,7 +88,6 @@ impl From<SymbolKindID> for GenericID {
 pub enum MemberSymbolKindID {
     TraitImplementation(ID<symbol::TraitImplementationType>),
     AdtImplementation(ID<symbol::AdtImplementationType>),
-    Trait(ID<symbol::TraitType>),
 }
 
 impl From<MemberSymbolKindID> for GlobalID {
@@ -96,7 +95,6 @@ impl From<MemberSymbolKindID> for GlobalID {
         match value {
             MemberSymbolKindID::TraitImplementation(id) => id.into(),
             MemberSymbolKindID::AdtImplementation(id) => id.into(),
-            MemberSymbolKindID::Trait(id) => id.into(),
         }
     }
 }
@@ -106,7 +104,6 @@ impl From<MemberSymbolKindID> for GenericID {
         match value {
             MemberSymbolKindID::TraitImplementation(id) => id.into(),
             MemberSymbolKindID::AdtImplementation(id) => id.into(),
-            MemberSymbolKindID::Trait(id) => id.into(),
         }
     }
 }
@@ -195,6 +192,10 @@ pub enum SubLifetimeLocation {
     /// A lifetime argument in a [`MemberSymbol`] type.
     #[from]
     MemberSymbol(SubMemberSymbolLocation),
+
+    /// A lifetime argument in a [`Type::TraitMember`] variant.
+    #[from]
+    TraitMember(SubTraitMemberLocation),
 }
 
 impl Location<Type, Lifetime> for SubLifetimeLocation {
@@ -216,6 +217,12 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
             ) => member_symbol
                 .get_term_mut(location)
                 .ok_or(AssignSubTermError::InvalidLocation)?,
+
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member
+                    .get_term_mut(location.0)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
 
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
@@ -239,6 +246,10 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Self::MemberSymbol(location),
             ) => member_symbol.get_term(location).copied(),
 
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member.get_term(location.0).copied()
+            }
+
             _ => None,
         }
     }
@@ -254,6 +265,10 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                     symbol.id.into(),
                     location.0,
                 ),
+
+            (Self::TraitMember(_), Type::TraitMember(_)) => {
+                Ok(Variance::Invariant)
+            }
 
             (Self::Reference, _) => Ok(Variance::Covariant),
 
@@ -280,8 +295,7 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::TraitImplementation(_), true)
-                    | (MemberSymbolKindID::Trait(_), _) => {
+                    (MemberSymbolKindID::TraitImplementation(_), true) => {
                         return Ok(Variance::Invariant)
                     }
                 };
@@ -325,6 +339,10 @@ pub enum SubTypeLocation {
     /// The type argument in a [`MemberSymbol`] type.
     #[from]
     MemberSymbol(SubMemberSymbolLocation),
+
+    /// A type argument in a [`Type::TraitMember`] variant.
+    #[from]
+    TraitMember(SubTraitMemberLocation),
 }
 
 impl Location<Type, Type> for SubTypeLocation {
@@ -355,6 +373,12 @@ impl Location<Type, Type> for SubTypeLocation {
             (Self::MemberSymbol(location), Type::MemberSymbol(symbol)) => {
                 symbol
                     .get_term_mut(location)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member
+                    .get_term_mut(location.0)
                     .ok_or(AssignSubTermError::InvalidLocation)?
             }
 
@@ -397,6 +421,10 @@ impl Location<Type, Type> for SubTypeLocation {
                 symbol.get_term(location).cloned()
             }
 
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.get_term(location.0).cloned()
+            }
+
             _ => None,
         }
     }
@@ -419,6 +447,10 @@ impl Location<Type, Type> for SubTypeLocation {
                 } else {
                     Ok(Variance::Invariant)
                 }
+            }
+
+            (Self::TraitMember(_), Type::TraitMember(_)) => {
+                Ok(Variance::Invariant)
             }
 
             (Self::Reference, Type::Reference(reference)) => {
@@ -456,8 +488,7 @@ impl Location<Type, Type> for SubTypeLocation {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::TraitImplementation(_), true)
-                    | (MemberSymbolKindID::Trait(_), _) => {
+                    (MemberSymbolKindID::TraitImplementation(_), true) => {
                         return Ok(Variance::Invariant)
                     }
                 };
@@ -485,6 +516,10 @@ pub enum SubConstantLocation {
 
     /// The [`Array::length`] of an array.
     Array,
+
+    /// A constant argument in a [`Type::TraitMember`] variant.
+    #[from]
+    TraitMember(SubTraitMemberLocation),
 }
 
 impl Location<Type, Constant> for SubConstantLocation {
@@ -506,6 +541,12 @@ impl Location<Type, Constant> for SubConstantLocation {
 
             (Self::Array, Type::Array(array)) => &mut array.length,
 
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member
+                    .get_term_mut(location.0)
+                    .ok_or(AssignSubTermError::InvalidLocation)?
+            }
+
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
 
@@ -525,6 +566,10 @@ impl Location<Type, Constant> for SubConstantLocation {
 
             (Self::Array, Type::Array(array)) => Some(array.length.clone()),
 
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.get_term(location.0).cloned()
+            }
+
             _ => None,
         }
     }
@@ -540,6 +585,10 @@ impl Location<Type, Constant> for SubConstantLocation {
                     symbol.id.into(),
                     location.0,
                 ),
+
+            (Self::TraitMember(_), Type::TraitMember(_)) => {
+                Ok(Variance::Invariant)
+            }
 
             (Self::MemberSymbol(location), Type::MemberSymbol(symbol)) => {
                 let id = match (symbol.id, location.from_parent) {
@@ -564,8 +613,7 @@ impl Location<Type, Constant> for SubConstantLocation {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::TraitImplementation(_), true)
-                    | (MemberSymbolKindID::Trait(_), _) => {
+                    (MemberSymbolKindID::TraitImplementation(_), true) => {
                         return Ok(Variance::Invariant)
                     }
                 };
@@ -761,6 +809,8 @@ pub enum Type {
     /// In the **TraitImplementation** case, the `parent_generic_arguments`
     /// field **is** deduced from the implementation.
     MemberSymbol(MemberSymbol<MemberSymbolKindID>),
+
+    TraitMember(MemberSymbol<ID<symbol::TraitType>>),
 }
 
 impl TryFrom<Type> for Tuple {
@@ -861,6 +911,7 @@ fn get_substitution_from_generic_arguments(
 
 impl Term for Type {
     type GenericParameter = TypeParameter;
+    type TraitMember = symbol::TraitType;
 
     fn as_generic_parameter(
         &self,
@@ -878,6 +929,31 @@ impl Term for Type {
         self,
     ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
         self.into_parameter()
+    }
+
+    fn as_trait_member(&self) -> Option<&MemberSymbol<ID<symbol::TraitType>>> {
+        match self {
+            Self::TraitMember(trait_member) => Some(trait_member),
+            _ => None,
+        }
+    }
+
+    fn as_trait_member_mut(
+        &mut self,
+    ) -> Option<&mut MemberSymbol<ID<symbol::TraitType>>> {
+        match self {
+            Self::TraitMember(trait_member) => Some(trait_member),
+            _ => None,
+        }
+    }
+
+    fn into_trait_member(
+        self,
+    ) -> Result<MemberSymbol<ID<symbol::TraitType>>, Self> {
+        match self {
+            Self::TraitMember(trait_member) => Ok(trait_member),
+            _ => Err(self),
+        }
     }
 
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>> {
@@ -989,6 +1065,7 @@ impl Term for Type {
             | Self::MemberSymbol(_)
             | Self::Reference(_)
             | Self::Array(_)
+            | Self::TraitMember(_)
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
@@ -1013,9 +1090,10 @@ impl Term for Type {
                 }
             },
 
-            Self::Parameter(_) | Self::Inference(_) | Self::MemberSymbol(_) => {
-                Satisfiability::Unsatisfied
-            }
+            Self::TraitMember(_)
+            | Self::Parameter(_)
+            | Self::Inference(_)
+            | Self::MemberSymbol(_) => Satisfiability::Unsatisfied,
 
             Self::Symbol(Symbol { id, .. }) => match id {
                 SymbolKindID::Struct(_) | SymbolKindID::Enum(_) => {
@@ -1031,6 +1109,19 @@ impl Term for Type {
             | Self::Tuple(_)
             | Self::Local(_) => Satisfiability::Congruent,
         }
+    }
+
+    fn get_instantiation(
+        instantiation: &Instantiation,
+    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+        &instantiation.types
+    }
+
+    fn get_instantiation_mut(
+        instantiation: &mut Instantiation,
+    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
+    {
+        &mut instantiation.types
     }
 
     fn get_substructural_unification<'a, T: Term>(
@@ -1072,19 +1163,6 @@ impl Term for Type {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.types
-    }
-
-    fn get_instantiation(
-        instantitation: &Instantiation,
-    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
-        &instantitation.types
-    }
-
-    fn get_instantiation_mut(
-        instantitation: &mut Instantiation,
-    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
-    {
-        &mut instantitation.types
     }
 }
 

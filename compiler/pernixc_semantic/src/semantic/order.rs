@@ -6,10 +6,8 @@
 use super::{
     session::{ExceedLimitError, Limit, Session},
     term::{
-        constant::{self, Constant},
-        lifetime::Lifetime,
-        r#type::{self, Type},
-        GenericArguments, MemberSymbol, Term,
+        constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
+        Term,
     },
     unification::{self, Unification},
     Premise, Semantic,
@@ -29,25 +27,11 @@ pub enum Order {
 const fn lifetime_predicate(_: &Lifetime) -> bool { true }
 
 fn type_predicate(x: &Type) -> bool {
-    x.is_parameter()
-        || matches!(
-            x,
-            Type::MemberSymbol(MemberSymbol {
-                id: r#type::MemberSymbolKindID::Trait(_),
-                ..
-            })
-        )
+    x.is_parameter() || matches!(x, Type::TraitMember(_))
 }
 
 fn constant_predicate(x: &Constant) -> bool {
-    x.is_parameter()
-        || matches!(
-            x,
-            Constant::MemberSymbol(MemberSymbol {
-                id: constant::MemberSymbolKindID::Trait(_),
-                ..
-            })
-        )
+    x.is_parameter() || matches!(x, Constant::TraitMember(_))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

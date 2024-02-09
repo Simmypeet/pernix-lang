@@ -723,6 +723,18 @@ impl<T: State> Representation<T> {
                         &member_symbol.member_generic_arguments,
                     )?),
             ),
+            r#type::Type::TraitMember(member_symbol) => Some(
+                self.get_accessibility(member_symbol.id.into())?.min(
+                    self.get_generic_arguments_overall_accessibility(
+                        &member_symbol.parent_generic_arguments,
+                    )?
+                    .min(
+                        self.get_generic_arguments_overall_accessibility(
+                            &member_symbol.member_generic_arguments,
+                        )?,
+                    ),
+                ),
+            ),
         }
     }
 
@@ -743,6 +755,18 @@ impl<T: State> Representation<T> {
             constant::Constant::Local(local) => {
                 self.get_constant_overall_accessibility(&local.0)
             }
+            constant::Constant::TraitMember(trait_member) => Some(
+                self.get_accessibility(trait_member.id.into())?.min(
+                    self.get_generic_arguments_overall_accessibility(
+                        &trait_member.parent_generic_arguments,
+                    )?
+                    .min(
+                        self.get_generic_arguments_overall_accessibility(
+                            &trait_member.member_generic_arguments,
+                        )?,
+                    ),
+                ),
+            ),
             constant::Constant::Inference(never) => match *never {},
 
             constant::Constant::Struct(constant) => {

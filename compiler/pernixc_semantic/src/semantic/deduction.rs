@@ -18,7 +18,6 @@ use super::{
 };
 use crate::{
     arena::ID,
-    semantic::term::{constant, r#type, MemberSymbol},
     symbol::{GenericID, MemberID},
     table::{State, Table},
 };
@@ -32,25 +31,11 @@ impl unification::Config for DeductionUnifyingConfig {
     }
 
     fn type_unifiable(&mut self, from: &Type, _: &Type) -> bool {
-        matches!(
-            from,
-            Type::Parameter(_)
-                | Type::MemberSymbol(MemberSymbol {
-                    id: r#type::MemberSymbolKindID::Trait(_),
-                    ..
-                })
-        )
+        matches!(from, Type::Parameter(_) | Type::TraitMember(_))
     }
 
     fn constant_unifiable(&mut self, from: &Constant, _: &Constant) -> bool {
-        matches!(
-            from,
-            Constant::Parameter(_)
-                | Constant::MemberSymbol(MemberSymbol {
-                    id: constant::MemberSymbolKindID::Trait(_),
-                    ..
-                })
-        )
+        matches!(from, Constant::Parameter(_) | Constant::TraitMember(_))
     }
 }
 

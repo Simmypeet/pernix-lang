@@ -9,7 +9,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    GetVarianceError, Never, Term,
+    GetVarianceError, MemberSymbol, Never, Term,
 };
 use crate::{
     arena::{Arena, ID},
@@ -175,6 +175,7 @@ impl Match for Lifetime {
 
 impl Term for Lifetime {
     type GenericParameter = LifetimeParameter;
+    type TraitMember = Never;
 
     fn as_generic_parameter(
         &self,
@@ -192,6 +193,22 @@ impl Term for Lifetime {
         self,
     ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
         self.into_parameter()
+    }
+
+    fn as_trait_member(&self) -> Option<&MemberSymbol<ID<Self::TraitMember>>> {
+        None
+    }
+
+    fn as_trait_member_mut(
+        &mut self,
+    ) -> Option<&mut MemberSymbol<ID<Self::TraitMember>>> {
+        None
+    }
+
+    fn into_trait_member(
+        self,
+    ) -> Result<MemberSymbol<ID<Self::TraitMember>>, Self> {
+        Err(self)
     }
 
     fn get_adt_fields(&self, _: &Table<impl State>) -> Option<Vec<Self>> {
@@ -237,16 +254,16 @@ impl Term for Lifetime {
     }
 
     fn get_instantiation(
-        instantitation: &Instantiation,
+        instantiation: &Instantiation,
     ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
-        &instantitation.lifetimes
+        &instantiation.lifetimes
     }
 
     fn get_instantiation_mut(
-        instantitation: &mut Instantiation,
+        instantiation: &mut Instantiation,
     ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
     {
-        &mut instantitation.lifetimes
+        &mut instantiation.lifetimes
     }
 
     fn get_substructural_unification<'a, T: Term>(

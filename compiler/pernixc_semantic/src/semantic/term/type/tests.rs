@@ -115,7 +115,6 @@ impl Arbitrary for MemberSymbolKindID {
         prop_oneof![
             ID::arbitrary().prop_map(Self::TraitImplementation),
             ID::arbitrary().prop_map(Self::AdtImplementation),
-            ID::arbitrary().prop_map(Self::Trait),
         ]
         .boxed()
     }
@@ -164,6 +163,12 @@ impl Arbitrary for Type {
                     Some(const_strat.clone())
                 ))
                 .prop_map(Self::MemberSymbol),
+                6 => MemberSymbol::arbitrary_with((
+                    Some(lt_strat.clone()),
+                    Some(inner.clone()),
+                    Some(const_strat.clone())
+                ))
+                .prop_map(Self::TraitMember),
                 6 => Symbol::arbitrary_with((Some(lt_strat.clone()), Some(inner.clone()), Some(const_strat.clone())))
                     .prop_map(Self::Symbol),
                 1 => Pointer::arbitrary_with(Some(inner.clone())).prop_map(Self::Pointer),

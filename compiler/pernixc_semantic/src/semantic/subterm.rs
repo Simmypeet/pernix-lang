@@ -228,3 +228,8 @@ impl<ID> Symbol<ID> {
         generic_arguments.get(location.0)
     }
 }
+
+/// A new type wrapper for [`SubMemberSymbolLocation`] to represent a sub-term
+/// in trait member symbols.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubTraitMemberLocation(pub SubMemberSymbolLocation);

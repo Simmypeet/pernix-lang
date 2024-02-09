@@ -294,6 +294,14 @@ macro_rules! implements_type {
                 && $visitor.$visit_constant(&$($ref)? term.length)),
             Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)),
             Self::Local(local) => Ok($visitor.$visit_type(&$($ref)?local.0)),
+            Self::TraitMember(trait_member) => Ok(
+                trait_member
+                    .parent_generic_arguments
+                    .$accept_one_level($visitor)
+                    && trait_member
+                        .member_generic_arguments
+                        .$accept_one_level($visitor),
+            ),
             Self::MemberSymbol(implementation) => Ok(implementation
                 .member_generic_arguments
                 .$accept_one_level($visitor)
@@ -393,6 +401,16 @@ macro_rules! implements_constant {
 
             Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)),
             Self::Local(local) => Ok($visitor.$visit_constant(&$($ref)?local.0)),
+
+            Self::TraitMember(trait_member) => {
+                Ok(trait_member
+                    .parent_generic_arguments
+                    .$accept_one_level($visitor)
+                    && trait_member
+                        .member_generic_arguments
+                        .$accept_one_level($visitor))
+            }
+
             Self::Symbol(symbol) => {
                 Ok(symbol.generic_arguments.$accept_one_level($visitor))
             }

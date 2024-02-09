@@ -140,6 +140,9 @@ pub trait Term:
     /// The type of generic parameters of this term kind.
     type GenericParameter: GenericParameter + 'static;
 
+    /// The type of trait member symbol that stores this term kind.
+    type TraitMember: 'static;
+
     #[doc(hidden)]
     fn as_generic_parameter(
         &self,
@@ -154,6 +157,19 @@ pub trait Term:
     fn into_generic_parameter(
         self,
     ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
+
+    #[doc(hidden)]
+    fn as_trait_member(&self) -> Option<&MemberSymbol<ID<Self::TraitMember>>>;
+
+    #[doc(hidden)]
+    fn as_trait_member_mut(
+        &mut self,
+    ) -> Option<&mut MemberSymbol<ID<Self::TraitMember>>>;
+
+    #[doc(hidden)]
+    fn into_trait_member(
+        self,
+    ) -> Result<MemberSymbol<ID<Self::TraitMember>>, Self>;
 
     #[doc(hidden)]
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;
@@ -183,12 +199,12 @@ pub trait Term:
 
     #[doc(hidden)]
     fn get_instantiation(
-        instantitation: &Instantiation,
+        instantiation: &Instantiation,
     ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
 
     #[doc(hidden)]
     fn get_instantiation_mut(
-        instantitation: &mut Instantiation,
+        instantiation: &mut Instantiation,
     ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
 
     #[doc(hidden)]
