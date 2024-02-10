@@ -30,11 +30,11 @@ pub struct Instantiation {
     pub constants: HashMap<ConstantParameterID, Constant>,
 }
 
-struct Instantiator<'a> {
+struct Instantiater<'a> {
     substitution: &'a Instantiation,
 }
 
-impl<'a> Visitor for Instantiator<'a> {
+impl<'a> Visitor for Instantiater<'a> {
     fn visit_type(&mut self, _: &Type) -> bool { unreachable!() }
 
     fn visit_lifetime(&mut self, _: &Lifetime) -> bool { unreachable!() }
@@ -80,8 +80,8 @@ impl<'a> Visitor for Instantiator<'a> {
 
 /// Applies the given substitution to the term.
 pub fn instantiate(term: &mut impl Term, instantiation: &Instantiation) {
-    let mut instantiator = Instantiator { substitution: instantiation };
-    visitor::accept_recursive_mut(term, &mut instantiator);
+    let mut instantiater = Instantiater { substitution: instantiation };
+    visitor::accept_recursive_mut(term, &mut instantiater);
 }
 
 /// Error that occurs when converting a [`GenericArguments`] into a
