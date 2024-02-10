@@ -127,7 +127,13 @@ impl<T, Idx: Key> Arena<T, Idx> {
 
     /// Inserts a new item into the [`Arena`] and returns its `Idx`.
     pub fn insert(&mut self, item: T) -> Idx {
-        self.insert_available(Idx::from_index(self.items.len()), item)
+        self.insert_available(Idx::from_index(self.items.len()), |_| item)
+    }
+
+    /// Inserts a new item into the [`Arena`] by constructing it with the given
+    /// function with the ID of the item as the argument.
+    pub fn insert_with(&mut self, f: impl FnOnce(Idx) -> T) -> Idx {
+        self.insert_available(Idx::from_index(self.items.len()), f)
     }
 
     /// Inserts a new item into the [`Arena`] with explicit `Idx`.
@@ -151,17 +157,17 @@ impl<T, Idx: Key> Arena<T, Idx> {
         }
     }
 
-    fn insert_available(&mut self, id: Idx, item: T) -> Idx {
+    fn insert_available(&mut self, id: Idx, f: impl FnOnce(Idx) -> T) -> Idx {
         match self.items.entry(id) {
             Entry::Vacant(entry) => {
-                entry.insert(item);
+                entry.insert(f(id));
                 id
             }
 
             Entry::Occupied(_) => {
                 let index = id.into_index();
                 let index = Idx::from_index(index + 1);
-                self.insert_available(index, item)
+                self.insert_available(index, f)
             }
         }
     }
