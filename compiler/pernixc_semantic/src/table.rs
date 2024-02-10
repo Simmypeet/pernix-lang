@@ -1073,3 +1073,150 @@ impl<'a, T: Container> Iterator for ScopeWalker<'a, T> {
         }
     }
 }
+
+/// The error type returned by [`build()`].
+#[derive(Debug, thiserror::Error)]
+#[allow(missing_docs, clippy::large_enum_variant)]
+pub enum BuildTableError {
+    #[error("the target `{0}` was already defined")]
+    DuplicateTargetName(String),
+
+    #[error("the table was built with some errors")]
+    Suboptimal(Table<Suboptimal>),
+}
+
+fn convert_rw_locked_arena<T: 'static>(
+    arena: Arena<RwLock<T>, ID<T>>,
+) -> Arena<T, ID<T>> {
+    let mut new_arena = Arena::default();
+
+    for (idx, value) in arena {
+        new_arena.insert_with_id(idx, value.into_inner()).unwrap();
+    }
+
+    new_arena
+}
+
+struct HandlerAdaptor<'a> {
+    handler: &'a dyn Handler<Box<dyn error::Error>>,
+    received: RwLock<bool>,
+}
+
+impl<'a> Handler<Box<dyn error::Error>> for HandlerAdaptor<'a> {
+    fn receive(&self, error: Box<dyn error::Error>) {
+        self.handler.receive(error);
+        *self.received.write() = true;
+    }
+}
+
+/// Builds a symbol table from the given targets.
+///
+/// # Errors
+///
+/// See [`BuildTableError`] for more information.
+#[allow(clippy::result_large_err)]
+pub fn build(
+    targets: impl ParallelIterator<Item = Target>,
+    handler: &dyn Handler<Box<dyn error::Error>>,
+) -> Result<Table<Success>, BuildTableError> {
+    let current_table = RwLock::new(Table {
+        representation: Representation::default(),
+        state: state::drafting::State::default(),
+    });
+    let handler = HandlerAdaptor { handler, received: RwLock::new(false) };
+
+    // draft all targets
+    targets.try_for_each(|target| {
+        let (syntax_tree, name) = target.dissolve();
+        let module_id = Table::draft_module(
+            &current_table,
+            syntax_tree,
+            name.clone(),
+            None,
+            &handler,
+        );
+
+        #[allow(clippy::significant_drop_in_scrutinee)]
+        match current_table
+            .write()
+            .representation
+            .root_module_ids_by_name
+            .entry(name)
+        {
+            Entry::Occupied(entry) => {
+                Err(BuildTableError::DuplicateTargetName(entry.key().clone()))
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(module_id);
+                Ok(())
+            }
+        }
+    })?;
+
+    let current_table = current_table.into_inner();
+
+    let representation = Representation::<NoContainer> {
+        modules: convert_rw_locked_arena(current_table.representation.modules),
+        structs: convert_rw_locked_arena(current_table.representation.structs),
+        enums: convert_rw_locked_arena(current_table.representation.enums),
+        variants: convert_rw_locked_arena(
+            current_table.representation.variants,
+        ),
+        types: convert_rw_locked_arena(current_table.representation.types),
+        functions: convert_rw_locked_arena(
+            current_table.representation.functions,
+        ),
+        constants: convert_rw_locked_arena(
+            current_table.representation.constants,
+        ),
+        traits: convert_rw_locked_arena(current_table.representation.traits),
+        trait_types: convert_rw_locked_arena(
+            current_table.representation.trait_types,
+        ),
+        trait_constants: convert_rw_locked_arena(
+            current_table.representation.trait_constants,
+        ),
+        trait_functions: convert_rw_locked_arena(
+            current_table.representation.trait_functions,
+        ),
+        trait_implementations: convert_rw_locked_arena(
+            current_table.representation.trait_implementations,
+        ),
+        negative_trait_implementations: convert_rw_locked_arena(
+            current_table.representation.negative_trait_implementations,
+        ),
+        trait_implementation_types: convert_rw_locked_arena(
+            current_table.representation.trait_implementation_types,
+        ),
+        trait_implementation_functions: convert_rw_locked_arena(
+            current_table.representation.trait_implementation_functions,
+        ),
+        trait_implementation_constants: convert_rw_locked_arena(
+            current_table.representation.trait_implementation_constants,
+        ),
+        adt_implementations: convert_rw_locked_arena(
+            current_table.representation.adt_implementations,
+        ),
+        adt_implementation_types: convert_rw_locked_arena(
+            current_table.representation.adt_implementation_types,
+        ),
+        adt_implementation_functions: convert_rw_locked_arena(
+            current_table.representation.adt_implementation_functions,
+        ),
+        adt_implementation_constants: convert_rw_locked_arena(
+            current_table.representation.adt_implementation_constants,
+        ),
+        root_module_ids_by_name: current_table
+            .representation
+            .root_module_ids_by_name,
+    };
+
+    if *handler.received.read() {
+        Err(BuildTableError::Suboptimal(Table {
+            representation,
+            state: Suboptimal(()),
+        }))
+    } else {
+        Ok(Table { representation, state: Success(()) })
+    }
+}
