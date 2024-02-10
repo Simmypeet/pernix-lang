@@ -1,12 +1,21 @@
 //! Contains the definition of [`Table`]
 
-use std::{collections::HashMap, fmt::Debug, hash::Hash, ops::Deref};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fmt::Debug,
+    hash::Hash,
+    ops::Deref,
+};
 
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
+use pernixc_base::diagnostic::Handler;
+use pernixc_syntax::syntax_tree::target::Target;
+use rayon::iter::ParallelIterator;
 
 use crate::{
     arena::{Arena, ID},
+    error,
     semantic::term::{constant, lifetime::Lifetime, r#type, GenericArguments},
     symbol::{
         Accessibility, AdtImplementation, AdtImplementationConstant,
@@ -20,6 +29,8 @@ use crate::{
     },
 };
 
+mod state;
+
 /// A trait used to access the symbols defined in the table.
 pub trait Index<Idx: ?Sized> {
     /// The output type of the indexing operation.
@@ -31,14 +42,14 @@ pub trait Index<Idx: ?Sized> {
     fn get(&self, index: Idx) -> Option<Self::Output<'_>>;
 }
 
-impl<T: Element, S: State> Index<ID<T>> for Representation<S>
+impl<T: Element, S: Container> Index<ID<T>> for Representation<S>
 where
     ID<T>: Into<GlobalID>,
 {
-    type Output<'a> = <S::Container as Container>::Read<'a, T> where Self: 'a;
+    type Output<'a> = S::Read<'a, T> where Self: 'a;
 
     fn get(&self, index: ID<T>) -> Option<Self::Output<'_>> {
-        T::get_arena(self).get(index).map(|x| S::Container::read(x))
+        T::get_arena(self).get(index).map(|x| S::read(x))
     }
 }
 
@@ -97,7 +108,7 @@ pub trait Container:
 /// A struct which implements [`Container`] by wrapping the value in a
 /// [`RwLock`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct RwLockContainer;
+pub struct RwLockContainer;
 
 impl Container for RwLockContainer {
     type MappedRead<'a, T: ?Sized + 'a> = MappedRwLockReadGuard<'a, T>;
@@ -167,116 +178,76 @@ impl Container for NoContainer {
 /// with some errors and is not suitable for the next phase (i.e. code
 /// generation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Suboptimal;
-
-impl private::Sealed for Suboptimal {}
+pub struct Suboptimal(());
 
 impl State for Suboptimal {
     type Container = NoContainer;
-
-    fn on_global_id_resolved(_: &Table<Self>, _: GlobalID, _: GlobalID) {}
 }
 
 /// A struct which implements [`State`] used to signify that the table is built
 /// successfully and is ready to be used for the next phase (i.e. code
 /// generation).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Success;
-
-impl private::Sealed for Success {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Success(() /* Preventing arbitrary instantiation */);
 
 impl State for Success {
     type Container = NoContainer;
-
-    fn on_global_id_resolved(_: &Table<Self>, _: GlobalID, _: GlobalID) {}
-}
-
-mod private {
-    pub trait Sealed {}
 }
 
 /// Represents a state object for the [`Table`].
 ///
 /// This is used to distinguish between the states of the symbols in the table.
 #[doc(hidden)]
-pub trait State:
-    Default + Debug + private::Sealed + 'static + Send + Sync
-{
+pub trait State: Debug + 'static + Send + Sync {
     /// The container type used to wrap the symbols in the table.
     type Container: Container;
-
-    /// Gets notified when the table performs a symbol resolution and resolves
-    /// the given [`GlobalID`]
-    ///
-    /// This is notified before the generic arguments are resolved for the given
-    /// [`GlobalID`].
-    fn on_global_id_resolved(
-        table: &Table<Self>,
-        referring_site: GlobalID,
-        resolved_global_id: GlobalID,
-    );
 }
 
 /// The representation of the table without any state information.
 #[derive(Debug)]
-pub struct Representation<T: State> {
-    modules: Arena<<T::Container as Container>::Wrap<Module>, ID<Module>>,
-    structs: Arena<<T::Container as Container>::Wrap<Struct>, ID<Struct>>,
-    enums: Arena<<T::Container as Container>::Wrap<Enum>, ID<Enum>>,
-    variants: Arena<<T::Container as Container>::Wrap<Variant>, ID<Variant>>,
-    pub(crate) types: Arena<<T::Container as Container>::Wrap<Type>, ID<Type>>,
-    functions: Arena<<T::Container as Container>::Wrap<Function>, ID<Function>>,
-    constants: Arena<<T::Container as Container>::Wrap<Constant>, ID<Constant>>,
+pub struct Representation<T: Container> {
+    modules: Arena<T::Wrap<Module>, ID<Module>>,
+    structs: Arena<T::Wrap<Struct>, ID<Struct>>,
+    enums: Arena<T::Wrap<Enum>, ID<Enum>>,
+    variants: Arena<T::Wrap<Variant>, ID<Variant>>,
+    pub(crate) types: Arena<T::Wrap<Type>, ID<Type>>,
+    functions: Arena<T::Wrap<Function>, ID<Function>>,
+    constants: Arena<T::Wrap<Constant>, ID<Constant>>,
 
-    traits: Arena<<T::Container as Container>::Wrap<Trait>, ID<Trait>>,
-    trait_types:
-        Arena<<T::Container as Container>::Wrap<TraitType>, ID<TraitType>>,
-    trait_functions: Arena<
-        <T::Container as Container>::Wrap<TraitFunction>,
-        ID<TraitFunction>,
-    >,
-    trait_constants: Arena<
-        <T::Container as Container>::Wrap<TraitConstant>,
-        ID<TraitConstant>,
-    >,
+    traits: Arena<T::Wrap<Trait>, ID<Trait>>,
+    trait_types: Arena<T::Wrap<TraitType>, ID<TraitType>>,
+    trait_functions: Arena<T::Wrap<TraitFunction>, ID<TraitFunction>>,
+    trait_constants: Arena<T::Wrap<TraitConstant>, ID<TraitConstant>>,
 
-    trait_implementations: Arena<
-        <T::Container as Container>::Wrap<TraitImplementation>,
-        ID<TraitImplementation>,
-    >,
+    trait_implementations:
+        Arena<T::Wrap<TraitImplementation>, ID<TraitImplementation>>,
     negative_trait_implementations: Arena<
-        <T::Container as Container>::Wrap<NegativeTraitImplementation>,
+        T::Wrap<NegativeTraitImplementation>,
         ID<NegativeTraitImplementation>,
     >,
 
-    trait_implementation_types: Arena<
-        <T::Container as Container>::Wrap<TraitImplementationType>,
-        ID<TraitImplementationType>,
-    >,
+    trait_implementation_types:
+        Arena<T::Wrap<TraitImplementationType>, ID<TraitImplementationType>>,
     trait_implementation_functions: Arena<
-        <T::Container as Container>::Wrap<TraitImplementationFunction>,
+        T::Wrap<TraitImplementationFunction>,
         ID<TraitImplementationFunction>,
     >,
     trait_implementation_constants: Arena<
-        <T::Container as Container>::Wrap<TraitImplementationConstant>,
+        T::Wrap<TraitImplementationConstant>,
         ID<TraitImplementationConstant>,
     >,
 
-    adt_implementations: Arena<
-        <T::Container as Container>::Wrap<AdtImplementation>,
-        ID<AdtImplementation>,
-    >,
+    adt_implementations:
+        Arena<T::Wrap<AdtImplementation>, ID<AdtImplementation>>,
 
-    adt_implementation_types: Arena<
-        <T::Container as Container>::Wrap<AdtImplementationType>,
-        ID<AdtImplementationType>,
-    >,
+    adt_implementation_types:
+        Arena<T::Wrap<AdtImplementationType>, ID<AdtImplementationType>>,
     adt_implementation_functions: Arena<
-        <T::Container as Container>::Wrap<AdtImplementationFunction>,
+        T::Wrap<AdtImplementationFunction>,
         ID<AdtImplementationFunction>,
     >,
     adt_implementation_constants: Arena<
-        <T::Container as Container>::Wrap<AdtImplementationConstant>,
+        T::Wrap<AdtImplementationConstant>,
         ID<AdtImplementationConstant>,
     >,
 
@@ -284,69 +255,70 @@ pub struct Representation<T: State> {
     root_module_ids_by_name: HashMap<String, ID<Module>>,
 }
 
+impl<T: Container> Default for Representation<T> {
+    fn default() -> Self {
+        Self {
+            modules: Arena::default(),
+            structs: Arena::default(),
+            enums: Arena::default(),
+            variants: Arena::default(),
+            types: Arena::default(),
+            functions: Arena::default(),
+            constants: Arena::default(),
+            traits: Arena::default(),
+            trait_types: Arena::default(),
+            trait_functions: Arena::default(),
+            trait_constants: Arena::default(),
+            trait_implementations: Arena::default(),
+            negative_trait_implementations: Arena::default(),
+            trait_implementation_types: Arena::default(),
+            trait_implementation_functions: Arena::default(),
+            trait_implementation_constants: Arena::default(),
+            adt_implementations: Arena::default(),
+            adt_implementation_types: Arena::default(),
+            adt_implementation_functions: Arena::default(),
+            adt_implementation_constants: Arena::default(),
+            root_module_ids_by_name: HashMap::default(),
+        }
+    }
+}
+
 /// Contains all the symbols and information defined in the target.
 #[derive(Debug, derive_more::Deref)]
 pub struct Table<T: State> {
     #[deref]
-    pub(crate) representation: Representation<T>,
+    pub(crate) representation: Representation<T::Container>,
 
     #[allow(unused)]
     state: T,
 }
 
-impl<T: State> Table<T> {
-    #[allow(unused)]
-    pub(crate) fn default() -> Self {
-        Self {
-            representation: Representation {
-                modules: Arena::default(),
-                structs: Arena::default(),
-                enums: Arena::default(),
-                types: Arena::default(),
-                functions: Arena::default(),
-                constants: Arena::default(),
-                traits: Arena::default(),
-                variants: Arena::default(),
-                trait_implementations: Arena::default(),
-                trait_implementation_constants: Arena::default(),
-                trait_implementation_functions: Arena::default(),
-                trait_implementation_types: Arena::default(),
-                trait_constants: Arena::default(),
-                trait_functions: Arena::default(),
-                trait_types: Arena::default(),
-                negative_trait_implementations: Arena::default(),
-                adt_implementations: Arena::default(),
-                adt_implementation_constants: Arena::default(),
-                adt_implementation_functions: Arena::default(),
-                adt_implementation_types: Arena::default(),
-
-                root_module_ids_by_name: HashMap::new(),
-            },
-            state: T::default(),
-        }
+impl<T: State + Default> Default for Table<T> {
+    fn default() -> Self {
+        Self { representation: Representation::default(), state: T::default() }
     }
 }
 
 /// A trait used to access the symbols defined in the table.
 trait Element: Sized + Debug + Send + Sync + 'static {
     /// Gets the arena reference containing *this* kind of symbol.
-    fn get_arena<T: State>(
+    fn get_arena<T: Container>(
         table: &Representation<T>,
-    ) -> &Arena<<T::Container as Container>::Wrap<Self>, ID<Self>>;
+    ) -> &Arena<T::Wrap<Self>, ID<Self>>;
 
     /// Gets the mutable arena reference containing *this* kind of symbol.
-    fn get_arena_mut<T: State>(
+    fn get_arena_mut<T: Container>(
         table: &mut Representation<T>,
-    ) -> &mut Arena<<T::Container as Container>::Wrap<Self>, ID<Self>>;
+    ) -> &mut Arena<T::Wrap<Self>, ID<Self>>;
 }
 
-macro_rules! implements_symbol {
+macro_rules! implements_element {
     ($symbol:ident) => {
         impl Element for $symbol {
             /// Gets the arena reference containing *this* kind of symbol.
-            fn get_arena<T: State>(
+            fn get_arena<T: Container>(
                 table: &Representation<T>,
-            ) -> &Arena<<T::Container as Container>::Wrap<Self>, ID<Self>> {
+            ) -> &Arena<T::Wrap<Self>, ID<Self>> {
                 paste! {
                     &table.[<$symbol:snake s>]
                 }
@@ -354,10 +326,9 @@ macro_rules! implements_symbol {
 
             /// Gets the mutable arena reference containing *this* kind of
             /// symbol.
-            fn get_arena_mut<T: State>(
+            fn get_arena_mut<T: Container>(
                 table: &mut Representation<T>,
-            ) -> &mut Arena<<T::Container as Container>::Wrap<Self>, ID<Self>>
-            {
+            ) -> &mut Arena<T::Wrap<Self>, ID<Self>> {
                 paste! {
                     &mut table.[<$symbol:snake s>]
                 }
@@ -366,32 +337,32 @@ macro_rules! implements_symbol {
     };
 }
 
-implements_symbol!(Module);
-implements_symbol!(Struct);
-implements_symbol!(Enum);
-implements_symbol!(Type);
-implements_symbol!(Function);
-implements_symbol!(Constant);
-implements_symbol!(Trait);
-implements_symbol!(TraitType);
-implements_symbol!(TraitFunction);
-implements_symbol!(TraitConstant);
-implements_symbol!(Variant);
-implements_symbol!(TraitImplementation);
-implements_symbol!(NegativeTraitImplementation);
-implements_symbol!(TraitImplementationType);
-implements_symbol!(TraitImplementationConstant);
-implements_symbol!(TraitImplementationFunction);
-implements_symbol!(AdtImplementation);
-implements_symbol!(AdtImplementationType);
-implements_symbol!(AdtImplementationConstant);
-implements_symbol!(AdtImplementationFunction);
+implements_element!(Module);
+implements_element!(Struct);
+implements_element!(Enum);
+implements_element!(Type);
+implements_element!(Function);
+implements_element!(Constant);
+implements_element!(Trait);
+implements_element!(TraitType);
+implements_element!(TraitFunction);
+implements_element!(TraitConstant);
+implements_element!(Variant);
+implements_element!(TraitImplementation);
+implements_element!(NegativeTraitImplementation);
+implements_element!(TraitImplementationType);
+implements_element!(TraitImplementationConstant);
+implements_element!(TraitImplementationFunction);
+implements_element!(AdtImplementation);
+implements_element!(AdtImplementationType);
+implements_element!(AdtImplementationConstant);
+implements_element!(AdtImplementationFunction);
 
 macro_rules! get {
     ($self:ident, $id:ident, $kind:ident, $($field:ident),*) => {
         match $id {
             $(
-                $kind::$field($id) => $self.get($id).map(|x| <T::Container as Container>::map_read(x, |x| x as _)),
+                $kind::$field($id) => $self.get($id).map(|x| T::map_read(x, |x| x as _)),
             )*
         }
     };
@@ -419,7 +390,7 @@ pub enum GetByQualifiedNameError<'a> {
     EmptyIterator,
 }
 
-impl<T: State> Representation<T> {
+impl<T: Container> Representation<T> {
     /// Checks if the `referred` is accessible from the `referring_site`.
     ///
     /// # Returns
@@ -490,19 +461,14 @@ impl<T: State> Representation<T> {
     pub fn get_trait_implementation_signature(
         &self,
         trait_implementation_kind: TraitImplementationKindID,
-    ) -> Option<
-        <T::Container as Container>::MappedRead<
-            '_,
-            ImplementationSignature<ID<Trait>>,
-        >,
-    > {
+    ) -> Option<T::MappedRead<'_, ImplementationSignature<ID<Trait>>>> {
         match trait_implementation_kind {
-            TraitImplementationKindID::Positive(id) => self
-                .get(id)
-                .map(|x| T::Container::map_read(x, |x| &x.signature)),
-            TraitImplementationKindID::Negative(id) => self
-                .get(id)
-                .map(|x| T::Container::map_read(x, |x| &x.signature)),
+            TraitImplementationKindID::Positive(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| &x.signature))
+            }
+            TraitImplementationKindID::Negative(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| &x.signature))
+            }
         }
     }
 
@@ -923,7 +889,7 @@ impl<T: State> Representation<T> {
         macro_rules! arm_expression {
             ($table:ident, $id:ident, $kind:ident) => {
                 paste! {
-                    $table.[<$kind:snake s>].get($id).map(|$id| T::Container::read($id).accessibility)
+                    $table.[<$kind:snake s>].get($id).map(|$id| T::read($id).accessibility)
                 }
             };
 
@@ -960,66 +926,48 @@ impl<T: State> Representation<T> {
             (
                 Variant,
                 self.get_accessibility(
-                    T::Container::read(global_id).parent_enum_id.into()
+                    T::read(global_id).parent_enum_id.into()
                 )
             ),
             (
                 TraitType,
-                self.get_accessibility(
-                    T::Container::read(global_id).parent_id.into()
-                )
+                self.get_accessibility(T::read(global_id).parent_id.into())
             ),
             (
                 TraitConstant,
-                self.get_accessibility(
-                    T::Container::read(global_id).parent_id.into()
-                )
+                self.get_accessibility(T::read(global_id).parent_id.into())
             ),
             (
                 TraitFunction,
-                self.get_accessibility(
-                    T::Container::read(global_id).parent_id.into()
-                )
+                self.get_accessibility(T::read(global_id).parent_id.into())
             ),
             (
                 TraitImplementation,
                 self.get_accessibility(
-                    T::Container::read(global_id)
-                        .signature
-                        .implemented_id
-                        .into()
+                    T::read(global_id).signature.implemented_id.into()
                 )
             ),
             (
                 TraitImplementationType,
-                self.get_accessibility(
-                    T::Container::read(global_id).parent_id.into()
-                )
+                self.get_accessibility(T::read(global_id).parent_id.into())
             ),
             (
                 TraitImplementationFunction,
-                self.get_accessibility(
-                    T::Container::read(global_id).parent_id.into()
-                )
+                self.get_accessibility(T::read(global_id).parent_id.into())
             ),
             (
                 TraitImplementationConstant,
-                self.get_accessibility(
-                    T::Container::read(global_id).parent_id.into()
-                )
+                self.get_accessibility(T::read(global_id).parent_id.into())
             ),
             (
                 NegativeTraitImplementation,
                 self.get_accessibility(
-                    T::Container::read(global_id)
-                        .signature
-                        .implemented_id
-                        .into()
+                    T::read(global_id).signature.implemented_id.into()
                 )
             ),
             (AdtImplementation, {
                 let implemented_id =
-                    T::Container::read(global_id).signature.implemented_id;
+                    T::read(global_id).signature.implemented_id;
                 match implemented_id {
                     crate::symbol::AdtKindID::Struct(id) => {
                         self.get_accessibility(id.into())
@@ -1037,7 +985,7 @@ impl<T: State> Representation<T> {
     pub fn get_generic(
         &self,
         generic_id: GenericID,
-    ) -> Option<<T::Container as Container>::MappedRead<'_, dyn Generic>> {
+    ) -> Option<T::MappedRead<'_, dyn Generic>> {
         get!(
             self,
             generic_id,
@@ -1068,7 +1016,7 @@ impl<T: State> Representation<T> {
     pub fn get_global(
         &self,
         global_id: GlobalID,
-    ) -> Option<<T::Container as Container>::MappedRead<'_, dyn Global>> {
+    ) -> Option<T::MappedRead<'_, dyn Global>> {
         get!(
             self,
             global_id,
@@ -1102,12 +1050,12 @@ impl<T: State> Representation<T> {
 ///
 /// The iterator iterates through the scope in id-to-parent order.
 #[derive(Debug, Clone)]
-pub struct ScopeWalker<'a, T: State> {
+pub struct ScopeWalker<'a, T: Container> {
     table: &'a Representation<T>,
     current_id: Option<GlobalID>,
 }
 
-impl<'a, T: State> Iterator for ScopeWalker<'a, T> {
+impl<'a, T: Container> Iterator for ScopeWalker<'a, T> {
     type Item = GlobalID;
 
     fn next(&mut self) -> Option<Self::Item> {

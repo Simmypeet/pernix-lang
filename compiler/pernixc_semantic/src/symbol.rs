@@ -194,7 +194,7 @@ pub trait Generic {
 
 /// Represents a generic declaration containing generic parameters and
 /// predicates.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GenericDeclaration {
     /// Generic parameters defined in the generic declaration.
     pub parameters: GenericParameters,
@@ -453,7 +453,7 @@ impl GenericParameter for ConstantParameter {
 }
 
 /// Represents a list of generic parameters.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.
     pub lifetimes: Arena<LifetimeParameter>,

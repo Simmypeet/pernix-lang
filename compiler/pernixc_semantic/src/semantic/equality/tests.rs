@@ -19,6 +19,7 @@ use crate::{
             r#type::{Primitive, SymbolKindID, Type},
             GenericArguments, Local, Symbol, Term,
         },
+        tests::State,
         visitor::{self, Visitor},
         Premise, Semantic,
     },
@@ -26,7 +27,7 @@ use crate::{
         self, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
         TypeParameterID,
     },
-    table::{Success, Table},
+    table::Table,
 };
 
 #[test]
@@ -35,7 +36,7 @@ fn reflexive() {
         equalities_mapping: mapping::Mapping::default(),
         non_equality_predicates: Vec::new(),
     };
-    let table = Table::<Success>::default();
+    let table = Table::<State>::default();
 
     let term = Type::Primitive(Primitive::Bool);
 
@@ -63,7 +64,7 @@ fn symmetric() {
         ),
         non_equality_predicates: Vec::new(),
     };
-    let table = Table::<Success>::default();
+    let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Bool);
     let rhs = Type::Primitive(Primitive::Float32);
 
@@ -105,7 +106,7 @@ fn transitivity() {
         ),
         non_equality_predicates: Vec::new(),
     };
-    let table = Table::<Success>::default();
+    let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Bool);
     let rhs = Type::Primitive(Primitive::Float64);
 
@@ -148,7 +149,7 @@ fn congruence() {
         ),
         non_equality_predicates: Vec::new(),
     };
-    let table = Table::<Success>::default();
+    let table = Table::<State>::default();
     let lhs = Type::Symbol(Symbol {
         id: SymbolKindID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
@@ -213,7 +214,7 @@ fn recursive() {
         ),
         non_equality_predicates: Vec::new(),
     };
-    let table = Table::<Success>::default();
+    let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Int32);
     let rhs = Type::Symbol(Symbol {
         id: SymbolKindID::Enum(ID::new(0)),
@@ -333,7 +334,7 @@ pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError>;
 
@@ -456,7 +457,7 @@ where
 impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
     fn apply(
         &self,
-        _: &mut Table<Success>,
+        _: &mut Table<State>,
         _: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         Ok(())
@@ -503,7 +504,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
@@ -590,7 +591,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
@@ -676,7 +677,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         for strategy in &self.type_properties {
@@ -810,12 +811,12 @@ impl Arbitrary for TypeAlias {
     }
 }
 
-struct Subsitutor<'a> {
+struct Substituter<'a> {
     from: &'a Type,
     to: &'a Type,
 }
 
-impl<'a> Visitor for Subsitutor<'a> {
+impl<'a> Visitor for Substituter<'a> {
     fn visit_type(&mut self, _: &Type) -> bool { unreachable!() }
 
     fn visit_lifetime(&mut self, _: &Lifetime) -> bool { unreachable!() }
@@ -838,7 +839,7 @@ impl<'a> Visitor for Subsitutor<'a> {
 impl Property<Type> for TypeAlias {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
@@ -912,7 +913,7 @@ impl Property<Type> for TypeAlias {
                         let mut sampled =
                             if self.aliased_at_lhs { lhs } else { rhs };
 
-                        let mut subsitutor = Subsitutor {
+                        let mut substituter = Substituter {
                             from: &self.argument,
                             to: &Type::Parameter(TypeParameterID {
                                 parent: GenericID::Type(self.type_id),
@@ -922,7 +923,7 @@ impl Property<Type> for TypeAlias {
 
                         visitor::accept_recursive_mut(
                             &mut sampled,
-                            &mut subsitutor,
+                            &mut substituter,
                         );
 
                         sampled
@@ -984,7 +985,7 @@ where
 {
     let (term1, term2) = property.generate();
     let mut premise = Premise::default();
-    let mut table = Table::<Success>::default();
+    let mut table = Table::<State>::default();
 
     property.apply(&mut table, &mut premise).map_err(|x| match x {
         ApplyPropertyError::ExceedLimitError(_) => {

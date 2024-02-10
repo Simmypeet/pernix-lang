@@ -18,13 +18,14 @@ use crate::{
             r#type::{self, SymbolKindID, Type},
             GenericArguments, Symbol, Term,
         },
+        tests::State,
         Premise, Semantic,
     },
     symbol::{
         self, ConstantParameterID, GenericDeclaration, GenericID,
         GenericParameters, TypeParameter, TypeParameterID,
     },
-    table::{Success, Table},
+    table::Table,
 };
 
 #[derive(
@@ -47,7 +48,7 @@ pub trait Property<T>: 'static + Debug {
     /// Returns `false` if failed to apply the environment to the
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError>;
 
@@ -77,7 +78,7 @@ impl<T: Into<U> + Clone + Debug + 'static, U> Property<U>
 {
     fn apply(
         &self,
-        _: &mut Table<Success>,
+        _: &mut Table<State>,
         _: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         Ok(())
@@ -122,7 +123,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         if definite(
@@ -202,7 +203,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         for type_strategy in &self.type_strategies {
@@ -322,7 +323,7 @@ impl Arbitrary for TypeAlias {
 impl Property<Type> for TypeAlias {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         self.property.apply(table, premise)?;
@@ -416,7 +417,7 @@ where
 {
     let term = property.generate();
     let mut premise = Premise::default();
-    let mut table = Table::<Success>::default();
+    let mut table = Table::<State>::default();
 
     property.apply(&mut table, &mut premise).map_err(|x| match x {
         ApplyPropertyError::ExceedLimitError(_) => {

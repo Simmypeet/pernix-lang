@@ -281,3 +281,6 @@ impl Semantic<Constant> for Default {
         Ok(Satisfiability::Satisfied)
     }
 }
+
+#[cfg(test)]
+pub(super) mod tests;

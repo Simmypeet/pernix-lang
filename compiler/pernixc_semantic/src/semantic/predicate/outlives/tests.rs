@@ -14,9 +14,10 @@ use crate::{
         predicate::{NonEquality, Outlives},
         session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+        tests::State,
         Premise, Semantic,
     },
-    table::{Success, Table},
+    table::Table,
 };
 
 #[derive(
@@ -47,7 +48,7 @@ pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError>;
 
@@ -64,7 +65,7 @@ pub struct Reflexive {
 impl Property<Lifetime> for Reflexive {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
@@ -111,7 +112,7 @@ pub struct Transitive {
 impl Property<Lifetime> for Transitive {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();
@@ -217,7 +218,7 @@ where
 {
     let (term1, term2) = property.generate();
     let mut premise = Premise::default();
-    let mut table = Table::<Success>::default();
+    let mut table = Table::<State>::default();
 
     property.apply(&mut table, &mut premise).map_err(|x| match x {
         ApplyPropertyError::ExceedLimitError(_) => {
@@ -287,7 +288,7 @@ proptest! {
                 &constant,
                 &lifetime,
                 &Premise::default(),
-                &Table::<Success>::default(),
+                &Table::<State>::default(),
                 &mut semantic::Default,
                 &mut Limit::new(&mut session::Default::default())
             ).unwrap()

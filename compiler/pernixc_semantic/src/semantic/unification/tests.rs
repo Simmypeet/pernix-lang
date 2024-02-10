@@ -19,10 +19,11 @@ use crate::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Symbol, Term,
         },
+        tests::State,
         Premise, Semantic,
     },
     symbol::{ConstantParameterID, LifetimeParameterID, TypeParameterID},
-    table::{Success, Table},
+    table::Table,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -55,7 +56,7 @@ pub enum ApplyPropertyError {
 pub trait Property<T>: 'static + Debug {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError>;
     fn generate(&self) -> (T, T);
@@ -74,7 +75,7 @@ impl<
 {
     fn apply(
         &self,
-        _: &mut Table<Success>,
+        _: &mut Table<State>,
         _: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         Ok(())
@@ -199,7 +200,7 @@ where
 {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         for property in &self.lifetime_properties {
@@ -309,7 +310,7 @@ impl<
 {
     fn apply(
         &self,
-        table: &mut Table<Success>,
+        table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
         let (lhs, rhs) = self.generate();

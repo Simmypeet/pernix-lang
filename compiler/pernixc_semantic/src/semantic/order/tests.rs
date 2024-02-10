@@ -18,10 +18,11 @@ use crate::{
             r#type::{self, Type},
             GenericArguments, Symbol, Term,
         },
+        tests::State,
         unification, Premise, Semantic,
     },
     symbol::{ConstantParameterID, TypeParameterID},
-    table::{Success, Table},
+    table::Table,
 };
 
 /// Property checks for the order of terms.
@@ -103,7 +104,7 @@ where
                         &lhs,
                         &rhs,
                         &Premise::default(),
-                        &Table::<Success>::default(),
+                        &Table::<State>::default(),
                         &mut OrderUnifyingConfig,
                         &mut semantic::Default,
                         &mut Limit::new(&mut session::Default::default()),
@@ -262,9 +263,9 @@ impl Arbitrary for Box<dyn Property<Type>> {
                 .prop_map(|x| Box::new(x) as _),
             4 => Ambiguous::<TypeParameterID, r#type::TraitMember>::arbitrary().prop_map(|x| Box::new(x) as _),
         ].prop_recursive(3, 12, 4, move |inner| {
-            let consts = args.clone().unwrap_or_else(|| Box::<dyn Property<Constant>>::arbitrary_with(Some(inner.clone())));
+            let constants = args.clone().unwrap_or_else(|| Box::<dyn Property<Constant>>::arbitrary_with(Some(inner.clone())));
 
-            Congruent::arbitrary_with((Some(inner), Some(consts))).prop_map(|x| Box::new(x) as _)
+            Congruent::arbitrary_with((Some(inner), Some(constants))).prop_map(|x| Box::new(x) as _)
         })
         .boxed()
     }
@@ -377,16 +378,16 @@ impl<ID: Debug + Arbitrary<Strategy = BoxedStrategy<ID>> + 'static> Arbitrary
     );
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let lt_strat = Lifetime::arbitrary();
+        let lifetimes = Lifetime::arbitrary();
         let types = args.0.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
-        let consts =
+        let constants =
             args.1.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary);
 
         (
             ID::arbitrary(),
-            proptest::collection::vec((lt_strat.clone(), lt_strat), 0..=2),
+            proptest::collection::vec((lifetimes.clone(), lifetimes), 0..=2),
             proptest::collection::vec(types, 0..=2),
-            proptest::collection::vec(consts, 0..=2),
+            proptest::collection::vec(constants, 0..=2),
         )
             .prop_map(|(id, lifetimes, types, constants)| Self {
                 id,
@@ -460,7 +461,7 @@ proptest! {
         let result = lhs.order(
             &rhs,
             &Premise::default(),
-            &Table::<Success>::default(),
+            &Table::<State>::default(),
             &mut semantic::Default,
             &mut Limit::new(&mut session::Default::default()),
         )?;
