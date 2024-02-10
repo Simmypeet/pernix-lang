@@ -28,7 +28,7 @@ use crate::{
     },
     symbol::{
         self, ConstantParameter, ConstantParameterID, GenericID,
-        GenericParameters, GlobalID, MemberID, Variance, Variant,
+        GenericParameters, GlobalID, Variance, Variant,
     },
     table::{Index, State, Table},
 };
@@ -112,6 +112,10 @@ pub type Tuple = super::Tuple<Constant>;
 
 /// Represents a constant inference variable in hindley-milner type inference.
 pub type Inference = Never; /* will be changed */
+
+/// Represents a trait-member constant, denoted by `TRAIT[ARGS]::CONSTANT[`
+/// syntax.
+pub type TraitMember = MemberSymbol<ID<symbol::TraitConstant>>;
 
 /// The location pointing to a sub-constant term in a constant.
 #[derive(
@@ -799,45 +803,33 @@ impl Term for Constant {
     type GenericParameter = ConstantParameter;
     type TraitMember = symbol::TraitConstant;
 
-    fn as_generic_parameter(
-        &self,
-    ) -> Option<&MemberID<ID<Self::GenericParameter>, GenericID>> {
+    fn as_generic_parameter(&self) -> Option<&ConstantParameterID> {
         self.as_parameter()
     }
 
-    fn as_generic_parameter_mut(
-        &mut self,
-    ) -> Option<&mut MemberID<ID<Self::GenericParameter>, GenericID>> {
+    fn as_generic_parameter_mut(&mut self) -> Option<&mut ConstantParameterID> {
         self.as_parameter_mut()
     }
 
-    fn into_generic_parameter(
-        self,
-    ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+    fn into_generic_parameter(self) -> Result<ConstantParameterID, Self> {
         self.into_parameter()
     }
 
-    fn as_trait_member(
-        &self,
-    ) -> Option<&MemberSymbol<ID<symbol::TraitConstant>>> {
+    fn as_trait_member(&self) -> Option<&TraitMember> {
         match self {
             Self::TraitMember(id) => Some(id),
             _ => None,
         }
     }
 
-    fn as_trait_member_mut(
-        &mut self,
-    ) -> Option<&mut MemberSymbol<ID<symbol::TraitConstant>>> {
+    fn as_trait_member_mut(&mut self) -> Option<&mut TraitMember> {
         match self {
             Self::TraitMember(id) => Some(id),
             _ => None,
         }
     }
 
-    fn into_trait_member(
-        self,
-    ) -> Result<MemberSymbol<ID<symbol::TraitConstant>>, Self> {
+    fn into_trait_member(self) -> Result<TraitMember, Self> {
         match self {
             Self::TraitMember(id) => Ok(id),
             x => Err(x),
@@ -912,14 +904,13 @@ impl Term for Constant {
 
     fn get_instantiation(
         instantiation: &Instantiation,
-    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+    ) -> &HashMap<ConstantParameterID, Self> {
         &instantiation.constants
     }
 
     fn get_instantiation_mut(
         instantiation: &mut Instantiation,
-    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
-    {
+    ) -> &mut HashMap<ConstantParameterID, Self> {
         &mut instantiation.constants
     }
 

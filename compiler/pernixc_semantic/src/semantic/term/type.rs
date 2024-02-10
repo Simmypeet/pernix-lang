@@ -24,8 +24,8 @@ use crate::{
     },
     symbol::{
         self, ConstantParameterID, Enum, GenericID, GenericParameters,
-        GlobalID, LifetimeParameterID, MemberID, Struct, TypeParameter,
-        TypeParameterID, Variance,
+        GlobalID, LifetimeParameterID, Struct, TypeParameter, TypeParameterID,
+        Variance,
     },
     table::{Index, State, Table},
 };
@@ -176,6 +176,10 @@ pub type Tuple = super::Tuple<Type>;
 
 /// Represents a type inference variable in Hindley Milner type inference.
 pub type Inference = Never; /* will be changed */
+
+/// Represents a trait-member type, denoted by `TRAIT[ARGS]::TYPE[ARGS]`
+/// syntax.
+pub type TraitMember = MemberSymbol<ID<symbol::TraitType>>;
 
 /// The location pointing to a sub-lifetime term in a type.
 #[derive(
@@ -810,7 +814,7 @@ pub enum Type {
     /// field **is** deduced from the implementation.
     MemberSymbol(MemberSymbol<MemberSymbolKindID>),
 
-    TraitMember(MemberSymbol<ID<symbol::TraitType>>),
+    TraitMember(TraitMember),
 }
 
 impl TryFrom<Type> for Tuple {
@@ -913,43 +917,33 @@ impl Term for Type {
     type GenericParameter = TypeParameter;
     type TraitMember = symbol::TraitType;
 
-    fn as_generic_parameter(
-        &self,
-    ) -> Option<&MemberID<ID<Self::GenericParameter>, GenericID>> {
+    fn as_generic_parameter(&self) -> Option<&TypeParameterID> {
         self.as_parameter()
     }
 
-    fn as_generic_parameter_mut(
-        &mut self,
-    ) -> Option<&mut MemberID<ID<Self::GenericParameter>, GenericID>> {
+    fn as_generic_parameter_mut(&mut self) -> Option<&mut TypeParameterID> {
         self.as_parameter_mut()
     }
 
-    fn into_generic_parameter(
-        self,
-    ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+    fn into_generic_parameter(self) -> Result<TypeParameterID, Self> {
         self.into_parameter()
     }
 
-    fn as_trait_member(&self) -> Option<&MemberSymbol<ID<symbol::TraitType>>> {
+    fn as_trait_member(&self) -> Option<&TraitMember> {
         match self {
             Self::TraitMember(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn as_trait_member_mut(
-        &mut self,
-    ) -> Option<&mut MemberSymbol<ID<symbol::TraitType>>> {
+    fn as_trait_member_mut(&mut self) -> Option<&mut TraitMember> {
         match self {
             Self::TraitMember(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn into_trait_member(
-        self,
-    ) -> Result<MemberSymbol<ID<symbol::TraitType>>, Self> {
+    fn into_trait_member(self) -> Result<TraitMember, Self> {
         match self {
             Self::TraitMember(trait_member) => Ok(trait_member),
             _ => Err(self),
@@ -1132,14 +1126,13 @@ impl Term for Type {
 
     fn get_instantiation(
         instantiation: &Instantiation,
-    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+    ) -> &HashMap<TypeParameterID, Self> {
         &instantiation.types
     }
 
     fn get_instantiation_mut(
         instantiation: &mut Instantiation,
-    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
-    {
+    ) -> &mut HashMap<TypeParameterID, Self> {
         &mut instantiation.types
     }
 
