@@ -135,8 +135,8 @@ impl SourceFile {
         Ok(Self::new(path, source))
     }
 
-    /// Creates a temporary source file and writes the given displayable object
-    /// to it.
+    /// Creates a temporary source file on the disk and writes the given
+    /// displayable object to it. Then, loads that temporary file.
     ///
     /// # Errors
     /// - [`Error::IoError`]: Error occurred when creating the temporary file,
