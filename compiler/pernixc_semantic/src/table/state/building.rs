@@ -17,6 +17,7 @@ use crate::{
         TraitImplementationConstant, TraitImplementationFunction,
         TraitImplementationType, TraitType, Type, Variant,
     },
+    table::{self, RwLockContainer},
 };
 
 #[derive(Debug)]
@@ -39,9 +40,12 @@ pub struct State<S: Symbol> {
     /// when building the symbol.
     dependencies: HashMap<S::Flag, HashSet<GlobalID>>,
 }
-
 #[derive(Debug, Default, derive_more::Deref, derive_more::DerefMut)]
-pub struct Builder(RwLock<Representation>);
+pub struct Building(RwLock<Representation>);
+
+impl table::State for Building {
+    type Container = RwLockContainer;
+}
 
 #[derive(Debug, Default)]
 pub struct Representation {
@@ -140,7 +144,7 @@ implements_element!(Trait);
 implements_element!(Type);
 implements_element!(Variant);
 
-impl Builder {
+impl Building {
     /// Adds a new symbol to the builder and sets its state to drafting.
     ///
     /// If there exists a symbol with the same ID, then the symbol is not

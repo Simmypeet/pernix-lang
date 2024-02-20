@@ -5,7 +5,7 @@ use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, target::ModuleTree, ConnectedList};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::building::Builder;
+use super::building::Building;
 use crate::{
     arena::{Map, ID},
     error::{self, GlobalRedefinition},
@@ -20,18 +20,18 @@ use crate::{
 };
 
 #[derive(Debug, Default)]
-pub struct State {
+pub struct Drafting {
     pub usings_by_module_id: HashMap<ID<Module>, Vec<syntax_tree::item::Using>>,
     pub implementations_by_module_id:
         HashMap<ID<Module>, Vec<syntax_tree::item::Implementation>>,
-    pub building: Builder,
+    pub building: Building,
 }
 
-impl table::State for State {
+impl table::State for Drafting {
     type Container = RwLockContainer;
 }
 
-impl Table<State> {
+impl Table<Drafting> {
     #[allow(clippy::significant_drop_tightening)]
     fn insert_member_id_to_map<
         MemberID: Into<GlobalID> + Copy,
