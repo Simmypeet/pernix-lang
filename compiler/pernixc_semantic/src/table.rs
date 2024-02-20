@@ -1270,3 +1270,6 @@ pub fn build(
         Ok(Table { representation, state: Success(()) })
     }
 }
+
+#[cfg(test)]
+mod tests;

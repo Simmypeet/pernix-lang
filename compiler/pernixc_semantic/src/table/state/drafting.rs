@@ -506,3 +506,6 @@ impl Table<Drafting> {
         module_id
     }
 }
+
+#[cfg(test)]
+mod tests;
