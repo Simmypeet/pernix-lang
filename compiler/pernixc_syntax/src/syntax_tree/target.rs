@@ -146,7 +146,7 @@ impl std::fmt::Display for SourceFileLoadFail {
             "{}",
             SourceCodeDisplay::new(
                 &self.submodule.signature().identifier().span,
-                Some("module")
+                Option::<i32>::None
             )
         )?;
 
