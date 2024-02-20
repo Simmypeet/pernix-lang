@@ -13,6 +13,7 @@ use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::target::Target;
 use rayon::iter::ParallelIterator;
 
+use self::state::drafting::Drafting;
 use crate::{
     arena::{Arena, ID},
     error,
@@ -1113,35 +1114,63 @@ impl<'a> Handler<Box<dyn error::Error>> for HandlerAdaptor<'a> {
     }
 }
 
-/// Builds a symbol table from the given targets.
-///
-/// # Errors
-///
-/// See [`BuildTableError`] for more information.
-#[allow(clippy::result_large_err)]
-pub fn build(
-    targets: impl ParallelIterator<Item = Target>,
+fn transition_to_building(
+    drafting_table: Table<state::drafting::Drafting>,
     handler: &dyn Handler<Box<dyn error::Error>>,
-) -> Result<Table<Success>, BuildTableError> {
-    let current_table = RwLock::new(Table {
-        representation: Representation::default(),
-        state: state::drafting::State::default(),
-    });
-    let handler = HandlerAdaptor { handler, received: RwLock::new(false) };
+) -> Table<state::building::Building> {
+    let representation = drafting_table.representation;
+    let drafting = drafting_table.state;
 
+    // transition to building table
+    let building = drafting.building;
+    let building_table = Table { representation, state: building };
+
+    // add usings to the modules
+    for (module_id, usings) in drafting.usings_by_module_id {
+        for using in usings {
+            let Ok(using_module_id) = building_table.resolve_module_path(
+                using.module_path(),
+                module_id.into(),
+                handler,
+            ) else {
+                continue;
+            };
+
+            building_table
+                .modules
+                .get(module_id)
+                .unwrap()
+                .write()
+                .usings
+                .insert(using_module_id);
+        }
+    }
+
+    building_table
+}
+
+#[allow(clippy::result_large_err)]
+fn draft_table(
+    targets: impl ParallelIterator<Item = Target>,
+    handler: &HandlerAdaptor,
+) -> Result<Table<Drafting>, BuildTableError> {
+    let drafting_table = RwLock::new(Table {
+        representation: Representation::default(),
+        state: state::drafting::Drafting::default(),
+    });
     // draft all targets
     targets.try_for_each(|target| {
         let (syntax_tree, name) = target.dissolve();
         let module_id = Table::draft_module(
-            &current_table,
+            &drafting_table,
             syntax_tree,
             name.clone(),
             None,
-            &handler,
+            handler,
         );
 
         #[allow(clippy::significant_drop_in_scrutinee)]
-        match current_table
+        match drafting_table
             .write()
             .representation
             .root_module_ids_by_name
@@ -1157,60 +1186,77 @@ pub fn build(
         }
     })?;
 
-    let current_table = current_table.into_inner();
+    Ok(drafting_table.into_inner())
+}
 
+/// Builds a symbol table from the given targets.
+///
+/// # Errors
+///
+/// See [`BuildTableError`] for more information.
+#[allow(clippy::result_large_err)]
+pub fn build(
+    targets: impl ParallelIterator<Item = Target>,
+    handler: &dyn Handler<Box<dyn error::Error>>,
+) -> Result<Table<Success>, BuildTableError> {
+    let handler = HandlerAdaptor { handler, received: RwLock::new(false) };
+
+    let building_table =
+        transition_to_building(draft_table(targets, &handler)?, &handler);
+
+    // unwrap mutexes and convert to the final table
     let representation = Representation::<NoContainer> {
-        modules: convert_rw_locked_arena(current_table.representation.modules),
-        structs: convert_rw_locked_arena(current_table.representation.structs),
-        enums: convert_rw_locked_arena(current_table.representation.enums),
+        modules: convert_rw_locked_arena(building_table.representation.modules),
+        structs: convert_rw_locked_arena(building_table.representation.structs),
+        enums: convert_rw_locked_arena(building_table.representation.enums),
         variants: convert_rw_locked_arena(
-            current_table.representation.variants,
+            building_table.representation.variants,
         ),
-        types: convert_rw_locked_arena(current_table.representation.types),
+        types: convert_rw_locked_arena(building_table.representation.types),
         functions: convert_rw_locked_arena(
-            current_table.representation.functions,
+            building_table.representation.functions,
         ),
         constants: convert_rw_locked_arena(
-            current_table.representation.constants,
+            building_table.representation.constants,
         ),
-        traits: convert_rw_locked_arena(current_table.representation.traits),
+        traits: convert_rw_locked_arena(building_table.representation.traits),
         trait_types: convert_rw_locked_arena(
-            current_table.representation.trait_types,
+            building_table.representation.trait_types,
         ),
         trait_constants: convert_rw_locked_arena(
-            current_table.representation.trait_constants,
+            building_table.representation.trait_constants,
         ),
         trait_functions: convert_rw_locked_arena(
-            current_table.representation.trait_functions,
+            building_table.representation.trait_functions,
         ),
         trait_implementations: convert_rw_locked_arena(
-            current_table.representation.trait_implementations,
+            building_table.representation.trait_implementations,
         ),
         negative_trait_implementations: convert_rw_locked_arena(
-            current_table.representation.negative_trait_implementations,
+            building_table.representation.negative_trait_implementations,
         ),
         trait_implementation_types: convert_rw_locked_arena(
-            current_table.representation.trait_implementation_types,
+            building_table.representation.trait_implementation_types,
         ),
         trait_implementation_functions: convert_rw_locked_arena(
-            current_table.representation.trait_implementation_functions,
+            building_table.representation.trait_implementation_functions,
         ),
         trait_implementation_constants: convert_rw_locked_arena(
-            current_table.representation.trait_implementation_constants,
+            building_table.representation.trait_implementation_constants,
         ),
         adt_implementations: convert_rw_locked_arena(
-            current_table.representation.adt_implementations,
+            building_table.representation.adt_implementations,
         ),
         adt_implementation_types: convert_rw_locked_arena(
-            current_table.representation.adt_implementation_types,
+            building_table.representation.adt_implementation_types,
         ),
         adt_implementation_functions: convert_rw_locked_arena(
-            current_table.representation.adt_implementation_functions,
+            building_table.representation.adt_implementation_functions,
         ),
         adt_implementation_constants: convert_rw_locked_arena(
-            current_table.representation.adt_implementation_constants,
+            building_table.representation.adt_implementation_constants,
         ),
-        root_module_ids_by_name: current_table
+        root_module_ids_by_name: building_table
             .representation
             .root_module_ids_by_name,
     };
