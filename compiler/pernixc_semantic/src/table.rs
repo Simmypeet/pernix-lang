@@ -30,6 +30,7 @@ use crate::{
     },
 };
 
+pub mod resolution;
 mod state;
 
 /// A trait used to access the symbols defined in the table.
