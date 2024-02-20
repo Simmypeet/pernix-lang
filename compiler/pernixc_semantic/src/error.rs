@@ -1,7 +1,7 @@
 //! Contains all the definition of errors that can be emitted by the semantic
 //! analyzer.
 
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display};
 
 use pernixc_base::{
     log::{
@@ -1153,12 +1153,12 @@ impl DisplayWithTable for WhereClausePredicateNotSatisfied {
 }
 
 /// Implemented by all semantic errors.
-pub trait Error: DisplayWithTable + Send + Sync + 'static {
+pub trait Error: Debug + DisplayWithTable + Send + Sync + 'static {
     #[allow(missing_docs, clippy::missing_errors_doc)]
     fn as_display_with_table(&self) -> &dyn DisplayWithTable;
 }
 
-impl<T: DisplayWithTable + Send + Sync + 'static> Error for T
+impl<T: Debug + DisplayWithTable + Send + Sync + 'static> Error for T
 where
     for<'a> WithTable<'a, T>: Display,
 {
