@@ -32,15 +32,28 @@ use crate::{
 /// assert!(internal < public);
 /// assert!(private < public);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
 pub enum Accessibility {
     /// The symbol is accessible only from the same module and its submodules.
+    #[display(fmt = "private")]
     Private,
 
     /// The symbol is accessible only from the same target.
+    #[display(fmt = "internal")]
     Internal,
 
     /// The symbol is accessible from anywhere.
+    #[display(fmt = "public")]
     Public,
 }
 
