@@ -1,4 +1,6 @@
-use std::{collections::HashMap, fmt::Display, path::Path, str::FromStr};
+use std::{
+    collections::HashMap, fmt::Display, path::Path, str::FromStr, sync::Arc,
+};
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
@@ -195,7 +197,9 @@ proptest! {
         let target_dir = target_module_tree.create_target()?;
         let file = std::fs::File::open(target_dir.path().join("main.pnx"))?;
 
-        let root_source_file = SourceFile::load(file, target_dir.path().join("main.pnx"))?;
+        let root_source_file = Arc::new(
+            SourceFile::load(file, target_dir.path().join("main.pnx"))?
+        );
         let storage = Storage::<Error>::new();
         let target = Target::parse(&root_source_file, "test".to_string(), &storage);
 

@@ -1,6 +1,7 @@
 use std::{
     fmt::{Display, Write},
     str::FromStr,
+    sync::Arc,
 };
 
 use derive_more::{Deref, DerefMut};
@@ -431,7 +432,7 @@ impl Input<&super::Token> for &Token {
 fn tokenize(
     source: String,
 ) -> Result<super::Token, proptest::test_runner::TestCaseError> {
-    let source_file = SourceFile::temp(source)?;
+    let source_file = Arc::new(SourceFile::temp(source)?);
     let mut iterator = source_file.iter();
 
     let error_storage: Storage<super::error::Error> = Storage::new();

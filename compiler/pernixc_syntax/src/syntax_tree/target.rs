@@ -343,7 +343,7 @@ impl Target {
                                 .map_err(Into::into)
                                 .and_then(|file| SourceFile::load(file, source_file_path.clone()))
                             {
-                                Ok(source_file) => source_file,
+                                Ok(source_file) => Arc::new(source_file),
                                 Err(source_error) => {
                                     handler.receive(Error::SourceFileLoadFail(
                                         SourceFileLoadFail {

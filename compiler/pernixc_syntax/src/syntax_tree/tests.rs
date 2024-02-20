@@ -1,6 +1,7 @@
 use std::{
     fmt::{Debug, Display, Write},
     str::FromStr,
+    sync::Arc,
 };
 
 use enum_as_inner::EnumAsInner;
@@ -575,7 +576,7 @@ pub fn parse<T, F>(source: &str, f: F) -> Result<T, TestCaseError>
 where
     F: FnOnce(&mut Parser, &Storage<error::Error>) -> Option<T>,
 {
-    let source_file = SourceFile::temp(source.to_string())?;
+    let source_file = Arc::new(SourceFile::temp(source.to_string())?);
 
     let storage: Storage<pernixc_lexical::error::Error> = Storage::new();
 

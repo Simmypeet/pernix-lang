@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display, Write};
+use std::{
+    fmt::{Debug, Display, Write},
+    sync::Arc,
+};
 
 use pernixc_base::{diagnostic::Storage, source_file::SourceFile};
 use pernixc_tests::input::Input;
@@ -314,7 +317,7 @@ proptest! {
         input in TokenStream::arbitrary()
     ) {
         let source = input.to_string();
-        let source_file = SourceFile::temp(source)?;
+        let source_file = Arc::new(SourceFile::temp(source)?);
 
         let storage: Storage<Error> = Storage::new();
         let token_stream =

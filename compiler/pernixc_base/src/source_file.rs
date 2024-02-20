@@ -89,9 +89,9 @@ impl MappedSource {
 }
 
 impl SourceFile {
-    fn new(full_path: PathBuf, source: MappedSource) -> Arc<Self> {
+    fn new(full_path: PathBuf, source: MappedSource) -> Self {
         let lines = get_line_byte_positions(source.content());
-        Arc::new(Self { source, full_path, lines })
+        Self { source, full_path, lines }
     }
 
     /// Gets the content of the source file.
@@ -130,7 +130,7 @@ impl SourceFile {
     /// - [`Error::IoError`]: Error occurred when mapping the file to memory.
     /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes
     ///   to a string.
-    pub fn load(file: File, path: PathBuf) -> Result<Arc<Self>, Error> {
+    pub fn load(file: File, path: PathBuf) -> Result<Self, Error> {
         let source = MappedSource::create(file)?;
         Ok(Self::new(path, source))
     }
@@ -143,7 +143,7 @@ impl SourceFile {
     ///   writing to, and mapping it to memory.
     /// - [`Error::Utf8Error`]: Error occurred when converting the mapped bytes
     ///   to a string.
-    pub fn temp(display: impl Display) -> Result<Arc<Self>, Error> {
+    pub fn temp(display: impl Display) -> Result<Self, Error> {
         use std::io::Write;
 
         let mut tempfile = tempfile::Builder::new()
