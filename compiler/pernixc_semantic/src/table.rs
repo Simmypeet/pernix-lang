@@ -412,7 +412,11 @@ impl<T: Container> Representation<T> {
             Accessibility::Private => {
                 let mut referring_module_id =
                     self.get_closet_module_id(referring_site)?;
-                let referred_module_id = self.get_closet_module_id(referred)?;
+                let referred_module_id = self.get_closet_module_id(
+                    self.get_global(referred)?
+                        .parent_global_id()
+                        .unwrap_or(referred),
+                )?;
 
                 loop {
                     if referring_module_id == referred_module_id {
