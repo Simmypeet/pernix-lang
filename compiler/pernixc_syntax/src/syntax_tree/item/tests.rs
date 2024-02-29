@@ -11,7 +11,7 @@ use proptest::{
 
 use crate::syntax_tree::{
     self,
-    expression::{self, tests::Expression},
+    expression::{tests::Expression, Access},
     pattern::tests::Irrefutable,
     r#type,
     statement::tests::Statement,
@@ -1501,11 +1501,13 @@ impl Display for TypeSignature {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitFunction {
+    pub access_modifier: AccessModifier,
     pub function_signature: FunctionSignature,
 }
 
 impl Input<&super::TraitFunction> for &TraitFunction {
     fn assert(self, output: &super::TraitFunction) -> TestCaseResult {
+        self.access_modifier.assert(output.access_modifier())?;
         self.function_signature.assert(output.signature())
     }
 }
@@ -1515,26 +1517,31 @@ impl Arbitrary for TraitFunction {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        FunctionSignature::arbitrary()
-            .prop_map(|function_signature| Self { function_signature })
+        (AccessModifier::arbitrary(), FunctionSignature::arbitrary())
+            .prop_map(|(access_modifier, function_signature)| Self {
+                access_modifier,
+                function_signature,
+            })
             .boxed()
     }
 }
 
 impl Display for TraitFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{};", self.function_signature)
+        write!(f, "{} {};", self.access_modifier, self.function_signature)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitType {
+    pub access_modifier: AccessModifier,
     pub type_signature: TypeSignature,
     pub where_clause: Option<WhereClause>,
 }
 
 impl Input<&super::TraitType> for &TraitType {
     fn assert(self, output: &super::TraitType) -> TestCaseResult {
+        self.access_modifier.assert(output.access_modifier())?;
         self.type_signature.assert(output.signature())?;
         self.where_clause.as_ref().assert(output.where_clause().as_ref())
     }
@@ -1546,10 +1553,12 @@ impl Arbitrary for TraitType {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
+            AccessModifier::arbitrary(),
             TypeSignature::arbitrary(),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(|(type_signature, where_clause)| Self {
+            .prop_map(|(access_modifier, type_signature, where_clause)| Self {
+                access_modifier,
                 type_signature,
                 where_clause,
             })
@@ -1559,7 +1568,7 @@ impl Arbitrary for TraitType {
 
 impl Display for TraitType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.type_signature)?;
+        write!(f, "{} {}", self.access_modifier, self.type_signature)?;
 
         if let Some(where_clause) = self.where_clause.as_ref() {
             write!(f, " {where_clause}")?;
@@ -1573,12 +1582,14 @@ impl Display for TraitType {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitConstant {
+    pub access_modifier: AccessModifier,
     pub signature: ConstantSignature,
     pub where_clause: Option<WhereClause>,
 }
 
 impl Input<&super::TraitConstant> for &TraitConstant {
     fn assert(self, output: &super::TraitConstant) -> TestCaseResult {
+        self.access_modifier.assert(output.access_modifier())?;
         self.signature.assert(output.signature())?;
         self.where_clause.as_ref().assert(output.where_clause().as_ref())
     }
@@ -1590,10 +1601,12 @@ impl Arbitrary for TraitConstant {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
+            AccessModifier::arbitrary(),
             ConstantSignature::arbitrary(),
             proptest::option::of(WhereClause::arbitrary()),
         )
-            .prop_map(|(signature, where_clause)| Self {
+            .prop_map(|(access_modifier, signature, where_clause)| Self {
+                access_modifier,
                 signature,
                 where_clause,
             })
@@ -1603,7 +1616,7 @@ impl Arbitrary for TraitConstant {
 
 impl Display for TraitConstant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.signature)?;
+        write!(f, "{} {}", self.access_modifier, self.signature)?;
 
         if let Some(where_clause) = self.where_clause.as_ref() {
             write!(f, " {where_clause}")?;
@@ -2199,73 +2212,6 @@ impl Display for Enum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {} {}", self.access_modifier, self.signature, self.body)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementationType {
-    pub signature: TypeSignature,
-    pub definition: TypeDefinition,
-}
-
-impl Input<&super::ImplementationType> for &ImplementationType {
-    fn assert(self, output: &super::ImplementationType) -> TestCaseResult {
-        self.signature.assert(output.signature())?;
-        self.definition.assert(output.definition())
-    }
-}
-
-impl Arbitrary for ImplementationType {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (TypeSignature::arbitrary(), TypeDefinition::arbitrary())
-            .prop_map(|(signature, definition)| Self { signature, definition })
-            .boxed()
-    }
-}
-
-impl Display for ImplementationType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {};", self.signature, self.definition)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementationFunction {
-    pub signature: FunctionSignature,
-    pub body: FunctionBody,
-}
-
-impl Input<&super::ImplementationFunction> for &ImplementationFunction {
-    fn assert(self, output: &super::ImplementationFunction) -> TestCaseResult {
-        self.signature.assert(output.signature())?;
-        self.body.assert(output.body())
-    }
-}
-
-impl Arbitrary for ImplementationFunction {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (FunctionSignature::arbitrary(), FunctionBody::arbitrary())
-            .prop_map(|(signature, body)| Self { signature, body })
-            .boxed()
-    }
-}
-
-impl Display for ImplementationFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.signature, self.body)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementationConstant {
-    pub identifier: Identifier,
-    pub ty: r#type::tests::Type,
-    pub expression: expression::tests::Expression,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

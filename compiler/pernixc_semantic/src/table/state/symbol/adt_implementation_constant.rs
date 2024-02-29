@@ -4,7 +4,7 @@ use super::Symbol;
 use crate::symbol::AdtImplementationConstant;
 
 impl Symbol for AdtImplementationConstant {
-    type SyntaxTree = syntax_tree::item::ImplementationConstant;
+    type SyntaxTree = syntax_tree::item::Constant;
     type Flag = ();
     type Data = ();
 }

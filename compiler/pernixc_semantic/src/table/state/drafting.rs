@@ -2,21 +2,38 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use parking_lot::RwLock;
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
-use pernixc_syntax::syntax_tree::{self, target::ModuleTree, ConnectedList};
+use pernixc_syntax::syntax_tree::{
+    self,
+    item::{ImplementationKind, ImplementationMember},
+    target::ModuleTree,
+    ConnectedList, GenericIdentifier,
+};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::building::Building;
 use crate::{
     arena::{Map, ID},
-    error::{self, GlobalRedefinition},
-    semantic::term::r#type,
+    error::{
+        self, AlreadyImplementedTraitMember, InvalidSymbolInImplementation,
+        MismatchedTraitMemberAndImplementationMember,
+        MismatchedTraitMemberAndImplementationMemberAccessibility,
+        RedefinedGlobal, SymbolIsMoreAccessibleThanParent, TraitMemberKind,
+        UnimplementedTraitMembers, UnknownTraitImplementationMember,
+    },
+    semantic::term::{r#type, GenericArguments},
     symbol::{
         Accessibility, Constant, ConstantData, Enum, Function, FunctionData,
-        GenericDeclaration, GlobalID, Module, ModuleMemberID, Struct, Trait,
+        GenericDeclaration, GlobalID, ImplementationSignature, Module,
+        ModuleMemberID, NegativeTraitImplementation, Struct, Trait,
         TraitConstant, TraitConstantData, TraitFunction, TraitFunctionData,
-        TraitMemberID, TraitType, TraitTypeData, Type, TypeData, Variant,
+        TraitImplementation, TraitImplementationConstant,
+        TraitImplementationConstantData, TraitImplementationData,
+        TraitImplementationFunction, TraitImplementationFunctionData,
+        TraitImplementationMemberID, TraitImplementationType,
+        TraitImplementationTypeData, TraitMemberID, TraitType, TraitTypeData,
+        Type, TypeData, Variant,
     },
-    table::{self, Element, RwLockContainer, Table},
+    table::{self, Element, Index, RwLockContainer, Table},
 };
 
 #[derive(Debug, Default)]
@@ -55,7 +72,7 @@ impl Table<Drafting> {
         #[allow(clippy::significant_drop_in_scrutinee)]
         match map.entry(member_name) {
             Entry::Occupied(entry) => {
-                handler.receive(Box::new(GlobalRedefinition {
+                handler.receive(Box::new(RedefinedGlobal {
                     existing_global_id: (*entry.get()).into(),
                     new_global_id: member_id.into(),
                     in_global_id: parent_id.into(),
@@ -87,7 +104,11 @@ impl Table<Drafting> {
                     .to_owned(),
                 return_type: r#type::Type::default(),
                 generic_declaration: GenericDeclaration::default(),
-                data: TraitFunctionData,
+                data: TraitFunctionData {
+                    accessibility: Accessibility::from_syntax_tree(
+                        syntax_tree.access_modifier(),
+                    ),
+                },
             })
         });
         assert!(table_write.state.building.draft_symbol(id, syntax_tree));
@@ -114,7 +135,11 @@ impl Table<Drafting> {
                     .str()
                     .to_owned(),
                 generic_declaration: GenericDeclaration::default(),
-                data: TraitTypeData,
+                data: TraitTypeData {
+                    accessibility: Accessibility::from_syntax_tree(
+                        syntax_tree.access_modifier(),
+                    ),
+                },
             })
         });
         assert!(table_write.state.building.draft_symbol(id, syntax_tree));
@@ -142,7 +167,11 @@ impl Table<Drafting> {
                     .to_owned(),
                 r#type: r#type::Type::default(),
                 generic_declaration: GenericDeclaration::default(),
-                data: TraitConstantData,
+                data: TraitConstantData {
+                    accessibility: Accessibility::from_syntax_tree(
+                        syntax_tree.access_modifier(),
+                    ),
+                },
             })
         });
         assert!(table_write.state.building.draft_symbol(id, syntax_tree));
@@ -161,17 +190,17 @@ impl Table<Drafting> {
         let (_, member_list, _) = body.dissolve();
 
         let mut table_write = table.write();
+        let trait_accessibility =
+            Accessibility::from_syntax_tree(&access_modifier);
         let id = table_write.representation.traits.insert_with(|id| {
             RwLock::new(Trait {
                 id,
                 name: signature.identifier().span.str().to_owned(),
-                accessibility: Accessibility::from_syntax_tree(
-                    &access_modifier,
-                ),
+                accessibility: trait_accessibility,
                 parent_module_id,
                 generic_declaration: GenericDeclaration::default(),
-                negative_implementations: Vec::new(),
-                implementations: Vec::new(),
+                negative_implementations: HashSet::new(),
+                implementations: HashSet::new(),
                 span: Some(signature.identifier().span.clone()),
                 trait_member_ids_by_name: HashMap::new(),
             })
@@ -195,6 +224,15 @@ impl Table<Drafting> {
                     ))
                 }
             };
+
+            if table.read().get_accessibility(trait_member_id.into()).unwrap()
+                > trait_accessibility
+            {
+                handler.receive(Box::new(SymbolIsMoreAccessibleThanParent {
+                    symbol_id: trait_member_id.into(),
+                    parent_id: id.into(),
+                }));
+            }
 
             table.read().insert_member_id_to_map(
                 |trait_sym| &mut trait_sym.trait_member_ids_by_name,
@@ -504,6 +542,548 @@ impl Table<Drafting> {
         });
 
         module_id
+    }
+}
+
+impl Table<Building> {
+    fn draft_trait_implementation_function(
+        table: &RwLock<Self>,
+        syntax_tree: syntax_tree::item::Function,
+        implemented_trait_function_id: ID<TraitFunction>,
+        parent_id: ID<TraitImplementation>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<TraitImplementationFunction> {
+        let implementation_function_id = table
+            .write()
+            .representation
+            .trait_implementation_functions
+            .insert_with(|id| {
+                RwLock::new(TraitImplementationFunction {
+                    id,
+                    generic_declaration: GenericDeclaration::default(),
+                    parent_id,
+                    span: Some(
+                        syntax_tree.signature().identifier().span.clone(),
+                    ),
+                    name: syntax_tree
+                        .signature()
+                        .identifier()
+                        .span
+                        .str()
+                        .to_owned(),
+                    data: TraitImplementationFunctionData {
+                        implemented_trait_function_id,
+                    },
+                    parameters: Map::default(),
+                    return_type: r#type::Type::default(),
+                })
+            });
+
+        let this_accessibility =
+            Accessibility::from_syntax_tree(syntax_tree.access_modifier());
+        if this_accessibility
+            != table
+                .read()
+                .get_accessibility(implemented_trait_function_id.into())
+                .unwrap()
+        {
+            handler.receive(Box::new(
+                MismatchedTraitMemberAndImplementationMemberAccessibility {
+                    trait_member_id: implemented_trait_function_id.into(),
+                    implementation_member_accessibility: this_accessibility,
+                    implementation_member_id: implementation_function_id.into(),
+                },
+            ));
+        }
+
+        assert!(table
+            .read()
+            .state
+            .draft_symbol(implementation_function_id, syntax_tree));
+
+        implementation_function_id
+    }
+
+    fn draft_trait_implementation_type(
+        table: &RwLock<Self>,
+        syntax_tree: syntax_tree::item::Type,
+        implemented_trait_type_id: ID<TraitType>,
+        parent_id: ID<TraitImplementation>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<TraitImplementationType> {
+        let implementation_type_id = table
+            .write()
+            .representation
+            .trait_implementation_types
+            .insert_with(|id| {
+                RwLock::new(TraitImplementationType {
+                    id,
+                    generic_declaration: GenericDeclaration::default(),
+                    parent_id,
+                    span: Some(
+                        syntax_tree.signature().identifier().span.clone(),
+                    ),
+                    name: syntax_tree
+                        .signature()
+                        .identifier()
+                        .span
+                        .str()
+                        .to_owned(),
+                    data: TraitImplementationTypeData {
+                        r#type: r#type::Type::default(),
+                        implemented_trait_type_id,
+                    },
+                })
+            });
+
+        let this_accessibility =
+            Accessibility::from_syntax_tree(syntax_tree.access_modifier());
+        if this_accessibility
+            != table
+                .read()
+                .get_accessibility(implemented_trait_type_id.into())
+                .unwrap()
+        {
+            handler.receive(Box::new(
+                MismatchedTraitMemberAndImplementationMemberAccessibility {
+                    trait_member_id: implemented_trait_type_id.into(),
+                    implementation_member_accessibility: this_accessibility,
+                    implementation_member_id: implementation_type_id.into(),
+                },
+            ));
+        }
+
+        assert!(table
+            .read()
+            .state
+            .draft_symbol(implementation_type_id, syntax_tree));
+
+        implementation_type_id
+    }
+
+    fn draft_trait_implementation_constant(
+        table: &RwLock<Self>,
+        syntax_tree: syntax_tree::item::Constant,
+        implemented_trait_constant_id: ID<TraitConstant>,
+        parent_id: ID<TraitImplementation>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<TraitImplementationConstant> {
+        let implementation_constant_id = table
+            .write()
+            .representation
+            .trait_implementation_constants
+            .insert_with(|id| {
+                RwLock::new(TraitImplementationConstant {
+                    id,
+                    generic_declaration: GenericDeclaration::default(),
+                    parent_id,
+                    span: Some(
+                        syntax_tree.signature().identifier().span.clone(),
+                    ),
+                    name: syntax_tree
+                        .signature()
+                        .identifier()
+                        .span
+                        .str()
+                        .to_owned(),
+                    r#type: r#type::Type::default(),
+                    data: TraitImplementationConstantData {
+                        implemented_trait_constant_id,
+                    },
+                })
+            });
+
+        let this_accessibility =
+            Accessibility::from_syntax_tree(syntax_tree.access_modifier());
+        if this_accessibility
+            != table
+                .read()
+                .get_accessibility(implemented_trait_constant_id.into())
+                .unwrap()
+        {
+            handler.receive(Box::new(
+                MismatchedTraitMemberAndImplementationMemberAccessibility {
+                    trait_member_id: implemented_trait_constant_id.into(),
+                    implementation_member_accessibility: this_accessibility,
+                    implementation_member_id: implementation_constant_id.into(),
+                },
+            ));
+        }
+
+        assert!(table
+            .read()
+            .state
+            .draft_symbol(implementation_constant_id, syntax_tree));
+
+        implementation_constant_id
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn draft_positive_trait_implementation(
+        table: &RwLock<Self>,
+        implementation_signature: syntax_tree::item::ImplementationSignature,
+        implementation_body: syntax_tree::item::ImplementationBody,
+        declared_in: ID<Module>,
+        trait_id: ID<Trait>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> ID<TraitImplementation> {
+        let (_, members, _) = implementation_body.dissolve();
+
+        // the implementation id
+        let implementation_name =
+            table.read().get(trait_id).unwrap().name.clone();
+        let implementation_id = table
+            .write()
+            .representation
+            .trait_implementations
+            .insert_with(|id| {
+                TraitImplementation {
+                    id,
+                    span: Some(
+                        implementation_signature.qualified_identifier().span(),
+                    ),
+                    signature: ImplementationSignature {
+                        generic_declaration: GenericDeclaration::default(),
+                        arguments: GenericArguments::default(),
+                        implemented_id: trait_id,
+                    },
+                    implementation_name,
+                    declared_in,
+                    data: TraitImplementationData {
+                        is_const: implementation_signature
+                            .const_keyword()
+                            .is_some(),
+                        implementation_member_ids_by_name: HashMap::new(),
+                        implementation_type_ids_by_trait_type_id: HashMap::new(
+                        ),
+                        implementation_function_ids_by_trait_function_id:
+                            HashMap::new(),
+                        implementation_constant_ids_by_trait_constant_id:
+                            HashMap::new(),
+                    },
+                }
+                .into()
+            });
+
+        assert!(table
+            .read()
+            .state
+            .draft_symbol(implementation_id, implementation_signature));
+
+        // used for checking if a particular member is implemented
+        let mut implemented_member = HashMap::new();
+
+        for member in members {
+            let identifier = match &member {
+                ImplementationMember::Type(syntax_tree) => {
+                    syntax_tree.signature().identifier().clone()
+                }
+                ImplementationMember::Function(syntax_tree) => {
+                    syntax_tree.signature().identifier().clone()
+                }
+                ImplementationMember::Constant(syntax_tree) => {
+                    syntax_tree.signature().identifier().clone()
+                }
+            };
+
+            // find the corresponding trait member
+            let Some(trait_member_id) = table
+                .read()
+                .get(trait_id)
+                .unwrap()
+                .trait_member_ids_by_name
+                .get(identifier.span.str())
+                .copied()
+            else {
+                handler.receive(Box::new(UnknownTraitImplementationMember {
+                    identifier_span: identifier.span.clone(),
+                    trait_id,
+                }));
+                continue;
+            };
+
+            let entry = match implemented_member.entry(trait_member_id) {
+                Entry::Occupied(entry) => {
+                    handler.receive(Box::new(AlreadyImplementedTraitMember {
+                        trait_member_id,
+                        implemented_id: *entry.get(),
+                        new_implementation_span: identifier.span.clone(),
+                    }));
+                    continue;
+                }
+                Entry::Vacant(entry) => entry,
+            };
+
+            let trait_implemetation_member_id = match (trait_member_id, member)
+            {
+                (
+                    TraitMemberID::Function(trait_function_id),
+                    ImplementationMember::Function(syntax_tree),
+                ) => {
+                    let trait_implementation_function_id =
+                        Self::draft_trait_implementation_function(
+                            table,
+                            syntax_tree,
+                            trait_function_id,
+                            implementation_id,
+                            handler,
+                        );
+                    assert!(table
+                        .read()
+                        .trait_implementations
+                        .get(implementation_id)
+                        .unwrap()
+                        .write()
+                        .implementation_function_ids_by_trait_function_id
+                        .insert(
+                            trait_function_id,
+                            trait_implementation_function_id
+                        )
+                        .is_none());
+                    TraitImplementationMemberID::Function(
+                        trait_implementation_function_id,
+                    )
+                }
+                (
+                    TraitMemberID::Type(trait_type_id),
+                    ImplementationMember::Type(syntax_tree),
+                ) => {
+                    let trait_implementation_type_id =
+                        Self::draft_trait_implementation_type(
+                            table,
+                            syntax_tree,
+                            trait_type_id,
+                            implementation_id,
+                            handler,
+                        );
+                    assert!(table
+                        .read()
+                        .trait_implementations
+                        .get(implementation_id)
+                        .unwrap()
+                        .write()
+                        .implementation_type_ids_by_trait_type_id
+                        .insert(trait_type_id, trait_implementation_type_id)
+                        .is_none());
+                    TraitImplementationMemberID::Type(
+                        trait_implementation_type_id,
+                    )
+                }
+                (
+                    TraitMemberID::Constant(trait_constant_id),
+                    ImplementationMember::Constant(syntax_tree),
+                ) => {
+                    let trait_implementation_constant_id =
+                        Self::draft_trait_implementation_constant(
+                            table,
+                            syntax_tree,
+                            trait_constant_id,
+                            implementation_id,
+                            handler,
+                        );
+                    assert!(table
+                        .read()
+                        .trait_implementations
+                        .get(implementation_id)
+                        .unwrap()
+                        .write()
+                        .implementation_constant_ids_by_trait_constant_id
+                        .insert(
+                            trait_constant_id,
+                            trait_implementation_constant_id
+                        )
+                        .is_none());
+                    TraitImplementationMemberID::Constant(
+                        trait_implementation_constant_id,
+                    )
+                }
+
+                (trait_member_id, member) => {
+                    // TODO: report the mismatch symbol kind error
+                    let found_kind = match member {
+                        ImplementationMember::Type(_) => TraitMemberKind::Type,
+                        ImplementationMember::Function(_) => {
+                            TraitMemberKind::Function
+                        }
+                        ImplementationMember::Constant(_) => {
+                            TraitMemberKind::Constant
+                        }
+                    };
+
+                    handler.receive(Box::new(
+                        MismatchedTraitMemberAndImplementationMember {
+                            trait_member_id,
+                            found_kind,
+                            implementation_member_identifer_span: identifier
+                                .span
+                                .clone(),
+                        },
+                    ));
+                    continue;
+                }
+            };
+
+            // add to the implementation
+            entry.insert(trait_implemetation_member_id);
+            assert!(table
+                .read()
+                .trait_implementations
+                .get(implementation_id)
+                .unwrap()
+                .write()
+                .implementation_member_ids_by_name
+                .insert(
+                    identifier.span.str().to_owned(),
+                    trait_implemetation_member_id,
+                )
+                .is_none());
+        }
+
+        // TODO: check if the trait members are implemented
+        let mut unimplemented_members = Vec::new();
+
+        #[allow(clippy::significant_drop_in_scrutinee)]
+        for trait_member_id in table
+            .read()
+            .get(trait_id)
+            .unwrap()
+            .trait_member_ids_by_name
+            .values()
+        {
+            if !implemented_member.contains_key(trait_member_id) {
+                unimplemented_members.push(*trait_member_id);
+            }
+        }
+
+        if !unimplemented_members.is_empty() {
+            handler.receive(Box::new(UnimplementedTraitMembers {
+                unimplemented_trait_member_ids: unimplemented_members,
+                implementation_id,
+            }));
+        }
+
+        implementation_id
+    }
+
+    fn draft_trait_implementation(
+        table: &RwLock<Self>,
+        implementation: syntax_tree::item::Implementation,
+        declared_in: ID<Module>,
+        trait_id: ID<Trait>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (signature, kind) = implementation.dissolve();
+
+        match kind {
+            ImplementationKind::Negative(..) => {
+                let implementation_name =
+                    table.read().get(trait_id).unwrap().name.clone();
+
+                let negative_implementation_id = table
+                    .write()
+                    .representation
+                    .negative_trait_implementations
+                    .insert_with(|id| {
+                        RwLock::new(NegativeTraitImplementation {
+                            id,
+                            span: Some(signature.qualified_identifier().span()),
+                            signature: ImplementationSignature {
+                                generic_declaration:
+                                    GenericDeclaration::default(),
+                                arguments: GenericArguments::default(),
+                                implemented_id: trait_id,
+                            },
+                            implementation_name,
+                            declared_in,
+                            data:
+                                crate::symbol::NegativeTraitImplementationData,
+                        })
+                    });
+
+                assert!(table
+                    .read()
+                    .state
+                    .draft_symbol(negative_implementation_id, signature));
+
+                assert!(table
+                    .read()
+                    .representation
+                    .traits
+                    .get(trait_id)
+                    .unwrap()
+                    .write()
+                    .negative_implementations
+                    .insert(negative_implementation_id));
+            }
+            ImplementationKind::Positive(body) => {
+                let implementation_id =
+                    Self::draft_positive_trait_implementation(
+                        table,
+                        signature,
+                        body,
+                        declared_in,
+                        trait_id,
+                        handler,
+                    );
+
+                assert!(table
+                    .read()
+                    .representation
+                    .traits
+                    .get(trait_id)
+                    .unwrap()
+                    .write()
+                    .implementations
+                    .insert(implementation_id));
+            }
+        }
+    }
+
+    pub(in crate::table) fn draft_implementation(
+        table: &RwLock<Self>,
+        implementation: syntax_tree::item::Implementation,
+        defined_in_module_id: ID<Module>,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let Ok(id) = table.read().resolve_simple_path(
+            implementation
+                .signature()
+                .qualified_identifier()
+                .generic_identifiers()
+                .map(GenericIdentifier::identifier),
+            defined_in_module_id.into(),
+            implementation
+                .signature()
+                .qualified_identifier()
+                .leading_scope_separator()
+                .is_some(),
+            handler,
+        ) else {
+            return;
+        };
+
+        match id {
+            GlobalID::Trait(id) => Self::draft_trait_implementation(
+                table,
+                implementation,
+                defined_in_module_id,
+                id,
+                handler,
+            ),
+
+            _adt_id @ (GlobalID::Enum(_) | GlobalID::Struct(_)) => {}
+
+            // invalid id
+            invalid_global_id => {
+                handler.receive(Box::new(InvalidSymbolInImplementation {
+                    invalid_global_id,
+                    qualified_identifier_span: implementation
+                        .signature()
+                        .qualified_identifier()
+                        .span(),
+                }));
+            }
+        }
     }
 }
 

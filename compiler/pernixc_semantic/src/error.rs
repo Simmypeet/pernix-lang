@@ -15,9 +15,9 @@ use crate::{
     arena::ID,
     semantic::predicate::Predicate,
     symbol::{
-        GenericID, GenericKind, GlobalID, LocalGenericParameterID,
-        TraitImplementation, TraitImplementationKindID,
-        TraitImplementationMemberID, TraitMemberID,
+        Accessibility, GenericID, GenericKind, Global, GlobalID,
+        LocalGenericParameterID, Module, Trait, TraitImplementation,
+        TraitImplementationKindID, TraitImplementationMemberID, TraitMemberID,
     },
     table::{Index, Suboptimal, Table},
 };
@@ -42,7 +42,7 @@ impl<'a, Error: DisplayWithTable + ?Sized> Display for WithTable<'a, Error> {
 
 /// The global symbol with the same name already exists in the given scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlobalRedefinition {
+pub struct RedefinedGlobal {
     /// The ID of the existing symbol.
     pub existing_global_id: GlobalID,
 
@@ -64,7 +64,7 @@ pub trait DisplayWithTable {
     ) -> fmt::Result;
 }
 
-impl DisplayWithTable for GlobalRedefinition {
+impl DisplayWithTable for RedefinedGlobal {
     fn fmt(
         &self,
         table: &Table<Suboptimal>,
@@ -86,7 +86,7 @@ impl DisplayWithTable for GlobalRedefinition {
         write!(f, "{}", Message {
             severity: pernixc_base::log::Severity::Error,
             display: format!(
-                "The symbol `{}` is already defined in `{}`",
+                "the symbol `{}` is already defined in `{}`",
                 existing_symbol.name(),
                 scope_qualified_name
             ),
@@ -110,9 +110,112 @@ impl DisplayWithTable for GlobalRedefinition {
     }
 }
 
+/// The symbol is more accessible than the parent symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SymbolIsMoreAccessibleThanParent {
+    /// The ID of the symbol that is more accessible than the parent symbol.
+    pub symbol_id: GlobalID,
+
+    /// The ID of the parent symbol.
+    pub parent_id: GlobalID,
+}
+
+impl DisplayWithTable for SymbolIsMoreAccessibleThanParent {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let (Some(symbol_name), Some(parent_qualified_name)) = (
+            table.get_global(self.symbol_id).map(Global::name),
+            table.get_qualified_name(self.parent_id),
+        ) else {
+            return Err(fmt::Error);
+        };
+
+        let (Some(symbol_accessibility), Some(parent_accessibility)) = (
+            table.get_accessibility(self.symbol_id),
+            table.get_accessibility(self.parent_id),
+        ) else {
+            return Err(fmt::Error);
+        };
+
+        let (Some(symbol_span), Some(parent_span)) = (
+            table.get_global(self.symbol_id).map(Global::span),
+            table.get_global(self.parent_id).map(Global::span),
+        ) else {
+            return Err(fmt::Error);
+        };
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the symbol `{symbol_name}` in `{parent_qualified_name}` is \
+                 more accessible than the parent symbol"
+            ),
+        })?;
+
+        if let Some(symbol_span) = symbol_span {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: symbol_span,
+                help_display: Some(format!(
+                    "the symbol `{symbol_name}` is {symbol_accessibility}",
+                )),
+            })?;
+        }
+
+        if let Some(parent_span) = parent_span {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: parent_span,
+                help_display: Some(format!(
+                    "the parent symbol is {parent_accessibility}",
+                )),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The symbol in the implementation is not trait, struct, or enum.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidSymbolInImplementation {
+    /// The ID of the symbol that was found in the implementation.
+    pub invalid_global_id: GlobalID,
+
+    /// The span where the invalid symbol was found.
+    pub qualified_identifier_span: Span,
+}
+
+impl DisplayWithTable for InvalidSymbolInImplementation {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let qualified_name = table
+            .get_qualified_name(self.invalid_global_id)
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the symbol `{qualified_name}` is not a trait, struct, or enum"
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.qualified_identifier_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// Expected a module in the module path, but found other kind of symbol.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModuleExpected {
+pub struct ExpectModule {
     /// The module path that was expected to be a module.
     pub module_path: Span,
 
@@ -153,7 +256,7 @@ impl GlobalID {
     }
 }
 
-impl DisplayWithTable for ModuleExpected {
+impl DisplayWithTable for ExpectModule {
     fn fmt(
         &self,
         table: &Table<Suboptimal>,
@@ -165,7 +268,7 @@ impl DisplayWithTable for ModuleExpected {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "Expected a module in the module path, but found `{} {}`",
+                "expected a module in the module path, but found `{} {}`",
                 self.found_id.kind_str(),
                 found_symbol_qualified_name
             ),
@@ -174,6 +277,90 @@ impl DisplayWithTable for ModuleExpected {
         write!(f, "\n{}", SourceCodeDisplay {
             span: &self.module_path,
             help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The module cannot have a `using` statement that uses itself.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SelfModuleUsing {
+    /// The module that was found to be using itself.
+    pub module_id: ID<Module>,
+
+    /// The span where the `using` statement was found.
+    pub using_span: Span,
+}
+
+impl DisplayWithTable for SelfModuleUsing {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let module_qualified_name = table
+            .get_qualified_name(self.module_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the module `{module_qualified_name}` was found to have a \
+                 `using` statement that uses itself",
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.using_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The module was found having a duplicate `using` statement.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DuplicatedUsing {
+    /// The module name that was found to have a duplicate `using` statement.
+    pub used_in_module_id: ID<Module>,
+
+    /// The module name that was used more than once in the `using` statement.
+    pub already_used_module_id: ID<Module>,
+
+    /// The span where the `using` statement was found.
+    pub using_span: Span,
+}
+
+impl DisplayWithTable for DuplicatedUsing {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let used_in_module_qualified_name = table
+            .get_qualified_name(self.used_in_module_id.into())
+            .ok_or(fmt::Error)?;
+
+        let already_used_module_qualified_name = table
+            .get_qualified_name(self.already_used_module_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the module `{used_in_module_qualified_name}` was found to \
+                 have a duplicate `using` statement",
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.using_span,
+            help_display: Some(format!(
+                "the module `{already_used_module_qualified_name}` was used \
+                 more than once"
+            )),
         })?;
 
         Ok(())
@@ -208,7 +395,7 @@ impl DisplayWithTable for SymbolIsNotAccessible {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The symbol `{referred_qualified_name}` is not accessible \
+                "the symbol `{referred_qualified_name}` is not accessible \
                  from `{referring_site_qualified_name}`",
             ),
         })?;
@@ -240,7 +427,7 @@ impl DisplayWithTable for ResolutionAmbiguity {
     ) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "The symbol resolution resulted in multiple candidates",
+            display: "the symbol resolution resulted in multiple candidates",
         })?;
         for candidate in &self.candidates {
             let candidate_qualified_name =
@@ -286,7 +473,7 @@ impl DisplayWithTable for SymbolNotFound {
             write!(f, "{}", Message {
                 severity: Severity::Error,
                 display: format!(
-                    "The symbol named `{}` does not exist in `{}`",
+                    "the symbol named `{}` does not exist in `{}`",
                     self.resolution_span.str(),
                     qualified_name
                 ),
@@ -295,7 +482,7 @@ impl DisplayWithTable for SymbolNotFound {
             write!(f, "{}", Message {
                 severity: Severity::Error,
                 display: format!(
-                    "The symbol `{}` does not exist",
+                    "the symbol `{}` does not exist",
                     self.resolution_span.str(),
                 ),
             })?;
@@ -332,7 +519,7 @@ impl DisplayWithTable for NoGenericArgumentsRequired {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The symbol `{qualified_name}` doesn't require any generic \
+                "the symbol `{qualified_name}` doesn't require any generic \
                  arguments"
             ),
         })?;
@@ -349,7 +536,7 @@ impl DisplayWithTable for NoGenericArgumentsRequired {
 /// The implementation is expected to implement a trait, but the trait was not
 /// found.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitExpectedInImplementation {
+pub struct ExpectTraitInImplementation {
     /// The ID of the symbol that was not a trait.
     pub found_id: GlobalID,
 
@@ -357,7 +544,7 @@ pub struct TraitExpectedInImplementation {
     pub trait_path: Span,
 }
 
-impl DisplayWithTable for TraitExpectedInImplementation {
+impl DisplayWithTable for ExpectTraitInImplementation {
     fn fmt(
         &self,
         table: &Table<Suboptimal>,
@@ -369,7 +556,7 @@ impl DisplayWithTable for TraitExpectedInImplementation {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "Expected a trait in the trait path, but found `{} {}`",
+                "txpected a trait in the trait path, but found `{} {}`",
                 self.found_id.kind_str(),
                 found_symbol_qualified_name
             ),
@@ -412,7 +599,7 @@ impl DisplayWithTable for CyclicDependency {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The cyclic dependency was found in the given set of symbols: \
+                "the cyclic dependency was found in the given set of symbols: \
                  {symbol_list}"
             ),
         })?;
@@ -446,7 +633,7 @@ impl<'a> Display for WithTable<'a, MisOrderedGenericArgument> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "The generic argument was supplied in the wrong order",
+            display: "the generic argument was supplied in the wrong order",
         })?;
 
         let help_display = match self.error.generic_kind {
@@ -486,7 +673,7 @@ impl DisplayWithTable for MisOrderedGenericParameter {
     ) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "The generic parameter was declared in the wrong order",
+            display: "the generic parameter was declared in the wrong order",
         })?;
 
         let help_display = match self.generic_kind {
@@ -524,7 +711,7 @@ pub struct PrivateEntityLeakedToPublicInterface<Entity> {
 
 /// Generic arguments count mismatch.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GenericArgumentCountMismatch {
+pub struct MismatchedGenericArugmentCount {
     /// The kind of the generic parameter.
     pub generic_kind: GenericKind,
 
@@ -538,7 +725,7 @@ pub struct GenericArgumentCountMismatch {
     pub supplied_count: usize,
 }
 
-impl DisplayWithTable for GenericArgumentCountMismatch {
+impl DisplayWithTable for MismatchedGenericArugmentCount {
     fn fmt(
         &self,
         _: &Table<Suboptimal>,
@@ -553,7 +740,7 @@ impl DisplayWithTable for GenericArgumentCountMismatch {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "Expected {} {} arguments, but {} were supplied",
+                "expected {} {} arguments, but {} were supplied",
                 self.expected_count, generic_kind, self.supplied_count,
             ),
         })?;
@@ -589,7 +776,7 @@ impl DisplayWithTable for LifetimeParameterNotFound {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The lifetime parameter `{}` was not found in \
+                "the lifetime parameter `{}` was not found in \
                  `{referring_site_qualified_name}`",
                 self.referred_span.str()
             ),
@@ -606,12 +793,12 @@ impl DisplayWithTable for LifetimeParameterNotFound {
 
 /// A lifetime wasn't supplied in the reference.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LifetimeExpected {
+pub struct ExpectLifetime {
     /// The span where the lifetime was expected.
     pub expected_span: Span,
 }
 
-impl DisplayWithTable for LifetimeExpected {
+impl DisplayWithTable for ExpectLifetime {
     fn fmt(
         &self,
         _: &Table<Suboptimal>,
@@ -619,7 +806,7 @@ impl DisplayWithTable for LifetimeExpected {
     ) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "A lifetime was expected",
+            display: "a lifetime was expected",
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
@@ -646,7 +833,7 @@ impl DisplayWithTable for MoreThanOneUnpackedInTupleType {
     ) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "The tuple type contains more than one unpacked type",
+            display: "the tuple type contains more than one unpacked type",
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
@@ -660,7 +847,7 @@ impl DisplayWithTable for MoreThanOneUnpackedInTupleType {
 
 /// The type was expected but the non-type symbol was found.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeExpected {
+pub struct ExpectType {
     /// The span where the non-type symbol was found.
     pub non_type_symbol_span: Span,
 
@@ -668,7 +855,7 @@ pub struct TypeExpected {
     pub resolved_global_id: GlobalID,
 }
 
-impl DisplayWithTable for TypeExpected {
+impl DisplayWithTable for ExpectType {
     fn fmt(
         &self,
         table: &Table<Suboptimal>,
@@ -681,7 +868,7 @@ impl DisplayWithTable for TypeExpected {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The type was expected but found {} `{qualified_name}`",
+                "the type was expected but found {} `{qualified_name}`",
                 self.resolved_global_id.kind_str(),
             ),
         })?;
@@ -697,7 +884,7 @@ impl DisplayWithTable for TypeExpected {
 
 /// The generic parameter with the same name already exists in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GenericParameterDuplication<ID> {
+pub struct DuplicatedGenericParameter<ID> {
     /// The ID of the existing generic parameter.
     pub existing_generic_parameter_id: ID,
 
@@ -726,68 +913,83 @@ pub struct TraitMemberBoundArgumentMismatched {
     pub trait_member_bound_argument_span: Span,
 }
 
-/// The trait member is not implemented in the implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitMemberNotImplemented {
+/// An enumeration of all kinds of symbols in the implemetation.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
+#[allow(missing_docs)]
+pub enum TraitMemberKind {
+    #[display(fmt = "function")]
+    Function,
+    #[display(fmt = "type")]
+    Type,
+    #[display(fmt = "constant")]
+    Constant,
+}
+
+/// The trait member and the implementation member have different types.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedTraitMemberAndImplementationMember {
     /// The ID of the trait member that is not implemented.
     pub trait_member_id: TraitMemberID,
 
-    /// The ID of the implementation in which the trait member is not
-    /// implemented.
-    pub implementation_id: ID<TraitImplementation>,
+    /// The implementation member kind
+    pub found_kind: TraitMemberKind,
+
+    /// The span of the implementation member's identifier.
+    pub implementation_member_identifer_span: Span,
 }
 
-impl DisplayWithTable for TraitMemberNotImplemented {
+impl DisplayWithTable for MismatchedTraitMemberAndImplementationMember {
     fn fmt(
         &self,
         table: &Table<Suboptimal>,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
-        let trait_name = table
+        let trait_member_qualified_identifier = table
             .get_qualified_name(self.trait_member_id.into())
             .ok_or(fmt::Error)?;
+        let trait_member_sym =
+            table.get_global(self.trait_member_id.into()).ok_or(fmt::Error)?;
+
+        let trait_member_kind = match self.trait_member_id {
+            TraitMemberID::Type(_) => TraitMemberKind::Type,
+            TraitMemberID::Function(_) => TraitMemberKind::Function,
+            TraitMemberID::Constant(_) => TraitMemberKind::Constant,
+        };
 
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The trait member `{trait_name}` is not implemented"
+                "the trait member `{trait_member_qualified_identifier}` is of \
+                 kind `{trait_member_kind}` but the implementation member is \
+                 of kind `{}`",
+                self.found_kind
             ),
         })?;
 
-        if let Some(trait_member_span) = table
-            .get_global(self.trait_member_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
-            write!(f, "\n{}", SourceCodeDisplay {
-                span: trait_member_span,
-                help_display: Some("is required to be implemented")
-            })?;
-        }
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.implementation_member_identifer_span,
+            help_display: Option::<i32>::None,
+        })?;
 
-        if let Some(implementation_span) = table
-            .get_global(self.implementation_id.into())
-            .ok_or(fmt::Error)?
-            .span()
-        {
+        if let Some(span) = trait_member_sym.span() {
             write!(f, "\n{}", SourceCodeDisplay {
-                span: implementation_span,
-                help_display: Some("doesn't implement the above trait member")
+                span,
+                help_display: Some("the trait member is defined here"),
             })?;
         }
 
         Ok(())
     }
-}
-
-/// The trait member and the implementation member have different types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitMemberAndImplementationMemberMismatched {
-    /// The ID of the trait member that is not implemented.
-    pub trait_member_id: TraitMemberID,
-
-    /// The ID of the implementation member that is not implemented.
-    pub implementation_member_id: TraitImplementationMemberID,
 }
 
 /// Generic parameter is unused in the implementation.
@@ -897,7 +1099,7 @@ impl DisplayWithTable for AmbiguousImplementation {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The implementations of the trait `{trait_name}` are ambiguous"
+                "the implementations of the trait `{trait_name}` are ambiguous"
             ),
         })?;
 
@@ -930,12 +1132,12 @@ impl DisplayWithTable for AmbiguousImplementation {
 /// The higher-ranked lifetime with the same name already exists in the given
 /// scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct HigherRankedLifetimeRedefinition {
+pub struct RedefinedHigherRankedLifetime {
     /// The span of the redefinition.
     pub redefinition_span: Span,
 }
 
-impl DisplayWithTable for HigherRankedLifetimeRedefinition {
+impl DisplayWithTable for RedefinedHigherRankedLifetime {
     fn fmt(
         &self,
         _: &Table<Suboptimal>,
@@ -943,7 +1145,7 @@ impl DisplayWithTable for HigherRankedLifetimeRedefinition {
     ) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "The higher-ranked lifetime with the same name already \
+            display: "the higher-ranked lifetime with the same name already \
                       exists in the given scope",
         })?;
 
@@ -991,7 +1193,7 @@ impl DisplayWithTable for MismatchedGenericParameterCountInImplementation {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The implementation member has {} {generic_kind} parameters, \
+                "the implementation member has {} {generic_kind} parameters, \
                  but the trait member has {}",
                 self.declared_count, self.expected_count
             ),
@@ -1023,6 +1225,170 @@ impl DisplayWithTable for MismatchedGenericParameterCountInImplementation {
     }
 }
 
+/// The implementation contains a member that is not a member of the trait.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnknownTraitImplementationMember {
+    /// The span to the identifier of the unknown member.
+    pub identifier_span: Span,
+
+    /// The ID of the trait implementation.
+    pub trait_id: ID<Trait>,
+}
+
+impl DisplayWithTable for UnknownTraitImplementationMember {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let trait_qualified_name =
+            table.get_qualified_name(self.trait_id.into()).ok_or(fmt::Error)?;
+        let trait_span =
+            table.get_global(self.trait_id.into()).ok_or(fmt::Error)?.span();
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the symbol named `{}` is not a member of the trait \
+                 `{trait_qualified_name}`",
+                self.identifier_span.str(),
+            )
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.identifier_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = trait_span {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("trait declared here"),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The trait member is already implemented in the implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AlreadyImplementedTraitMember {
+    /// The trait member that is being implemented more than once.
+    pub trait_member_id: TraitMemberID,
+
+    /// The ID of the existing trait implementation member.   
+    pub implemented_id: TraitImplementationMemberID,
+
+    /// The span where the re-implementation occurred.
+    pub new_implementation_span: Span,
+}
+
+impl DisplayWithTable for AlreadyImplementedTraitMember {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let trait_member_qualified_name = table
+            .get_qualified_name(self.trait_member_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the trait member `{trait_member_qualified_name}` is already \
+                 implemented"
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.new_implementation_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = table
+            .get_global(self.implemented_id.into())
+            .ok_or(fmt::Error)?
+            .span()
+        {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some(
+                    "the trait member is already implemented here"
+                ),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The trait member is implemented with different accessibility in the
+/// implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedTraitMemberAndImplementationMemberAccessibility {
+    /// The ID of the trait member.
+    pub trait_member_id: TraitMemberID,
+
+    /// The accessibility defined in the implementation.
+    pub implementation_member_accessibility: Accessibility,
+
+    /// The trait implementation member that has different accessibility.
+    pub implementation_member_id: TraitImplementationMemberID,
+}
+
+impl DisplayWithTable
+    for MismatchedTraitMemberAndImplementationMemberAccessibility
+{
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let trait_member_qualified_name = table
+            .get_qualified_name(self.trait_member_id.into())
+            .ok_or(fmt::Error)?;
+        let trait_member_accessibility = table
+            .get_accessibility(self.trait_member_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the trait member `{trait_member_qualified_name}` is defined \
+                 with accessibility `{trait_member_accessibility}` but the \
+                 implementation member is defined with accessibility `{}`",
+                self.implementation_member_accessibility
+            ),
+        })?;
+
+        if let Some(span) = table
+            .get_global(self.implementation_member_id.into())
+            .ok_or(fmt::Error)?
+            .span()
+        {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("the implementation member is defined here"),
+            })?;
+        }
+
+        if let Some(span) = table
+            .get_global(self.trait_member_id.into())
+            .ok_or(fmt::Error)?
+            .span()
+        {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("the trait member is defined here"),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
 /// The type of the constant parameter in the implementation doesn't match the
 /// type of the constant parameter in the trait.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1045,7 +1411,7 @@ impl DisplayWithTable for MismatchedImplementationConstantTypeParameter {
     ) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "The type of the constant parameter in the \
+            display: "the type of the constant parameter in the \
                       implementation doesn't match the type of the constant \
                       parameter in the trait",
         })?;
@@ -1118,9 +1484,64 @@ impl DisplayWithTable for MismatchedImplementationConstantTypeParameter {
     }
 }
 
+/// Not all trait members are implemented in the implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnimplementedTraitMembers {
+    /// The list of trait members that are not implemented.
+    pub unimplemented_trait_member_ids: Vec<TraitMemberID>,
+
+    /// The ID of the implementation in which the trait members are not
+    pub implementation_id: ID<TraitImplementation>,
+}
+
+impl DisplayWithTable for UnimplementedTraitMembers {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let trait_member_qualified_names = self
+            .unimplemented_trait_member_ids
+            .iter()
+            .map(|&trait_member_id| {
+                table
+                    .get_qualified_name(trait_member_id.into())
+                    .ok_or(fmt::Error)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "mot all trait members are implemented in the \
+                      implementation",
+        })?;
+
+        if let Some(span) = table
+            .get_global(self.implementation_id.into())
+            .ok_or(fmt::Error)?
+            .span()
+        {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("the implementation is declared here"),
+            })?;
+        }
+
+        write!(f, "\n{}", Message {
+            severity: Severity::Info,
+            display: format!(
+                "the following trait members are not implemented: {}",
+                trait_member_qualified_names.join(", ")
+            ),
+        })?;
+
+        Ok(())
+    }
+}
+
 /// The where clause predicate is not satisfied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WhereClausePredicateNotSatisfied {
+pub struct UnsatisfiedWhereClausePredicate {
     /// The predicate that is not satisfied.
     pub predicate: Predicate,
 
@@ -1128,7 +1549,7 @@ pub struct WhereClausePredicateNotSatisfied {
     pub span: Span,
 }
 
-impl DisplayWithTable for WhereClausePredicateNotSatisfied {
+impl DisplayWithTable for UnsatisfiedWhereClausePredicate {
     fn fmt(
         &self,
         _: &Table<Suboptimal>,
@@ -1139,7 +1560,7 @@ impl DisplayWithTable for WhereClausePredicateNotSatisfied {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "The where clause predicate `{predicate:#?}` is not satisfied",
+                "the where clause predicate `{predicate:#?}` is not satisfied",
             ),
         })?;
 

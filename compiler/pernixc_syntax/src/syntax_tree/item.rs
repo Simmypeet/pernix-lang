@@ -38,6 +38,16 @@ pub struct ModulePath {
     rest: Vec<(ScopeSeparator, Identifier)>,
 }
 
+impl SourceElement for ModulePath {
+    fn span(&self) -> Span {
+        let first = &self.first.span;
+        self.rest.last().map_or_else(
+            || first.clone(),
+            |last| first.join(&last.1.span).unwrap(),
+        )
+    }
+}
+
 impl ModulePath {
     /// Returns an iterator over the path identifiers.
     pub fn paths(&self) -> impl Iterator<Item = &Identifier> {
@@ -844,11 +854,13 @@ impl SourceElement for Trait {
 /// Syntax Synopsis:
 /// ``` txt
 /// TraitFunction:
-///     FunctionSignature ';'
+///     AccessModifier FunctionSignature ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitFunction {
+    #[get = "pub"]
+    access_modifier: AccessModifier,
     #[get = "pub"]
     signature: FunctionSignature,
     #[get = "pub"]
@@ -858,25 +870,27 @@ pub struct TraitFunction {
 impl TraitFunction {
     /// Dissolves the [`TraitFunction`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (FunctionSignature, Punctuation) {
-        (self.signature, self.semicolon)
+    pub fn dissolve(self) -> (AccessModifier, FunctionSignature, Punctuation) {
+        (self.access_modifier, self.signature, self.semicolon)
     }
 }
 
 impl SourceElement for TraitFunction {
     fn span(&self) -> Span {
-        self.signature.span().join(&self.semicolon.span).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span).unwrap()
     }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
 /// TraitType:
-///     TypeSignature WhereClause? ';'
+///     AccessModifier TypeSignature WhereClause? ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitType {
+    #[get = "pub"]
+    access_modifier: AccessModifier,
     #[get = "pub"]
     signature: TypeSignature,
     #[get = "pub"]
@@ -888,25 +902,34 @@ pub struct TraitType {
 impl TraitType {
     /// Dissolves the [`TraitType`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (TypeSignature, Option<WhereClause>, Punctuation) {
-        (self.signature, self.where_clause, self.semicolon)
+    pub fn dissolve(
+        self,
+    ) -> (AccessModifier, TypeSignature, Option<WhereClause>, Punctuation) {
+        (
+            self.access_modifier,
+            self.signature,
+            self.where_clause,
+            self.semicolon,
+        )
     }
 }
 
 impl SourceElement for TraitType {
     fn span(&self) -> Span {
-        self.signature.span().join(&self.semicolon.span).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span).unwrap()
     }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
 /// TraitConstant:
-///     ConstantSignature ';'
+///     AccessModifier ConstantSignature WhereClause? ';'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TraitConstant {
+    #[get = "pub"]
+    access_modifier: AccessModifier,
     #[get = "pub"]
     signature: ConstantSignature,
     #[get = "pub"]
@@ -917,7 +940,7 @@ pub struct TraitConstant {
 
 impl SourceElement for TraitConstant {
     fn span(&self) -> Span {
-        self.signature.span().join(&self.semicolon.span).unwrap()
+        self.access_modifier.span().join(&self.semicolon.span).unwrap()
     }
 }
 
@@ -1458,84 +1481,6 @@ impl SourceElement for ImplementationSignature {
             .span
             .join(&self.qualified_identifier.span())
             .unwrap()
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// ImplementationFunction:
-///     FunctionSignature FunctionBody
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementationFunction {
-    #[get = "pub"]
-    signature: FunctionSignature,
-    #[get = "pub"]
-    body: FunctionBody,
-}
-
-impl ImplementationFunction {
-    /// Dissolves the [`ImplementationFunction`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (FunctionSignature, FunctionBody) {
-        (self.signature, self.body)
-    }
-}
-
-impl SourceElement for ImplementationFunction {
-    fn span(&self) -> Span {
-        self.signature.span().join(&self.body.span()).unwrap()
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// ImplementationType:
-///     TypeSignature TypeDefinition ';'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementationType {
-    #[get = "pub"]
-    signature: TypeSignature,
-    #[get = "pub"]
-    definition: TypeDefinition,
-    #[get = "pub"]
-    semicolon: Punctuation,
-}
-
-impl ImplementationType {
-    /// Dissolves the [`ImplementationType`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (TypeSignature, TypeDefinition, Punctuation) {
-        (self.signature, self.definition, self.semicolon)
-    }
-}
-
-impl SourceElement for ImplementationType {
-    fn span(&self) -> Span {
-        self.signature.span().join(&self.semicolon.span()).unwrap()
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// ImplementationConstant:
-///     ConstantSignature ConstantDefinition
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ImplementationConstant {
-    #[get = "pub"]
-    signature: ConstantSignature,
-    #[get = "pub"]
-    definition: ConstantDefinition,
-}
-
-impl SourceElement for ImplementationConstant {
-    fn span(&self) -> Span {
-        self.signature.span().join(&self.definition.span()).unwrap()
     }
 }
 
@@ -2772,6 +2717,7 @@ impl<'a> Parser<'a> {
         &mut self,
         handler: &dyn Handler<Error>,
     ) -> Option<TraitMember> {
+        let access_modifier = self.parse_access_modifier(handler)?;
         match self.stop_at_significant() {
             Reading::Unit(Token::Keyword(function_keyword))
                 if function_keyword.kind == KeywordKind::Function =>
@@ -2781,6 +2727,7 @@ impl<'a> Parser<'a> {
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Some(TraitMember::Function(TraitFunction {
+                    access_modifier,
                     signature: function_signature,
                     semicolon,
                 }))
@@ -2800,6 +2747,7 @@ impl<'a> Parser<'a> {
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Some(TraitMember::Constant(TraitConstant {
+                    access_modifier,
                     signature: ConstantSignature {
                         const_keyword,
                         identifier,
@@ -2820,6 +2768,7 @@ impl<'a> Parser<'a> {
                 let semicolon = self.parse_punctuation(';', true, handler)?;
 
                 Some(TraitMember::Type(TraitType {
+                    access_modifier,
                     signature,
                     where_clause,
                     semicolon,

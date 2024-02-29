@@ -9,14 +9,14 @@ use std::{
 
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use paste::paste;
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::target::Target;
-use rayon::iter::ParallelIterator;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use self::state::drafting::Drafting;
 use crate::{
     arena::{Arena, ID},
-    error,
+    error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
     semantic::term::{constant, lifetime::Lifetime, r#type, GenericArguments},
     symbol::{
         Accessibility, AdtImplementation, AdtImplementationConstant,
@@ -883,7 +883,7 @@ impl<T: Container> Representation<T> {
 
     /// Gets the accessibility of the given [`GlobalID`].
     ///
-    /// # Returns
+    /// # Errors
     ///
     /// Returns `None` if the given [`GlobalID`] is not a valid ID.
     #[must_use]
@@ -935,18 +935,9 @@ impl<T: Container> Representation<T> {
                     T::read(global_id).parent_enum_id.into()
                 )
             ),
-            (
-                TraitType,
-                self.get_accessibility(T::read(global_id).parent_id.into())
-            ),
-            (
-                TraitConstant,
-                self.get_accessibility(T::read(global_id).parent_id.into())
-            ),
-            (
-                TraitFunction,
-                self.get_accessibility(T::read(global_id).parent_id.into())
-            ),
+            (TraitType),
+            (TraitConstant),
+            (TraitFunction),
             (
                 TraitImplementation,
                 self.get_accessibility(
@@ -955,15 +946,21 @@ impl<T: Container> Representation<T> {
             ),
             (
                 TraitImplementationType,
-                self.get_accessibility(T::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::read(global_id).implemented_trait_type_id.into()
+                )
             ),
             (
                 TraitImplementationFunction,
-                self.get_accessibility(T::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::read(global_id).implemented_trait_function_id.into()
+                )
             ),
             (
                 TraitImplementationConstant,
-                self.get_accessibility(T::read(global_id).parent_id.into())
+                self.get_accessibility(
+                    T::read(global_id).implemented_trait_constant_id.into()
+                )
             ),
             (
                 NegativeTraitImplementation,
@@ -975,10 +972,10 @@ impl<T: Container> Representation<T> {
                 let implemented_id =
                     T::read(global_id).signature.implemented_id;
                 match implemented_id {
-                    crate::symbol::AdtKindID::Struct(id) => {
+                    crate::symbol::AdtID::Struct(id) => {
                         self.get_accessibility(id.into())
                     }
-                    crate::symbol::AdtKindID::Enum(id) => {
+                    crate::symbol::AdtID::Enum(id) => {
                         self.get_accessibility(id.into())
                     }
                 }
@@ -1123,31 +1120,83 @@ fn transition_to_building(
     let drafting = drafting_table.state;
 
     // transition to building table
-    let building = drafting.building;
-    let building_table = Table { representation, state: building };
+    let building_table = Table { representation, state: drafting.building };
 
     // add usings to the modules
-    for (module_id, usings) in drafting.usings_by_module_id {
-        for using in usings {
-            let Ok(using_module_id) = building_table.resolve_module_path(
-                using.module_path(),
-                module_id.into(),
+    drafting
+        .usings_by_module_id
+        .into_par_iter()
+        .flat_map(|(id, usings)| {
+            usings.into_par_iter().map(move |using| (id, using))
+        })
+        .for_each(|(current_module_id, using)| {
+            // resolve for the module
+            let Ok(found_id) = building_table.resolve_simple_path(
+                using.module_path().paths(),
+                current_module_id.into(),
+                true,
                 handler,
             ) else {
-                continue;
+                return;
             };
 
-            building_table
-                .modules
-                .get(module_id)
-                .unwrap()
-                .write()
-                .usings
-                .insert(using_module_id);
-        }
-    }
+            //  must be a module
+            let GlobalID::Module(using_module_id) = found_id else {
+                handler.receive(Box::new(ExpectModule {
+                    module_path: using.module_path().span(),
+                    found_id,
+                }));
+                return;
+            };
 
-    building_table
+            // can't use itself
+            if using_module_id == current_module_id {
+                handler.receive(Box::new(SelfModuleUsing {
+                    module_id: current_module_id,
+                    using_span: using.span(),
+                }));
+            }
+
+            // duplicate using
+            let mut modules = building_table
+                .representation
+                .modules
+                .get(current_module_id)
+                .unwrap()
+                .write();
+            let duplicated = !modules.usings.insert(using_module_id);
+            drop(modules);
+
+            if duplicated {
+                handler.receive(Box::new(DuplicatedUsing {
+                    used_in_module_id: current_module_id,
+                    already_used_module_id: using_module_id,
+                    using_span: using.span(),
+                }));
+            }
+        });
+
+    let building_table = RwLock::new(building_table);
+
+    // add implementation to the appropriate symbols
+    drafting
+        .implementations_by_module_id
+        .into_par_iter()
+        .flat_map(|(current_module_id, implementations)| {
+            implementations
+                .into_par_iter()
+                .map(move |implementation| (current_module_id, implementation))
+        })
+        .for_each(|(current_module_id, implementation)| {
+            Table::draft_implementation(
+                &building_table,
+                implementation,
+                current_module_id,
+                handler,
+            );
+        });
+
+    building_table.into_inner()
 }
 
 #[allow(clippy::result_large_err)]

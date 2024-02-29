@@ -4,7 +4,7 @@ use proptest::{
     arbitrary::Arbitrary,
     prop_oneof, proptest,
     strategy::{BoxedStrategy, Strategy},
-    test_runner::TestCaseError,
+    test_runner::{Config, TestCaseError},
 };
 
 use super::{Order, OrderUnifyingConfig};
@@ -400,6 +400,10 @@ impl<ID: Debug + Arbitrary<Strategy = BoxedStrategy<ID>> + 'static> Arbitrary
 }
 
 proptest! {
+    #![proptest_config(Config {
+        max_shrink_iters: 100_000,
+        ..Config::default()
+    })]
     #[test]
     fn property_based_testing(
         lifetimes in proptest::collection::vec((Lifetime::arbitrary(), Lifetime::arbitrary()), 0..=2),

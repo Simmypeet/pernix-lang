@@ -94,9 +94,9 @@ impl Item {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TraitMember {
-    Function,
-    Constant,
-    Type,
+    Function(Accessibility),
+    Constant(Accessibility),
+    Type(Accessibility),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,27 +130,36 @@ impl Trait {
                 sym.trait_member_ids_by_name.get(name).copied().unwrap();
 
             match (member_id, kind) {
-                (TraitMemberID::Type(id), TraitMember::Type) => {
+                (TraitMemberID::Type(id), TraitMember::Type(accessibility)) => {
                     let sym = drafting_table.get(id).unwrap();
 
                     prop_assert_eq!(&sym.name, name);
                     prop_assert_eq!(sym.parent_id, self_id);
+                    prop_assert_eq!(sym.accessibility, *accessibility);
 
                     drop(sym);
                 }
-                (TraitMemberID::Function(id), TraitMember::Function) => {
+                (
+                    TraitMemberID::Function(id),
+                    TraitMember::Function(accessibility),
+                ) => {
                     let sym = drafting_table.get(id).unwrap();
 
                     prop_assert_eq!(&sym.name, name);
                     prop_assert_eq!(sym.parent_id, self_id);
+                    prop_assert_eq!(sym.accessibility, *accessibility);
 
                     drop(sym);
                 }
-                (TraitMemberID::Constant(id), TraitMember::Constant) => {
+                (
+                    TraitMemberID::Constant(id),
+                    TraitMember::Constant(accessibility),
+                ) => {
                     let sym = drafting_table.get(id).unwrap();
 
                     prop_assert_eq!(&sym.name, name);
                     prop_assert_eq!(sym.parent_id, self_id);
+                    prop_assert_eq!(sym.accessibility, *accessibility);
 
                     drop(sym);
                 }
@@ -177,17 +186,28 @@ impl Arbitrary for Trait {
             Accessibility::arbitrary(),
             proptest::collection::hash_map(
                 name_strategy(),
-                prop_oneof![
-                    Just(TraitMember::Function),
-                    Just(TraitMember::Constant),
-                    Just(TraitMember::Type),
-                ],
+                Accessibility::arbitrary().prop_flat_map(|accessibility| {
+                    prop_oneof![
+                        Just(TraitMember::Function(accessibility)),
+                        Just(TraitMember::Constant(accessibility)),
+                        Just(TraitMember::Type(accessibility)),
+                    ]
+                }),
                 0..=4,
             ),
         )
-            .prop_map(|(accessibility, trait_members)| Self {
-                accessibility,
-                trait_members,
+            .prop_map(|(accessibility, mut trait_members)| {
+                for mut trait_member in trait_members.values_mut() {
+                    let trait_member_acc = match &mut trait_member {
+                        TraitMember::Function(accessibility)
+                        | TraitMember::Constant(accessibility)
+                        | TraitMember::Type(accessibility) => accessibility,
+                    };
+
+                    *trait_member_acc = (*trait_member_acc).min(accessibility);
+                }
+
+                Self { accessibility, trait_members }
             })
             .boxed()
     }
@@ -532,9 +552,15 @@ impl<'a> Display for WithName<'a, Trait> {
         write!(f, "{} trait {} {{ ", self.value.accessibility, self.name)?;
         for (name, member) in &self.value.trait_members {
             match member {
-                TraitMember::Function => write!(f, "function {name}();")?,
-                TraitMember::Constant => write!(f, "const {name}: int32;")?,
-                TraitMember::Type => write!(f, "type {name};")?,
+                TraitMember::Function(accessibility) => {
+                    write!(f, "{accessibility} function {name}();")?;
+                }
+                TraitMember::Constant(accessibility) => {
+                    write!(f, "{accessibility} const {name}: int32;")?;
+                }
+                TraitMember::Type(accessibility) => {
+                    write!(f, "{accessibility} type {name};")?;
+                }
             }
         }
 
@@ -640,7 +666,6 @@ const ROOT_MODULE_NAME: &str = "test";
 
 fn property_based_testing_impl(module: &Module) -> TestCaseResult {
     let source_file = Arc::new(SourceFile::temp(RootModule(module))?);
-    println!("{}", RootModule(module));
 
     let storage = Storage::<ParseTargetError>::default();
     let target =

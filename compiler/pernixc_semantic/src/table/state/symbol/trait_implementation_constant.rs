@@ -4,7 +4,7 @@ use super::Symbol;
 use crate::symbol::TraitImplementationConstant;
 
 impl Symbol for TraitImplementationConstant {
-    type SyntaxTree = syntax_tree::item::ImplementationConstant;
+    type SyntaxTree = syntax_tree::item::Constant;
     type Flag = ();
     type Data = ();
 }

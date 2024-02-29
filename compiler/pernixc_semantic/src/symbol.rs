@@ -964,18 +964,18 @@ impl ImplementationData for AdtImplementationData {
 /// Enumeration of either struct or enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum AdtKindID {
+pub enum AdtID {
     Struct(ID<Struct>),
     Enum(ID<Enum>),
 }
 
-from_ids!(AdtKindID, GlobalID, (Struct, Struct), (Enum, Enum));
-from_ids!(AdtKindID, GenericID, (Struct, Struct), (Enum, Enum));
+from_ids!(AdtID, GlobalID, (Struct, Struct), (Enum, Enum));
+from_ids!(AdtID, GenericID, (Struct, Struct), (Enum, Enum));
 
 /// Represents a adt implementation, denoted by `implements<PARAM> adt<PARAM> {
 /// ... }` syntax.
 pub type AdtImplementation =
-    ImplementationTemplate<AdtKindID, AdtImplementationData>;
+    ImplementationTemplate<AdtID, AdtImplementationData>;
 
 /// Negative trait implementation data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1046,6 +1046,8 @@ pub type TraitImplementationFunction =
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TraitImplementationFunctionData {
     // TODO: Function IR
+    /// The trait function ID that is being implemented.
+    pub implemented_trait_function_id: ID<TraitFunction>,
 }
 
 /// Represents a type declaration as an implements member, denoted by `type NAME
@@ -1058,6 +1060,9 @@ pub type TraitImplementationType =
 pub struct TraitImplementationTypeData {
     /// The aliased type.
     pub r#type: r#type::Type,
+
+    /// The trait type ID that is being implemented.
+    pub implemented_trait_type_id: ID<TraitType>,
 }
 
 /// Represents a constant declaration as an implements member, denoted by `const
@@ -1069,6 +1074,8 @@ pub type TraitImplementationConstant =
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TraitImplementationConstantData {
     // The IR of the constant.
+    /// The trait constant ID that is being implemented.
+    pub implemented_trait_constant_id: ID<TraitConstant>,
 }
 
 /// An ID to all kinds of symbols that can be defined in a adt implementation.
@@ -1187,7 +1194,10 @@ pub type TraitType = TypeTemplate<ID<Trait>, TraitTypeData>;
 
 /// Trait type data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitTypeData;
+pub struct TraitTypeData {
+    /// The accessibility of the type.
+    pub accessibility: Accessibility,
+}
 
 /// Represents a function declaration as a trait member, denoted by `function
 /// NAME(...) {...}` syntax.
@@ -1195,7 +1205,10 @@ pub type TraitFunction = FunctionTemplate<ID<Trait>, TraitFunctionData>;
 
 /// Trait function data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TraitFunctionData;
+pub struct TraitFunctionData {
+    /// The accessibility of the function.
+    pub accessibility: Accessibility,
+}
 
 /// Represents a constant declaration as a trait member, denoted by `const NAME:
 /// TYPE` syntax.
@@ -1203,7 +1216,10 @@ pub type TraitConstant = ConstantTemplate<ID<Trait>, TraitConstantData>;
 
 /// Trait constant data tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitConstantData;
+pub struct TraitConstantData {
+    /// The accessibility of the constant.
+    pub accessibility: Accessibility,
+}
 
 /// An enumeration containing all an ID to all kinds of symbols that can be
 /// defined in a trait.
@@ -1244,10 +1260,10 @@ pub struct Trait {
     pub generic_declaration: GenericDeclaration,
 
     /// Contains all the negative trait implementation defined in the trait.
-    pub negative_implementations: Vec<ID<NegativeTraitImplementation>>,
+    pub negative_implementations: HashSet<ID<NegativeTraitImplementation>>,
 
     /// Contains all the trait implementation defined in the trait.
-    pub implementations: Vec<ID<TraitImplementation>>,
+    pub implementations: HashSet<ID<TraitImplementation>>,
 
     /// Contains all the types defined in the trait.
     pub span: Option<Span>,

@@ -35,7 +35,7 @@ pub mod lifetime;
 pub mod r#type;
 
 /// Represents a generic arguments supplied to a term (i.e., `type[ARGS]`).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct GenericArguments {
     /// The lifetimes supplied to the term.
     pub lifetimes: Vec<Lifetime>,
@@ -294,6 +294,36 @@ where
                     lhs_location: lhs_location.into(),
                     rhs_location: rhs_location.into(),
                 });
+            }
+        }
+
+        if from.elements.len() == to.elements.len() {
+            let mut error = false;
+            let mut existing = matching::Substructural::default();
+
+            for (idx, (from_element, to_element)) in
+                from.elements.iter().zip(&to.elements).enumerate()
+            {
+                if from_element.is_unpacked() != to_element.is_unpacked() {
+                    error = true;
+                    break;
+                }
+
+                let from_element = from_element.as_term();
+                let to_element = to_element.as_term();
+
+                push(
+                    from_element.clone(),
+                    to_element.clone(),
+                    SubTupleLocation::Single(idx),
+                    SubTupleLocation::Single(idx),
+                    &mut existing,
+                    swap,
+                );
+            }
+
+            if !error {
+                return Some(existing);
             }
         }
 
