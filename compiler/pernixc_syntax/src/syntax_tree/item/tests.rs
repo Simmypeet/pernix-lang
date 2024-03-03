@@ -11,7 +11,7 @@ use proptest::{
 
 use crate::syntax_tree::{
     self,
-    expression::{tests::Expression, Access},
+    expression::tests::Expression,
     pattern::tests::Irrefutable,
     r#type,
     statement::tests::Statement,
