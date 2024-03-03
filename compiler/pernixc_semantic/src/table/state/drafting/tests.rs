@@ -53,7 +53,7 @@ impl Item {
         let member_id = drafting_table
             .get(parent_module_id)
             .unwrap()
-            .module_child_ids_by_name
+            .child_ids_by_name
             .get(expected_name)
             .copied()
             .unwrap();
@@ -120,14 +120,10 @@ impl Trait {
         prop_assert_eq!(sym.parent_module_id, parent_module_id);
         prop_assert_eq!(sym.accessibility, self.accessibility);
 
-        prop_assert_eq!(
-            self.trait_members.len(),
-            sym.trait_member_ids_by_name.len()
-        );
+        prop_assert_eq!(self.trait_members.len(), sym.member_ids_by_name.len());
 
         for (name, kind) in &self.trait_members {
-            let member_id =
-                sym.trait_member_ids_by_name.get(name).copied().unwrap();
+            let member_id = sym.member_ids_by_name.get(name).copied().unwrap();
 
             match (member_id, kind) {
                 (TraitMemberID::Type(id), TraitMember::Type(accessibility)) => {
@@ -453,7 +449,7 @@ impl Module {
         prop_assert_eq!(sym.parent_module_id, parent_module_id);
         prop_assert_eq!(sym.accessibility, self.accessibility);
 
-        prop_assert_eq!(self.items.len(), sym.module_child_ids_by_name.len());
+        prop_assert_eq!(self.items.len(), sym.child_ids_by_name.len());
 
         for (name, item) in &self.items {
             item.verify(self_id, name, drafting_table)?;

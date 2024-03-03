@@ -305,7 +305,7 @@ pub struct Module {
     pub parent_module_id: Option<ID<Module>>,
 
     /// Maps the name of the module child to its ID.
-    pub module_child_ids_by_name: HashMap<String, ModuleMemberID>,
+    pub child_ids_by_name: HashMap<String, ModuleMemberID>,
 
     /// Location of where the module is declared.
     pub span: Option<Span>,
@@ -1119,8 +1119,7 @@ pub struct TraitImplementationData {
     pub is_const: bool,
 
     /// Maps the name of the trait member to its ID.
-    pub implementation_member_ids_by_name:
-        HashMap<String, TraitImplementationMemberID>,
+    pub member_ids_by_name: HashMap<String, TraitImplementationMemberID>,
 
     /// Maps the ID of the trait type to the ID of the implementation type.
     pub implementation_type_ids_by_trait_type_id:
@@ -1141,7 +1140,7 @@ impl ImplementationData for TraitImplementationData {
     type MemberID = TraitImplementationMemberID;
 
     fn get_member(&self, name: &str) -> Option<Self::MemberID> {
-        self.implementation_member_ids_by_name.get(name).copied()
+        self.member_ids_by_name.get(name).copied()
     }
 }
 
@@ -1243,7 +1242,7 @@ pub struct Trait {
     pub span: Option<Span>,
 
     /// Map the name of the trait member to its ID.
-    pub trait_member_ids_by_name: HashMap<String, TraitMemberID>,
+    pub member_ids_by_name: HashMap<String, TraitMemberID>,
 }
 
 impl Generic for Trait {
@@ -1265,14 +1264,6 @@ impl Global for Trait {
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(GlobalID::Module(self.parent_module_id))
-    }
-
-    fn get_member(&self, name: &str) -> Option<GlobalID> {
-        self.trait_member_ids_by_name.get(name).copied().map(|x| match x {
-            TraitMemberID::Type(x) => GlobalID::TraitType(x),
-            TraitMemberID::Function(x) => GlobalID::TraitFunction(x),
-            TraitMemberID::Constant(x) => GlobalID::TraitConstant(x),
-        })
     }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }

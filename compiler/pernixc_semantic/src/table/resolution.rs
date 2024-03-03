@@ -396,7 +396,7 @@ impl<T: State> Table<T> {
                 Some(id) => self
                     .get(id)
                     .unwrap()
-                    .module_child_ids_by_name
+                    .child_ids_by_name
                     .get(path.span.str())
                     .copied()
                     .map(|x| {

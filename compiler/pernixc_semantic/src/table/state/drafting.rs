@@ -202,7 +202,7 @@ impl Table<Drafting> {
                 negative_implementations: HashSet::new(),
                 implementations: HashSet::new(),
                 span: Some(signature.identifier().span.clone()),
-                trait_member_ids_by_name: HashMap::new(),
+                member_ids_by_name: HashMap::new(),
             })
         });
         assert!(table_write.state.building.draft_symbol(id, signature));
@@ -235,7 +235,7 @@ impl Table<Drafting> {
             }
 
             table.read().insert_member_id_to_map(
-                |trait_sym| &mut trait_sym.trait_member_ids_by_name,
+                |trait_sym| &mut trait_sym.member_ids_by_name,
                 trait_member_id,
                 id,
                 handler,
@@ -456,7 +456,7 @@ impl Table<Drafting> {
                             Accessibility::from_syntax_tree(&x.access_modifier)
                         }),
                     parent_module_id,
-                    module_child_ids_by_name: HashMap::new(),
+                    child_ids_by_name: HashMap::new(),
                     span: syntax_tree
                         .signature()
                         .as_ref()
@@ -488,7 +488,7 @@ impl Table<Drafting> {
                 .get(module_id)
                 .unwrap()
                 .write()
-                .module_child_ids_by_name
+                .child_ids_by_name
                 .insert(name, ModuleMemberID::Module(submodule_id));
         });
 
@@ -534,7 +534,7 @@ impl Table<Drafting> {
             };
 
             table.read().insert_member_id_to_map(
-                |module| &mut module.module_child_ids_by_name,
+                |module| &mut module.child_ids_by_name,
                 module_member_id,
                 module_id,
                 handler,
@@ -753,7 +753,7 @@ impl Table<Building> {
                         is_const: implementation_signature
                             .const_keyword()
                             .is_some(),
-                        implementation_member_ids_by_name: HashMap::new(),
+                        member_ids_by_name: HashMap::new(),
                         implementation_type_ids_by_trait_type_id: HashMap::new(
                         ),
                         implementation_function_ids_by_trait_function_id:
@@ -791,7 +791,7 @@ impl Table<Building> {
                 .read()
                 .get(trait_id)
                 .unwrap()
-                .trait_member_ids_by_name
+                .member_ids_by_name
                 .get(identifier.span.str())
                 .copied()
             else {
@@ -931,7 +931,7 @@ impl Table<Building> {
                 .get(implementation_id)
                 .unwrap()
                 .write()
-                .implementation_member_ids_by_name
+                .member_ids_by_name
                 .insert(
                     identifier.span.str().to_owned(),
                     trait_implemetation_member_id,
@@ -943,12 +943,8 @@ impl Table<Building> {
         let mut unimplemented_members = Vec::new();
 
         #[allow(clippy::significant_drop_in_scrutinee)]
-        for trait_member_id in table
-            .read()
-            .get(trait_id)
-            .unwrap()
-            .trait_member_ids_by_name
-            .values()
+        for trait_member_id in
+            table.read().get(trait_id).unwrap().member_ids_by_name.values()
         {
             if !implemented_member.contains_key(trait_member_id) {
                 unimplemented_members.push(*trait_member_id);
