@@ -246,10 +246,8 @@ impl<T: State> Table<T> {
 
         for identifier in simple_path {
             let new_id = self
-                .get_global(lastest_resolution)
-                .unwrap()
-                .get_member(identifier.span.str())
-                .ok_or_else(|| {
+                .get_member_of(lastest_resolution, identifier.span.str())
+                .map_err(|_| {
                     handler.receive(Box::new(SymbolNotFound {
                         searched_global_id: Some(lastest_resolution),
                         resolution_span: identifier.span.clone(),
@@ -290,11 +288,7 @@ impl<T: State> Table<T> {
         let search_locations = map.chain(std::iter::once(referring_site));
 
         let mut candidates = search_locations
-            .filter_map(|x| {
-                self.get_global(x)
-                    .expect("should've been all valid ID")
-                    .get_member(identifier.span.str())
-            })
+            .filter_map(|x| self.get_member_of(x, identifier.span.str()).ok())
             .filter(|x| {
                 self.symbol_accessible(referring_site, *x)
                     .expect("should've been a valid ID")
@@ -329,13 +323,15 @@ impl<T: State> Table<T> {
 
         loop {
             // try to find the symbol in the current scope
+            if let Ok(id) =
+                self.get_member_of(referring_site, identifier.span.str())
+            {
+                return Ok(id);
+            }
+
             let global_symbol = self
                 .get_global(referring_site)
                 .ok_or(Error::InvalidReferringSiteID)?;
-
-            if let Some(id) = global_symbol.get_member(identifier.span.str()) {
-                return Ok(id);
-            }
 
             if let Some(parent_id) = global_symbol.parent_global_id() {
                 referring_site = parent_id;

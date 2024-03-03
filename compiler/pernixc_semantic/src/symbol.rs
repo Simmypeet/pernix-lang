@@ -256,10 +256,6 @@ pub trait Global {
     /// The ID of the parent symbol.
     fn parent_global_id(&self) -> Option<GlobalID>;
 
-    /// Gets the ID of the global symbol defined as a member of this symbol with
-    /// its name.
-    fn get_member(&self, name: &str) -> Option<GlobalID>;
-
     /// Location of where the symbol is declared.
     fn span(&self) -> Option<&Span>;
 }
@@ -325,10 +321,6 @@ impl Global for Module {
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         self.parent_module_id.map(GlobalID::Module)
-    }
-
-    fn get_member(&self, name: &str) -> Option<GlobalID> {
-        self.module_child_ids_by_name.get(name).copied().map(Into::into)
     }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
@@ -570,8 +562,6 @@ impl Global for Struct {
         Some(GlobalID::Module(self.parent_module_id))
     }
 
-    fn get_member(&self, _: &str) -> Option<GlobalID> { None }
-
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -603,8 +593,6 @@ impl Global for Variant {
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(GlobalID::Enum(self.parent_enum_id))
     }
-
-    fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
@@ -656,10 +644,6 @@ impl Global for Enum {
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(GlobalID::Module(self.parent_module_id))
-    }
-
-    fn get_member(&self, name: &str) -> Option<GlobalID> {
-        self.variant_ids_by_name.get(name).copied().map(GlobalID::Variant)
     }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
@@ -720,8 +704,6 @@ where
         Some(self.parent_id.into())
     }
 
-    fn get_member(&self, _: &str) -> Option<GlobalID> { None }
-
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
 
@@ -779,8 +761,6 @@ where
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(self.parent_id.into())
     }
-
-    fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
@@ -876,8 +856,6 @@ where
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(self.parent_id.into())
     }
-
-    fn get_member(&self, _: &str) -> Option<GlobalID> { None }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 }
@@ -1012,10 +990,6 @@ where
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(self.declared_in.into())
-    }
-
-    fn get_member(&self, name: &str) -> Option<GlobalID> {
-        self.data.get_member(name).map(Into::into)
     }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }

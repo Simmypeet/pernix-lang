@@ -392,6 +392,18 @@ pub enum GetByQualifiedNameError<'a> {
     EmptyIterator,
 }
 
+/// The error type returned by [`Table::get_member_of()`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum GetMemberError {
+    #[error("the given global ID is not valid")]
+    InvalidID,
+    #[error("the member with the given name is not found")]
+    MemberNotFound,
+}
+
 impl<T: Container> Representation<T> {
     /// Checks if the `referred` is accessible from the `referring_site`.
     ///
@@ -499,6 +511,88 @@ impl<T: Container> Representation<T> {
         }
     }
 
+    /// Searches for a member with the given name in the given global ID.
+    ///
+    /// # Errors
+    ///
+    /// See [`GetMemberError`] for more information.
+    pub fn get_member_of(
+        &self,
+        global_id: GlobalID,
+        member_name: &str,
+    ) -> Result<GlobalID, GetMemberError> {
+        match global_id {
+            GlobalID::Module(id) => self
+                .get(id)
+                .ok_or(GetMemberError::InvalidID)?
+                .child_ids_by_name
+                .get(member_name)
+                .map(|x| (*x).into()),
+            GlobalID::Struct(id) => self
+                .get(id)
+                .ok_or(GetMemberError::InvalidID)?
+                .implementations
+                .iter()
+                .find_map(|x| {
+                    self.get(*x)
+                        .unwrap()
+                        .member_ids_by_name
+                        .get(member_name)
+                        .map(|x| (*x).into())
+                }),
+            GlobalID::Trait(id) => self
+                .get(id)
+                .ok_or(GetMemberError::InvalidID)?
+                .member_ids_by_name
+                .get(member_name)
+                .map(|x| (*x).into()),
+            GlobalID::Enum(id) => {
+                let enum_sym = self.get(id).ok_or(GetMemberError::InvalidID)?;
+
+                enum_sym
+                    .variant_ids_by_name
+                    .get(member_name)
+                    .map(|x| (*x).into())
+                    .or_else(|| {
+                        enum_sym.implementations.iter().find_map(|x| {
+                            self.get(*x)
+                                .unwrap()
+                                .member_ids_by_name
+                                .get(member_name)
+                                .map(|x| (*x).into())
+                        })
+                    })
+            }
+            GlobalID::TraitImplementation(id) => self
+                .get(id)
+                .ok_or(GetMemberError::InvalidID)?
+                .member_ids_by_name
+                .get(member_name)
+                .map(|x| (*x).into()),
+            GlobalID::AdtImplementation(x) => self
+                .get(x)
+                .ok_or(GetMemberError::InvalidID)?
+                .member_ids_by_name
+                .get(member_name)
+                .map(|x| (*x).into()),
+            GlobalID::NegativeTraitImplementation(_)
+            | GlobalID::TraitImplementationFunction(_)
+            | GlobalID::TraitImplementationType(_)
+            | GlobalID::TraitImplementationConstant(_)
+            | GlobalID::Type(_)
+            | GlobalID::Constant(_)
+            | GlobalID::Function(_)
+            | GlobalID::Variant(_)
+            | GlobalID::TraitType(_)
+            | GlobalID::TraitFunction(_)
+            | GlobalID::TraitConstant(_)
+            | GlobalID::AdtImplementationFunction(_)
+            | GlobalID::AdtImplementationType(_)
+            | GlobalID::AdtImplementationConstant(_) => None,
+        }
+        .ok_or(GetMemberError::MemberNotFound)
+    }
+
     /// Gets a [`GlobalID`] from the given qualified identifier.
     ///
     /// # Errors
@@ -517,14 +611,19 @@ impl<T: Container> Representation<T> {
             match current_id {
                 Some(searched_in_global_id) => {
                     current_id = Some(
-                        self.get_global(searched_in_global_id)
-                            .unwrap()
-                            .get_member(name)
-                            .ok_or(GetByQualifiedNameError::SymbolNotFound {
-                                searched_in_global_id: Some(
-                                    searched_in_global_id,
-                                ),
-                                name,
+                        self.get_member_of(searched_in_global_id, name)
+                            .map_err(|err| match err {
+                                GetMemberError::InvalidID => {
+                                    unreachable!("invalid ID in the table")
+                                }
+                                GetMemberError::MemberNotFound => {
+                                    GetByQualifiedNameError::SymbolNotFound {
+                                        searched_in_global_id: Some(
+                                            searched_in_global_id,
+                                        ),
+                                        name,
+                                    }
+                                }
                             })?,
                     );
                 }
