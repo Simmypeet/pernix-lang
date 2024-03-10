@@ -124,7 +124,7 @@ impl Container for RwLockContainer {
     fn read<T: Debug + 'static + Send + Sync>(
         value: &Self::Wrap<T>,
     ) -> Self::Read<'_, T> {
-        value.read()
+        value.read_recursive()
     }
 
     fn map_read<'a, T: ?Sized + 'a, U: ?Sized + 'a>(
