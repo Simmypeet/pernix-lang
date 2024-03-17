@@ -36,7 +36,7 @@ pub trait Key:
 
 /// Represents an unique identifier to a particular entry in the [`Arena`] of
 /// type `T`.
-pub struct ID<T> {
+pub struct ID<T: ?Sized> {
     index: usize,
     _marker: PhantomData<T>,
 }

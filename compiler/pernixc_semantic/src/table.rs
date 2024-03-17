@@ -13,7 +13,7 @@ use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::target::Target;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use self::state::drafting::Drafting;
+use self::{resolution::Resolution, state::drafting::Drafting};
 use crate::{
     arena::{Arena, ID},
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
@@ -30,6 +30,7 @@ use crate::{
     },
 };
 
+pub mod evaluate;
 pub mod resolution;
 mod state;
 
@@ -184,6 +185,10 @@ pub struct Suboptimal(());
 
 impl State for Suboptimal {
     type Container = NoContainer;
+
+    fn on_global_id_resolved(_: &Table<Self>, _: GlobalID, _: GlobalID) {}
+
+    fn on_resolved(_: &Table<Self>, _: Resolution, _: GlobalID) {}
 }
 
 /// A struct which implements [`State`] used to signify that the table is built
@@ -194,15 +199,33 @@ pub struct Success(() /* Preventing arbitrary instantiation */);
 
 impl State for Success {
     type Container = NoContainer;
+
+    fn on_global_id_resolved(_: &Table<Self>, _: GlobalID, _: GlobalID) {}
+
+    fn on_resolved(_: &Table<Self>, _: Resolution, _: GlobalID) {}
 }
 
 /// Represents a state object for the [`Table`].
 ///
 /// This is used to distinguish between the states of the symbols in the table.
 #[doc(hidden)]
-pub trait State: Debug + 'static + Send + Sync {
+pub trait State: Debug + Sized + 'static + Send + Sync {
     /// The container type used to wrap the symbols in the table.
     type Container: Container;
+
+    /// Gets called when a symbol is beiing resolved (before the generic
+    /// arguments will be resolved).
+    fn on_global_id_resolved(
+        table: &Table<Self>,
+        global_id: GlobalID,
+        referring_site: GlobalID,
+    );
+
+    fn on_resolved(
+        table: &Table<Self>,
+        resolution: Resolution,
+        referring_site: GlobalID,
+    );
 }
 
 /// The representation of the table without any state information.
@@ -1352,6 +1375,8 @@ pub fn build(
 
     let building_table =
         transition_to_building(draft_table(targets, &handler)?, &handler);
+
+    building_table.build_all(&handler);
 
     // unwrap mutexes and convert to the final table
     let representation = Representation::<NoContainer> {

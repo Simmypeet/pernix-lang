@@ -15,7 +15,7 @@ use crate::{
     arena::{Arena, Map, ID},
     semantic::{
         predicate,
-        term::{constant, r#type, GenericArguments, Never},
+        term::{constant, lifetime, r#type, GenericArguments, Never},
     },
 };
 
@@ -494,6 +494,52 @@ pub struct GenericParameters {
     /// List of default constant parameters to be used when the generic
     /// parameters are not
     pub default_constant_parameters: Vec<constant::Constant>,
+}
+
+impl GenericParameters {
+    /// Creates a [`GenericArguments`] that all of its parameters are the
+    /// generic parameters of this [`GenericParameters`].
+    #[must_use]
+    pub fn create_identity_generic_arguments(
+        &self,
+        generic_id: GenericID,
+    ) -> GenericArguments {
+        GenericArguments {
+            lifetimes: self
+                .lifetime_order
+                .iter()
+                .copied()
+                .map(|x| {
+                    lifetime::Lifetime::Parameter(MemberID {
+                        parent: generic_id,
+                        id: x,
+                    })
+                })
+                .collect(),
+            types: self
+                .type_order
+                .iter()
+                .copied()
+                .map(|x| {
+                    r#type::Type::Parameter(MemberID {
+                        parent: generic_id,
+                        id: x,
+                    })
+                })
+                .collect(),
+            constants: self
+                .constant_order
+                .iter()
+                .copied()
+                .map(|x| {
+                    constant::Constant::Parameter(MemberID {
+                        parent: generic_id,
+                        id: x,
+                    })
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Represents a field declaration in the struct, denoted by `NAME: TYPE`

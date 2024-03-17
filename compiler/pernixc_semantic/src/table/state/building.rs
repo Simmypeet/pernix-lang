@@ -1,14 +1,20 @@
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::{atomic::AtomicBool, Arc},
+    collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
+    sync::{
+        atomic::{self, AtomicBool},
+        Arc,
+    },
 };
 
 use parking_lot::{Condvar, Mutex, RwLock};
 use paste::paste;
+use pernixc_base::diagnostic::Handler;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::Symbol;
+use super::{symbol::Flag, Symbol};
 use crate::{
     arena::ID,
+    error::{self, CyclicDependency},
     symbol::{
         AdtImplementation, AdtImplementationConstant,
         AdtImplementationFunction, AdtImplementationType, Constant, Enum,
@@ -17,14 +23,14 @@ use crate::{
         TraitImplementationConstant, TraitImplementationFunction,
         TraitImplementationType, TraitType, Type, Variant,
     },
-    table::{self, RwLockContainer},
+    table::{self, RwLockContainer, Table},
 };
 
 #[derive(Debug)]
 pub struct Synchronization<F> {
     notify: Condvar,
     building: AtomicBool,
-    state_flag: Mutex<F>,
+    state_flag: Mutex<Option<F>>,
 }
 
 #[derive(Debug)]
@@ -38,13 +44,25 @@ pub struct State<S: Symbol> {
     /// This is used to detect cyclic dependency, notifying the symbols that
     /// depends on it when the symbol is finalized, and avoiding deadlock
     /// when building the symbol.
-    dependencies: HashMap<S::Flag, HashSet<GlobalID>>,
+    dependants_by_flag: HashMap<S::Flag, HashSet<GlobalID>>,
 }
 #[derive(Debug, Default, derive_more::Deref, derive_more::DerefMut)]
 pub struct Building(RwLock<Representation>);
 
 impl table::State for Building {
     type Container = RwLockContainer;
+
+    fn on_global_id_resolved(_: &table::Table<Self>, _: GlobalID, _: GlobalID) {
+        // TODO: make sure the symbol is built to the state where the generic
+        // parameters information is available.
+    }
+
+    fn on_resolved(
+        _: &table::Table<Self>,
+        _: table::resolution::Resolution,
+        _: GlobalID,
+    ) {
+    }
 }
 
 #[derive(Debug, Default)]
@@ -89,6 +107,125 @@ pub struct Representation {
     traits: HashMap<ID<Trait>, State<Trait>>,
     types: HashMap<ID<Type>, State<Type>>,
     variants: HashMap<ID<Variant>, State<Variant>>,
+
+    dependencies_by_dependent: HashMap<GlobalID, GlobalID>,
+    reported_cyclic_dependencies: HashSet<BTreeSet<GlobalID>>,
+}
+
+impl Representation {
+    /// Checks if the `dependent` symbol is depending on the `dependency` symbol
+    /// to be built to a certain state.
+    #[allow(clippy::too_many_lines)]
+    pub fn is_depending_on(
+        &self,
+        dependency: GlobalID,
+        dependent: GlobalID,
+    ) -> Option<bool> {
+        match dependency {
+            GlobalID::Struct(id) => self.structs.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::Enum(id) => self.enums.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::Variant(id) => self.variants.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::Constant(id) => self.constants.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::Function(id) => self.functions.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::Type(id) => self.types.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::AdtImplementation(id) => {
+                self.adt_implementations.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::AdtImplementationConstant(id) => {
+                self.adt_implementation_constants.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::AdtImplementationFunction(id) => {
+                self.adt_implementation_functions.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::AdtImplementationType(id) => {
+                self.adt_implementation_types.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::Trait(id) => self.traits.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::TraitConstant(id) => {
+                self.trait_constants.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::TraitFunction(id) => {
+                self.trait_functions.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::TraitImplementation(id) => {
+                self.trait_implementations.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::TraitImplementationConstant(id) => {
+                self.trait_implementation_constants.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::TraitImplementationFunction(id) => {
+                self.trait_implementation_functions.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::TraitImplementationType(id) => {
+                self.trait_implementation_types.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::NegativeTraitImplementation(id) => {
+                self.negative_trait_implementations.get(&id).map(|x| {
+                    x.dependants_by_flag
+                        .values()
+                        .any(|x| x.contains(&dependent))
+                })
+            }
+            GlobalID::TraitType(id) => self.trait_types.get(&id).map(|x| {
+                x.dependants_by_flag.values().any(|x| x.contains(&dependent))
+            }),
+            GlobalID::Module(_) => None,
+        }
+    }
 }
 
 /// The trait used for retrieving the states of a particular symbol in
@@ -166,13 +303,364 @@ impl Building {
                     synchronization: Arc::new(Synchronization {
                         notify: Condvar::new(),
                         building: AtomicBool::new(false),
-                        state_flag: Mutex::new(T::Flag::default()),
+                        state_flag: Mutex::new(None),
                     }),
                     data: Arc::new(Mutex::new(T::Data::default())),
-                    dependencies: HashMap::new(),
+                    dependants_by_flag: HashMap::new(),
                 });
                 true
             }
         }
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error("threre's no state for the given symbol")]
+pub struct EntryNotFoundError;
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+pub enum BuildError {
+    #[error("the symbol is not found in the builder entry")]
+    EntryNotFound(#[from] EntryNotFoundError),
+
+    #[error("cyclic depedency detected")]
+    CyclicDependency,
+}
+
+impl Table<Building> {
+    fn build_loop<T: Symbol + Element>(
+        &self,
+        id: ID<T>,
+        to_flag: T::Flag,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<(), EntryNotFoundError> {
+        let (synchronization, syntax_tree, data) = {
+            let builder_read = self.state.read();
+            let states = T::get_states(&builder_read);
+            let state = states.get(&id).ok_or(EntryNotFoundError)?;
+
+            let result = (
+                state.synchronization.clone(),
+                state.syntax_tree.clone(),
+                state.data.clone(),
+            );
+
+            drop(builder_read);
+
+            result
+        };
+
+        loop {
+            // if the symbol is already finalized beyond the given flag, then we
+            // can just return.
+            if synchronization.state_flag.lock().map_or(false, |x| x >= to_flag)
+            {
+                synchronization.building.store(false, atomic::Ordering::SeqCst);
+                synchronization.notify.notify_all();
+                return Ok(());
+            }
+
+            let next_flag = synchronization.state_flag.lock().map_or(
+                <T::Flag as Flag>::first(),
+                |mut x| {
+                    x.increment();
+                    x
+                },
+            );
+
+            T::build(
+                self,
+                id,
+                next_flag,
+                &syntax_tree,
+                &mut data.lock(),
+                handler,
+            );
+
+            // update the state of the symbol
+            synchronization.state_flag.lock().replace(next_flag);
+
+            // notify all waiting threads
+            let mut builder_write = self.state.write();
+            let states = T::get_states_mut(&mut builder_write);
+
+            let dependencies = states
+                .get_mut(&id)
+                .ok_or(EntryNotFoundError)?
+                .dependants_by_flag
+                .remove(&next_flag);
+
+            for dependant in dependencies.into_iter().flatten() {
+                // no assertion, because the dependency may be removed by cyclic
+                // dependency
+                builder_write.dependencies_by_dependent.remove(&dependant);
+            }
+
+            drop(builder_write);
+
+            synchronization.notify.notify_all();
+        }
+    }
+
+    fn acquire_build_lock<T: Symbol + Element>(
+        &self,
+        id: ID<T>,
+        to_flag: T::Flag,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<(), EntryNotFoundError>
+    where
+        ID<T>: Into<GlobalID>,
+    {
+        let synchronization = T::get_states(&self.state.read())
+            .get(&id)
+            .ok_or(EntryNotFoundError)?
+            .synchronization
+            .clone();
+
+        // if the symbol is being built by another thread, then this thread will
+        // wait until the other thread finishes building the symbol.
+        // Otherwise, this thread will build the symbol.
+
+        if synchronization
+            .building
+            .compare_exchange(
+                false,
+                true,
+                atomic::Ordering::SeqCst,
+                atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            self.build_loop(id, to_flag, handler)
+        } else {
+            // some other thread is building the symbol, so we wait for it to
+            // finish.
+            let mut flag = synchronization.state_flag.lock();
+
+            // wait until either the symbol is finalized beyond or equal to the
+            // given flag, or the symbol is no longer being built by
+            // another thread.
+            if let Some(flag_some) = *flag {
+                if flag_some < to_flag {
+                    synchronization.notify.wait_while(&mut flag, |flag| {
+                        flag.map_or(true, |x| x < to_flag)
+                            && synchronization
+                                .building
+                                .load(atomic::Ordering::SeqCst)
+                    });
+
+                    if flag_some >= to_flag {
+                        return Ok(());
+                    }
+                }
+            }
+
+            // IMPORTANT: we must release the lock before calling
+            // `attempt_build_to`, otherwise we will deadlock.
+            drop(flag);
+
+            // try to acquire the build lock again
+            self.acquire_build_lock(id, to_flag, handler)
+        }
+    }
+
+    /// Builds the given symbol id to the specified `to_flag` state.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: The ID of the symbol to build.
+    /// - `required_from`: The ID of the symbol that requires the symbol to be
+    ///  built to the specified state. This is used to detect cyclic dependency.
+    /// - `to_flag`: The state to build the symbol to.
+    /// - `handler`: The handler to report the error to.
+    ///
+    /// # Errors
+    ///
+    /// See [`BuildError`] for the list of errors that can be returned.
+    pub fn build_to<T: Symbol + Element>(
+        &self,
+        id: ID<T>,
+        required_from: Option<GlobalID>,
+        to_flag: T::Flag,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<(), BuildError>
+    where
+        ID<T>: Into<GlobalID>,
+    {
+        let mut builder_write = self.state.write();
+
+        // if the symbol has already been built to the required state, then
+        // return early.
+        if T::get_states(&builder_write)
+            .get(&id)
+            .ok_or(EntryNotFoundError)?
+            .synchronization
+            .state_flag
+            .lock()
+            .map_or(false, |x| x >= to_flag)
+        {
+            return Ok(());
+        }
+
+        // cyclic dependency detection
+        if let Some(referring_site) = required_from {
+            if referring_site == id.into() {
+                handler.receive(Box::new(CyclicDependency {
+                    participants: vec![id.into()],
+                }));
+
+                return Err(BuildError::CyclicDependency);
+            }
+
+            // dependency cyclic check starts here
+            let mut dependency_stack = vec![id.into()];
+            let mut current_node = id.into();
+
+            while let Some(dependency) = builder_write
+                .dependencies_by_dependent
+                .get(&current_node)
+                .copied()
+            {
+                dependency_stack.push(dependency);
+
+                // cyclic dependency found
+                if dependency == referring_site {
+                    let dependency_stack_set = dependency_stack
+                        .iter()
+                        .copied()
+                        .collect::<BTreeSet<_>>();
+
+                    let is_reported = builder_write
+                        .reported_cyclic_dependencies
+                        .contains(&dependency_stack_set);
+
+                    if !is_reported {
+                        handler.receive(Box::new(CyclicDependency {
+                            participants: dependency_stack,
+                        }));
+                        builder_write
+                            .reported_cyclic_dependencies
+                            .insert(dependency_stack_set);
+                    }
+
+                    return Err(BuildError::CyclicDependency);
+                }
+
+                current_node = dependency;
+            }
+
+            // no cyclic dependency found, so we can safely add the dependency
+            // to the builder
+            assert!(builder_write
+                .dependencies_by_dependent
+                .insert(referring_site, id.into())
+                .is_none());
+
+            T::get_states_mut(&mut builder_write)
+                .get_mut(&id)
+                .unwrap()
+                .dependants_by_flag
+                .entry(to_flag)
+                .or_default()
+                .insert(referring_site);
+        }
+
+        // drop the builder write
+        drop(builder_write);
+
+        Ok(self.acquire_build_lock(id, to_flag, handler)?)
+    }
+}
+
+impl Table<Building> {
+    /// Builds all symbols in the builder to the last state.
+    pub fn build_all(&self, handler: &dyn Handler<Box<dyn error::Error>>) {
+        macro_rules! make_ids {
+            ($field_name:ident) => {
+                paste! {
+                     self.state
+                        .read()
+                        .[<$field_name:snake s>]
+                        .keys()
+                        .copied()
+                        .collect::<Vec<_>>()
+                }
+            };
+        }
+
+        let enum_ids = make_ids!(Enum);
+        let variant_ids = make_ids!(Variant);
+        let struct_ids = make_ids!(Struct);
+        let constant_ids = make_ids!(Constant);
+        let type_ids = make_ids!(Type);
+        let function_ids = make_ids!(Function);
+        let trait_ids = make_ids!(Trait);
+        let trait_constant_ids = make_ids!(TraitConstant);
+        let trait_type_ids = make_ids!(TraitType);
+        let trait_function_ids = make_ids!(TraitFunction);
+        let negative_trait_implementation_ids =
+            make_ids!(NegativeTraitImplementation);
+        let trait_implementation_ids = make_ids!(TraitImplementation);
+        let trait_implementation_function_ids =
+            make_ids!(TraitImplementationFunction);
+        let trait_implementation_constant_ids =
+            make_ids!(TraitImplementationConstant);
+        let trait_implementation_type_ids = make_ids!(TraitImplementationType);
+        let adt_implementation_ids = make_ids!(AdtImplementation);
+        let adt_implementation_constant_ids =
+            make_ids!(AdtImplementationConstant);
+        let adt_implementation_function_ids =
+            make_ids!(AdtImplementationFunction);
+        let adt_implementation_type_ids = make_ids!(AdtImplementationType);
+
+        macro_rules! build_id {
+            ($field_name:ident) => {
+                paste! {
+                    [<$field_name:snake _ids>].into_par_iter()
+                        .map(|x| {
+                            let _ = self.build_to(
+                                x,
+                                None,
+                                <<$field_name as Symbol>::Flag as Flag>::last(),
+                                handler
+                            );
+                        })
+                }
+            };
+        }
+
+        macro_rules! build_all {
+            ($first_name:ident, $($names:ident),*) => {
+                build_id!($first_name)
+                    $( .chain(build_id!($names)) )*
+                    .for_each(|()| {})
+            };
+        }
+
+        build_all!(
+            Enum,
+            Variant,
+            Struct,
+            Constant,
+            Type,
+            Function,
+            Trait,
+            TraitConstant,
+            TraitType,
+            TraitFunction,
+            NegativeTraitImplementation,
+            TraitImplementation,
+            TraitImplementationFunction,
+            TraitImplementationConstant,
+            TraitImplementationType,
+            AdtImplementation,
+            AdtImplementationConstant,
+            AdtImplementationFunction,
+            AdtImplementationType
+        );
     }
 }

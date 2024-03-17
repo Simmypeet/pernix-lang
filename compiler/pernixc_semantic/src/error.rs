@@ -15,7 +15,7 @@ use crate::{
     arena::ID,
     semantic::predicate::Predicate,
     symbol::{
-        Accessibility, GenericID, GenericKind, Global, GlobalID,
+        Accessibility, AdtID, GenericID, GenericKind, Global, GlobalID,
         LocalGenericParameterID, Module, Trait, TraitImplementation,
         TraitImplementationKindID, TraitImplementationMemberID, TraitMemberID,
     },
@@ -629,14 +629,18 @@ pub struct MisOrderedGenericArgument {
     pub generic_argument: Span,
 }
 
-impl<'a> Display for WithTable<'a, MisOrderedGenericArgument> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayWithTable for MisOrderedGenericArgument {
+    fn fmt(
+        &self,
+        _: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the generic argument was supplied in the wrong order",
         })?;
 
-        let help_display = match self.error.generic_kind {
+        let help_display = match self.generic_kind {
             GenericKind::Type => {
                 Some("can't be supplied after constant arguments")
             }
@@ -647,8 +651,44 @@ impl<'a> Display for WithTable<'a, MisOrderedGenericArgument> {
         };
 
         write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.error.generic_argument,
+            span: &self.generic_argument,
             help_display,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The negative implementation was used on the ADT.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NegativeImplementationOnAdt {
+    /// The span where the negative implementation was used.
+    pub negative_implementation_span: Span,
+
+    /// The ID of the ADT where the negative implementation was used.
+    pub adt_id: AdtID,
+}
+
+impl DisplayWithTable for NegativeImplementationOnAdt {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let adt_qualified_name =
+            table.get_qualified_name(self.adt_id.into()).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "negative implementation is not allowed here because \
+                 `{adt_qualified_name}` is not a trait",
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.negative_implementation_span,
+            help_display: Option::<i32>::None,
         })?;
 
         Ok(())
@@ -711,7 +751,7 @@ pub struct PrivateEntityLeakedToPublicInterface<Entity> {
 
 /// Generic arguments count mismatch.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MismatchedGenericArugmentCount {
+pub struct MisMatchedGenericArgumentCount {
     /// The kind of the generic parameter.
     pub generic_kind: GenericKind,
 
@@ -725,7 +765,7 @@ pub struct MismatchedGenericArugmentCount {
     pub supplied_count: usize,
 }
 
-impl DisplayWithTable for MismatchedGenericArugmentCount {
+impl DisplayWithTable for MisMatchedGenericArgumentCount {
     fn fmt(
         &self,
         _: &Table<Suboptimal>,

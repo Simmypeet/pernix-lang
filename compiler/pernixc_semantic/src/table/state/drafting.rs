@@ -17,15 +17,19 @@ use crate::{
         self, AlreadyImplementedTraitMember, InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember,
         MismatchedTraitMemberAndImplementationMemberAccessibility,
-        RedefinedGlobal, SymbolIsMoreAccessibleThanParent, TraitMemberKind,
+        NegativeImplementationOnAdt, RedefinedGlobal,
+        SymbolIsMoreAccessibleThanParent, TraitMemberKind,
         UnimplementedTraitMembers, UnknownTraitImplementationMember,
     },
     semantic::term::{r#type, GenericArguments},
     symbol::{
-        Accessibility, Constant, ConstantData, Enum, Function, FunctionData,
-        GenericDeclaration, GlobalID, ImplementationSignature, Module,
-        ModuleMemberID, NegativeTraitImplementation, Struct, Trait,
-        TraitConstant, TraitConstantData, TraitFunction, TraitFunctionData,
+        Accessibility, AdtID, AdtImplementation, AdtImplementationConstant,
+        AdtImplementationData, AdtImplementationFunction,
+        AdtImplementationMemberID, AdtImplementationType, Constant,
+        ConstantData, Enum, Function, FunctionData, GenericDeclaration,
+        GlobalID, ImplementationSignature, Module, ModuleMemberID,
+        NegativeTraitImplementation, Struct, Trait, TraitConstant,
+        TraitConstantData, TraitFunction, TraitFunctionData,
         TraitImplementation, TraitImplementationConstant,
         TraitImplementationConstantData, TraitImplementationData,
         TraitImplementationFunction, TraitImplementationFunctionData,
@@ -33,7 +37,7 @@ use crate::{
         TraitImplementationTypeData, TraitMemberID, TraitType, TraitTypeData,
         Type, TypeData, Variant,
     },
-    table::{self, Element, Index, RwLockContainer, Table},
+    table::{self, Element, GetMemberError, Index, RwLockContainer, Table},
 };
 
 #[derive(Debug, Default)]
@@ -46,6 +50,16 @@ pub struct Drafting {
 
 impl table::State for Drafting {
     type Container = RwLockContainer;
+
+    fn on_global_id_resolved(_: &Table<Self>, _: GlobalID, _: GlobalID) {}
+
+    fn on_resolved(
+        _: &Table<Self>,
+        _: table::resolution::Resolution,
+        _: GlobalID,
+    ) {
+        todo!()
+    }
 }
 
 impl Table<Drafting> {
@@ -961,6 +975,259 @@ impl Table<Building> {
         implementation_id
     }
 
+    fn draft_adt_implementation_type(
+        table: &RwLock<Self>,
+        syntax_tree: syntax_tree::item::Type,
+        adt_implementations_id: ID<AdtImplementation>,
+    ) -> ID<AdtImplementationType> {
+        let implementation_type_id =
+            table.write().representation.adt_implementation_types.insert_with(
+                |id| {
+                    RwLock::new(AdtImplementationType {
+                        id,
+                        generic_declaration: GenericDeclaration::default(),
+                        parent_id: adt_implementations_id,
+                        span: Some(
+                            syntax_tree.signature().identifier().span.clone(),
+                        ),
+                        name: syntax_tree
+                            .signature()
+                            .identifier()
+                            .span
+                            .str()
+                            .to_owned(),
+                        data: TypeData {
+                            accessibility: Accessibility::from_syntax_tree(
+                                syntax_tree.access_modifier(),
+                            ),
+                            r#type: r#type::Type::default(),
+                        },
+                    })
+                },
+            );
+
+        assert!(table
+            .read()
+            .state
+            .draft_symbol(implementation_type_id, syntax_tree));
+
+        implementation_type_id
+    }
+
+    fn draft_adt_implementation_function(
+        table: &RwLock<Self>,
+        syntax_tree: syntax_tree::item::Function,
+        adt_implementations_id: ID<AdtImplementation>,
+    ) -> ID<AdtImplementationFunction> {
+        let implementation_function_id = table
+            .write()
+            .representation
+            .adt_implementation_functions
+            .insert_with(|id| {
+                RwLock::new(AdtImplementationFunction {
+                    id,
+                    generic_declaration: GenericDeclaration::default(),
+                    parent_id: adt_implementations_id,
+                    span: Some(
+                        syntax_tree.signature().identifier().span.clone(),
+                    ),
+                    name: syntax_tree
+                        .signature()
+                        .identifier()
+                        .span
+                        .str()
+                        .to_owned(),
+                    data: FunctionData {
+                        accessibility: Accessibility::from_syntax_tree(
+                            syntax_tree.access_modifier(),
+                        ),
+                        const_function: syntax_tree.const_keyword().is_some(),
+                    },
+                    parameters: Map::default(),
+                    return_type: r#type::Type::default(),
+                })
+            });
+
+        assert!(table
+            .read()
+            .state
+            .draft_symbol(implementation_function_id, syntax_tree));
+
+        implementation_function_id
+    }
+
+    fn draft_adt_implementation_constant(
+        table: &RwLock<Self>,
+        syntax_tree: syntax_tree::item::Constant,
+        adt_implementations_id: ID<AdtImplementation>,
+    ) -> ID<AdtImplementationConstant> {
+        let implementation_constant_id = table
+            .write()
+            .representation
+            .adt_implementation_constants
+            .insert_with(|id| {
+                RwLock::new(AdtImplementationConstant {
+                    id,
+                    generic_declaration: GenericDeclaration::default(),
+                    parent_id: adt_implementations_id,
+                    span: Some(
+                        syntax_tree.signature().identifier().span.clone(),
+                    ),
+                    name: syntax_tree
+                        .signature()
+                        .identifier()
+                        .span
+                        .str()
+                        .to_owned(),
+                    r#type: r#type::Type::default(),
+                    data: ConstantData {
+                        accessibility: Accessibility::from_syntax_tree(
+                            syntax_tree.access_modifier(),
+                        ),
+                    },
+                })
+            });
+
+        assert!(table
+            .read()
+            .state
+            .draft_symbol(implementation_constant_id, syntax_tree));
+
+        implementation_constant_id
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn draft_adt_implementation(
+        table: &RwLock<Self>,
+        implementation: syntax_tree::item::Implementation,
+        declared_in: ID<Module>,
+        adt_id: AdtID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+        let (signature, kind) = implementation.dissolve();
+
+        let body = match kind {
+            ImplementationKind::Negative(_) => {
+                handler.receive(Box::new(NegativeImplementationOnAdt {
+                    negative_implementation_span: signature
+                        .qualified_identifier()
+                        .span(),
+                    adt_id,
+                }));
+                return;
+            }
+            ImplementationKind::Positive(body) => body,
+        };
+
+        let (_, members, _) = body.dissolve();
+
+        // create the implementation
+        let implementation_name =
+            table.read().get_global(adt_id.into()).unwrap().name().to_owned();
+
+        let adt_implementation_id =
+            table.write().representation.adt_implementations.insert_with(
+                |id| {
+                    RwLock::new(AdtImplementation {
+                        id,
+                        span: Some(signature.qualified_identifier().span()),
+                        signature: ImplementationSignature {
+                            generic_declaration: GenericDeclaration::default(),
+                            arguments: GenericArguments::default(),
+                            implemented_id: adt_id,
+                        },
+                        implementation_name,
+                        declared_in,
+                        data: AdtImplementationData {
+                            member_ids_by_name: HashMap::new(),
+                        },
+                    })
+                },
+            );
+
+        assert!(table
+            .read()
+            .state
+            .draft_symbol(adt_implementation_id, signature));
+
+        for member in members {
+            // get the identifier sytax
+            let identifier = match &member {
+                ImplementationMember::Type(member) => {
+                    member.signature().identifier().clone()
+                }
+                ImplementationMember::Function(member) => {
+                    member.signature().identifier().clone()
+                }
+                ImplementationMember::Constant(member) => {
+                    member.signature().identifier().clone()
+                }
+            };
+
+            let member_id = match member {
+                ImplementationMember::Type(syntax_tree) => {
+                    AdtImplementationMemberID::Type(
+                        Self::draft_adt_implementation_type(
+                            table,
+                            syntax_tree,
+                            adt_implementation_id,
+                        ),
+                    )
+                }
+                ImplementationMember::Function(syntax_tree) => {
+                    AdtImplementationMemberID::Function(
+                        Self::draft_adt_implementation_function(
+                            table,
+                            syntax_tree,
+                            adt_implementation_id,
+                        ),
+                    )
+                }
+                ImplementationMember::Constant(syntax_tree) => {
+                    AdtImplementationMemberID::Constant(
+                        Self::draft_adt_implementation_constant(
+                            table,
+                            syntax_tree,
+                            adt_implementation_id,
+                        ),
+                    )
+                }
+            };
+
+            // check if the member already exists
+            #[allow(clippy::significant_drop_in_scrutinee)]
+            match table
+                .read()
+                .get_member_of(adt_id.into(), identifier.span().str())
+            {
+                Ok(id) => {
+                    // redefinition error
+                    handler.receive(Box::new(RedefinedGlobal {
+                        existing_global_id: id,
+                        new_global_id: member_id.into(),
+                        in_global_id: adt_id.into(),
+                    }));
+                    continue;
+                }
+                Err(GetMemberError::MemberNotFound) => {}
+                Err(GetMemberError::InvalidID) => {
+                    unreachable!();
+                }
+            }
+
+            // add the member to the implementation
+            assert!(table
+                .read()
+                .adt_implementations
+                .get(adt_implementation_id)
+                .unwrap()
+                .write()
+                .member_ids_by_name
+                .insert(identifier.span.str().to_owned(), member_id)
+                .is_none());
+        }
+    }
+
     fn draft_trait_implementation(
         table: &RwLock<Self>,
         implementation: syntax_tree::item::Implementation,
@@ -1067,7 +1334,19 @@ impl Table<Building> {
                 handler,
             ),
 
-            _adt_id @ (GlobalID::Enum(_) | GlobalID::Struct(_)) => {}
+            adt_id @ (GlobalID::Enum(_) | GlobalID::Struct(_)) => {
+                Self::draft_adt_implementation(
+                    table,
+                    implementation,
+                    defined_in_module_id,
+                    match adt_id {
+                        GlobalID::Struct(struct_id) => AdtID::Struct(struct_id),
+                        GlobalID::Enum(enum_id) => AdtID::Enum(enum_id),
+                        _ => unreachable!(),
+                    },
+                    handler,
+                );
+            }
 
             // invalid id
             invalid_global_id => {
