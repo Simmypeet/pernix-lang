@@ -96,14 +96,12 @@ impl<Pattern> SourceElement for Structural<Pattern> {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Enum:
-///     Identifier '(' Pattern ')'
+/// EnumAssociation:
+///     '(' Pattern ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Enum<Pattern> {
-    #[get = "pub"]
-    identifier: Identifier,
+pub struct EnumAssociation<Pattern> {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
@@ -112,9 +110,36 @@ pub struct Enum<Pattern> {
     right_paren: Punctuation,
 }
 
+impl<Pattern> SourceElement for EnumAssociation<Pattern> {
+    fn span(&self) -> Span {
+        self.left_paren.span.join(&self.right_paren.span).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Enum:
+///     'case' Identifier EnumAssociation?
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Enum<Pattern> {
+    #[get = "pub"]
+    case_keyword: Keyword,
+    #[get = "pub"]
+    identifier: Identifier,
+    #[get = "pub"]
+    association: Option<EnumAssociation<Pattern>>,
+}
+
 impl<Pattern> SourceElement for Enum<Pattern> {
     fn span(&self) -> Span {
-        self.identifier.span().join(&self.right_paren.span).unwrap()
+        self.association.as_ref().map_or_else(
+            || self.case_keyword.span().join(&self.identifier.span()).unwrap(),
+            |association| {
+                self.case_keyword.span().join(&association.span()).unwrap()
+            },
+        )
     }
 }
 
@@ -417,39 +442,6 @@ impl<'a> Parser<'a> {
             right_paren: enclosed_tree.close,
         })
     }
-
-    fn parse_identifier_pattern<T>(
-        &mut self,
-        handler: &dyn Handler<error::Error>,
-    ) -> Option<T>
-    where
-        T: Pattern + From<Named> + From<Enum<T>>,
-    {
-        let identifier = self.parse_identifier(handler)?;
-
-        match self.stop_at_significant() {
-            // parse enum pattern
-            Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
-                let delimited_tree = self.step_into(
-                    Delimiter::Parenthesis,
-                    |parser| T::parse(parser, handler).map(Box::new),
-                    handler,
-                )?;
-
-                Some(
-                    Enum {
-                        identifier,
-                        left_paren: delimited_tree.open,
-                        pattern: delimited_tree.tree?,
-                        right_paren: delimited_tree.close,
-                    }
-                    .into(),
-                )
-            }
-            // parse named pattern
-            _ => Some(Named { mutable_keyword: None, identifier }.into()),
-        }
-    }
 }
 
 impl Pattern for Irrefutable {
@@ -513,7 +505,7 @@ impl Pattern for Refutable {
         handler: &dyn Handler<error::Error>,
     ) -> Option<Self> {
         match parser.stop_at_significant() {
-            // parse named pattern
+            // parse mutable named pattern
             Reading::Unit(Token::Keyword(mutable_keyword))
                 if mutable_keyword.kind == KeywordKind::Mutable =>
             {
@@ -528,9 +520,40 @@ impl Pattern for Refutable {
                 }))
             }
 
+            Reading::Unit(Token::Keyword(case_keyword))
+                if case_keyword.kind == KeywordKind::Case =>
+            {
+                // eat the case keyword
+                parser.forward();
+
+                let identifier = parser.parse_identifier(handler)?;
+
+                let association = if matches!(
+                    parser.stop_at_significant(),
+                    Reading::IntoDelimited(Delimiter::Parenthesis, _)
+                ) {
+                    let tree = parser.step_into(
+                        Delimiter::Parenthesis,
+                        |parser| parser.parse_refutable_pattern(handler),
+                        handler,
+                    )?;
+
+                    Some(EnumAssociation {
+                        left_paren: tree.open,
+                        pattern: Box::new(tree.tree?),
+                        right_paren: tree.close,
+                    })
+                } else {
+                    None
+                };
+
+                Some(Self::Enum(Enum { case_keyword, identifier, association }))
+            }
+
             // parse named pattern
-            Reading::Unit(Token::Identifier(..)) => {
-                parser.parse_identifier_pattern(handler)
+            Reading::Unit(Token::Identifier(identifier)) => {
+                parser.forward();
+                Some(Self::Named(Named { mutable_keyword: None, identifier }))
             }
 
             // parse tuple pattern

@@ -370,7 +370,7 @@ impl Display for Irrefutable {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum<Pattern> {
     pub identifier: Identifier,
-    pub pattern: Box<Pattern>,
+    pub association: Option<Box<Pattern>>,
 }
 
 impl<I: Debug, O: Debug> Input<&super::Enum<O>> for &Enum<I>
@@ -379,7 +379,9 @@ where
 {
     fn assert(self, output: &super::Enum<O>) -> TestCaseResult {
         (&self.identifier).assert(&output.identifier)?;
-        self.pattern.assert(&output.pattern)
+        self.association
+            .as_ref()
+            .assert(output.association.as_ref().map(|x| &x.pattern))
     }
 }
 
@@ -390,10 +392,13 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        (Identifier::arbitrary(), args.unwrap_or_else(Pattern::arbitrary))
+        (
+            Identifier::arbitrary(),
+            proptest::option::of(args.unwrap_or_else(Pattern::arbitrary)),
+        )
             .prop_map(|(identifier, pattern)| Self {
                 identifier,
-                pattern: Box::new(pattern),
+                association: pattern.map(Box::new),
             })
             .boxed()
     }
@@ -401,7 +406,13 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
 
 impl<Pattern: Display> Display for Enum<Pattern> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({})", self.identifier, self.pattern)
+        write!(f, "case {}", self.identifier)?;
+
+        if let Some(pattern) = &self.association {
+            write!(f, "({pattern})")?;
+        }
+
+        Ok(())
     }
 }
 
