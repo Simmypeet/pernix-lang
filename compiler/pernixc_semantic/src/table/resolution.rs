@@ -23,7 +23,7 @@ use crate::{
         ResolutionAmbiguity, SymbolNotFound,
     },
     semantic::term::{
-        self,
+        self, constant,
         lifetime::{Forall, Lifetime},
         r#type::{self, Qualifier, SymbolKindID},
         GenericArguments, Local, MemberSymbol, TupleElement,
@@ -197,9 +197,9 @@ trait GenericParameter: Sized + 'static {
 
     fn on_resolved(
         table: &Table<impl State>,
+        config: Config,
         resolved: &Self::Argument,
         parameter: &Self::SyntaxTree,
-        span: &Span,
     );
 }
 
@@ -214,7 +214,7 @@ impl GenericParameter for LifetimeParameter {
         config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Self::Argument, Error> {
-        table.resolve_lifetime(syntax_tree, referring_site, &config, handler)
+        table.resolve_lifetime(syntax_tree, referring_site, config, handler)
     }
 
     fn get_ellided_term_provider<'a>(
@@ -231,11 +231,10 @@ impl GenericParameter for LifetimeParameter {
 
     fn on_resolved(
         _: &Table<impl State>,
+        _: Config,
         _: &Self::Argument,
         _: &Self::SyntaxTree,
-        _: &Span,
     ) {
-        todo!()
     }
 }
 
@@ -267,11 +266,10 @@ impl GenericParameter for TypeParameter {
 
     fn on_resolved(
         _: &Table<impl State>,
+        _: Config,
         _: &Self::Argument,
         _: &Self::SyntaxTree,
-        _: &Span,
     ) {
-        todo!()
     }
 }
 
@@ -311,10 +309,13 @@ impl GenericParameter for ConstantParameter {
 
     fn on_resolved(
         _: &Table<impl State>,
-        _: &Self::Argument,
-        _: &Self::SyntaxTree,
-        _: &Span,
+        mut config: Config,
+        constant: &Self::Argument,
+        syntax_tree: &Self::SyntaxTree,
     ) {
+        if let Some(observer) = config.observer.as_mut() {
+            observer.on_constant_arguments_resolved(constant, syntax_tree);
+        }
     }
 }
 
@@ -373,9 +374,36 @@ pub trait EliidedTermProvider<T>: Debug {
     fn create(&mut self) -> T;
 }
 
-/// The struct containing the all kinds of elided term providers.
+/// A trait for observing the resolution process.
+///
+/// The trait will notified when a type, lifetime, or constant is resolved
+/// during the resolution process.
+pub trait Observer: Debug {
+    /// Notifies the observer when a type is resolved.
+    fn on_type_resolved(
+        &mut self,
+        ty: &r#type::Type,
+        syntax_tree: &syntax_tree::r#type::Type,
+    );
+
+    /// Notifies the observer when a lifetime is resolved.
+    fn on_lifetime_resolved(
+        &mut self,
+        lifetime: &Lifetime,
+        syntax_tree: &syntax_tree::Lifetime,
+    );
+
+    /// Notifies the observer when a constant is resolved.
+    fn on_constant_arguments_resolved(
+        &mut self,
+        constant: &constant::Constant,
+        syntax_tree: &syntax_tree::expression::Expression,
+    );
+}
+
+/// The configuration struct specifying the behaviour of the resolution process.
 #[derive(Debug)]
-pub struct Config<'lp, 'tp, 'cp, 'hrlt> {
+pub struct Config<'lp, 'tp, 'cp, 'ob, 'hrlt> {
     /// If specified, when the lifetime argument is elided, the provider will
     /// be used to supply the missing required lifetimes.
     pub ellided_lifetime_provider:
@@ -391,12 +419,16 @@ pub struct Config<'lp, 'tp, 'cp, 'hrlt> {
     pub ellided_constant_provider:
         Option<&'cp mut dyn EliidedTermProvider<term::constant::Constant>>,
 
-    /// If specified, when resolving a lifetime parameter, the higher-ranked
-    /// lifetimes will be used to resolve the lifetime parameter.
+    /// If specified, during the resolution process, the observer will be
+    /// notified each time a type, lifetime, or constant is resolved.
+    pub observer: Option<&'ob mut dyn Observer>,
+
+    /// If specified, when resolving a lifetime parameter, these higher-ranked
+    /// lifetimes map will be taken into consideration.
     pub higher_ranked_liftimes: Option<&'hrlt HashMap<String, Forall>>,
 }
 
-impl<'lp, 'tp, 'cp, 'hrlt> Config<'lp, 'tp, 'cp, 'hrlt> {
+impl<'lp, 'tp, 'cp, 'ob, 'hrlt> Config<'lp, 'tp, 'cp, 'ob, 'hrlt> {
     /// Creates a new instance of the config.
     #[allow(clippy::option_if_let_else)]
     pub fn reborrow(&mut self) -> Config {
@@ -413,6 +445,10 @@ impl<'lp, 'tp, 'cp, 'hrlt> Config<'lp, 'tp, 'cp, 'hrlt> {
             ellided_constant_provider: match &mut self.ellided_constant_provider
             {
                 Some(provider) => Some(&mut **provider),
+                None => None,
+            },
+            observer: match &mut self.observer {
+                Some(observer) => Some(&mut **observer),
                 None => None,
             },
             higher_ranked_liftimes: self.higher_ranked_liftimes,
@@ -711,10 +747,10 @@ impl<T: State> Table<T> {
         &self,
         lifetime_argument: &syntax_tree::Lifetime,
         referring_site: GlobalID,
-        config: &Config,
+        config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<Lifetime, Error> {
-        match lifetime_argument.identifier() {
+        let lifetime = match lifetime_argument.identifier() {
             LifetimeIdentifier::Static(..) => Ok(Lifetime::Static),
             LifetimeIdentifier::Identifier(ident) => {
                 if let Some(higher_ranked_lifetimes) =
@@ -730,7 +766,13 @@ impl<T: State> Table<T> {
                 self.resolve_lifetime_parameter(ident, referring_site, handler)
                     .map(Lifetime::Parameter)
             }
+        }?;
+
+        if let Some(observer) = config.observer {
+            observer.on_lifetime_resolved(&lifetime, lifetime_argument);
         }
+
+        Ok(lifetime)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -954,7 +996,7 @@ impl<T: State> Table<T> {
         mut config: Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<r#type::Type, Error> {
-        match syntax_tree {
+        let ty = match syntax_tree {
             syntax_tree::r#type::Type::Primitive(primitive) => {
                 Ok(r#type::Type::Primitive(match primitive {
                     syntax_tree::r#type::Primitive::Bool(_) => {
@@ -1002,7 +1044,7 @@ impl<T: State> Table<T> {
                 Ok(r#type::Type::Local(Local(Box::new(self.resolve_type(
                     local.ty(),
                     referring_site,
-                    config,
+                    config.reborrow(),
                     handler,
                 )?))))
             }
@@ -1011,7 +1053,7 @@ impl<T: State> Table<T> {
             ) => self.resolve_qualified_identifier_type(
                 qualified_identifier,
                 referring_site,
-                config,
+                config.reborrow(),
                 handler,
             ),
             syntax_tree::r#type::Type::Reference(reference) => {
@@ -1022,7 +1064,7 @@ impl<T: State> Table<T> {
                         self.resolve_lifetime(
                             x,
                             referring_site,
-                            &config,
+                            config.reborrow(),
                             handler,
                         )
                     })
@@ -1054,7 +1096,7 @@ impl<T: State> Table<T> {
                 let pointee = Box::new(self.resolve_type(
                     reference.operand(),
                     referring_site,
-                    config,
+                    config.reborrow(),
                     handler,
                 )?);
 
@@ -1078,7 +1120,7 @@ impl<T: State> Table<T> {
                 let pointee = Box::new(self.resolve_type(
                     pointer_ty.operand(),
                     referring_site,
-                    config,
+                    config.reborrow(),
                     handler,
                 )?);
 
@@ -1141,7 +1183,7 @@ impl<T: State> Table<T> {
                 let element_ty = self.resolve_type(
                     array.operand(),
                     referring_site,
-                    config,
+                    config.reborrow(),
                     handler,
                 )?;
 
@@ -1150,7 +1192,13 @@ impl<T: State> Table<T> {
                     r#type: Box::new(element_ty),
                 }))
             }
+        }?;
+
+        if let Some(observer) = config.observer.as_mut() {
+            observer.on_type_resolved(&ty, syntax_tree);
         }
+
+        Ok(ty)
     }
 
     fn resolve_qualified_identifier_type(
@@ -1267,13 +1315,25 @@ impl<T: State> Table<T> {
             let mut arguments = syntax_trees
                 .take(parameters.len())
                 .map(|syntax_tree| {
-                    G::resolve(
+                    let resolved = G::resolve(
                         self,
                         syntax_tree,
                         referring_site,
                         config.reborrow(),
                         handler,
-                    )
+                    );
+
+                    // report the on resolved
+                    if let Ok(resolved) = &resolved {
+                        G::on_resolved(
+                            self,
+                            config.reborrow(),
+                            resolved,
+                            syntax_tree,
+                        );
+                    }
+
+                    resolved
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -1449,7 +1509,7 @@ impl<T: State> Table<T> {
     ///  for.
     /// - `referring_site`: The global ID of the symbol that is referring to the
     /// symbol to resolve.
-    /// - `ellided_term_providers`: The providers for the elided terms.
+    /// - `config`:
     /// - `handler`: The handler for the diagnostics.
     ///
     /// # Errors
