@@ -513,7 +513,8 @@ where
             &table,
             &mut semantic::Default,
             &mut Limit::new(&mut session::Default::default()),
-        )?);
+        )
+        .map_err(|_| TestCaseError::reject("too complex property"))?);
     }
 
     // the terms will equal by rewriting the lhs
@@ -527,7 +528,8 @@ where
             &table,
             &mut semantic::Default,
             &mut Limit::new(&mut session::Default::default()),
-        )?);
+        )
+        .map_err(|_| TestCaseError::reject("too complex property"))?);
     }
 
     Ok(())
