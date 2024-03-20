@@ -526,6 +526,28 @@ impl SourceElement for ConstantTypePredicate {
 
 /// Syntax Synopsis:
 /// ``` txt
+/// TuplePredicate:
+///     Type
+///     | ConstantArgument
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum TuplePredicateOperand {
+    Type(r#type::Type),
+    Constant(ConstantArgument),
+}
+
+impl SourceElement for TuplePredicateOperand {
+    fn span(&self) -> Span {
+        match self {
+            Self::Type(ty) => ty.span(),
+            Self::Constant(c) => c.span(),
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// ConstantPredicate:
 ///     'tuple' Type ('+' Type)*
 ///     ;
@@ -535,23 +557,20 @@ pub struct TuplePredicate {
     #[get = "pub"]
     pub(super) tuple_keyword: Keyword,
     #[get = "pub"]
-    pub(super) qualified_identifiers: BoundList<QualifiedIdentifier>,
+    pub(super) operands: BoundList<TuplePredicateOperand>,
 }
 
 impl SourceElement for TuplePredicate {
     fn span(&self) -> Span {
-        self.tuple_keyword
-            .span
-            .join(&self.qualified_identifiers.span())
-            .unwrap()
+        self.tuple_keyword.span.join(&self.operands.span()).unwrap()
     }
 }
 
 impl TuplePredicate {
     /// Dissolves the [`TuplePredicate`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(self) -> (Keyword, BoundList<QualifiedIdentifier>) {
-        (self.tuple_keyword, self.qualified_identifiers)
+    pub fn dissolve(self) -> (Keyword, BoundList<TuplePredicateOperand>) {
+        (self.tuple_keyword, self.operands)
     }
 }
 
@@ -2251,14 +2270,32 @@ impl<'a> Parser<'a> {
                 // eat token keyword
                 self.forward();
 
-                let qualified_identifiers =
-                    self.parse_bound_list(|parser| {
-                        parser.parse_qualified_identifier(handler)
-                    })?;
+                let types = self.parse_bound_list(|parser| {
+                    match parser.stop_at_significant() {
+                        Reading::IntoDelimited(Delimiter::Brace, _) => {
+                            let expr = parser.step_into(
+                                Delimiter::Brace,
+                                |parser| parser.parse_expression(handler),
+                                handler,
+                            )?;
+
+                            Some(TuplePredicateOperand::Constant(
+                                ConstantArgument {
+                                    left_brace: expr.open,
+                                    expression: Box::new(expr.tree?),
+                                    right_brace: expr.close,
+                                },
+                            ))
+                        }
+                        _ => parser
+                            .parse_type(handler)
+                            .map(TuplePredicateOperand::Type),
+                    }
+                })?;
 
                 Some(Predicate::Tuple(TuplePredicate {
                     tuple_keyword,
-                    qualified_identifiers,
+                    operands: types,
                 }))
             }
 

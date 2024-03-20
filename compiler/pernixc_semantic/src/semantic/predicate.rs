@@ -11,7 +11,50 @@ use enum_as_inner::EnumAsInner;
 use super::{
     instantiation::{self, Instantiation},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+    visitor::{accept_recursive, Visitor},
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct ContainsForallLifetimeVisitor {
+    contains_forall_lifetime: bool,
+}
+
+impl Visitor for ContainsForallLifetimeVisitor {
+    fn visit_type(&mut self, _: &Type) -> bool { true }
+
+    fn visit_lifetime(&mut self, lifetime: &Lifetime) -> bool {
+        if lifetime.is_forall() {
+            self.contains_forall_lifetime = true;
+            false
+        } else {
+            true
+        }
+    }
+
+    fn visit_constant(&mut self, _: &Constant) -> bool { true }
+
+    fn visit_type_mut(&mut self, _: &mut Type) -> bool { true }
+
+    fn visit_lifetime_mut(&mut self, lifetime: &mut Lifetime) -> bool {
+        if lifetime.is_forall() {
+            self.contains_forall_lifetime = true;
+            false
+        } else {
+            true
+        }
+    }
+
+    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { true }
+}
+
+fn contains_forall_lifetime<T: Term>(term: &T) -> bool {
+    let mut visitor =
+        ContainsForallLifetimeVisitor { contains_forall_lifetime: false };
+
+    accept_recursive(term, &mut visitor);
+
+    visitor.contains_forall_lifetime
+}
 
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -55,6 +98,27 @@ pub enum Predicate {
 }
 
 impl Predicate {
+    /// Checks if the predicate contains a `forall` lifetime.
+    #[must_use]
+    pub fn contains_forall_lifetime(&self) -> bool {
+        match self {
+            Self::TypeEquality(equality) => equality.contains_forall_lifetime(),
+            Self::ConstantEquality(equality) => {
+                equality.contains_forall_lifetime()
+            }
+            Self::ConstantType(constant_type) => {
+                constant_type.contains_forall_lifetime()
+            }
+            Self::LifetimeOutlives(outlives) => {
+                outlives.contains_forall_lifetime()
+            }
+            Self::TypeOutlives(outlives) => outlives.contains_forall_lifetime(),
+            Self::TupleType(tuple) => tuple.contains_forall_lifetime(),
+            Self::TupleConstant(tuple) => tuple.contains_forall_lifetime(),
+            Self::Trait(tr) => tr.contains_forall_lifetime(),
+        }
+    }
+
     /// Applies the instantiate to the predicate.
     pub fn instantiate(&mut self, substitution: &Instantiation) {
         match self {
@@ -87,6 +151,12 @@ pub struct Equality<T> {
 }
 
 impl<T: Term> Equality<T> {
+    /// Checks if the predicate has a `forall` lifetime.
+    pub fn contains_forall_lifetime(&self) -> bool {
+        contains_forall_lifetime(&self.lhs)
+            || contains_forall_lifetime(&self.rhs)
+    }
+
     /// Applies the instantiation to both [`Equality::lhs`] and
     /// [`Equality::rhs`].
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
@@ -108,6 +178,23 @@ pub enum NonEquality {
 }
 
 impl NonEquality {
+    /// Checks if the predicate contains a `forall` lifetime.
+    #[must_use]
+    pub fn contains_forall_lifetime(&self) -> bool {
+        match self {
+            Self::LifetimeOutlives(outlives) => {
+                outlives.contains_forall_lifetime()
+            }
+            Self::TypeOutlives(outlives) => outlives.contains_forall_lifetime(),
+            Self::TupleType(tuple) => tuple.contains_forall_lifetime(),
+            Self::TupleConstant(tuple) => tuple.contains_forall_lifetime(),
+            Self::Trait(tr) => tr.contains_forall_lifetime(),
+            Self::ConstantType(constant_type) => {
+                constant_type.contains_forall_lifetime()
+            }
+        }
+    }
+
     /// Applies the instantiation to the predicate.
     pub fn instantiate(&mut self, substitution: &Instantiation) {
         match self {

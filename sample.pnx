@@ -1,0 +1,2 @@
+public type A = B[int32];
+public type B[T] = T;

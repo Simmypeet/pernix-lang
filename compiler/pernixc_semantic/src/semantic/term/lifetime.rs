@@ -12,7 +12,7 @@ use super::{
     GetVarianceError, MemberSymbol, Never, Term, Tuple,
 };
 use crate::{
-    arena::{Arena, ID},
+    arena::ID,
     semantic::{
         instantiation::Instantiation,
         mapping::Mapping,
@@ -23,8 +23,7 @@ use crate::{
         Premise,
     },
     symbol::{
-        GenericID, GenericParameters, LifetimeParameter, LifetimeParameterID,
-        MemberID, Variance,
+        GenericID, LifetimeParameter, LifetimeParameterID, MemberID, Variance,
     },
     table::{State, Table},
 };
@@ -287,18 +286,6 @@ impl Term for Lifetime {
         mapping: &mut Mapping,
     ) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.lifetimes
-    }
-
-    fn get_generic_parameters(
-        parameters: &GenericParameters,
-    ) -> &Arena<Self::GenericParameter> {
-        &parameters.lifetimes
-    }
-
-    fn get_generic_parameter_order(
-        parameters: &GenericParameters,
-    ) -> &[ID<Self::GenericParameter>] {
-        &parameters.lifetime_order
     }
 
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {

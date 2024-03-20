@@ -13,7 +13,7 @@ use super::{
     Local, MemberSymbol, Never, Symbol, Term,
 };
 use crate::{
-    arena::{Arena, ID},
+    arena::ID,
     semantic::{
         instantiation::Instantiation,
         mapping::Mapping,
@@ -27,8 +27,8 @@ use crate::{
         Premise,
     },
     symbol::{
-        self, ConstantParameter, ConstantParameterID, GenericID,
-        GenericParameters, GlobalID, Variance, Variant,
+        self, ConstantParameter, ConstantParameterID, GenericID, GlobalID,
+        Variance, Variant,
     },
     table::{Index, State, Table},
 };
@@ -931,18 +931,6 @@ impl Term for Constant {
         mapping: &mut Mapping,
     ) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.constants
-    }
-
-    fn get_generic_parameters(
-        parameters: &GenericParameters,
-    ) -> &Arena<Self::GenericParameter> {
-        &parameters.constants
-    }
-
-    fn get_generic_parameter_order(
-        parameters: &GenericParameters,
-    ) -> &[ID<Self::GenericParameter>] {
-        &parameters.constant_order
     }
 
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {

@@ -13,7 +13,7 @@ use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::target::Target;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use self::{resolution::Resolution, state::drafting::Drafting};
+use self::{building::drafting::Drafter, resolution::Resolution};
 use crate::{
     arena::{Arena, ID},
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
@@ -30,9 +30,9 @@ use crate::{
     },
 };
 
+mod building;
 pub mod evaluate;
 pub mod resolution;
-mod state;
 
 /// A trait used to access the symbols defined in the table.
 pub trait Index<Idx: ?Sized> {
@@ -186,9 +186,21 @@ pub struct Suboptimal(());
 impl State for Suboptimal {
     type Container = NoContainer;
 
-    fn on_global_id_resolved(_: &Table<Self>, _: GlobalID, _: GlobalID) {}
+    fn on_global_id_resolved(
+        _: &Table<Self>,
+        _: GlobalID,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+    }
 
-    fn on_resolved(_: &Table<Self>, _: Resolution, _: GlobalID) {}
+    fn on_resolved(
+        _: &Table<Self>,
+        _: Resolution,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+    }
 }
 
 /// A struct which implements [`State`] used to signify that the table is built
@@ -200,9 +212,21 @@ pub struct Success(() /* Preventing arbitrary instantiation */);
 impl State for Success {
     type Container = NoContainer;
 
-    fn on_global_id_resolved(_: &Table<Self>, _: GlobalID, _: GlobalID) {}
+    fn on_global_id_resolved(
+        _: &Table<Self>,
+        _: GlobalID,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+    }
 
-    fn on_resolved(_: &Table<Self>, _: Resolution, _: GlobalID) {}
+    fn on_resolved(
+        _: &Table<Self>,
+        _: Resolution,
+        _: GlobalID,
+        _: &dyn Handler<Box<dyn error::Error>>,
+    ) {
+    }
 }
 
 /// Represents a state object for the [`Table`].
@@ -219,12 +243,14 @@ pub trait State: Debug + Sized + 'static + Send + Sync {
         table: &Table<Self>,
         global_id: GlobalID,
         referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     );
 
     fn on_resolved(
         table: &Table<Self>,
         resolution: Resolution,
         referring_site: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     );
 }
 
@@ -1235,9 +1261,9 @@ impl<'a> Handler<Box<dyn error::Error>> for HandlerAdaptor<'a> {
 }
 
 fn transition_to_building(
-    drafting_table: Table<state::drafting::Drafting>,
+    drafting_table: Table<building::drafting::Drafter>,
     handler: &dyn Handler<Box<dyn error::Error>>,
-) -> Table<state::building::Building> {
+) -> Table<building::finalizing::Finalizer> {
     let representation = drafting_table.representation;
     let drafting = drafting_table.state;
 
@@ -1325,10 +1351,10 @@ fn transition_to_building(
 fn draft_table(
     targets: impl ParallelIterator<Item = Target>,
     handler: &HandlerAdaptor,
-) -> Result<Table<Drafting>, BuildTableError> {
+) -> Result<Table<Drafter>, BuildTableError> {
     let drafting_table = RwLock::new(Table {
         representation: Representation::default(),
-        state: state::drafting::Drafting::default(),
+        state: building::drafting::Drafter::default(),
     });
     // draft all targets
     targets.try_for_each(|target| {

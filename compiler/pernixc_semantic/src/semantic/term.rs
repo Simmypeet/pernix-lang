@@ -23,10 +23,8 @@ use super::{
     visitor, Premise, Semantic,
 };
 use crate::{
-    arena::{Arena, ID},
-    symbol::{
-        GenericID, GenericParameter, GenericParameters, MemberID, Variance,
-    },
+    arena::ID,
+    symbol::{GenericID, GenericParameter, MemberID, Variance},
     table::{State, Table},
 };
 
@@ -227,16 +225,6 @@ pub trait Term:
     fn get_mapping_mut(
         mapping: &mut Mapping,
     ) -> &mut HashMap<Self, HashSet<Self>>;
-
-    #[doc(hidden)]
-    fn get_generic_parameters(
-        parameters: &GenericParameters,
-    ) -> &Arena<Self::GenericParameter>;
-
-    #[doc(hidden)]
-    fn get_generic_parameter_order(
-        parameters: &GenericParameters,
-    ) -> &[ID<Self::GenericParameter>];
 
     #[doc(hidden)]
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self];
@@ -659,14 +647,14 @@ impl<S: State> Table<S> {
         let generic_sym =
             self.get_generic(generic_id).ok_or(GetVarianceError::InvalidID)?;
 
-        let id = T::get_generic_parameter_order(
+        let id = T::GenericParameter::get_generic_parameters_order(
             &generic_sym.generic_declaration().parameters,
         )
         .get(generic_parameter_order)
         .copied()
         .ok_or(GetVarianceError::InvalidLocation)?;
 
-        Ok(T::get_generic_parameters(
+        Ok(T::GenericParameter::get_generic_parameters_arena(
             &generic_sym.generic_declaration().parameters,
         )
         .get(id)

@@ -1,3 +1,4 @@
+use super::contains_forall_lifetime;
 use crate::{
     semantic::{
         equality,
@@ -18,6 +19,12 @@ pub struct Query<'a, T>(pub &'a T);
 pub struct Tuple<T>(pub T);
 
 impl<T: Term> Tuple<T> {
+    /// Checks if the term contains a `forall` lifetime.
+    #[must_use]
+    pub fn contains_forall_lifetime(&self) -> bool {
+        contains_forall_lifetime(&self.0)
+    }
+
     /// Applies a instantiation to the [`Tuple`] term.
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         instantiation::instantiate(&mut self.0, instantiation);

@@ -3,7 +3,6 @@
 use std::{
     collections::{HashMap, HashSet},
     convert::Into,
-    sync::Arc,
 };
 
 use derive_more::{Deref, DerefMut, From};
@@ -81,18 +80,27 @@ impl Accessibility {
     }
 }
 
+/// Describes how a predicate is introduced.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PredicateKind {
+    /// Introduced explicitly by a where clause syntax. The optional span
+    /// represents the location of the where clause syntax.
+    Explicit(Option<Span>),
+
+    /// Introduced implicitly by a trait predicate. The optional span
+    /// represents the location of the trait predicate that introduces the
+    /// implicit predicate.
+    ImpliedByTraitBound(Option<Span>),
+}
+
 /// Represents a predicate introduced by either a where clause or implication.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Predicate {
     /// The predicate itself.
     pub predicate: predicate::Predicate,
 
-    /// Location of where the predicate is declared.
-    pub span: Option<Span>,
-
-    /// Whether the predicate is explicitly declared or was implied by the
-    /// compiler.
-    pub explicit: bool,
+    /// The kind of the predicate.
+    pub kind: PredicateKind,
 }
 
 /// An ID of all kinds of symbols that implements the [`Generic`] trait.
@@ -328,7 +336,7 @@ impl Global for Module {
 
 /// Implemented by all generic parameters [`LifetimeParameter`],
 /// [`TypeParameter`], and [`ConstantParameter`].
-pub trait GenericParameter {
+pub trait GenericParameter: Sized + 'static {
     /// Gets the [`Variance`] of the generic parameter.
     fn variance(&self) -> Variance;
 
@@ -340,6 +348,23 @@ pub trait GenericParameter {
 
     /// Gets the span where the generic parameter is declared.
     fn span(&self) -> Option<&Span>;
+
+    /// Gets the [`Arena`] of generic parameters of this type from
+    /// [`GenericParameters`].
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self>;
+
+    /// Gets the list of generic parameter id stored in order.
+    fn get_generic_parameters_order(
+        generic_parameters: &GenericParameters,
+    ) -> &[ID<Self>];
+
+    /// Gets the map that maps between the name of the generic parameters to its
+    /// id.
+    fn get_generic_parameters_ids_by_name_map(
+        generic_parameters: &GenericParameters,
+    ) -> &HashMap<String, ID<Self>>;
 }
 
 /// An ID used to refer to a particular symbol defined in a particular
@@ -365,12 +390,12 @@ pub type LifetimeParameterID = MemberID<ID<LifetimeParameter>, GenericID>;
 /// An enumeration of either an invariant or covariant variance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Variance {
-    /// The term is invariant and cannot be changed.
-    #[default]
-    Invariant,
-
     /// The term is covariant and can be changed to a subtype.
+    #[default]
     Covariant,
+
+    /// The term is invariant and cannot be changed.
+    Invariant,
 }
 
 impl Variance {
@@ -406,7 +431,25 @@ impl GenericParameter for LifetimeParameter {
 
     fn name(&self) -> Option<&str> { self.name.as_ref().map(AsRef::as_ref) }
 
-    fn span(&self) -> Option<&Span> { todo!() }
+    fn span(&self) -> Option<&Span> { self.span.as_ref() }
+
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.lifetimes
+    }
+
+    fn get_generic_parameters_order(
+        generic_parameters: &GenericParameters,
+    ) -> &[ID<Self>] {
+        &generic_parameters.lifetime_order
+    }
+
+    fn get_generic_parameters_ids_by_name_map(
+        generic_parameters: &GenericParameters,
+    ) -> &HashMap<String, ID<Self>> {
+        &generic_parameters.lifetime_parameter_ids_by_name
+    }
 }
 
 /// Represents a type parameter, denoted by `T` syntax.
@@ -431,6 +474,24 @@ impl GenericParameter for TypeParameter {
     fn name(&self) -> Option<&str> { Some(&self.name) }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
+
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.types
+    }
+
+    fn get_generic_parameters_order(
+        generic_parameters: &GenericParameters,
+    ) -> &[ID<Self>] {
+        &generic_parameters.type_order
+    }
+
+    fn get_generic_parameters_ids_by_name_map(
+        generic_parameters: &GenericParameters,
+    ) -> &HashMap<String, ID<Self>> {
+        &generic_parameters.type_parameter_ids_by_name
+    }
 }
 
 /// Represents a constant parameter, denoted by `const C: TYPE` syntax.
@@ -443,7 +504,7 @@ pub struct ConstantParameter {
     pub parent_generic_id: GenericID,
 
     /// The type of the constant parameter.
-    pub r#type: Arc<r#type::Type>,
+    pub r#type: r#type::Type,
 
     /// The type of the constant parameter.
     pub span: Option<Span>,
@@ -455,6 +516,24 @@ impl GenericParameter for ConstantParameter {
     fn name(&self) -> Option<&str> { Some(&self.name) }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
+
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.constants
+    }
+
+    fn get_generic_parameters_order(
+        generic_parameters: &GenericParameters,
+    ) -> &[ID<Self>] {
+        &generic_parameters.constant_order
+    }
+
+    fn get_generic_parameters_ids_by_name_map(
+        generic_parameters: &GenericParameters,
+    ) -> &HashMap<String, ID<Self>> {
+        &generic_parameters.constant_parameter_ids_by_name
+    }
 }
 
 /// Represents a list of generic parameters.

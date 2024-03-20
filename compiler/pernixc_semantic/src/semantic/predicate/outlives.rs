@@ -1,3 +1,4 @@
+use super::contains_forall_lifetime;
 use crate::{
     semantic::{
         instantiation::{self, Instantiation},
@@ -32,6 +33,12 @@ pub struct Outlives<T> {
 }
 
 impl<T: Term> Outlives<T> {
+    /// Checks if the term contains a `forall` lifetime.
+    #[must_use]
+    pub fn contains_forall_lifetime(&self) -> bool {
+        contains_forall_lifetime(&self.operand) || self.bound.is_forall()
+    }
+
     /// Applies a instantiation to the [`Outlives::operand`] and
     /// [`Outlives::bound`].
     pub fn instantiate(&mut self, instantiation: &Instantiation) {

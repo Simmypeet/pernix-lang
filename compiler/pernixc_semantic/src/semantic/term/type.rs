@@ -9,7 +9,7 @@ use super::{
     Local, MemberSymbol, Never, Symbol, Term,
 };
 use crate::{
-    arena::{Arena, ID},
+    arena::ID,
     semantic::{
         instantiation::{self, Instantiation},
         mapping::Mapping,
@@ -23,9 +23,8 @@ use crate::{
         Premise,
     },
     symbol::{
-        self, ConstantParameterID, Enum, GenericID, GenericParameters,
-        GlobalID, LifetimeParameterID, Struct, TypeParameter, TypeParameterID,
-        Variance,
+        self, ConstantParameterID, Enum, GenericID, GlobalID,
+        LifetimeParameterID, Struct, TypeParameter, TypeParameterID, Variance,
     },
     table::{Index, State, Table},
 };
@@ -1153,18 +1152,6 @@ impl Term for Type {
         mapping: &mut Mapping,
     ) -> &mut HashMap<Self, HashSet<Self>> {
         &mut mapping.types
-    }
-
-    fn get_generic_parameters(
-        parameters: &GenericParameters,
-    ) -> &Arena<Self::GenericParameter> {
-        &parameters.types
-    }
-
-    fn get_generic_parameter_order(
-        parameters: &GenericParameters,
-    ) -> &[ID<Self::GenericParameter>] {
-        &parameters.type_order
     }
 
     fn get_generic_arguments(generic_arguments: &GenericArguments) -> &[Self] {

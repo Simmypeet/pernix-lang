@@ -1544,7 +1544,7 @@ impl<T: State> Table<T> {
             )?;
 
             // invoke state-specific logic on global_id_resolved
-            T::on_global_id_resolved(self, global_id, referring_site);
+            T::on_global_id_resolved(self, global_id, referring_site, handler);
 
             let generic_arguments = self.resolve_generic_arguments(
                 generic_identifier,
@@ -1554,11 +1554,13 @@ impl<T: State> Table<T> {
                 handler,
             )?;
 
-            latest_resolution = Some(self.to_resolution(
+            let next_resolution = self.to_resolution(
                 global_id,
                 generic_arguments,
                 latest_resolution,
-            ));
+            );
+
+            latest_resolution = Some(next_resolution);
         }
 
         Ok(latest_resolution.expect("should at least have one resolution"))

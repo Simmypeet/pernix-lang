@@ -812,13 +812,59 @@ impl Display for ConstantTypePredicate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TuplePredicateOperand {
+    Type(r#type::tests::Type),
+    Constant(Expression),
+}
+
+impl Input<&super::TuplePredicateOperand> for &TuplePredicateOperand {
+    fn assert(self, output: &super::TuplePredicateOperand) -> TestCaseResult {
+        match (self, output) {
+            (
+                TuplePredicateOperand::Type(i),
+                super::TuplePredicateOperand::Type(o),
+            ) => i.assert(o),
+            (
+                TuplePredicateOperand::Constant(i),
+                super::TuplePredicateOperand::Constant(o),
+            ) => i.assert(o.expression()),
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}"
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for TuplePredicateOperand {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            r#type::tests::Type::arbitrary().prop_map(Self::Type),
+            Expression::arbitrary().prop_map(Self::Constant),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for TuplePredicateOperand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Type(ty) => Display::fmt(ty, f),
+            Self::Constant(expression) => write!(f, "{{{expression}}}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TuplePredicate {
-    pub qualified_identifiers: BoundList<QualifiedIdentifier>,
+    pub operands: BoundList<TuplePredicateOperand>,
 }
 
 impl Input<&super::TuplePredicate> for &TuplePredicate {
     fn assert(self, output: &super::TuplePredicate) -> TestCaseResult {
-        self.qualified_identifiers.assert(output.qualified_identifiers())
+        self.operands.assert(output.operands())
     }
 }
 
@@ -827,15 +873,15 @@ impl Arbitrary for TuplePredicate {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        BoundList::arbitrary_with(QualifiedIdentifier::arbitrary())
-            .prop_map(|qualified_identifiers| Self { qualified_identifiers })
+        BoundList::arbitrary_with(TuplePredicateOperand::arbitrary())
+            .prop_map(|operands| Self { operands })
             .boxed()
     }
 }
 
 impl Display for TuplePredicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "tuple {}", self.qualified_identifiers)
+        write!(f, "tuple {}", self.operands)
     }
 }
 

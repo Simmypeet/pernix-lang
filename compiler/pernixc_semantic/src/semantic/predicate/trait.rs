@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use super::Outlives;
+use super::{contains_forall_lifetime, Outlives};
 use crate::{
     arena::ID,
     semantic::{
@@ -39,6 +39,20 @@ pub struct Trait {
 
     /// The generic arguments supplied to the trait.
     pub generic_arguments: GenericArguments,
+}
+
+impl Trait {
+    /// Checks if the trait contains a `forall` lifetime.
+    #[must_use]
+    pub fn contains_forall_lifetime(&self) -> bool {
+        self.generic_arguments.lifetimes.iter().any(Lifetime::is_forall)
+            || self.generic_arguments.types.iter().any(contains_forall_lifetime)
+            || self
+                .generic_arguments
+                .constants
+                .iter()
+                .any(contains_forall_lifetime)
+    }
 }
 
 /// Result of determining whether a trait bound is satisfiable or not.

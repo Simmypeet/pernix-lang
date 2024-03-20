@@ -15,9 +15,10 @@ use crate::{
     arena::ID,
     semantic::predicate::Predicate,
     symbol::{
-        Accessibility, AdtID, GenericID, GenericKind, Global, GlobalID,
-        LocalGenericParameterID, Module, Trait, TraitImplementation,
-        TraitImplementationKindID, TraitImplementationMemberID, TraitMemberID,
+        Accessibility, AdtID, GenericID, GenericKind, GenericParameter, Global,
+        GlobalID, LocalGenericParameterID, MemberID, Module, Trait,
+        TraitImplementation, TraitImplementationKindID,
+        TraitImplementationMemberID, TraitMemberID,
     },
     table::{Index, Suboptimal, Table},
 };
@@ -533,10 +534,9 @@ impl DisplayWithTable for NoGenericArgumentsRequired {
     }
 }
 
-/// The implementation is expected to implement a trait, but the trait was not
-/// found.
+/// Expects a trait symbol but found other kind of symbol.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectTraitInImplementation {
+pub struct ExpectTrait {
     /// The ID of the symbol that was not a trait.
     pub found_id: GlobalID,
 
@@ -544,7 +544,7 @@ pub struct ExpectTraitInImplementation {
     pub trait_path: Span,
 }
 
-impl DisplayWithTable for ExpectTraitInImplementation {
+impl DisplayWithTable for ExpectTrait {
     fn fmt(
         &self,
         table: &Table<Suboptimal>,
@@ -924,12 +924,54 @@ impl DisplayWithTable for ExpectType {
 
 /// The generic parameter with the same name already exists in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DuplicatedGenericParameter<ID> {
+pub struct DuplicatedGenericParameter<T> {
     /// The ID of the existing generic parameter.
-    pub existing_generic_parameter_id: ID,
+    pub existing_generic_parameter_id: MemberID<ID<T>, GenericID>,
 
     /// The ID of the new generic parameter.
     pub duplicating_generic_parameter_span: Span,
+}
+
+impl<T: GenericParameter> DisplayWithTable for DuplicatedGenericParameter<T> {
+    fn fmt(
+        &self,
+        table: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let Some(generic_parameter_symbol) = table
+            .get_generic(self.existing_generic_parameter_id.parent)
+            .and_then(|x| {
+                T::get_generic_parameters_arena(
+                    &x.generic_declaration().parameters,
+                )
+                .get(self.existing_generic_parameter_id.id)
+            })
+        else {
+            return Err(fmt::Error);
+        };
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the generic parameter named `{}` is already defined",
+                generic_parameter_symbol.name().unwrap_or("?")
+            ),
+        })?;
+
+        if let Some(existing_span) = generic_parameter_symbol.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: existing_span,
+                help_display: Some("previously defined here"),
+            })?;
+        }
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.duplicating_generic_parameter_span,
+            help_display: Some("redefined here"),
+        })?;
+
+        Ok(())
+    }
 }
 
 /// The default generic parameter must be trailing.
@@ -939,6 +981,28 @@ pub struct DefaultGenericParameterMustBeTrailing {
     pub invalid_generic_default_parameter_spans: Vec<Span>,
 }
 
+impl DisplayWithTable for DefaultGenericParameterMustBeTrailing {
+    fn fmt(
+        &self,
+        _: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the default generic parameter must be trailing",
+        })?;
+
+        for span in &self.invalid_generic_default_parameter_spans {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Option::<i32>::None,
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
 /// The trait member was expected but the non-trait member was found.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitMemberExpected {
@@ -946,11 +1010,52 @@ pub struct TraitMemberExpected {
     pub non_trait_member_span: Span,
 }
 
+impl DisplayWithTable for TraitMemberExpected {
+    fn fmt(
+        &self,
+        _: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the trait member was expected but the non-trait member \
+                      was found",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.non_trait_member_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// Trait member bound argument mismatched.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitMemberBoundArgumentMismatched {
+pub struct MisMatchedTraitMemberBoundArgument {
     /// The span where the trait member bound argument was found.
     pub trait_member_bound_argument_span: Span,
+}
+
+impl DisplayWithTable for MisMatchedTraitMemberBoundArgument {
+    fn fmt(
+        &self,
+        _: &Table<Suboptimal>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the trait member bound argument mismatched",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.trait_member_bound_argument_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
 }
 
 /// An enumeration of all kinds of symbols in the implemetation.

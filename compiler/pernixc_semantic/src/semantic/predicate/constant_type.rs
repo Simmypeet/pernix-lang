@@ -1,4 +1,4 @@
-use super::Satisfiability;
+use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     semantic::{
         equality,
@@ -128,6 +128,12 @@ pub enum QuerySource {
 pub struct ConstantType(pub Type);
 
 impl ConstantType {
+    /// Checks if the type contains a `forall` lifetime.
+    #[must_use]
+    pub fn contains_forall_lifetime(&self) -> bool {
+        contains_forall_lifetime(&self.0)
+    }
+
     /// Applies the instantiation to the type.
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         instantiation::instantiate(&mut self.0, instantiation);
