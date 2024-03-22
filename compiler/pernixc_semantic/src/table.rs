@@ -1096,21 +1096,12 @@ impl<T: Container> Representation<T> {
 
     /// Gets the active [`Premise`] starting at the given [`GlobalID`] scope.
     #[must_use]
-    pub fn get_active_premise(
-        &self,
-        mut global_id: GlobalID,
-    ) -> Option<Premise> {
+    pub fn get_active_premise(&self, global_id: GlobalID) -> Option<Premise> {
         let mut premise = Premise::default();
 
-        loop {
+        for global_id in self.scope_walker(global_id)? {
             let Ok(generic_id) = GenericID::try_from(global_id) else {
-                if let Some(id) = self.get_global(global_id)?.parent_global_id()
-                {
-                    global_id = id;
-                    continue;
-                }
-
-                return Some(premise);
+                continue;
             };
 
             let generic = self.get_generic(generic_id)?;
@@ -1165,6 +1156,8 @@ impl<T: Container> Representation<T> {
                 }
             }
         }
+
+        Some(premise)
     }
 
     /// Gets the [`ScopeWalker`] that walks through the scope hierarchy of the
