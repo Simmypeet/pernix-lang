@@ -1591,6 +1591,45 @@ impl<T: State> Display<T> for UnsatisfiedWhereClausePredicate {
     }
 }
 
+/// The bound is not satisfied upon instantiation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnsatisfiedBound<T> {
+    /// The unsatisfied bound.
+    pub bound: T,
+
+    /// The span of the instantiation that causes the bound check.
+    pub instantiation_span: Span,
+
+    /// The span of the trait member bound declaration.
+    pub bound_declaration_span: Option<Span>,
+}
+
+impl<S: State, T: Display<S>> Display<S> for UnsatisfiedBound<T> {
+    fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the bound `{}` is not satisfied",
+                DisplayObject { display: &self.bound, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.instantiation_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = self.bound_declaration_span.as_ref() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("trait member bound declared here"),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Implemented by all semantic errors.
 pub trait Error: Debug + Display<Suboptimal> + Send + Sync + 'static {
     #[allow(missing_docs, clippy::missing_errors_doc)]
