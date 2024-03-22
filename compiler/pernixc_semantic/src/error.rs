@@ -15,7 +15,7 @@ use crate::{
     arena::ID,
     semantic::predicate::Predicate,
     symbol::{
-        self, Accessibility, AdtID, GenericID, GenericKind, GenericParameter,
+        Accessibility, AdtID, GenericID, GenericKind, GenericParameter,
         GlobalID, LocalGenericParameterID, MemberID, Module, Trait,
         TraitImplementation, TraitImplementationKindID,
         TraitImplementationMemberID, TraitMemberID,
@@ -765,7 +765,10 @@ pub struct UndecidablePredicate {
     pub instantiation_span: Span,
 
     /// The predicate that was undecidable.
-    pub predicate: symbol::Predicate,
+    pub predicate: Predicate,
+
+    /// The span where the predicate is defined.
+    pub predicate_declaration_span: Option<Span>,
 }
 
 impl<T: State> Display<T> for UndecidablePredicate {
@@ -775,7 +778,7 @@ impl<T: State> Display<T> for UndecidablePredicate {
             display: format!(
                 "overflow calculating the satisfiability of `{}` predicate \
                  when instantiating",
-                DisplayObject { display: &self.predicate.predicate, table }
+                DisplayObject { display: &self.predicate, table }
             ),
         })?;
 
@@ -784,7 +787,7 @@ impl<T: State> Display<T> for UndecidablePredicate {
             help_display: None::<i32>
         })?;
 
-        if let Some(predicate_span) = self.predicate.kind.span() {
+        if let Some(predicate_span) = self.predicate_declaration_span.as_ref() {
             write!(f, "\n{}", SourceCodeDisplay {
                 span: predicate_span,
                 help_display: Some("predicate defined here"),
@@ -1561,56 +1564,26 @@ impl<T: State> Display<T> for UnimplementedTraitMembers {
     }
 }
 
-/// The where clause predicate is not satisfied.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnsatisfiedWhereClausePredicate {
-    /// The predicate that is not satisfied.
-    pub predicate: Predicate,
-
-    /// The span where the predicate check occurred.
-    pub span: Span,
-}
-
-impl<T: State> Display<T> for UnsatisfiedWhereClausePredicate {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let predicate = &self.predicate;
-
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: format!(
-                "the where clause predicate `{predicate:#?}` is not satisfied",
-            ),
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
-    }
-}
-
 /// The bound is not satisfied upon instantiation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnsatisfiedBound<T> {
+pub struct UnsatisifedPredicate {
     /// The unsatisfied bound.
-    pub bound: T,
+    pub predicate: Predicate,
 
     /// The span of the instantiation that causes the bound check.
     pub instantiation_span: Span,
 
     /// The span of the trait member bound declaration.
-    pub bound_declaration_span: Option<Span>,
+    pub predicate_declaration_span: Option<Span>,
 }
 
-impl<S: State, T: Display<S>> Display<S> for UnsatisfiedBound<T> {
+impl<S: State> Display<S> for UnsatisifedPredicate {
     fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
                 "the bound `{}` is not satisfied",
-                DisplayObject { display: &self.bound, table }
+                DisplayObject { display: &self.predicate, table }
             ),
         })?;
 
@@ -1619,7 +1592,7 @@ impl<S: State, T: Display<S>> Display<S> for UnsatisfiedBound<T> {
             help_display: Option::<i32>::None,
         })?;
 
-        if let Some(span) = self.bound_declaration_span.as_ref() {
+        if let Some(span) = self.predicate_declaration_span.as_ref() {
             write!(f, "\n{}", SourceCodeDisplay {
                 span,
                 help_display: Some("trait member bound declared here"),
