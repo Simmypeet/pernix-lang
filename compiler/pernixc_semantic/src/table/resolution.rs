@@ -399,6 +399,22 @@ pub trait Observer: Debug {
         constant: &constant::Constant,
         syntax_tree: &syntax_tree::expression::Expression,
     );
+
+    /// Notifies the observer when a type is resolved as an unpacked element
+    /// in a tuple type.
+    fn on_unpacked_type_resolved(
+        &mut self,
+        ty: &r#type::Type,
+        syntax_tree: &syntax_tree::r#type::Type,
+    );
+
+    /// Notifies the observer when a constant is resolved as an unpacked element
+    /// in a tuple constant.
+    fn on_unpacked_constant_resolved(
+        &mut self,
+        constant: &constant::Constant,
+        syntax_tree: &syntax_tree::expression::Expression,
+    );
 }
 
 /// The configuration struct specifying the behaviour of the resolution process.
@@ -1146,14 +1162,20 @@ impl<T: State> Table<T> {
 
                     if element.ellipsis().is_some() {
                         match ty {
-                            ty @ (r#type::Type::TraitMember(_)
-                            | r#type::Type::Parameter(_)) => {
-                                elements.push(TupleElement::Unpacked(ty));
-                            }
                             r#type::Type::Tuple(tuple) => {
                                 elements.extend(tuple.elements.into_iter());
                             }
-                            ty => elements.push(TupleElement::Regular(ty)),
+                            ty => {
+                                if let Some(observer) = config.observer.as_mut()
+                                {
+                                    observer.on_unpacked_type_resolved(
+                                        &ty,
+                                        element.ty(),
+                                    );
+                                }
+
+                                elements.push(TupleElement::Unpacked(ty));
+                            }
                         }
                     } else {
                         elements.push(TupleElement::Regular(ty));

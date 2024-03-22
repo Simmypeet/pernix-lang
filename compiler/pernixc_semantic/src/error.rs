@@ -649,15 +649,50 @@ impl<T: State> Display<T> for MisOrderedGenericParameter {
 /// An entity was exposed to the public interface but it's accessability is less
 /// permissive than the public interface.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PrivateEntityLeakedToPublicInterface<Entity> {
+pub struct PrivateEntityLeakedToPublicInterface<T> {
     /// The entity that was leaked.
-    pub entity: Entity,
+    pub entity: T,
+
+    /// The overall accessibility of the entity.
+    pub entity_overall_accessibility: Accessibility,
 
     /// The span where the entity was leaked.
     pub leaked_span: Span,
 
     /// The ID of the public interface that contains the leaked entity.
     pub public_interface_id: GlobalID,
+}
+
+impl<S: State, T: Display<S>> Display<S>
+    for PrivateEntityLeakedToPublicInterface<T>
+{
+    fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let entity_display = DisplayObject { display: &self.entity, table };
+
+        let public_interface_qualified_name = table
+            .get_qualified_name(self.public_interface_id)
+            .ok_or(fmt::Error)?;
+        let public_interface_accessibility = table
+            .get_accessibility(self.public_interface_id)
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "`{entity_display}` is `{}` accessible but it was declared in \
+                 a `{public_interface_qualified_name}` interface, which is \
+                 `{public_interface_accessibility}` accessible",
+                self.entity_overall_accessibility
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.leaked_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
 }
 
 /// Generic arguments count mismatch.
@@ -1582,7 +1617,7 @@ impl<S: State> Display<S> for UnsatisifedPredicate {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: format!(
-                "the bound `{}` is not satisfied",
+                "the predicate `{}` is not satisfied",
                 DisplayObject { display: &self.predicate, table }
             ),
         })?;
@@ -1595,7 +1630,7 @@ impl<S: State> Display<S> for UnsatisifedPredicate {
         if let Some(span) = self.predicate_declaration_span.as_ref() {
             write!(f, "\n{}", SourceCodeDisplay {
                 span,
-                help_display: Some("trait member bound declared here"),
+                help_display: Some("predicate declared here"),
             })?;
         }
 

@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use pernixc_base::{
     diagnostic::Handler,
     source_file::{SourceElement, Span},
@@ -6,24 +8,23 @@ use pernixc_syntax::syntax_tree;
 
 use super::{finalize::Occurrences, Finalizer};
 use crate::{
-    error::{self, UndecidablePredicate},
+    error::{self, UndecidablePredicate, UnsatisifedPredicate},
     semantic::{
         self, equality,
         instantiation::Instantiation,
         predicate::{self, ConstantType, Outlives, Trait, Tuple},
-        session::{self, Limit},
+        session::{self, ExceedLimitError, Limit},
         term::{self, GenericArguments},
         Premise,
     },
     symbol::{GenericID, GlobalID},
-    table::Table,
+    table::{Index, Table},
 };
 
 impl Table<Finalizer> {
-    #[allow(clippy::too_many_arguments)]
-    fn check_where_clause_predicates(
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    fn check_where_clause_predicates_with_generic_arguments(
         &self,
-        caller: GlobalID,
         caller_premise: &Premise,
         instantiated: GenericID,
         generic_arguments: GenericArguments,
@@ -32,28 +33,49 @@ impl Table<Finalizer> {
         session: &mut session::Default,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        // make sure that the given instantiated has built the where clause
-        // predicates
-        let _ = self.build_where_clause(instantiated, caller, handler);
+        self.check_where_clause_predicates(
+            caller_premise,
+            instantiated,
+            &Instantiation::from_generic_arguments(
+                generic_arguments,
+                instantiated,
+                &self
+                    .get_generic(instantiated)
+                    .unwrap()
+                    .generic_declaration()
+                    .parameters,
+            )
+            .unwrap(),
+            instantiation_span,
+            semantic,
+            session,
+            handler,
+        );
+    }
 
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    fn check_where_clause_predicates(
+        &self,
+        caller_premise: &Premise,
+        instantiated: GenericID,
+        instantiation: &Instantiation,
+        instantiation_span: &Span,
+        semantic: &mut semantic::Default,
+        session: &mut session::Default,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) {
         // get all the predicates and instantiate them with the given generic
         // arguments
         let instantiated_sym = self.get_generic(instantiated).unwrap();
-        let instantiation = Instantiation::from_generic_arguments(
-            generic_arguments,
-            instantiated,
-            &instantiated_sym.generic_declaration().parameters,
-        )
-        .unwrap();
 
         #[allow(clippy::significant_drop_in_scrutinee)]
         for predicate_info in &instantiated_sym.generic_declaration().predicates
         {
             let mut predicate = predicate_info.predicate.clone();
-            predicate.instantiate(&instantiation);
+            predicate.instantiate(instantiation);
 
             // check if the predicate is satisfied
-            let undecidiable = match predicate {
+            let result = match &predicate {
                 predicate::Predicate::TypeEquality(eq) => equality::equals(
                     &eq.lhs,
                     &eq.rhs,
@@ -61,8 +83,7 @@ impl Table<Finalizer> {
                     self,
                     semantic,
                     &mut Limit::new(session),
-                )
-                .map_or(true, |result| false),
+                ),
                 predicate::Predicate::ConstantEquality(eq) => equality::equals(
                     &eq.lhs,
                     &eq.rhs,
@@ -70,8 +91,7 @@ impl Table<Finalizer> {
                     self,
                     semantic,
                     &mut Limit::new(session),
-                )
-                .map_or(true, |result| false),
+                ),
                 predicate::Predicate::ConstantType(pred) => {
                     ConstantType::satisfies(
                         &pred.0,
@@ -80,7 +100,6 @@ impl Table<Finalizer> {
                         semantic,
                         &mut Limit::new(session),
                     )
-                    .map_or(true, |result| false)
                 }
                 predicate::Predicate::LifetimeOutlives(pred) => {
                     Outlives::satisfies(
@@ -91,7 +110,6 @@ impl Table<Finalizer> {
                         semantic,
                         &mut Limit::new(session),
                     )
-                    .map_or(true, |result| false)
                 }
                 predicate::Predicate::TypeOutlives(pred) => {
                     Outlives::satisfies(
@@ -102,7 +120,6 @@ impl Table<Finalizer> {
                         semantic,
                         &mut Limit::new(session),
                     )
-                    .map_or(true, |result| false)
                 }
                 predicate::Predicate::TupleType(pred) => Tuple::satisfies(
                     &pred.0,
@@ -110,40 +127,93 @@ impl Table<Finalizer> {
                     self,
                     semantic,
                     &mut Limit::new(session),
-                )
-                .map_or(true, |result| false),
+                ),
                 predicate::Predicate::TupleConstant(pred) => Tuple::satisfies(
                     &pred.0,
                     caller_premise,
                     self,
                     semantic,
                     &mut Limit::new(session),
-                )
-                .map_or(true, |result| false),
-                predicate::Predicate::Trait(pred) => Trait::satisfies(
-                    pred.id,
-                    pred.is_const,
-                    &pred.generic_arguments,
-                    caller_premise,
-                    self,
-                    semantic,
-                    &mut Limit::new(session),
-                )
-                .map_or(true, |result| false),
+                ),
+                predicate::Predicate::Trait(pred) => {
+                    || -> Result<bool, ExceedLimitError> {
+                        let Some(lifetime_constraints) = Trait::satisfies(
+                            pred.id,
+                            pred.is_const,
+                            &pred.generic_arguments,
+                            caller_premise,
+                            self,
+                            semantic,
+                            &mut Limit::new(session),
+                        )?
+                        else {
+                            return Ok(false);
+                        };
+
+                        // check if the lifetime constraints are satisfied
+                        for constraint in
+                            lifetime_constraints.lifetime_constraints
+                        {
+                            match constraint {
+                                predicate::LifetimeConstraint::LifetimeOutlives(pred) => {
+                                     if !Outlives::satisfies(
+                                        &pred.operand,
+                                        &pred.bound,
+                                        caller_premise,
+                                        self,
+                                        semantic,
+                                        &mut Limit::new(session),
+                                    )? {
+                                        return Ok(false);
+                                    }
+                                }
+                                predicate::LifetimeConstraint::TypeOutlives(pred) => {
+                                    if !Outlives::satisfies(
+                                        &pred.operand,
+                                        &pred.bound,
+                                        caller_premise,
+                                        self,
+                                        semantic,
+                                        &mut Limit::new(session),
+                                    )? {
+                                        return Ok(false);
+                                    }
+                                }
+                            }
+                        }
+
+                        Ok(true)
+                    }()
+                }
             };
 
-            if undecidiable {
-                handler.receive(Box::new(UndecidablePredicate {
+            match result {
+                Ok(false) => handler.receive(Box::new(UnsatisifedPredicate {
+                    predicate,
                     instantiation_span: instantiation_span.clone(),
-                    predicate: predicate_info.clone(),
-                }));
+                    predicate_declaration_span: predicate_info
+                        .kind
+                        .span()
+                        .cloned(),
+                })),
+                Ok(true) => {}
+                Err(_) => {
+                    handler.receive(Box::new(UndecidablePredicate {
+                        instantiation_span: instantiation_span.clone(),
+                        predicate: predicate_info.predicate.clone(),
+                        predicate_declaration_span: predicate_info
+                            .kind
+                            .span()
+                            .cloned(),
+                    }));
+                }
             }
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn check_type_ocurrences<'a>(
         &self,
-        caller: GlobalID,
         caller_active_premise: &Premise,
         occurrences: impl IntoIterator<
             Item = (&'a term::r#type::Type, &'a syntax_tree::r#type::Type),
@@ -154,7 +224,10 @@ impl Table<Finalizer> {
     ) {
         for (ty, syn) in occurrences {
             match ty {
-                term::r#type::Type::Primitive(_)
+                term::r#type::Type::Tuple(_)
+                | term::r#type::Type::Local(_)
+                | term::r#type::Type::Pointer(_)
+                | term::r#type::Type::Primitive(_)
                 | term::r#type::Type::Parameter(_)
                 | term::r#type::Type::Inference(_) => {
                     /* no additional check */
@@ -164,8 +237,7 @@ impl Table<Finalizer> {
                     id,
                     generic_arguments,
                 }) => {
-                    self.check_where_clause_predicates(
-                        caller,
+                    self.check_where_clause_predicates_with_generic_arguments(
                         caller_active_premise,
                         (*id).into(),
                         generic_arguments.clone(),
@@ -176,13 +248,254 @@ impl Table<Finalizer> {
                     );
                 }
 
-                term::r#type::Type::Pointer(_) => todo!(),
-                term::r#type::Type::Reference(_) => todo!(),
-                term::r#type::Type::Array(_) => todo!(),
-                term::r#type::Type::Tuple(_) => todo!(),
-                term::r#type::Type::Local(_) => todo!(),
-                term::r#type::Type::MemberSymbol(_) => todo!(),
-                term::r#type::Type::TraitMember(_) => todo!(),
+                term::r#type::Type::Reference(reference) => {
+                    match Outlives::satisfies(
+                        &*reference.pointee,
+                        &reference.lifetime,
+                        caller_active_premise,
+                        self,
+                        semantic,
+                        &mut Limit::new(session),
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            handler.receive(Box::new(UnsatisifedPredicate {
+                                predicate: predicate::Predicate::TypeOutlives(
+                                    Outlives {
+                                        operand: reference
+                                            .pointee
+                                            .deref()
+                                            .clone(),
+                                        bound: reference.lifetime,
+                                    },
+                                ),
+                                instantiation_span: syn.span(),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+                        Err(_) => {
+                            handler.receive(Box::new(UndecidablePredicate {
+                                instantiation_span: syn.span(),
+                                predicate: predicate::Predicate::TypeOutlives(
+                                    Outlives {
+                                        operand: reference
+                                            .pointee
+                                            .deref()
+                                            .clone(),
+                                        bound: reference.lifetime,
+                                    },
+                                ),
+                                predicate_declaration_span: None,
+                            }));
+                        }
+                    }
+                }
+                term::r#type::Type::Array(_) => {
+                    todo!("check if the length is type of usize")
+                }
+
+                term::r#type::Type::MemberSymbol(member_symbol) => {
+                    match member_symbol.id {
+                        term::r#type::MemberSymbolID::TraitImplementation(
+                            trait_implementation_type,
+                        ) => {
+                            let implementation_id = self
+                                .get(trait_implementation_type)
+                                .unwrap()
+                                .parent_id;
+
+                            self.check_where_clause_predicates_with_generic_arguments(
+                                caller_active_premise,
+                                implementation_id.into(),
+                                member_symbol.parent_generic_arguments.clone(),
+                                &syn.span(),
+                                semantic,
+                                session,
+                                handler,
+                            );
+                            self.check_where_clause_predicates_with_generic_arguments(
+                                caller_active_premise,
+                                trait_implementation_type.into(),
+                                member_symbol.member_generic_arguments.clone(),
+                                &syn.span(),
+                                semantic,
+                                session,
+                                handler,
+                            );
+                        }
+                        term::r#type::MemberSymbolID::AdtImplementation(
+                            adt_implementation_type,
+                        ) => {
+                            let adt_implementation_id = self
+                                .get(adt_implementation_type)
+                                .unwrap()
+                                .parent_id;
+
+                            let Ok(Some(deduction)) =
+                                member_symbol.parent_generic_arguments.deduce(
+                                    &self
+                                        .get(adt_implementation_id)
+                                        .unwrap()
+                                        .signature
+                                        .arguments,
+                                    caller_active_premise,
+                                    self,
+                                    semantic,
+                                    &mut Limit::new(session),
+                                )
+                            else {
+                                todo!("report overflow deducing");
+                            };
+
+                            self.check_where_clause_predicates(
+                                caller_active_premise,
+                                adt_implementation_id.into(),
+                                &deduction,
+                                &syn.span(),
+                                semantic,
+                                session,
+                                handler,
+                            );
+                            self.check_where_clause_predicates_with_generic_arguments(
+                                caller_active_premise,
+                                adt_implementation_type.into(),
+                                member_symbol.member_generic_arguments.clone(),
+                                &syn.span(),
+                                semantic,
+                                session,
+                                handler,
+                            );
+                        }
+                    }
+                }
+
+                term::r#type::Type::TraitMember(trait_member) => {
+                    let parent_trait_id =
+                        self.get(trait_member.id).unwrap().parent_id;
+
+                    Trait::satisfies(
+                        parent_trait_id,
+                        false,
+                        &trait_member.parent_generic_arguments,
+                        caller_active_premise,
+                        self,
+                        semantic,
+                        &mut Limit::new(session),
+                    ).map_or_else(|_| {
+                            handler.receive(Box::new(UndecidablePredicate {
+                                instantiation_span: syn.span(),
+                                predicate: predicate::Predicate::Trait(Trait {
+                                    id: parent_trait_id,
+                                    is_const: false,
+                                    generic_arguments: trait_member
+                                        .parent_generic_arguments
+                                        .clone(),
+                                }),
+                                predicate_declaration_span: None,
+                            }));
+                        }, |satisfiability| satisfiability.map_or_else(|| {
+                                handler.receive(Box::new(
+                                    UnsatisifedPredicate {
+                                        predicate: predicate::Predicate::Trait(
+                                            Trait {
+                                                id: parent_trait_id,
+                                                is_const: false,
+                                                generic_arguments: trait_member
+                                                    .parent_generic_arguments
+                                                    .clone(),
+                                            },
+                                        ),
+                                        instantiation_span: syn.span(),
+                                        predicate_declaration_span: None,
+                                    },
+                                ));
+                            }, |satisfiability| {
+                                let satisfied =
+                                    || -> Result<bool, ExceedLimitError> {
+                                        for constraint in
+                                            satisfiability.lifetime_constraints
+                                        {
+                                            if !match constraint {
+                                                predicate::LifetimeConstraint::LifetimeOutlives(outlives) => {
+                                                    Outlives::satisfies(
+                                                        &outlives.operand,
+                                                        &outlives.bound,
+                                                        caller_active_premise,
+                                                        self,
+                                                        semantic,
+                                                        &mut Limit::new(session),
+                                                    )
+                                                },
+                                                predicate::LifetimeConstraint::TypeOutlives(outlives) => {
+                                                    Outlives::satisfies(
+                                                        &outlives.operand,
+                                                        &outlives.bound,
+                                                        caller_active_premise,
+                                                        self,
+                                                        semantic,
+                                                        &mut Limit::new(session),
+                                                    )
+                                                },
+                                            }? {
+                                                return Ok(false);
+                                            }
+                                        }
+
+                                        Ok(true)
+                                    }();
+                                
+                                match satisfied {
+                                    Ok(false) => {
+                                        handler.receive(Box::new(UnsatisifedPredicate {
+                                            predicate: predicate::Predicate::Trait(
+                                                Trait {
+                                                    id: parent_trait_id,
+                                                    is_const: false,
+                                                    generic_arguments: trait_member
+                                                        .parent_generic_arguments
+                                                        .clone(),
+                                                },
+                                            ),
+                                            instantiation_span: syn.span(),
+                                            predicate_declaration_span: None,
+                                        }));
+                                    },
+                                    Ok(true) => {},
+                                    Err(_) => {
+                                        handler.receive(Box::new(UndecidablePredicate {
+                                            instantiation_span: syn.span(),
+                                            predicate: predicate::Predicate::Trait(Trait {
+                                                id: parent_trait_id,
+                                                is_const: false,
+                                                generic_arguments: trait_member
+                                                    .parent_generic_arguments
+                                                    .clone(),
+                                            }),
+                                            predicate_declaration_span: None,
+                                        }));
+                                    }
+                                }
+                            }));
+
+                    self.check_where_clause_predicates_with_generic_arguments(
+                        caller_active_premise,
+                        parent_trait_id.into(),
+                        trait_member.parent_generic_arguments.clone(),
+                        &syn.span(),
+                        semantic,
+                        session,
+                        handler,
+                    );
+                    self.check_where_clause_predicates_with_generic_arguments(
+                        caller_active_premise,
+                        trait_member.id.into(),
+                        trait_member.member_generic_arguments.clone(),
+                        &syn.span(),
+                        semantic,
+                        session,
+                        handler,
+                    );
+                }
             }
         }
     }
@@ -201,9 +514,8 @@ impl Table<Finalizer> {
 
         #[allow(clippy::map_identity)]
         self.check_type_ocurrences(
-            id,
             &active_premise,
-            occurrences.types.iter().map(|(ty, syn)| (ty, syn)),
+            occurrences.types().iter().map(|(ty, syn)| (ty, syn)),
             &mut semantic,
             &mut session,
             handler,

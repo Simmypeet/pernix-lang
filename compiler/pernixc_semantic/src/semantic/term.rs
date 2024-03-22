@@ -574,6 +574,28 @@ where
 }
 
 impl GenericArguments {
+    /// Gets the [`GlobalID`]s that occur in the generic arguments.
+    #[must_use]
+    pub fn get_global_id_dependencies(
+        &self,
+        table: &Table<impl State>,
+    ) -> Option<Vec<GlobalID>> {
+        let mut occurrences = Vec::new();
+
+        for r#type in &self.types {
+            occurrences.extend(r#type.get_global_id_dependencies(table)?);
+        }
+
+        for constant in &self.constants {
+            occurrences.extend(constant.get_global_id_dependencies(table)?);
+        }
+
+        occurrences.sort_unstable();
+        occurrences.dedup();
+
+        Some(occurrences)
+    }
+
     /// Returns a unification of `this` generic arguments to `other` generic
     /// arguments.
     ///

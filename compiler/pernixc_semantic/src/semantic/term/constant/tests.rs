@@ -4,7 +4,7 @@ use proptest::{
     strategy::{BoxedStrategy, Strategy},
 };
 
-use super::{Array, Constant, Enum, MemberSymbolKindID, Primitive, Struct};
+use super::{Array, Constant, Enum, MemberSymbolID, Primitive, Struct};
 use crate::{
     arena::ID,
     semantic::term::{
@@ -35,7 +35,7 @@ impl Arbitrary for Primitive {
     }
 }
 
-impl Arbitrary for MemberSymbolKindID {
+impl Arbitrary for MemberSymbolID {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 

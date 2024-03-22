@@ -1,15 +1,13 @@
 use std::{fmt::Debug, hash::Hash};
 
 use pernixc_base::diagnostic::Handler;
-use pernixc_syntax::syntax_tree;
 
 use super::finalizer::Finalizer;
-use crate::{
-    arena::ID,
-    error,
-    semantic::term,
-    table::{resolution::Observer, Table},
-};
+use crate::{arena::ID, error, table::Table};
+
+mod occurrences;
+
+pub use occurrences::Occurrences;
 
 pub(in crate::table::building) mod adt_implementation;
 pub(in crate::table::building) mod adt_implementation_constant;
@@ -55,42 +53,6 @@ pub trait Flag:
     fn increment(&mut self);
 }
 
-/// A structure containing the list of all resolution resolved so far in the
-/// building process.
-#[derive(Debug, Default)]
-pub struct Occurrences {
-    pub types: Vec<(term::r#type::Type, syntax_tree::r#type::Type)>,
-    pub lifetimes: Vec<(term::lifetime::Lifetime, syntax_tree::Lifetime)>,
-    pub constants:
-        Vec<(term::constant::Constant, syntax_tree::expression::Expression)>,
-}
-
-impl Observer for Occurrences {
-    fn on_type_resolved(
-        &mut self,
-        ty: &term::r#type::Type,
-        syntax_tree: &syntax_tree::r#type::Type,
-    ) {
-        self.types.push((ty.clone(), syntax_tree.clone()));
-    }
-
-    fn on_lifetime_resolved(
-        &mut self,
-        lifetime: &term::lifetime::Lifetime,
-        syntax_tree: &syntax_tree::Lifetime,
-    ) {
-        self.lifetimes.push((*lifetime, syntax_tree.clone()));
-    }
-
-    fn on_constant_arguments_resolved(
-        &mut self,
-        constant: &term::constant::Constant,
-        syntax_tree: &syntax_tree::expression::Expression,
-    ) {
-        self.constants.push((constant.clone(), syntax_tree.clone()));
-    }
-}
-
 /// A trait for finalizing a symbol.
 pub trait Finalize {
     type SyntaxTree: Debug;
@@ -116,6 +78,7 @@ macro_rules! build_flag {
     (
         $vis:vis enum $name:ident {
             $(
+                $(#[$meta:meta])?
                 $variant:ident,
             )*
         }
@@ -124,6 +87,7 @@ macro_rules! build_flag {
         #[repr(u8)]
         $vis enum $name {
             $(
+                $(#[$meta])?
                 $variant,
             )*
         }

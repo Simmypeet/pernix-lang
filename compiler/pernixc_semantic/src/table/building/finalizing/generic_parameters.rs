@@ -7,7 +7,7 @@ use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::Finalizer;
+use super::{finalize::Occurrences, Finalizer};
 use crate::{
     arena::{Arena, ID},
     error::{self, DuplicatedGenericParameter, MisOrderedGenericParameter},
@@ -27,7 +27,7 @@ impl Table<Finalizer> {
         &self,
         generic_id: ID<T>,
         syntax_tree: Option<&syntax_tree::item::GenericParameters>,
-        mut config: resolution::Config,
+        occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
@@ -116,7 +116,7 @@ impl Table<Finalizer> {
             .create_generic_parameters_kind(
                 generic_id.into(),
                 lifetime_parameter_syns.into_iter(),
-                config.reborrow(),
+                occurrences,
                 |x| x.identifier(),
                 |_, syntax_tree, generic_id, _, _| LifetimeParameter {
                     name: Some(syntax_tree.identifier().span.str().to_string()),
@@ -130,7 +130,7 @@ impl Table<Finalizer> {
             .create_generic_parameters_kind(
                 generic_id.into(),
                 type_parameter_syns.into_iter(),
-                config.reborrow(),
+                occurrences,
                 |x| x,
                 |_, syntax_tree, generic_id, _, _| TypeParameter {
                     name: syntax_tree.span.str().to_string(),
@@ -162,11 +162,22 @@ impl Table<Finalizer> {
             .create_generic_parameters_kind(
                 generic_id.into(),
                 constant_parameter_syns.into_iter(),
-                config.reborrow(),
+                occurrences,
                 |x| x.0,
-                |this, (name, ty), generic_id, config, handler| {
+                |this, (name, ty), generic_id, occurrences, handler| {
                     let constant_type = this
-                        .resolve_type(ty, generic_id.into(), config, handler)
+                        .resolve_type(
+                            ty,
+                            generic_id.into(),
+                            resolution::Config {
+                                ellided_lifetime_provider: None,
+                                ellided_type_provider: None,
+                                ellided_constant_provider: None,
+                                observer: Some(occurrences),
+                                higher_ranked_liftimes: None,
+                            },
+                            handler,
+                        )
                         .unwrap_or_default();
 
                     let ty_accessibility = this
@@ -179,16 +190,21 @@ impl Table<Finalizer> {
                         .expect("should be a valid id")
                         > ty_accessibility
                     {
-                        /* TODO: report private entity leaked to public
-                         * interface */
-                        // handler.receive(Box::new(
-                        //     error::PrivateEntityLeakedToPublicInterface {
-                        //         entity: constant_type.clone(),
-                        //         leaked_span: ty.span(),
-                        //         public_interface_id: generic_id.into(),
-                        //     },
-                        // ));
+                        handler.receive(Box::new(
+                            error::PrivateEntityLeakedToPublicInterface {
+                                entity: constant_type.clone(),
+                                leaked_span: ty.span(),
+                                public_interface_id: generic_id.into(),
+                                entity_overall_accessibility: ty_accessibility,
+                            },
+                        ));
                     }
+
+                    // add the constant type to the occurrences
+                    occurrences.add_constant_type(
+                        constant_type.clone(),
+                        (*ty).clone(),
+                    );
 
                     ConstantParameter {
                         name: name.span.str().to_string(),
@@ -222,13 +238,13 @@ impl Table<Finalizer> {
         &self,
         referring_site: GenericID,
         syntax_trees: impl Iterator<Item = S>,
-        mut config: resolution::Config,
+        occurrences: &mut Occurrences,
         identifier_func: impl Fn(&S) -> &Identifier,
         create_func: impl Fn(
             &Self,
             &S,
             GenericID,
-            resolution::Config,
+            &mut Occurrences,
             &dyn Handler<Box<dyn error::Error>>,
         ) -> T,
         handler: &dyn Handler<Box<dyn error::Error>>,
@@ -259,7 +275,7 @@ impl Table<Finalizer> {
                         self,
                         &syntax_tree,
                         referring_site,
-                        config.reborrow(),
+                        occurrences,
                         handler,
                     ));
 

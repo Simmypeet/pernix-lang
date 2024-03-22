@@ -1209,5 +1209,114 @@ impl<T: State> table::Display<T> for Type {
     }
 }
 
+impl Type {
+    /// Gets a list of [`GlobalID`]s that occur in the type.
+    #[must_use]
+    pub fn get_global_id_dependencies(
+        &self,
+        table: &Table<impl State>,
+    ) -> Option<Vec<GlobalID>> {
+        let mut occurrences = match self {
+            Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
+                return Some(Vec::new());
+            }
+
+            Self::Symbol(symbol) => {
+                let mut occurrences = symbol
+                    .generic_arguments
+                    .get_global_id_dependencies(table)?;
+                occurrences.push(symbol.id.into());
+                occurrences
+            }
+
+            Self::Pointer(symbol) => {
+                return symbol.pointee.get_global_id_dependencies(table);
+            }
+            Self::Reference(symbol) => {
+                return symbol.pointee.get_global_id_dependencies(table);
+            }
+
+            Self::Array(array) => {
+                let mut occurrences =
+                    array.r#type.get_global_id_dependencies(table)?;
+                occurrences
+                    .extend(array.length.get_global_id_dependencies(table)?);
+                occurrences
+            }
+            Self::Tuple(tuple) => {
+                let mut occurrences = Vec::new();
+                for element in &tuple.elements {
+                    occurrences.extend(
+                        element.as_term().get_global_id_dependencies(table)?,
+                    );
+                }
+                occurrences
+            }
+
+            Self::Local(local) => {
+                return local.0.get_global_id_dependencies(table);
+            }
+
+            Self::MemberSymbol(member_symbol) => {
+                let mut occurrences = member_symbol
+                    .parent_generic_arguments
+                    .get_global_id_dependencies(table)?;
+                occurrences.extend(
+                    member_symbol
+                        .member_generic_arguments
+                        .get_global_id_dependencies(table)?,
+                );
+
+                occurrences.push(member_symbol.id.into());
+
+                match member_symbol.id {
+                    MemberSymbolID::TraitImplementation(id) => {
+                        let implementation_id = table.get(id)?.parent_id;
+                        let trait_id = table
+                            .get(implementation_id)?
+                            .signature
+                            .implemented_id;
+
+                        occurrences.push(implementation_id.into());
+                        occurrences.push(trait_id.into());
+                    }
+                    MemberSymbolID::AdtImplementation(id) => {
+                        let implementation_id = table.get(id)?.parent_id;
+                        let adt_kind_id = table
+                            .get(implementation_id)?
+                            .signature
+                            .implemented_id;
+
+                        occurrences.push(implementation_id.into());
+                        occurrences.push(adt_kind_id.into());
+                    }
+                }
+
+                occurrences
+            }
+            Self::TraitMember(member_symbol) => {
+                let mut occurrences = member_symbol
+                    .parent_generic_arguments
+                    .get_global_id_dependencies(table)?;
+                occurrences.extend(
+                    member_symbol
+                        .member_generic_arguments
+                        .get_global_id_dependencies(table)?,
+                );
+
+                occurrences.push(member_symbol.id.into());
+                occurrences.push(table.get(member_symbol.id)?.parent_id.into());
+
+                occurrences
+            }
+        };
+
+        occurrences.sort_unstable();
+        occurrences.dedup();
+
+        Some(occurrences)
+    }
+}
+
 #[cfg(test)]
 mod tests;

@@ -40,25 +40,25 @@ use crate::{
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
 )]
 #[allow(missing_docs)]
-pub enum MemberSymbolKindID {
+pub enum MemberSymbolID {
     TraitImplementation(ID<symbol::TraitImplementationConstant>),
     AdtImplementation(ID<symbol::AdtImplementationConstant>),
 }
 
-impl From<MemberSymbolKindID> for GlobalID {
-    fn from(value: MemberSymbolKindID) -> Self {
+impl From<MemberSymbolID> for GlobalID {
+    fn from(value: MemberSymbolID) -> Self {
         match value {
-            MemberSymbolKindID::TraitImplementation(id) => id.into(),
-            MemberSymbolKindID::AdtImplementation(id) => id.into(),
+            MemberSymbolID::TraitImplementation(id) => id.into(),
+            MemberSymbolID::AdtImplementation(id) => id.into(),
         }
     }
 }
 
-impl From<MemberSymbolKindID> for GenericID {
-    fn from(value: MemberSymbolKindID) -> Self {
+impl From<MemberSymbolID> for GenericID {
+    fn from(value: MemberSymbolID) -> Self {
         match value {
-            MemberSymbolKindID::TraitImplementation(id) => id.into(),
-            MemberSymbolKindID::AdtImplementation(id) => id.into(),
+            MemberSymbolID::TraitImplementation(id) => id.into(),
+            MemberSymbolID::AdtImplementation(id) => id.into(),
         }
     }
 }
@@ -298,11 +298,11 @@ impl Location<Constant, Constant> for SubConstantLocation {
 
             (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
                 let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                    (MemberSymbolID::TraitImplementation(id), false) => {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                    (MemberSymbolID::AdtImplementation(id), true) => {
                         let implementation_id = table
                             .get(id)
                             .ok_or(GetVarianceError::InvalidLocation)?
@@ -316,11 +316,9 @@ impl Location<Constant, Constant> for SubConstantLocation {
 
                         adt_kind_id.into()
                     }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
+                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
 
-                    (MemberSymbolKindID::TraitImplementation(_), true) => {
+                    (MemberSymbolID::TraitImplementation(_), true) => {
                         return Ok(symbol::Variance::Invariant)
                     }
                 };
@@ -421,11 +419,11 @@ impl Location<Constant, Type> for SubTypeLocation {
 
             (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
                 let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                    (MemberSymbolID::TraitImplementation(id), false) => {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                    (MemberSymbolID::AdtImplementation(id), true) => {
                         let implementation_id = table
                             .get(id)
                             .ok_or(GetVarianceError::InvalidLocation)?
@@ -439,11 +437,9 @@ impl Location<Constant, Type> for SubTypeLocation {
 
                         adt_kind_id.into()
                     }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
+                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
 
-                    (MemberSymbolKindID::TraitImplementation(_), true) => {
+                    (MemberSymbolID::TraitImplementation(_), true) => {
                         return Ok(symbol::Variance::Invariant)
                     }
                 };
@@ -523,11 +519,11 @@ impl Location<Constant, Lifetime> for SubLifetimeLocation {
 
             (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
                 let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                    (MemberSymbolID::TraitImplementation(id), false) => {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                    (MemberSymbolID::AdtImplementation(id), true) => {
                         let implementation_id = table
                             .get(id)
                             .ok_or(GetVarianceError::InvalidLocation)?
@@ -541,11 +537,9 @@ impl Location<Constant, Lifetime> for SubLifetimeLocation {
 
                         adt_kind_id.into()
                     }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
+                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
 
-                    (MemberSymbolKindID::TraitImplementation(_), true) => {
+                    (MemberSymbolID::TraitImplementation(_), true) => {
                         return Ok(symbol::Variance::Invariant)
                     }
                 };
@@ -612,7 +606,7 @@ pub enum Constant {
     ///
     /// In the **TraitImplementation** case, the `parent_generic_arguments`
     /// field **is** deduced from the implementation.
-    MemberSymbol(MemberSymbol<MemberSymbolKindID>),
+    MemberSymbol(MemberSymbol<MemberSymbolID>),
 
     TraitMember(MemberSymbol<ID<symbol::TraitConstant>>),
 }
@@ -963,6 +957,135 @@ impl Term for Constant {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.constants
+    }
+}
+
+impl Constant {
+    /// Gets a list of [`GlobalID`]s that occur in the constant.
+    #[must_use]
+    pub fn get_global_id_dependencies(
+        &self,
+        table: &Table<impl State>,
+    ) -> Option<Vec<GlobalID>> {
+        let mut occurrences = match self {
+            Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {
+                return Some(Vec::new());
+            }
+
+            Self::Struct(val) => {
+                let mut occurrences = Vec::new();
+
+                occurrences.push(val.id.into());
+
+                for field in &val.fields {
+                    occurrences
+                        .extend(field.get_global_id_dependencies(table)?);
+                }
+
+                occurrences
+            }
+            Self::Enum(val) => {
+                let parent_enum_id = table.get(val.variant_id)?.parent_enum_id;
+
+                let mut occurrences =
+                    vec![parent_enum_id.into(), val.variant_id.into()];
+
+                for associated_value in &val.associated_value {
+                    occurrences.extend(
+                        associated_value.get_global_id_dependencies(table)?,
+                    );
+                }
+
+                occurrences
+            }
+            Self::Array(val) => {
+                let mut occurrences = Vec::new();
+
+                for element in &val.elements {
+                    occurrences
+                        .extend(element.get_global_id_dependencies(table)?);
+                }
+
+                occurrences
+            }
+            Self::Local(local) => local.0.get_global_id_dependencies(table)?,
+            Self::Tuple(tuple) => {
+                let mut occurrences = Vec::new();
+
+                for element in &tuple.elements {
+                    occurrences.extend(
+                        element.as_term().get_global_id_dependencies(table)?,
+                    );
+                }
+
+                occurrences
+            }
+            Self::Symbol(symbol) => {
+                let mut occurrences = symbol
+                    .generic_arguments
+                    .get_global_id_dependencies(table)?;
+                occurrences.push(symbol.id.into());
+
+                occurrences
+            }
+            Self::MemberSymbol(member_symbol) => {
+                let mut occurrences = member_symbol
+                    .parent_generic_arguments
+                    .get_global_id_dependencies(table)?;
+                occurrences.extend(
+                    member_symbol
+                        .member_generic_arguments
+                        .get_global_id_dependencies(table)?,
+                );
+
+                occurrences.push(member_symbol.id.into());
+
+                match member_symbol.id {
+                    MemberSymbolID::TraitImplementation(id) => {
+                        let implementation_id = table.get(id)?.parent_id;
+                        let trait_id = table
+                            .get(implementation_id)?
+                            .signature
+                            .implemented_id;
+
+                        occurrences.push(implementation_id.into());
+                        occurrences.push(trait_id.into());
+                    }
+                    MemberSymbolID::AdtImplementation(id) => {
+                        let implementation_id = table.get(id)?.parent_id;
+                        let adt_kind_id = table
+                            .get(implementation_id)?
+                            .signature
+                            .implemented_id;
+
+                        occurrences.push(implementation_id.into());
+                        occurrences.push(adt_kind_id.into());
+                    }
+                }
+
+                occurrences
+            }
+            Self::TraitMember(member_symbol) => {
+                let mut occurrences = member_symbol
+                    .parent_generic_arguments
+                    .get_global_id_dependencies(table)?;
+                occurrences.extend(
+                    member_symbol
+                        .member_generic_arguments
+                        .get_global_id_dependencies(table)?,
+                );
+
+                occurrences.push(member_symbol.id.into());
+                occurrences.push(table.get(member_symbol.id)?.parent_id.into());
+
+                occurrences
+            }
+        };
+
+        occurrences.sort_unstable();
+        occurrences.dedup();
+
+        Some(occurrences)
     }
 }
 

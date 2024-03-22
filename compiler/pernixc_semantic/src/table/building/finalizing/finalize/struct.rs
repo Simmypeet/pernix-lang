@@ -6,14 +6,18 @@ use crate::{
     arena::ID,
     error,
     symbol::Struct,
-    table::{building::finalizing::Finalizer, resolution::Config, Table},
+    table::{building::finalizing::Finalizer, Table},
 };
 
 build_flag! {
     pub enum Flag {
+        /// Generic parameters are built
         GenericParameter,
+        /// Where clause predicates are built
         WhereClause,
-        Body,
+        /// All structs are field are built
+        Complete,
+        /// Bounds check are performed
         Check,
     }
 }
@@ -31,29 +35,30 @@ impl Finalize for Struct {
         data: &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        let resolution_config = Config {
-            ellided_lifetime_provider: None,
-            ellided_type_provider: None,
-            ellided_constant_provider: None,
-            observer: Some(data),
-            higher_ranked_liftimes: None,
-        };
         match state_flag {
             Flag::GenericParameter => table.create_generic_parameters(
                 symbol_id,
                 syntax_tree.signature().generic_parameters().as_ref(),
-                resolution_config,
+                data,
                 handler,
             ),
             Flag::WhereClause => {
                 table.create_where_clause_predicates(
                     symbol_id,
                     syntax_tree.signature().where_clause().as_ref(),
-                    resolution_config,
+                    data,
                     handler,
                 );
             }
-            Flag::Body => { /*create struct fields*/ }
+            Flag::Complete => {
+                /* TODO: build all struct fields */
+                data.build_all_occurrences_to_completion(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
+            }
             Flag::Check => {
                 table.check_occurrences(symbol_id.into(), data, handler);
             }

@@ -11,9 +11,15 @@ use crate::{
 
 build_flag! {
     pub enum Flag {
+        /// Generic parameters are built
         GenericParameter,
+        /// Where clause predicates are built
         WhereClause,
-        Body,
+        /// Thet trait members are built to completion
+        Members,
+        /// All the implementations are built to completion
+        Complete,
+        /// Bounds check are performed
         Check,
     }
 }

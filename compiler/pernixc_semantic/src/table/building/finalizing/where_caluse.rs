@@ -7,7 +7,10 @@ use pernixc_syntax::syntax_tree::{
     ConnectedList,
 };
 
-use super::{finalize, finalizer, Finalizer};
+use super::{
+    finalize::{self, Occurrences},
+    finalizer, Finalizer,
+};
 use crate::{
     arena::ID,
     error::{
@@ -157,7 +160,7 @@ impl Table<Finalizer> {
         &self,
         generic_id: ID<T>,
         syntax_tree: &syntax_tree::item::TraitPredicate,
-        mut config: resolution::Config,
+        occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
@@ -229,14 +232,18 @@ impl Table<Finalizer> {
                 );
             }
 
-            let mut config = config.reborrow();
-            config.higher_ranked_liftimes =
-                Some(&forall_lifetimes_by_name_cloned);
-
             let Ok(resolution) = self.resolve(
                 qualified_identifier,
                 generic_id.into(),
-                config,
+                resolution::Config {
+                    ellided_lifetime_provider: None,
+                    ellided_type_provider: None,
+                    ellided_constant_provider: None,
+                    observer: Some(occurrences),
+                    higher_ranked_liftimes: Some(
+                        &forall_lifetimes_by_name_cloned,
+                    ),
+                },
                 handler,
             ) else {
                 return;
@@ -249,17 +256,22 @@ impl Table<Finalizer> {
                 }) => {
                     let mut generic_symbol =
                         T::get_arena(self).get(generic_id).unwrap().write();
+
+                    let trait_predicate = predicate::Trait {
+                        id: trait_id,
+                        is_const: syntax_tree.const_keyword().is_some(),
+                        generic_arguments: generic_arguments.clone(),
+                    };
+
+                    occurrences.add_trait_predicate(
+                        trait_predicate.clone(),
+                        qualified_identifier.clone(),
+                    );
+
                     generic_symbol.generic_declaration_mut().predicates.push(
                         symbol::Predicate {
                             predicate: predicate::Predicate::Trait(
-                                predicate::Trait {
-                                    id: trait_id,
-                                    is_const: syntax_tree
-                                        .const_keyword()
-                                        .is_some(),
-                                    generic_arguments: generic_arguments
-                                        .clone(),
-                                },
+                                trait_predicate,
                             ),
                             kind: PredicateKind::Explicit(Some(
                                 qualified_identifier.span(),
@@ -274,6 +286,7 @@ impl Table<Finalizer> {
                         trait_id,
                         Some(generic_id.into()),
                         finalize::r#trait::Flag::WhereClause,
+                        true,
                         handler,
                     );
                     let trait_sym = self
@@ -527,7 +540,7 @@ impl Table<Finalizer> {
         &self,
         generic_id: ID<T>,
         syntax_tree: Option<&syntax_tree::item::WhereClause>,
-        mut config: resolution::Config,
+        occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
         ID<T>: Into<GlobalID> + Into<GenericID>,
@@ -542,21 +555,33 @@ impl Table<Finalizer> {
                     .create_trait_member_predicate(
                         generic_id,
                         trait_member,
-                        config.reborrow(),
+                        resolution::Config {
+                            ellided_lifetime_provider: None,
+                            ellided_type_provider: None,
+                            ellided_constant_provider: None,
+                            observer: Some(occurrences),
+                            higher_ranked_liftimes: None,
+                        },
                         handler,
                     ),
                 syntax_tree::item::Predicate::Trait(trait_bound) => self
                     .create_trait_bound_predicates(
                         generic_id,
                         trait_bound,
-                        config.reborrow(),
+                        occurrences,
                         handler,
                     ),
                 syntax_tree::item::Predicate::Lifetime(lifetime_predicates) => {
                     self.create_lifetime_outlives_predicates(
                         generic_id,
                         lifetime_predicates,
-                        config.reborrow(),
+                        resolution::Config {
+                            ellided_lifetime_provider: None,
+                            ellided_type_provider: None,
+                            ellided_constant_provider: None,
+                            observer: Some(occurrences),
+                            higher_ranked_liftimes: None,
+                        },
                         handler,
                     );
                 }
@@ -564,7 +589,13 @@ impl Table<Finalizer> {
                     self.create_constant_type_predicates(
                         generic_id,
                         constant_types,
-                        config.reborrow(),
+                        resolution::Config {
+                            ellided_lifetime_provider: None,
+                            ellided_type_provider: None,
+                            ellided_constant_provider: None,
+                            observer: Some(occurrences),
+                            higher_ranked_liftimes: None,
+                        },
                         handler,
                     );
                 }
@@ -572,7 +603,13 @@ impl Table<Finalizer> {
                     self.create_tuple_predicates(
                         generic_id,
                         tuple_types,
-                        config.reborrow(),
+                        resolution::Config {
+                            ellided_lifetime_provider: None,
+                            ellided_type_provider: None,
+                            ellided_constant_provider: None,
+                            observer: Some(occurrences),
+                            higher_ranked_liftimes: None,
+                        },
                         handler,
                     );
                 }

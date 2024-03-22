@@ -63,8 +63,12 @@ impl table::State for Finalizer {
             return;
         };
 
-        let _ =
-            table.build_generic_parameter(generic_id, referring_site, handler);
+        let _ = table.build_generic_parameter(
+            generic_id,
+            referring_site,
+            true,
+            handler,
+        );
     }
 
     fn on_resolved(
@@ -486,6 +490,7 @@ impl Table<Finalizer> {
         id: ID<T>,
         required_from: Option<GlobalID>,
         to_flag: T::Flag,
+        cyclic_dependency_as_error: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), EntryNotFoundError>
     where
@@ -538,7 +543,7 @@ impl Table<Finalizer> {
                         .reported_cyclic_dependencies
                         .contains(&dependency_stack_set);
 
-                    if !is_reported {
+                    if !is_reported && cyclic_dependency_as_error {
                         handler.receive(Box::new(CyclicDependency {
                             participants: dependency_stack,
                         }));
@@ -577,114 +582,132 @@ impl Table<Finalizer> {
 }
 
 macro_rules! implements_build_to {
-    ($symbol_id:ident, $table:ident, $dependant:ident, $flag:ident, $handler:ident) => {
+    ($symbol_id:ident, $table:ident, $dependant:ident, $flag:ident, $handler:ident, $cyclic_dependency_as_error:ident) => {
         match $symbol_id {
             GenericID::Struct(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::r#struct::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::Trait(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::r#trait::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::Enum(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::r#enum::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::Type(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::r#type::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::Constant(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::constant::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::Function(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::function::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::TraitType(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::trait_type::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::TraitFunction(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::trait_function::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::TraitConstant(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::trait_constant::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::TraitImplementation(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::trait_implementation::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::NegativeTraitImplementation(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::negative_trait_implementation::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::TraitImplementationFunction(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::trait_implementation_function::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::TraitImplementationType(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::trait_implementation_type::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::TraitImplementationConstant(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::trait_implementation_constant::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::AdtImplementation(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::adt_implementation::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::AdtImplementationFunction(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::adt_implementation_function::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::AdtImplementationType(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::adt_implementation_type::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
             GenericID::AdtImplementationConstant(id) => $table.build_to(
                 id,
                 Some($dependant),
                 finalize::adt_implementation_constant::Flag::$flag,
+                $cyclic_dependency_as_error,
                 $handler,
             ),
         }
@@ -711,6 +734,7 @@ impl Table<Finalizer> {
         &self,
         dependency: GenericID,
         dependant: GlobalID,
+        cyclic_dependency_as_error: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), EntryNotFoundError> {
         implements_build_to!(
@@ -718,12 +742,13 @@ impl Table<Finalizer> {
             self,
             dependant,
             GenericParameter,
-            handler
+            handler,
+            cyclic_dependency_as_error
         )
     }
 
-    /// Builds the given `dependency` symbol so that it has where clause
-    /// predicates information available.
+    /// Builds the given `dependency` symbol to completion. (without checking
+    /// bounds)
     ///
     /// # Parameters
     ///
@@ -737,13 +762,150 @@ impl Table<Finalizer> {
     ///
     /// - [`EntryNotFoundError`]: If the `dependency` or `dependant` symbol is
     ///   not found in the builder.
-    pub fn build_where_clause(
+    #[allow(clippy::too_many_lines)]
+    pub fn build_to_completion(
         &self,
-        dependency: GenericID,
+        dependency: GlobalID,
         dependant: GlobalID,
+        cyclic_dependency_as_error: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), EntryNotFoundError> {
-        implements_build_to!(dependency, self, dependant, WhereClause, handler)
+        match dependency {
+            GlobalID::Struct(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::r#struct::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::Trait(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::r#trait::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::Enum(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::r#enum::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::Type(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::r#type::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::Constant(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::constant::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::Function(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::function::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::TraitType(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::trait_type::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::TraitFunction(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::trait_function::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::TraitConstant(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::trait_constant::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::TraitImplementation(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::trait_implementation::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::NegativeTraitImplementation(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::negative_trait_implementation::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::TraitImplementationFunction(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::trait_implementation_function::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::TraitImplementationType(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::trait_implementation_type::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::TraitImplementationConstant(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::trait_implementation_constant::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::AdtImplementation(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::adt_implementation::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::AdtImplementationFunction(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::adt_implementation_function::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::AdtImplementationType(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::adt_implementation_type::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::AdtImplementationConstant(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::adt_implementation_constant::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+            GlobalID::Module(_) => Ok(()),
+            GlobalID::Variant(id) => self.build_to(
+                id,
+                Some(dependant),
+                finalize::variant::Flag::Complete,
+                cyclic_dependency_as_error,
+                handler,
+            ),
+        }
     }
 
     /// Builds all symbols in the builder to the last state.
@@ -795,6 +957,7 @@ impl Table<Finalizer> {
                                 x,
                                 None,
                                 <<$field_name as Finalize>::Flag as Flag>::last(),
+                                true,
                                 handler
                             );
                         })
