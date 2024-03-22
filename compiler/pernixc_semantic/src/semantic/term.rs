@@ -1,6 +1,7 @@
 //! Contains the three fundamental terms of the language: [`Type`],
 //! [`Constant`], and [`Lifetime`].
 
+use core::fmt;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -24,8 +25,8 @@ use super::{
 };
 use crate::{
     arena::ID,
-    symbol::{GenericID, GenericParameter, MemberID, Variance},
-    table::{State, Table},
+    symbol::{GenericID, GenericParameter, GlobalID, MemberID, Variance},
+    table::{self, DisplayObject, State, Table},
 };
 
 pub mod constant;
@@ -45,6 +46,61 @@ pub struct GenericArguments {
     pub constants: Vec<Constant>,
 }
 
+impl<T: State> table::Display<T> for GenericArguments {
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        if self.lifetimes.is_empty()
+            && self.types.is_empty()
+            && self.constants.is_empty()
+        {
+            return Ok(());
+        }
+
+        let mut lifetimes = self.lifetimes.iter().peekable();
+        let mut types = self.types.iter().peekable();
+        let mut constants = self.constants.iter().peekable();
+
+        write!(f, "[")?;
+
+        while let Some(lifetime) = lifetimes.next() {
+            let is_last = lifetimes.peek().is_none()
+                && self.types.is_empty()
+                && self.constants.is_empty();
+
+            write!(f, "{}", DisplayObject { table, display: lifetime })?;
+
+            if !is_last {
+                write!(f, ", ")?;
+            }
+        }
+
+        while let Some(r#type) = types.next() {
+            let is_last = types.peek().is_none() && self.constants.is_empty();
+
+            write!(f, "{}", DisplayObject { table, display: r#type })?;
+
+            if !is_last {
+                write!(f, ", ")?;
+            }
+        }
+
+        while let Some(constant) = constants.next() {
+            let is_last = constants.peek().is_none();
+
+            write!(f, "{}", DisplayObject { table, display: constant })?;
+
+            if !is_last {
+                write!(f, ", ")?;
+            }
+        }
+
+        write!(f, "]")
+    }
+}
+
 /// Represents a term where its value is stored as a symbol (i.e., `type` or
 /// `const` declaration).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,6 +110,22 @@ pub struct Symbol<ID> {
 
     /// The generic arguments supplied to the symbol.
     pub generic_arguments: GenericArguments,
+}
+
+impl<T: State, ID: Into<GlobalID> + Copy> table::Display<T> for Symbol<ID> {
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let qualified_name =
+            table.get_qualified_name(self.id.into()).ok_or(fmt::Error)?;
+
+        write!(f, "{qualified_name}{}", DisplayObject {
+            table,
+            display: &self.generic_arguments,
+        })
+    }
 }
 
 /// Represents a term where its value is stored as a member of a particular
@@ -68,6 +140,30 @@ pub struct MemberSymbol<ID> {
 
     /// The generic arguments supplied to the parent scope.
     pub parent_generic_arguments: GenericArguments,
+}
+impl<T: State, ID: Copy + Into<GlobalID>> table::Display<T>
+    for MemberSymbol<ID>
+{
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let this_sym = table.get_global(self.id.into()).ok_or(fmt::Error)?;
+        let parent_qualified_identifier = table
+            .get_qualified_name(this_sym.parent_global_id().ok_or(fmt::Error)?)
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{parent_qualified_identifier}{}", DisplayObject {
+            table,
+            display: &self.parent_generic_arguments,
+        })?;
+
+        write!(f, "::{}{}", this_sym.name(), DisplayObject {
+            table,
+            display: &self.member_generic_arguments,
+        })
+    }
 }
 
 /// Represents a single element of a tuple.
@@ -111,6 +207,36 @@ impl<Term> TupleElement<Term> {
 pub struct Tuple<Term: Clone> {
     /// The elements of the tuple.
     pub elements: Vec<TupleElement<Term>>,
+}
+
+impl<S: State, T: table::Display<S> + Clone> table::Display<S> for Tuple<T> {
+    fn fmt(
+        &self,
+        table: &Table<S>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "(")?;
+
+        let mut peekable = self.elements.iter().peekable();
+
+        while let Some(element) = peekable.next() {
+            let is_last = peekable.peek().is_none();
+            let is_unpacked = element.is_unpacked();
+            let term = element.as_term();
+
+            if is_unpacked {
+                write!(f, "...")?;
+            }
+
+            write!(f, "{}", DisplayObject { table, display: term })?;
+
+            if !is_last {
+                write!(f, ", ")?;
+            }
+        }
+
+        write!(f, ")")
+    }
 }
 
 /// A type that can't never be instantiated.
@@ -202,14 +328,13 @@ pub trait Term:
     fn constant_type_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
-    fn get_instantiation(
-        instantiation: &Instantiation,
-    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
+    fn get_instantiation(instantiation: &Instantiation)
+        -> &HashMap<Self, Self>;
 
     #[doc(hidden)]
     fn get_instantiation_mut(
         instantiation: &mut Instantiation,
-    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
+    ) -> &mut HashMap<Self, Self>;
 
     #[doc(hidden)]
     fn get_substructural_unification<'a, T: Term>(

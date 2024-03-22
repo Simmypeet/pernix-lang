@@ -1,5 +1,6 @@
 //! Contains the definition of [`Lifetime`].
 
+use core::fmt;
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::{AtomicUsize, Ordering},
@@ -12,7 +13,7 @@ use super::{
     GetVarianceError, MemberSymbol, Never, Term, Tuple,
 };
 use crate::{
-    arena::ID,
+    arena::{Key, ID},
     semantic::{
         instantiation::Instantiation,
         mapping::Mapping,
@@ -25,7 +26,7 @@ use crate::{
     symbol::{
         GenericID, LifetimeParameter, LifetimeParameterID, MemberID, Variance,
     },
-    table::{State, Table},
+    table::{self, State, Table},
 };
 
 /// Represents a for-all quantified lifetime, denoted by `for<'a>` syntax, used
@@ -258,14 +259,13 @@ impl Term for Lifetime {
 
     fn get_instantiation(
         instantiation: &Instantiation,
-    ) -> &HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self> {
+    ) -> &HashMap<Self, Self> {
         &instantiation.lifetimes
     }
 
     fn get_instantiation_mut(
         instantiation: &mut Instantiation,
-    ) -> &mut HashMap<MemberID<ID<Self::GenericParameter>, GenericID>, Self>
-    {
+    ) -> &mut HashMap<Self, Self> {
         &mut instantiation.lifetimes
     }
 
@@ -296,6 +296,36 @@ impl Term for Lifetime {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.lifetimes
+    }
+}
+
+impl<T: State> table::Display<T> for Lifetime {
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Static => write!(f, "'static"),
+            Self::Parameter(parameter) => {
+                match &table
+                    .get_generic(parameter.parent)
+                    .ok_or(fmt::Error)?
+                    .generic_declaration()
+                    .parameters
+                    .lifetimes
+                    .get(parameter.id)
+                    .ok_or(fmt::Error)?
+                    .name
+                {
+                    Some(name) => write!(f, "'{name}"),
+                    None => write!(f, "'{}", parameter.id.into_index()),
+                }
+            }
+            Self::Forall(_) | Self::Inference(_) | Self::Local(_) => {
+                write!(f, "'?")
+            }
+        }
     }
 }
 

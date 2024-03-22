@@ -18,8 +18,8 @@ use crate::{
     symbol::{
         AdtImplementation, AdtImplementationConstant,
         AdtImplementationFunction, AdtImplementationType, Constant, Enum,
-        Function, GlobalID, NegativeTraitImplementation, Struct, Trait,
-        TraitConstant, TraitFunction, TraitImplementation,
+        Function, GenericID, GlobalID, NegativeTraitImplementation, Struct,
+        Trait, TraitConstant, TraitFunction, TraitImplementation,
         TraitImplementationConstant, TraitImplementationFunction,
         TraitImplementationType, TraitType, Type, Variant,
     },
@@ -59,163 +59,12 @@ impl table::State for Finalizer {
         referring_site: GlobalID,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        // TODO: make sure the symbol is built to the state where the generic
-        // parameters information is available.
-        match global_id {
-            GlobalID::Module(_) => {}
-            GlobalID::Struct(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::r#struct::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::Trait(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::r#trait::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::Enum(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::r#enum::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::Type(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::r#type::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::Constant(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::constant::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::Function(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::function::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::Variant(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::variant::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::TraitType(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::trait_type::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::TraitFunction(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::trait_function::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::TraitConstant(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::trait_constant::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::TraitImplementation(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::trait_implementation::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::NegativeTraitImplementation(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::negative_trait_implementation::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::TraitImplementationFunction(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::trait_implementation_function::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::TraitImplementationType(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::trait_implementation_type::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::TraitImplementationConstant(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::trait_implementation_constant::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::AdtImplementation(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::adt_implementation::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::AdtImplementationFunction(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::adt_implementation_function::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::AdtImplementationType(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::adt_implementation_type::Flag::GenericParameter,
-                    handler,
-                );
-            }
-            GlobalID::AdtImplementationConstant(id) => {
-                let _ = table.build_to(
-                    id,
-                    Some(referring_site),
-                    finalize::adt_implementation_constant::Flag::GenericParameter,
-                    handler,
-                );
-            }
-        }
+        let Ok(generic_id) = GenericID::try_from(global_id) else {
+            return;
+        };
+
+        let _ =
+            table.build_generic_parameter(generic_id, referring_site, handler);
     }
 
     fn on_resolved(
@@ -482,17 +331,6 @@ impl Finalizer {
 #[error("threre's no state for the given symbol")]
 pub struct EntryNotFoundError;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-pub enum BuildError {
-    #[error("the symbol is not found in the builder entry")]
-    EntryNotFound(#[from] EntryNotFoundError),
-
-    #[error("cyclic depedency detected")]
-    CyclicDependency,
-}
-
 impl Table<Finalizer> {
     fn build_loop<T: Finalize + Element>(
         &self,
@@ -649,7 +487,7 @@ impl Table<Finalizer> {
         required_from: Option<GlobalID>,
         to_flag: T::Flag,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), BuildError>
+    ) -> Result<(), EntryNotFoundError>
     where
         ID<T>: Into<GlobalID>,
     {
@@ -675,7 +513,7 @@ impl Table<Finalizer> {
                     participants: vec![id.into()],
                 }));
 
-                return Err(BuildError::CyclicDependency);
+                return Ok(());
             }
 
             // dependency cyclic check starts here
@@ -709,7 +547,7 @@ impl Table<Finalizer> {
                             .insert(dependency_stack_set);
                     }
 
-                    return Err(BuildError::CyclicDependency);
+                    return Ok(());
                 }
 
                 current_node = dependency;
@@ -734,11 +572,180 @@ impl Table<Finalizer> {
         // drop the builder write
         drop(builder_write);
 
-        Ok(self.acquire_build_lock(id, to_flag, handler)?)
+        self.acquire_build_lock(id, to_flag, handler)
     }
 }
 
+macro_rules! implements_build_to {
+    ($symbol_id:ident, $table:ident, $dependant:ident, $flag:ident, $handler:ident) => {
+        match $symbol_id {
+            GenericID::Struct(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::r#struct::Flag::$flag,
+                $handler,
+            ),
+            GenericID::Trait(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::r#trait::Flag::$flag,
+                $handler,
+            ),
+            GenericID::Enum(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::r#enum::Flag::$flag,
+                $handler,
+            ),
+            GenericID::Type(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::r#type::Flag::$flag,
+                $handler,
+            ),
+            GenericID::Constant(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::constant::Flag::$flag,
+                $handler,
+            ),
+            GenericID::Function(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::function::Flag::$flag,
+                $handler,
+            ),
+            GenericID::TraitType(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::trait_type::Flag::$flag,
+                $handler,
+            ),
+            GenericID::TraitFunction(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::trait_function::Flag::$flag,
+                $handler,
+            ),
+            GenericID::TraitConstant(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::trait_constant::Flag::$flag,
+                $handler,
+            ),
+            GenericID::TraitImplementation(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::trait_implementation::Flag::$flag,
+                $handler,
+            ),
+            GenericID::NegativeTraitImplementation(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::negative_trait_implementation::Flag::$flag,
+                $handler,
+            ),
+            GenericID::TraitImplementationFunction(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::trait_implementation_function::Flag::$flag,
+                $handler,
+            ),
+            GenericID::TraitImplementationType(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::trait_implementation_type::Flag::$flag,
+                $handler,
+            ),
+            GenericID::TraitImplementationConstant(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::trait_implementation_constant::Flag::$flag,
+                $handler,
+            ),
+            GenericID::AdtImplementation(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::adt_implementation::Flag::$flag,
+                $handler,
+            ),
+            GenericID::AdtImplementationFunction(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::adt_implementation_function::Flag::$flag,
+                $handler,
+            ),
+            GenericID::AdtImplementationType(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::adt_implementation_type::Flag::$flag,
+                $handler,
+            ),
+            GenericID::AdtImplementationConstant(id) => $table.build_to(
+                id,
+                Some($dependant),
+                finalize::adt_implementation_constant::Flag::$flag,
+                $handler,
+            ),
+        }
+    };
+}
+
 impl Table<Finalizer> {
+    /// Builds the given `dependency` symbol so that it has generic parameters
+    /// information available.
+    ///
+    /// # Parameters
+    ///
+    /// - `dependency`: The ID of the symbol to build.
+    /// - `dependant`: The ID of the symbol that requires the `dependency` to be
+    ///   built to the specified state. This is used to detect cyclic
+    ///   dependency.
+    /// - `handler`: The handler to report the error to.
+    ///
+    /// # Errors
+    ///
+    /// - [`EntryNotFoundError`]: If the `dependency` or `dependant` symbol is
+    ///   not found in the builder.
+    pub fn build_generic_parameter(
+        &self,
+        dependency: GenericID,
+        dependant: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<(), EntryNotFoundError> {
+        implements_build_to!(
+            dependency,
+            self,
+            dependant,
+            GenericParameter,
+            handler
+        )
+    }
+
+    /// Builds the given `dependency` symbol so that it has where clause
+    /// predicates information available.
+    ///
+    /// # Parameters
+    ///
+    /// - `dependency`: The ID of the symbol to build.
+    /// - `dependant`: The ID of the symbol that requires the `dependency` to be
+    ///   built to the specified state. This is used to detect cyclic
+    ///   dependency.
+    /// - `handler`: The handler to report the error to.
+    ///
+    /// # Errors
+    ///
+    /// - [`EntryNotFoundError`]: If the `dependency` or `dependant` symbol is
+    ///   not found in the builder.
+    pub fn build_where_clause(
+        &self,
+        dependency: GenericID,
+        dependant: GlobalID,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) -> Result<(), EntryNotFoundError> {
+        implements_build_to!(dependency, self, dependant, WhereClause, handler)
+    }
+
     /// Builds all symbols in the builder to the last state.
     pub fn build_all(&self, handler: &dyn Handler<Box<dyn error::Error>>) {
         macro_rules! make_ids {

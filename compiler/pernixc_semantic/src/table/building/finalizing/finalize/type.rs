@@ -1,7 +1,7 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{build_flag, Finalize, ResolutionStorage};
+use super::{build_flag, Finalize, Occurrences};
 use crate::{
     arena::ID,
     error,
@@ -21,7 +21,7 @@ build_flag! {
 impl Finalize for Type {
     type SyntaxTree = syntax_tree::item::Type;
     type Flag = Flag;
-    type Data = ResolutionStorage;
+    type Data = Occurrences;
 
     fn finalize(
         table: &Table<Finalizer>,

@@ -25,7 +25,7 @@ use crate::{
     semantic::term::{
         self, constant,
         lifetime::{Forall, Lifetime},
-        r#type::{self, Qualifier, SymbolKindID},
+        r#type::{self, Qualifier, SymbolID},
         GenericArguments, Local, MemberSymbol, TupleElement,
     },
     symbol::{
@@ -928,9 +928,9 @@ impl<T: State> Table<T> {
         match resolution {
             Resolution::Generic(symbol) => {
                 let id = match symbol.id {
-                    GenericID::Struct(id) => SymbolKindID::Struct(id),
-                    GenericID::Enum(id) => SymbolKindID::Enum(id),
-                    GenericID::Type(id) => SymbolKindID::Type(id),
+                    GenericID::Struct(id) => SymbolID::Struct(id),
+                    GenericID::Enum(id) => SymbolID::Enum(id),
+                    GenericID::Type(id) => SymbolID::Type(id),
 
                     GenericID::TraitImplementationType(id) => {
                         return Ok(r#type::Type::MemberSymbol(MemberSymbol {
@@ -970,7 +970,7 @@ impl<T: State> Table<T> {
                 }
                 MemberGenericID::AdtImplementationType(id) => {
                     Ok(r#type::Type::MemberSymbol(term::MemberSymbol {
-                        id: r#type::MemberSymbolKindID::AdtImplementation(id),
+                        id: r#type::MemberSymbolID::AdtImplementation(id),
                         member_generic_arguments: symbol.generic_arguments,
                         parent_generic_arguments: symbol
                             .parent_generic_arguments,

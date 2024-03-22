@@ -16,11 +16,7 @@ use super::{
     },
     unification, Premise, Semantic,
 };
-use crate::{
-    arena::ID,
-    symbol::{GenericID, MemberID},
-    table::{State, Table},
-};
+use crate::table::{State, Table};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct DeductionUnifyingConfig;
@@ -128,10 +124,7 @@ fn from_unification_to_substitution<
     table: &Table<impl State>,
     semantic: &mut S,
     session: &mut Limit<R>,
-) -> Result<
-    Option<HashMap<MemberID<ID<T::GenericParameter>, GenericID>, T>>,
-    ExceedLimitError,
-> {
+) -> Result<Option<HashMap<T, T>>, ExceedLimitError> {
     let mut result = HashMap::new();
     for (key, values) in unification {
         let mut values = values.into_iter();
@@ -146,13 +139,7 @@ fn from_unification_to_substitution<
             }
         }
 
-        result
-            .insert(
-                key.into_generic_parameter()
-                    .expect("should be a generic parameter"),
-                sampled,
-            )
-            .unwrap();
+        result.insert(key, sampled).unwrap();
     }
 
     Ok(Some(result))

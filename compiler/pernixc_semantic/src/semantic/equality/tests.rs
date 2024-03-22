@@ -16,7 +16,7 @@ use crate::{
         term::{
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{Primitive, SymbolKindID, Type},
+            r#type::{Primitive, SymbolID, Type},
             GenericArguments, Local, Symbol, Term,
         },
         tests::State,
@@ -151,7 +151,7 @@ fn congruence() {
     };
     let table = Table::<State>::default();
     let lhs = Type::Symbol(Symbol {
-        id: SymbolKindID::Struct(ID::new(0)),
+        id: SymbolID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![
@@ -162,7 +162,7 @@ fn congruence() {
         },
     });
     let rhs = Type::Symbol(Symbol {
-        id: SymbolKindID::Struct(ID::new(0)),
+        id: SymbolID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![
@@ -202,7 +202,7 @@ fn recursive() {
             [(
                 Type::Primitive(Primitive::Int32),
                 Type::Symbol(Symbol {
-                    id: SymbolKindID::Enum(ID::new(0)),
+                    id: SymbolID::Enum(ID::new(0)),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![Type::Primitive(Primitive::Int32)],
@@ -217,19 +217,19 @@ fn recursive() {
     let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Int32);
     let rhs = Type::Symbol(Symbol {
-        id: SymbolKindID::Enum(ID::new(0)),
+        id: SymbolID::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![Type::Symbol(Symbol {
-                id: SymbolKindID::Enum(ID::new(0)),
+                id: SymbolID::Enum(ID::new(0)),
                 generic_arguments: GenericArguments {
                     lifetimes: Vec::new(),
                     types: vec![Type::Symbol(Symbol {
-                        id: SymbolKindID::Enum(ID::new(0)),
+                        id: SymbolID::Enum(ID::new(0)),
                         generic_arguments: GenericArguments {
                             lifetimes: Vec::new(),
                             types: vec![Type::Symbol(Symbol {
-                                id: SymbolKindID::Enum(ID::new(0)),
+                                id: SymbolID::Enum(ID::new(0)),
                                 generic_arguments: GenericArguments {
                                     lifetimes: Vec::new(),
                                     types: vec![Type::Primitive(
@@ -268,19 +268,19 @@ fn recursive() {
     .unwrap());
 
     let rhs = Type::Symbol(Symbol {
-        id: SymbolKindID::Enum(ID::new(0)),
+        id: SymbolID::Enum(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![Type::Symbol(Symbol {
-                id: SymbolKindID::Enum(ID::new(0)),
+                id: SymbolID::Enum(ID::new(0)),
                 generic_arguments: GenericArguments {
                     lifetimes: Vec::new(),
                     types: vec![Type::Symbol(Symbol {
-                        id: SymbolKindID::Enum(ID::new(0)),
+                        id: SymbolID::Enum(ID::new(0)),
                         generic_arguments: GenericArguments {
                             lifetimes: Vec::new(),
                             types: vec![Type::Symbol(Symbol {
-                                id: SymbolKindID::Enum(ID::new(0)),
+                                id: SymbolID::Enum(ID::new(0)),
                                 generic_arguments: GenericArguments {
                                     lifetimes: Vec::new(),
                                     types: vec![Type::Primitive(
@@ -948,7 +948,7 @@ impl Property<Type> for TypeAlias {
         let (lhs, rhs) = self.property.generate();
         let non_aliased = if self.aliased_at_lhs { rhs } else { lhs };
         let aliased = Type::Symbol(Symbol {
-            id: SymbolKindID::Type(self.type_id),
+            id: SymbolID::Type(self.type_id),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![self.argument.clone()],

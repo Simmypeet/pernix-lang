@@ -58,14 +58,14 @@ pub trait Flag:
 /// A structure containing the list of all resolution resolved so far in the
 /// building process.
 #[derive(Debug, Default)]
-pub struct ResolutionStorage {
-    types: Vec<(term::r#type::Type, syntax_tree::r#type::Type)>,
-    lifetimes: Vec<(term::lifetime::Lifetime, syntax_tree::Lifetime)>,
-    constants:
+pub struct Occurrences {
+    pub types: Vec<(term::r#type::Type, syntax_tree::r#type::Type)>,
+    pub lifetimes: Vec<(term::lifetime::Lifetime, syntax_tree::Lifetime)>,
+    pub constants:
         Vec<(term::constant::Constant, syntax_tree::expression::Expression)>,
 }
 
-impl Observer for ResolutionStorage {
+impl Observer for Occurrences {
     fn on_type_resolved(
         &mut self,
         ty: &term::r#type::Type,

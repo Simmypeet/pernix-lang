@@ -1,5 +1,6 @@
 //! Contains the definition of [`Constant`].
 
+use core::fmt;
 use std::{
     self,
     collections::{HashMap, HashSet},
@@ -30,7 +31,7 @@ use crate::{
         self, ConstantParameter, ConstantParameterID, GenericID, GlobalID,
         Variance, Variant,
     },
-    table::{Index, State, Table},
+    table::{self, DisplayObject, Index, State, Table},
 };
 
 /// Enumeration of either a trait implementation constant or an ADT
@@ -63,19 +64,40 @@ impl From<MemberSymbolKindID> for GenericID {
 }
 
 /// Represents a primitive constant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
 #[allow(missing_docs)]
 pub enum Primitive {
+    #[display(fmt = "{_0}i8")]
     Int8(i8),
+    #[display(fmt = "{_0}i16")]
     Int16(i16),
+    #[display(fmt = "{_0}i32")]
     Int32(i32),
+    #[display(fmt = "{_0}i64")]
     Int64(i64),
+    #[display(fmt = "{_0}u8")]
     Uint8(u8),
+    #[display(fmt = "{_0}u16")]
     Uint16(u16),
+    #[display(fmt = "{_0}u32")]
     Uint32(u32),
+    #[display(fmt = "{_0}u64")]
     Uint64(u64),
+    #[display(fmt = "{_0}")]
     Bool(bool),
+    #[display(fmt = "{_0}usize")]
     Usize(usize),
+    #[display(fmt = "{_0}isize")]
     Isize(isize),
 }
 
@@ -904,13 +926,13 @@ impl Term for Constant {
 
     fn get_instantiation(
         instantiation: &Instantiation,
-    ) -> &HashMap<ConstantParameterID, Self> {
+    ) -> &HashMap<Self, Self> {
         &instantiation.constants
     }
 
     fn get_instantiation_mut(
         instantiation: &mut Instantiation,
-    ) -> &mut HashMap<ConstantParameterID, Self> {
+    ) -> &mut HashMap<Self, Self> {
         &mut instantiation.constants
     }
 
@@ -941,6 +963,104 @@ impl Term for Constant {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.constants
+    }
+}
+
+impl<T: State> table::Display<T> for Constant {
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Primitive(val) => write!(f, "{val}"),
+            Self::Inference(_) => write!(f, "?"),
+            Self::Struct(val) => {
+                let qualified_name = table
+                    .get_qualified_name(val.id.into())
+                    .ok_or(fmt::Error)?;
+
+                write!(f, "{qualified_name} {{ ")?;
+
+                let mut fields = val.fields.iter().peekable();
+                while let Some(field) = fields.next() {
+                    let is_last = fields.peek().is_none();
+
+                    write!(f, "{}", DisplayObject { display: field, table })?;
+
+                    if !is_last {
+                        write!(f, ", ")?;
+                    }
+                }
+
+                write!(f, " }}")
+            }
+            Self::Enum(id) => {
+                let qualified_name = table
+                    .get_qualified_name(id.variant_id.into())
+                    .ok_or(fmt::Error)?;
+
+                write!(f, "{qualified_name}")?;
+
+                if let Some(associated_value) = &id.associated_value {
+                    write!(f, "({})", DisplayObject {
+                        display: &**associated_value,
+                        table
+                    })?;
+                }
+
+                Ok(())
+            }
+            Self::Array(array) => {
+                write!(f, "[")?;
+
+                let mut elements = array.elements.iter().peekable();
+                while let Some(element) = elements.next() {
+                    let is_last = elements.peek().is_none();
+
+                    write!(f, "{}", DisplayObject { display: element, table })?;
+
+                    if !is_last {
+                        write!(f, ", ")?;
+                    }
+                }
+
+                write!(f, "]")
+            }
+            Self::Parameter(parameter) => {
+                write!(
+                    f,
+                    "{}",
+                    table
+                        .get_generic(parameter.parent)
+                        .ok_or(fmt::Error)?
+                        .generic_declaration()
+                        .parameters
+                        .constants
+                        .get(parameter.id)
+                        .ok_or(fmt::Error)?
+                        .name
+                )
+            }
+            Self::Local(local) => {
+                write!(f, "local {}", DisplayObject {
+                    display: &*local.0,
+                    table
+                })
+            }
+            Self::Tuple(tuple) => {
+                write!(f, "{}", DisplayObject { display: tuple, table })
+            }
+            Self::Symbol(symol) => {
+                write!(f, "{}", DisplayObject { display: symol, table })
+            }
+            Self::MemberSymbol(symbol) => {
+                write!(f, "{}", DisplayObject { display: symbol, table })
+            }
+            Self::TraitMember(symbol) => {
+                write!(f, "{}", DisplayObject { display: symbol, table })
+            }
+        }
     }
 }
 

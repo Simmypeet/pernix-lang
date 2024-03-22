@@ -13,10 +13,7 @@ use pernixc_base::{
     log::{Message, Severity},
     source_file::{self, SourceFile},
 };
-use pernixc_semantic::{
-    error::WithTable,
-    table::{self, BuildTableError},
-};
+use pernixc_semantic::table::{self, BuildTableError, DisplayObject};
 use pernixc_syntax::syntax_tree::target::Target;
 
 /// The arguments to the program.
@@ -130,9 +127,9 @@ pub fn run(argument: Arguments) -> ExitCode {
         Ok(table) => table,
         Err(BuildTableError::Suboptimal(table)) => {
             for error in storage.into_vec() {
-                let msg = WithTable {
+                let msg = DisplayObject {
                     table: &table,
-                    error: error.as_display_with_table(),
+                    display: error.as_display_with_table(),
                 };
 
                 eprintln!("{msg}\n");

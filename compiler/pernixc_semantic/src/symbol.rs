@@ -93,6 +93,18 @@ pub enum PredicateKind {
     ImpliedByTraitBound(Option<Span>),
 }
 
+impl PredicateKind {
+    /// Gets the span of the predicate kind.
+    #[must_use]
+    pub const fn span(&self) -> Option<&Span> {
+        match self {
+            Self::Explicit(span) | Self::ImpliedByTraitBound(span) => {
+                span.as_ref()
+            }
+        }
+    }
+}
+
 /// Represents a predicate introduced by either a where clause or implication.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Predicate {

@@ -13,6 +13,7 @@ use super::{
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
     visitor::{accept_recursive, Visitor},
 };
+use crate::table::{self, DisplayObject, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ContainsForallLifetimeVisitor {
@@ -97,6 +98,25 @@ pub enum Predicate {
     Trait(Trait),
 }
 
+impl<T: State> table::Display<T> for Predicate {
+    fn fmt(
+        &self,
+        table: &table::Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::TypeEquality(equality) => equality.fmt(table, f),
+            Self::ConstantEquality(equality) => equality.fmt(table, f),
+            Self::ConstantType(constant_type) => constant_type.fmt(table, f),
+            Self::LifetimeOutlives(outlives) => outlives.fmt(table, f),
+            Self::TypeOutlives(outlives) => outlives.fmt(table, f),
+            Self::TupleType(tuple) => tuple.fmt(table, f),
+            Self::TupleConstant(tuple) => tuple.fmt(table, f),
+            Self::Trait(tr) => tr.fmt(table, f),
+        }
+    }
+}
+
 impl Predicate {
     /// Checks if the predicate contains a `forall` lifetime.
     #[must_use]
@@ -148,6 +168,21 @@ pub struct Equality<T> {
 
     /// The right-hand side of the equality.
     pub rhs: T,
+}
+
+impl<S: State, T: table::Display<S>> table::Display<S> for Equality<T> {
+    fn fmt(
+        &self,
+        table: &table::Table<S>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(
+            f,
+            "{} = {}",
+            DisplayObject { display: &self.lhs, table },
+            DisplayObject { display: &self.rhs, table }
+        )
+    }
 }
 
 impl<T: Term> Equality<T> {

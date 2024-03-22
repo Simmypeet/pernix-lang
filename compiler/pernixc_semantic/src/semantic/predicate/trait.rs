@@ -1,3 +1,6 @@
+use core::fmt;
+use std::collections::HashMap;
+
 use thiserror::Error;
 
 use super::{contains_forall_lifetime, Outlives};
@@ -16,7 +19,7 @@ use crate::{
         unification, Premise, Semantic,
     },
     symbol::{self, Generic, TraitImplementationKindID},
-    table::{Index, State, Table},
+    table::{self, DisplayObject, Index, State, Table},
 };
 
 /// Enumeration containing either a lifetime or a type outlives predicate.
@@ -39,6 +42,25 @@ pub struct Trait {
 
     /// The generic arguments supplied to the trait.
     pub generic_arguments: GenericArguments,
+}
+
+impl<T: State> table::Display<T> for Trait {
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        if self.is_const {
+            write!(f, "const ")?;
+        }
+
+        write!(
+            f,
+            "trait {}{}",
+            table.get_qualified_name(self.id.into()).ok_or(fmt::Error)?,
+            DisplayObject { display: &self.generic_arguments, table }
+        )
+    }
 }
 
 impl Trait {
@@ -94,6 +116,7 @@ impl Trait {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
+    #[allow(clippy::too_many_lines)]
     pub fn satisfies<
         S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<Lifetime> + Session<Type> + Session<Constant>,
@@ -133,7 +156,7 @@ impl Trait {
                 continue;
             }
 
-            let Some(unification_mapping) =
+            let Some(forall_lifetime_unification) =
                 trait_premise.generic_arguments.unify_as_mapping(
                     generic_arguments,
                     premise,
@@ -146,7 +169,7 @@ impl Trait {
                 continue;
             };
 
-            for lifetimes in unification_mapping.lifetimes.values() {
+            for lifetimes in forall_lifetime_unification.lifetimes.values() {
                 let mut lifetimes_iter = lifetimes.iter();
 
                 // get the first lifetime to compare with the rest
@@ -168,14 +191,130 @@ impl Trait {
                 }
             }
 
+            let Some(trait_sym) = table.get(trait_premise.id) else {
+                continue;
+            };
+
+            // constraints that involve with forall lifetime
+            let predicate_with_forall_lifetimes = {
+                let instantiation = Instantiation::from_generic_arguments(
+                    trait_premise.generic_arguments.clone(),
+                    trait_premise.id.into(),
+                    &trait_sym.generic_declaration.parameters,
+                )
+                .unwrap();
+
+                trait_sym
+                    .generic_declaration
+                    .predicates
+                    .iter()
+                    .filter_map(|x| {
+                        let mut predicate = x.predicate.clone();
+
+                        predicate.instantiate(&instantiation);
+
+                        if predicate.contains_forall_lifetime() {
+                            Some(predicate)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+
+            let forall_lifetime_instantiation = Instantiation {
+                lifetimes: forall_lifetime_unification
+                    .lifetimes
+                    .iter()
+                    .filter_map(|(forall, lifetimes)| {
+                        lifetimes
+                            .iter()
+                            .next()
+                            .copied()
+                            .map(|lifetime| (*forall, lifetime))
+                    })
+                    .collect(),
+                types: HashMap::default(),
+                constants: HashMap::default(),
+            };
+
+            let mut lifetime_constraints = Vec::new();
+            for mut predicate in predicate_with_forall_lifetimes {
+                predicate.instantiate(&forall_lifetime_instantiation);
+
+                if !match predicate {
+                    Predicate::TypeEquality(equality) => equality::equals(
+                        &equality.lhs,
+                        &equality.rhs,
+                        premise,
+                        table,
+                        semantic,
+                        session,
+                    )?,
+                    Predicate::ConstantEquality(equality) => equality::equals(
+                        &equality.lhs,
+                        &equality.rhs,
+                        premise,
+                        table,
+                        semantic,
+                        session,
+                    )?,
+                    Predicate::ConstantType(constant_type) => {
+                        ConstantType::satisfies(
+                            &constant_type.0,
+                            premise,
+                            table,
+                            semantic,
+                            session,
+                        )?
+                    }
+                    Predicate::LifetimeOutlives(outlives) => {
+                        lifetime_constraints.push(
+                            LifetimeConstraint::LifetimeOutlives(outlives),
+                        );
+                        true
+                    }
+                    Predicate::TypeOutlives(outlives) => {
+                        lifetime_constraints
+                            .push(LifetimeConstraint::TypeOutlives(outlives));
+                        true
+                    }
+                    Predicate::TupleType(tuple) => Tuple::satisfies(
+                        &tuple.0, premise, table, semantic, session,
+                    )?,
+                    Predicate::TupleConstant(tuple) => Tuple::satisfies(
+                        &tuple.0, premise, table, semantic, session,
+                    )?,
+                    Predicate::Trait(tr) => {
+                        if let Some(satisfiability) = Self::satisfies(
+                            tr.id,
+                            tr.is_const,
+                            &tr.generic_arguments,
+                            premise,
+                            table,
+                            semantic,
+                            session,
+                        )? {
+                            lifetime_constraints
+                                .extend(satisfiability.lifetime_constraints);
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                } {
+                    continue 'outer;
+                }
+            }
+
             // if all the lifetimes are equal, then the trait is satisfied
             session.mark_as_done(
                 Query { id, is_const, generic_arguments },
-                Satisfiability { lifetime_constraints: Vec::new() },
+                Satisfiability {
+                    lifetime_constraints: lifetime_constraints.clone(),
+                },
             );
-            return Ok(Some(Satisfiability {
-                lifetime_constraints: Vec::new(),
-            }));
+            return Ok(Some(Satisfiability { lifetime_constraints }));
         }
 
         // manually search for the trait implementation

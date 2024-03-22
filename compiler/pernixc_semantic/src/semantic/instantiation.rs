@@ -15,9 +15,8 @@ use super::{
 use crate::{
     arena::ID,
     symbol::{
-        ConstantParameter, ConstantParameterID, GenericID, GenericParameters,
-        LifetimeParameter, LifetimeParameterID, MemberID, TypeParameter,
-        TypeParameterID,
+        ConstantParameter, GenericID, GenericParameters, LifetimeParameter,
+        MemberID, TypeParameter,
     },
 };
 
@@ -25,9 +24,9 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(missing_docs)]
 pub struct Instantiation {
-    pub lifetimes: HashMap<LifetimeParameterID, Lifetime>,
-    pub types: HashMap<TypeParameterID, Type>,
-    pub constants: HashMap<ConstantParameterID, Constant>,
+    pub lifetimes: HashMap<Lifetime, Lifetime>,
+    pub types: HashMap<Type, Type>,
+    pub constants: HashMap<Constant, Constant>,
 }
 
 struct Instantiater<'a> {
@@ -42,11 +41,7 @@ impl<'a> Visitor for Instantiater<'a> {
     fn visit_constant(&mut self, _t: &Constant) -> bool { unreachable!() }
 
     fn visit_type_mut(&mut self, ty: &mut Type) -> bool {
-        let Some(parameter) = ty.as_generic_parameter() else {
-            return true;
-        };
-
-        if let Some(substitution) = self.substitution.types.get(parameter) {
+        if let Some(substitution) = self.substitution.types.get(ty) {
             *ty = substitution.clone();
         }
 
@@ -54,11 +49,7 @@ impl<'a> Visitor for Instantiater<'a> {
     }
 
     fn visit_lifetime_mut(&mut self, lifetime: &mut Lifetime) -> bool {
-        let Some(parameter) = lifetime.as_generic_parameter() else {
-            return true;
-        };
-
-        if let Some(substitution) = self.substitution.lifetimes.get(parameter) {
+        if let Some(substitution) = self.substitution.lifetimes.get(lifetime) {
             *lifetime = *substitution;
         }
 
@@ -66,11 +57,7 @@ impl<'a> Visitor for Instantiater<'a> {
     }
 
     fn visit_constant_mut(&mut self, constant: &mut Constant) -> bool {
-        let Some(parameter) = constant.as_generic_parameter() else {
-            return true;
-        };
-
-        if let Some(substitution) = self.substitution.constants.get(parameter) {
+        if let Some(substitution) = self.substitution.constants.get(constant) {
             *constant = substitution.clone();
         }
 
@@ -113,7 +100,9 @@ pub enum FromGenericArgumentsError {
 }
 
 impl Instantiation {
-    fn append_from_arguments<T: Term>(
+    fn append_from_arguments<
+        T: Term + From<MemberID<ID<T::GenericParameter>, GenericID>>,
+    >(
         &mut self,
         terms: impl Iterator<Item = T>,
         term_parameter_order: impl Iterator<Item = ID<T::GenericParameter>>,
@@ -123,7 +112,7 @@ impl Instantiation {
         for (term, term_id) in terms.zip(term_parameter_order) {
             let parameter_id = MemberID { parent: generic_id, id: term_id };
 
-            match T::get_instantiation_mut(self).entry(parameter_id) {
+            match T::get_instantiation_mut(self).entry(parameter_id.into()) {
                 Entry::Occupied(..) => {
                     return Err(to_error(term_id));
                 }

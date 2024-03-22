@@ -7,7 +7,7 @@ use crate::{
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         visitor, Premise, Semantic,
     },
-    table::{State, Table},
+    table::{self, DisplayObject, State, Table},
 };
 
 #[derive(Debug)]
@@ -126,6 +126,16 @@ pub enum QuerySource {
 /// Represents a type can be used as a type of a compile-time constant value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantType(pub Type);
+
+impl<T: State> table::Display<T> for ConstantType {
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "const type {}", DisplayObject { display: &self.0, table })
+    }
+}
 
 impl ConstantType {
     /// Checks if the type contains a `forall` lifetime.

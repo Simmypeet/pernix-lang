@@ -7,8 +7,8 @@ use proptest::{
 };
 
 use super::{
-    Array, MemberSymbolKindID, Pointer, Primitive, Qualifier, Reference,
-    SymbolKindID, Type,
+    Array, MemberSymbolID, Pointer, Primitive, Qualifier, Reference, SymbolID,
+    Type,
 };
 use crate::{
     arena::ID,
@@ -93,7 +93,7 @@ impl Arbitrary for Reference {
     }
 }
 
-impl Arbitrary for SymbolKindID {
+impl Arbitrary for SymbolID {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -107,7 +107,7 @@ impl Arbitrary for SymbolKindID {
     }
 }
 
-impl Arbitrary for MemberSymbolKindID {
+impl Arbitrary for MemberSymbolID {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 

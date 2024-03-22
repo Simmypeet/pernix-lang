@@ -9,7 +9,7 @@ use crate::{
         unification::{self, Unification},
         visitor, Premise, Semantic,
     },
-    table::{State, Table},
+    table::{self, DisplayObject, State, Table},
 };
 
 /// A query for checking [`Outlives`] predicate satisfiability.
@@ -30,6 +30,21 @@ pub struct Outlives<T> {
 
     /// The lifetime that the term must outlive.
     pub bound: Lifetime,
+}
+
+impl<S: State, T: table::Display<S>> table::Display<S> for Outlives<T> {
+    fn fmt(
+        &self,
+        table: &Table<S>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: {}",
+            DisplayObject { display: &self.operand, table },
+            DisplayObject { display: &self.bound, table },
+        )
+    }
 }
 
 impl<T: Term> Outlives<T> {

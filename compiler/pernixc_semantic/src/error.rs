@@ -1,7 +1,7 @@
 //! Contains all the definition of errors that can be emitted by the semantic
 //! analyzer.
 
-use std::fmt::{self, Debug, Display};
+use std::fmt::{self, Debug};
 
 use pernixc_base::{
     log::{
@@ -15,31 +15,13 @@ use crate::{
     arena::ID,
     semantic::predicate::Predicate,
     symbol::{
-        Accessibility, AdtID, GenericID, GenericKind, GenericParameter, Global,
+        self, Accessibility, AdtID, GenericID, GenericKind, GenericParameter,
         GlobalID, LocalGenericParameterID, MemberID, Module, Trait,
         TraitImplementation, TraitImplementationKindID,
         TraitImplementationMemberID, TraitMemberID,
     },
-    table::{Index, Suboptimal, Table},
+    table::{Display, DisplayObject, Index, State, Suboptimal, Table},
 };
-
-/// Contains both error and the table in which the error occurred.
-///
-/// Primarily used for implementing [`std::fmt::Display`] trait.
-#[derive(Debug, Clone, Copy)]
-pub struct WithTable<'a, Error: ?Sized> {
-    /// The table in which the error occurred.
-    pub table: &'a Table<Suboptimal>,
-
-    /// The error that occurred.
-    pub error: &'a Error,
-}
-
-impl<'a, Error: DisplayWithTable + ?Sized> Display for WithTable<'a, Error> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.error.fmt(self.table, f)
-    }
-}
 
 /// The global symbol with the same name already exists in the given scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,23 +36,8 @@ pub struct RedefinedGlobal {
     pub in_global_id: GlobalID,
 }
 
-/// Similar to [`std::fmt::Display`] but with the table in which the error
-/// occurred.
-pub trait DisplayWithTable {
-    #[allow(missing_docs, clippy::missing_errors_doc)]
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result;
-}
-
-impl DisplayWithTable for RedefinedGlobal {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for RedefinedGlobal {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (
             Some(existing_symbol),
             Some(new_symbol),
@@ -121,14 +88,10 @@ pub struct SymbolIsMoreAccessibleThanParent {
     pub parent_id: GlobalID,
 }
 
-impl DisplayWithTable for SymbolIsMoreAccessibleThanParent {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for SymbolIsMoreAccessibleThanParent {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (Some(symbol_name), Some(parent_qualified_name)) = (
-            table.get_global(self.symbol_id).map(Global::name),
+            table.get_global(self.symbol_id).map(|x| x.name().to_owned()),
             table.get_qualified_name(self.parent_id),
         ) else {
             return Err(fmt::Error);
@@ -142,8 +105,8 @@ impl DisplayWithTable for SymbolIsMoreAccessibleThanParent {
         };
 
         let (Some(symbol_span), Some(parent_span)) = (
-            table.get_global(self.symbol_id).map(Global::span),
-            table.get_global(self.parent_id).map(Global::span),
+            table.get_global(self.symbol_id).map(|x| x.span().cloned()),
+            table.get_global(self.parent_id).map(|x| x.span().cloned()),
         ) else {
             return Err(fmt::Error);
         };
@@ -158,7 +121,7 @@ impl DisplayWithTable for SymbolIsMoreAccessibleThanParent {
 
         if let Some(symbol_span) = symbol_span {
             write!(f, "\n{}", SourceCodeDisplay {
-                span: symbol_span,
+                span: &symbol_span,
                 help_display: Some(format!(
                     "the symbol `{symbol_name}` is {symbol_accessibility}",
                 )),
@@ -167,7 +130,7 @@ impl DisplayWithTable for SymbolIsMoreAccessibleThanParent {
 
         if let Some(parent_span) = parent_span {
             write!(f, "\n{}", SourceCodeDisplay {
-                span: parent_span,
+                span: &parent_span,
                 help_display: Some(format!(
                     "the parent symbol is {parent_accessibility}",
                 )),
@@ -188,12 +151,8 @@ pub struct InvalidSymbolInImplementation {
     pub qualified_identifier_span: Span,
 }
 
-impl DisplayWithTable for InvalidSymbolInImplementation {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for InvalidSymbolInImplementation {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let qualified_name = table
             .get_qualified_name(self.invalid_global_id)
             .ok_or(fmt::Error)?;
@@ -257,12 +216,8 @@ impl GlobalID {
     }
 }
 
-impl DisplayWithTable for ExpectModule {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for ExpectModule {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let found_symbol_qualified_name =
             table.get_qualified_name(self.found_id).ok_or(fmt::Error)?;
 
@@ -294,12 +249,8 @@ pub struct SelfModuleUsing {
     pub using_span: Span,
 }
 
-impl DisplayWithTable for SelfModuleUsing {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for SelfModuleUsing {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let module_qualified_name = table
             .get_qualified_name(self.module_id.into())
             .ok_or(fmt::Error)?;
@@ -334,12 +285,8 @@ pub struct DuplicatedUsing {
     pub using_span: Span,
 }
 
-impl DisplayWithTable for DuplicatedUsing {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for DuplicatedUsing {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let used_in_module_qualified_name = table
             .get_qualified_name(self.used_in_module_id.into())
             .ok_or(fmt::Error)?;
@@ -381,12 +328,8 @@ pub struct SymbolIsNotAccessible {
     pub referred_span: Span,
 }
 
-impl DisplayWithTable for SymbolIsNotAccessible {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for SymbolIsNotAccessible {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let referring_site_qualified_name =
             table.get_qualified_name(self.referring_site).ok_or(fmt::Error)?;
 
@@ -420,12 +363,8 @@ pub struct ResolutionAmbiguity {
     pub candidates: Vec<GlobalID>,
 }
 
-impl DisplayWithTable for ResolutionAmbiguity {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for ResolutionAmbiguity {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the symbol resolution resulted in multiple candidates",
@@ -460,12 +399,8 @@ pub struct SymbolNotFound {
     pub resolution_span: Span,
 }
 
-impl DisplayWithTable for SymbolNotFound {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for SymbolNotFound {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(searched_in_module_id) = self.searched_global_id {
             let qualified_name = table
                 .get_qualified_name(searched_in_module_id)
@@ -508,12 +443,8 @@ pub struct NoGenericArgumentsRequired {
     pub generic_argument_span: Span,
 }
 
-impl DisplayWithTable for NoGenericArgumentsRequired {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for NoGenericArgumentsRequired {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let qualified_name =
             table.get_qualified_name(self.global_id).ok_or(fmt::Error)?;
 
@@ -544,12 +475,8 @@ pub struct ExpectTrait {
     pub trait_path: Span,
 }
 
-impl DisplayWithTable for ExpectTrait {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for ExpectTrait {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let found_symbol_qualified_name =
             table.get_qualified_name(self.found_id).ok_or(fmt::Error)?;
 
@@ -578,12 +505,8 @@ pub struct CyclicDependency {
     pub participants: Vec<GlobalID>,
 }
 
-impl DisplayWithTable for CyclicDependency {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for CyclicDependency {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let symbol_list = self
             .participants
             .iter()
@@ -629,12 +552,8 @@ pub struct MisOrderedGenericArgument {
     pub generic_argument: Span,
 }
 
-impl DisplayWithTable for MisOrderedGenericArgument {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for MisOrderedGenericArgument {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the generic argument was supplied in the wrong order",
@@ -669,12 +588,8 @@ pub struct NegativeImplementationOnAdt {
     pub adt_id: AdtID,
 }
 
-impl DisplayWithTable for NegativeImplementationOnAdt {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for NegativeImplementationOnAdt {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let adt_qualified_name =
             table.get_qualified_name(self.adt_id.into()).ok_or(fmt::Error)?;
 
@@ -705,12 +620,8 @@ pub struct MisOrderedGenericParameter {
     pub generic_parameter_span: Span,
 }
 
-impl DisplayWithTable for MisOrderedGenericParameter {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for MisOrderedGenericParameter {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the generic parameter was declared in the wrong order",
@@ -765,12 +676,8 @@ pub struct MisMatchedGenericArgumentCount {
     pub supplied_count: usize,
 }
 
-impl DisplayWithTable for MisMatchedGenericArgumentCount {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for MisMatchedGenericArgumentCount {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let generic_kind = match self.generic_kind {
             GenericKind::Type => "type",
             GenericKind::Lifetime => "lifetime",
@@ -804,12 +711,8 @@ pub struct LifetimeParameterNotFound {
     pub referring_site: GlobalID,
 }
 
-impl DisplayWithTable for LifetimeParameterNotFound {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for LifetimeParameterNotFound {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let referring_site_qualified_name =
             table.get_qualified_name(self.referring_site).ok_or(fmt::Error)?;
 
@@ -838,12 +741,8 @@ pub struct ExpectLifetime {
     pub expected_span: Span,
 }
 
-impl DisplayWithTable for ExpectLifetime {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for ExpectLifetime {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "a lifetime was expected",
@@ -858,6 +757,44 @@ impl DisplayWithTable for ExpectLifetime {
     }
 }
 
+/// The satisfiability of the predicate was undecidable (takes too long to
+/// solve).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UndecidablePredicate {
+    /// The span where the predicate satisfiability was undecidable.
+    pub instantiation_span: Span,
+
+    /// The predicate that was undecidable.
+    pub predicate: symbol::Predicate,
+}
+
+impl<T: State> Display<T> for UndecidablePredicate {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "overflow calculating the satisfiability of `{}` predicate \
+                 when instantiating",
+                DisplayObject { display: &self.predicate.predicate, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.instantiation_span,
+            help_display: None::<i32>
+        })?;
+
+        if let Some(predicate_span) = self.predicate.kind.span() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span: predicate_span,
+                help_display: Some("predicate defined here"),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
 /// The tuple type contains more than one unpacked type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MoreThanOneUnpackedInTupleType {
@@ -865,12 +802,8 @@ pub struct MoreThanOneUnpackedInTupleType {
     pub illegal_tuple_type_span: Span,
 }
 
-impl DisplayWithTable for MoreThanOneUnpackedInTupleType {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for MoreThanOneUnpackedInTupleType {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the tuple type contains more than one unpacked type",
@@ -895,12 +828,8 @@ pub struct ExpectType {
     pub resolved_global_id: GlobalID,
 }
 
-impl DisplayWithTable for ExpectType {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for ExpectType {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let qualified_name = table
             .get_qualified_name(self.resolved_global_id)
             .ok_or(fmt::Error)?;
@@ -932,21 +861,20 @@ pub struct DuplicatedGenericParameter<T> {
     pub duplicating_generic_parameter_span: Span,
 }
 
-impl<T: GenericParameter> DisplayWithTable for DuplicatedGenericParameter<T> {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
-        let Some(generic_parameter_symbol) = table
-            .get_generic(self.existing_generic_parameter_id.parent)
-            .and_then(|x| {
-                T::get_generic_parameters_arena(
-                    &x.generic_declaration().parameters,
-                )
-                .get(self.existing_generic_parameter_id.id)
-            })
+impl<T: GenericParameter, S: State> Display<S>
+    for DuplicatedGenericParameter<T>
+{
+    fn fmt(&self, table: &Table<S>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Some(generic_symbol) =
+            table.get_generic(self.existing_generic_parameter_id.parent)
         else {
+            return Err(fmt::Error);
+        };
+
+        let Some(generic_parameter) = T::get_generic_parameters_arena(
+            &generic_symbol.generic_declaration().parameters,
+        )
+        .get(self.existing_generic_parameter_id.id) else {
             return Err(fmt::Error);
         };
 
@@ -954,11 +882,11 @@ impl<T: GenericParameter> DisplayWithTable for DuplicatedGenericParameter<T> {
             severity: Severity::Error,
             display: format!(
                 "the generic parameter named `{}` is already defined",
-                generic_parameter_symbol.name().unwrap_or("?")
+                generic_parameter.name().unwrap_or("?")
             ),
         })?;
 
-        if let Some(existing_span) = generic_parameter_symbol.span() {
+        if let Some(existing_span) = generic_parameter.span() {
             write!(f, "\n{}", SourceCodeDisplay {
                 span: existing_span,
                 help_display: Some("previously defined here"),
@@ -981,12 +909,8 @@ pub struct DefaultGenericParameterMustBeTrailing {
     pub invalid_generic_default_parameter_spans: Vec<Span>,
 }
 
-impl DisplayWithTable for DefaultGenericParameterMustBeTrailing {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for DefaultGenericParameterMustBeTrailing {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the default generic parameter must be trailing",
@@ -1010,12 +934,8 @@ pub struct TraitMemberExpected {
     pub non_trait_member_span: Span,
 }
 
-impl DisplayWithTable for TraitMemberExpected {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for TraitMemberExpected {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the trait member was expected but the non-trait member \
@@ -1038,12 +958,8 @@ pub struct MisMatchedTraitMemberBoundArgument {
     pub trait_member_bound_argument_span: Span,
 }
 
-impl DisplayWithTable for MisMatchedTraitMemberBoundArgument {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for MisMatchedTraitMemberBoundArgument {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the trait member bound argument mismatched",
@@ -1093,12 +1009,8 @@ pub struct MismatchedTraitMemberAndImplementationMember {
     pub implementation_member_identifer_span: Span,
 }
 
-impl DisplayWithTable for MismatchedTraitMemberAndImplementationMember {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for MismatchedTraitMemberAndImplementationMember {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let trait_member_qualified_identifier = table
             .get_qualified_name(self.trait_member_id.into())
             .ok_or(fmt::Error)?;
@@ -1147,12 +1059,8 @@ pub struct UnusedGenericParameterInImplementation {
     pub implementation_kind_id: TraitImplementationKindID,
 }
 
-impl DisplayWithTable for UnusedGenericParameterInImplementation {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for UnusedGenericParameterInImplementation {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let generic_id: GenericID = self.implementation_kind_id.into();
         let generic_symbol = table.get_generic(generic_id).ok_or(fmt::Error)?;
 
@@ -1231,12 +1139,8 @@ pub struct AmbiguousImplementation {
     pub second_implementation_id: TraitImplementationKindID,
 }
 
-impl DisplayWithTable for AmbiguousImplementation {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for AmbiguousImplementation {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let trait_name = table
             .get_qualified_name(self.first_implementation_id.into())
             .ok_or(fmt::Error)?;
@@ -1282,12 +1186,8 @@ pub struct RedefinedHigherRankedLifetime {
     pub redefinition_span: Span,
 }
 
-impl DisplayWithTable for RedefinedHigherRankedLifetime {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for RedefinedHigherRankedLifetime {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the higher-ranked lifetime with the same name already \
@@ -1323,12 +1223,8 @@ pub struct MismatchedGenericParameterCountInImplementation {
     pub generic_kind: GenericKind,
 }
 
-impl DisplayWithTable for MismatchedGenericParameterCountInImplementation {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for MismatchedGenericParameterCountInImplementation {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let generic_kind = match self.generic_kind {
             GenericKind::Type => "type",
             GenericKind::Lifetime => "lifetime",
@@ -1380,16 +1276,13 @@ pub struct UnknownTraitImplementationMember {
     pub trait_id: ID<Trait>,
 }
 
-impl DisplayWithTable for UnknownTraitImplementationMember {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for UnknownTraitImplementationMember {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let trait_qualified_name =
             table.get_qualified_name(self.trait_id.into()).ok_or(fmt::Error)?;
-        let trait_span =
-            table.get_global(self.trait_id.into()).ok_or(fmt::Error)?.span();
+        let trait_sym =
+            table.get_global(self.trait_id.into()).ok_or(fmt::Error)?;
+        let trait_span = trait_sym.span();
 
         write!(f, "{}", Message {
             severity: Severity::Error,
@@ -1429,12 +1322,8 @@ pub struct AlreadyImplementedTraitMember {
     pub new_implementation_span: Span,
 }
 
-impl DisplayWithTable for AlreadyImplementedTraitMember {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for AlreadyImplementedTraitMember {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let trait_member_qualified_name = table
             .get_qualified_name(self.trait_member_id.into())
             .ok_or(fmt::Error)?;
@@ -1483,14 +1372,10 @@ pub struct MismatchedTraitMemberAndImplementationMemberAccessibility {
     pub implementation_member_id: TraitImplementationMemberID,
 }
 
-impl DisplayWithTable
+impl<T: State> Display<T>
     for MismatchedTraitMemberAndImplementationMemberAccessibility
 {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let trait_member_qualified_name = table
             .get_qualified_name(self.trait_member_id.into())
             .ok_or(fmt::Error)?;
@@ -1548,12 +1433,8 @@ pub struct MismatchedImplementationConstantTypeParameter {
     pub constant_parameter_index: usize,
 }
 
-impl DisplayWithTable for MismatchedImplementationConstantTypeParameter {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for MismatchedImplementationConstantTypeParameter {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the type of the constant parameter in the \
@@ -1639,12 +1520,8 @@ pub struct UnimplementedTraitMembers {
     pub implementation_id: ID<TraitImplementation>,
 }
 
-impl DisplayWithTable for UnimplementedTraitMembers {
-    fn fmt(
-        &self,
-        table: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for UnimplementedTraitMembers {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let trait_member_qualified_names = self
             .unimplemented_trait_member_ids
             .iter()
@@ -1694,12 +1571,8 @@ pub struct UnsatisfiedWhereClausePredicate {
     pub span: Span,
 }
 
-impl DisplayWithTable for UnsatisfiedWhereClausePredicate {
-    fn fmt(
-        &self,
-        _: &Table<Suboptimal>,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+impl<T: State> Display<T> for UnsatisfiedWhereClausePredicate {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let predicate = &self.predicate;
 
         write!(f, "{}", Message {
@@ -1719,14 +1592,14 @@ impl DisplayWithTable for UnsatisfiedWhereClausePredicate {
 }
 
 /// Implemented by all semantic errors.
-pub trait Error: Debug + DisplayWithTable + Send + Sync + 'static {
+pub trait Error: Debug + Display<Suboptimal> + Send + Sync + 'static {
     #[allow(missing_docs, clippy::missing_errors_doc)]
-    fn as_display_with_table(&self) -> &dyn DisplayWithTable;
+    fn as_display_with_table(&self) -> &dyn Display<Suboptimal>;
 }
 
-impl<T: Debug + DisplayWithTable + Send + Sync + 'static> Error for T
+impl<U: Debug + Display<Suboptimal> + Send + Sync + 'static> Error for U
 where
-    for<'a> WithTable<'a, T>: Display,
+    for<'a> DisplayObject<'a, U, Suboptimal>: fmt::Display,
 {
-    fn as_display_with_table(&self) -> &dyn DisplayWithTable { self }
+    fn as_display_with_table(&self) -> &dyn Display<Suboptimal> { self }
 }

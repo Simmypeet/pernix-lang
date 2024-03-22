@@ -1,6 +1,10 @@
 //! Contains the definition of [`Type`].
 
-use std::collections::{HashMap, HashSet};
+use core::fmt;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
 use enum_as_inner::EnumAsInner;
 
@@ -23,10 +27,10 @@ use crate::{
         Premise,
     },
     symbol::{
-        self, ConstantParameterID, Enum, GenericID, GlobalID,
-        LifetimeParameterID, Struct, TypeParameter, TypeParameterID, Variance,
+        self, Enum, GenericID, GlobalID, Struct, TypeParameter,
+        TypeParameterID, Variance,
     },
-    table::{Index, State, Table},
+    table::{self, DisplayObject, Index, State, Table},
 };
 
 /// Enumeration of all symbol kinds (as a type term).
@@ -43,28 +47,28 @@ use crate::{
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum SymbolKindID {
+pub enum SymbolID {
     Struct(ID<Struct>),
     Enum(ID<Enum>),
     Type(ID<symbol::Type>),
 }
 
-impl From<SymbolKindID> for GlobalID {
-    fn from(value: SymbolKindID) -> Self {
+impl From<SymbolID> for GlobalID {
+    fn from(value: SymbolID) -> Self {
         match value {
-            SymbolKindID::Struct(id) => Self::Struct(id),
-            SymbolKindID::Enum(id) => Self::Enum(id),
-            SymbolKindID::Type(id) => Self::Type(id),
+            SymbolID::Struct(id) => Self::Struct(id),
+            SymbolID::Enum(id) => Self::Enum(id),
+            SymbolID::Type(id) => Self::Type(id),
         }
     }
 }
 
-impl From<SymbolKindID> for GenericID {
-    fn from(value: SymbolKindID) -> Self {
+impl From<SymbolID> for GenericID {
+    fn from(value: SymbolID) -> Self {
         match value {
-            SymbolKindID::Struct(id) => Self::Struct(id),
-            SymbolKindID::Enum(id) => Self::Enum(id),
-            SymbolKindID::Type(id) => Self::Type(id),
+            SymbolID::Struct(id) => Self::Struct(id),
+            SymbolID::Enum(id) => Self::Enum(id),
+            SymbolID::Type(id) => Self::Type(id),
         }
     }
 }
@@ -84,25 +88,25 @@ impl From<SymbolKindID> for GenericID {
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum MemberSymbolKindID {
+pub enum MemberSymbolID {
     TraitImplementation(ID<symbol::TraitImplementationType>),
     AdtImplementation(ID<symbol::AdtImplementationType>),
 }
 
-impl From<MemberSymbolKindID> for GlobalID {
-    fn from(value: MemberSymbolKindID) -> Self {
+impl From<MemberSymbolID> for GlobalID {
+    fn from(value: MemberSymbolID) -> Self {
         match value {
-            MemberSymbolKindID::TraitImplementation(id) => id.into(),
-            MemberSymbolKindID::AdtImplementation(id) => id.into(),
+            MemberSymbolID::TraitImplementation(id) => id.into(),
+            MemberSymbolID::AdtImplementation(id) => id.into(),
         }
     }
 }
 
-impl From<MemberSymbolKindID> for GenericID {
-    fn from(value: MemberSymbolKindID) -> Self {
+impl From<MemberSymbolID> for GenericID {
+    fn from(value: MemberSymbolID) -> Self {
         match value {
-            MemberSymbolKindID::TraitImplementation(id) => id.into(),
-            MemberSymbolKindID::AdtImplementation(id) => id.into(),
+            MemberSymbolID::TraitImplementation(id) => id.into(),
+            MemberSymbolID::AdtImplementation(id) => id.into(),
         }
     }
 }
@@ -151,22 +155,44 @@ pub struct Array {
 
 /// Contains all primitive types in the language.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::Display,
 )]
 #[allow(missing_docs)]
 pub enum Primitive {
+    #[display(fmt = "int8")]
     Int8,
+    #[display(fmt = "int16")]
     Int16,
+    #[display(fmt = "int32")]
     Int32,
+    #[display(fmt = "int64")]
     Int64,
+    #[display(fmt = "uint8")]
     Uint8,
+    #[display(fmt = "uint16")]
     Uint16,
+    #[display(fmt = "uint32")]
     Uint32,
+    #[display(fmt = "uint64")]
     Uint64,
+    #[display(fmt = "float32")]
     Float32,
+    #[display(fmt = "float64")]
     Float64,
+    #[display(fmt = "bool")]
     Bool,
+    #[display(fmt = "usize")]
     Usize,
+    #[display(fmt = "isize")]
     Isize,
 }
 
@@ -277,11 +303,11 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
 
             (Self::MemberSymbol(location), Type::MemberSymbol(symbol)) => {
                 let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                    (MemberSymbolID::TraitImplementation(id), false) => {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                    (MemberSymbolID::AdtImplementation(id), true) => {
                         let implementation_id = table
                             .get(id)
                             .ok_or(GetVarianceError::InvalidID)?
@@ -294,11 +320,9 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
 
                         adt_kind_id.into()
                     }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
+                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
 
-                    (MemberSymbolKindID::TraitImplementation(_), true) => {
+                    (MemberSymbolID::TraitImplementation(_), true) => {
                         return Ok(Variance::Invariant)
                     }
                 };
@@ -470,11 +494,11 @@ impl Location<Type, Type> for SubTypeLocation {
 
             (Self::MemberSymbol(location), Type::MemberSymbol(symbol)) => {
                 let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                    (MemberSymbolID::TraitImplementation(id), false) => {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                    (MemberSymbolID::AdtImplementation(id), true) => {
                         let implementation_id = table
                             .get(id)
                             .ok_or(GetVarianceError::InvalidID)?
@@ -487,11 +511,9 @@ impl Location<Type, Type> for SubTypeLocation {
 
                         adt_kind_id.into()
                     }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
+                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
 
-                    (MemberSymbolKindID::TraitImplementation(_), true) => {
+                    (MemberSymbolID::TraitImplementation(_), true) => {
                         return Ok(Variance::Invariant)
                     }
                 };
@@ -595,11 +617,11 @@ impl Location<Type, Constant> for SubConstantLocation {
 
             (Self::MemberSymbol(location), Type::MemberSymbol(symbol)) => {
                 let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolKindID::TraitImplementation(id), false) => {
+                    (MemberSymbolID::TraitImplementation(id), false) => {
                         id.into()
                     }
 
-                    (MemberSymbolKindID::AdtImplementation(id), true) => {
+                    (MemberSymbolID::AdtImplementation(id), true) => {
                         let implementation_id = table
                             .get(id)
                             .ok_or(GetVarianceError::InvalidID)?
@@ -612,11 +634,9 @@ impl Location<Type, Constant> for SubConstantLocation {
 
                         adt_kind_id.into()
                     }
-                    (MemberSymbolKindID::AdtImplementation(id), false) => {
-                        id.into()
-                    }
+                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
 
-                    (MemberSymbolKindID::TraitImplementation(_), true) => {
+                    (MemberSymbolID::TraitImplementation(_), true) => {
                         return Ok(Variance::Invariant)
                     }
                 };
@@ -796,7 +816,7 @@ pub enum Type {
     Primitive(Primitive),
     Parameter(TypeParameterID),
     Inference(Inference),
-    Symbol(Symbol<SymbolKindID>),
+    Symbol(Symbol<SymbolID>),
     Pointer(Pointer),
     Reference(Reference),
     Array(Array),
@@ -811,7 +831,7 @@ pub enum Type {
     ///
     /// In the **TraitImplementation** case, the `parent_generic_arguments`
     /// field **is** deduced from the implementation.
-    MemberSymbol(MemberSymbol<MemberSymbolKindID>),
+    MemberSymbol(MemberSymbol<MemberSymbolID>),
 
     TraitMember(TraitMember),
 }
@@ -832,84 +852,6 @@ impl TryFrom<Type> for TypeParameterID {
 
 impl Default for Type {
     fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
-}
-
-fn get_substitution_from_generic_arguments(
-    generic_id: GenericID,
-    generic_arguments: &GenericArguments,
-    table: &Table<impl State>,
-) -> Option<Instantiation> {
-    let Some(generic_symbol) = table.get_generic(generic_id) else {
-        return None;
-    };
-
-    if generic_arguments.lifetimes.len()
-        != generic_symbol.generic_declaration().parameters.lifetime_order.len()
-        || generic_arguments.types.len()
-            != generic_symbol.generic_declaration().parameters.type_order.len()
-        || generic_arguments.constants.len()
-            != generic_symbol
-                .generic_declaration()
-                .parameters
-                .constant_order
-                .len()
-    {
-        return None;
-    }
-
-    Some(Instantiation {
-        lifetimes: generic_arguments
-            .lifetimes
-            .iter()
-            .enumerate()
-            .map(|(idx, lt)| {
-                (
-                    LifetimeParameterID {
-                        parent: generic_id,
-                        id: generic_symbol
-                            .generic_declaration()
-                            .parameters
-                            .lifetime_order[idx],
-                    },
-                    *lt,
-                )
-            })
-            .collect(),
-        types: generic_arguments
-            .types
-            .iter()
-            .enumerate()
-            .map(|(idx, ty)| {
-                (
-                    TypeParameterID {
-                        parent: generic_id,
-                        id: generic_symbol
-                            .generic_declaration()
-                            .parameters
-                            .type_order[idx],
-                    },
-                    ty.clone(),
-                )
-            })
-            .collect(),
-        constants: generic_arguments
-            .constants
-            .iter()
-            .enumerate()
-            .map(|(idx, c)| {
-                (
-                    ConstantParameterID {
-                        parent: generic_id,
-                        id: generic_symbol
-                            .generic_declaration()
-                            .parameters
-                            .constant_order[idx],
-                    },
-                    c.clone(),
-                )
-            })
-            .collect(),
-    })
 }
 
 impl Term for Type {
@@ -973,14 +915,18 @@ impl Term for Type {
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>> {
         match self {
             Self::Symbol(Symbol { id, generic_arguments }) => match *id {
-                SymbolKindID::Struct(struct_id) => {
-                    let substitution = get_substitution_from_generic_arguments(
-                        struct_id.into(),
-                        generic_arguments,
-                        table,
-                    )?;
-
+                SymbolID::Struct(struct_id) => {
                     let Some(struct_sym) = table.get(struct_id) else {
+                        return None;
+                    };
+
+                    let Ok(substitution) =
+                        Instantiation::from_generic_arguments(
+                            generic_arguments.clone(),
+                            struct_id.into(),
+                            &struct_sym.generic_declaration.parameters,
+                        )
+                    else {
                         return None;
                     };
 
@@ -999,14 +945,18 @@ impl Term for Type {
                             .collect(),
                     )
                 }
-                SymbolKindID::Enum(enum_id) => {
-                    let substitution = get_substitution_from_generic_arguments(
-                        enum_id.into(),
-                        generic_arguments,
-                        table,
-                    )?;
-
+                SymbolID::Enum(enum_id) => {
                     let Some(enum_sym) = table.get(enum_id) else {
+                        return None;
+                    };
+
+                    let Ok(substitution) =
+                        Instantiation::from_generic_arguments(
+                            generic_arguments.clone(),
+                            enum_id.into(),
+                            &enum_sym.generic_declaration.parameters,
+                        )
+                    else {
                         return None;
                     };
 
@@ -1032,7 +982,7 @@ impl Term for Type {
                             .collect(),
                     )
                 }
-                SymbolKindID::Type(_) => None,
+                SymbolID::Type(_) => None,
             },
 
             _ => None,
@@ -1108,11 +1058,11 @@ impl Term for Type {
             | Self::MemberSymbol(_) => Satisfiability::Unsatisfied,
 
             Self::Symbol(Symbol { id, .. }) => match id {
-                SymbolKindID::Struct(_) | SymbolKindID::Enum(_) => {
+                SymbolID::Struct(_) | SymbolID::Enum(_) => {
                     Satisfiability::Congruent
                 }
 
-                SymbolKindID::Type(_) => Satisfiability::Unsatisfied,
+                SymbolID::Type(_) => Satisfiability::Unsatisfied,
             },
 
             Self::Pointer(_)
@@ -1125,13 +1075,13 @@ impl Term for Type {
 
     fn get_instantiation(
         instantiation: &Instantiation,
-    ) -> &HashMap<TypeParameterID, Self> {
+    ) -> &HashMap<Self, Self> {
         &instantiation.types
     }
 
     fn get_instantiation_mut(
         instantiation: &mut Instantiation,
-    ) -> &mut HashMap<TypeParameterID, Self> {
+    ) -> &mut HashMap<Self, Self> {
         &mut instantiation.types
     }
 
@@ -1162,6 +1112,100 @@ impl Term for Type {
         generic_arguments: &mut GenericArguments,
     ) -> &mut Vec<Self> {
         &mut generic_arguments.types
+    }
+}
+
+impl<T: State> table::Display<T> for Type {
+    fn fmt(
+        &self,
+        table: &Table<T>,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Primitive(primitve) => {
+                write!(f, "{primitve}")
+            }
+            Self::Parameter(type_parameter) => {
+                write!(
+                    f,
+                    "{}",
+                    table
+                        .get_generic(type_parameter.parent)
+                        .ok_or(fmt::Error)?
+                        .generic_declaration()
+                        .parameters
+                        .types
+                        .get(type_parameter.id)
+                        .ok_or(fmt::Error)?
+                        .name
+                )
+            }
+            Self::Inference(_) => write!(f, "?"),
+            Self::Symbol(symbol) => {
+                write!(f, "{}", DisplayObject { table, display: symbol })
+            }
+            Self::Pointer(pointer) => {
+                write!(f, "*")?;
+
+                match pointer.qualifier {
+                    Qualifier::Immutable => {}
+                    Qualifier::Mutable => {
+                        write!(f, "mutable ")?;
+                    }
+                    Qualifier::Restrict => {
+                        write!(f, "restrict ")?;
+                    }
+                }
+
+                write!(f, "{}", DisplayObject {
+                    table,
+                    display: &*pointer.pointee
+                })
+            }
+            Self::Reference(reference) => {
+                write!(f, "&")?;
+
+                match reference.qualifier {
+                    Qualifier::Immutable => {}
+                    Qualifier::Mutable => {
+                        write!(f, "mutable ")?;
+                    }
+                    Qualifier::Restrict => {
+                        write!(f, "restrict ")?;
+                    }
+                }
+
+                write!(f, "{} ", DisplayObject {
+                    table,
+                    display: &reference.lifetime
+                })?;
+
+                write!(f, "{}", DisplayObject {
+                    table,
+                    display: &*reference.pointee
+                })
+            }
+            Self::Array(array) => {
+                write!(
+                    f,
+                    "[{}: {}]",
+                    DisplayObject { table, display: &*array.r#type },
+                    DisplayObject { table, display: &array.length },
+                )
+            }
+            Self::Tuple(tuple) => {
+                write!(f, "{}", DisplayObject { table, display: tuple })
+            }
+            Self::Local(ty) => {
+                write!(f, "local {}", DisplayObject { table, display: &*ty.0 })
+            }
+            Self::MemberSymbol(ty) => {
+                write!(f, "{}", DisplayObject { table, display: ty })
+            }
+            Self::TraitMember(ty) => {
+                write!(f, "{}", DisplayObject { table, display: ty })
+            }
+        }
     }
 }
 

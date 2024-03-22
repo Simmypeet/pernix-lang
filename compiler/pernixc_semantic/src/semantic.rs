@@ -8,7 +8,7 @@ use self::{
     term::{
         constant::Constant,
         lifetime::Lifetime,
-        r#type::{self, SymbolKindID, Type},
+        r#type::{self, SymbolID, Type},
         GenericArguments, MemberSymbol, Symbol, Term,
     },
 };
@@ -193,7 +193,7 @@ impl Semantic<Type> for Default {
         match term {
             // transform type alias into the aliased type equivalent
             Type::Symbol(Symbol {
-                id: SymbolKindID::Type(id),
+                id: SymbolID::Type(id),
                 generic_arguments,
             }) => {
                 let Some(type_sym) = table.get(*id) else {
@@ -258,7 +258,8 @@ impl Semantic<Type> for Default {
                     .iter()
                     .map(|x| {
                         result.deduced_substitution.lifetimes.remove(
-                            &MemberID { id: *x, parent: result.id.into() },
+                            &MemberID { id: *x, parent: result.id.into() }
+                                .into(),
                         )
                     })
                     .collect::<Option<Vec<_>>>();
@@ -269,10 +270,10 @@ impl Semantic<Type> for Default {
                     .type_order
                     .iter()
                     .map(|x| {
-                        result.deduced_substitution.types.remove(&MemberID {
-                            id: *x,
-                            parent: result.id.into(),
-                        })
+                        result.deduced_substitution.types.remove(
+                            &MemberID { id: *x, parent: result.id.into() }
+                                .into(),
+                        )
                     })
                     .collect::<Option<Vec<_>>>();
                 let parent_constants = implementation_symbol
@@ -283,7 +284,8 @@ impl Semantic<Type> for Default {
                     .iter()
                     .map(|x| {
                         result.deduced_substitution.constants.remove(
-                            &MemberID { id: *x, parent: result.id.into() },
+                            &MemberID { id: *x, parent: result.id.into() }
+                                .into(),
                         )
                     })
                     .collect::<Option<Vec<_>>>();
@@ -313,7 +315,7 @@ impl Semantic<Type> for Default {
 
             // transform trait-implementation-type into the aliased type
             Type::MemberSymbol(MemberSymbol {
-                id: r#type::MemberSymbolKindID::TraitImplementation(id),
+                id: r#type::MemberSymbolID::TraitImplementation(id),
                 member_generic_arguments,
                 parent_generic_arguments,
             }) => {
@@ -361,7 +363,7 @@ impl Semantic<Type> for Default {
 
             // transform into its aliased equivalent
             Type::MemberSymbol(MemberSymbol {
-                id: r#type::MemberSymbolKindID::AdtImplementation(id),
+                id: r#type::MemberSymbolID::AdtImplementation(id),
                 member_generic_arguments,
                 parent_generic_arguments,
             }) => {

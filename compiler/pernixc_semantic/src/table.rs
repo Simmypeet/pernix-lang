@@ -2,7 +2,7 @@
 
 use std::{
     collections::{hash_map::Entry, HashMap},
-    fmt::Debug,
+    fmt::{self, Debug},
     hash::Hash,
     ops::Deref,
 };
@@ -17,7 +17,11 @@ use self::{building::drafting::Drafter, resolution::Resolution};
 use crate::{
     arena::{Arena, ID},
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
-    semantic::term::{constant, lifetime::Lifetime, r#type, GenericArguments},
+    semantic::{
+        predicate,
+        term::{constant, lifetime::Lifetime, r#type, GenericArguments},
+        Premise,
+    },
     symbol::{
         Accessibility, AdtImplementation, AdtImplementationConstant,
         AdtImplementationFunction, AdtImplementationType, Constant, Enum,
@@ -33,6 +37,34 @@ use crate::{
 mod building;
 pub mod evaluate;
 pub mod resolution;
+
+/// Contaains the display object that requires the table.
+///
+/// Primarily used for implementing [`std::fmt::Display`] trait.
+#[derive(Debug, Clone, Copy)]
+#[allow(clippy::self_named_module_files)]
+pub struct DisplayObject<'a, D: ?Sized, T: State> {
+    /// The table in which the error occurred.
+    pub table: &'a Table<T>,
+
+    /// The display object that requires the table.
+    pub display: &'a D,
+}
+
+impl<'a, Error: Display<T> + ?Sized, T: State> fmt::Display
+    for DisplayObject<'a, Error, T>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.display.fmt(self.table, f)
+    }
+}
+
+/// Similar to [`std::fmt::Display`] but with the table in which the error
+/// occurred.
+pub trait Display<T: State> {
+    #[allow(missing_docs, clippy::missing_errors_doc)]
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
 
 /// A trait used to access the symbols defined in the table.
 pub trait Index<Idx: ?Sized> {
@@ -698,6 +730,7 @@ impl<T: Container> Representation<T> {
     ///
     /// Returns `None` if the given [`GlobalID`] is not valid.
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn get_qualified_name(&self, global_id: GlobalID) -> Option<String> {
         match global_id {
             GlobalID::TraitImplementation(id) => self.get_qualified_name(
@@ -707,6 +740,49 @@ impl<T: Container> Representation<T> {
                 .get_qualified_name(
                     self.get(id)?.signature.implemented_id.into(),
                 ),
+
+            GlobalID::AdtImplementation(id) => self.get_qualified_name(
+                self.get(id)?.signature.implemented_id.into(),
+            ),
+
+            GlobalID::AdtImplementationType(id) => {
+                let mut qualified_name = self.get_qualified_name(
+                    self.get(self.get(id)?.parent_id)
+                        .unwrap()
+                        .signature
+                        .implemented_id
+                        .into(),
+                )?;
+                qualified_name.push_str("::");
+                qualified_name.push_str(self.get(id)?.name.as_str());
+                Some(qualified_name)
+            }
+
+            GlobalID::AdtImplementationFunction(id) => {
+                let mut qualified_name = self.get_qualified_name(
+                    self.get(self.get(id)?.parent_id)
+                        .unwrap()
+                        .signature
+                        .implemented_id
+                        .into(),
+                )?;
+                qualified_name.push_str("::");
+                qualified_name.push_str(self.get(id)?.name.as_str());
+                Some(qualified_name)
+            }
+
+            GlobalID::AdtImplementationConstant(id) => {
+                let mut qualified_name = self.get_qualified_name(
+                    self.get(self.get(id)?.parent_id)
+                        .unwrap()
+                        .signature
+                        .implemented_id
+                        .into(),
+                )?;
+                qualified_name.push_str("::");
+                qualified_name.push_str(self.get(id)?.name.as_str());
+                Some(qualified_name)
+            }
 
             GlobalID::TraitImplementationType(id) => {
                 let mut qualified_name = self.get_qualified_name(
@@ -1016,6 +1092,79 @@ impl<T: Container> Representation<T> {
         }
 
         Some(current_min)
+    }
+
+    /// Gets the active [`Premise`] starting at the given [`GlobalID`] scope.
+    #[must_use]
+    pub fn get_active_premise(
+        &self,
+        mut global_id: GlobalID,
+    ) -> Option<Premise> {
+        let mut premise = Premise::default();
+
+        loop {
+            let Ok(generic_id) = GenericID::try_from(global_id) else {
+                if let Some(id) = self.get_global(global_id)?.parent_global_id()
+                {
+                    global_id = id;
+                    continue;
+                }
+
+                return Some(premise);
+            };
+
+            let generic = self.get_generic(generic_id)?;
+
+            for predicate in generic
+                .generic_declaration()
+                .predicates
+                .iter()
+                .map(|x| x.predicate.clone())
+            {
+                match predicate {
+                    predicate::Predicate::TypeEquality(eq) => {
+                        premise
+                            .equalities_mapping
+                            .insert(eq.lhs.clone(), eq.rhs.clone());
+                    }
+                    predicate::Predicate::ConstantEquality(eq) => {
+                        premise
+                            .equalities_mapping
+                            .insert(eq.lhs.clone(), eq.rhs.clone());
+                    }
+                    predicate::Predicate::ConstantType(pred) => {
+                        premise
+                            .non_equality_predicates
+                            .push(predicate::NonEquality::ConstantType(pred));
+                    }
+                    predicate::Predicate::LifetimeOutlives(pred) => {
+                        premise.non_equality_predicates.push(
+                            predicate::NonEquality::LifetimeOutlives(pred),
+                        );
+                    }
+                    predicate::Predicate::TypeOutlives(pred) => {
+                        premise
+                            .non_equality_predicates
+                            .push(predicate::NonEquality::TypeOutlives(pred));
+                    }
+                    predicate::Predicate::TupleType(pred) => {
+                        premise
+                            .non_equality_predicates
+                            .push(predicate::NonEquality::TupleType(pred));
+                    }
+                    predicate::Predicate::TupleConstant(pred) => {
+                        premise
+                            .non_equality_predicates
+                            .push(predicate::NonEquality::TupleConstant(pred));
+                    }
+                    predicate::Predicate::Trait(pred) => {
+                        premise
+                            .non_equality_predicates
+                            .push(predicate::NonEquality::Trait(pred));
+                    }
+                }
+            }
+        }
     }
 
     /// Gets the [`ScopeWalker`] that walks through the scope hierarchy of the

@@ -15,7 +15,7 @@ use crate::{
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             constant::{self, Constant},
-            r#type::{self, SymbolKindID, Type},
+            r#type::{self, SymbolID, Type},
             GenericArguments, Symbol, Term,
         },
         tests::State,
@@ -255,7 +255,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
             prop_oneof![
                 1 => Mapping::<TypeParameterID, Type>::arbitrary_with(Some(inner.clone()))
                     .prop_map(|x| Box::new(x) as _),
-                4 => SymbolCongruence::<SymbolKindID>::arbitrary_with((
+                4 => SymbolCongruence::<SymbolID>::arbitrary_with((
                     Some(inner.clone()),
                     Some(const_strat.clone())
                 )).prop_map(|x| Box::new(x) as _),
@@ -388,7 +388,7 @@ impl Property<Type> for TypeAlias {
 
     fn generate(&self) -> Type {
         Type::Symbol(Symbol {
-            id: SymbolKindID::Type(self.type_id),
+            id: SymbolID::Type(self.type_id),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Parameter(self.type_parameter)],
