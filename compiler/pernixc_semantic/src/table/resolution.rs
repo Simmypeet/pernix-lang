@@ -1287,9 +1287,6 @@ impl<T: State> Table<T> {
             };
 
             Ok(parameters.map(|_| provider.create()).collect())
-        } else if matches!(&defaults, Some(defaults) if defaults.len() == parameters.len())
-        {
-            Ok(defaults.unwrap().cloned().collect())
         } else {
             let valid_count = defaults.as_ref().map_or_else(
                 || parameters.len() == syntax_trees.len(),
