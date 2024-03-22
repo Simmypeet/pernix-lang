@@ -63,7 +63,9 @@ impl Finalize for Type {
                     )
                     .unwrap_or_default();
             }
-            Flag::Check => {}
+            Flag::Check => {
+                table.check_occurrences(symbol_id.into(), data, handler);
+            }
         }
     }
 }
