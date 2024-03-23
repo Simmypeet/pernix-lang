@@ -322,6 +322,13 @@ pub trait Term:
         Self: 'a;
 
     #[doc(hidden)]
+    fn tuple_predicates<'a>(
+        premise: &'a Premise,
+    ) -> impl Iterator<Item = &'a Self>
+    where
+        Self: 'a;
+
+    #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]

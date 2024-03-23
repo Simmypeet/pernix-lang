@@ -1,12 +1,15 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{build_flag, Finalize, Occurrences};
+use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
     symbol::NegativeTraitImplementation,
-    table::{building::finalizing::Finalizer, resolution, Index, Table},
+    table::{
+        building::finalizing::{occurrences::Occurrences, Finalizer},
+        resolution, Index, Table,
+    },
 };
 
 build_flag! {
@@ -105,9 +108,7 @@ impl Finalize for NegativeTraitImplementation {
             }
             Flag::Check => {
                 table.check_occurrences(symbol_id.into(), data, handler);
-                // TODO: check if the signature matches the trait definition
-                // TODO: check if all the generic parameters are used in the
-                // implementation arguments
+                table.implementation_signature_check(symbol_id, handler);
             }
         }
     }

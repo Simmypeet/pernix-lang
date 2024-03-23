@@ -5,10 +5,6 @@ use pernixc_base::diagnostic::Handler;
 use super::finalizer::Finalizer;
 use crate::{arena::ID, error, table::Table};
 
-mod occurrences;
-
-pub use occurrences::Occurrences;
-
 pub(in crate::table::building) mod adt_implementation;
 pub(in crate::table::building) mod adt_implementation_constant;
 pub(in crate::table::building) mod adt_implementation_function;

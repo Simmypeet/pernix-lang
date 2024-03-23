@@ -85,7 +85,17 @@ pub use r#trait::{
 pub use tuple::{Query as TupleQuery, Tuple};
 
 /// A predicate that can appear in the where clause.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum Predicate {
     TypeEquality(Equality<Type>),
@@ -201,7 +211,17 @@ impl<T: Term> Equality<T> {
 }
 
 /// An enumeration of all predicates that doesn't include equality.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum NonEquality {
     LifetimeOutlives(Outlives<Lifetime>),

@@ -1407,7 +1407,9 @@ impl Global for Trait {
 }
 
 /// Enumeration of all kinds of generic parameters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum LocalGenericParameterID {
     Lifetime(ID<LifetimeParameter>),

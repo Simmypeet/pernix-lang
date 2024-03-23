@@ -242,6 +242,13 @@ impl Term for Lifetime {
         std::iter::empty()
     }
 
+    fn tuple_predicates<'a>(_: &'a Premise) -> impl Iterator<Item = &'a Self>
+    where
+        Self: 'a,
+    {
+        std::iter::empty()
+    }
+
     fn definite_satisfiability(&self) -> Satisfiability {
         Satisfiability::Satisfied
     }

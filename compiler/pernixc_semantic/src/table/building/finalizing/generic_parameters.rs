@@ -7,7 +7,7 @@ use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{finalize::Occurrences, Finalizer};
+use super::{occurrences::Occurrences, Finalizer};
 use crate::{
     arena::{Arena, ID},
     error::{self, DuplicatedGenericParameter, MisOrderedGenericParameter},

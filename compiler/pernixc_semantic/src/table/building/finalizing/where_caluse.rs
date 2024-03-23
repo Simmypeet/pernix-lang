@@ -8,8 +8,10 @@ use pernixc_syntax::syntax_tree::{
 };
 
 use super::{
-    finalize::{self, Occurrences},
-    finalizer, Finalizer,
+    finalize,
+    finalizer::{self, BuildSymbolError},
+    occurrences::Occurrences,
+    Finalizer,
 };
 use crate::{
     arena::ID,
@@ -254,8 +256,22 @@ impl Table<Finalizer> {
                     id: resolution::GenericID::Trait(trait_id),
                     generic_arguments,
                 }) => {
-                    let mut generic_symbol =
-                        T::get_arena(self).get(generic_id).unwrap().write();
+                    // make sure the trait is built to have the where clause
+                    match self.build_to::<Trait>(
+                        trait_id,
+                        Some(generic_id.into()),
+                        finalize::r#trait::Flag::WhereClause,
+                        true,
+                        handler,
+                    ) {
+                        Ok(()) => {}
+                        Err(
+                            BuildSymbolError::EntryNotFound(_)
+                            | BuildSymbolError::CyclicDependency,
+                        ) => {
+                            continue;
+                        }
+                    }
 
                     let trait_predicate = predicate::Trait {
                         id: trait_id,
@@ -268,27 +284,21 @@ impl Table<Finalizer> {
                         qualified_identifier.clone(),
                     );
 
-                    generic_symbol.generic_declaration_mut().predicates.push(
-                        symbol::Predicate {
+                    T::get_arena(self)
+                        .get(generic_id)
+                        .unwrap()
+                        .write()
+                        .generic_declaration_mut()
+                        .predicates
+                        .push(symbol::Predicate {
                             predicate: predicate::Predicate::Trait(
                                 trait_predicate,
                             ),
                             kind: PredicateKind::Explicit(Some(
                                 qualified_identifier.span(),
                             )),
-                        },
-                    );
+                        });
 
-                    drop(generic_symbol);
-
-                    // make sure the trait is built to have the where clause
-                    let _ = self.build_to::<Trait>(
-                        trait_id,
-                        Some(generic_id.into()),
-                        finalize::r#trait::Flag::WhereClause,
-                        true,
-                        handler,
-                    );
                     let trait_sym = self
                         .representation
                         .traits

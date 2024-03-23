@@ -18,7 +18,6 @@ use crate::{
     arena::{Arena, ID},
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
     semantic::{
-        predicate,
         term::{constant, lifetime::Lifetime, r#type, GenericArguments},
         Premise,
     },
@@ -1106,55 +1105,13 @@ impl<T: Container> Representation<T> {
 
             let generic = self.get_generic(generic_id)?;
 
-            for predicate in generic
-                .generic_declaration()
-                .predicates
-                .iter()
-                .map(|x| x.predicate.clone())
-            {
-                match predicate {
-                    predicate::Predicate::TypeEquality(eq) => {
-                        premise
-                            .equalities_mapping
-                            .insert(eq.lhs.clone(), eq.rhs.clone());
-                    }
-                    predicate::Predicate::ConstantEquality(eq) => {
-                        premise
-                            .equalities_mapping
-                            .insert(eq.lhs.clone(), eq.rhs.clone());
-                    }
-                    predicate::Predicate::ConstantType(pred) => {
-                        premise
-                            .non_equality_predicates
-                            .push(predicate::NonEquality::ConstantType(pred));
-                    }
-                    predicate::Predicate::LifetimeOutlives(pred) => {
-                        premise.non_equality_predicates.push(
-                            predicate::NonEquality::LifetimeOutlives(pred),
-                        );
-                    }
-                    predicate::Predicate::TypeOutlives(pred) => {
-                        premise
-                            .non_equality_predicates
-                            .push(predicate::NonEquality::TypeOutlives(pred));
-                    }
-                    predicate::Predicate::TupleType(pred) => {
-                        premise
-                            .non_equality_predicates
-                            .push(predicate::NonEquality::TupleType(pred));
-                    }
-                    predicate::Predicate::TupleConstant(pred) => {
-                        premise
-                            .non_equality_predicates
-                            .push(predicate::NonEquality::TupleConstant(pred));
-                    }
-                    predicate::Predicate::Trait(pred) => {
-                        premise
-                            .non_equality_predicates
-                            .push(predicate::NonEquality::Trait(pred));
-                    }
-                }
-            }
+            premise.append_from_predicates(
+                generic
+                    .generic_declaration()
+                    .predicates
+                    .iter()
+                    .map(|x| x.predicate.clone()),
+            );
         }
 
         Some(premise)

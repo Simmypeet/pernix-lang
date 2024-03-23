@@ -1,15 +1,7 @@
-public trait Pair[T, U] {
-    public type Output;
+public trait LastTuple[T] {
+    public type Type;
 }
 
-implements[T] Pair[T, int32] {
-    public type Output = (T, int32);
+implements[T, First] LastTuple[(...First, T)] {
+    public type Type = T;
 }
-
-implements[T] Pair[int32, T] {
-    public type Output = (int32, T);
-}
-
-public type Test[T, U] = Pair[T, U]::Output
-where
-    trait Pair[T, U];

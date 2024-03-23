@@ -335,6 +335,17 @@ impl Finalizer {
 #[error("threre's no state for the given symbol")]
 pub struct EntryNotFoundError;
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+pub enum BuildSymbolError {
+    #[error(transparent)]
+    EntryNotFound(#[from] EntryNotFoundError),
+
+    #[error("cyclic dependency detected")]
+    CyclicDependency,
+}
+
 impl Table<Finalizer> {
     fn build_loop<T: Finalize + Element>(
         &self,
@@ -484,7 +495,7 @@ impl Table<Finalizer> {
     ///
     /// # Errors
     ///
-    /// See [`BuildError`] for the list of errors that can be returned.
+    /// See [`BuildSymbolError`] for the list of errors that can be returned.
     pub fn build_to<T: Finalize + Element>(
         &self,
         id: ID<T>,
@@ -492,7 +503,7 @@ impl Table<Finalizer> {
         to_flag: T::Flag,
         cyclic_dependency_as_error: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), EntryNotFoundError>
+    ) -> Result<(), BuildSymbolError>
     where
         ID<T>: Into<GlobalID>,
     {
@@ -518,7 +529,7 @@ impl Table<Finalizer> {
                     participants: vec![id.into()],
                 }));
 
-                return Ok(());
+                return Err(BuildSymbolError::CyclicDependency);
             }
 
             // dependency cyclic check starts here
@@ -552,7 +563,7 @@ impl Table<Finalizer> {
                             .insert(dependency_stack_set);
                     }
 
-                    return Ok(());
+                    return Err(BuildSymbolError::CyclicDependency);
                 }
 
                 current_node = dependency;
@@ -577,7 +588,7 @@ impl Table<Finalizer> {
         // drop the builder write
         drop(builder_write);
 
-        self.acquire_build_lock(id, to_flag, handler)
+        Ok(self.acquire_build_lock(id, to_flag, handler)?)
     }
 }
 
@@ -728,15 +739,14 @@ impl Table<Finalizer> {
     ///
     /// # Errors
     ///
-    /// - [`EntryNotFoundError`]: If the `dependency` or `dependant` symbol is
-    ///   not found in the builder.
+    /// See [`BuildSymbolError`] for the list of errors that can be returned.
     pub fn build_generic_parameter(
         &self,
         dependency: GenericID,
         dependant: GlobalID,
         cyclic_dependency_as_error: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), EntryNotFoundError> {
+    ) -> Result<(), BuildSymbolError> {
         implements_build_to!(
             dependency,
             self,
@@ -769,7 +779,7 @@ impl Table<Finalizer> {
         dependant: GlobalID,
         cyclic_dependency_as_error: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), EntryNotFoundError> {
+    ) -> Result<(), BuildSymbolError> {
         match dependency {
             GlobalID::Struct(id) => self.build_to(
                 id,

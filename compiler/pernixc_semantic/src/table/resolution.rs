@@ -316,6 +316,8 @@ impl GenericParameter for ConstantParameter {
         if let Some(observer) = config.observer.as_mut() {
             observer.on_constant_arguments_resolved(constant, syntax_tree);
         }
+
+        // TODO: check if the constant's type matches the expected type
     }
 }
 

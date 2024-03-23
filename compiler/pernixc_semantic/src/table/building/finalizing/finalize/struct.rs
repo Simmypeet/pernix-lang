@@ -1,12 +1,15 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{build_flag, Finalize, Occurrences};
+use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
     symbol::Struct,
-    table::{building::finalizing::Finalizer, Table},
+    table::{
+        building::finalizing::{occurrences::Occurrences, Finalizer},
+        Table,
+    },
 };
 
 build_flag! {

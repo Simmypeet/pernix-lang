@@ -1089,17 +1089,19 @@ impl<T: State> Display<T> for MismatchedTraitMemberAndImplementationMember {
 
 /// Generic parameter is unused in the implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnusedGenericParameterInImplementation {
+pub struct UnusedGenericParameterInImplementation<ID> {
     /// The ID of the unused generic parameter.
     pub generic_parameter_id: LocalGenericParameterID,
 
     /// The ID of the implementation in which the generic parameter is unused.
-    pub implementation_kind_id: TraitImplementationKindID,
+    pub implementation_id: ID,
 }
 
-impl<T: State> Display<T> for UnusedGenericParameterInImplementation {
+impl<T: State, ID: Copy + Into<GenericID>> Display<T>
+    for UnusedGenericParameterInImplementation<ID>
+{
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let generic_id: GenericID = self.implementation_kind_id.into();
+        let generic_id: GenericID = self.implementation_id.into();
         let generic_symbol = table.get_generic(generic_id).ok_or(fmt::Error)?;
 
         let (span, name, kind) = {

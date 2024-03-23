@@ -1013,6 +1013,18 @@ impl Term for Type {
             .filter_map(|x| x.as_constant_type().map(|x| &x.0))
     }
 
+    fn tuple_predicates<'a>(
+        premise: &'a Premise,
+    ) -> impl Iterator<Item = &'a Self>
+    where
+        Self: 'a,
+    {
+        premise
+            .non_equality_predicates
+            .iter()
+            .filter_map(|x| x.as_tuple_type().map(|x| &x.0))
+    }
+
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
             Self::Parameter(_) | Self::Inference(_) => {

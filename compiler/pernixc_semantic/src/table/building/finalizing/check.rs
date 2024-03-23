@@ -6,24 +6,25 @@ use pernixc_base::{
 };
 use pernixc_syntax::syntax_tree;
 
-use super::{finalize::Occurrences, Finalizer};
+use super::{occurrences::Occurrences, Finalizer};
 use crate::{
     error::{self, UndecidablePredicate, UnsatisifedPredicate},
     semantic::{
         self, equality,
         instantiation::Instantiation,
         predicate::{self, ConstantType, Outlives, Trait, Tuple},
-        session::{self, ExceedLimitError, Limit},
-        term::{self, GenericArguments},
-        Premise,
+        session::{self, ExceedLimitError, Limit, Session},
+        term::{self, GenericArguments, Term},
+        Premise, Semantic,
     },
     symbol::{GenericID, GlobalID},
     table::{Index, Table},
 };
 
 impl Table<Finalizer> {
+    /// Do predicates check for the given instantiation.
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-    fn check_where_clause_predicates_with_generic_arguments(
+    pub fn check_instantiation_predicates_from_generic_arguments(
         &self,
         caller_premise: &Premise,
         instantiated: GenericID,
@@ -33,7 +34,7 @@ impl Table<Finalizer> {
         session: &mut session::Default,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        self.check_where_clause_predicates(
+        self.check_instantiation_predicates(
             caller_premise,
             instantiated,
             &Instantiation::from_generic_arguments(
@@ -53,8 +54,9 @@ impl Table<Finalizer> {
         );
     }
 
+    /// Do predicates check for the given instantiation.
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-    fn check_where_clause_predicates(
+    pub fn check_instantiation_predicates(
         &self,
         caller_premise: &Premise,
         instantiated: GenericID,
@@ -237,7 +239,7 @@ impl Table<Finalizer> {
                     id,
                     generic_arguments,
                 }) => {
-                    self.check_where_clause_predicates_with_generic_arguments(
+                    self.check_instantiation_predicates_from_generic_arguments(
                         caller_active_premise,
                         (*id).into(),
                         generic_arguments.clone(),
@@ -304,7 +306,7 @@ impl Table<Finalizer> {
                                 .unwrap()
                                 .parent_id;
 
-                            self.check_where_clause_predicates_with_generic_arguments(
+                            self.check_instantiation_predicates_from_generic_arguments(
                                 caller_active_premise,
                                 implementation_id.into(),
                                 member_symbol.parent_generic_arguments.clone(),
@@ -313,7 +315,7 @@ impl Table<Finalizer> {
                                 session,
                                 handler,
                             );
-                            self.check_where_clause_predicates_with_generic_arguments(
+                            self.check_instantiation_predicates_from_generic_arguments(
                                 caller_active_premise,
                                 trait_implementation_type.into(),
                                 member_symbol.member_generic_arguments.clone(),
@@ -347,7 +349,7 @@ impl Table<Finalizer> {
                                 todo!("report overflow deducing");
                             };
 
-                            self.check_where_clause_predicates(
+                            self.check_instantiation_predicates(
                                 caller_active_premise,
                                 adt_implementation_id.into(),
                                 &deduction,
@@ -356,7 +358,7 @@ impl Table<Finalizer> {
                                 session,
                                 handler,
                             );
-                            self.check_where_clause_predicates_with_generic_arguments(
+                            self.check_instantiation_predicates_from_generic_arguments(
                                 caller_active_premise,
                                 adt_implementation_type.into(),
                                 member_symbol.member_generic_arguments.clone(),
@@ -444,7 +446,6 @@ impl Table<Finalizer> {
 
                                         Ok(true)
                                     }();
-                                
                                 match satisfied {
                                     Ok(false) => {
                                         handler.receive(Box::new(UnsatisifedPredicate {
@@ -478,7 +479,7 @@ impl Table<Finalizer> {
                                 }
                             }));
 
-                    self.check_where_clause_predicates_with_generic_arguments(
+                    self.check_instantiation_predicates_from_generic_arguments(
                         caller_active_premise,
                         parent_trait_id.into(),
                         trait_member.parent_generic_arguments.clone(),
@@ -487,7 +488,7 @@ impl Table<Finalizer> {
                         session,
                         handler,
                     );
-                    self.check_where_clause_predicates_with_generic_arguments(
+                    self.check_instantiation_predicates_from_generic_arguments(
                         caller_active_premise,
                         trait_member.id.into(),
                         trait_member.member_generic_arguments.clone(),
@@ -496,6 +497,45 @@ impl Table<Finalizer> {
                         session,
                         handler,
                     );
+                }
+            }
+        }
+    }
+
+    fn check_unpacked_ocurrences<'a, T: Term + 'a, Syn: SourceElement + 'a>(
+        &self,
+        premise: &Premise,
+        occurrences: impl Iterator<Item = (&'a T, &'a Syn)>,
+        semantic: &mut semantic::Default,
+        session: &mut session::Default,
+        handler: &dyn Handler<Box<dyn error::Error>>,
+    ) where
+        semantic::Default: Semantic<T>,
+        session::Default: Session<T>,
+        predicate::Predicate: From<Tuple<T>>,
+    {
+        for (term, ocurrence) in occurrences {
+            match Tuple::satisfies(
+                term,
+                premise,
+                self,
+                semantic,
+                &mut Limit::new(session),
+            ) {
+                Ok(true) => {}
+                Ok(false) => {
+                    handler.receive(Box::new(error::UnsatisifedPredicate {
+                        predicate: Tuple(term.clone()).into(),
+                        instantiation_span: ocurrence.span(),
+                        predicate_declaration_span: None,
+                    }));
+                }
+                Err(ExceedLimitError) => {
+                    handler.receive(Box::new(error::UndecidablePredicate {
+                        instantiation_span: ocurrence.span(),
+                        predicate: Tuple(term.clone()).into(),
+                        predicate_declaration_span: None,
+                    }));
                 }
             }
         }
@@ -517,6 +557,30 @@ impl Table<Finalizer> {
         self.check_type_ocurrences(
             &active_premise,
             occurrences.types().iter().map(|(ty, syn)| (ty, syn)),
+            &mut semantic,
+            &mut session,
+            handler,
+        );
+
+        #[allow(clippy::map_identity)]
+        self.check_unpacked_ocurrences(
+            &active_premise,
+            occurrences
+                .unpacked_types()
+                .iter()
+                .map(|(tuple, syn)| (tuple, syn)),
+            &mut semantic,
+            &mut session,
+            handler,
+        );
+
+        #[allow(clippy::map_identity)]
+        self.check_unpacked_ocurrences(
+            &active_premise,
+            occurrences
+                .constant_types()
+                .iter()
+                .map(|(tuple, syn)| (tuple, syn)),
             &mut semantic,
             &mut session,
             handler,

@@ -1,12 +1,15 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{build_flag, Finalize, Occurrences};
+use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
     symbol::TraitImplementationType,
-    table::{building::finalizing::Finalizer, resolution, Table},
+    table::{
+        building::finalizing::{occurrences::Occurrences, Finalizer},
+        resolution, Index, Table,
+    },
 };
 
 build_flag! {
@@ -98,8 +101,27 @@ impl Finalize for TraitImplementationType {
             Flag::Check => {
                 table.check_occurrences(symbol_id.into(), data, handler);
 
-                // TODO: make sure the signature is the same as the trait
-                // definition
+                let trait_implementation_type_sym =
+                    table.get(symbol_id).unwrap();
+                let trait_implemetation =
+                    table.get(trait_implementation_type_sym.parent_id).unwrap();
+
+                // get the trait type id equivalent
+                let Some(trait_type_id) = trait_implemetation
+                    .implementation_type_ids_by_trait_type_id
+                    .iter()
+                    .find_map(|(key, val)| {
+                        if *val == trait_implementation_type_sym.id {
+                            Some(*key)
+                        } else {
+                            None
+                        }
+                    })
+                else {
+                    return;
+                };
+
+                drop(trait_implemetation);
             }
         }
     }

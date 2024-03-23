@@ -68,6 +68,16 @@ impl<T: Term> Tuple<T> {
             None => {}
         }
 
+        // check from predicates
+        for predicate in T::tuple_predicates(premise) {
+            if equality::equals(
+                predicate, term, premise, table, semantic, session,
+            )? {
+                session.mark_as_done(Query(term), Satisfied);
+                return Ok(true);
+            }
+        }
+
         // normalize the term
         if let Some(normalized) =
             semantic.normalize(term, premise, table, session)?
