@@ -1,2 +1,15 @@
-public type A = B[int32];
-public type B[T] = T;
+public trait Pair[T, U] {
+    public type Output;
+}
+
+implements[T] Pair[T, int32] {
+    public type Output = (T, int32);
+}
+
+implements[T] Pair[int32, T] {
+    public type Output = (int32, T);
+}
+
+public type Test[T, U] = Pair[T, U]::Output
+where
+    trait Pair[T, U];

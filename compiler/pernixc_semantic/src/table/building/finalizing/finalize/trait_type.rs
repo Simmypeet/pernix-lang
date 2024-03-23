@@ -1,12 +1,12 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{build_flag, Finalize};
+use super::{build_flag, Finalize, Occurrences};
 use crate::{
     arena::ID,
     error::Error,
     symbol::TraitType,
-    table::{building::finalizing::Finalizer, Table},
+    table::{building::finalizing::Finalizer, Index, Table},
 };
 
 build_flag! {
@@ -15,7 +15,6 @@ build_flag! {
         GenericParameter,
         /// Where clause predicates are built
         WhereClause,
-        Complete,
         /// Bounds check are performed
         Check,
     }
@@ -24,15 +23,53 @@ build_flag! {
 impl Finalize for TraitType {
     type SyntaxTree = syntax_tree::item::TraitType;
     type Flag = Flag;
-    type Data = ();
+    type Data = Occurrences;
 
     fn finalize(
-        _table: &Table<Finalizer>,
-        _symbol_id: ID<Self>,
-        _state_flag: Self::Flag,
-        _syntax_tree: &Self::SyntaxTree,
-        _data: &mut Self::Data,
-        _handler: &dyn Handler<Box<dyn Error>>,
+        table: &Table<Finalizer>,
+        symbol_id: ID<Self>,
+        state_flag: Self::Flag,
+        syntax_tree: &Self::SyntaxTree,
+        data: &mut Self::Data,
+        handler: &dyn Handler<Box<dyn Error>>,
     ) {
+        match state_flag {
+            Flag::GenericParameter => {
+                // make sure the trait's geneirc parameters are built
+                let parent_trait_id = table.get(symbol_id).unwrap().parent_id;
+                let _ = table.build_to(
+                    parent_trait_id,
+                    Some(symbol_id.into()),
+                    super::r#trait::Flag::GenericParameter,
+                    true,
+                    handler,
+                );
+
+                table.create_generic_parameters(
+                    symbol_id,
+                    syntax_tree.signature().generic_parameters().as_ref(),
+                    data,
+                    handler,
+                );
+            }
+            Flag::WhereClause => {
+                table.create_where_clause_predicates(
+                    symbol_id,
+                    syntax_tree.where_clause().as_ref(),
+                    data,
+                    handler,
+                );
+
+                data.build_all_occurrences_to_completion(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
+            }
+            Flag::Check => {
+                table.check_occurrences(symbol_id.into(), data, handler);
+            }
+        }
     }
 }

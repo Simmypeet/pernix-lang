@@ -139,7 +139,7 @@ fn from_unification_to_substitution<
             }
         }
 
-        result.insert(key, sampled).unwrap();
+        assert!(result.insert(key, sampled).is_none());
     }
 
     Ok(Some(result))

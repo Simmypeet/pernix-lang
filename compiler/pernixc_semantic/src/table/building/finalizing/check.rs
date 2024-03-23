@@ -373,6 +373,7 @@ impl Table<Finalizer> {
                     let parent_trait_id =
                         self.get(trait_member.id).unwrap().parent_id;
 
+                    // check if the trait predicate is satisfied
                     Trait::satisfies(
                         parent_trait_id,
                         false,

@@ -791,8 +791,14 @@ impl<T: State> Table<T> {
         Ok(lifetime)
     }
 
+    /// Resolves a [`GenericArguments`] from the given generic arguments syntax
+    /// tree.
+    ///
+    /// # Errors
+    ///
+    /// See [`Error`] for more information.
     #[allow(clippy::too_many_lines)]
-    fn resolve_generic_arguments(
+    pub fn resolve_generic_arguments(
         &self,
         generic_identifier: &GenericIdentifier,
         referring_site: GlobalID,

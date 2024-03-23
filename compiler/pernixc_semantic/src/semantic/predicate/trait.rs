@@ -588,24 +588,6 @@ impl<T: State> Table<T> {
                     candidate_unification,
                     candidate_lifetime_constraints,
                 )) => {
-                    let mut merged_premise = Premise::from_predicates(
-                        generic_symbol
-                            .generic_declaration()
-                            .predicates
-                            .iter()
-                            .map(|x| x.predicate.clone()),
-                    );
-                    let candidate_sym =
-                        self.get_generic((*candidate_id).into()).unwrap();
-
-                    merged_premise.append_from_predicates(
-                        candidate_sym
-                            .generic_declaration()
-                            .predicates
-                            .iter()
-                            .map(|x| x.predicate.clone()),
-                    );
-
                     // check which one is more specific
                     match self
                         .get_trait_implementation_signature(key)

@@ -39,6 +39,7 @@ pub struct Occurrences {
 }
 
 impl Occurrences {
+    /// Builds all the occurrences (dependencies) to completion.
     pub fn build_all_occurrences_to_completion(
         &self,
         table: &Table<Finalizer>,

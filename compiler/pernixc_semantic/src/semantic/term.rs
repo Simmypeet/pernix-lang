@@ -695,14 +695,14 @@ impl GenericArguments {
             if !predicate::definite(
                 lifetime, premise, table, semantic, session,
             )? {
-                return Ok(true);
+                return Ok(false);
             }
         }
 
         for r#type in &self.types {
             if !predicate::definite(r#type, premise, table, semantic, session)?
             {
-                return Ok(true);
+                return Ok(false);
             }
         }
 
@@ -710,11 +710,11 @@ impl GenericArguments {
             if !predicate::definite(
                 constant, premise, table, semantic, session,
             )? {
-                return Ok(true);
+                return Ok(false);
             }
         }
 
-        Ok(false)
+        Ok(true)
     }
 
     fn substructural_match<L, T, C, Y>(

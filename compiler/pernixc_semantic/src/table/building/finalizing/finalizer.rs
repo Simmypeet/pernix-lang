@@ -456,10 +456,10 @@ impl Table<Finalizer> {
                                 .building
                                 .load(atomic::Ordering::SeqCst)
                     });
+                }
 
-                    if flag_some >= to_flag {
-                        return Ok(());
-                    }
+                if flag_some >= to_flag {
+                    return Ok(());
                 }
             }
 
@@ -816,7 +816,7 @@ impl Table<Finalizer> {
             GlobalID::TraitType(id) => self.build_to(
                 id,
                 Some(dependant),
-                finalize::trait_type::Flag::Complete,
+                finalize::trait_type::Flag::WhereClause,
                 cyclic_dependency_as_error,
                 handler,
             ),
