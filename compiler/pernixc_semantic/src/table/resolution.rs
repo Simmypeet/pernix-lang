@@ -741,7 +741,7 @@ impl<T: State> Table<T> {
             if let Some(lifetime_id) = generic_symbol
                 .generic_declaration()
                 .parameters
-                .lifetime_parameter_ids_by_name
+                .lifetime_parameter_ids_by_name()
                 .get(identifier.span.str())
                 .copied()
             {
@@ -878,14 +878,8 @@ impl<T: State> Table<T> {
                 generic_declaration
                     .generic_declaration()
                     .parameters
-                    .lifetime_order
-                    .iter()
-                    .map(|x| {
-                        &generic_declaration
-                            .generic_declaration()
-                            .parameters
-                            .lifetimes[*x]
-                    }),
+                    .lifetime_parameters_as_order()
+                    .map(|(_, x)| x),
                 Option::<std::iter::Empty<_>>::None,
                 generic_identifier.span(),
                 referring_site,
@@ -897,19 +891,13 @@ impl<T: State> Table<T> {
                 generic_declaration
                     .generic_declaration()
                     .parameters
-                    .type_order
-                    .iter()
-                    .map(|x| {
-                        &generic_declaration
-                            .generic_declaration()
-                            .parameters
-                            .types[*x]
-                    }),
+                    .type_parameters_as_order()
+                    .map(|(_, x)| x),
                 constant_argument_syns.is_empty().then(|| {
                     generic_declaration
                         .generic_declaration()
                         .parameters
-                        .default_type_parameters
+                        .default_type_parameters()
                         .iter()
                 }),
                 generic_identifier.span(),
@@ -922,19 +910,13 @@ impl<T: State> Table<T> {
                 generic_declaration
                     .generic_declaration()
                     .parameters
-                    .constant_order
-                    .iter()
-                    .map(|x| {
-                        &generic_declaration
-                            .generic_declaration()
-                            .parameters
-                            .constants[*x]
-                    }),
+                    .constant_parameters_as_order()
+                    .map(|(_, x)| x),
                 Some(
                     generic_declaration
                         .generic_declaration()
                         .parameters
-                        .default_constant_parameters
+                        .default_constant_parameters()
                         .iter(),
                 ),
                 generic_identifier.span(),
@@ -1259,7 +1241,7 @@ impl<T: State> Table<T> {
                 if let Some(type_parameter_id) = generic_symbol
                     .generic_declaration()
                     .parameters
-                    .type_parameter_ids_by_name
+                    .type_parameter_ids_by_name()
                     .get(syntax_tree.first().identifier().span.str())
                     .copied()
                 {

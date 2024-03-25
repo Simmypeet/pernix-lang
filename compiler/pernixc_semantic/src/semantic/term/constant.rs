@@ -1171,7 +1171,7 @@ impl<T: State> table::Display<T> for Constant {
                         .ok_or(fmt::Error)?
                         .generic_declaration()
                         .parameters
-                        .constants
+                        .constants()
                         .get(parameter.id)
                         .ok_or(fmt::Error)?
                         .name

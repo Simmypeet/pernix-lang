@@ -18,7 +18,10 @@ use crate::{
         },
         unification, Premise, Semantic,
     },
-    symbol::{self, Generic, TraitImplementationKindID},
+    symbol::{
+        self, ConstantParameterID, Generic, LifetimeParameterID,
+        TraitImplementationKindID, TypeParameterID,
+    },
     table::{self, DisplayObject, Index, State, Table},
 };
 
@@ -133,8 +136,9 @@ impl Trait {
             Query { id, is_const, generic_arguments },
             (),
         )? {
-            // co-inductive reasoning
             Some(Cached::InProgress(())) => {
+                // co-inductive
+                session.clear_query(Query { id, is_const, generic_arguments });
                 return Ok(Some(Satisfiability {
                     lifetime_constraints: Vec::new(),
                 }));
@@ -143,6 +147,30 @@ impl Trait {
                 return Ok(Some(satisfiability));
             }
             None => {}
+        }
+
+        if table.is_in_active_trait_implementation(
+            id,
+            generic_arguments,
+            premise,
+            semantic,
+            session,
+        )? {
+            let implementation = table
+                .get(premise.active_trait_implementation.unwrap())
+                .unwrap();
+
+            // pass the const flag
+            if !is_const || implementation.is_const {
+                let result =
+                    Satisfiability { lifetime_constraints: Vec::new() };
+                session.mark_as_done(
+                    Query { id, is_const, generic_arguments },
+                    result.clone(),
+                );
+
+                return Ok(Some(result));
+            }
         }
 
         // look for the premise that matches
@@ -530,6 +558,82 @@ impl<T: State> Table<T> {
     ) -> Result<Implementation, ResolveError> {
         let trait_symbol = self.get(trait_id).ok_or(ResolveError::InvalidID)?;
 
+        if self.is_in_active_trait_implementation(
+            trait_id,
+            generic_arguments,
+            premise,
+            semantic,
+            session,
+        )? {
+            return Ok(Implementation {
+                deduced_substitution: {
+                    let implementation = self
+                        .get(premise.active_trait_implementation.unwrap())
+                        .unwrap();
+
+                    Instantiation {
+                        lifetimes: implementation
+                            .signature
+                            .generic_declaration
+                            .parameters
+                            .lifetime_parameters_as_order()
+                            .map(|x| {
+                                let lifetime =
+                                    Lifetime::Parameter(LifetimeParameterID {
+                                        parent: premise
+                                            .active_trait_implementation
+                                            .unwrap()
+                                            .into(),
+                                        id: x.0,
+                                    });
+
+                                (lifetime, lifetime)
+                            })
+                            .collect(),
+
+                        types: implementation
+                            .signature
+                            .generic_declaration
+                            .parameters
+                            .type_parameters_as_order()
+                            .map(|x| {
+                                let ty = Type::Parameter(TypeParameterID {
+                                    parent: premise
+                                        .active_trait_implementation
+                                        .unwrap()
+                                        .into(),
+                                    id: x.0,
+                                });
+
+                                (ty.clone(), ty)
+                            })
+                            .collect(),
+
+                        constants: implementation
+                            .signature
+                            .generic_declaration
+                            .parameters
+                            .constant_parameters_as_order()
+                            .map(|x| {
+                                let constant =
+                                    Constant::Parameter(ConstantParameterID {
+                                        parent: premise
+                                            .active_trait_implementation
+                                            .unwrap()
+                                            .into(),
+                                        id: x.0,
+                                    });
+
+                                (constant.clone(), constant)
+                            })
+                            .collect(),
+                    }
+                },
+                id: premise.active_trait_implementation.unwrap(),
+                lifetime_constraints: Vec::new(),
+            });
+        }
+
         if !generic_arguments.definite(premise, self, semantic, session)? {
             return Err(ResolveError::NonDefiniteGenericArguments);
         }
@@ -641,6 +745,42 @@ impl<T: State> Table<T> {
             None | Some((TraitImplementationKindID::Negative(_), _, _)) => {
                 Err(ResolveError::NotFound)
             }
+        }
+    }
+
+    fn is_in_active_trait_implementation<
+        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+        R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    >(
+        &self,
+        trait_id: ID<symbol::Trait>,
+        generic_arguments: &GenericArguments,
+        premise: &Premise,
+        semantic: &mut S,
+        session: &mut Limit<R>,
+    ) -> Result<bool, ExceedLimitError> {
+        match premise.active_trait_implementation {
+            Some(trait_implementation) => {
+                let Some(implementation) = self.get(trait_implementation)
+                else {
+                    return Ok(false);
+                };
+
+                // check if the trait id is the same
+                if implementation.signature.implemented_id != trait_id {
+                    return Ok(false);
+                }
+
+                // check if the generic arguments are the same
+                implementation.signature.arguments.equals(
+                    generic_arguments,
+                    premise,
+                    self,
+                    semantic,
+                    session,
+                )
+            }
+            None => Ok(false),
         }
     }
 }

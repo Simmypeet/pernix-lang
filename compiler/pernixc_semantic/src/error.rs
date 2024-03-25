@@ -15,12 +15,12 @@ use crate::{
     arena::ID,
     semantic::predicate::Predicate,
     symbol::{
-        Accessibility, AdtID, GenericID, GenericKind, GenericParameter,
-        GlobalID, LocalGenericParameterID, MemberID, Module, Trait,
-        TraitImplementation, TraitImplementationKindID,
+        Accessibility, AdtID, ConstantParameterID, GenericID, GenericKind,
+        GenericParameter, GlobalID, LocalGenericParameterID, MemberID, Module,
+        Trait, TraitImplementation, TraitImplementationKindID,
         TraitImplementationMemberID, TraitMemberID,
     },
-    table::{Display, DisplayObject, Index, State, Suboptimal, Table},
+    table::{Display, DisplayObject, State, Suboptimal, Table},
 };
 
 /// The global symbol with the same name already exists in the given scope.
@@ -1110,7 +1110,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                     let lifetime_param = generic_symbol
                         .generic_declaration()
                         .parameters
-                        .lifetimes
+                        .lifetimes()
                         .get(lifetime_parameter_id)
                         .ok_or(fmt::Error)?;
 
@@ -1124,7 +1124,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                     let type_param = generic_symbol
                         .generic_declaration()
                         .parameters
-                        .types
+                        .types()
                         .get(type_parameter_id)
                         .ok_or(fmt::Error)?;
 
@@ -1138,7 +1138,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
                     let constant_param = generic_symbol
                         .generic_declaration()
                         .parameters
-                        .constants
+                        .constants()
                         .get(constant_parameter_id)
                         .ok_or(fmt::Error)?;
 
@@ -1463,74 +1463,45 @@ impl<T: State> Display<T>
 /// type of the constant parameter in the trait.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedImplementationConstantTypeParameter {
-    /// The ID of the implementation member
-    pub implementation_member_id: TraitImplementationMemberID,
+    /// The constant parameter ID of the implementation member
+    pub implementation_member_constant_parameter_id: ConstantParameterID,
 
-    /// The ID of the trait member
-    pub trait_member_id: TraitMemberID,
-
-    /// In which generic parameter the mismatch occurred
-    pub constant_parameter_index: usize,
+    /// The constant parameter ID of the trait member
+    pub trait_member_constant_parameter_id: ConstantParameterID,
 }
 
 impl<T: State> Display<T> for MismatchedImplementationConstantTypeParameter {
     fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let trait_member_span = table
+            .get_generic(
+                self.implementation_member_constant_parameter_id.parent,
+            )
+            .and_then(|x| {
+                x.generic_declaration()
+                    .parameters
+                    .constants()
+                    .get(self.implementation_member_constant_parameter_id.id)
+                    .map(|x| x.span().cloned())
+            })
+            .ok_or(fmt::Error)?;
+
+        let implementation_member_span = table
+            .get_generic(self.trait_member_constant_parameter_id.parent)
+            .and_then(|x| {
+                x.generic_declaration()
+                    .parameters
+                    .constants()
+                    .get(self.trait_member_constant_parameter_id.id)
+                    .map(|x| x.span().cloned())
+            })
+            .ok_or(fmt::Error)?;
+
         write!(f, "{}", Message {
             severity: Severity::Error,
             display: "the type of the constant parameter in the \
                       implementation doesn't match the type of the constant \
                       parameter in the trait",
         })?;
-
-        let trait_member_span = match self.trait_member_id {
-            TraitMemberID::Type(trait_type_id) => table
-                .get(trait_type_id)
-                .ok_or(fmt::Error)?
-                .generic_declaration
-                .parameters
-                .constants
-                .get(ID::new(self.constant_parameter_index))
-                .ok_or(fmt::Error)?
-                .span
-                .clone(),
-            TraitMemberID::Function(trait_function_id) => table
-                .get(trait_function_id)
-                .ok_or(fmt::Error)?
-                .generic_declaration
-                .parameters
-                .constants
-                .get(ID::new(self.constant_parameter_index))
-                .ok_or(fmt::Error)?
-                .span
-                .clone(),
-            TraitMemberID::Constant(_) => return Err(fmt::Error),
-        };
-
-        let implementation_member_span = match self.implementation_member_id {
-            TraitImplementationMemberID::Type(implementation_type_id) => table
-                .get(implementation_type_id)
-                .ok_or(fmt::Error)?
-                .generic_declaration
-                .parameters
-                .constants
-                .get(ID::new(self.constant_parameter_index))
-                .ok_or(fmt::Error)?
-                .span
-                .clone(),
-            TraitImplementationMemberID::Function(
-                implementation_function_id,
-            ) => table
-                .get(implementation_function_id)
-                .ok_or(fmt::Error)?
-                .generic_declaration
-                .parameters
-                .constants
-                .get(ID::new(self.constant_parameter_index))
-                .ok_or(fmt::Error)?
-                .span
-                .clone(),
-            TraitImplementationMemberID::Constant(_) => return Err(fmt::Error),
-        };
 
         if let Some(span) = implementation_member_span {
             write!(f, "\n{}", SourceCodeDisplay {

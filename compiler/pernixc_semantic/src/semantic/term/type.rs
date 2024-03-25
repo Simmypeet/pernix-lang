@@ -1146,7 +1146,7 @@ impl<T: State> table::Display<T> for Type {
                         .ok_or(fmt::Error)?
                         .generic_declaration()
                         .parameters
-                        .types
+                        .types()
                         .get(type_parameter.id)
                         .ok_or(fmt::Error)?
                         .name

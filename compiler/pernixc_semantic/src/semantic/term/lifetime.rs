@@ -320,7 +320,7 @@ impl<T: State> table::Display<T> for Lifetime {
                     .ok_or(fmt::Error)?
                     .generic_declaration()
                     .parameters
-                    .lifetimes
+                    .lifetimes()
                     .get(parameter.id)
                     .ok_or(fmt::Error)?
                     .name

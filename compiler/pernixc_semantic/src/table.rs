@@ -382,7 +382,7 @@ impl<T: State + Default> Default for Table<T> {
 }
 
 /// A trait used to access the symbols defined in the table.
-trait Element: Sized + Debug + Send + Sync + 'static {
+pub trait Element: Sized + Debug + Send + Sync + 'static {
     /// Gets the arena reference containing *this* kind of symbol.
     fn get_arena<T: Container>(
         table: &Representation<T>,
@@ -1094,6 +1094,8 @@ impl<T: Container> Representation<T> {
     }
 
     /// Gets the active [`Premise`] starting at the given [`GlobalID`] scope.
+    ///
+    /// # Errors
     #[must_use]
     pub fn get_active_premise(&self, global_id: GlobalID) -> Option<Premise> {
         let mut premise = Premise::default();
@@ -1102,6 +1104,16 @@ impl<T: Container> Representation<T> {
             let Ok(generic_id) = GenericID::try_from(global_id) else {
                 continue;
             };
+
+            // implicitly add the trait implementation to the premise
+            if let GenericID::TraitImplementation(trait_implementation_id) =
+                generic_id
+            {
+                assert!(premise
+                    .active_trait_implementation
+                    .replace(trait_implementation_id)
+                    .is_none());
+            }
 
             let generic = self.get_generic(generic_id)?;
 

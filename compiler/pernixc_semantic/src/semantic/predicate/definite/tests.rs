@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -8,7 +8,7 @@ use proptest::{
 };
 
 use crate::{
-    arena::{Arena, ID},
+    arena::ID,
     semantic::{
         self, mapping,
         predicate::definite,
@@ -331,37 +331,19 @@ impl Property<Type> for TypeAlias {
         let type_symbol = symbol::Type {
             id: self.type_id,
             generic_declaration: GenericDeclaration {
-                parameters: GenericParameters {
-                    lifetimes: Arena::new(),
-                    types: {
-                        let mut arena = Arena::new();
+                parameters: {
+                    let mut generic_parameters = GenericParameters::default();
 
-                        arena
-                            .insert_with_id(ID::new(0), TypeParameter {
-                                name: "T".to_string(),
-                                parent_generic_id: GenericID::Type(
-                                    self.type_id,
-                                ),
-                                span: None,
-                                variance: symbol::Variance::Invariant,
-                            })
-                            .unwrap();
+                    assert!(generic_parameters
+                        .add_type_parameter(TypeParameter {
+                            name: "T".to_string(),
+                            parent_generic_id: GenericID::Type(self.type_id),
+                            span: None,
+                            variance: symbol::Variance::Invariant,
+                        })
+                        .is_ok());
 
-                        arena
-                    },
-                    constants: Arena::new(),
-                    lifetime_parameter_ids_by_name: HashMap::new(),
-                    type_parameter_ids_by_name: {
-                        let mut map = HashMap::new();
-                        map.insert("T".to_string(), ID::new(0));
-                        map
-                    },
-                    constant_parameter_ids_by_name: HashMap::new(),
-                    default_type_parameters: Vec::new(),
-                    default_constant_parameters: Vec::new(),
-                    lifetime_order: Vec::new(),
-                    type_order: vec![ID::new(0)],
-                    constant_order: Vec::new(),
+                    generic_parameters
                 },
                 predicates: Vec::new(),
             },

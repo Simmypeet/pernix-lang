@@ -1,12 +1,14 @@
 //! Contains the definition of all symbol kinds in the language.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     convert::Into,
 };
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
+use paste::paste;
 use pernixc_base::source_file::Span;
 use pernixc_syntax::syntax_tree::AccessModifier;
 
@@ -214,7 +216,7 @@ try_from_ids!(
 );
 
 /// Represents a kind of symbol that accepts generic arguments.
-pub trait Generic {
+pub trait Generic: Global {
     /// The ID representing the symbol itself.
     fn generic_id(&self) -> GenericID;
 
@@ -361,6 +363,9 @@ pub trait GenericParameter: Sized + 'static {
     /// Gets the span where the generic parameter is declared.
     fn span(&self) -> Option<&Span>;
 
+    /// Gets the kind of the generic parameter.
+    fn kind() -> GenericKind;
+
     /// Gets the [`Arena`] of generic parameters of this type from
     /// [`GenericParameters`].
     fn get_generic_parameters_arena(
@@ -377,6 +382,17 @@ pub trait GenericParameter: Sized + 'static {
     fn get_generic_parameters_ids_by_name_map(
         generic_parameters: &GenericParameters,
     ) -> &HashMap<String, ID<Self>>;
+
+    /// Adds a new generic parameter to the list of generic parameters.
+    ///
+    /// # Errors
+    ///
+    /// If the generic parameter has a name and it is a duplicate, then it
+    /// returns `Err(ID)` where `ID` is the ID of the generic parameter.
+    fn add_generic_parameter(
+        generic_parameters: &mut GenericParameters,
+        parameter: Self,
+    ) -> Result<ID<Self>, ID<Self>>;
 }
 
 /// An ID used to refer to a particular symbol defined in a particular
@@ -445,6 +461,8 @@ impl GenericParameter for LifetimeParameter {
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 
+    fn kind() -> GenericKind { GenericKind::Lifetime }
+
     fn get_generic_parameters_arena(
         generic_parameters: &GenericParameters,
     ) -> &Arena<Self> {
@@ -461,6 +479,13 @@ impl GenericParameter for LifetimeParameter {
         generic_parameters: &GenericParameters,
     ) -> &HashMap<String, ID<Self>> {
         &generic_parameters.lifetime_parameter_ids_by_name
+    }
+
+    fn add_generic_parameter(
+        generic_parameters: &mut GenericParameters,
+        parameter: Self,
+    ) -> Result<ID<Self>, ID<Self>> {
+        generic_parameters.add_lifetime_parameter(parameter)
     }
 }
 
@@ -487,6 +512,8 @@ impl GenericParameter for TypeParameter {
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 
+    fn kind() -> GenericKind { GenericKind::Type }
+
     fn get_generic_parameters_arena(
         generic_parameters: &GenericParameters,
     ) -> &Arena<Self> {
@@ -503,6 +530,13 @@ impl GenericParameter for TypeParameter {
         generic_parameters: &GenericParameters,
     ) -> &HashMap<String, ID<Self>> {
         &generic_parameters.type_parameter_ids_by_name
+    }
+
+    fn add_generic_parameter(
+        generic_parameters: &mut GenericParameters,
+        parameter: Self,
+    ) -> Result<ID<Self>, ID<Self>> {
+        generic_parameters.add_type_parameter(parameter)
     }
 }
 
@@ -529,6 +563,8 @@ impl GenericParameter for ConstantParameter {
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 
+    fn kind() -> GenericKind { GenericKind::Constant }
+
     fn get_generic_parameters_arena(
         generic_parameters: &GenericParameters,
     ) -> &Arena<Self> {
@@ -546,48 +582,153 @@ impl GenericParameter for ConstantParameter {
     ) -> &HashMap<String, ID<Self>> {
         &generic_parameters.constant_parameter_ids_by_name
     }
+
+    fn add_generic_parameter(
+        generic_parameters: &mut GenericParameters,
+        parameter: Self,
+    ) -> Result<ID<Self>, ID<Self>> {
+        generic_parameters.add_constant_parameter(parameter)
+    }
 }
 
 /// Represents a list of generic parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.
-    pub lifetimes: Arena<LifetimeParameter>,
+    #[get = "pub"]
+    lifetimes: Arena<LifetimeParameter>,
 
     /// List of defined type parameters.
-    pub types: Arena<TypeParameter>,
+    #[get = "pub"]
+    types: Arena<TypeParameter>,
 
     /// List of defined constant parameters.
-    pub constants: Arena<ConstantParameter>,
+    #[get = "pub"]
+    constants: Arena<ConstantParameter>,
 
     /// The order of the declaration of lifetime parameters.
-    pub lifetime_order: Vec<ID<LifetimeParameter>>,
+    #[get = "pub"]
+    lifetime_order: Vec<ID<LifetimeParameter>>,
 
     /// The order of the declaration of type parameters.
-    pub type_order: Vec<ID<TypeParameter>>,
+    #[get = "pub"]
+    type_order: Vec<ID<TypeParameter>>,
 
     /// The order of the declaration of constant parameters.
-    pub constant_order: Vec<ID<ConstantParameter>>,
+    #[get = "pub"]
+    constant_order: Vec<ID<ConstantParameter>>,
 
     /// Maps the name of the lifetime parameter to its ID.
-    pub lifetime_parameter_ids_by_name: HashMap<String, ID<LifetimeParameter>>,
+    #[get = "pub"]
+    lifetime_parameter_ids_by_name: HashMap<String, ID<LifetimeParameter>>,
 
     /// Maps the name of the type parameter to its ID.
-    pub type_parameter_ids_by_name: HashMap<String, ID<TypeParameter>>,
+    #[get = "pub"]
+    type_parameter_ids_by_name: HashMap<String, ID<TypeParameter>>,
 
     /// Maps the name of the constant parameter to its ID.
-    pub constant_parameter_ids_by_name: HashMap<String, ID<ConstantParameter>>,
+    #[get = "pub"]
+    constant_parameter_ids_by_name: HashMap<String, ID<ConstantParameter>>,
 
     /// List of default type parameters to be used when the generic parameters
     /// are not specified.
-    pub default_type_parameters: Vec<r#type::Type>,
+    #[get = "pub"]
+    default_type_parameters: Vec<r#type::Type>,
 
     /// List of default constant parameters to be used when the generic
     /// parameters are not
-    pub default_constant_parameters: Vec<constant::Constant>,
+    #[get = "pub"]
+    default_constant_parameters: Vec<constant::Constant>,
+}
+
+macro_rules! implements_add_parameter {
+    ($self:ident, $kind:ident) => {
+        paste! {
+            /// Adds a new generic parameter to the list of generic parameters.
+            ///
+            /// The generic parameter will be added to the list of generic
+            /// parameters and the order of the declaration.
+            ///
+            /// If the generic parameter has a name, then it will be added to the
+            /// map that maps the name of the generic parameter to its ID.
+            ///
+            /// # Errors
+            ///
+            /// If the generic parameter has a name and it is not a duplicate, then
+            /// it returns `Ok(ID)` where `ID` is the ID of the generic parameter.
+            pub fn [<add_ $kind:snake _parameter>](
+                &mut $self,
+                parameter: [< $kind Parameter >]
+            ) -> Result<ID<[< $kind Parameter >]>, ID<[< $kind Parameter >]>> {
+                let entry = if let Some(name) = parameter.name() {
+                    match $self
+                        .[< $kind:snake _parameter_ids_by_name >]
+                        .entry(name.to_owned()) {
+                        Entry::Vacant(entry) => Some(entry),
+                        Entry::Occupied(entry) => {
+                            return Err(*entry.get());
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                let id = $self.[< $kind:snake s>].insert(parameter);
+                $self.[< $kind:snake _order >].push(id);
+
+                if let Some(entry) = entry {
+                    entry.insert(id);
+                }
+
+                Ok(id)
+            }
+        }
+    };
 }
 
 impl GenericParameters {
+    /// Returns an iterator of all type parameters that iterates in order as
+    /// they are declared.
+    #[must_use]
+    pub fn type_parameters_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (ID<TypeParameter>, &TypeParameter)>
+    {
+        self.type_order.iter().copied().map(|x| (x, self.types.get(x).unwrap()))
+    }
+
+    /// Returns an iterator of all lifetime parameters that iterates in order as
+    /// they are declared.
+    #[must_use]
+    pub fn lifetime_parameters_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (ID<LifetimeParameter>, &LifetimeParameter)>
+    {
+        self.lifetime_order
+            .iter()
+            .copied()
+            .map(|x| (x, self.lifetimes.get(x).unwrap()))
+    }
+
+    /// Returns an iterator of all constant parameters that iterates in order as
+    /// they are declared.
+    #[must_use]
+    pub fn constant_parameters_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (ID<ConstantParameter>, &ConstantParameter)>
+    {
+        self.constant_order
+            .iter()
+            .copied()
+            .map(|x| (x, self.constants.get(x).unwrap()))
+    }
+
+    implements_add_parameter!(self, Lifetime);
+
+    implements_add_parameter!(self, Type);
+
+    implements_add_parameter!(self, Constant);
+
     /// Creates a [`GenericArguments`] that all of its parameters are the
     /// generic parameters of this [`GenericParameters`].
     #[must_use]
@@ -846,6 +987,7 @@ where
 
 impl<ParentID, Data> Generic for TypeTemplate<ParentID, Data>
 where
+    Self: Global,
     ID<Self>: Into<GenericID>,
 {
     fn generic_id(&self) -> GenericID { self.id.into() }
@@ -904,6 +1046,7 @@ where
 
 impl<ParentID, Data> Generic for ConstantTemplate<ParentID, Data>
 where
+    Self: Global,
     ID<Self>: Into<GenericID>,
 {
     fn generic_id(&self) -> GenericID { self.id.into() }
@@ -999,6 +1142,7 @@ where
 
 impl<ParentID, Data> Generic for FunctionTemplate<ParentID, Data>
 where
+    Self: Global,
     ID<Self>: Into<GenericID>,
 {
     fn generic_id(&self) -> GenericID { self.id.into() }
@@ -1135,6 +1279,7 @@ where
 impl<ImplementedID, Data: ImplementationData> Generic
     for ImplementationTemplate<ImplementedID, Data>
 where
+    Self: Global,
     ID<Self>: Into<GenericID>,
 {
     fn generic_id(&self) -> GenericID { self.id.into() }
@@ -1346,6 +1491,14 @@ pub enum TraitMemberID {
 from_ids!(
     TraitMemberID,
     GlobalID,
+    (Type, TraitType),
+    (Function, TraitFunction),
+    (Constant, TraitConstant)
+);
+
+from_ids!(
+    TraitMemberID,
+    GenericID,
     (Type, TraitType),
     (Function, TraitFunction),
     (Constant, TraitConstant)

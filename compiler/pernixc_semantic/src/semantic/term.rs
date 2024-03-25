@@ -14,6 +14,7 @@ use lifetime::Lifetime;
 use r#type::Type;
 
 use super::{
+    equality,
     instantiation::{self, Instantiation},
     mapping::Mapping,
     matching,
@@ -581,6 +582,50 @@ where
 }
 
 impl GenericArguments {
+    /// Determines if two generic arguments are equal.
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`] for more information.
+    pub fn equals<
+        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+        R: Session<Lifetime> + Session<Type> + Session<Constant>,
+    >(
+        &self,
+        other: &Self,
+        premise: &Premise,
+        table: &Table<impl State>,
+        semantic: &mut S,
+        session: &mut Limit<R>,
+    ) -> Result<bool, ExceedLimitError> {
+        if self.lifetimes.len() != other.lifetimes.len()
+            || self.types.len() != other.types.len()
+            || self.constants.len() != other.constants.len()
+        {
+            return Ok(false);
+        }
+
+        for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
+            if !equality::equals(lhs, rhs, premise, table, semantic, session)? {
+                return Ok(false);
+            }
+        }
+
+        for (lhs, rhs) in self.types.iter().zip(&other.types) {
+            if !equality::equals(lhs, rhs, premise, table, semantic, session)? {
+                return Ok(false);
+            }
+        }
+
+        for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
+            if !equality::equals(lhs, rhs, premise, table, semantic, session)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
     /// Gets the [`GlobalID`]s that occur in the generic arguments.
     #[must_use]
     pub fn get_global_id_dependencies(

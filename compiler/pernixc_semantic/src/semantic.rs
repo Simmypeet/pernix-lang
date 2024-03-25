@@ -13,8 +13,9 @@ use self::{
     },
 };
 use crate::{
+    arena::ID,
     semantic::instantiation::Instantiation,
-    symbol::MemberID,
+    symbol::{MemberID, TraitImplementation},
     table::{Index, State, Table},
 };
 
@@ -39,6 +40,10 @@ pub struct Premise {
 
     /// The list of non-equality predicates.
     pub non_equality_predicates: Vec<NonEquality>,
+
+    /// Specifies the trait implementation that the semantic logic is currently
+    /// taking place in.
+    pub active_trait_implementation: Option<ID<TraitImplementation>>,
 }
 
 impl Premise {
@@ -254,7 +259,7 @@ impl Semantic<Type> for Default {
                     .signature
                     .generic_declaration
                     .parameters
-                    .lifetime_order
+                    .lifetime_order()
                     .iter()
                     .map(|x| {
                         result.deduced_substitution.lifetimes.remove(
@@ -267,7 +272,7 @@ impl Semantic<Type> for Default {
                     .signature
                     .generic_declaration
                     .parameters
-                    .type_order
+                    .type_order()
                     .iter()
                     .map(|x| {
                         result.deduced_substitution.types.remove(
@@ -280,7 +285,7 @@ impl Semantic<Type> for Default {
                     .signature
                     .generic_declaration
                     .parameters
-                    .constant_order
+                    .constant_order()
                     .iter()
                     .map(|x| {
                         result.deduced_substitution.constants.remove(

@@ -5,7 +5,8 @@ use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
-    symbol::TraitImplementationType,
+    semantic::instantiation::Instantiation,
+    symbol::{TraitImplementationType, Variance},
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         resolution, Index, Table,
@@ -30,6 +31,7 @@ impl Finalize for TraitImplementationType {
     type Flag = Flag;
     type Data = Occurrences;
 
+    #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
@@ -58,6 +60,7 @@ impl Finalize for TraitImplementationType {
                 table.create_generic_parameters(
                     symbol_id,
                     syntax_tree.signature().generic_parameters().as_ref(),
+                    Variance::Invariant,
                     data,
                     handler,
                 );
@@ -99,15 +102,45 @@ impl Finalize for TraitImplementationType {
                 );
             }
             Flag::Check => {
+                let (trait_implementation_id, trait_id) = {
+                    let trait_implementation_type_sym =
+                        table.get(symbol_id).unwrap();
+                    let trait_implementation_sym = table
+                        .get(trait_implementation_type_sym.parent_id)
+                        .unwrap();
+                    let trait_sym = table
+                        .get(trait_implementation_sym.signature.implemented_id)
+                        .unwrap();
+
+                    (trait_implementation_sym.id, trait_sym.id)
+                };
+
+                // make sure that the trait implementation's generic arguments
+                // are built
+                let _ = table.build_to(
+                    trait_implementation_id,
+                    Some(symbol_id.into()),
+                    super::trait_implementation::Flag::GenericArguments,
+                    true,
+                    handler,
+                );
+
                 table.check_occurrences(symbol_id.into(), data, handler);
 
-                let trait_implementation_type_sym =
-                    table.get(symbol_id).unwrap();
-                let trait_implemetation =
-                    table.get(trait_implementation_type_sym.parent_id).unwrap();
+                let trait_implementation_type_sym = table
+                    .trait_implementation_types
+                    .get(symbol_id)
+                    .unwrap()
+                    .read();
+                let trait_implementation_sym = table
+                    .trait_implementations
+                    .get(trait_implementation_type_sym.parent_id)
+                    .unwrap()
+                    .read();
+                let trait_sym = table.traits.get(trait_id).unwrap().read();
 
                 // get the trait type id equivalent
-                let Some(trait_type_id) = trait_implemetation
+                let Some(trait_type_id) = trait_implementation_sym
                     .implementation_type_ids_by_trait_type_id
                     .iter()
                     .find_map(|(key, val)| {
@@ -121,7 +154,20 @@ impl Finalize for TraitImplementationType {
                     return;
                 };
 
-                drop(trait_implemetation);
+                table.implementation_member_check(
+                    symbol_id.into(),
+                    trait_type_id.into(),
+                    Instantiation::from_generic_arguments(
+                        trait_implementation_sym.signature.arguments.clone(),
+                        trait_implementation_sym
+                            .signature
+                            .implemented_id
+                            .into(),
+                        &trait_sym.generic_declaration.parameters,
+                    )
+                    .unwrap_or_default(),
+                    handler,
+                );
             }
         }
     }

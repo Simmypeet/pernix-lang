@@ -5,7 +5,7 @@ use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
-    symbol::Type,
+    symbol::{Type, Variance},
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         resolution, Table,
@@ -42,6 +42,7 @@ impl Finalize for Type {
             Flag::GenericParameter => table.create_generic_parameters(
                 symbol_id,
                 syntax_tree.signature().generic_parameters().as_ref(),
+                Variance::Covariant,
                 data,
                 handler,
             ),

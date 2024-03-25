@@ -123,7 +123,7 @@ pub struct Representation {
     types: HashMap<ID<Type>, State<Type>>,
     variants: HashMap<ID<Variant>, State<Variant>>,
 
-    dependencies_by_dependent: HashMap<GlobalID, GlobalID>,
+    dependencies_by_dependant: HashMap<GlobalID, GlobalID>,
     reported_cyclic_dependencies: HashSet<BTreeSet<GlobalID>>,
 }
 
@@ -352,7 +352,10 @@ impl Table<Finalizer> {
         id: ID<T>,
         to_flag: T::Flag,
         handler: &dyn Handler<Box<dyn error::Error>>,
-    ) -> Result<(), EntryNotFoundError> {
+    ) -> Result<(), EntryNotFoundError>
+    where
+        ID<T>: Into<GlobalID>,
+    {
         let (synchronization, syntax_tree, data) = {
             let builder_read = self.state.read();
             let states = T::get_states(&builder_read);
@@ -410,9 +413,16 @@ impl Table<Finalizer> {
                 .remove(&next_flag);
 
             for dependant in dependencies.into_iter().flatten() {
-                // no assertion, because the dependency may be removed by cyclic
-                // dependency
-                builder_write.dependencies_by_dependent.remove(&dependant);
+                // the dependency of the dependant might have been overridden,
+                // so we better not mistakenly remove the dependency.
+                if builder_write
+                    .dependencies_by_dependant
+                    .get(&dependant)
+                    .copied()
+                    == Some(id.into())
+                {
+                    builder_write.dependencies_by_dependant.remove(&dependant);
+                }
             }
 
             drop(builder_write);
@@ -496,12 +506,13 @@ impl Table<Finalizer> {
     /// # Errors
     ///
     /// See [`BuildSymbolError`] for the list of errors that can be returned.
+    #[allow(clippy::significant_drop_tightening)]
     pub fn build_to<T: Finalize + Element>(
         &self,
         id: ID<T>,
         required_from: Option<GlobalID>,
         to_flag: T::Flag,
-        cyclic_dependency_as_error: bool,
+        report_cyclic_dependency_to_handler: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Result<(), BuildSymbolError>
     where
@@ -525,9 +536,15 @@ impl Table<Finalizer> {
         // cyclic dependency detection
         if let Some(referring_site) = required_from {
             if referring_site == id.into() {
-                handler.receive(Box::new(CyclicDependency {
-                    participants: vec![id.into()],
-                }));
+                if report_cyclic_dependency_to_handler
+                    && builder_write
+                        .reported_cyclic_dependencies
+                        .insert(std::iter::once(id.into()).collect())
+                {
+                    handler.receive(Box::new(CyclicDependency {
+                        participants: vec![id.into()],
+                    }));
+                }
 
                 return Err(BuildSymbolError::CyclicDependency);
             }
@@ -537,12 +554,10 @@ impl Table<Finalizer> {
             let mut current_node = id.into();
 
             while let Some(dependency) = builder_write
-                .dependencies_by_dependent
+                .dependencies_by_dependant
                 .get(&current_node)
                 .copied()
             {
-                dependency_stack.push(dependency);
-
                 // cyclic dependency found
                 if dependency == referring_site {
                     let dependency_stack_set = dependency_stack
@@ -554,9 +569,9 @@ impl Table<Finalizer> {
                         .reported_cyclic_dependencies
                         .contains(&dependency_stack_set);
 
-                    if !is_reported && cyclic_dependency_as_error {
+                    if !is_reported && report_cyclic_dependency_to_handler {
                         handler.receive(Box::new(CyclicDependency {
-                            participants: dependency_stack,
+                            participants: dependency_stack.clone(),
                         }));
                         builder_write
                             .reported_cyclic_dependencies
@@ -566,16 +581,15 @@ impl Table<Finalizer> {
                     return Err(BuildSymbolError::CyclicDependency);
                 }
 
+                dependency_stack.push(dependency);
                 current_node = dependency;
             }
 
             // no cyclic dependency found, so we can safely add the dependency
             // to the builder
-            assert!(builder_write
-                .dependencies_by_dependent
-                .insert(referring_site, id.into())
-                .is_none());
-
+            builder_write
+                .dependencies_by_dependant
+                .insert(referring_site, id.into());
             T::get_states_mut(&mut builder_write)
                 .get_mut(&id)
                 .unwrap()

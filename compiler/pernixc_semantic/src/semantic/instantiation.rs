@@ -137,11 +137,12 @@ impl Instantiation {
         generic_id: GenericID,
         generic_parameters: &GenericParameters,
     ) -> Result<(), FromGenericArgumentsError> {
-        if generic_arguments.types.len() != generic_parameters.type_order.len()
+        if generic_arguments.types.len()
+            != generic_parameters.type_order().len()
             || generic_arguments.lifetimes.len()
-                != generic_parameters.lifetime_order.len()
+                != generic_parameters.lifetime_order().len()
             || generic_arguments.constants.len()
-                != generic_parameters.constant_order.len()
+                != generic_parameters.constant_order().len()
         {
             return Err(
                 FromGenericArgumentsError::MismatchedGenericParameterCount(
@@ -152,21 +153,21 @@ impl Instantiation {
 
         self.append_from_arguments(
             generic_arguments.lifetimes.into_iter(),
-            generic_parameters.lifetime_order.iter().copied(),
+            generic_parameters.lifetime_order().iter().copied(),
             generic_id,
             FromGenericArgumentsError::LifetimeParameterCollision,
         )?;
 
         self.append_from_arguments(
             generic_arguments.types.into_iter(),
-            generic_parameters.type_order.iter().copied(),
+            generic_parameters.type_order().iter().copied(),
             generic_id,
             FromGenericArgumentsError::TypeParameterCollision,
         )?;
 
         self.append_from_arguments(
             generic_arguments.constants.into_iter(),
-            generic_parameters.constant_order.iter().copied(),
+            generic_parameters.constant_order().iter().copied(),
             generic_id,
             FromGenericArgumentsError::ConstantParameterCollision,
         )?;

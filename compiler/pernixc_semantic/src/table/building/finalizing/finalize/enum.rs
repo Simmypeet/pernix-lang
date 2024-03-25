@@ -5,8 +5,11 @@ use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
-    symbol::Enum,
-    table::{building::finalizing::Finalizer, Table},
+    symbol::{Enum, Variance},
+    table::{
+        building::finalizing::{occurrences::Occurrences, Finalizer},
+        Index, Table,
+    },
 };
 
 build_flag! {
@@ -24,15 +27,60 @@ build_flag! {
 impl Finalize for Enum {
     type SyntaxTree = syntax_tree::item::EnumSignature;
     type Flag = Flag;
-    type Data = ();
+    type Data = Occurrences;
 
+    #[allow(clippy::significant_drop_in_scrutinee)]
     fn finalize(
-        _table: &Table<Finalizer>,
-        _symbol_id: ID<Self>,
-        _state_flag: Self::Flag,
-        _syntax_tree: &Self::SyntaxTree,
-        _data: &mut Self::Data,
-        _handler: &dyn Handler<Box<dyn error::Error>>,
+        table: &Table<Finalizer>,
+        symbol_id: ID<Self>,
+        state_flag: Self::Flag,
+        syntax_tree: &Self::SyntaxTree,
+        data: &mut Self::Data,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
+        match state_flag {
+            Flag::GenericParameter => table.create_generic_parameters(
+                symbol_id,
+                syntax_tree.generic_parameters().as_ref(),
+                Variance::Covariant,
+                data,
+                handler,
+            ),
+            Flag::WhereClause => {
+                table.create_where_clause_predicates(
+                    symbol_id,
+                    syntax_tree.where_clause().as_ref(),
+                    data,
+                    handler,
+                );
+            }
+            Flag::Complete => {
+                for variant in table
+                    .get(symbol_id)
+                    .unwrap()
+                    .variant_ids_by_name
+                    .values()
+                    .copied()
+                {
+                    let _ = table.build_to(
+                        variant,
+                        Some(symbol_id.into()),
+                        super::variant::Flag::Complete,
+                        true,
+                        handler,
+                    );
+                }
+
+                data.build_all_occurrences_to_completion(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
+            }
+            Flag::Check => {
+                table.check_occurrences(symbol_id.into(), data, handler);
+            }
+        }
     }
 }

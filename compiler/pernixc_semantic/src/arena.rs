@@ -52,7 +52,7 @@ unsafe impl<T> Sync for ID<T> {}
 
 impl<T> Debug for ID<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("ID").field(&self.index).finish()
+        write!(f, "ID({})", self.index)
     }
 }
 

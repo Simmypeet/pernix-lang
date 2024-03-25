@@ -11,7 +11,7 @@ use crate::{
         session::{self, Limit},
         Premise,
     },
-    symbol::{GlobalID, Trait, TraitImplementationKindID},
+    symbol::{GlobalID, Trait, TraitImplementationKindID, Variance},
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         Index, Table,
@@ -52,6 +52,7 @@ impl Finalize for Trait {
                 table.create_generic_parameters(
                     symbol_id,
                     syntax_tree.generic_parameters().as_ref(),
+                    Variance::Invariant,
                     data,
                     handler,
                 );
@@ -159,19 +160,19 @@ impl Finalize for Trait {
                         != trait_sym
                             .generic_declaration
                             .parameters
-                            .lifetimes
+                            .lifetimes()
                             .len()
                         || lhs_arguments.types.len()
                             != trait_sym
                                 .generic_declaration
                                 .parameters
-                                .types
+                                .types()
                                 .len()
                         || lhs_arguments.constants.len()
                             != trait_sym
                                 .generic_declaration
                                 .parameters
-                                .constants
+                                .constants()
                                 .len()
                     {
                         continue;
@@ -197,19 +198,19 @@ impl Finalize for Trait {
                             != trait_sym
                                 .generic_declaration
                                 .parameters
-                                .lifetimes
+                                .lifetimes()
                                 .len()
                             || rhs_arguments.types.len()
                                 != trait_sym
                                     .generic_declaration
                                     .parameters
-                                    .types
+                                    .types()
                                     .len()
                             || rhs_arguments.constants.len()
                                 != trait_sym
                                     .generic_declaration
                                     .parameters
-                                    .constants
+                                    .constants()
                                     .len()
                         {
                             continue;

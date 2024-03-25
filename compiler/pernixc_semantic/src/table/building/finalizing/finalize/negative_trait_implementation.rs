@@ -5,7 +5,7 @@ use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
-    symbol::NegativeTraitImplementation,
+    symbol::{NegativeTraitImplementation, Variance},
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         resolution, Index, Table,
@@ -44,6 +44,7 @@ impl Finalize for NegativeTraitImplementation {
                 table.create_generic_parameters(
                     symbol_id,
                     syntax_tree.generic_parameters().as_ref(),
+                    Variance::Invariant,
                     data,
                     handler,
                 );
