@@ -11,13 +11,16 @@ use super::{occurrences::Occurrences, Finalizer};
 use crate::{
     arena::ID,
     error::{
-        self, MismatchedGenericParameterCountInImplementation,
+        self, ExtraneousTraitMemberPredicate,
+        MismatchedGenericParameterCountInImplementation,
         MismatchedImplementationConstantTypeParameter, UndecidablePredicate,
-        UnsatisifedPredicate, UnusedGenericParameterInImplementation,
+        UnsatisfiedTraitMemberPredicate, UnsatisifedPredicate,
+        UnusedGenericParameterInImplementation,
     },
     semantic::{
         self, equality,
-        instantiation::{self, Instantiation},
+        instantiation::{self, instantiate, Instantiation},
+        mapping::Mapping,
         predicate::{self, ConstantType, Outlives, Trait, Tuple},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
@@ -965,8 +968,9 @@ impl Table<Finalizer> {
         );
 
         // check if the constant type matches
-        let active_premise =
+        let implementation_member_active_premise =
             self.get_active_premise(implementation_member_id.into()).unwrap();
+
         let mut semantic = semantic::Default;
         let mut session = session::Default::default();
 
@@ -988,7 +992,7 @@ impl Table<Finalizer> {
             match equality::equals(
                 &tr_const_ty,
                 &im_const_param.r#type,
-                &active_premise,
+                &implementation_member_active_premise,
                 self,
                 &mut semantic,
                 &mut Limit::new(&mut session),
@@ -1019,6 +1023,146 @@ impl Table<Finalizer> {
                             rhs: im_const_param.r#type.clone(),
                         },
                     ),
+                    predicate_declaration_span: None,
+                })),
+            }
+        }
+
+        // check if the predicates match
+        for predicate in &trait_member_sym.generic_declaration().predicates {
+            let mut predicate_instantiated = predicate.predicate.clone();
+            predicate_instantiated.instantiate(&trait_instantiation);
+
+            match self.predicate_satisfied(
+                &implementation_member_active_premise,
+                &predicate_instantiated,
+                &mut semantic,
+                &mut session,
+            ) {
+                Ok(false) => {
+                    handler.receive(Box::new(
+                        UnsatisfiedTraitMemberPredicate {
+                            trait_implementation_id: implementation_member_id,
+                            predicate: predicate_instantiated,
+                            predicate_span: predicate.kind.span().cloned(),
+                        },
+                    ));
+                }
+                Ok(true) => {}
+                Err(_) => handler.receive(Box::new(UndecidablePredicate {
+                    instantiation_span: implementation_member_sym
+                        .span()
+                        .cloned()
+                        .unwrap(),
+                    predicate: predicate_instantiated,
+                    predicate_declaration_span: None,
+                })),
+            }
+        }
+
+        let mut trait_member_active_premise =
+            self.get_active_premise(trait_member_id.into()).unwrap();
+
+        // transform the trait member active premise to the implementation
+        trait_member_active_premise.environment =
+            implementation_member_active_premise.environment;
+        trait_member_active_premise
+            .non_equality_predicates
+            .iter_mut()
+            .for_each(|x| x.instantiate(&trait_instantiation));
+        trait_member_active_premise.equalities_mapping = Mapping {
+            lifetimes: trait_member_active_premise
+                .equalities_mapping
+                .lifetimes
+                .into_iter()
+                .map(|(mut lhs, rhs)| {
+                    instantiation::instantiate(&mut lhs, &trait_instantiation);
+
+                    (
+                        lhs,
+                        rhs.into_iter()
+                            .map(|mut x| {
+                                instantiation::instantiate(
+                                    &mut x,
+                                    &trait_instantiation,
+                                );
+                                x
+                            })
+                            .collect(),
+                    )
+                })
+                .collect(),
+
+            types: trait_member_active_premise
+                .equalities_mapping
+                .types
+                .into_iter()
+                .map(|(mut lhs, rhs)| {
+                    instantiation::instantiate(&mut lhs, &trait_instantiation);
+
+                    (
+                        lhs,
+                        rhs.into_iter()
+                            .map(|mut x| {
+                                instantiation::instantiate(
+                                    &mut x,
+                                    &trait_instantiation,
+                                );
+                                x
+                            })
+                            .collect(),
+                    )
+                })
+                .collect(),
+            constants: trait_member_active_premise
+                .equalities_mapping
+                .constants
+                .into_iter()
+                .map(|(mut lhs, rhs)| {
+                    instantiation::instantiate(&mut lhs, &trait_instantiation);
+
+                    (
+                        lhs,
+                        rhs.into_iter()
+                            .map(|mut x| {
+                                instantiation::instantiate(
+                                    &mut x,
+                                    &trait_instantiation,
+                                );
+                                x
+                            })
+                            .collect(),
+                    )
+                })
+                .collect(),
+        };
+
+        // check for any extraneous predicates defined in the implementation
+        // member that are not in the trait member
+        for predicate in
+            &implementation_member_sym.generic_declaration().predicates
+        {
+            match self.predicate_satisfied(
+                &trait_member_active_premise,
+                &predicate.predicate,
+                &mut semantic,
+                &mut session,
+            ) {
+                Ok(false) => {
+                    handler.receive(Box::new(ExtraneousTraitMemberPredicate {
+                        trait_implementation_member_id:
+                            implementation_member_id,
+                        predicate: predicate.predicate.clone(),
+                        predicate_span: predicate.kind.span().cloned(),
+                    }));
+                }
+                Ok(true) => {}
+                Err(_) => handler.receive(Box::new(UndecidablePredicate {
+                    instantiation_span: implementation_member_sym
+                        .span()
+                        .cloned()
+                        .unwrap(),
+                    predicate: predicate.predicate.clone(),
                     predicate_declaration_span: None,
                 })),
             }

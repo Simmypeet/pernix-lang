@@ -741,10 +741,10 @@ impl GenericParameters {
                 .lifetime_order
                 .iter()
                 .copied()
-                .map(|x| {
+                .map(|id| {
                     lifetime::Lifetime::Parameter(MemberID {
                         parent: generic_id,
-                        id: x,
+                        id,
                     })
                 })
                 .collect(),
@@ -752,21 +752,18 @@ impl GenericParameters {
                 .type_order
                 .iter()
                 .copied()
-                .map(|x| {
-                    r#type::Type::Parameter(MemberID {
-                        parent: generic_id,
-                        id: x,
-                    })
+                .map(|id| {
+                    r#type::Type::Parameter(MemberID { parent: generic_id, id })
                 })
                 .collect(),
             constants: self
                 .constant_order
                 .iter()
                 .copied()
-                .map(|x| {
+                .map(|id| {
                     constant::Constant::Parameter(MemberID {
                         parent: generic_id,
-                        id: x,
+                        id,
                     })
                 })
                 .collect(),

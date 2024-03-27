@@ -16,7 +16,7 @@ use crate::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments,
         },
-        unification, Premise, Semantic,
+        unification, Environment, Premise, Semantic,
     },
     symbol::{
         self, ConstantParameterID, Generic, LifetimeParameterID,
@@ -151,17 +151,25 @@ impl Trait {
 
         if table.is_in_active_trait_implementation(
             id,
+            false,
             generic_arguments,
             premise,
             semantic,
             session,
         )? {
-            let implementation = table
-                .get(premise.active_trait_implementation.unwrap())
-                .unwrap();
+            let pass = match premise.environment {
+                Environment::InTraitImplementation(trait_implementation_id) => {
+                    let implementation =
+                        table.get(trait_implementation_id).unwrap();
 
-            // pass the const flag
-            if !is_const || implementation.is_const {
+                    !is_const || implementation.is_const
+                }
+                Environment::InTrait(_) => !is_const,
+                Environment::Normal => false,
+            };
+
+            // pass the check
+            if pass {
                 let result =
                     Satisfiability { lifetime_constraints: Vec::new() };
                 session.mark_as_done(
@@ -560,6 +568,7 @@ impl<T: State> Table<T> {
 
         if self.is_in_active_trait_implementation(
             trait_id,
+            true,
             generic_arguments,
             premise,
             semantic,
@@ -568,7 +577,12 @@ impl<T: State> Table<T> {
             return Ok(Implementation {
                 deduced_substitution: {
                     let implementation = self
-                        .get(premise.active_trait_implementation.unwrap())
+                        .get(
+                            premise
+                                .environment
+                                .into_in_trait_implementation()
+                                .unwrap(),
+                        )
                         .unwrap();
 
                     Instantiation {
@@ -581,7 +595,8 @@ impl<T: State> Table<T> {
                                 let lifetime =
                                     Lifetime::Parameter(LifetimeParameterID {
                                         parent: premise
-                                            .active_trait_implementation
+                                            .environment
+                                            .into_in_trait_implementation()
                                             .unwrap()
                                             .into(),
                                         id: x.0,
@@ -599,7 +614,8 @@ impl<T: State> Table<T> {
                             .map(|x| {
                                 let ty = Type::Parameter(TypeParameterID {
                                     parent: premise
-                                        .active_trait_implementation
+                                        .environment
+                                        .into_in_trait_implementation()
                                         .unwrap()
                                         .into(),
                                     id: x.0,
@@ -618,7 +634,8 @@ impl<T: State> Table<T> {
                                 let constant =
                                     Constant::Parameter(ConstantParameterID {
                                         parent: premise
-                                            .active_trait_implementation
+                                            .environment
+                                            .into_in_trait_implementation()
                                             .unwrap()
                                             .into(),
                                         id: x.0,
@@ -629,7 +646,7 @@ impl<T: State> Table<T> {
                             .collect(),
                     }
                 },
-                id: premise.active_trait_implementation.unwrap(),
+                id: premise.environment.into_in_trait_implementation().unwrap(),
                 lifetime_constraints: Vec::new(),
             });
         }
@@ -754,13 +771,14 @@ impl<T: State> Table<T> {
     >(
         &self,
         trait_id: ID<symbol::Trait>,
+        need_implementation: bool,
         generic_arguments: &GenericArguments,
         premise: &Premise,
         semantic: &mut S,
         session: &mut Limit<R>,
     ) -> Result<bool, ExceedLimitError> {
-        match premise.active_trait_implementation {
-            Some(trait_implementation) => {
+        match premise.environment {
+            Environment::InTraitImplementation(trait_implementation) => {
                 let Some(implementation) = self.get(trait_implementation)
                 else {
                     return Ok(false);
@@ -780,7 +798,20 @@ impl<T: State> Table<T> {
                     session,
                 )
             }
-            None => Ok(false),
+            Environment::InTrait(env_trait_id) => {
+                if need_implementation || env_trait_id != trait_id {
+                    return Ok(false);
+                }
+
+                let trait_symbol = self.get(trait_id).unwrap();
+
+                trait_symbol
+                    .generic_declaration()
+                    .parameters
+                    .create_identity_generic_arguments(env_trait_id.into())
+                    .equals(generic_arguments, premise, self, semantic, session)
+            }
+            Environment::Normal => Ok(false),
         }
     }
 }

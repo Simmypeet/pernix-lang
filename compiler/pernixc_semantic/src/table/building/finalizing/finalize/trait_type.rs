@@ -72,6 +72,16 @@ impl Finalize for TraitType {
                 );
             }
             Flag::Check => {
+                // make sure the trait where clause predicates are built
+                let parent_trait_id = table.get(symbol_id).unwrap().parent_id;
+                let _ = table.build_to(
+                    parent_trait_id,
+                    Some(symbol_id.into()),
+                    super::r#trait::Flag::WhereClause,
+                    true,
+                    handler,
+                );
+
                 table.check_occurrences(symbol_id.into(), data, handler);
             }
         }

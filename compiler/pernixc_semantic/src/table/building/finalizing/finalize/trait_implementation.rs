@@ -145,6 +145,17 @@ impl Finalize for TraitImplementation {
                 );
             }
             Flag::Check => {
+                // make sure the implemented trait has the where clause
+                let parent_trait_id =
+                    table.get(symbol_id).unwrap().signature.implemented_id;
+                let _ = table.build_to(
+                    parent_trait_id,
+                    Some(symbol_id.into()),
+                    super::r#trait::Flag::WhereClause,
+                    true,
+                    handler,
+                );
+
                 table.check_occurrences(symbol_id.into(), data, handler);
                 table.implementation_signature_check(symbol_id, handler);
             }

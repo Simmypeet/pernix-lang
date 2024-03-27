@@ -244,6 +244,40 @@ impl<T: Term> Outlives<T> {
             }
         }
 
+        // normalize operand
+        if let Some(normalized_operand) =
+            semantic.normalize(operand, premise, table, session)?
+        {
+            if Self::satisfies(
+                &normalized_operand,
+                bound,
+                premise,
+                table,
+                semantic,
+                session,
+            )? {
+                session.mark_as_done(Query { operand, bound }, Satisfied);
+                return Ok(true);
+            }
+        }
+
+        // normalize bound
+        if let Some(normalized_bound) =
+            semantic.normalize(bound, premise, table, session)?
+        {
+            if Self::satisfies(
+                operand,
+                &normalized_bound,
+                premise,
+                table,
+                semantic,
+                session,
+            )? {
+                session.mark_as_done(Query { operand, bound }, Satisfied);
+                return Ok(true);
+            }
+        }
+
         for Self { operand: next_operand, bound: next_bound } in
             T::outlives_predicates(premise)
         {

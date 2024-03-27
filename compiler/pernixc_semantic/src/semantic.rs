@@ -1,5 +1,7 @@
 //! Contains the semantic logic of the compiler (i.e. type checking/system).
 
+use enum_as_inner::EnumAsInner;
+
 use self::{
     equality::equals,
     mapping::Mapping,
@@ -15,7 +17,7 @@ use self::{
 use crate::{
     arena::ID,
     semantic::instantiation::Instantiation,
-    symbol::{MemberID, TraitImplementation},
+    symbol::{MemberID, Trait, TraitImplementation},
     table::{Index, State, Table},
 };
 
@@ -32,6 +34,31 @@ pub mod term;
 pub mod unification;
 pub mod visitor;
 
+/// Extra environment content that has a particular effect on the semantic
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    EnumAsInner,
+)]
+pub enum Environment {
+    /// The semantic logic is currently taking place in a trait implementation.
+    InTraitImplementation(ID<TraitImplementation>),
+
+    /// The semantic logic is currently taking place in a trait.
+    InTrait(ID<Trait>),
+
+    /// The semantic logic is currently taking place in other than the above.
+    #[default]
+    Normal,
+}
+
 /// The foundation truth used to derive further arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Premise {
@@ -41,9 +68,8 @@ pub struct Premise {
     /// The list of non-equality predicates.
     pub non_equality_predicates: Vec<NonEquality>,
 
-    /// Specifies the trait implementation that the semantic logic is currently
-    /// taking place in.
-    pub active_trait_implementation: Option<ID<TraitImplementation>>,
+    /// The environment of the premise.
+    pub environment: Environment,
 }
 
 impl Premise {
@@ -304,8 +330,7 @@ impl Semantic<Type> for Default {
                     return Ok(None);
                 };
 
-                // append the deduced generic arguments
-                Ok(Some(Type::MemberSymbol(MemberSymbol {
+                let result_ty = Type::MemberSymbol(MemberSymbol {
                     id: implementation_type_symbol.id.into(),
                     member_generic_arguments: trait_member
                         .member_generic_arguments
@@ -315,7 +340,10 @@ impl Semantic<Type> for Default {
                         types: parent_types,
                         constants: parent_constants,
                     },
-                })))
+                });
+
+                // append the deduced generic arguments
+                Ok(Some(result_ty))
             }
 
             // transform trait-implementation-type into the aliased type

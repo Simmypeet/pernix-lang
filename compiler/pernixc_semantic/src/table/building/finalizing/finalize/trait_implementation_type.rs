@@ -120,12 +120,10 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     trait_implementation_id,
                     Some(symbol_id.into()),
-                    super::trait_implementation::Flag::GenericArguments,
+                    super::trait_implementation::Flag::WhereClause,
                     true,
                     handler,
                 );
-
-                table.check_occurrences(symbol_id.into(), data, handler);
 
                 let trait_implementation_type_sym = table
                     .trait_implementation_types
@@ -153,6 +151,15 @@ impl Finalize for TraitImplementationType {
                 else {
                     return;
                 };
+
+                table.check_occurrences(symbol_id.into(), data, handler);
+                let _ = table.build_to(
+                    trait_type_id,
+                    Some(symbol_id.into()),
+                    super::trait_type::Flag::WhereClause,
+                    true,
+                    handler,
+                );
 
                 table.implementation_member_check(
                     symbol_id.into(),

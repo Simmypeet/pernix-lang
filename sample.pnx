@@ -1,52 +1,10 @@
-public trait Clone[T] {
-    public type Cloned;
+public trait Test[T] {
+    public type A[U];
 }
 
-public struct Box[T] {}
-public enum Option[T] { None, Some(T) }
-
-implements[T] Clone[Box[T]]
-where
-    trait Clone[T]
+implements[T] Test[T] 
 {
-    public type Cloned = Box[T];
+    public type A[U] = bool
+    where
+        U: 'static;
 }
-
-implements[T] Clone[Option[T]]
-where
-    trait Clone[T]
-{
-    public type Cloned = Option[T];
-}
-
-public struct List[T]  
-where
-    trait Clone[List[T]] // always cloneable
-        + Clone[T]  
-        + Clone[Option[Box[List[T]]]],
-
-    Clone[List[T]]::Cloned = (
-        Clone[T]::Cloned, 
-        Clone[Option[Box[List[T]]]]::Cloned
-    )
-{
-    public value: T,
-    public next: Option[Box[List[T]]],
-}
-
-implements[T] Clone[List[T]]
-where
-    trait Clone[T]
-        + Clone[Option[Box[List[T]]]]
-{
-    public type Cloned = (
-        Clone[T]::Cloned,
-        Clone[Option[Box[List[T]]]]::Cloned
-    );
-}
-
-implements Clone[int32] {
-    public type Cloned = int32;
-}
-
-public type Instantiated = Clone[List[int32]]::Cloned;

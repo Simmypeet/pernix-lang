@@ -1611,6 +1611,128 @@ impl<S: State> Display<S> for UnsatisifedPredicate {
     }
 }
 
+/// The trait implementation member does not include the predicate defined in
+/// the trait member.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnsatisfiedTraitMemberPredicate {
+    /// The ID of the trait implementation member.
+    pub trait_implementation_id: TraitImplementationMemberID,
+
+    /// The predicate that is missing in the trait implementation member.
+    pub predicate: Predicate,
+
+    /// The span of the predicate declaration.
+    pub predicate_span: Option<Span>,
+}
+
+impl<T: State> Display<T> for UnsatisfiedTraitMemberPredicate {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Some(trait_implementation_symbol) =
+            table.get_global(self.trait_implementation_id.into())
+        else {
+            return Err(fmt::Error);
+        };
+
+        let Some(trait_implementation_symbol_span) =
+            trait_implementation_symbol.span()
+        else {
+            return Err(fmt::Error);
+        };
+
+        let Some(qualified_name) =
+            table.get_qualified_name(self.trait_implementation_id.into())
+        else {
+            return Err(fmt::Error);
+        };
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the trait implementation member `{}` does not \
+                 include/satisfy the predicate `{}`",
+                qualified_name,
+                DisplayObject { display: &self.predicate, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: trait_implementation_symbol_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = self.predicate_span.as_ref() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("predicate declared here"),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The trait implementation member contains extraneous predicate--a predicate
+/// that is not defined in the trait member.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExtraneousTraitMemberPredicate {
+    /// The ID of the trait implementation member containing the extraneous
+    /// predicate.
+    pub trait_implementation_member_id: TraitImplementationMemberID,
+
+    /// The extraneous predicate.
+    pub predicate: Predicate,
+
+    /// The declaration span of the extraneous predicate.
+    pub predicate_span: Option<Span>,
+}
+
+impl<T: State> Display<T> for ExtraneousTraitMemberPredicate {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Some(trait_implementation_symbol) =
+            table.get_global(self.trait_implementation_member_id.into())
+        else {
+            return Err(fmt::Error);
+        };
+
+        let Some(trait_implementation_symbol_span) =
+            trait_implementation_symbol.span()
+        else {
+            return Err(fmt::Error);
+        };
+
+        let Some(qualified_name) = table
+            .get_qualified_name(self.trait_implementation_member_id.into())
+        else {
+            return Err(fmt::Error);
+        };
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the trait implementation member `{}` contains an extraneous \
+                 predicate `{}` -- a predicate that is not defined in the \
+                 trait member",
+                qualified_name,
+                DisplayObject { display: &self.predicate, table }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: trait_implementation_symbol_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = self.predicate_span.as_ref() {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("extraneous predicate declared here"),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Implemented by all semantic errors.
 pub trait Error: Debug + Display<Suboptimal> + Send + Sync + 'static {
     #[allow(missing_docs, clippy::missing_errors_doc)]

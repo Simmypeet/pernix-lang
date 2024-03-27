@@ -21,7 +21,7 @@ use crate::{
         },
         tests::State,
         visitor::{self, Visitor},
-        Premise, Semantic,
+        Environment, Premise, Semantic,
     },
     symbol::{
         self, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
@@ -35,7 +35,7 @@ fn reflexive() {
     let premise = Premise {
         equalities_mapping: mapping::Mapping::default(),
         non_equality_predicates: Vec::new(),
-        active_trait_implementation: None,
+        environment: Environment::Normal,
     };
     let table = Table::<State>::default();
 
@@ -64,7 +64,7 @@ fn symmetric() {
             std::iter::empty(),
         ),
         non_equality_predicates: Vec::new(),
-        active_trait_implementation: None,
+        environment: Environment::Normal,
     };
     let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Bool);
@@ -107,7 +107,7 @@ fn transitivity() {
             std::iter::empty(),
         ),
         non_equality_predicates: Vec::new(),
-        active_trait_implementation: None,
+        environment: Environment::Normal,
     };
     let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Bool);
@@ -151,7 +151,7 @@ fn congruence() {
             std::iter::empty(),
         ),
         non_equality_predicates: Vec::new(),
-        active_trait_implementation: None,
+        environment: Environment::Normal,
     };
     let table = Table::<State>::default();
     let lhs = Type::Symbol(Symbol {
@@ -217,7 +217,7 @@ fn recursive() {
             std::iter::empty(),
         ),
         non_equality_predicates: Vec::new(),
-        active_trait_implementation: None,
+        environment: Environment::Normal,
     };
     let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Int32);

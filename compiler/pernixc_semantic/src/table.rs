@@ -19,7 +19,7 @@ use crate::{
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
     semantic::{
         term::{constant, lifetime::Lifetime, r#type, GenericArguments},
-        Premise,
+        Environment, Premise,
     },
     symbol::{
         Accessibility, AdtImplementation, AdtImplementationConstant,
@@ -1105,14 +1105,18 @@ impl<T: Container> Representation<T> {
                 continue;
             };
 
-            // implicitly add the trait implementation to the premise
-            if let GenericID::TraitImplementation(trait_implementation_id) =
-                generic_id
-            {
-                assert!(premise
-                    .active_trait_implementation
-                    .replace(trait_implementation_id)
-                    .is_none());
+            // assign environment
+            match generic_id {
+                GenericID::Trait(id) => {
+                    premise.environment = Environment::InTrait(id);
+                }
+
+                GenericID::TraitImplementation(id) => {
+                    premise.environment =
+                        Environment::InTraitImplementation(id);
+                }
+
+                _ => {}
             }
 
             let generic = self.get_generic(generic_id)?;
