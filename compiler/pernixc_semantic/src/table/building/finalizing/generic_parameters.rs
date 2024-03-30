@@ -7,7 +7,7 @@ use crate::{
     error::{self, DuplicatedGenericParameter, MisOrderedGenericParameter},
     symbol::{
         ConstantParameter, Generic, GenericID, GenericKind, GlobalID,
-        LifetimeParameter, MemberID, TypeParameter, Variance,
+        LifetimeParameter, MemberID, TypeParameter,
     },
     table::{resolution, Element, Table},
 };
@@ -21,7 +21,6 @@ impl Table<Finalizer> {
         &self,
         generic_id: ID<T>,
         syntax_tree: Option<&syntax_tree::item::GenericParameters>,
-        variance: Variance,
         occurrences: &mut Occurrences,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
@@ -126,7 +125,6 @@ impl Table<Finalizer> {
                     span: Some(
                         lifetime_parameter_syn.identifier().span.clone(),
                     ),
-                    variance,
                 })
             {
                 handler.receive(Box::new(DuplicatedGenericParameter {
@@ -153,7 +151,6 @@ impl Table<Finalizer> {
                     name: type_parameter_syn.span.str().to_owned(),
                     parent_generic_id: generic_id.into(),
                     span: Some(type_parameter_syn.span.clone()),
-                    variance,
                 })
             {
                 handler.receive(Box::new(DuplicatedGenericParameter {

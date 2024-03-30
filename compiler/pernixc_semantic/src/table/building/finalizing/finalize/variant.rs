@@ -1,10 +1,10 @@
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
 use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
-    error,
+    error::{self, PrivateEntityLeakedToPublicInterface},
     symbol::Variant,
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
@@ -61,6 +61,23 @@ impl Finalize for Variant {
                             handler,
                         )
                         .unwrap_or_default();
+
+                    let ty_accessible =
+                        table.get_type_overall_accessibility(&ty).unwrap();
+
+                    // private entity leaked to public interface
+                    if ty_accessible
+                        < table.get_accessibility(symbol_id.into()).unwrap()
+                    {
+                        handler.receive(Box::new(
+                            PrivateEntityLeakedToPublicInterface {
+                                entity: ty.clone(),
+                                entity_overall_accessibility: ty_accessible,
+                                leaked_span: association.span(),
+                                public_interface_id: symbol_id.into(),
+                            },
+                        ));
+                    }
 
                     table
                         .representation

@@ -351,9 +351,6 @@ impl Global for Module {
 /// Implemented by all generic parameters [`LifetimeParameter`],
 /// [`TypeParameter`], and [`ConstantParameter`].
 pub trait GenericParameter: Sized + 'static {
-    /// Gets the [`Variance`] of the generic parameter.
-    fn variance(&self) -> Variance;
-
     /// Gets the name of the generic parameter.
     ///
     /// If the generic parameter is anonymous, (i.e. elided lifetime parameter),
@@ -449,14 +446,9 @@ pub struct LifetimeParameter {
 
     /// Location of where the lifetime parameter is declared.
     pub span: Option<Span>,
-
-    /// The variance of the lifetime parameter.
-    pub variance: Variance,
 }
 
 impl GenericParameter for LifetimeParameter {
-    fn variance(&self) -> Variance { self.variance }
-
     fn name(&self) -> Option<&str> { self.name.as_ref().map(AsRef::as_ref) }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
@@ -500,14 +492,9 @@ pub struct TypeParameter {
 
     /// The kind of the type parameter.
     pub span: Option<Span>,
-
-    /// The variance of the type parameter.
-    pub variance: Variance,
 }
 
 impl GenericParameter for TypeParameter {
-    fn variance(&self) -> Variance { self.variance }
-
     fn name(&self) -> Option<&str> { Some(&self.name) }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
@@ -557,8 +544,6 @@ pub struct ConstantParameter {
 }
 
 impl GenericParameter for ConstantParameter {
-    fn variance(&self) -> Variance { Variance::Invariant }
-
     fn name(&self) -> Option<&str> { Some(&self.name) }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }

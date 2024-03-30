@@ -20,13 +20,13 @@ use super::{
     matching,
     predicate::{self, Outlives, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
-    subterm::{AssignSubTermError, GetVarianceError, SubTupleLocation},
+    subterm::{AssignSubTermError, SubTupleLocation},
     unification::{self, Unification},
     visitor, Premise, Semantic,
 };
 use crate::{
     arena::ID,
-    symbol::{GenericID, GenericParameter, GlobalID, MemberID, Variance},
+    symbol::{GenericID, GenericParameter, GlobalID, MemberID},
     table::{self, DisplayObject, State, Table},
 };
 
@@ -834,31 +834,6 @@ impl GenericArguments {
         }
 
         Some(existing)
-    }
-}
-
-impl<S: State> Table<S> {
-    fn get_generic_parameter_variance<T: Term>(
-        &self,
-        generic_id: GenericID,
-        generic_parameter_order: usize,
-    ) -> Result<Variance, GetVarianceError> {
-        let generic_sym =
-            self.get_generic(generic_id).ok_or(GetVarianceError::InvalidID)?;
-
-        let id = T::GenericParameter::get_generic_parameters_order(
-            &generic_sym.generic_declaration().parameters,
-        )
-        .get(generic_parameter_order)
-        .copied()
-        .ok_or(GetVarianceError::InvalidLocation)?;
-
-        Ok(T::GenericParameter::get_generic_parameters_arena(
-            &generic_sym.generic_declaration().parameters,
-        )
-        .get(id)
-        .unwrap()
-        .variance())
     }
 }
 

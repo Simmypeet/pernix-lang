@@ -1339,16 +1339,16 @@ impl SourceElement for StructSignature {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// StructMemberList:
-///     StructMember (',' StructMember)* ','?
+/// FieldList:
+///     Field (',' Field)* ','?
 ///     ;
 /// ```
-pub type StructMemberList = ConnectedList<StructMember, Punctuation>;
+pub type FieldList = ConnectedList<Field, Punctuation>;
 
 /// Syntax Synopsis:
 /// ``` txt
 /// StructDefinition:
-///     '{' StructMember* '}'
+///     '{' FieldList* '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1356,7 +1356,7 @@ pub struct StructBody {
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
-    struct_member_list: Option<StructMemberList>,
+    field_list: Option<FieldList>,
     #[get = "pub"]
     right_brace: Punctuation,
 }
@@ -1364,10 +1364,8 @@ pub struct StructBody {
 impl StructBody {
     /// Dissolves the [`StructBody`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Punctuation, Option<StructMemberList>, Punctuation) {
-        (self.left_brace, self.struct_member_list, self.right_brace)
+    pub fn dissolve(self) -> (Punctuation, Option<FieldList>, Punctuation) {
+        (self.left_brace, self.field_list, self.right_brace)
     }
 }
 
@@ -1414,7 +1412,7 @@ impl SourceElement for Struct {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct StructField {
+pub struct Field {
     #[get = "pub"]
     access_modifier: AccessModifier,
     #[get = "pub"]
@@ -1422,33 +1420,12 @@ pub struct StructField {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    ty: r#type::Type,
+    r#type: r#type::Type,
 }
 
-impl SourceElement for StructField {
+impl SourceElement for Field {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(&self.ty.span()).unwrap()
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// StructMember:
-///     StructField
-///     ;
-/// ```
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
-)]
-pub enum StructMember {
-    Field(StructField),
-}
-
-impl SourceElement for StructMember {
-    fn span(&self) -> Span {
-        match self {
-            Self::Field(field) => field.span(),
-        }
+        self.access_modifier.span().join(&self.r#type.span()).unwrap()
     }
 }
 
@@ -1737,16 +1714,16 @@ impl SourceElement for Variant {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// EnumVariantList:
+/// VariantList:
 ///     Identifier (',' Identifier)*
 ///     ;
 /// ```
-pub type EnumVariantList = ConnectedList<Variant, Punctuation>;
+pub type VariantList = ConnectedList<Variant, Punctuation>;
 
 /// Syntax Synopsis:
 /// ``` txt
 /// EnumBody:
-///     '{' EnumVariantList? '}'
+///     '{' VariantList? '}'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -1754,7 +1731,7 @@ pub struct EnumBody {
     #[get = "pub"]
     left_brace: Punctuation,
     #[get = "pub"]
-    variant_list: Option<EnumVariantList>,
+    variant_list: Option<VariantList>,
     #[get = "pub"]
     right_brace: Punctuation,
 }
@@ -1762,9 +1739,7 @@ pub struct EnumBody {
 impl EnumBody {
     /// Dissolves the [`EnumBody`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Punctuation, Option<EnumVariantList>, Punctuation) {
+    pub fn dissolve(self) -> (Punctuation, Option<VariantList>, Punctuation) {
         (self.left_brace, self.variant_list, self.right_brace)
     }
 }
@@ -2897,19 +2872,14 @@ impl<'a> Parser<'a> {
                 let colon = parser.parse_punctuation(':', true, handler)?;
                 let ty = parser.parse_type(handler)?;
 
-                Some(StructMember::Field(StructField {
-                    access_modifier,
-                    identifier,
-                    colon,
-                    ty,
-                }))
+                Some(Field { access_modifier, identifier, colon, r#type: ty })
             },
             handler,
         )?;
 
         Some(StructBody {
             left_brace: enclosed_list.open,
-            struct_member_list: enclosed_list.list,
+            field_list: enclosed_list.list,
             right_brace: enclosed_list.close,
         })
     }

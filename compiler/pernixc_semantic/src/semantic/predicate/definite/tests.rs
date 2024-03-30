@@ -339,7 +339,6 @@ impl Property<Type> for TypeAlias {
                             name: "T".to_string(),
                             parent_generic_id: GenericID::Type(self.type_id),
                             span: None,
-                            variance: symbol::Variance::Invariant,
                         })
                         .is_ok());
 

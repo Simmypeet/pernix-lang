@@ -863,6 +863,7 @@ impl<T: Container> Representation<T> {
     ///
     /// `None` if the type contains an invalid id as its component.
     #[must_use]
+    #[allow(clippy::uninhabited_references)]
     pub fn get_type_overall_accessibility(
         &self,
         ty: &r#type::Type,
@@ -942,6 +943,7 @@ impl<T: Container> Representation<T> {
     ///
     /// `None` if the constant contains an invalid id as its component.
     #[must_use]
+    #[allow(clippy::uninhabited_references)]
     pub fn get_constant_overall_accessibility(
         &self,
         constant: &constant::Constant,

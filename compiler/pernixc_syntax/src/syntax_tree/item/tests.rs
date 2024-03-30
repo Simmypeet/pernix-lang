@@ -1880,21 +1880,21 @@ impl Display for Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StructField {
+pub struct Field {
     pub access_modifier: AccessModifier,
     pub identifier: Identifier,
     pub ty: r#type::tests::Type,
 }
 
-impl Input<&super::StructField> for &StructField {
-    fn assert(self, output: &super::StructField) -> TestCaseResult {
+impl Input<&super::Field> for &Field {
+    fn assert(self, output: &super::Field) -> TestCaseResult {
         self.access_modifier.assert(output.access_modifier())?;
         self.identifier.assert(output.identifier())?;
-        self.ty.assert(output.ty())
+        self.ty.assert(output.r#type())
     }
 }
 
-impl Arbitrary for StructField {
+impl Arbitrary for Field {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -1913,55 +1913,20 @@ impl Arbitrary for StructField {
     }
 }
 
-impl Display for StructField {
+impl Display for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}: {}", self.access_modifier, self.identifier, self.ty)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum StructMember {
-    Field(StructField),
-}
-
-impl Input<&super::StructMember> for &StructMember {
-    fn assert(self, output: &super::StructMember) -> TestCaseResult {
-        match (self, output) {
-            (StructMember::Field(i), super::StructMember::Field(o)) => {
-                i.assert(o)
-            }
-        }
-    }
-}
-
-impl Arbitrary for StructMember {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![StructField::arbitrary().prop_map(Self::Field),].boxed()
-    }
-}
-
-impl Display for StructMember {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Field(field) => Display::fmt(field, f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructBody {
-    struct_member_list:
-        Option<ConnectedList<StructMember, ConstantPunctuation<','>>>,
+    field_list: Option<ConnectedList<Field, ConstantPunctuation<','>>>,
 }
 
 impl Input<&super::StructBody> for &StructBody {
     fn assert(self, output: &super::StructBody) -> TestCaseResult {
-        self.struct_member_list
-            .as_ref()
-            .assert(output.struct_member_list().as_ref())
+        self.field_list.as_ref().assert(output.field_list().as_ref())
     }
 }
 
@@ -1971,10 +1936,10 @@ impl Arbitrary for StructBody {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::option::of(ConnectedList::arbitrary_with(
-            StructMember::arbitrary(),
+            Field::arbitrary(),
             ConstantPunctuation::<','>::arbitrary(),
         ))
-        .prop_map(|struct_member_list| Self { struct_member_list })
+        .prop_map(|struct_member_list| Self { field_list: struct_member_list })
         .boxed()
     }
 }
@@ -1983,7 +1948,7 @@ impl Display for StructBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('{')?;
 
-        if let Some(struct_member_list) = &self.struct_member_list {
+        if let Some(struct_member_list) = &self.field_list {
             Display::fmt(&struct_member_list, f)?;
         }
 

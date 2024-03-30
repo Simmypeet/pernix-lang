@@ -10,7 +10,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    GetVarianceError, MemberSymbol, Never, Term, Tuple,
+    MemberSymbol, Never, Term, Tuple,
 };
 use crate::{
     arena::{Key, ID},
@@ -23,9 +23,7 @@ use crate::{
         unification::{Substructural, Unification},
         Premise,
     },
-    symbol::{
-        GenericID, LifetimeParameter, LifetimeParameterID, MemberID, Variance,
-    },
+    symbol::{GenericID, LifetimeParameter, LifetimeParameterID, MemberID},
     table::{self, State, Table},
 };
 
@@ -83,14 +81,6 @@ impl Location<Lifetime, Lifetime> for Never {
     }
 
     fn get_sub_term(self, _: &Lifetime) -> Option<Lifetime> { match self {} }
-
-    fn get_sub_variance(
-        self,
-        _: &Lifetime,
-        _: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match self {}
-    }
 }
 
 impl Location<Lifetime, Type> for Never {
@@ -103,14 +93,6 @@ impl Location<Lifetime, Type> for Never {
     }
 
     fn get_sub_term(self, _: &Lifetime) -> Option<Type> { match self {} }
-
-    fn get_sub_variance(
-        self,
-        _: &Lifetime,
-        _: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match self {}
-    }
 }
 
 impl Location<Lifetime, Constant> for Never {
@@ -123,14 +105,6 @@ impl Location<Lifetime, Constant> for Never {
     }
 
     fn get_sub_term(self, _: &Lifetime) -> Option<Constant> { match self {} }
-
-    fn get_sub_variance(
-        self,
-        _: &Lifetime,
-        _: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match self {}
-    }
 }
 
 impl Match for Lifetime {

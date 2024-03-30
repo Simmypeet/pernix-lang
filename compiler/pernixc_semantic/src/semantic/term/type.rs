@@ -9,8 +9,8 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    constant::Constant, lifetime::Lifetime, GenericArguments, GetVarianceError,
-    Local, MemberSymbol, Never, Symbol, Term,
+    constant::Constant, lifetime::Lifetime, GenericArguments, Local,
+    MemberSymbol, Never, Symbol, Term,
 };
 use crate::{
     arena::ID,
@@ -27,8 +27,7 @@ use crate::{
         Premise,
     },
     symbol::{
-        self, Enum, GenericID, GlobalID, Struct, TypeParameter,
-        TypeParameterID, Variance,
+        self, Enum, GenericID, GlobalID, Struct, TypeParameter, TypeParameterID,
     },
     table::{self, DisplayObject, Index, State, Table},
 };
@@ -282,60 +281,6 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
             _ => None,
         }
     }
-
-    fn get_sub_variance(
-        self,
-        term: &Type,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match (self, term) {
-            (Self::Symbol(location), Type::Symbol(symbol)) => table
-                .get_generic_parameter_variance::<Lifetime>(
-                    symbol.id.into(),
-                    location.0,
-                ),
-
-            (Self::TraitMember(_), Type::TraitMember(_)) => {
-                Ok(Variance::Invariant)
-            }
-
-            (Self::Reference, _) => Ok(Variance::Covariant),
-
-            (Self::MemberSymbol(location), Type::MemberSymbol(symbol)) => {
-                let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolID::TraitImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolID::AdtImplementation(id), true) => {
-                        let implementation_id = table
-                            .get(id)
-                            .ok_or(GetVarianceError::InvalidID)?
-                            .parent_id;
-                        let adt_kind_id = table
-                            .get(implementation_id)
-                            .unwrap()
-                            .signature
-                            .implemented_id;
-
-                        adt_kind_id.into()
-                    }
-                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
-
-                    (MemberSymbolID::TraitImplementation(_), true) => {
-                        return Ok(Variance::Invariant)
-                    }
-                };
-
-                table.get_generic_parameter_variance::<Lifetime>(
-                    id,
-                    location.index,
-                )
-            }
-
-            _ => Err(GetVarianceError::InvalidLocation),
-        }
-    }
 }
 
 /// The location pointing to a sub-type term in a type.
@@ -455,75 +400,6 @@ impl Location<Type, Type> for SubTypeLocation {
             _ => None,
         }
     }
-
-    fn get_sub_variance(
-        self,
-        term: &Type,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match (self, term) {
-            (Self::Symbol(location), Type::Symbol(symbol)) => table
-                .get_generic_parameter_variance::<Type>(
-                    symbol.id.into(),
-                    location.0,
-                ),
-
-            (Self::Pointer, Type::Pointer(pointer)) => {
-                if pointer.qualifier == Qualifier::Immutable {
-                    Ok(Variance::Covariant)
-                } else {
-                    Ok(Variance::Invariant)
-                }
-            }
-
-            (Self::TraitMember(_), Type::TraitMember(_)) => {
-                Ok(Variance::Invariant)
-            }
-
-            (Self::Reference, Type::Reference(reference)) => {
-                if reference.qualifier == Qualifier::Immutable {
-                    Ok(Variance::Covariant)
-                } else {
-                    Ok(Variance::Invariant)
-                }
-            }
-
-            (Self::Array, Type::Array(_))
-            | (Self::Local, Type::Local(_))
-            | (Self::Tuple(_), Type::Tuple(_)) => Ok(Variance::Covariant),
-
-            (Self::MemberSymbol(location), Type::MemberSymbol(symbol)) => {
-                let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolID::TraitImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolID::AdtImplementation(id), true) => {
-                        let implementation_id = table
-                            .get(id)
-                            .ok_or(GetVarianceError::InvalidID)?
-                            .parent_id;
-                        let adt_kind_id = table
-                            .get(implementation_id)
-                            .unwrap()
-                            .signature
-                            .implemented_id;
-
-                        adt_kind_id.into()
-                    }
-                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
-
-                    (MemberSymbolID::TraitImplementation(_), true) => {
-                        return Ok(Variance::Invariant)
-                    }
-                };
-
-                table.get_generic_parameter_variance::<Type>(id, location.index)
-            }
-
-            _ => Err(GetVarianceError::InvalidLocation),
-        }
-    }
 }
 
 /// The location pointing to a sub-constant term in a type.
@@ -596,60 +472,6 @@ impl Location<Type, Constant> for SubConstantLocation {
             }
 
             _ => None,
-        }
-    }
-
-    fn get_sub_variance(
-        self,
-        term: &Type,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError> {
-        match (self, term) {
-            (Self::Symbol(location), Type::Symbol(symbol)) => table
-                .get_generic_parameter_variance::<Constant>(
-                    symbol.id.into(),
-                    location.0,
-                ),
-
-            (Self::TraitMember(_), Type::TraitMember(_)) => {
-                Ok(Variance::Invariant)
-            }
-
-            (Self::MemberSymbol(location), Type::MemberSymbol(symbol)) => {
-                let id = match (symbol.id, location.from_parent) {
-                    (MemberSymbolID::TraitImplementation(id), false) => {
-                        id.into()
-                    }
-
-                    (MemberSymbolID::AdtImplementation(id), true) => {
-                        let implementation_id = table
-                            .get(id)
-                            .ok_or(GetVarianceError::InvalidID)?
-                            .parent_id;
-                        let adt_kind_id = table
-                            .get(implementation_id)
-                            .unwrap()
-                            .signature
-                            .implemented_id;
-
-                        adt_kind_id.into()
-                    }
-                    (MemberSymbolID::AdtImplementation(id), false) => id.into(),
-
-                    (MemberSymbolID::TraitImplementation(_), true) => {
-                        return Ok(Variance::Invariant)
-                    }
-                };
-
-                table.get_generic_parameter_variance::<Constant>(
-                    id,
-                    location.index,
-                )
-            }
-
-            (Self::Array, Type::Array(_)) => Ok(Variance::Covariant),
-
-            _ => Err(GetVarianceError::InvalidLocation),
         }
     }
 }
@@ -916,9 +738,7 @@ impl Term for Type {
         match self {
             Self::Symbol(Symbol { id, generic_arguments }) => match *id {
                 SymbolID::Struct(struct_id) => {
-                    let Some(struct_sym) = table.get(struct_id) else {
-                        return None;
-                    };
+                    let struct_sym = table.get(struct_id)?;
 
                     let Ok(substitution) =
                         Instantiation::from_generic_arguments(
@@ -946,9 +766,7 @@ impl Term for Type {
                     )
                 }
                 SymbolID::Enum(enum_id) => {
-                    let Some(enum_sym) = table.get(enum_id) else {
-                        return None;
-                    };
+                    let enum_sym = table.get(enum_id)?;
 
                     let Ok(substitution) =
                         Instantiation::from_generic_arguments(
@@ -967,10 +785,7 @@ impl Term for Type {
                             .copied()
                             .filter_map(|variant| table.get(variant))
                             .filter_map(|variant| {
-                                let Some(ty) = variant.associated_type.as_ref()
-                                else {
-                                    return None;
-                                };
+                                let ty = variant.associated_type.as_ref()?;
 
                                 let mut ty = ty.clone();
                                 instantiation::instantiate(

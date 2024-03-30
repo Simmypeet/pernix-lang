@@ -11,7 +11,7 @@ use crate::{
         session::{self, Limit},
         Premise,
     },
-    symbol::{GlobalID, Trait, TraitImplementationKindID, Variance},
+    symbol::{GlobalID, Trait, TraitImplementationKindID},
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         Index, Table,
@@ -52,7 +52,6 @@ impl Finalize for Trait {
                 table.create_generic_parameters(
                     symbol_id,
                     syntax_tree.generic_parameters().as_ref(),
-                    Variance::Invariant,
                     data,
                     handler,
                 );

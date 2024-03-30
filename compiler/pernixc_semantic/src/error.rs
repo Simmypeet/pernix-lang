@@ -15,12 +15,12 @@ use crate::{
     arena::ID,
     semantic::predicate::Predicate,
     symbol::{
-        Accessibility, AdtID, ConstantParameterID, GenericID, GenericKind,
-        GenericParameter, GlobalID, LocalGenericParameterID, MemberID, Module,
-        Trait, TraitImplementation, TraitImplementationKindID,
-        TraitImplementationMemberID, TraitMemberID,
+        Accessibility, AdtID, ConstantParameterID, Field, GenericID,
+        GenericKind, GenericParameter, GlobalID, LocalGenericParameterID,
+        MemberID, Module, Struct, Trait, TraitImplementation,
+        TraitImplementationKindID, TraitImplementationMemberID, TraitMemberID,
     },
-    table::{Display, DisplayObject, State, Suboptimal, Table},
+    table::{Display, DisplayObject, Index, State, Suboptimal, Table},
 };
 
 /// The global symbol with the same name already exists in the given scope.
@@ -1604,6 +1604,54 @@ impl<S: State> Display<S> for UnsatisifedPredicate {
             write!(f, "\n{}", SourceCodeDisplay {
                 span,
                 help_display: Some("predicate declared here"),
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+/// The field with the same name already exists in the struct.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DuplicatedField {
+    /// The struct ID where the field is duplicated.
+    pub struct_id: ID<Struct>,
+
+    /// The ID of the existing field.
+    pub field_id: ID<Field>,
+
+    /// The span of the redeclaration.
+    pub redeclaration_span: Span,
+}
+
+impl<T: State> Display<T> for DuplicatedField {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let struct_qualified_name = table
+            .get_qualified_name(self.struct_id.into())
+            .ok_or(fmt::Error)?;
+
+        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
+        let field_sym =
+            struct_sym.fields.get(self.field_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the field `{}` is already defined in the struct \
+                 `{struct_qualified_name}`",
+                field_sym.name
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.redeclaration_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        if let Some(span) = &field_sym.span {
+            write!(f, "\n{}", SourceCodeDisplay {
+                span,
+                help_display: Some("is first defined here"),
             })?;
         }
 

@@ -1,11 +1,11 @@
-use pernixc_base::diagnostic::Handler;
+use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
 use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
-    error,
-    symbol::{Type, Variance},
+    error::{self, PrivateEntityLeakedToPublicInterface},
+    symbol::Type,
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         resolution, Table,
@@ -42,7 +42,6 @@ impl Finalize for Type {
             Flag::GenericParameter => table.create_generic_parameters(
                 symbol_id,
                 syntax_tree.signature().generic_parameters().as_ref(),
-                Variance::Covariant,
                 data,
                 handler,
             ),
@@ -55,7 +54,7 @@ impl Finalize for Type {
                 );
             }
             Flag::Complete => {
-                table.types.get(symbol_id).unwrap().write().r#type = table
+                let ty = table
                     .resolve_type(
                         syntax_tree.definition().ty(),
                         symbol_id.into(),
@@ -69,6 +68,25 @@ impl Finalize for Type {
                         handler,
                     )
                     .unwrap_or_default();
+
+                let ty_accessible =
+                    table.get_type_overall_accessibility(&ty).unwrap();
+
+                // private entity leaked to public interface
+                if ty_accessible
+                    < table.get_accessibility(symbol_id.into()).unwrap()
+                {
+                    handler.receive(Box::new(
+                        PrivateEntityLeakedToPublicInterface {
+                            entity: ty.clone(),
+                            entity_overall_accessibility: ty_accessible,
+                            leaked_span: syntax_tree.definition().ty().span(),
+                            public_interface_id: symbol_id.into(),
+                        },
+                    ));
+                }
+
+                table.types.get(symbol_id).unwrap().write().r#type = ty;
                 data.build_all_occurrences_to_completion(
                     table,
                     symbol_id.into(),

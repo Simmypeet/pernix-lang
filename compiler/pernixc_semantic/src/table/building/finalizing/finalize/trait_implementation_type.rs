@@ -6,7 +6,7 @@ use crate::{
     arena::ID,
     error,
     semantic::instantiation::Instantiation,
-    symbol::{TraitImplementationType, Variance},
+    symbol::TraitImplementationType,
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         resolution, Index, Table,
@@ -60,7 +60,6 @@ impl Finalize for TraitImplementationType {
                 table.create_generic_parameters(
                     symbol_id,
                     syntax_tree.signature().generic_parameters().as_ref(),
-                    Variance::Invariant,
                     data,
                     handler,
                 );

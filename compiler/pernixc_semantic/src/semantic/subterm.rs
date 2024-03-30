@@ -3,10 +3,6 @@
 use std::{fmt::Debug, hash::Hash};
 
 use super::term::{MemberSymbol, Symbol, Term, Tuple, TupleElement};
-use crate::{
-    symbol::Variance,
-    table::{State, Table},
-};
 
 /// An error that occurs when assigning a sub-term to a term.
 #[derive(
@@ -20,19 +16,6 @@ pub enum AssignSubTermError {
     TupleExpected,
     #[error("the given tuple term to assign had a mismatched length")]
     InvalidTupleRange,
-}
-
-/// An error that occurs when getting the variance of a sub-term.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum GetVarianceError {
-    #[error("the given location is invalid for this term")]
-    InvalidLocation,
-
-    #[error("the term contains an ID that is invalid to the given table")]
-    InvalidID,
 }
 
 /// Represents a type used to retrieve a sub-term of a particular term.
@@ -63,17 +46,6 @@ pub trait Location<Term, SubTerm>:
     /// Returns the sub-term at this location.
     #[must_use]
     fn get_sub_term(self, term: &Term) -> Option<SubTerm>;
-
-    /// Returns the variance of the sub-term at this location.
-    ///
-    /// # Errors
-    ///
-    /// See [`GetVarianceError`] for more information.
-    fn get_sub_variance(
-        self,
-        term: &Term,
-        table: &Table<impl State>,
-    ) -> Result<Variance, GetVarianceError>;
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic

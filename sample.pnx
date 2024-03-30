@@ -2,9 +2,10 @@ public trait Test[T] {
     public type A[U];
 }
 
-implements[T] Test[T] 
-{
-    public type A[U] = bool
-    where
-        U: 'static;
+implements[T] Test[T] {
+    public type A[U] = bool;
+}
+
+private trait ImSoGood[T] {
+    public type Output[U];
 }

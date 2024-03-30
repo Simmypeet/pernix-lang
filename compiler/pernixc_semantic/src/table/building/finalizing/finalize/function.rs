@@ -6,7 +6,10 @@ use crate::{
     arena::ID,
     error,
     symbol::Function,
-    table::{building::finalizing::Finalizer, Table},
+    table::{
+        building::finalizing::{occurrences::Occurrences, Finalizer},
+        Table,
+    },
 };
 
 build_flag! {
@@ -15,8 +18,9 @@ build_flag! {
         GenericParameter,
         /// Where clause predicates are built
         WhereClause,
+        /// The parameters and return type are built
         Complete,
-        /// Bounds check are performed
+        /// Bounds check are performed and the full function body is built
         Check,
     }
 }
@@ -24,15 +28,27 @@ build_flag! {
 impl Finalize for Function {
     type SyntaxTree = syntax_tree::item::Function;
     type Flag = Flag;
-    type Data = ();
+    type Data = Occurrences;
 
     fn finalize(
-        _table: &Table<Finalizer>,
-        _symbol_id: ID<Self>,
-        _state_flag: Self::Flag,
-        _syntax_tree: &Self::SyntaxTree,
-        _data: &mut Self::Data,
-        _handler: &dyn Handler<Box<dyn error::Error>>,
+        table: &Table<Finalizer>,
+        symbol_id: ID<Self>,
+        state_flag: Self::Flag,
+        syntax_tree: &Self::SyntaxTree,
+        data: &mut Self::Data,
+        handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
+        match state_flag {
+            Flag::GenericParameter => {
+                // Create the generic parameters
+                table.create_generic_parameters(
+                    symbol_id,
+                    syntax_tree.signature().generic_parameters().as_ref(),
+                    data,
+                    handler,
+                );
+            }
+            Flag::WhereClause | Flag::Complete | Flag::Check => {}
+        }
     }
 }

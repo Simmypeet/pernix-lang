@@ -19,7 +19,7 @@ use crate::{
     },
     semantic::{
         self, equality,
-        instantiation::{self, instantiate, Instantiation},
+        instantiation::{self, Instantiation},
         mapping::Mapping,
         predicate::{self, ConstantType, Outlives, Trait, Tuple},
         session::{self, ExceedLimitError, Limit, Session},

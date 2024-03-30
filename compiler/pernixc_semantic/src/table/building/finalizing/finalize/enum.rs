@@ -5,7 +5,7 @@ use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
-    symbol::{Enum, Variance},
+    symbol::Enum,
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         Index, Table,
@@ -18,6 +18,7 @@ build_flag! {
         GenericParameter,
         /// Where clause predicates are built
         WhereClause,
+        /// All the enum variants are built
         Complete,
         /// Bounds check are performed
         Check,
@@ -42,7 +43,6 @@ impl Finalize for Enum {
             Flag::GenericParameter => table.create_generic_parameters(
                 symbol_id,
                 syntax_tree.generic_parameters().as_ref(),
-                Variance::Covariant,
                 data,
                 handler,
             ),

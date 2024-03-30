@@ -462,9 +462,7 @@ impl<'a> Parser<'a> {
         let tree = f(self);
 
         // pops the current frame off the stack
-        let Some(new_frame) = self.stack.pop() else {
-            return None;
-        };
+        let new_frame = self.stack.pop()?;
 
         // the current frame must be at the end
         if !self.current_frame.is_exhausted() {
