@@ -27,9 +27,9 @@ use crate::{
         AdtImplementationData, AdtImplementationFunction,
         AdtImplementationMemberID, AdtImplementationType, Constant,
         ConstantData, Enum, Function, FunctionData, GenericDeclaration,
-        GlobalID, ImplementationSignature, Module, ModuleMemberID,
-        NegativeTraitImplementation, Struct, Trait, TraitConstant,
-        TraitConstantData, TraitFunction, TraitFunctionData,
+        GenericParameterVariances, GlobalID, ImplementationSignature, Module,
+        ModuleMemberID, NegativeTraitImplementation, Struct, Trait,
+        TraitConstant, TraitConstantData, TraitFunction, TraitFunctionData,
         TraitImplementation, TraitImplementationConstant,
         TraitImplementationConstantData, TraitImplementationData,
         TraitImplementationFunction, TraitImplementationFunctionData,
@@ -355,6 +355,8 @@ impl Table<Drafter> {
                 fields: Map::new(),
                 implementations: HashSet::default(),
                 span: Some(syntax_tree.signature().identifier().span.clone()),
+                generic_parameter_variances: GenericParameterVariances::default(
+                ),
             })
         });
         assert!(table_write.state.building.draft_symbol(id, syntax_tree));
@@ -384,6 +386,8 @@ impl Table<Drafter> {
                 variant_ids_by_name: HashMap::new(),
                 implementations: HashSet::new(),
                 span: Some(signature.identifier().span.clone()),
+                generic_parameter_variances: GenericParameterVariances::default(
+                ),
             })
         });
         assert!(table_write.state.building.draft_symbol(id, signature));

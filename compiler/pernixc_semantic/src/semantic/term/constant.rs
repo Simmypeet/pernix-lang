@@ -20,9 +20,10 @@ use crate::{
         mapping::Mapping,
         matching::{self, Match},
         predicate::{Outlives, Satisfiability},
-        subterm::{
+        sub_term::{
             AssignSubTermError, Location, SubMemberSymbolLocation,
-            SubSymbolLocation, SubTraitMemberLocation, SubTupleLocation,
+            SubSymbolLocation, SubTerm, SubTraitMemberLocation,
+            SubTupleLocation,
         },
         unification::{self, Unification},
         Premise,
@@ -411,6 +412,15 @@ impl Location<Constant, Lifetime> for SubLifetimeLocation {
     }
 }
 
+/// Enumeration of all kinds of sub-term locations in a constant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum SubTermLocation {
+    Lifetime(SubLifetimeLocation),
+    Type(SubTypeLocation),
+    Constant(SubConstantLocation),
+}
+
 /// Represents a compile-time constant term.
 #[derive(
     Debug,
@@ -469,12 +479,14 @@ impl Default for Constant {
     fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
 }
 
-impl Match for Constant {
+impl SubTerm for Constant {
     type SubTypeLocation = SubTypeLocation;
-    type SubLifetimeLocation = SubLifetimeLocation;
     type SubConstantLocation = SubConstantLocation;
-    type ThisSubTermLocation = Self::SubConstantLocation;
+    type SubLifetimeLocation = SubLifetimeLocation;
+    type ThisSubTermLocation = SubConstantLocation;
+}
 
+impl Match for Constant {
     #[allow(clippy::too_many_lines)]
     fn substructural_match(
         &self,

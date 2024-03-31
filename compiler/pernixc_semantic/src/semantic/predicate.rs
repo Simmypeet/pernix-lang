@@ -11,7 +11,7 @@ use enum_as_inner::EnumAsInner;
 use super::{
     instantiation::{self, Instantiation},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-    visitor::{accept_recursive, Visitor},
+    visitor::{accept_recursive, Recursive, SubTermLocation},
 };
 use crate::table::{self, DisplayObject, State};
 
@@ -20,10 +20,20 @@ struct ContainsForallLifetimeVisitor {
     contains_forall_lifetime: bool,
 }
 
-impl Visitor for ContainsForallLifetimeVisitor {
-    fn visit_type(&mut self, _: &Type) -> bool { true }
+impl Recursive for ContainsForallLifetimeVisitor {
+    fn visit_type(
+        &mut self,
+        _: &Type,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        true
+    }
 
-    fn visit_lifetime(&mut self, lifetime: &Lifetime) -> bool {
+    fn visit_lifetime(
+        &mut self,
+        lifetime: &Lifetime,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
         if lifetime.is_forall() {
             self.contains_forall_lifetime = true;
             false
@@ -32,20 +42,13 @@ impl Visitor for ContainsForallLifetimeVisitor {
         }
     }
 
-    fn visit_constant(&mut self, _: &Constant) -> bool { true }
-
-    fn visit_type_mut(&mut self, _: &mut Type) -> bool { true }
-
-    fn visit_lifetime_mut(&mut self, lifetime: &mut Lifetime) -> bool {
-        if lifetime.is_forall() {
-            self.contains_forall_lifetime = true;
-            false
-        } else {
-            true
-        }
+    fn visit_constant(
+        &mut self,
+        _: &Constant,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        true
     }
-
-    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { true }
 }
 
 fn contains_forall_lifetime<T: Term>(term: &T) -> bool {

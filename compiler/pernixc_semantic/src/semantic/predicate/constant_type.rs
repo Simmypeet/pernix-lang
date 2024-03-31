@@ -5,7 +5,10 @@ use crate::{
         instantiation::{self, Instantiation},
         session::{self, ExceedLimitError, Limit, Satisfied, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        visitor, Premise, Semantic,
+        visitor::{
+            self, SubConstantLocation, SubLifetimeLocation, SubTypeLocation,
+        },
+        Premise, Semantic,
     },
     table::{self, DisplayObject, State, Table},
 };
@@ -37,7 +40,7 @@ impl<
         R: Session<Lifetime> + Session<Type> + Session<Constant>,
     > visitor::Visitor for Visitor<'a, 's, 'r, 'l, T, S, R>
 {
-    fn visit_type(&mut self, ty: &Type) -> bool {
+    fn visit_type(&mut self, ty: &Type, _: SubTypeLocation) -> bool {
         match satisfies_internal(
             ty,
             QuerySource::Normal,
@@ -57,7 +60,11 @@ impl<
         true
     }
 
-    fn visit_lifetime(&mut self, lifetime: &Lifetime) -> bool {
+    fn visit_lifetime(
+        &mut self,
+        lifetime: &Lifetime,
+        _: SubLifetimeLocation,
+    ) -> bool {
         match satisfies_internal(
             lifetime,
             QuerySource::Normal,
@@ -77,7 +84,11 @@ impl<
         true
     }
 
-    fn visit_constant(&mut self, constant: &Constant) -> bool {
+    fn visit_constant(
+        &mut self,
+        constant: &Constant,
+        _: SubConstantLocation,
+    ) -> bool {
         match satisfies_internal(
             constant,
             QuerySource::Normal,
@@ -95,16 +106,6 @@ impl<
         }
 
         true
-    }
-
-    fn visit_type_mut(&mut self, _: &mut Type) -> bool { unreachable!() }
-
-    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool {
-        unreachable!()
-    }
-
-    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool {
-        unreachable!()
     }
 }
 

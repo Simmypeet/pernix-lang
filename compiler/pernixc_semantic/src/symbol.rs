@@ -227,6 +227,15 @@ pub trait Generic: Global {
     fn generic_declaration_mut(&mut self) -> &mut GenericDeclaration;
 }
 
+/// Represents a kind of symbol that defines a algebraic data type.
+///
+/// This primarily includes [`Struct`] and [`Enum`].
+pub trait Adt: Generic {
+    /// Gets the [`GenericParameterVariances`], containing the variances
+    /// informations of all the generic parameters.
+    fn generic_parameter_variances(&self) -> &GenericParameterVariances;
+}
+
 /// Represents a generic declaration containing generic parameters and
 /// predicates.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -576,6 +585,21 @@ impl GenericParameter for ConstantParameter {
     }
 }
 
+/// Contains the [`Variance`] informations for all the generic parameters.
+///
+/// This is primarily used in algebraic data types declarations.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GenericParameterVariances {
+    /// Maps the lifetime parameter ID to its variance.
+    pub variances_by_lifetime_ids: HashMap<ID<LifetimeParameter>, Variance>,
+
+    /// Maps the type parameter ID to its variance.
+    pub variances_by_type_ids: HashMap<ID<TypeParameter>, Variance>,
+
+    /// Maps the constant parameter ID to its variance.
+    pub variances_by_constant_ids: HashMap<ID<ConstantParameter>, Variance>,
+}
+
 /// Represents a list of generic parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Getters)]
 pub struct GenericParameters {
@@ -797,6 +821,9 @@ pub struct Struct {
     /// All of the implementations of the struct.
     pub implementations: HashSet<ID<AdtImplementation>>,
 
+    /// Contains the variances of the generic parameters.
+    pub generic_parameter_variances: GenericParameterVariances,
+
     /// Location of where the struct is declared.
     pub span: Option<Span>,
 }
@@ -823,6 +850,12 @@ impl Global for Struct {
     }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
+}
+
+impl Adt for Struct {
+    fn generic_parameter_variances(&self) -> &GenericParameterVariances {
+        &self.generic_parameter_variances
+    }
 }
 
 /// Represents an enum variant declaration, denoted by `NAME(ASSOC_TYPE)`
@@ -881,6 +914,9 @@ pub struct Enum {
     /// All of the implementations of the enums.
     pub implementations: HashSet<ID<AdtImplementation>>,
 
+    /// Contains the variances of the generic parameters.
+    pub generic_parameter_variances: GenericParameterVariances,
+
     /// Location of where the enum is declared.
     pub span: Option<Span>,
 }
@@ -907,6 +943,12 @@ impl Global for Enum {
     }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
+}
+
+impl Adt for Enum {
+    fn generic_parameter_variances(&self) -> &GenericParameterVariances {
+        &self.generic_parameter_variances
+    }
 }
 
 /// A template struct representing all kinds of type alias declarations.

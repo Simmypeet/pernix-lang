@@ -29,7 +29,7 @@ pub mod matching;
 pub mod order;
 pub mod predicate;
 pub mod session;
-pub mod subterm;
+pub mod sub_term;
 pub mod term;
 pub mod unification;
 pub mod visitor;

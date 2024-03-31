@@ -2,7 +2,10 @@
 
 use std::{fmt::Debug, hash::Hash};
 
-use super::term::{MemberSymbol, Symbol, Term, Tuple, TupleElement};
+use super::term::{
+    constant::Constant, lifetime::Lifetime, r#type::Type, MemberSymbol, Symbol,
+    Term, Tuple, TupleElement,
+};
 
 /// An error that occurs when assigning a sub-term to a term.
 #[derive(
@@ -16,6 +19,22 @@ pub enum AssignSubTermError {
     TupleExpected,
     #[error("the given tuple term to assign had a mismatched length")]
     InvalidTupleRange,
+}
+
+/// Contains the information about the sub-term of a term.
+pub trait SubTerm: Sized {
+    /// The type that represents the location of a sub-type in the term.
+    type SubTypeLocation: Location<Self, Type>;
+
+    /// The type that represents the location of a sub-constant in the term.
+    type SubConstantLocation: Location<Self, Constant>;
+
+    /// The type that represents the location of a sub-lifetime in the term.
+    type SubLifetimeLocation: Location<Self, Lifetime>;
+
+    /// The type that represents the location of a sub-term of this kind of
+    /// term.
+    type ThisSubTermLocation: Location<Self, Self>;
 }
 
 /// Represents a type used to retrieve a sub-term of a particular term.

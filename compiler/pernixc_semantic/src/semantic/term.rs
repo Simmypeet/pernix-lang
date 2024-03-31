@@ -20,7 +20,7 @@ use super::{
     matching,
     predicate::{self, Outlives, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
-    subterm::{AssignSubTermError, SubTupleLocation},
+    sub_term::{self, AssignSubTermError, SubTupleLocation},
     unification::{self, Unification},
     visitor, Premise, Semantic,
 };
@@ -261,6 +261,7 @@ pub trait Term:
     + visitor::Element
     + unification::Element
     + matching::Match
+    + sub_term::SubTerm
 {
     /// The type of generic parameters of this term kind.
     type GenericParameter: GenericParameter + 'static;

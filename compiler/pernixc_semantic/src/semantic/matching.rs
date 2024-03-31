@@ -1,24 +1,12 @@
 //!
 
 use super::{
-    subterm,
+    sub_term::SubTerm,
     term::{constant::Constant, lifetime::Lifetime, r#type::Type},
 };
 
 /// Represents a match between two terms.
-pub trait Match: Sized {
-    /// The type used to retrieve the sub-type term of a term.
-    type SubTypeLocation: subterm::Location<Self, Type>;
-
-    /// The type used to retrieve the sub-lifetime term of a term.
-    type SubLifetimeLocation: subterm::Location<Self, Lifetime>;
-
-    /// The type used to retrieve the sub-constant term of a term.
-    type SubConstantLocation: subterm::Location<Self, Constant>;
-
-    /// The type used to retrieve the sub-tern of this type.
-    type ThisSubTermLocation: subterm::Location<Self, Self>;
-
+pub trait Match: Sized + SubTerm {
     /// Returns the matching substructural matches between `self` and `other`.
     ///
     /// # Example

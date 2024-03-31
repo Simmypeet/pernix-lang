@@ -22,14 +22,14 @@ use crate::{
         Environment, Premise,
     },
     symbol::{
-        Accessibility, AdtImplementation, AdtImplementationConstant,
-        AdtImplementationFunction, AdtImplementationType, Constant, Enum,
-        Function, Generic, GenericID, Global, GlobalID,
-        ImplementationSignature, Module, NegativeTraitImplementation, Struct,
-        Trait, TraitConstant, TraitFunction, TraitImplementation,
-        TraitImplementationConstant, TraitImplementationFunction,
-        TraitImplementationKindID, TraitImplementationType, TraitType, Type,
-        Variant,
+        Accessibility, Adt, AdtID, AdtImplementation,
+        AdtImplementationConstant, AdtImplementationFunction,
+        AdtImplementationType, Constant, Enum, Function, Generic, GenericID,
+        Global, GlobalID, ImplementationSignature, Module,
+        NegativeTraitImplementation, Struct, Trait, TraitConstant,
+        TraitFunction, TraitImplementation, TraitImplementationConstant,
+        TraitImplementationFunction, TraitImplementationKindID,
+        TraitImplementationType, TraitType, Type, Variant,
     },
 };
 
@@ -1277,6 +1277,17 @@ impl<T: Container> Representation<T> {
             AdtImplementationConstant,
             AdtImplementationFunction
         )
+    }
+
+    /// Returns the [`Adt`] symbol from the given [`AdtID`].
+    #[must_use]
+    pub fn get_adt(&self, adt_id: AdtID) -> Option<T::MappedRead<'_, dyn Adt>> {
+        match adt_id {
+            AdtID::Struct(id) => {
+                self.get(id).map(|x| T::map_read(x, |x| x as _))
+            }
+            AdtID::Enum(id) => self.get(id).map(|x| T::map_read(x, |x| x as _)),
+        }
     }
 
     /// Returns the [`Global`] symbol from the given [`GlobalID`].

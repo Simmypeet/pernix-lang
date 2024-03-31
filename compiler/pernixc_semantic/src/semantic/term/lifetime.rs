@@ -19,7 +19,7 @@ use crate::{
         mapping::Mapping,
         matching::{self, Match, Matching},
         predicate::{NonEquality, Outlives, Satisfiability},
-        subterm::Location,
+        sub_term::{Location, SubTerm},
         unification::{Substructural, Unification},
         Premise,
     },
@@ -107,12 +107,14 @@ impl Location<Lifetime, Constant> for Never {
     fn get_sub_term(self, _: &Lifetime) -> Option<Constant> { match self {} }
 }
 
-impl Match for Lifetime {
+impl SubTerm for Lifetime {
     type SubTypeLocation = Never;
-    type SubLifetimeLocation = Never;
     type SubConstantLocation = Never;
-    type ThisSubTermLocation = Self::SubLifetimeLocation;
+    type SubLifetimeLocation = Never;
+    type ThisSubTermLocation = Never;
+}
 
+impl Match for Lifetime {
     fn substructural_match(
         &self,
         _: &Self,

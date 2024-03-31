@@ -10,7 +10,7 @@ use super::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
-    visitor::{self, Visitor},
+    visitor::{self, MutableRecursive, SubTermLocation},
 };
 use crate::{
     arena::ID,
@@ -33,14 +33,12 @@ struct Instantiater<'a> {
     substitution: &'a Instantiation,
 }
 
-impl<'a> Visitor for Instantiater<'a> {
-    fn visit_type(&mut self, _: &Type) -> bool { unreachable!() }
-
-    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { unreachable!() }
-
-    fn visit_constant(&mut self, _t: &Constant) -> bool { unreachable!() }
-
-    fn visit_type_mut(&mut self, ty: &mut Type) -> bool {
+impl<'a> MutableRecursive for Instantiater<'a> {
+    fn visit_type(
+        &mut self,
+        ty: &mut Type,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
         if let Some(substitution) = self.substitution.types.get(ty) {
             *ty = substitution.clone();
         }
@@ -48,7 +46,11 @@ impl<'a> Visitor for Instantiater<'a> {
         true
     }
 
-    fn visit_lifetime_mut(&mut self, lifetime: &mut Lifetime) -> bool {
+    fn visit_lifetime(
+        &mut self,
+        lifetime: &mut Lifetime,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
         if let Some(substitution) = self.substitution.lifetimes.get(lifetime) {
             *lifetime = *substitution;
         }
@@ -56,7 +58,11 @@ impl<'a> Visitor for Instantiater<'a> {
         true
     }
 
-    fn visit_constant_mut(&mut self, constant: &mut Constant) -> bool {
+    fn visit_constant(
+        &mut self,
+        constant: &mut Constant,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
         if let Some(substitution) = self.substitution.constants.get(constant) {
             *constant = substitution.clone();
         }

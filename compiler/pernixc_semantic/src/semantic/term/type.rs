@@ -19,9 +19,10 @@ use crate::{
         mapping::Mapping,
         matching::{self, Match, Matching},
         predicate::{NonEquality, Outlives, Satisfiability},
-        subterm::{
+        sub_term::{
             AssignSubTermError, Location, SubMemberSymbolLocation,
-            SubSymbolLocation, SubTraitMemberLocation, SubTupleLocation,
+            SubSymbolLocation, SubTerm, SubTraitMemberLocation,
+            SubTupleLocation,
         },
         unification::{self, Unification},
         Premise,
@@ -476,13 +477,23 @@ impl Location<Type, Constant> for SubConstantLocation {
     }
 }
 
-impl Match for Type {
-    type SubTypeLocation = SubTypeLocation;
+/// Enumeration of all kinds of sub-term locations in a type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum SubTermLocation {
+    Lifetime(SubLifetimeLocation),
+    Type(SubTypeLocation),
+    Constant(SubConstantLocation),
+}
+
+impl SubTerm for Type {
     type SubLifetimeLocation = SubLifetimeLocation;
+    type SubTypeLocation = SubTypeLocation;
     type SubConstantLocation = SubConstantLocation;
+    type ThisSubTermLocation = SubTypeLocation;
+}
 
-    type ThisSubTermLocation = Self::SubTypeLocation;
-
+impl Match for Type {
     fn substructural_match(
         &self,
         other: &Self,

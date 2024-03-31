@@ -20,7 +20,7 @@ use crate::{
             GenericArguments, Local, Symbol, Term,
         },
         tests::State,
-        visitor::{self, Visitor},
+        visitor::{self, MutableRecursive, Recursive, SubTermLocation},
         Environment, Premise, Semantic,
     },
     symbol::{
@@ -752,24 +752,30 @@ struct TermCollector {
     terms: Vec<Type>,
 }
 
-impl Visitor for TermCollector {
-    fn visit_type(&mut self, ty: &Type) -> bool {
+impl Recursive for TermCollector {
+    fn visit_type(
+        &mut self,
+        ty: &Type,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
         self.terms.push(ty.clone());
         true
     }
 
-    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { true }
-
-    fn visit_constant(&mut self, _: &Constant) -> bool { true }
-
-    fn visit_type_mut(&mut self, _: &mut Type) -> bool { unreachable!() }
-
-    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool {
-        unreachable!()
+    fn visit_lifetime(
+        &mut self,
+        _: &Lifetime,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        true
     }
 
-    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool {
-        unreachable!()
+    fn visit_constant(
+        &mut self,
+        _: &Constant,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        true
     }
 }
 
@@ -821,14 +827,12 @@ struct Substituter<'a> {
     to: &'a Type,
 }
 
-impl<'a> Visitor for Substituter<'a> {
-    fn visit_type(&mut self, _: &Type) -> bool { unreachable!() }
-
-    fn visit_lifetime(&mut self, _: &Lifetime) -> bool { unreachable!() }
-
-    fn visit_constant(&mut self, _: &Constant) -> bool { unreachable!() }
-
-    fn visit_type_mut(&mut self, ty: &mut Type) -> bool {
+impl<'a> MutableRecursive for Substituter<'a> {
+    fn visit_type(
+        &mut self,
+        ty: &mut Type,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
         if ty == self.from {
             *ty = self.to.clone();
         }
@@ -836,9 +840,21 @@ impl<'a> Visitor for Substituter<'a> {
         true
     }
 
-    fn visit_lifetime_mut(&mut self, _: &mut Lifetime) -> bool { true }
+    fn visit_lifetime(
+        &mut self,
+        _: &mut Lifetime,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        true
+    }
 
-    fn visit_constant_mut(&mut self, _: &mut Constant) -> bool { true }
+    fn visit_constant(
+        &mut self,
+        _: &mut Constant,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        true
+    }
 }
 
 impl Property<Type> for TypeAlias {

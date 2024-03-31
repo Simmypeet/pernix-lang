@@ -14,7 +14,7 @@ use crate::{
         equality::equals,
         mapping,
         session::{self, ExceedLimitError, Limit, Session},
-        subterm::Location,
+        sub_term::Location,
         term::{
             constant::Constant, lifetime::Lifetime, r#type::Type,
             GenericArguments, Symbol, Term,
