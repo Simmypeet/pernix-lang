@@ -182,6 +182,27 @@ impl SourceElement for Pointer {
 /// Syntax Synopsis:
 ///
 /// ``` txt
+/// Phantom:
+///     'phantom' Type
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Phantom {
+    #[get = "pub"]
+    phantom_keyword: Keyword,
+    #[get = "pub"]
+    r#type: Box<Type>,
+}
+
+impl SourceElement for Phantom {
+    fn span(&self) -> Span {
+        self.phantom_keyword.span.join(&self.r#type.span()).unwrap()
+    }
+}
+
+/// Syntax Synopsis:
+///
+/// ``` txt
 /// Local:
 ///     'local' Type
 ///     ;
@@ -207,6 +228,10 @@ impl SourceElement for Local {
 ///     | QualifiedIdentifier
 ///     | Reference
 ///     | Pointer
+///     | Tuple
+///     | Local
+///     | Array
+///     | Phantom
 ///     ;
 /// ```
 #[derive(
@@ -229,6 +254,7 @@ pub enum Type {
     Tuple(Tuple),
     Local(Local),
     Array(Array),
+    Phantom(Phantom),
 }
 
 impl SourceElement for Type {
@@ -241,6 +267,7 @@ impl SourceElement for Type {
             Self::Pointer(pointer) => pointer.span(),
             Self::Tuple(tuple) => tuple.span(),
             Self::Array(array) => array.span(),
+            Self::Phantom(phantom) => phantom.span(),
         }
     }
 }
@@ -495,6 +522,19 @@ impl<'a> Parser<'a> {
             // parse tuple type
             Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
                 self.parse_tuple_type(handler).map(Type::Tuple)
+            }
+
+            Reading::Unit(Token::Keyword(phantom_keyword))
+                if phantom_keyword.kind == KeywordKind::Phantom => {
+                // eat phantom keyword
+                self.forward();
+
+                let ty = self.parse_type(handler)?;
+
+                Some(Type::Phantom(Phantom {
+                    phantom_keyword,
+                    r#type: Box::new(ty),
+                }))
             }
 
             // primitive type

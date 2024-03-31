@@ -78,8 +78,8 @@ pub fn instantiate(term: &mut impl Term, instantiation: &Instantiation) {
 }
 
 /// Error that occurs when converting a [`GenericArguments`] into a
-/// [`Substitution`] but the number of generic arguments supplied does not match
-/// the number of generic parameters.
+/// [`Instantiation`] but the number of generic arguments supplied does not
+/// match the number of generic parameters.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]

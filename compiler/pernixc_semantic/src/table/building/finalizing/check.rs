@@ -263,6 +263,7 @@ impl Table<Finalizer> {
             match ty {
                 term::r#type::Type::Tuple(_)
                 | term::r#type::Type::Local(_)
+                | term::r#type::Type::Phantom(_)
                 | term::r#type::Type::Pointer(_)
                 | term::r#type::Type::Primitive(_)
                 | term::r#type::Type::Parameter(_)
@@ -739,6 +740,9 @@ impl UnusedGenericParameters {
             r#type::Type::Local(local) => {
                 self.check_in_type(&local.0);
             }
+            r#type::Type::Phantom(phantom) => {
+                self.check_in_type(&phantom.0);
+            }
             r#type::Type::MemberSymbol(member_symbol) => {
                 self.check_in_generic_arguments(
                     &member_symbol.member_generic_arguments,
@@ -753,6 +757,7 @@ impl UnusedGenericParameters {
             | r#type::Type::Primitive(_) => {}
         }
     }
+
     fn check_in_lifetime(&mut self, lt: &lifetime::Lifetime) {
         match lt {
             lifetime::Lifetime::Parameter(parameter) => {
@@ -765,13 +770,15 @@ impl UnusedGenericParameters {
             | lifetime::Lifetime::Forall(_) => {}
         }
     }
+
     fn check_in_constant(&mut self, val: &constant::Constant) {
         match val {
             constant::Constant::Parameter(parameter) => {
                 self.constants.remove(parameter);
             }
 
-            constant::Constant::Primitive(_)
+            constant::Constant::Phantom(_)
+            | constant::Constant::Primitive(_)
             | constant::Constant::TraitMember(_)
             | constant::Constant::Inference(_) => {}
 

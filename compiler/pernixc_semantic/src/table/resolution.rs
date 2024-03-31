@@ -1204,6 +1204,16 @@ impl<T: State> Table<T> {
                     r#type: Box::new(element_ty),
                 }))
             }
+            syntax_tree::r#type::Type::Phantom(phantom) => {
+                let ty = self.resolve_type(
+                    phantom.r#type(),
+                    referring_site,
+                    config.reborrow(),
+                    handler,
+                )?;
+
+                Ok(r#type::Type::Phantom(r#type::Phantom(Box::new(ty))))
+            }
         }?;
 
         if let Some(observer) = config.observer.as_mut() {

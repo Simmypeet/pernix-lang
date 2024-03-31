@@ -8,7 +8,7 @@ use pernixc_base::{
     source_file::{SourceElement, Span},
 };
 use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Numeric, Punctuation, Token},
+    token::{self, Identifier, Keyword, KeywordKind, Punctuation, Token},
     token_stream::Delimiter,
 };
 
@@ -486,12 +486,12 @@ impl SourceElement for Break {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BooleanLiteral {
+pub enum Boolean {
     True(Keyword),
     False(Keyword),
 }
 
-impl SourceElement for BooleanLiteral {
+impl SourceElement for Boolean {
     fn span(&self) -> Span {
         match self {
             Self::True(keyword) | Self::False(keyword) => keyword.span(),
@@ -502,7 +502,7 @@ impl SourceElement for BooleanLiteral {
 /// Syntax Synopsis:
 /// ``` txt
 /// Decimal:
-///     '.' Numeric
+///     '.' NumericToken
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -510,7 +510,7 @@ pub struct Decimal {
     #[get = "pub"]
     pub(super) dot: Punctuation,
     #[get = "pub"]
-    pub(super) numeric: Numeric,
+    pub(super) numeric: token::Numeric,
 }
 
 impl SourceElement for Decimal {
@@ -519,22 +519,22 @@ impl SourceElement for Decimal {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// NumericLiteral:
-///     NumericLiteralToken
+/// Numeric:
+///     NumericToken Decimal? Identifier?
 ///     ;
 /// ````
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
-pub struct NumericLiteral {
+pub struct Numeric {
     #[get = "pub"]
-    pub(super) numeric: Numeric,
+    pub(super) numeric: token::Numeric,
     #[get = "pub"]
     pub(super) decimal: Option<Decimal>,
     #[get = "pub"]
     pub(super) suffix: Option<Identifier>,
 }
 
-impl SourceElement for NumericLiteral {
+impl SourceElement for Numeric {
     fn span(&self) -> Span {
         let end = self.suffix.as_ref().map_or_else(
             || {
@@ -637,7 +637,7 @@ pub type FieldInitializerList = ConnectedList<FieldInitializer, Punctuation>;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 #[allow(missing_docs)]
-pub struct StructLiteral {
+pub struct Struct {
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
@@ -648,7 +648,7 @@ pub struct StructLiteral {
     right_brace: Punctuation,
 }
 
-impl SourceElement for StructLiteral {
+impl SourceElement for Struct {
     fn span(&self) -> Span {
         self.qualified_identifier.span().join(&self.right_brace.span).unwrap()
     }
@@ -669,7 +669,7 @@ pub type ArgumentList = ConnectedList<Box<Expression>, Punctuation>;
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct ArrayLiteral {
+pub struct Array {
     #[get = "pub"]
     left_bracket: Punctuation,
     #[get = "pub"]
@@ -678,10 +678,27 @@ pub struct ArrayLiteral {
     right_bracket: Punctuation,
 }
 
-impl SourceElement for ArrayLiteral {
+impl SourceElement for Array {
     fn span(&self) -> Span {
         self.left_bracket.span.join(&self.right_bracket.span).unwrap()
     }
+}
+
+/// Syntax Synopsis:
+///
+/// ``` txt
+/// Phantom:
+///     'phantom'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Phantom {
+    #[get = "pub"]
+    phantom_keyword: Keyword,
+}
+
+impl SourceElement for Phantom {
+    fn span(&self) -> Span { self.phantom_keyword.span() }
 }
 
 /// Syntax Synopsis:
@@ -694,27 +711,30 @@ impl SourceElement for ArrayLiteral {
 ///     | Parenthesized
 ///     | StructLiteral
 ///     | ArrayLiteral
+///     | Phantom
 ///    ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Unit {
-    BooleanLiteral(BooleanLiteral),
-    NumericLiteral(NumericLiteral),
+    Boolean(Boolean),
+    Numeric(Numeric),
     QualifiedIdentifier(QualifiedIdentifier),
     Parenthesized(Parenthesized),
-    StructLiteral(StructLiteral),
-    ArrayLiteral(ArrayLiteral),
+    Struct(Struct),
+    Array(Array),
+    Phantom(Phantom),
 }
 
 impl SourceElement for Unit {
     fn span(&self) -> Span {
         match self {
-            Self::BooleanLiteral(unit) => unit.span(),
-            Self::NumericLiteral(unit) => unit.span(),
+            Self::Boolean(unit) => unit.span(),
+            Self::Numeric(unit) => unit.span(),
             Self::QualifiedIdentifier(unit) => unit.span(),
             Self::Parenthesized(unit) => unit.span(),
-            Self::StructLiteral(unit) => unit.span(),
-            Self::ArrayLiteral(unit) => unit.span(),
+            Self::Struct(unit) => unit.span(),
+            Self::Array(unit) => unit.span(),
+            Self::Phantom(unit) => unit.span(),
         }
     }
 }
@@ -797,7 +817,7 @@ impl SourceElement for AccessOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AccessKind {
     Identifier(Identifier),
-    Tuple(Numeric),
+    Tuple(token::Numeric),
 }
 
 impl SourceElement for AccessKind {
@@ -1666,7 +1686,7 @@ impl Parser<'_> {
         Some(Binary { first: Box::new(first), chain })
     }
 
-    pub fn parse_numeric_literal(&mut self) -> Option<NumericLiteral> {
+    pub fn parse_numeric_literal(&mut self) -> Option<Numeric> {
         let Reading::Unit(Token::Numeric(numeric)) =
             self.next_significant_token()
         else {
@@ -1693,7 +1713,7 @@ impl Parser<'_> {
                 None
             };
 
-        Some(NumericLiteral { numeric, decimal, suffix })
+        Some(Numeric { numeric, decimal, suffix })
     }
 
     fn parse_parenthesized_expression(
@@ -1770,7 +1790,7 @@ impl Parser<'_> {
                     handler,
                 )?;
 
-                Some(Unit::StructLiteral(StructLiteral {
+                Some(Unit::Struct(Struct {
                     qualified_identifier,
                     left_brace: delimited_list.open,
                     field_initializers: delimited_list.list,
@@ -2028,15 +2048,24 @@ impl Parser<'_> {
                 // eat the token
                 self.forward();
 
-                Some(Unit::BooleanLiteral(match bool_keyword.kind {
-                    KeywordKind::True => BooleanLiteral::True,
-                    KeywordKind::False => BooleanLiteral::False,
+                Some(Unit::Boolean(match bool_keyword.kind {
+                    KeywordKind::True => Boolean::True,
+                    KeywordKind::False => Boolean::False,
                     _ => unreachable!(),
                 }(bool_keyword)))
             }
 
+            Reading::Unit(Token::Keyword(keyword))
+                if keyword.kind == KeywordKind::Phantom =>
+            {
+                // eat the token
+                self.forward();
+
+                Some(Unit::Phantom(Phantom { phantom_keyword: keyword }))
+            }
+
             Reading::Unit(Token::Numeric(_)) => {
-                Some(Unit::NumericLiteral(self.parse_numeric_literal()?))
+                Some(Unit::Numeric(self.parse_numeric_literal()?))
             }
 
             Reading::Unit(Token::Identifier(_)) => {
@@ -2066,7 +2095,7 @@ impl Parser<'_> {
                     handler,
                 )?;
 
-                Some(Unit::ArrayLiteral(ArrayLiteral {
+                Some(Unit::Array(Array {
                     left_bracket: delimited_list.open,
                     arguments: delimited_list.list,
                     right_bracket: delimited_list.close,

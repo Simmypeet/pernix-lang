@@ -16,7 +16,7 @@ use pernixc_lexical::{
 };
 
 use super::{
-    expression::{BooleanLiteral, NumericLiteral},
+    expression::{Boolean, Numeric},
     ConnectedList,
 };
 use crate::{
@@ -254,8 +254,8 @@ impl SourceElement for Named {
     derive_more::From,
 )]
 pub enum Refutable {
-    BooleanLiteral(BooleanLiteral),
-    NumericLiteral(NumericLiteral),
+    BooleanLiteral(Boolean),
+    NumericLiteral(Numeric),
     Structural(Structural<Self>),
     Enum(Enum<Self>),
     Named(Named),
@@ -580,8 +580,8 @@ impl Pattern for Refutable {
             {
                 parser.forward();
                 let constructor = match boolean_keyword.kind {
-                    KeywordKind::True => BooleanLiteral::True,
-                    KeywordKind::False => BooleanLiteral::False,
+                    KeywordKind::True => Boolean::True,
+                    KeywordKind::False => Boolean::False,
                     _ => unreachable!(),
                 };
                 Some(Self::BooleanLiteral(constructor(boolean_keyword)))

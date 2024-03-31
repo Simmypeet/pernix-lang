@@ -11,7 +11,7 @@ use proptest::{
 
 use crate::syntax_tree::{
     self,
-    expression::tests::{BooleanLiteral, NumericLiteral},
+    expression::tests::{Boolean, Numeric},
     tests::{ConnectedList, ConstantPunctuation, Identifier},
 };
 
@@ -418,8 +418,8 @@ impl<Pattern: Display> Display for Enum<Pattern> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Refutable {
-    BooleanLiteral(BooleanLiteral),
-    NumericLiteral(NumericLiteral),
+    BooleanLiteral(Boolean),
+    NumericLiteral(Numeric),
     Structural(Structural<Self>),
     Tuple(Tuple<Self>),
     Enum(Enum<Self>),
@@ -463,8 +463,8 @@ impl Arbitrary for Refutable {
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         let leaf = prop_oneof![
-            BooleanLiteral::arbitrary().prop_map(Self::BooleanLiteral),
-            NumericLiteral::arbitrary().prop_map(Self::NumericLiteral),
+            Boolean::arbitrary().prop_map(Self::BooleanLiteral),
+            Numeric::arbitrary().prop_map(Self::NumericLiteral),
             Named::arbitrary().prop_map(Self::Named),
         ];
 

@@ -10,11 +10,12 @@ use proptest::{
 };
 
 use crate::syntax_tree::{
+    self,
     pattern::tests::Refutable,
     r#type::tests::Type,
     statement::tests::Statement,
     tests::{
-        parse, ConnectedList, ConstantPunctuation, Identifier, Label, Numeric,
+        parse, ConnectedList, ConstantPunctuation, Identifier, Label,
         QualifiedIdentifier, Qualifier,
     },
 };
@@ -57,18 +58,18 @@ impl Arbitrary for Expression {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let leaf = prop_oneof![
-            BooleanLiteral::arbitrary().prop_map(|x| {
+            Boolean::arbitrary().prop_map(|x| {
                 Self::Binary(Binary {
                     first: Box::new(Prefixable::Postfixable(
-                        Postfixable::Unit(Unit::BooleanLiteral(x)),
+                        Postfixable::Unit(Unit::Boolean(x)),
                     )),
                     chain: Vec::new(),
                 })
             }),
-            NumericLiteral::arbitrary().prop_map(|x| {
+            Numeric::arbitrary().prop_map(|x| {
                 Self::Binary(Binary {
                     first: Box::new(Prefixable::Postfixable(
-                        Postfixable::Unit(Unit::NumericLiteral(x)),
+                        Postfixable::Unit(Unit::Numeric(x)),
                     )),
                     chain: Vec::new(),
                 })
@@ -827,11 +828,11 @@ impl Display for Break {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BooleanLiteral {
+pub struct Boolean {
     pub value: bool,
 }
 
-impl Arbitrary for BooleanLiteral {
+impl Arbitrary for Boolean {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -840,17 +841,17 @@ impl Arbitrary for BooleanLiteral {
     }
 }
 
-impl Display for BooleanLiteral {
+impl Display for Boolean {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", if self.value { "true" } else { "false" })
     }
 }
 
-impl Input<&super::BooleanLiteral> for &BooleanLiteral {
-    fn assert(self, output: &super::BooleanLiteral) -> TestCaseResult {
+impl Input<&super::Boolean> for &Boolean {
+    fn assert(self, output: &super::Boolean) -> TestCaseResult {
         match (self.value, output) {
-            (true, super::BooleanLiteral::True(_))
-            | (false, super::BooleanLiteral::False(_)) => Ok(()),
+            (true, super::Boolean::True(_))
+            | (false, super::Boolean::False(_)) => Ok(()),
 
             (input, output) => Err(TestCaseError::fail(format!(
                 "expected {input:?}, got {output:?}",
@@ -861,7 +862,7 @@ impl Input<&super::BooleanLiteral> for &BooleanLiteral {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Decimal {
-    pub numeric: Numeric,
+    pub numeric: syntax_tree::tests::Numeric,
 }
 
 impl Input<&super::Decimal> for &Decimal {
@@ -875,7 +876,9 @@ impl Arbitrary for Decimal {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Numeric::arbitrary_with(()).prop_map(|numeric| Self { numeric }).boxed()
+        syntax_tree::tests::Numeric::arbitrary_with(())
+            .prop_map(|numeric| Self { numeric })
+            .boxed()
     }
 }
 
@@ -886,27 +889,28 @@ impl Display for Decimal {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NumericLiteral {
-    pub numeric: Numeric,
+#[allow(clippy::struct_field_names)]
+pub struct Numeric {
+    pub numeric: syntax_tree::tests::Numeric,
     pub decimal: Option<Decimal>,
     pub suffix: Option<Identifier>,
 }
 
-impl Input<&super::NumericLiteral> for &NumericLiteral {
-    fn assert(self, output: &super::NumericLiteral) -> TestCaseResult {
+impl Input<&super::Numeric> for &Numeric {
+    fn assert(self, output: &super::Numeric) -> TestCaseResult {
         self.numeric.assert(&output.numeric)?;
         self.decimal.as_ref().assert(output.decimal.as_ref())?;
         self.suffix.as_ref().assert(output.suffix.as_ref())
     }
 }
 
-impl Arbitrary for NumericLiteral {
+impl Arbitrary for Numeric {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            Numeric::arbitrary_with(()),
+            syntax_tree::tests::Numeric::arbitrary_with(()),
             proptest::option::of(Decimal::arbitrary_with(())),
             proptest::option::of(Identifier::arbitrary_with(())),
         )
@@ -919,7 +923,7 @@ impl Arbitrary for NumericLiteral {
     }
 }
 
-impl Display for NumericLiteral {
+impl Display for Numeric {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.numeric)?;
 
@@ -1045,14 +1049,14 @@ impl Display for FieldInitializer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StructLiteral {
+pub struct Struct {
     pub qualified_identifier: QualifiedIdentifier,
     pub field_initializers:
         Option<ConnectedList<FieldInitializer, ConstantPunctuation<','>>>,
 }
 
-impl Input<&super::StructLiteral> for &StructLiteral {
-    fn assert(self, output: &super::StructLiteral) -> TestCaseResult {
+impl Input<&super::Struct> for &Struct {
+    fn assert(self, output: &super::Struct) -> TestCaseResult {
         self.qualified_identifier.assert(output.qualified_identifier())?;
         self.field_initializers
             .as_ref()
@@ -1060,7 +1064,7 @@ impl Input<&super::StructLiteral> for &StructLiteral {
     }
 }
 
-impl Arbitrary for StructLiteral {
+impl Arbitrary for Struct {
     type Parameters = (
         Option<BoxedStrategy<Type>>,
         Option<BoxedStrategy<Expression>>,
@@ -1089,7 +1093,7 @@ impl Arbitrary for StructLiteral {
     }
 }
 
-impl Display for StructLiteral {
+impl Display for Struct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.qualified_identifier, f)?;
 
@@ -1104,18 +1108,18 @@ impl Display for StructLiteral {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ArrayLiteral {
+pub struct Array {
     pub expressions:
         Option<ConnectedList<Box<Expression>, ConstantPunctuation<','>>>,
 }
 
-impl Input<&super::ArrayLiteral> for &ArrayLiteral {
-    fn assert(self, output: &super::ArrayLiteral) -> TestCaseResult {
+impl Input<&super::Array> for &Array {
+    fn assert(self, output: &super::Array) -> TestCaseResult {
         self.expressions.as_ref().assert(output.arguments().as_ref())
     }
 }
 
-impl Arbitrary for ArrayLiteral {
+impl Arbitrary for Array {
     type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
@@ -1131,7 +1135,7 @@ impl Arbitrary for ArrayLiteral {
     }
 }
 
-impl Display for ArrayLiteral {
+impl Display for Array {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('[')?;
 
@@ -1143,14 +1147,39 @@ impl Display for ArrayLiteral {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Phantom;
+
+impl Arbitrary for Phantom {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::strategy::Just(Self).boxed()
+    }
+}
+
+impl Display for Phantom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "phantom")?;
+
+        Ok(())
+    }
+}
+
+impl Input<&super::Phantom> for &Phantom {
+    fn assert(self, _: &super::Phantom) -> TestCaseResult { Ok(()) }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Unit {
-    BooleanLiteral(BooleanLiteral),
-    NumericLiteral(NumericLiteral),
+    Boolean(Boolean),
+    Numeric(Numeric),
     QualifiedIdentifier(QualifiedIdentifier),
     Parenthesized(Parenthesized),
-    StructLiteral(StructLiteral),
-    ArrayLiteral(ArrayLiteral),
+    Struct(Struct),
+    Array(Array),
+    Phantom(Phantom),
 }
 
 impl Arbitrary for Unit {
@@ -1165,8 +1194,8 @@ impl Arbitrary for Unit {
         (expr_strategy, ty_strategy, qualified_strategy): Self::Parameters,
     ) -> Self::Strategy {
         prop_oneof![
-            BooleanLiteral::arbitrary_with(()).prop_map(Unit::BooleanLiteral),
-            NumericLiteral::arbitrary_with(()).prop_map(Unit::NumericLiteral),
+            Boolean::arbitrary_with(()).prop_map(Unit::Boolean),
+            Numeric::arbitrary_with(()).prop_map(Unit::Numeric),
             qualified_strategy
                 .clone()
                 .unwrap_or_else(|| {
@@ -1178,14 +1207,14 @@ impl Arbitrary for Unit {
                 .prop_map(Unit::QualifiedIdentifier),
             Parenthesized::arbitrary_with(expr_strategy.clone())
                 .prop_map(Unit::Parenthesized),
-            StructLiteral::arbitrary_with((
+            Struct::arbitrary_with((
                 ty_strategy,
                 expr_strategy.clone(),
                 qualified_strategy
             ))
-            .prop_map(Unit::StructLiteral),
-            ArrayLiteral::arbitrary_with(expr_strategy)
-                .prop_map(Unit::ArrayLiteral),
+            .prop_map(Unit::Struct),
+            Array::arbitrary_with(expr_strategy).prop_map(Unit::Array),
+            Just(Self::Phantom(Phantom)),
         ]
         .boxed()
     }
@@ -1194,14 +1223,12 @@ impl Arbitrary for Unit {
 impl Input<&super::Unit> for &Unit {
     fn assert(self, output: &super::Unit) -> TestCaseResult {
         match (self, output) {
-            (
-                Unit::BooleanLiteral(input),
-                super::Unit::BooleanLiteral(output),
-            ) => input.assert(output),
-            (
-                Unit::NumericLiteral(input),
-                super::Unit::NumericLiteral(output),
-            ) => input.assert(output),
+            (Unit::Boolean(input), super::Unit::Boolean(output)) => {
+                input.assert(output)
+            }
+            (Unit::Numeric(input), super::Unit::Numeric(output)) => {
+                input.assert(output)
+            }
             (
                 Unit::QualifiedIdentifier(input),
                 super::Unit::QualifiedIdentifier(output),
@@ -1210,11 +1237,13 @@ impl Input<&super::Unit> for &Unit {
                 Unit::Parenthesized(input),
                 super::Unit::Parenthesized(output),
             ) => input.assert(output),
-            (
-                Unit::StructLiteral(input),
-                super::Unit::StructLiteral(output),
-            ) => input.assert(output),
-            (Unit::ArrayLiteral(input), super::Unit::ArrayLiteral(output)) => {
+            (Unit::Struct(input), super::Unit::Struct(output)) => {
+                input.assert(output)
+            }
+            (Unit::Array(input), super::Unit::Array(output)) => {
+                input.assert(output)
+            }
+            (Unit::Phantom(input), super::Unit::Phantom(output)) => {
                 input.assert(output)
             }
 
@@ -1228,22 +1257,17 @@ impl Input<&super::Unit> for &Unit {
 impl Display for Unit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BooleanLiteral(boolean_literal) => {
-                Display::fmt(boolean_literal, f)
-            }
-            Self::NumericLiteral(numeric_literal) => {
-                Display::fmt(numeric_literal, f)
-            }
+            Self::Boolean(boolean_literal) => Display::fmt(boolean_literal, f),
+            Self::Numeric(numeric_literal) => Display::fmt(numeric_literal, f),
             Self::QualifiedIdentifier(qualified_identifier) => {
                 Display::fmt(qualified_identifier, f)
             }
             Self::Parenthesized(parenthesized) => {
                 Display::fmt(parenthesized, f)
             }
-            Self::StructLiteral(struct_literal) => {
-                Display::fmt(struct_literal, f)
-            }
-            Self::ArrayLiteral(array_literal) => Display::fmt(array_literal, f),
+            Self::Struct(struct_literal) => Display::fmt(struct_literal, f),
+            Self::Array(array_literal) => Display::fmt(array_literal, f),
+            Self::Phantom(phantom) => Display::fmt(phantom, f),
         }
     }
 }
@@ -1363,7 +1387,7 @@ impl Display for AccessOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AccessKind {
     Identifier(Identifier),
-    Tuple(Numeric),
+    Tuple(syntax_tree::tests::Numeric),
 }
 
 impl Input<&super::AccessKind> for &AccessKind {
@@ -1391,7 +1415,8 @@ impl Arbitrary for AccessKind {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Identifier::arbitrary().prop_map(AccessKind::Identifier),
-            Numeric::arbitrary().prop_map(AccessKind::Tuple),
+            syntax_tree::tests::Numeric::arbitrary()
+                .prop_map(AccessKind::Tuple),
         ]
         .boxed()
     }
@@ -1541,9 +1566,11 @@ impl Arbitrary for Postfix {
                 !matches!(
                     (&*x.postfixable, &x.operator),
                     (
-                        Postfixable::Unit(Unit::NumericLiteral(
-                            NumericLiteral { decimal: None, suffix: None, .. }
-                        )),
+                        Postfixable::Unit(Unit::Numeric(Numeric {
+                            decimal: None,
+                            suffix: None,
+                            ..
+                        })),
                         PostfixOperator::Access(Access {
                             operator: AccessOperator::Dot,
                             kind: AccessKind::Tuple(..)

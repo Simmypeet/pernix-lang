@@ -140,6 +140,10 @@ pub type Inference = Never; /* will be changed */
 /// syntax.
 pub type TraitMember = MemberSymbol<ID<symbol::TraitConstant>>;
 
+/// Represents a constant value denoted by a `phantom` syntax.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Phantom;
+
 /// The location pointing to a sub-constant term in a constant.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
@@ -445,6 +449,7 @@ pub enum Constant {
     Local(Local<Self>),
     Tuple(Tuple),
     Symbol(Symbol<ID<symbol::Constant>>),
+    Phantom(Phantom),
 
     /// Please notice the differences
     ///
@@ -763,7 +768,9 @@ impl Term for Constant {
                 Satisfiability::Unsatisfied
             }
 
-            Self::Primitive(_) => Satisfiability::Satisfied,
+            Self::Phantom(Phantom) | Self::Primitive(_) => {
+                Satisfiability::Satisfied
+            }
 
             Self::TraitMember(_)
             | Self::Struct(_)
@@ -825,12 +832,16 @@ impl Term for Constant {
 impl Constant {
     /// Gets a list of [`GlobalID`]s that occur in the constant.
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn get_global_id_dependencies(
         &self,
         table: &Table<impl State>,
     ) -> Option<Vec<GlobalID>> {
         let mut occurrences = match self {
-            Self::Parameter(_) | Self::Primitive(_) | Self::Inference(_) => {
+            Self::Phantom(Phantom)
+            | Self::Parameter(_)
+            | Self::Primitive(_)
+            | Self::Inference(_) => {
                 return Some(Vec::new());
             }
 
@@ -958,6 +969,7 @@ impl<T: State> table::Display<T> for Constant {
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         match self {
+            Self::Phantom(_) => write!(f, "phantom"),
             Self::Primitive(val) => write!(f, "{val}"),
             Self::Inference(_) => write!(f, "?"),
             Self::Struct(val) => {

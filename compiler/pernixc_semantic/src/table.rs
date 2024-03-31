@@ -43,7 +43,7 @@ pub mod resolution;
 #[derive(Debug, Clone, Copy)]
 #[allow(clippy::self_named_module_files)]
 pub struct DisplayObject<'a, D: ?Sized, T: State> {
-    /// The table in which the error occurred.
+    /// The table in which the display object will refer to.
     pub table: &'a Table<T>,
 
     /// The display object that requires the table.
@@ -89,8 +89,8 @@ where
 
 /// A trait used to wrap a symbol in a container.
 ///
-/// This is primarily used to either wrap a symbol in a [`RwLock`] or not at
-/// all.
+/// This is primarily used to either wrap a symbol in a [`RwLock`]
+/// or not at all.
 ///
 /// See [`RwLockContainer`] for an example.
 pub trait Container:
@@ -931,6 +931,9 @@ impl<T: Container> Representation<T> {
                     ),
                 ),
             ),
+            r#type::Type::Phantom(phantom) => {
+                self.get_type_overall_accessibility(&phantom.0)
+            }
         }
     }
 
@@ -984,7 +987,8 @@ impl<T: Container> Representation<T> {
                 .map(|x| self.get_constant_overall_accessibility(x))
                 .try_fold(Accessibility::Public, |acc, x| Some(acc.min(x?))),
 
-            constant::Constant::Parameter(_)
+            constant::Constant::Phantom(_)
+            | constant::Constant::Parameter(_)
             | constant::Constant::Primitive(_) => Some(Accessibility::Public),
 
             constant::Constant::MemberSymbol(member_symbol) => Some(

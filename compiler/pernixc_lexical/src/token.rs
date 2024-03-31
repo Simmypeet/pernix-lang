@@ -126,6 +126,8 @@ pub enum KeywordKind {
     Tuple,
     /// `case` keyword
     Case,
+    /// `phantom` keyword
+    Phantom,
 }
 
 impl ToString for KeywordKind {
@@ -215,6 +217,7 @@ impl KeywordKind {
             Self::Unlocal => "unlocal",
             Self::Tuple => "tuple",
             Self::Case => "case",
+            Self::Phantom => "phantom",
         }
     }
 }

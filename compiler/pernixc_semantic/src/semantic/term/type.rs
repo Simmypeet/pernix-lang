@@ -206,6 +206,10 @@ pub type Inference = Never; /* will be changed */
 /// syntax.
 pub type TraitMember = MemberSymbol<ID<symbol::TraitType>>;
 
+/// Represents a phantom type, denoted by `phantom TYPE` syntax.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Phantom(pub Box<Type>);
+
 /// The location pointing to a sub-lifetime term in a type.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
@@ -309,6 +313,9 @@ pub enum SubTypeLocation {
     /// The inner type of a [`Local`] type.
     Local,
 
+    /// The inner type of a [`Phantom`] type.
+    Phantom,
+
     /// The type argument in a [`MemberSymbol`] type.
     #[from]
     MemberSymbol(SubMemberSymbolLocation),
@@ -330,6 +337,8 @@ impl Location<Type, Type> for SubTypeLocation {
                 .ok_or(AssignSubTermError::InvalidLocation)?,
 
             (Self::Pointer, Type::Pointer(pointer)) => &mut *pointer.pointee,
+
+            (Self::Phantom, Type::Phantom(phantom)) => &mut *phantom.0,
 
             (Self::Reference, Type::Reference(reference)) => {
                 &mut *reference.pointee
@@ -655,6 +664,7 @@ pub enum Type {
     Array(Array),
     Tuple(Tuple),
     Local(Local<Self>),
+    Phantom(Phantom),
 
     /// Please notice this differences
     ///
@@ -866,6 +876,7 @@ impl Term for Type {
             | Self::Reference(_)
             | Self::Array(_)
             | Self::TraitMember(_)
+            | Self::Phantom(_)
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
@@ -907,6 +918,7 @@ impl Term for Type {
             | Self::Reference(_)
             | Self::Array(_)
             | Self::Tuple(_)
+            | Self::Phantom(_)
             | Self::Local(_) => Satisfiability::Congruent,
         }
     }
@@ -1043,6 +1055,12 @@ impl<T: State> table::Display<T> for Type {
             Self::TraitMember(ty) => {
                 write!(f, "{}", DisplayObject { table, display: ty })
             }
+            Self::Phantom(phantom) => {
+                write!(f, "phantom {}", DisplayObject {
+                    table,
+                    display: &*phantom.0
+                })
+            }
         }
     }
 }
@@ -1146,6 +1164,9 @@ impl Type {
                 occurrences.push(table.get(member_symbol.id)?.parent_id.into());
 
                 occurrences
+            }
+            Self::Phantom(phantom) => {
+                return phantom.0.get_global_id_dependencies(table);
             }
         };
 

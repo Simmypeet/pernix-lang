@@ -501,6 +501,7 @@ impl Semantic<Type> for Default {
             | Type::Reference(_)
             | Type::Array(_)
             | Type::Tuple(_)
+            | Type::Phantom(_)
             | Type::MemberSymbol(_) => Ok(Satisfiability::Congruent),
         }
     }

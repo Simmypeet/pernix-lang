@@ -347,6 +347,34 @@ impl Display for Local {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Phantom {
+    r#type: Box<Type>,
+}
+
+impl Input<&super::Phantom> for &Phantom {
+    fn assert(self, output: &super::Phantom) -> TestCaseResult {
+        self.r#type.assert(output.r#type())
+    }
+}
+
+impl Arbitrary for Phantom {
+    type Parameters = Option<BoxedStrategy<Type>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        args.unwrap_or_else(Type::arbitrary)
+            .prop_map(|r#type| Self { r#type: Box::new(r#type) })
+            .boxed()
+    }
+}
+
+impl Display for Phantom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "phantom {}", &self.r#type)
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -367,6 +395,7 @@ pub enum Type {
     Pointer(Pointer),
     Tuple(Tuple),
     Local(Local),
+    Phantom(Phantom),
 }
 
 impl Input<&super::Type> for &Type {
@@ -382,6 +411,7 @@ impl Input<&super::Type> for &Type {
             (Type::Array(i), super::Type::Array(o)) => i.assert(o),
             (Type::Pointer(i), super::Type::Pointer(o)) => i.assert(o),
             (Type::Tuple(i), super::Type::Tuple(o)) => i.assert(o),
+            (Type::Phantom(i), super::Type::Phantom(o)) => i.assert(o),
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
             ))),
@@ -409,6 +439,10 @@ impl Arbitrary for Type {
                     .prop_map(Self::Pointer),
                 Tuple::arbitrary_with(Some(inner.clone()))
                     .prop_map(Self::Tuple),
+                Array::arbitrary_with((Some(inner.clone()), args.0.clone()))
+                    .prop_map(Self::Array),
+                Phantom::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Phantom),
                 args.1
                     .clone()
                     .unwrap_or_else(|| {
@@ -434,6 +468,7 @@ impl Display for Type {
             Self::Pointer(i) => Display::fmt(i, f),
             Self::Tuple(i) => Display::fmt(i, f),
             Self::Local(i) => Display::fmt(i, f),
+            Self::Phantom(i) => Display::fmt(i, f),
         }
     }
 }

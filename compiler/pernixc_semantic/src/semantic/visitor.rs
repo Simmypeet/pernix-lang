@@ -627,6 +627,12 @@ macro_rules! implements_type {
 
                 Ok(true)
             }
+            Self::Phantom(term) => Ok(
+                $visitor.$visit_type(
+                    &$($ref)?term.0,
+                    SubTypeLocation::FromType(r#type::SubTypeLocation::Phantom)
+                )
+            ),
             Self::Pointer(term) => Ok($visitor.$visit_type(
                 &$($ref)? term.pointee,
                 SubTypeLocation::FromType(r#type::SubTypeLocation::Pointer)
@@ -837,7 +843,10 @@ macro_rules! implements_constant {
         $(, $ref:ident)?
     ) => {
         match $self {
-            Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
+            Self::Phantom(_)
+            | Self::Primitive(_)
+            | Self::Parameter(_)
+            | Self::Inference(_) => {
                 Err(VisitNonApplicationTermError)
             }
 
