@@ -2,6 +2,8 @@
 
 use std::{fmt::Debug, hash::Hash};
 
+use enum_as_inner::EnumAsInner;
+
 use super::term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, MemberSymbol, Symbol,
     Term, Tuple, TupleElement,
@@ -118,7 +120,9 @@ impl<ID> MemberSymbol<ID> {
 
 /// Represents a sub-term location where the sub-term is stored as an element of
 /// a tuple.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 pub enum SubTupleLocation {
     /// The sub-term is stored as a regular element of the tuple.
     Single(usize),

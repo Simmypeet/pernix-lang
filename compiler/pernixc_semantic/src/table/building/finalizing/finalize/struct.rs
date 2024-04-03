@@ -5,7 +5,9 @@ use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error::{self, DuplicatedField, PrivateEntityLeakedToPublicInterface},
-    symbol::{Accessibility, Field, Struct},
+    symbol::{
+        Accessibility, Field, GenericParameterVariances, Struct, Variance,
+    },
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
         resolution, Table,
@@ -30,6 +32,7 @@ impl Finalize for Struct {
     type Flag = Flag;
     type Data = Occurrences;
 
+    #[allow(clippy::too_many_lines)]
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
@@ -54,6 +57,31 @@ impl Finalize for Struct {
                 );
             }
             Flag::Complete => {
+                let mut struct_sym = table
+                    .representation
+                    .structs
+                    .get(symbol_id)
+                    .unwrap()
+                    .write();
+
+                struct_sym.generic_parameter_variances =
+                    GenericParameterVariances {
+                        variances_by_lifetime_ids: struct_sym
+                            .generic_declaration
+                            .parameters
+                            .lifetime_parameters_as_order()
+                            .map(|(id, _)| (id, Variance::Bivariant))
+                            .collect(),
+                        variances_by_type_ids: struct_sym
+                            .generic_declaration
+                            .parameters
+                            .type_parameters_as_order()
+                            .map(|(id, _)| (id, Variance::Bivariant))
+                            .collect(),
+                    };
+
+                drop(struct_sym);
+
                 for field_syn in syntax_tree
                     .body()
                     .field_list()
@@ -135,6 +163,35 @@ impl Finalize for Struct {
                     false,
                     handler,
                 );
+
+                // build the variance
+                let premise =
+                    table.get_active_premise(symbol_id.into()).unwrap();
+                let mut struct_sym_write = table
+                    .representation
+                    .structs
+                    .get(symbol_id)
+                    .unwrap()
+                    .write();
+                let struct_sym = &mut *struct_sym_write;
+
+                #[allow(clippy::needless_collect)]
+                let type_usages = struct_sym
+                    .fields
+                    .values()
+                    .map(|f| &f.r#type)
+                    .collect::<Vec<_>>();
+
+                table.build_variance(
+                    &struct_sym.generic_declaration.parameters,
+                    &mut struct_sym.generic_parameter_variances,
+                    &premise,
+                    symbol_id.into(),
+                    type_usages.iter().copied(),
+                    handler,
+                );
+
+                drop(struct_sym_write);
             }
             Flag::Check => {
                 table.check_occurrences(symbol_id.into(), data, handler);

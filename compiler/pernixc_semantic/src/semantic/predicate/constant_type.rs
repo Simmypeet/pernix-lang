@@ -5,10 +5,7 @@ use crate::{
         instantiation::{self, Instantiation},
         session::{self, ExceedLimitError, Limit, Satisfied, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        visitor::{
-            self, SubConstantLocation, SubLifetimeLocation, SubTypeLocation,
-        },
-        Premise, Semantic,
+        visitor, Premise, Semantic,
     },
     table::{self, DisplayObject, State, Table},
 };
@@ -35,14 +32,15 @@ impl<
         's,
         'r,
         'l,
+        U: Term,
         T: State,
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor for Visitor<'a, 's, 'r, 'l, T, S, R>
+        S: Semantic<U> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+        R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    > visitor::Visitor<U> for Visitor<'a, 's, 'r, 'l, T, S, R>
 {
-    fn visit_type(&mut self, ty: &Type, _: SubTypeLocation) -> bool {
+    fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match satisfies_internal(
-            ty,
+            term,
             QuerySource::Normal,
             self.premise,
             self.table,
@@ -51,61 +49,11 @@ impl<
         ) {
             result @ (Err(_) | Ok(false)) => {
                 self.constant_type = result;
-                return false;
+                false
             }
 
-            Ok(true) => {}
+            Ok(true) => true,
         }
-
-        true
-    }
-
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &Lifetime,
-        _: SubLifetimeLocation,
-    ) -> bool {
-        match satisfies_internal(
-            lifetime,
-            QuerySource::Normal,
-            self.premise,
-            self.table,
-            self.semantic,
-            self.session,
-        ) {
-            result @ (Err(_) | Ok(false)) => {
-                self.constant_type = result;
-                return false;
-            }
-
-            Ok(true) => {}
-        }
-
-        true
-    }
-
-    fn visit_constant(
-        &mut self,
-        constant: &Constant,
-        _: SubConstantLocation,
-    ) -> bool {
-        match satisfies_internal(
-            constant,
-            QuerySource::Normal,
-            self.premise,
-            self.table,
-            self.semantic,
-            self.session,
-        ) {
-            result @ (Err(_) | Ok(false)) => {
-                self.constant_type = result;
-                return false;
-            }
-
-            Ok(true) => {}
-        }
-
-        true
     }
 }
 

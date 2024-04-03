@@ -7,10 +7,7 @@ use crate::{
         session::{Cached, ExceedLimitError, Limit, Satisfied, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         unification::{self, Unification},
-        visitor::{
-            self, SubConstantLocation, SubLifetimeLocation, SubTypeLocation,
-        },
-        Premise, Semantic,
+        visitor, Premise, Semantic,
     },
     table::{self, DisplayObject, State, Table},
 };
@@ -87,56 +84,15 @@ impl<
         's,
         'r,
         'l,
+        U: Term,
         T: State,
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor for Visitor<'a, 's, 'r, 'l, T, S, R>
+        S: Semantic<U> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
+        R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    > visitor::Visitor<U> for Visitor<'a, 's, 'r, 'l, T, S, R>
 {
-    fn visit_type(&mut self, ty: &Type, _: SubTypeLocation) -> bool {
+    fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match Outlives::satisfies(
-            ty,
-            self.bound,
-            self.premise,
-            self.table,
-            self.semantic,
-            self.session,
-        ) {
-            result @ (Err(_) | Ok(false)) => {
-                self.outlives = result;
-                false
-            }
-            Ok(true) => true,
-        }
-    }
-
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &Lifetime,
-        _: SubLifetimeLocation,
-    ) -> bool {
-        match Outlives::satisfies(
-            lifetime,
-            self.bound,
-            self.premise,
-            self.table,
-            self.semantic,
-            self.session,
-        ) {
-            result @ (Err(_) | Ok(false)) => {
-                self.outlives = result;
-                false
-            }
-            Ok(true) => true,
-        }
-    }
-
-    fn visit_constant(
-        &mut self,
-        constant: &Constant,
-        _: SubConstantLocation,
-    ) -> bool {
-        match Outlives::satisfies(
-            constant,
+            term,
             self.bound,
             self.premise,
             self.table,

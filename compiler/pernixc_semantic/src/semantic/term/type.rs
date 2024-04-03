@@ -486,15 +486,6 @@ impl Location<Type, Constant> for SubConstantLocation {
     }
 }
 
-/// Enumeration of all kinds of sub-term locations in a type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum SubTermLocation {
-    Lifetime(SubLifetimeLocation),
-    Type(SubTypeLocation),
-    Constant(SubConstantLocation),
-}
-
 impl SubTerm for Type {
     type SubLifetimeLocation = SubLifetimeLocation;
     type SubTypeLocation = SubTypeLocation;

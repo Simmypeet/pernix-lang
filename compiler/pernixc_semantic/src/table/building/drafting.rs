@@ -657,6 +657,8 @@ impl Table<Finalizer> {
                     data: TraitImplementationTypeData {
                         r#type: r#type::Type::default(),
                         implemented_trait_type_id,
+                        generic_parameter_variances:
+                            GenericParameterVariances::default(),
                     },
                 })
             });

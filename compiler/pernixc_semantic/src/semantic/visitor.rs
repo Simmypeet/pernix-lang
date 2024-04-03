@@ -107,164 +107,60 @@ pub enum SubTermLocation {
 }
 
 /// Represents a visitor that visits a term recursively.
-pub trait Recursive {
-    /// Visits a type.
+pub trait Recursive<T> {
+    /// Visits a term
     ///
     /// # Parameters
     ///
-    /// - `ty`: The type to visit.
+    /// - `term`: The term to visit.
     /// - `locations`: The iterator of all the locations taken to reach the
     ///   current term. The last element of the iterator is the location of the
     ///   current term. If the iterator is empty, then the current term is the
     ///   root term.
-    fn visit_type(
+    fn visit(
         &mut self,
-        ty: &Type,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool;
-
-    /// Visits a lifetime.
-    ///
-    /// # Parameters
-    ///
-    /// - `lifetime`: The lifetime to visit.
-    /// - `locations`: The iterator of all the locations taken to reach the
-    ///   current term. The last element of the iterator is the location of the
-    ///   current term. If the iterator is empty, then the current term is the
-    ///   root term.
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &Lifetime,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool;
-
-    /// Visits a constant.
-    ///
-    /// # Parameters
-    ///
-    /// - `constant`: The constant to visit.
-    /// - `locations`: The iterator of all the locations taken to reach the
-    ///   current term. The last element of the iterator is the location of the
-    ///   current term. If the iterator is empty, then the current term is the
-    ///   root term.
-    fn visit_constant(
-        &mut self,
-        constant: &Constant,
+        term: &T,
         locations: impl Iterator<Item = SubTermLocation>,
     ) -> bool;
 }
 
 /// Represents a mutable visitor that visits a term recursively.
-pub trait MutableRecursive {
-    /// Visits a type.
+pub trait MutableRecursive<T> {
+    /// Visits a term.
     ///
     /// # Parameters
     ///
-    /// - `ty`: The type to visit.
+    /// - `T`: The term to visit.
     /// - `locations`: The iterator of all the locations taken to reach the
     ///   current term. The last element of the iterator is the location of the
     ///   current term. If the iterator is empty, then the current term is the
     ///   root term.
-    fn visit_type(
+    fn visit(
         &mut self,
-        ty: &mut Type,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool;
-
-    /// Visits a lifetime.
-    ///
-    /// # Parameters
-    ///
-    /// - `lifetime`: The lifetime to visit.
-    /// - `locations`: The iterator of all the locations taken to reach the
-    ///   current term. The last element of the iterator is the location of the
-    ///   current term. If the iterator is empty, then the current term is the
-    ///   root term.
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &mut Lifetime,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool;
-
-    /// Visits a constant.
-    ///
-    /// # Parameters
-    ///
-    /// - `constant`: The constant to visit.
-    /// - `locations`: The iterator of all the locations taken to reach the
-    ///   current term. The last element of the iterator is the location of the
-    ///   current term. If the iterator is empty, then the current term is the
-    ///   root term.
-    fn visit_constant(
-        &mut self,
-        constant: &mut Constant,
+        term: &mut T,
         locations: impl Iterator<Item = SubTermLocation>,
     ) -> bool;
 }
 
 /// Represents a visitor that visits a term.
-pub trait Visitor {
-    /// Visits a type.
+pub trait Visitor<T: Element> {
+    /// Visits a term.
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of
-    /// the type.
+    /// the term.
     #[must_use]
-    fn visit_type(&mut self, ty: &Type, location: SubTypeLocation) -> bool;
-
-    /// Visits a lifetime.
-    ///
-    /// Returns `true` if the visitor should continue visiting the sub-terms of
-    /// the lifetime.
-    #[must_use]
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &Lifetime,
-        location: SubLifetimeLocation,
-    ) -> bool;
-
-    /// Visits a constant.
-    ///
-    /// Returns `true` if the visitor should continue visiting the sub-terms of
-    /// the constant.
-    #[must_use]
-    fn visit_constant(
-        &mut self,
-        constant: &Constant,
-        location: SubConstantLocation,
-    ) -> bool;
+    fn visit(&mut self, term: &T, location: T::Location) -> bool;
 }
 
 /// Represents a mutable visitor that visits a term.
 #[allow(clippy::module_name_repetitions)]
-pub trait Mutable {
-    /// Visits a type.
+pub trait Mutable<T: Element> {
+    /// Visits a term.
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of
-    /// the type.
+    /// the term.
     #[must_use]
-    fn visit_type(&mut self, ty: &mut Type, location: SubTypeLocation) -> bool;
-
-    /// Visits a lifetime.
-    ///
-    /// Returns `true` if the visitor should continue visiting the sub-terms of
-    /// the lifetime.
-    #[must_use]
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &mut Lifetime,
-        locatinon: SubLifetimeLocation,
-    ) -> bool;
-
-    /// Visits a constant.
-    ///
-    /// Returns `true` if the visitor should continue visiting the sub-terms of
-    /// the constant.
-    #[must_use]
-    fn visit_constant(
-        &mut self,
-        constant: &mut Constant,
-        location: SubConstantLocation,
-    ) -> bool;
+    fn visit(&mut self, term: &mut T, location: T::Location) -> bool;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
@@ -273,7 +169,10 @@ pub trait Mutable {
 pub struct VisitNonApplicationTermError;
 
 #[derive(Debug)]
-struct RecursiveVisitorAdapter<'a, V: Recursive> {
+struct RecursiveVisitorAdapter<
+    'a,
+    V: Recursive<Lifetime> + Recursive<Type> + Recursive<Constant>,
+> {
     visitor: &'a mut V,
     current_locations: Vec<SubTermLocation>,
 }
@@ -281,14 +180,20 @@ struct RecursiveVisitorAdapter<'a, V: Recursive> {
 macro_rules! implements_visit_recursive {
     ($self:ident, $visit_fn:ident, $term:ident, $location:ident) => {{
         let current_locations = $self.current_locations.clone();
+        let next_locations = $self
+            .current_locations
+            .iter()
+            .copied()
+            .chain(std::iter::once($location.into()))
+            .collect::<Vec<_>>();
 
-        if !$self.visitor.$visit_fn(
-            $term,
-            current_locations
-                .iter()
-                .copied()
-                .chain(std::iter::once($location.into())),
-        ) {
+        if !$self.visitor.visit($term, next_locations.iter().copied()) {
+            return false;
+        }
+
+        $self.current_locations = next_locations;
+
+        if !$term.$visit_fn($self).unwrap_or(true) {
             return false;
         }
 
@@ -298,53 +203,42 @@ macro_rules! implements_visit_recursive {
     }};
 }
 
-impl<'a, V: Recursive> Visitor for RecursiveVisitorAdapter<'a, V> {
-    fn visit_type(&mut self, ty: &Type, location: SubTypeLocation) -> bool {
-        implements_visit_recursive!(self, visit_type, ty, location)
-    }
-
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &Lifetime,
-        location: SubLifetimeLocation,
-    ) -> bool {
-        implements_visit_recursive!(self, visit_lifetime, lifetime, location)
-    }
-
-    fn visit_constant(
-        &mut self,
-        constant: &Constant,
-        location: SubConstantLocation,
-    ) -> bool {
-        implements_visit_recursive!(self, visit_constant, constant, location)
+impl<
+        'a,
+        T: Element,
+        V: Recursive<T>
+            + Recursive<Lifetime>
+            + Recursive<Type>
+            + Recursive<Constant>,
+    > Visitor<T> for RecursiveVisitorAdapter<'a, V>
+{
+    fn visit(&mut self, term: &T, location: T::Location) -> bool {
+        implements_visit_recursive!(self, accept_one_level, term, location)
     }
 }
 
 #[derive(Debug)]
-struct RecursiveVisitorAdapterMut<'a, V: MutableRecursive> {
+struct RecursiveVisitorAdapterMut<
+    'a,
+    V: MutableRecursive<Lifetime>
+        + MutableRecursive<Type>
+        + MutableRecursive<Constant>,
+> {
     visitor: &'a mut V,
     current_locations: Vec<SubTermLocation>,
 }
 
-impl<'a, V: MutableRecursive> Mutable for RecursiveVisitorAdapterMut<'a, V> {
-    fn visit_type(&mut self, ty: &mut Type, location: SubTypeLocation) -> bool {
-        implements_visit_recursive!(self, visit_type, ty, location)
-    }
-
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &mut Lifetime,
-        location: SubLifetimeLocation,
-    ) -> bool {
-        implements_visit_recursive!(self, visit_lifetime, lifetime, location)
-    }
-
-    fn visit_constant(
-        &mut self,
-        constant: &mut Constant,
-        location: SubConstantLocation,
-    ) -> bool {
-        implements_visit_recursive!(self, visit_constant, constant, location)
+impl<
+        'a,
+        T: Element,
+        V: MutableRecursive<T>
+            + MutableRecursive<Lifetime>
+            + MutableRecursive<Type>
+            + MutableRecursive<Constant>,
+    > Mutable<T> for RecursiveVisitorAdapterMut<'a, V>
+{
+    fn visit(&mut self, term: &mut T, location: T::Location) -> bool {
+        implements_visit_recursive!(self, accept_one_level_mut, term, location)
     }
 }
 
@@ -367,31 +261,39 @@ pub trait Element: Sized + SubTerm {
     /// # Returns
     ///
     /// Returns whatever the visitor `visit_*` method returns.
-    fn accept_single(
+    fn accept_single<V: Visitor<Lifetime> + Visitor<Type> + Visitor<Constant>>(
         &self,
-        visitor: &mut impl Visitor,
+        visitor: &mut V,
         location: Self::Location,
     ) -> bool;
 
     /// Similar to [`Element::accept_single()`], but for mutable references.
-    fn accept_single_mut(
+    fn accept_single_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+    >(
         &mut self,
-        visitor: &mut impl Mutable,
+        visitor: &mut V,
         location: Self::Location,
     ) -> bool;
 
     /// Invokes the [`Recursive`] visitor on the term itself.
-    fn accept_single_recursive(
+    fn accept_single_recursive<
+        V: Recursive<Lifetime> + Recursive<Type> + Recursive<Constant>,
+    >(
         &self,
-        visitor: &mut impl Recursive,
+        visitor: &mut V,
         locations: impl Iterator<Item = SubTermLocation>,
     ) -> bool;
 
     /// Similar to [`Element::accept_single_recursive()`], but for mutable
     /// references.
-    fn accept_single_recursive_mut(
+    fn accept_single_recursive_mut<
+        V: MutableRecursive<Lifetime>
+            + MutableRecursive<Type>
+            + MutableRecursive<Constant>,
+    >(
         &mut self,
-        visitor: &mut impl MutableRecursive,
+        visitor: &mut V,
         locations: impl Iterator<Item = SubTermLocation>,
     ) -> bool;
 
@@ -412,9 +314,11 @@ pub trait Element: Sized + SubTerm {
     /// # Errors
     ///
     /// When visiting a non-application term (i.e. `int32, float32`)
-    fn accept_one_level(
+    fn accept_one_level<
+        V: Visitor<Lifetime> + Visitor<Type> + Visitor<Constant>,
+    >(
         &self,
-        visitor: &mut impl Visitor,
+        visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError>;
 
     /// Similar to [`Element::accept_one_level()`], but for mutable references.
@@ -422,9 +326,11 @@ pub trait Element: Sized + SubTerm {
     /// # Errors
     ///
     /// When visiting a non-application term (i.e. `int32, float32`)
-    fn accept_one_level_mut(
+    fn accept_one_level_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+    >(
         &mut self,
-        visitor: &mut impl Mutable,
+        visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError>;
 }
 
@@ -439,9 +345,11 @@ pub trait Element: Sized + SubTerm {
 /// # Returns
 ///
 /// Returns `true` if the visitor has visited all of the sub-terms of the term.
-pub fn accept_recursive(
+pub fn accept_recursive<
+    V: Recursive<Lifetime> + Recursive<Type> + Recursive<Constant>,
+>(
     element: &impl Element,
-    visitor: &mut impl Recursive,
+    visitor: &mut V,
 ) -> bool {
     if !element.accept_single_recursive(visitor, std::iter::empty()) {
         return false;
@@ -457,9 +365,13 @@ pub fn accept_recursive(
 }
 
 /// Similar to [`accept_recursive()`], but for mutable references.
-pub fn accept_recursive_mut(
+pub fn accept_recursive_mut<
+    V: MutableRecursive<Lifetime>
+        + MutableRecursive<Type>
+        + MutableRecursive<Constant>,
+>(
     element: &mut impl Element,
-    visitor: &mut impl MutableRecursive,
+    visitor: &mut V,
 ) -> bool {
     if !element.accept_single_recursive_mut(visitor, std::iter::empty()) {
         return false;
@@ -498,11 +410,21 @@ where
     Self: TryFrom<Term, Error = Term> + Into<Term>,
     SubTupleLocation: Into<Term::ThisSubTermLocation>,
 {
-    fn accept_one_level(&self, visitor: &mut impl Visitor) -> bool {
+    fn accept_one_level<
+        V: Visitor<Lifetime> + Visitor<Type> + Visitor<Constant>,
+    >(
+        &self,
+        visitor: &mut V,
+    ) -> bool {
         implements_tuple!(self, visitor, accept_single, iter)
     }
 
-    fn accept_one_level_mut(&mut self, visitor: &mut impl Mutable) -> bool {
+    fn accept_one_level_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> bool {
         implements_tuple!(self, visitor, accept_single_mut, iter_mut)
     }
 }
@@ -550,9 +472,13 @@ macro_rules! implements_generic_arguments {
 
 impl GenericArguments {
     #[allow(clippy::trait_duplication_in_bounds)]
-    fn accept_one_level<T: Element, Idx>(
+    fn accept_one_level<
+        T: Element,
+        Idx,
+        V: Visitor<Lifetime> + Visitor<Type> + Visitor<Constant>,
+    >(
         &self,
-        visitor: &mut impl Visitor,
+        visitor: &mut V,
         map_idx: impl Fn(usize) -> Idx,
     ) -> bool
     where
@@ -564,20 +490,18 @@ impl GenericArguments {
         T::SubConstantLocation: Into<SubConstantLocation>,
     {
         implements_generic_arguments!(
-            self,
-            visitor,
-            visit_type,
-            visit_lifetime,
-            visit_constant,
-            iter,
-            map_idx
+            self, visitor, visit, visit, visit, iter, map_idx
         )
     }
 
     #[allow(clippy::trait_duplication_in_bounds)]
-    fn accept_one_level_mut<T: Element, Idx>(
+    fn accept_one_level_mut<
+        T: Element,
+        Idx,
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+    >(
         &mut self,
-        visitor: &mut impl Mutable,
+        visitor: &mut V,
         map_idx: impl Fn(usize) -> Idx,
     ) -> bool
     where
@@ -589,13 +513,7 @@ impl GenericArguments {
         T::SubConstantLocation: Into<SubConstantLocation>,
     {
         implements_generic_arguments!(
-            self,
-            visitor,
-            visit_type,
-            visit_lifetime,
-            visit_constant,
-            iter_mut,
-            map_idx
+            self, visitor, visit, visit, visit, iter_mut, map_idx
         )
     }
 }
@@ -618,7 +536,7 @@ macro_rules! implements_type {
             Self::Symbol(term) => {
                 if !term
                     .generic_arguments
-                    .$accept_one_level::<Self, _>(
+                    .$accept_one_level::<Self, _, _>(
                         $visitor,
                         |id| SubSymbolLocation(id),
                     ) {
@@ -629,12 +547,12 @@ macro_rules! implements_type {
             }
             Self::Phantom(term) => Ok(
                 $visitor.$visit_type(
-                    &$($ref)?term.0,
+                    &$($ref)?*term.0,
                     SubTypeLocation::FromType(r#type::SubTypeLocation::Phantom)
                 )
             ),
             Self::Pointer(term) => Ok($visitor.$visit_type(
-                &$($ref)? term.pointee,
+                &$($ref)?*term.pointee,
                 SubTypeLocation::FromType(r#type::SubTypeLocation::Pointer)
             )),
             Self::Reference(term) => Ok($visitor
@@ -645,14 +563,14 @@ macro_rules! implements_type {
                     )
                 )
                 && $visitor.$visit_type(
-                    &$($ref)?term.pointee,
+                    &$($ref)?*term.pointee,
                     SubTypeLocation::FromType(
                         r#type::SubTypeLocation::Reference
                     )
                 )),
             Self::Array(term) => Ok($visitor
                 .$visit_type(
-                    &$($ref)?term.r#type,
+                    &$($ref)?*term.r#type,
                     SubTypeLocation::FromType(r#type::SubTypeLocation::Array)
                 )
                 && $visitor
@@ -665,14 +583,14 @@ macro_rules! implements_type {
             Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)),
             Self::Local(local) => Ok($visitor
                 .$visit_type(
-                    &$($ref)?local.0,
+                    &$($ref)?*local.0,
                     SubTypeLocation::FromType(r#type::SubTypeLocation::Local)
                 )
             ),
             Self::TraitMember(trait_member) => Ok(
                 trait_member
                     .parent_generic_arguments
-                    .$accept_one_level::<Self, _>(
+                    .$accept_one_level::<Self, _, _>(
                         $visitor,
                         |id| SubTraitMemberLocation(SubMemberSymbolLocation {
                             index: id,
@@ -681,7 +599,7 @@ macro_rules! implements_type {
                     )
                     && trait_member
                         .member_generic_arguments
-                        .$accept_one_level::<Self, _>(
+                        .$accept_one_level::<Self, _, _>(
                             $visitor,
                             |id| SubTraitMemberLocation(SubMemberSymbolLocation {
                                 index: id,
@@ -691,7 +609,7 @@ macro_rules! implements_type {
             ),
             Self::MemberSymbol(implementation) => Ok(implementation
                 .member_generic_arguments
-                .$accept_one_level::<Self, _>(
+                .$accept_one_level::<Self, _, _>(
                     $visitor,
                     |id| SubMemberSymbolLocation {
                         index: id,
@@ -700,7 +618,7 @@ macro_rules! implements_type {
                 )
                 && implementation
                     .parent_generic_arguments
-                    .$accept_one_level::<Self, _>(
+                    .$accept_one_level::<Self, _, _>(
                         $visitor,
                         |id| SubMemberSymbolLocation {
                             index: id,
@@ -714,65 +632,72 @@ macro_rules! implements_type {
 impl Element for Type {
     type Location = SubTypeLocation;
 
-    fn accept_single(
+    fn accept_single<
+        V: Visitor<Lifetime> + Visitor<Self> + Visitor<Constant>,
+    >(
         &self,
-        visitor: &mut impl Visitor,
+        visitor: &mut V,
         location: SubTypeLocation,
     ) -> bool {
-        visitor.visit_type(self, location)
+        visitor.visit(self, location)
     }
 
-    fn accept_one_level(
+    fn accept_single_mut<
+        V: Mutable<Lifetime> + Mutable<Self> + Mutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        location: SubTypeLocation,
+    ) -> bool {
+        visitor.visit(self, location)
+    }
+
+    fn accept_single_recursive<
+        V: Recursive<Lifetime> + Recursive<Self> + Recursive<Constant>,
+    >(
         &self,
-        visitor: &mut impl Visitor,
+        visitor: &mut V,
+        locations: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        visitor.visit(self, locations)
+    }
+
+    fn accept_single_recursive_mut<
+        V: MutableRecursive<Lifetime>
+            + MutableRecursive<Self>
+            + MutableRecursive<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        locations: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        visitor.visit(self, locations)
+    }
+
+    fn accept_one_level<
+        V: Visitor<Lifetime> + Visitor<Self> + Visitor<Constant>,
+    >(
+        &self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        implements_type!(self, visitor, visit, visit, visit, accept_one_level)
+    }
+
+    fn accept_one_level_mut<
+        V: Mutable<Lifetime> + Mutable<Self> + Mutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
         implements_type!(
             self,
             visitor,
-            visit_type,
-            visit_lifetime,
-            visit_constant,
-            accept_one_level
-        )
-    }
-
-    fn accept_single_mut(
-        &mut self,
-        visitor: &mut impl Mutable,
-        location: SubTypeLocation,
-    ) -> bool {
-        visitor.visit_type(self, location)
-    }
-
-    fn accept_one_level_mut(
-        &mut self,
-        visitor: &mut impl Mutable,
-    ) -> Result<bool, VisitNonApplicationTermError> {
-        implements_type!(
-            self,
-            visitor,
-            visit_type,
-            visit_lifetime,
-            visit_constant,
+            visit,
+            visit,
+            visit,
             accept_one_level_mut,
             mut
         )
-    }
-
-    fn accept_single_recursive(
-        &self,
-        visitor: &mut impl Recursive,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        visitor.visit_type(self, locations)
-    }
-
-    fn accept_single_recursive_mut(
-        &mut self,
-        visitor: &mut impl MutableRecursive,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        visitor.visit_type(self, locations)
     }
 }
 
@@ -783,50 +708,62 @@ impl From<Never> for SubLifetimeLocation {
 impl Element for Lifetime {
     type Location = SubLifetimeLocation;
 
-    fn accept_single(
+    fn accept_single<V: Visitor<Self> + Visitor<Type> + Visitor<Constant>>(
         &self,
-        visitor: &mut impl Visitor,
+        visitor: &mut V,
         location: SubLifetimeLocation,
     ) -> bool {
-        visitor.visit_lifetime(self, location)
+        visitor.visit(self, location)
     }
 
-    fn accept_one_level(
+    fn accept_single_mut<
+        V: Mutable<Self> + Mutable<Type> + Mutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        location: SubLifetimeLocation,
+    ) -> bool {
+        visitor.visit(self, location)
+    }
+
+    fn accept_single_recursive<
+        V: Recursive<Self> + Recursive<Type> + Recursive<Constant>,
+    >(
         &self,
-        _: &mut impl Visitor,
+        visitor: &mut V,
+        locations: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        visitor.visit(self, locations)
+    }
+
+    fn accept_single_recursive_mut<
+        V: MutableRecursive<Self>
+            + MutableRecursive<Type>
+            + MutableRecursive<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        locations: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        visitor.visit(self, locations)
+    }
+
+    fn accept_one_level<
+        V: Visitor<Self> + Visitor<Type> + Visitor<Constant>,
+    >(
+        &self,
+        _: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
         Err(VisitNonApplicationTermError)
     }
 
-    fn accept_single_mut(
+    fn accept_one_level_mut<
+        V: Mutable<Self> + Mutable<Type> + Mutable<Constant>,
+    >(
         &mut self,
-        visitor: &mut impl Mutable,
-        location: SubLifetimeLocation,
-    ) -> bool {
-        visitor.visit_lifetime(self, location)
-    }
-
-    fn accept_one_level_mut(
-        &mut self,
-        _: &mut impl Mutable,
+        _: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
         Err(VisitNonApplicationTermError)
-    }
-
-    fn accept_single_recursive(
-        &self,
-        visitor: &mut impl Recursive,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        visitor.visit_lifetime(self, locations)
-    }
-
-    fn accept_single_recursive_mut(
-        &mut self,
-        visitor: &mut impl MutableRecursive,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        visitor.visit_lifetime(self, locations)
     }
 }
 
@@ -868,7 +805,7 @@ macro_rules! implements_constant {
                 .associated_value
                 .$as_ref()
                 .map_or(true, |x| $visitor.$visit_constant(
-                    x,
+                    & $($ref)? **x,
                     SubConstantLocation::FromConstant(
                         constant::SubConstantLocation::Enum
                     )
@@ -886,7 +823,7 @@ macro_rules! implements_constant {
 
             Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)),
             Self::Local(local) => Ok($visitor.$visit_constant(
-                &$($ref)?local.0,
+                &$($ref)?*local.0,
                 SubConstantLocation::FromConstant(
                     constant::SubConstantLocation::Local
                 )
@@ -895,14 +832,14 @@ macro_rules! implements_constant {
             Self::TraitMember(trait_member) => {
                 Ok(trait_member
                     .parent_generic_arguments
-                    .$accept_one_level::<Self, _>($visitor, |id|
+                    .$accept_one_level::<Self, _, _>($visitor, |id|
                         SubTraitMemberLocation(SubMemberSymbolLocation {
                             index: id,
                             from_parent: true,
                         }))
                     && trait_member
                         .member_generic_arguments
-                        .$accept_one_level::<Self, _>($visitor, |id|
+                        .$accept_one_level::<Self, _, _>($visitor, |id|
                             SubTraitMemberLocation(SubMemberSymbolLocation {
                                 index: id,
                                 from_parent: false,
@@ -912,13 +849,13 @@ macro_rules! implements_constant {
             }
 
             Self::Symbol(symbol) => {
-                Ok(symbol.generic_arguments.$accept_one_level::<Self, _>(
+                Ok(symbol.generic_arguments.$accept_one_level::<Self, _, _>(
                     $visitor,
                     |id| SubSymbolLocation(id),
                 ))
             }
             Self::MemberSymbol(term) => {
-                Ok(term.member_generic_arguments.$accept_one_level::<Self, _>(
+                Ok(term.member_generic_arguments.$accept_one_level::<Self, _, _>(
                     $visitor,
                     |id| SubMemberSymbolLocation {
                         index: id,
@@ -926,7 +863,7 @@ macro_rules! implements_constant {
                     })
                     && term
                         .parent_generic_arguments
-                        .$accept_one_level::<Self, _>($visitor,
+                        .$accept_one_level::<Self, _, _>($visitor,
                         |id| SubMemberSymbolLocation {
                             index: id,
                             from_parent: true,
@@ -941,68 +878,80 @@ macro_rules! implements_constant {
 impl Element for Constant {
     type Location = SubConstantLocation;
 
-    fn accept_single(
+    fn accept_single<V: Visitor<Lifetime> + Visitor<Type> + Visitor<Self>>(
         &self,
-        visitor: &mut impl Visitor,
+        visitor: &mut V,
         location: SubConstantLocation,
     ) -> bool {
-        visitor.visit_constant(self, location)
+        visitor.visit(self, location)
     }
 
-    fn accept_one_level(
+    fn accept_single_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Self>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        location: SubConstantLocation,
+    ) -> bool {
+        visitor.visit(self, location)
+    }
+
+    fn accept_single_recursive<
+        V: Recursive<Lifetime> + Recursive<Type> + Recursive<Self>,
+    >(
         &self,
-        visitor: &mut impl Visitor,
+        visitor: &mut V,
+        locations: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        visitor.visit(self, locations)
+    }
+
+    fn accept_single_recursive_mut<
+        V: MutableRecursive<Lifetime>
+            + MutableRecursive<Type>
+            + MutableRecursive<Self>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        locations: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        visitor.visit(self, locations)
+    }
+
+    fn accept_one_level<
+        V: Visitor<Lifetime> + Visitor<Type> + Visitor<Self>,
+    >(
+        &self,
+        visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
         implements_constant!(
             self,
             visitor,
             visit_type,
             visit_lifetime,
-            visit_constant,
+            visit,
             accept_one_level,
             as_ref,
             iter
         )
     }
 
-    fn accept_single_mut(
+    fn accept_one_level_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Self>,
+    >(
         &mut self,
-        visitor: &mut impl Mutable,
-        location: SubConstantLocation,
-    ) -> bool {
-        visitor.visit_constant(self, location)
-    }
-
-    fn accept_one_level_mut(
-        &mut self,
-        visitor: &mut impl Mutable,
+        visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
         implements_constant!(
             self,
             visitor,
             visit_type,
             visit_lifetime,
-            visit_constant,
+            visit,
             accept_one_level_mut,
             as_mut,
             iter_mut,
             mut
         )
-    }
-
-    fn accept_single_recursive(
-        &self,
-        visitor: &mut impl Recursive,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        visitor.visit_constant(self, locations)
-    }
-
-    fn accept_single_recursive_mut(
-        &mut self,
-        visitor: &mut impl MutableRecursive,
-        locations: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        visitor.visit_constant(self, locations)
     }
 }

@@ -416,15 +416,6 @@ impl Location<Constant, Lifetime> for SubLifetimeLocation {
     }
 }
 
-/// Enumeration of all kinds of sub-term locations in a constant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum SubTermLocation {
-    Lifetime(SubLifetimeLocation),
-    Type(SubTypeLocation),
-    Constant(SubConstantLocation),
-}
-
 /// Represents a compile-time constant term.
 #[derive(
     Debug,

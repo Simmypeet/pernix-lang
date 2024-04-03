@@ -20,29 +20,33 @@ struct ContainsForallLifetimeVisitor {
     contains_forall_lifetime: bool,
 }
 
-impl Recursive for ContainsForallLifetimeVisitor {
-    fn visit_type(
+impl Recursive<Lifetime> for ContainsForallLifetimeVisitor {
+    fn visit(
         &mut self,
-        _: &Type,
+        term: &Lifetime,
         _: impl Iterator<Item = SubTermLocation>,
     ) -> bool {
-        true
-    }
-
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &Lifetime,
-        _: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        if lifetime.is_forall() {
+        if term.is_forall() {
             self.contains_forall_lifetime = true;
             false
         } else {
             true
         }
     }
+}
 
-    fn visit_constant(
+impl Recursive<Type> for ContainsForallLifetimeVisitor {
+    fn visit(
+        &mut self,
+        _: &Type,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
+impl Recursive<Constant> for ContainsForallLifetimeVisitor {
+    fn visit(
         &mut self,
         _: &Constant,
         _: impl Iterator<Item = SubTermLocation>,

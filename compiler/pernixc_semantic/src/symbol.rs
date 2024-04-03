@@ -424,11 +424,26 @@ pub type LifetimeParameterID = MemberID<ID<LifetimeParameter>, GenericID>;
 /// An enumeration of either an invariant or covariant variance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Variance {
+    /// The term is bivariant and can be changed to any subtype or supertype.
+    Bivariant,
+
     /// The term is covariant and can be changed to a subtype.
-    #[default]
+    ///
+    /// This is the most common variance; that is, the lifetime can be changed
+    /// to a smaller lifetime e.g. `'static` to `'a`.
     Covariant,
 
+    /// The term is contravariant and can be changed to a supertype.
+    ///
+    /// This is the opposite of convariant; that is, the lifetime can be
+    /// changed to a larger lifetime e.g. `'a` to `'static`. This is
+    /// generally used in the parameter of a function i.e. the function
+    /// parameter used to accept a particular lifetime `'a` can be changed
+    /// to accept a larger lifetime `'static`.
+    Contravariant,
+
     /// The term is invariant and cannot be changed.
+    #[default]
     Invariant,
 }
 
@@ -437,8 +452,16 @@ impl Variance {
     #[must_use]
     pub const fn chain(self, other: Self) -> Self {
         match (self, other) {
-            (Self::Covariant, other) => other,
-            (Self::Invariant, _) => Self::Invariant,
+            (Self::Bivariant, other) | (other, Self::Bivariant) => other,
+
+            (Self::Invariant, _)
+            | (_, Self::Invariant)
+            | (Self::Covariant, Self::Contravariant)
+            | (Self::Contravariant, Self::Covariant) => Self::Invariant,
+
+            (Self::Covariant, Self::Covariant) => Self::Covariant,
+
+            (Self::Contravariant, Self::Contravariant) => Self::Contravariant,
         }
     }
 }
@@ -595,9 +618,6 @@ pub struct GenericParameterVariances {
 
     /// Maps the type parameter ID to its variance.
     pub variances_by_type_ids: HashMap<ID<TypeParameter>, Variance>,
-
-    /// Maps the constant parameter ID to its variance.
-    pub variances_by_constant_ids: HashMap<ID<ConstantParameter>, Variance>,
 }
 
 /// Represents a list of generic parameters.
@@ -977,7 +997,7 @@ pub struct TypeTemplate<ParentID: 'static, Data: 'static> {
 
 /// Contains the data for the regular type declaration i.e. those that are
 /// declared in the module level.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeData {
     /// The accessibility of the type.
     pub accessibility: Accessibility,
@@ -1343,6 +1363,9 @@ pub struct TraitImplementationTypeData {
 
     /// The trait type ID that is being implemented.
     pub implemented_trait_type_id: ID<TraitType>,
+
+    /// The variances of the generic parameters.
+    pub generic_parameter_variances: GenericParameterVariances,
 }
 
 /// Represents a constant declaration as an implements member, denoted by `const

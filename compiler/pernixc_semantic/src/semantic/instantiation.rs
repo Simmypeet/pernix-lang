@@ -33,38 +33,16 @@ struct Instantiater<'a> {
     substitution: &'a Instantiation,
 }
 
-impl<'a> MutableRecursive for Instantiater<'a> {
-    fn visit_type(
+impl<'a, T: Term> MutableRecursive<T> for Instantiater<'a> {
+    fn visit(
         &mut self,
-        ty: &mut Type,
+        term: &mut T,
         _: impl Iterator<Item = SubTermLocation>,
     ) -> bool {
-        if let Some(substitution) = self.substitution.types.get(ty) {
-            *ty = substitution.clone();
-        }
-
-        true
-    }
-
-    fn visit_lifetime(
-        &mut self,
-        lifetime: &mut Lifetime,
-        _: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        if let Some(substitution) = self.substitution.lifetimes.get(lifetime) {
-            *lifetime = *substitution;
-        }
-
-        true
-    }
-
-    fn visit_constant(
-        &mut self,
-        constant: &mut Constant,
-        _: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        if let Some(substitution) = self.substitution.constants.get(constant) {
-            *constant = substitution.clone();
+        if let Some(substitution) =
+            T::get_instantiation(self.substitution).get(term)
+        {
+            *term = substitution.clone();
         }
 
         true

@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
 use proptest::{
     arbitrary::Arbitrary,
@@ -11,7 +11,9 @@ use super::equals;
 use crate::{
     arena::ID,
     semantic::{
-        self, mapping,
+        self,
+        instantiation::{self, Instantiation},
+        mapping,
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             constant::Constant,
@@ -20,7 +22,7 @@ use crate::{
             GenericArguments, Local, Symbol, Term,
         },
         tests::State,
-        visitor::{self, MutableRecursive, Recursive, SubTermLocation},
+        visitor::{self, Recursive, SubTermLocation},
         Environment, Premise, Semantic,
     },
     symbol::{
@@ -752,25 +754,29 @@ struct TermCollector {
     terms: Vec<Type>,
 }
 
-impl Recursive for TermCollector {
-    fn visit_type(
-        &mut self,
-        ty: &Type,
-        _: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        self.terms.push(ty.clone());
-        true
-    }
-
-    fn visit_lifetime(
+impl Recursive<Lifetime> for TermCollector {
+    fn visit(
         &mut self,
         _: &Lifetime,
         _: impl Iterator<Item = SubTermLocation>,
     ) -> bool {
         true
     }
+}
 
-    fn visit_constant(
+impl Recursive<Type> for TermCollector {
+    fn visit(
+        &mut self,
+        term: &Type,
+        _: impl Iterator<Item = SubTermLocation>,
+    ) -> bool {
+        self.terms.push(term.clone());
+        true
+    }
+}
+
+impl Recursive<Constant> for TermCollector {
+    fn visit(
         &mut self,
         _: &Constant,
         _: impl Iterator<Item = SubTermLocation>,
@@ -819,41 +825,6 @@ impl Arbitrary for TypeAlias {
                 },
             )
             .boxed()
-    }
-}
-
-struct Substituter<'a> {
-    from: &'a Type,
-    to: &'a Type,
-}
-
-impl<'a> MutableRecursive for Substituter<'a> {
-    fn visit_type(
-        &mut self,
-        ty: &mut Type,
-        _: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        if ty == self.from {
-            *ty = self.to.clone();
-        }
-
-        true
-    }
-
-    fn visit_lifetime(
-        &mut self,
-        _: &mut Lifetime,
-        _: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        true
-    }
-
-    fn visit_constant(
-        &mut self,
-        _: &mut Constant,
-        _: impl Iterator<Item = SubTermLocation>,
-    ) -> bool {
-        true
     }
 }
 
@@ -913,17 +884,22 @@ impl Property<Type> for TypeAlias {
                         let mut sampled =
                             if self.aliased_at_lhs { lhs } else { rhs };
 
-                        let mut substituter = Substituter {
-                            from: &self.argument,
-                            to: &Type::Parameter(TypeParameterID {
-                                parent: GenericID::Type(self.type_id),
-                                id: ID::new(0),
-                            }),
+                        let instantiation = Instantiation {
+                            lifetimes: HashMap::new(),
+                            types: std::iter::once((
+                                self.argument.clone(),
+                                Type::Parameter(TypeParameterID {
+                                    parent: GenericID::Type(self.type_id),
+                                    id: ID::new(0),
+                                }),
+                            ))
+                            .collect(),
+                            constants: HashMap::new(),
                         };
 
-                        visitor::accept_recursive_mut(
+                        instantiation::instantiate(
                             &mut sampled,
-                            &mut substituter,
+                            &instantiation,
                         );
 
                         sampled

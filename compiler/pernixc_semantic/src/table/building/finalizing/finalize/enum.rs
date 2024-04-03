@@ -77,6 +77,33 @@ impl Finalize for Enum {
                     false,
                     handler,
                 );
+
+                // build the variance
+                let premise =
+                    table.get_active_premise(symbol_id.into()).unwrap();
+                let mut enum_sym_write =
+                    table.representation.enums.get(symbol_id).unwrap().write();
+                let enum_sym = &mut *enum_sym_write;
+
+                #[allow(clippy::needless_collect)]
+                let type_usages = enum_sym
+                    .variant_ids_by_name
+                    .values()
+                    .filter_map(|f| {
+                        table.get(*f).unwrap().associated_type.clone()
+                    })
+                    .collect::<Vec<_>>();
+
+                table.build_variance(
+                    &enum_sym.generic_declaration.parameters,
+                    &mut enum_sym.generic_parameter_variances,
+                    &premise,
+                    symbol_id.into(),
+                    type_usages.iter(),
+                    handler,
+                );
+
+                drop(enum_sym_write);
             }
             Flag::Check => {
                 table.check_occurrences(symbol_id.into(), data, handler);
