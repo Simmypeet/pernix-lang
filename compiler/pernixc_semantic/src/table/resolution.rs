@@ -1093,8 +1093,8 @@ impl<T: State> Table<T> {
                     Some(syntax_tree::Qualifier::Mutable(..)) => {
                         Qualifier::Mutable
                     }
-                    Some(syntax_tree::Qualifier::Restrict(..)) => {
-                        Qualifier::Restrict
+                    Some(syntax_tree::Qualifier::Unique(..)) => {
+                        Qualifier::Unique
                     }
                     None => Qualifier::Immutable,
                 };
@@ -1117,8 +1117,8 @@ impl<T: State> Table<T> {
                     Some(syntax_tree::Qualifier::Mutable(..)) => {
                         Qualifier::Mutable
                     }
-                    Some(syntax_tree::Qualifier::Restrict(..)) => {
-                        Qualifier::Restrict
+                    Some(syntax_tree::Qualifier::Unique(..)) => {
+                        Qualifier::Unique
                     }
                     None => Qualifier::Immutable,
                 };

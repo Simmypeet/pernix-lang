@@ -19,7 +19,7 @@ use crate::{
     error::{self, DuplicatedUsing, ExpectModule, SelfModuleUsing},
     semantic::{
         term::{constant, lifetime::Lifetime, r#type, GenericArguments},
-        Environment, Premise,
+        Premise, TraitContext,
     },
     symbol::{
         Accessibility, Adt, AdtID, AdtImplementation,
@@ -1114,12 +1114,12 @@ impl<T: Container> Representation<T> {
             // assign environment
             match generic_id {
                 GenericID::Trait(id) => {
-                    premise.environment = Environment::InTrait(id);
+                    premise.trait_context = TraitContext::InTrait(id);
                 }
 
                 GenericID::TraitImplementation(id) => {
-                    premise.environment =
-                        Environment::InTraitImplementation(id);
+                    premise.trait_context =
+                        TraitContext::InTraitImplementation(id);
                 }
 
                 _ => {}

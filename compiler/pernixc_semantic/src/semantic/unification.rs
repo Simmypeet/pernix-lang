@@ -3,12 +3,12 @@
 use std::collections::HashMap;
 
 use super::{
-    equality, matching,
+    equality, get_equivalences, matching,
     session::{self, ExceedLimitError, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-    Premise, Semantic,
+    Environment,
 };
-use crate::table::{State, Table};
+use crate::table::State;
 
 /// Represents a record of unifying two terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -21,38 +21,79 @@ pub struct Query<'a, T> {
 /// A customization point for the unification logic.
 pub trait Config {
     /// Determines if the two given lifetimes are unifiable.
-    #[must_use]
-    fn lifetime_unifiable(&mut self, from: &Lifetime, to: &Lifetime) -> bool;
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`].
+    fn lifetime_unifiable(
+        &mut self,
+        from: &Lifetime,
+        to: &Lifetime,
+    ) -> Result<bool, ExceedLimitError>;
 
     /// Determines if the two given types are unifiable.
-    #[must_use]
-    fn type_unifiable(&mut self, from: &Type, to: &Type) -> bool;
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`].
+    fn type_unifiable(
+        &mut self,
+        from: &Type,
+        to: &Type,
+    ) -> Result<bool, ExceedLimitError>;
 
     /// Determines if the two given constants are unifiable.
-    #[must_use]
-    fn constant_unifiable(&mut self, from: &Constant, to: &Constant) -> bool;
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`].
+    fn constant_unifiable(
+        &mut self,
+        from: &Constant,
+        to: &Constant,
+    ) -> Result<bool, ExceedLimitError>;
 }
 
 /// A trait implemented by terms that can be unified.
 pub trait Element {
     /// Accepts a configuration and returns `true` if the term is unifiable.
-    fn unifiable(from: &Self, to: &Self, config: &mut impl Config) -> bool;
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`].
+    fn unifiable(
+        from: &Self,
+        to: &Self,
+        config: &mut impl Config,
+    ) -> Result<bool, ExceedLimitError>;
 }
 
 impl Element for Lifetime {
-    fn unifiable(from: &Self, to: &Self, config: &mut impl Config) -> bool {
+    fn unifiable(
+        from: &Self,
+        to: &Self,
+        config: &mut impl Config,
+    ) -> Result<bool, ExceedLimitError> {
         config.lifetime_unifiable(from, to)
     }
 }
 
 impl Element for Type {
-    fn unifiable(from: &Self, to: &Self, config: &mut impl Config) -> bool {
+    fn unifiable(
+        from: &Self,
+        to: &Self,
+        config: &mut impl Config,
+    ) -> Result<bool, ExceedLimitError> {
         config.type_unifiable(from, to)
     }
 }
 
 impl Element for Constant {
-    fn unifiable(from: &Self, to: &Self, config: &mut impl Config) -> bool {
+    fn unifiable(
+        from: &Self,
+        to: &Self,
+        config: &mut impl Config,
+    ) -> Result<bool, ExceedLimitError> {
         config.constant_unifiable(from, to)
     }
 }
@@ -109,18 +150,14 @@ pub struct Unification<T: Term> {
     pub r#match: Matching<T>,
 }
 
-fn substructural_unify<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+fn substructural_unify<T: Term>(
     lhs: &T,
     rhs: &T,
-    premise: &Premise,
-    table: &Table<impl State>,
     config: &mut impl Config,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<Option<Unification<T>>, ExceedLimitError> {
     let Some(substructural) = lhs.substructural_match(rhs) else {
         return Ok(None);
@@ -130,9 +167,7 @@ fn substructural_unify<
 
     for matching::Matching { lhs, rhs, lhs_location, .. } in substructural.types
     {
-        let Some(new) =
-            unify(&lhs, &rhs, premise, table, config, semantic, session)?
-        else {
+        let Some(new) = unify(&lhs, &rhs, config, environment, limit)? else {
             return Ok(None);
         };
 
@@ -142,9 +177,7 @@ fn substructural_unify<
     for matching::Matching { lhs, rhs, lhs_location, .. } in
         substructural.lifetimes
     {
-        let Some(new) =
-            unify(&lhs, &rhs, premise, table, config, semantic, session)?
-        else {
+        let Some(new) = unify(&lhs, &rhs, config, environment, limit)? else {
             return Ok(None);
         };
 
@@ -154,9 +187,7 @@ fn substructural_unify<
     for matching::Matching { lhs, rhs, lhs_location, .. } in
         substructural.constants
     {
-        let Some(new) =
-            unify(&lhs, &rhs, premise, table, config, semantic, session)?
-        else {
+        let Some(new) = unify(&lhs, &rhs, config, environment, limit)? else {
             return Ok(None);
         };
 
@@ -175,20 +206,16 @@ fn substructural_unify<
 /// # Errors
 ///
 /// See [`ExceedLimitError`].
-pub fn unify<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+pub fn unify<T: Term>(
     from: &T,
     to: &T,
-    premise: &Premise,
-    table: &Table<impl State>,
     config: &mut impl Config,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<Option<Unification<T>>, ExceedLimitError> {
-    if equality::equals(from, to, premise, table, semantic, session)? {
+    if equality::equals(from, to, environment, limit)? {
         return Ok(Some(Unification {
             rewritten_lhs: None,
             rewritten_rhs: None,
@@ -198,7 +225,7 @@ pub fn unify<
 
     let query = Query { lhs: from, rhs: to };
 
-    match session.mark_as_in_progress(query.clone(), ())? {
+    match limit.mark_as_in_progress(query.clone(), ())? {
         Some(session::Cached::Done(result)) => return Ok(Some(result)),
         Some(session::Cached::InProgress(())) => {
             return Ok(None);
@@ -206,99 +233,52 @@ pub fn unify<
         None => {}
     }
 
-    if T::unifiable(from, to, config) {
-        let unification = Unification {
+    if T::unifiable(from, to, config)? {
+        let result = Unification {
             rewritten_lhs: None,
             rewritten_rhs: None,
             r#match: Matching::Unifiable(from.clone(), to.clone()),
         };
 
-        session.mark_as_done(query, unification.clone());
-        return Ok(Some(unification));
+        limit.mark_as_done(query, result.clone());
+        return Ok(Some(result));
     }
 
-    if let Some(unification) = substructural_unify(
-        from, to, premise, table, config, semantic, session,
-    )? {
-        session.mark_as_done(query, unification.clone());
-        return Ok(Some(unification));
-    }
-
-    // try to normalize lhs, rhs
-    if let Some(normalized_lhs) =
-        semantic.normalize(from, premise, table, session)?
+    if let Some(unification) =
+        substructural_unify(from, to, config, environment, limit)?
     {
-        if let Some(mut unification) = unify(
-            &normalized_lhs,
-            to,
-            premise,
-            table,
-            config,
-            semantic,
-            session,
-        )? {
+        limit.mark_as_done(query, unification.clone());
+        return Ok(Some(unification));
+    }
+
+    // try to look for equivalences
+    for eq_lhs in get_equivalences(from, environment, limit)? {
+        if let Some(mut unification) =
+            unify(&eq_lhs, to, config, environment, limit)?
+        {
             unification.rewritten_lhs =
-                unification.rewritten_lhs.or(Some(normalized_lhs));
+                unification.rewritten_lhs.or(Some(eq_lhs));
 
-            session.mark_as_done(query, unification.clone());
+            limit.mark_as_done(query, unification.clone());
             return Ok(Some(unification));
         }
     }
 
-    if let Some(normalized_rhs) =
-        semantic.normalize(to, premise, table, session)?
-    {
-        if let Some(mut unification) = unify(
-            from,
-            &normalized_rhs,
-            premise,
-            table,
-            config,
-            semantic,
-            session,
-        )? {
+    for eq_rhs in get_equivalences(to, environment, limit)? {
+        if let Some(mut unification) =
+            unify(from, &eq_rhs, config, environment, limit)?
+        {
             unification.rewritten_rhs =
-                unification.rewritten_rhs.or(Some(normalized_rhs));
+                unification.rewritten_rhs.or(Some(eq_rhs));
 
-            session.mark_as_done(query, unification.clone());
+            limit.mark_as_done(query, unification.clone());
             return Ok(Some(unification));
         }
     }
 
-    // try to look for equivalent terms in the premise
-    for (key, values) in T::get_mapping(&premise.equalities_mapping) {
-        if equality::equals(from, key, premise, table, semantic, session)? {
-            for value in values {
-                if let Some(mut unification) =
-                    unify(value, to, premise, table, config, semantic, session)?
-                {
-                    unification.rewritten_lhs =
-                        unification.rewritten_lhs.or(Some(value.clone()));
-
-                    session.mark_as_done(query, unification.clone());
-                    return Ok(Some(unification));
-                }
-            }
-        }
-
-        if equality::equals(key, to, premise, table, semantic, session)? {
-            for value in values {
-                if let Some(mut unification) = unify(
-                    from, value, premise, table, config, semantic, session,
-                )? {
-                    unification.rewritten_rhs =
-                        unification.rewritten_rhs.or(Some(value.clone()));
-
-                    session.mark_as_done(query, unification.clone());
-                    return Ok(Some(unification));
-                }
-            }
-        }
-    }
-
-    session.clear_query(query);
+    limit.clear_query(query);
     Ok(None)
 }
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;

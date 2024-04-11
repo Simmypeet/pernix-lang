@@ -11,9 +11,8 @@ use super::equals;
 use crate::{
     arena::ID,
     semantic::{
-        self,
+        equivalent::Equivalent,
         instantiation::{self, Instantiation},
-        mapping,
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             constant::Constant,
@@ -23,7 +22,7 @@ use crate::{
         },
         tests::State,
         visitor::{self, Recursive, SubTermLocation},
-        Environment, Premise, Semantic,
+        Environment, Premise, TraitContext,
     },
     symbol::{
         self, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
@@ -35,9 +34,9 @@ use crate::{
 #[test]
 fn reflexive() {
     let premise = Premise {
-        equalities_mapping: mapping::Mapping::default(),
-        non_equality_predicates: Vec::new(),
-        environment: Environment::Normal,
+        predicates: Vec::new(),
+        trait_context: TraitContext::Normal,
+        equivalent: Equivalent::default(),
     };
     let table = Table::<State>::default();
 
@@ -46,9 +45,7 @@ fn reflexive() {
     assert!(equals(
         &term,
         &term,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -57,16 +54,18 @@ fn reflexive() {
 #[test]
 fn symmetric() {
     let premise = Premise {
-        equalities_mapping: mapping::Mapping::from_pairs(
-            std::iter::empty(),
-            std::iter::once((
+        predicates: Vec::new(),
+        trait_context: TraitContext::Normal,
+        equivalent: {
+            let mut equivalent = Equivalent::default();
+
+            equivalent.insert(
                 Type::Primitive(Primitive::Bool),
                 Type::Primitive(Primitive::Float32),
-            )),
-            std::iter::empty(),
-        ),
-        non_equality_predicates: Vec::new(),
-        environment: Environment::Normal,
+            );
+
+            equivalent
+        },
     };
     let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Bool);
@@ -75,18 +74,14 @@ fn symmetric() {
     assert!(equals(
         &lhs,
         &rhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
         &rhs,
         &lhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -94,22 +89,22 @@ fn symmetric() {
 #[test]
 fn transitivity() {
     let premise = Premise {
-        equalities_mapping: mapping::Mapping::from_pairs(
-            std::iter::empty(),
-            [
-                (
-                    Type::Primitive(Primitive::Bool),
-                    Type::Primitive(Primitive::Float32),
-                ),
-                (
-                    Type::Primitive(Primitive::Float32),
-                    Type::Primitive(Primitive::Float64),
-                ),
-            ],
-            std::iter::empty(),
-        ),
-        non_equality_predicates: Vec::new(),
-        environment: Environment::Normal,
+        predicates: Vec::new(),
+        trait_context: TraitContext::Normal,
+        equivalent: {
+            let mut equivalent = Equivalent::default();
+
+            equivalent.insert(
+                Type::Primitive(Primitive::Bool),
+                Type::Primitive(Primitive::Float32),
+            );
+            equivalent.insert(
+                Type::Primitive(Primitive::Float32),
+                Type::Primitive(Primitive::Float64),
+            );
+
+            equivalent
+        },
     };
     let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Bool);
@@ -118,18 +113,14 @@ fn transitivity() {
     assert!(equals(
         &lhs,
         &rhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
         &rhs,
         &lhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -138,22 +129,22 @@ fn transitivity() {
 #[test]
 fn congruence() {
     let premise = Premise {
-        equalities_mapping: mapping::Mapping::from_pairs(
-            std::iter::empty(),
-            [
-                (
-                    Type::Primitive(Primitive::Int32),
-                    Type::Primitive(Primitive::Float32),
-                ),
-                (
-                    Type::Primitive(Primitive::Int64),
-                    Type::Primitive(Primitive::Float64),
-                ),
-            ],
-            std::iter::empty(),
-        ),
-        non_equality_predicates: Vec::new(),
-        environment: Environment::Normal,
+        predicates: Vec::new(),
+        trait_context: TraitContext::Normal,
+        equivalent: {
+            let mut equivalent = Equivalent::default();
+
+            equivalent.insert(
+                Type::Primitive(Primitive::Int32),
+                Type::Primitive(Primitive::Float32),
+            );
+            equivalent.insert(
+                Type::Primitive(Primitive::Int64),
+                Type::Primitive(Primitive::Float64),
+            );
+
+            equivalent
+        },
     };
     let table = Table::<State>::default();
     let lhs = Type::Symbol(Symbol {
@@ -182,18 +173,14 @@ fn congruence() {
     assert!(equals(
         &lhs,
         &rhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
         &rhs,
         &lhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -203,9 +190,12 @@ fn congruence() {
 #[allow(missing_docs, clippy::too_many_lines)]
 fn recursive() {
     let premise = Premise {
-        equalities_mapping: mapping::Mapping::from_pairs(
-            std::iter::empty(),
-            [(
+        predicates: Vec::new(),
+        trait_context: TraitContext::Normal,
+        equivalent: {
+            let mut equivalent = Equivalent::default();
+
+            equivalent.insert(
                 Type::Primitive(Primitive::Int32),
                 Type::Symbol(Symbol {
                     id: SymbolID::Enum(ID::new(0)),
@@ -215,11 +205,10 @@ fn recursive() {
                         constants: Vec::new(),
                     },
                 }),
-            )],
-            std::iter::empty(),
-        ),
-        non_equality_predicates: Vec::new(),
-        environment: Environment::Normal,
+            );
+
+            equivalent
+        },
     };
     let table = Table::<State>::default();
     let lhs = Type::Primitive(Primitive::Int32);
@@ -258,18 +247,14 @@ fn recursive() {
     assert!(equals(
         &lhs,
         &rhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
         &rhs,
         &lhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -309,18 +294,14 @@ fn recursive() {
     assert!(!equals(
         &lhs,
         &rhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(!equals(
         &rhs,
         &lhs,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
@@ -485,7 +466,6 @@ impl<T: 'static + Debug + Term + Arbitrary<Strategy = BoxedStrategy<T>>>
 where
     Box<dyn Property<T>>:
         Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
@@ -506,7 +486,6 @@ where
 
 impl<T: Term + Debug + 'static> Property<T> for Mapping<T>
 where
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     fn apply(
@@ -519,9 +498,7 @@ where
         if equals(
             &lhs,
             &rhs,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -536,22 +513,18 @@ where
         if equals(
             &lhs,
             &rhs,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? || equals(
             &to_be_mapped,
             &self.target,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
         }
 
-        premise.equalities_mapping.insert(to_be_mapped, self.target.clone());
+        premise.equivalent.insert(to_be_mapped, self.target.clone());
 
         Ok(())
     }
@@ -577,7 +550,6 @@ where
     Local<T>: Into<T>,
     Box<dyn Property<T>>:
         Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
@@ -593,7 +565,6 @@ where
 impl<T: Term + Debug + 'static> Property<T> for LocalCongruence<T>
 where
     Local<T>: Into<T>,
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     fn apply(
@@ -605,9 +576,7 @@ where
         if equals(
             &lhs,
             &rhs,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -679,7 +648,6 @@ impl<ID: Debug + 'static + Clone, T: Term + 'static> Property<T>
     for SymbolCongruence<ID>
 where
     Symbol<ID>: Into<T>,
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     fn apply(
@@ -839,9 +807,7 @@ impl Property<Type> for TypeAlias {
         if equals(
             &lhs,
             &rhs,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -852,9 +818,7 @@ impl Property<Type> for TypeAlias {
         if !equals(
             &lhs,
             &rhs,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             let type_symbol = symbol::Type {
@@ -940,23 +904,12 @@ impl Property<Type> for TypeAlias {
     }
 }
 
-fn remove_sampled<T: Term>(equalities: &mut mapping::Mapping) -> bool {
-    #[allow(clippy::option_if_let_else)]
-    if let Some(sampled) = T::get_mapping(equalities).keys().next() {
-        equalities.remove_recursive(&sampled.clone());
-        true
-    } else {
-        false
-    }
-}
-
 #[allow(clippy::too_many_lines)]
 fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
     decoy: Decoy,
 ) -> TestCaseResult
 where
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     let (term1, term2) = property.generate();
@@ -972,12 +925,11 @@ where
         }
     })?;
 
+    let environment = &Environment { premise: &premise, table: &table };
     prop_assert!(equals(
         &term1,
         &term2,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        environment,
         &mut Limit::new(&mut session::Default::default())
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?);
@@ -985,9 +937,7 @@ where
     prop_assert!(equals(
         &term2,
         &term1,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        environment,
         &mut Limit::new(&mut session::Default::default())
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?);
@@ -1001,29 +951,24 @@ where
     {
         let mut premise_removed = premise.clone();
 
-        if remove_sampled::<Type>(&mut premise_removed.equalities_mapping)
-            || remove_sampled::<Lifetime>(
-                &mut premise_removed.equalities_mapping,
-            )
-            || remove_sampled::<Constant>(
-                &mut premise_removed.equalities_mapping,
-            )
+        if premise_removed.equivalent.remove_class::<Lifetime>(0).is_some()
+            || premise_removed.equivalent.remove_class::<Type>(0).is_some()
+            || premise_removed.equivalent.remove_class::<Constant>(0).is_some()
         {
+            let environment =
+                &Environment { premise: &premise_removed, table: &table };
+
             prop_assert!(!equals(
                 &term1,
                 &term2,
-                &premise_removed,
-                &table,
-                &mut semantic::Default,
+                environment,
                 &mut Limit::new(&mut session::Default::default())
             )
             .map_err(|_| TestCaseError::reject("too complex property"))?);
             prop_assert!(!equals(
                 &term2,
                 &term1,
-                &premise_removed,
-                &table,
-                &mut semantic::Default,
+                environment,
                 &mut Limit::new(&mut session::Default::default())
             )
             .map_err(|_| TestCaseError::reject("too complex property"))?);
@@ -1035,22 +980,19 @@ where
         let id = table.representation.types.ids().next().copied();
         if let Some(id) = id {
             let removed = table.representation.types.remove(id).unwrap();
+            let environment = &Environment { premise: &premise, table: &table };
 
             prop_assert!(!equals(
                 &term1,
                 &term2,
-                &premise,
-                &table,
-                &mut semantic::Default,
+                environment,
                 &mut Limit::new(&mut session::Default::default())
             )
             .map_err(|_| TestCaseError::reject("too complex property"))?);
             prop_assert!(!equals(
                 &term2,
                 &term1,
-                &premise,
-                &table,
-                &mut semantic::Default,
+                environment,
                 &mut Limit::new(&mut session::Default::default())
             )
             .map_err(|_| TestCaseError::reject("too complex property"))?);
@@ -1061,7 +1003,7 @@ where
 
     // adding unrelated equalities should not affect the result.
     for decoy_lifetime_equalities in decoy.lifetimes {
-        premise.equalities_mapping.insert(
+        premise.equivalent.insert(
             decoy_lifetime_equalities.lhs,
             decoy_lifetime_equalities.rhs,
         );
@@ -1069,32 +1011,29 @@ where
 
     for decoy_type_equalities in decoy.types {
         premise
-            .equalities_mapping
+            .equivalent
             .insert(decoy_type_equalities.lhs, decoy_type_equalities.rhs);
     }
 
     for decoy_constant_equalities in decoy.constants {
-        premise.equalities_mapping.insert(
+        premise.equivalent.insert(
             decoy_constant_equalities.lhs,
             decoy_constant_equalities.rhs,
         );
     }
 
+    let environment = &Environment { premise: &premise, table: &table };
     prop_assert!(equals(
         &term1,
         &term2,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        environment,
         &mut Limit::new(&mut session::Default::default())
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?);
     prop_assert!(equals(
         &term2,
         &term1,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        environment,
         &mut Limit::new(&mut session::Default::default())
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?);

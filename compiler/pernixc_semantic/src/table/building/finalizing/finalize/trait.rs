@@ -7,9 +7,9 @@ use crate::{
     arena::ID,
     error::{self, AmbiguousImplementation},
     semantic::{
-        self, order,
+        order,
         session::{self, Limit},
-        Premise,
+        Environment, Premise,
     },
     symbol::{GlobalID, Trait, TraitImplementationKindID},
     table::{
@@ -217,9 +217,10 @@ impl Finalize for Trait {
 
                         let Ok(result) = lhs_arguments.order(
                             &rhs_arguments,
-                            &Premise::default(),
-                            table,
-                            &mut semantic::Default,
+                            &Environment {
+                                table,
+                                premise: &Premise::default(),
+                            },
                             &mut Limit::new(&mut session::Default::default()),
                         ) else {
                             todo!("report undecidable error")

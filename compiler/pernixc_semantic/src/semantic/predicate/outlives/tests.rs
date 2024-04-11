@@ -9,13 +9,12 @@ use proptest::{
 
 use crate::{
     semantic::{
-        self, equality,
-        mapping::Mapping,
-        predicate::{NonEquality, Outlives},
+        equality,
+        predicate::{Outlives, Predicate},
         session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         tests::State,
-        Premise, Semantic,
+        Environment, Premise,
     },
     table::Table,
 };
@@ -73,9 +72,7 @@ impl Property<Lifetime> for Reflexive {
         if Outlives::satisfies(
             &lhs,
             &rhs,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -121,9 +118,7 @@ impl Property<Lifetime> for Transitive {
         if Outlives::satisfies(
             &lhs,
             &rhs,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -135,16 +130,12 @@ impl Property<Lifetime> for Transitive {
             Outlives { operand: inner_rhs, bound: self.term }
         };
 
-        premise
-            .non_equality_predicates
-            .push(NonEquality::LifetimeOutlives(outlives_premise));
+        premise.predicates.push(Predicate::LifetimeOutlives(outlives_premise));
 
         if Outlives::satisfies(
             &lhs,
             &rhs,
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -199,21 +190,10 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
     }
 }
 
-fn remove_sampled<T: Term>(mapping: &mut Mapping) -> bool {
-    #[allow(clippy::option_if_let_else)]
-    if let Some(sampled) = T::get_mapping(mapping).keys().next() {
-        mapping.remove_recursive(&sampled.clone());
-        true
-    } else {
-        false
-    }
-}
-
 fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
 where
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     let (term1, term2) = property.generate();
@@ -229,12 +209,11 @@ where
         }
     })?;
 
+    let environment = &Environment { table: &table, premise: &premise };
     prop_assert!(Outlives::satisfies(
         &term1,
         &term2,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        environment,
         &mut Limit::new(&mut session::Default::default())
     )
     .map_err(|_| TestCaseError::reject("too complex property"))?);
@@ -242,18 +221,16 @@ where
     {
         let mut premise_cloned = premise.clone();
 
-        if remove_sampled::<Lifetime>(&mut premise_cloned.equalities_mapping)
-            || remove_sampled::<Type>(&mut premise_cloned.equalities_mapping)
-            || remove_sampled::<Constant>(
-                &mut premise_cloned.equalities_mapping,
-            )
+        if premise_cloned.equivalent.remove_class::<Lifetime>(0).is_some()
+            || premise_cloned.equivalent.remove_class::<Type>(0).is_some()
+            || premise_cloned.equivalent.remove_class::<Constant>(0).is_some()
         {
+            let environment =
+                &Environment { table: &table, premise: &premise_cloned };
             prop_assert!(!Outlives::satisfies(
                 &term1,
                 &term2,
-                &premise_cloned,
-                &table,
-                &mut semantic::Default,
+                environment,
                 &mut Limit::new(&mut session::Default::default())
             )
             .map_err(|_| TestCaseError::reject("too complex property"))?);
@@ -283,13 +260,15 @@ proptest! {
         constant in Constant::arbitrary(),
         lifetime in Lifetime::arbitrary()
     ) {
+        let environment = &Environment {
+            table: &Table::<State>::default(),
+            premise: &Premise::default()
+        };
         prop_assert!(
             Outlives::satisfies(
                 &constant,
                 &lifetime,
-                &Premise::default(),
-                &Table::<State>::default(),
-                &mut semantic::Default,
+                environment,
                 &mut Limit::new(&mut session::Default::default())
             ).unwrap()
         );

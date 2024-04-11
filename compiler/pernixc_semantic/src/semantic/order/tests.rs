@@ -10,7 +10,6 @@ use proptest::{
 use super::{Order, OrderUnifyingConfig};
 use crate::{
     semantic::{
-        self,
         session::{self, Limit, Session},
         term::{
             constant::{self, Constant},
@@ -19,7 +18,7 @@ use crate::{
             GenericArguments, Symbol, Term,
         },
         tests::State,
-        unification, Premise, Semantic,
+        unification, Environment, Premise,
     },
     symbol::{ConstantParameterID, TypeParameterID},
     table::Table,
@@ -88,7 +87,6 @@ impl<T: Clone + Debug + 'static> Property<T> for Incompatible<T> {
 impl<T: Debug + Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static>
     Arbitrary for Incompatible<T>
 where
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     type Parameters = ();
@@ -103,10 +101,11 @@ where
                     if unification::unify(
                         &lhs,
                         &rhs,
-                        &Premise::default(),
-                        &Table::<State>::default(),
                         &mut OrderUnifyingConfig,
-                        &mut semantic::Default,
+                        &Environment {
+                            table: &Table::<State>::default(),
+                            premise: &Premise::default(),
+                        },
                         &mut Limit::new(&mut session::Default::default()),
                     )
                     .unwrap()
@@ -464,9 +463,10 @@ proptest! {
 
         let result = lhs.order(
             &rhs,
-            &Premise::default(),
-            &Table::<State>::default(),
-            &mut semantic::Default,
+            &Environment {
+                table: &Table::<State>::default(),
+                premise: &Premise::default(),
+            },
             &mut Limit::new(&mut session::Default::default()),
         )?;
 

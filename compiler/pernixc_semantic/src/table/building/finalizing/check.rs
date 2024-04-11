@@ -1,3 +1,6 @@
+//! Contains code related to well-formedness checking of each instantiation of
+//! symbols and types.
+
 use std::{collections::HashSet, ops::Deref};
 
 use parking_lot::RwLockReadGuard;
@@ -18,17 +21,17 @@ use crate::{
         UnusedGenericParameterInImplementation,
     },
     semantic::{
-        self, equality,
+        equality,
+        equivalent::Equivalent,
         instantiation::{self, Instantiation},
-        mapping::Mapping,
-        predicate::{self, ConstantType, Outlives, Trait, Tuple},
+        predicate::{self, ConstantType, Outlives, Predicate, Trait, Tuple},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             self, constant,
             lifetime::{self, Lifetime},
             r#type, GenericArguments, Term,
         },
-        Premise, Semantic,
+        Environment, Premise,
     },
     symbol::{
         ConstantParameter, ConstantParameterID, GenericID, GenericParameter,
@@ -48,7 +51,6 @@ impl Table<Finalizer> {
         instantiated: GenericID,
         generic_arguments: GenericArguments,
         instantiation_span: &Span,
-        semantic: &mut semantic::Default,
         session: &mut session::Default,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
@@ -66,7 +68,6 @@ impl Table<Finalizer> {
             )
             .unwrap(),
             instantiation_span,
-            semantic,
             session,
             handler,
         );
@@ -77,33 +78,28 @@ impl Table<Finalizer> {
         &self,
         caller_premise: &Premise,
         predicate: &predicate::Predicate,
-        semantic: &mut semantic::Default,
         session: &mut session::Default,
     ) -> Result<bool, ExceedLimitError> {
         // check if the predicate is satisfied
+        let environment = Environment { premise: caller_premise, table: self };
+
         let result = match &predicate {
             predicate::Predicate::TypeEquality(eq) => equality::equals(
                 &eq.lhs,
                 &eq.rhs,
-                caller_premise,
-                self,
-                semantic,
+                &environment,
                 &mut Limit::new(session),
             ),
             predicate::Predicate::ConstantEquality(eq) => equality::equals(
                 &eq.lhs,
                 &eq.rhs,
-                caller_premise,
-                self,
-                semantic,
+                &environment,
                 &mut Limit::new(session),
             ),
             predicate::Predicate::ConstantType(pred) => {
                 ConstantType::satisfies(
                     &pred.0,
-                    caller_premise,
-                    self,
-                    semantic,
+                    &environment,
                     &mut Limit::new(session),
                 )
             }
@@ -111,32 +107,24 @@ impl Table<Finalizer> {
                 Outlives::satisfies(
                     &pred.operand,
                     &pred.bound,
-                    caller_premise,
-                    self,
-                    semantic,
+                    &environment,
                     &mut Limit::new(session),
                 )
             }
             predicate::Predicate::TypeOutlives(pred) => Outlives::satisfies(
                 &pred.operand,
                 &pred.bound,
-                caller_premise,
-                self,
-                semantic,
+                &environment,
                 &mut Limit::new(session),
             ),
             predicate::Predicate::TupleType(pred) => Tuple::satisfies(
                 &pred.0,
-                caller_premise,
-                self,
-                semantic,
+                &environment,
                 &mut Limit::new(session),
             ),
             predicate::Predicate::TupleConstant(pred) => Tuple::satisfies(
                 &pred.0,
-                caller_premise,
-                self,
-                semantic,
+                &environment,
                 &mut Limit::new(session),
             ),
             predicate::Predicate::Trait(pred) => {
@@ -145,9 +133,7 @@ impl Table<Finalizer> {
                         pred.id,
                         pred.is_const,
                         &pred.generic_arguments,
-                        caller_premise,
-                        self,
-                        semantic,
+                        &environment,
                         &mut Limit::new(session),
                     )?
                     else {
@@ -164,9 +150,7 @@ impl Table<Finalizer> {
                                 if !Outlives::satisfies(
                                     &pred.operand,
                                     &pred.bound,
-                                    caller_premise,
-                                    self,
-                                    semantic,
+                                    &environment,
                                     &mut Limit::new(session),
                                 )? {
                                     return Ok(false);
@@ -178,9 +162,7 @@ impl Table<Finalizer> {
                                 if !Outlives::satisfies(
                                     &pred.operand,
                                     &pred.bound,
-                                    caller_premise,
-                                    self,
-                                    semantic,
+                                    &environment,
                                     &mut Limit::new(session),
                                 )? {
                                     return Ok(false);
@@ -205,7 +187,6 @@ impl Table<Finalizer> {
         instantiated: GenericID,
         instantiation: &Instantiation,
         instantiation_span: &Span,
-        semantic: &mut semantic::Default,
         session: &mut session::Default,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
@@ -219,12 +200,8 @@ impl Table<Finalizer> {
             let mut predicate = predicate_info.predicate.clone();
             predicate.instantiate(instantiation);
 
-            match self.predicate_satisfied(
-                caller_premise,
-                &predicate,
-                semantic,
-                session,
-            ) {
+            match self.predicate_satisfied(caller_premise, &predicate, session)
+            {
                 Ok(false) => handler.receive(Box::new(UnsatisifedPredicate {
                     predicate,
                     instantiation_span: instantiation_span.clone(),
@@ -255,10 +232,12 @@ impl Table<Finalizer> {
         occurrences: impl IntoIterator<
             Item = (&'a term::r#type::Type, &'a syntax_tree::r#type::Type),
         >,
-        semantic: &mut semantic::Default,
         session: &mut session::Default,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
+        let environment =
+            Environment { premise: caller_active_premise, table: self };
+
         for (ty, syn) in occurrences {
             match ty {
                 term::r#type::Type::Tuple(_)
@@ -280,7 +259,6 @@ impl Table<Finalizer> {
                         (*id).into(),
                         generic_arguments.clone(),
                         &syn.span(),
-                        semantic,
                         session,
                         handler,
                     );
@@ -290,9 +268,7 @@ impl Table<Finalizer> {
                     match Outlives::satisfies(
                         &*reference.pointee,
                         &reference.lifetime,
-                        caller_active_premise,
-                        self,
-                        semantic,
+                        &environment,
                         &mut Limit::new(session),
                     ) {
                         Ok(true) => {}
@@ -347,7 +323,6 @@ impl Table<Finalizer> {
                                 implementation_id.into(),
                                 member_symbol.parent_generic_arguments.clone(),
                                 &syn.span(),
-                                semantic,
                                 session,
                                 handler,
                             );
@@ -356,7 +331,6 @@ impl Table<Finalizer> {
                                 trait_implementation_type.into(),
                                 member_symbol.member_generic_arguments.clone(),
                                 &syn.span(),
-                                semantic,
                                 session,
                                 handler,
                             );
@@ -376,9 +350,7 @@ impl Table<Finalizer> {
                                         .unwrap()
                                         .signature
                                         .arguments,
-                                    caller_active_premise,
-                                    self,
-                                    semantic,
+                                    &environment,
                                     &mut Limit::new(session),
                                 )
                             else {
@@ -390,7 +362,6 @@ impl Table<Finalizer> {
                                 adt_implementation_id.into(),
                                 &deduction,
                                 &syn.span(),
-                                semantic,
                                 session,
                                 handler,
                             );
@@ -399,7 +370,6 @@ impl Table<Finalizer> {
                                 adt_implementation_type.into(),
                                 member_symbol.member_generic_arguments.clone(),
                                 &syn.span(),
-                                semantic,
                                 session,
                                 handler,
                             );
@@ -416,9 +386,7 @@ impl Table<Finalizer> {
                         parent_trait_id,
                         false,
                         &trait_member.parent_generic_arguments,
-                        caller_active_premise,
-                        self,
-                        semantic,
+                        &environment,
                         &mut Limit::new(session),
                     ).map_or_else(|_| {
                             handler.receive(Box::new(UndecidablePredicate {
@@ -459,9 +427,7 @@ impl Table<Finalizer> {
                                                     Outlives::satisfies(
                                                         &outlives.operand,
                                                         &outlives.bound,
-                                                        caller_active_premise,
-                                                        self,
-                                                        semantic,
+                                                        &environment,
                                                         &mut Limit::new(session),
                                                     )
                                                 },
@@ -469,9 +435,7 @@ impl Table<Finalizer> {
                                                     Outlives::satisfies(
                                                         &outlives.operand,
                                                         &outlives.bound,
-                                                        caller_active_premise,
-                                                        self,
-                                                        semantic,
+                                                        &environment,
                                                         &mut Limit::new(session),
                                                     )
                                                 },
@@ -520,7 +484,6 @@ impl Table<Finalizer> {
                         parent_trait_id.into(),
                         trait_member.parent_generic_arguments.clone(),
                         &syn.span(),
-                        semantic,
                         session,
                         handler,
                     );
@@ -529,7 +492,6 @@ impl Table<Finalizer> {
                         trait_member.id.into(),
                         trait_member.member_generic_arguments.clone(),
                         &syn.span(),
-                        semantic,
                         session,
                         handler,
                     );
@@ -542,22 +504,16 @@ impl Table<Finalizer> {
         &self,
         premise: &Premise,
         occurrences: impl Iterator<Item = (&'a T, &'a Syn)>,
-        semantic: &mut semantic::Default,
         session: &mut session::Default,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
-        semantic::Default: Semantic<T>,
         session::Default: Session<T>,
         predicate::Predicate: From<Tuple<T>>,
     {
+        let environment = Environment { premise, table: self };
         for (term, ocurrence) in occurrences {
-            match Tuple::satisfies(
-                term,
-                premise,
-                self,
-                semantic,
-                &mut Limit::new(session),
-            ) {
+            match Tuple::satisfies(term, &environment, &mut Limit::new(session))
+            {
                 Ok(true) => {}
                 Ok(false) => {
                     handler.receive(Box::new(error::UnsatisifedPredicate {
@@ -586,14 +542,12 @@ impl Table<Finalizer> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         let active_premise = self.get_active_premise(id).unwrap();
-        let mut semantic = semantic::Default;
         let mut session = session::Default::default();
 
         #[allow(clippy::map_identity)]
         self.check_type_ocurrences(
             &active_premise,
             occurrences.types().iter().map(|(ty, syn)| (ty, syn)),
-            &mut semantic,
             &mut session,
             handler,
         );
@@ -605,7 +559,6 @@ impl Table<Finalizer> {
                 .unpacked_types()
                 .iter()
                 .map(|(tuple, syn)| (tuple, syn)),
-            &mut semantic,
             &mut session,
             handler,
         );
@@ -617,7 +570,6 @@ impl Table<Finalizer> {
                 .unpacked_constants()
                 .iter()
                 .map(|(tuple, syn)| (tuple, syn)),
-            &mut semantic,
             &mut session,
             handler,
         );
@@ -978,7 +930,6 @@ impl Table<Finalizer> {
         let implementation_member_active_premise =
             self.get_active_premise(implementation_member_id.into()).unwrap();
 
-        let mut semantic = semantic::Default;
         let mut session = session::Default::default();
 
         for ((tr_const_id, tr_const_param), (im_const_id, im_const_param)) in
@@ -999,9 +950,10 @@ impl Table<Finalizer> {
             match equality::equals(
                 &tr_const_ty,
                 &im_const_param.r#type,
-                &implementation_member_active_premise,
-                self,
-                &mut semantic,
+                &Environment {
+                    table: self,
+                    premise: &implementation_member_active_premise,
+                },
                 &mut Limit::new(&mut session),
             ) {
                 Ok(false) => handler.receive(Box::new(
@@ -1043,7 +995,6 @@ impl Table<Finalizer> {
             match self.predicate_satisfied(
                 &implementation_member_active_premise,
                 &predicate_instantiated,
-                &mut semantic,
                 &mut session,
             ) {
                 Ok(false) => {
@@ -1071,77 +1022,32 @@ impl Table<Finalizer> {
             self.get_active_premise(trait_member_id.into()).unwrap();
 
         // transform the trait member active premise to the implementation
-        trait_member_active_premise.environment =
-            implementation_member_active_premise.environment;
+        trait_member_active_premise.trait_context =
+            implementation_member_active_premise.trait_context;
         trait_member_active_premise
-            .non_equality_predicates
+            .predicates
             .iter_mut()
             .for_each(|x| x.instantiate(&trait_instantiation));
-        trait_member_active_premise.equalities_mapping = Mapping {
-            lifetimes: trait_member_active_premise
-                .equalities_mapping
-                .lifetimes
-                .into_iter()
-                .map(|(mut lhs, rhs)| {
-                    instantiation::instantiate(&mut lhs, &trait_instantiation);
+        trait_member_active_premise.equivalent = {
+            let mut equivalent = Equivalent::default();
 
-                    (
-                        lhs,
-                        rhs.into_iter()
-                            .map(|mut x| {
-                                instantiation::instantiate(
-                                    &mut x,
-                                    &trait_instantiation,
-                                );
-                                x
-                            })
-                            .collect(),
-                    )
-                })
-                .collect(),
+            for eq in trait_member_active_premise
+                .predicates
+                .iter()
+                .filter_map(Predicate::as_constant_equality)
+            {
+                equivalent.insert(eq.lhs.clone(), eq.rhs.clone());
+            }
 
-            types: trait_member_active_premise
-                .equalities_mapping
-                .types
-                .into_iter()
-                .map(|(mut lhs, rhs)| {
-                    instantiation::instantiate(&mut lhs, &trait_instantiation);
+            for eq in trait_member_active_premise
+                .predicates
+                .iter()
+                .filter_map(Predicate::as_type_equality)
+            {
+                equivalent.insert(eq.lhs.clone(), eq.rhs.clone());
+            }
 
-                    (
-                        lhs,
-                        rhs.into_iter()
-                            .map(|mut x| {
-                                instantiation::instantiate(
-                                    &mut x,
-                                    &trait_instantiation,
-                                );
-                                x
-                            })
-                            .collect(),
-                    )
-                })
-                .collect(),
-            constants: trait_member_active_premise
-                .equalities_mapping
-                .constants
-                .into_iter()
-                .map(|(mut lhs, rhs)| {
-                    instantiation::instantiate(&mut lhs, &trait_instantiation);
-
-                    (
-                        lhs,
-                        rhs.into_iter()
-                            .map(|mut x| {
-                                instantiation::instantiate(
-                                    &mut x,
-                                    &trait_instantiation,
-                                );
-                                x
-                            })
-                            .collect(),
-                    )
-                })
-                .collect(),
+            equivalent
         };
 
         // check for any extraneous predicates defined in the implementation
@@ -1152,7 +1058,6 @@ impl Table<Finalizer> {
             match self.predicate_satisfied(
                 &trait_member_active_premise,
                 &predicate.predicate,
-                &mut semantic,
                 &mut session,
             ) {
                 Ok(false) => {
@@ -1271,7 +1176,6 @@ impl Table<Finalizer> {
         drop(trait_sym);
 
         // check if the signature matches the trait definition
-        let mut semantic = semantic::Default;
         let mut session = session::Default::default();
         let premise =
             self.get_active_premise(implementation_id.into()).unwrap();
@@ -1281,7 +1185,6 @@ impl Table<Finalizer> {
             implementation_sym.signature.implemented_id.into(),
             implementation_sym.signature.arguments.clone(),
             implementation_sym.span.as_ref().unwrap(),
-            &mut semantic,
             &mut session,
             handler,
         );

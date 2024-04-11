@@ -2,11 +2,11 @@
 
 use super::{
     matching::Matching,
-    session::{self, ExceedLimitError, Limit, Satisfied, Session},
+    session::{self, ExceedLimitError, Limit, Session},
     term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-    Premise, Semantic,
+    Environment, Satisfied,
 };
-use crate::table::{State, Table};
+use crate::table::State;
 
 /// A query for checking equality
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,36 +16,32 @@ pub struct Query<'a, T> {
     pub rhs: &'a T,
 }
 
-fn equals_by_unification<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+fn equals_by_unification<T: Term>(
     lhs: &T,
     rhs: &T,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<bool, ExceedLimitError> {
     let Some(matching) = lhs.substructural_match(rhs) else {
         return Ok(false);
     };
 
     for Matching { lhs, rhs, .. } in matching.lifetimes {
-        if !equals(&lhs, &rhs, premise, table, semantic, session)? {
+        if !equals(&lhs, &rhs, environment, limit)? {
             return Ok(false);
         }
     }
 
     for Matching { lhs, rhs, .. } in matching.types {
-        if !equals(&lhs, &rhs, premise, table, semantic, session)? {
+        if !equals(&lhs, &rhs, environment, limit)? {
             return Ok(false);
         }
     }
 
     for Matching { lhs, rhs, .. } in matching.constants {
-        if !equals(&lhs, &rhs, premise, table, semantic, session)? {
+        if !equals(&lhs, &rhs, environment, limit)? {
             return Ok(false);
         }
     }
@@ -53,26 +49,22 @@ fn equals_by_unification<
     Ok(true)
 }
 
-fn equals_by_normalization<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+fn equals_by_normalization<T: Term>(
     lhs: &T,
     rhs: &T,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<bool, ExceedLimitError> {
-    if let Some(lhs) = semantic.normalize(lhs, premise, table, session)? {
-        if equals(&lhs, rhs, premise, table, semantic, session)? {
+    if let Some(lhs) = lhs.normalize(environment, limit)? {
+        if equals(&lhs, rhs, environment, limit)? {
             return Ok(true);
         }
     }
 
-    if let Some(rhs) = semantic.normalize(rhs, premise, table, session)? {
-        if equals(lhs, &rhs, premise, table, semantic, session)? {
+    if let Some(rhs) = rhs.normalize(environment, limit)? {
+        if equals(lhs, &rhs, environment, limit)? {
             return Ok(true);
         }
     }
@@ -80,23 +72,19 @@ fn equals_by_normalization<
     Ok(false)
 }
 
-fn equals_without_mapping<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+fn equals_without_mapping<T: Term>(
     lhs: &T,
     rhs: &T,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<bool, ExceedLimitError> {
-    if semantic.trivially_equals(lhs, rhs)
-        || equals_by_unification(lhs, rhs, premise, table, semantic, session)?
-        || equals_by_normalization(lhs, rhs, premise, table, semantic, session)?
+    if lhs == rhs
+        || equals_by_unification(lhs, rhs, environment, limit)?
+        || equals_by_normalization(lhs, rhs, environment, limit)?
     {
-        session.mark_as_done(Query { lhs, rhs }, Satisfied);
+        limit.mark_as_done(Query { lhs, rhs }, Satisfied);
         return Ok(true);
     }
 
@@ -130,25 +118,21 @@ fn equals_without_mapping<
 /// # Errors
 ///
 /// See [`ExceedLimitError`] for more information.
-pub fn equals<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+pub fn equals<T: Term>(
     lhs: &T,
     rhs: &T,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<bool, ExceedLimitError> {
     let query = Query { lhs, rhs };
 
-    if semantic.trivially_equals(lhs, rhs) {
+    if lhs == rhs {
         return Ok(true);
     }
 
-    match session.mark_as_in_progress(query.clone(), ())? {
+    match limit.mark_as_in_progress(query.clone(), ())? {
         Some(session::Cached::Done(Satisfied)) => return Ok(true),
         Some(session::Cached::InProgress(())) => {
             return Ok(false);
@@ -156,54 +140,36 @@ pub fn equals<
         None => {}
     }
 
-    if equals_by_unification(lhs, rhs, premise, table, semantic, session)?
-        || equals_by_normalization(lhs, rhs, premise, table, semantic, session)?
+    if equals_by_normalization(lhs, rhs, environment, limit)?
+        || equals_by_unification(lhs, rhs, environment, limit)?
     {
-        session.mark_as_done(Query { lhs, rhs }, Satisfied);
+        limit.mark_as_done(query, Satisfied);
         return Ok(true);
     }
 
-    for (key, values) in T::get_mapping(&premise.equalities_mapping) {
-        if equals_without_mapping(lhs, key, premise, table, semantic, session)?
-        {
-            for value in values {
-                if equals(value, rhs, premise, table, semantic, session)? {
-                    session.mark_as_done(Query { lhs, rhs }, Satisfied);
-                    return Ok(true);
+    for class in T::get_equivalent_classes(&environment.premise.equivalent) {
+        for value in class.iter() {
+            if equals_without_mapping(lhs, value, environment, limit)? {
+                for value in class.iter() {
+                    if equals(value, rhs, environment, limit)? {
+                        limit.mark_as_done(query, Satisfied);
+                        return Ok(true);
+                    }
                 }
             }
-        }
 
-        if equals_without_mapping(key, rhs, premise, table, semantic, session)?
-        {
-            for value in values {
-                if equals(lhs, value, premise, table, semantic, session)? {
-                    session.mark_as_done(Query { lhs, rhs }, Satisfied);
-                    return Ok(true);
+            if equals_without_mapping(value, rhs, environment, limit)? {
+                for value in class.iter() {
+                    if equals(lhs, value, environment, limit)? {
+                        limit.mark_as_done(query, Satisfied);
+                        return Ok(true);
+                    }
                 }
-            }
-        }
-
-        for value in values {
-            if equals_without_mapping(
-                lhs, value, premise, table, semantic, session,
-            )? && equals(key, rhs, premise, table, semantic, session)?
-            {
-                session.mark_as_done(Query { lhs, rhs }, Satisfied);
-                return Ok(true);
-            }
-
-            if equals_without_mapping(
-                value, rhs, premise, table, semantic, session,
-            )? && equals(lhs, key, premise, table, semantic, session)?
-            {
-                session.mark_as_done(Query { lhs, rhs }, Satisfied);
-                return Ok(true);
             }
         }
     }
 
-    session.clear_query(query);
+    limit.clear_query(query);
     Ok(false)
 }
 

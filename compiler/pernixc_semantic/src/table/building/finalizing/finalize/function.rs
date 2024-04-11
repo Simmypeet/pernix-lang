@@ -48,7 +48,15 @@ impl Finalize for Function {
                     handler,
                 );
             }
-            Flag::WhereClause | Flag::Complete | Flag::Check => {}
+
+            Flag::WhereClause => table.create_where_clause_predicates(
+                symbol_id,
+                syntax_tree.signature().where_clause().as_ref(),
+                data,
+                handler,
+            ),
+
+            Flag::Complete | Flag::Check => {}
         }
     }
 }

@@ -1,3 +1,5 @@
+//! Contains the finalization logic for each kinds of symbols.
+
 use std::{fmt::Debug, hash::Hash};
 
 use pernixc_base::diagnostic::Handler;

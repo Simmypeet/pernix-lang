@@ -14,49 +14,55 @@ use super::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
-    unification, Premise, Semantic,
+    unification, Environment,
 };
-use crate::table::{State, Table};
+use crate::table::State;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct DeductionUnifyingConfig;
 
 impl unification::Config for DeductionUnifyingConfig {
-    fn lifetime_unifiable(&mut self, from: &Lifetime, _: &Lifetime) -> bool {
-        from.is_parameter()
+    fn lifetime_unifiable(
+        &mut self,
+        from: &Lifetime,
+        _: &Lifetime,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(from.is_parameter())
     }
 
-    fn type_unifiable(&mut self, from: &Type, _: &Type) -> bool {
-        matches!(from, Type::Parameter(_) | Type::TraitMember(_))
+    fn type_unifiable(
+        &mut self,
+        from: &Type,
+        _: &Type,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(matches!(from, Type::Parameter(_) | Type::TraitMember(_)))
     }
 
-    fn constant_unifiable(&mut self, from: &Constant, _: &Constant) -> bool {
-        matches!(from, Constant::Parameter(_) | Constant::TraitMember(_))
+    fn constant_unifiable(
+        &mut self,
+        from: &Constant,
+        _: &Constant,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(matches!(from, Constant::Parameter(_) | Constant::TraitMember(_)))
     }
 }
 
-fn unify<
-    T: Term,
-    S: Semantic<T> + Semantic<Type> + Semantic<Lifetime> + Semantic<Constant>,
-    R: Session<T> + Session<Type> + Session<Lifetime> + Session<Constant>,
->(
+fn unify<T: Term>(
     lhs: &[T],
     rhs: &[T],
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
     mut existing: Mapping,
 ) -> Result<Option<Mapping>, ExceedLimitError> {
     for (lhs, rhs) in lhs.iter().zip(rhs.iter()) {
         let Some(new) = unification::unify(
             lhs,
             rhs,
-            premise,
-            table,
             &mut DeductionUnifyingConfig,
-            semantic,
-            session,
+            environment,
+            limit,
         )?
         else {
             return Ok(None);
@@ -86,25 +92,19 @@ fn extract<K: Eq + Hash, V>(
     (positive, negative)
 }
 
-fn mapping_equals<
-    T: Term,
-    S: Semantic<T> + Semantic<Type> + Semantic<Lifetime> + Semantic<Constant>,
-    R: Session<T> + Session<Type> + Session<Lifetime> + Session<Constant>,
->(
+fn mapping_equals<T: Term>(
     unification: HashMap<T, HashSet<T>>,
     substitution: &Instantiation,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<bool, ExceedLimitError> {
     for (mut key, values) in unification {
         instantiation::instantiate(&mut key, substitution);
 
         for value in values {
-            if !equality::equals(
-                &key, &value, premise, table, semantic, session,
-            )? {
+            if !equality::equals(&key, &value, environment, limit)? {
                 return Ok(false);
             }
         }
@@ -114,16 +114,12 @@ fn mapping_equals<
 }
 
 #[allow(clippy::type_complexity)]
-fn from_unification_to_substitution<
-    T: Term,
-    S: Semantic<T> + Semantic<Type> + Semantic<Lifetime> + Semantic<Constant>,
-    R: Session<T> + Session<Type> + Session<Lifetime> + Session<Constant>,
->(
+fn from_unification_to_substitution<T: Term>(
     unification: HashMap<T, HashSet<T>>,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<Option<HashMap<T, T>>, ExceedLimitError> {
     let mut result = HashMap::new();
     for (key, values) in unification {
@@ -132,9 +128,7 @@ fn from_unification_to_substitution<
         let sampled = values.next().expect("should at least have one element");
 
         for value in values {
-            if !equality::equals(
-                &sampled, &value, premise, table, semantic, session,
-            )? {
+            if !equality::equals(&sampled, &value, environment, limit)? {
                 return Ok(None);
             }
         }
@@ -152,16 +146,13 @@ impl GenericArguments {
     ///
     /// See [`ExceedLimitError`] for more information.
     #[allow(clippy::too_many_lines)]
-    pub fn deduce<
-        S: Semantic<Type> + Semantic<Lifetime> + Semantic<Constant>,
-        R: Session<Type> + Session<Lifetime> + Session<Constant>,
-    >(
+    pub fn deduce(
         &self,
         another: &Self,
-        premise: &Premise,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<Option<Instantiation>, ExceedLimitError> {
         // arity check
         if self.lifetimes.len() != another.lifetimes.len()
@@ -175,10 +166,8 @@ impl GenericArguments {
         let Some(unification) = unify(
             &self.lifetimes,
             &another.lifetimes,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
             Mapping::default(),
         )?
         else {
@@ -187,10 +176,8 @@ impl GenericArguments {
         let Some(unification) = unify(
             &self.types,
             &another.types,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
             unification,
         )?
         else {
@@ -199,10 +186,8 @@ impl GenericArguments {
         let Some(unification) = unify(
             &self.constants,
             &another.constants,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
             unification,
         )?
         else {
@@ -219,30 +204,24 @@ impl GenericArguments {
 
             let Some(lifetimes) = from_unification_to_substitution(
                 unification.lifetimes,
-                premise,
-                table,
-                semantic,
-                session,
+                environment,
+                limit,
             )?
             else {
                 return Ok(None);
             };
             let Some(types) = from_unification_to_substitution(
                 type_param_map,
-                premise,
-                table,
-                semantic,
-                session,
+                environment,
+                limit,
             )?
             else {
                 return Ok(None);
             };
             let Some(constants) = from_unification_to_substitution(
                 constant_param_map,
-                premise,
-                table,
-                semantic,
-                session,
+                environment,
+                limit,
             )?
             else {
                 return Ok(None);
@@ -257,17 +236,13 @@ impl GenericArguments {
         if !mapping_equals(
             trait_type_map,
             &base_unification,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
         )? || !mapping_equals(
             trait_constant_map,
             &base_unification,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
         )? {
             return Ok(None);
         }

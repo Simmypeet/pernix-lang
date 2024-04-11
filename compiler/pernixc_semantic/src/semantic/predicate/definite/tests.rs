@@ -10,7 +10,6 @@ use proptest::{
 use crate::{
     arena::ID,
     semantic::{
-        self, mapping,
         predicate::definite,
         session::{self, ExceedLimitError, Limit, Session},
         term::{
@@ -19,7 +18,7 @@ use crate::{
             GenericArguments, Symbol, Term,
         },
         tests::State,
-        Premise, Semantic,
+        Environment, Premise,
     },
     symbol::{
         self, ConstantParameterID, GenericDeclaration, GenericID,
@@ -118,7 +117,6 @@ where
 impl<Param: Debug + Into<T> + Clone + 'static, T: Term + Debug + 'static>
     Property<T> for Mapping<Param, T>
 where
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     fn apply(
@@ -128,9 +126,7 @@ where
     ) -> Result<(), ApplyPropertyError> {
         if definite(
             &self.generate(),
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
@@ -140,17 +136,13 @@ where
 
         if definite(
             &self.generate(),
-            premise,
-            table,
-            &mut semantic::Default,
+            &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
         }
 
-        premise
-            .equalities_mapping
-            .insert(self.generate(), self.property.generate());
+        premise.equivalent.insert(self.generate(), self.property.generate());
 
         Ok(())
     }
@@ -379,21 +371,10 @@ impl Property<Type> for TypeAlias {
     }
 }
 
-fn remove_sampled<T: Term>(equalities: &mut mapping::Mapping) -> bool {
-    #[allow(clippy::option_if_let_else)]
-    if let Some(sampled) = T::get_mapping(equalities).keys().next() {
-        equalities.remove_recursive(&sampled.clone());
-        true
-    } else {
-        false
-    }
-}
-
 fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult
 where
-    semantic::Default: Semantic<T>,
     session::Default: Session<T>,
 {
     let term = property.generate();
@@ -409,26 +390,25 @@ where
         }
     })?;
 
+    let environment = &Environment { table: &table, premise: &premise };
     prop_assert!(definite(
         &term,
-        &premise,
-        &table,
-        &mut semantic::Default,
+        environment,
         &mut Limit::new(&mut session::Default::default())
     )
     .map_err(|_| TestCaseError::reject("too complex property to test"))?);
 
     // remove one of the mappings and check if the term is still definite
     {
-        let mut premise = premise.clone();
-        if remove_sampled::<Type>(&mut premise.equalities_mapping)
-            || remove_sampled::<Constant>(&mut premise.equalities_mapping)
+        let mut premise_removed = premise.clone();
+        if premise_removed.equivalent.remove_class::<Type>(0).is_some()
+            || premise_removed.equivalent.remove_class::<Constant>(0).is_some()
         {
+            let environment =
+                &Environment { table: &table, premise: &premise_removed };
             prop_assert!(!definite(
                 &term,
-                &premise,
-                &table,
-                &mut semantic::Default,
+                environment,
                 &mut Limit::new(&mut session::Default::default())
             )
             .map_err(|_| TestCaseError::reject(

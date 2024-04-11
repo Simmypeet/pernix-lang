@@ -20,13 +20,14 @@ use crate::{
         mapping::Mapping,
         matching::{self, Match},
         predicate::{Outlives, Satisfiability},
+        session::{ExceedLimitError, Limit, Session},
         sub_term::{
             AssignSubTermError, Location, SubMemberSymbolLocation,
             SubSymbolLocation, SubTerm, SubTraitMemberLocation,
             SubTupleLocation,
         },
         unification::{self, Unification},
-        Premise,
+        Environment, Premise,
     },
     symbol::{
         self, ConstantParameter, ConstantParameterID, GenericID, GlobalID,
@@ -452,7 +453,7 @@ pub enum Constant {
     /// field **is** deduced from the implementation.
     MemberSymbol(MemberSymbol<MemberSymbolID>),
 
-    TraitMember(MemberSymbol<ID<symbol::TraitConstant>>),
+    TraitMember(TraitMember),
 }
 
 impl TryFrom<Constant> for Tuple {
@@ -663,7 +664,26 @@ impl Match for Constant {
 
 impl Term for Constant {
     type GenericParameter = ConstantParameter;
-    type TraitMember = symbol::TraitConstant;
+    type TraitMember = TraitMember;
+
+    fn normalize(
+        &self,
+        _: &Environment<impl State>,
+        _: &mut Limit<impl Session<Lifetime> + Session<Type> + Session<Self>>,
+    ) -> Result<Option<Self>, ExceedLimitError> {
+        // TODO: Implement this.
+        Ok(None)
+    }
+
+    fn outlives_satisfiability(
+        &self,
+        _: &Lifetime,
+        _: &Environment<impl State>,
+        _: &mut Limit<impl Session<Lifetime> + Session<Type> + Session<Self>>,
+    ) -> Result<Satisfiability, ExceedLimitError> {
+        // constants value do not have lifetimes
+        Ok(Satisfiability::Satisfied)
+    }
 
     fn as_generic_parameter(&self) -> Option<&ConstantParameterID> {
         self.as_parameter()
@@ -748,7 +768,7 @@ impl Term for Constant {
         Self: 'a,
     {
         premise
-            .non_equality_predicates
+            .predicates
             .iter()
             .filter_map(|x| x.as_tuple_constant().map(|x| &x.0))
     }

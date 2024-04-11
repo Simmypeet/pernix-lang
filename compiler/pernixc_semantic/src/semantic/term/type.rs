@@ -18,17 +18,19 @@ use crate::{
         instantiation::{self, Instantiation},
         mapping::Mapping,
         matching::{self, Match, Matching},
-        predicate::{NonEquality, Outlives, Satisfiability},
+        predicate::{self, Outlives, Predicate, Satisfiability},
+        session::{ExceedLimitError, Limit, Session},
         sub_term::{
             AssignSubTermError, Location, SubMemberSymbolLocation,
             SubSymbolLocation, SubTerm, SubTraitMemberLocation,
             SubTupleLocation,
         },
         unification::{self, Unification},
-        Premise,
+        Environment, Premise,
     },
     symbol::{
-        self, Enum, GenericID, GlobalID, Struct, TypeParameter, TypeParameterID,
+        self, Enum, GenericID, GlobalID, MemberID, Struct, TypeParameter,
+        TypeParameterID,
     },
     table::{self, DisplayObject, Index, State, Table},
 };
@@ -117,7 +119,7 @@ impl From<MemberSymbolID> for GenericID {
 pub enum Qualifier {
     Immutable,
     Mutable,
-    Restrict,
+    Unique,
 }
 
 /// Represents a pointer type, denoted by `*QUALIFIER TYPE` syntax.
@@ -690,7 +692,304 @@ impl Default for Type {
 
 impl Term for Type {
     type GenericParameter = TypeParameter;
-    type TraitMember = symbol::TraitType;
+    type TraitMember = TraitMember;
+
+    #[allow(clippy::too_many_lines)]
+    fn normalize(
+        &self,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Lifetime> + Session<Self> + Session<Constant>,
+        >,
+    ) -> Result<Option<Self>, ExceedLimitError> {
+        match self {
+            // transform type alias into the aliased type equivalent
+            Self::Symbol(Symbol {
+                id: SymbolID::Type(id),
+                generic_arguments,
+            }) => {
+                let Some(type_sym) = environment.table.get(*id) else {
+                    return Ok(None);
+                };
+
+                let mut type_aliased = type_sym.r#type.clone();
+                let Ok(inst) = Instantiation::from_generic_arguments(
+                    generic_arguments.clone(),
+                    (*id).into(),
+                    &type_sym.generic_declaration.parameters,
+                ) else {
+                    return Ok(None);
+                };
+                instantiation::instantiate(&mut type_aliased, &inst);
+
+                Ok(Some(type_aliased))
+            }
+
+            // transform the trait-member into trait-implementation-type
+            // equivalent
+            Self::TraitMember(trait_member) => {
+                let Some(trait_id) =
+                    environment.table.get(trait_member.id).map(|x| x.parent_id)
+                else {
+                    // invalid id
+                    return Ok(None);
+                };
+
+                // resolve for the appropriate trait-implementation
+                let Ok(mut result) = predicate::resolve_implementation(
+                    trait_id,
+                    &trait_member.parent_generic_arguments,
+                    environment,
+                    limit,
+                ) else {
+                    return Ok(None);
+                };
+
+                let Some(implementation_type_symbol) = environment
+                    .table
+                    .get(result.id)
+                    .and_then(|x| {
+                        x.implementation_type_ids_by_trait_type_id
+                            .get(&trait_member.id)
+                            .copied()
+                    })
+                    .and_then(|x| environment.table.get(x))
+                else {
+                    return Ok(None);
+                };
+
+                let Some(implementation_symbol) =
+                    environment.table.get(result.id)
+                else {
+                    return Ok(None);
+                };
+
+                let parent_lifetimes = implementation_symbol
+                    .signature
+                    .generic_declaration
+                    .parameters
+                    .lifetime_order()
+                    .iter()
+                    .map(|x| {
+                        result.deduced_substitution.lifetimes.remove(
+                            &MemberID { id: *x, parent: result.id.into() }
+                                .into(),
+                        )
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let parent_types = implementation_symbol
+                    .signature
+                    .generic_declaration
+                    .parameters
+                    .type_order()
+                    .iter()
+                    .map(|x| {
+                        result.deduced_substitution.types.remove(
+                            &MemberID { id: *x, parent: result.id.into() }
+                                .into(),
+                        )
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let parent_constants = implementation_symbol
+                    .signature
+                    .generic_declaration
+                    .parameters
+                    .constant_order()
+                    .iter()
+                    .map(|x| {
+                        result.deduced_substitution.constants.remove(
+                            &MemberID { id: *x, parent: result.id.into() }
+                                .into(),
+                        )
+                    })
+                    .collect::<Option<Vec<_>>>();
+
+                let (
+                    Some(parent_lifetimes),
+                    Some(parent_types),
+                    Some(parent_constants),
+                ) = (parent_lifetimes, parent_types, parent_constants)
+                else {
+                    return Ok(None);
+                };
+
+                let result_ty = Self::MemberSymbol(MemberSymbol {
+                    id: implementation_type_symbol.id.into(),
+                    member_generic_arguments: trait_member
+                        .member_generic_arguments
+                        .clone(),
+                    parent_generic_arguments: GenericArguments {
+                        lifetimes: parent_lifetimes,
+                        types: parent_types,
+                        constants: parent_constants,
+                    },
+                });
+
+                // append the deduced generic arguments
+                Ok(Some(result_ty))
+            }
+
+            // transform trait-implementation-type into the aliased type
+            Self::MemberSymbol(MemberSymbol {
+                id: MemberSymbolID::TraitImplementation(id),
+                member_generic_arguments,
+                parent_generic_arguments,
+            }) => {
+                let Some(implementation_type_symbol) =
+                    environment.table.get(*id)
+                else {
+                    return Ok(None);
+                };
+                let Some(implementation_symbol) =
+                    environment.table.get(implementation_type_symbol.parent_id)
+                else {
+                    return Ok(None);
+                };
+
+                let mut aliased = implementation_type_symbol.r#type.clone();
+
+                let Ok(mut instantiation) =
+                    Instantiation::from_generic_arguments(
+                        parent_generic_arguments.clone(),
+                        implementation_type_symbol.parent_id.into(),
+                        &implementation_symbol
+                            .signature
+                            .generic_declaration
+                            .parameters,
+                    )
+                else {
+                    return Ok(None);
+                };
+
+                if instantiation
+                    .append_from_generic_arguments(
+                        member_generic_arguments.clone(),
+                        implementation_type_symbol.id.into(),
+                        &implementation_type_symbol
+                            .generic_declaration
+                            .parameters,
+                    )
+                    .is_err()
+                {
+                    return Ok(None);
+                }
+
+                instantiation::instantiate(&mut aliased, &instantiation);
+
+                Ok(Some(aliased))
+            }
+
+            // transform into its aliased equivalent
+            Self::MemberSymbol(MemberSymbol {
+                id: MemberSymbolID::AdtImplementation(id),
+                member_generic_arguments,
+                parent_generic_arguments,
+            }) => {
+                let Some(implementation_type_symbol) =
+                    environment.table.get(*id)
+                else {
+                    return Ok(None);
+                };
+
+                let Some(adt_implementation_symbol) =
+                    environment.table.get(implementation_type_symbol.parent_id)
+                else {
+                    return Ok(None);
+                };
+
+                // gets the decution for the parent generic arguments
+                let Some(mut deduction) = adt_implementation_symbol
+                    .signature
+                    .arguments
+                    .deduce(parent_generic_arguments, environment, limit)?
+                else {
+                    return Ok(None);
+                };
+
+                if deduction
+                    .append_from_generic_arguments(
+                        member_generic_arguments.clone(),
+                        implementation_type_symbol.id.into(),
+                        &implementation_type_symbol
+                            .generic_declaration
+                            .parameters,
+                    )
+                    .is_err()
+                {
+                    return Ok(None);
+                }
+
+                let mut aliased = implementation_type_symbol.r#type.clone();
+
+                instantiation::instantiate(&mut aliased, &deduction);
+
+                Ok(Some(aliased))
+            }
+
+            // unpack the tuple
+            Self::Tuple(tuple) => {
+                let contain_upacked =
+                    tuple.elements.iter().any(super::TupleElement::is_unpacked);
+
+                if !contain_upacked {
+                    return Ok(None);
+                }
+
+                let mut result = Vec::new();
+
+                for element in tuple.elements.iter().cloned() {
+                    match element {
+                        regular @ super::TupleElement::Regular(_) => {
+                            result.push(regular);
+                        }
+                        super::TupleElement::Unpacked(term) => match term {
+                            Self::Tuple(inner) => {
+                                result.extend(inner.elements.iter().cloned());
+                            }
+                            term => {
+                                result
+                                    .push(super::TupleElement::Unpacked(term));
+                            }
+                        },
+                    }
+                }
+
+                Ok(Some(Self::Tuple(Tuple { elements: result })))
+            }
+
+            _ => Ok(None),
+        }
+    }
+
+    fn outlives_satisfiability(
+        &self,
+        _: &Lifetime,
+        _: &Environment<impl State>,
+        _: &mut Limit<
+            impl Session<Self>
+                + Session<Lifetime>
+                + Session<Self>
+                + Session<Constant>,
+        >,
+    ) -> Result<Satisfiability, ExceedLimitError> {
+        match self {
+            Self::Primitive(_) => Ok(Satisfiability::Satisfied),
+
+            Self::Inference(_) | Self::Parameter(_) => {
+                Ok(Satisfiability::Unsatisfied)
+            }
+
+            Self::TraitMember(_)
+            | Self::Local(_)
+            | Self::Symbol(_)
+            | Self::Pointer(_)
+            | Self::Reference(_)
+            | Self::Array(_)
+            | Self::Tuple(_)
+            | Self::Phantom(_)
+            | Self::MemberSymbol(_) => Ok(Satisfiability::Congruent),
+        }
+    }
 
     fn as_generic_parameter(&self) -> Option<&TypeParameterID> {
         self.as_parameter()
@@ -822,10 +1121,7 @@ impl Term for Type {
     where
         Self: 'a,
     {
-        premise
-            .non_equality_predicates
-            .iter()
-            .filter_map(NonEquality::as_type_outlives)
+        premise.predicates.iter().filter_map(Predicate::as_type_outlives)
     }
 
     fn constant_type_predicates<'a>(
@@ -835,7 +1131,7 @@ impl Term for Type {
         Self: 'a,
     {
         premise
-            .non_equality_predicates
+            .predicates
             .iter()
             .filter_map(|x| x.as_constant_type().map(|x| &x.0))
     }
@@ -847,7 +1143,7 @@ impl Term for Type {
         Self: 'a,
     {
         premise
-            .non_equality_predicates
+            .predicates
             .iter()
             .filter_map(|x| x.as_tuple_type().map(|x| &x.0))
     }
@@ -993,8 +1289,8 @@ impl<T: State> table::Display<T> for Type {
                     Qualifier::Mutable => {
                         write!(f, "mutable ")?;
                     }
-                    Qualifier::Restrict => {
-                        write!(f, "restrict ")?;
+                    Qualifier::Unique => {
+                        write!(f, "unique ")?;
                     }
                 }
 
@@ -1011,8 +1307,8 @@ impl<T: State> table::Display<T> for Type {
                     Qualifier::Mutable => {
                         write!(f, "mutable ")?;
                     }
-                    Qualifier::Restrict => {
-                        write!(f, "restrict ")?;
+                    Qualifier::Unique => {
+                        write!(f, "unique ")?;
                     }
                 }
 

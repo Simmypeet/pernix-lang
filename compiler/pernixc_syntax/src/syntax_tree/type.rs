@@ -345,10 +345,10 @@ impl<'a> Parser<'a> {
             }
 
             Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Restrict =>
+                if k.kind == KeywordKind::Unique =>
             {
                 self.forward();
-                Some(Qualifier::Restrict(k))
+                Some(Qualifier::Unique(k))
             }
 
             _ => None,
@@ -378,10 +378,10 @@ impl<'a> Parser<'a> {
             }
 
             Reading::Unit(Token::Keyword(k))
-                if k.kind == KeywordKind::Restrict =>
+                if k.kind == KeywordKind::Unique =>
             {
                 self.forward();
-                Some(Qualifier::Restrict(k))
+                Some(Qualifier::Unique(k))
             }
 
             _ => None,

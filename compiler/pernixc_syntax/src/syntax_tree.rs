@@ -487,20 +487,20 @@ impl<'a> Frame<'a> {
 /// ``` txt
 /// Qualifier:
 ///     'mutable'
-///     | 'restrict'
+///     | 'unique'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Qualifier {
     Mutable(Keyword),
-    Restrict(Keyword),
+    Unique(Keyword),
 }
 
 impl SourceElement for Qualifier {
     fn span(&self) -> Span {
         match self {
-            Self::Mutable(token) | Self::Restrict(token) => token.span.clone(),
+            Self::Mutable(token) | Self::Unique(token) => token.span.clone(),
         }
     }
 }

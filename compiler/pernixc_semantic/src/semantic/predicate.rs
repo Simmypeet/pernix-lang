@@ -64,6 +64,14 @@ fn contains_forall_lifetime<T: Term>(term: &T) -> bool {
     visitor.contains_forall_lifetime
 }
 
+/// Enumeration containing either a lifetime or a type outlives predicate.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum LifetimeConstraint {
+    LifetimeOutlives(Outlives<Lifetime>),
+    TypeOutlives(Outlives<Type>),
+}
+
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Satisfiability {
@@ -85,7 +93,7 @@ pub use constant_type::{
 pub use definite::{definite, Query as DefiniteQuery};
 pub use outlives::{Outlives, Query as OutlivesQuery};
 pub use r#trait::{
-    Implementation, LifetimeConstraint, Query as TraitQuery,
+    resolve_implementation, Implementation, Query as TraitQuery,
     ResolveError as TraitResolveError, Satisfiability as TraitSatisfiability,
     Trait,
 };
@@ -214,62 +222,5 @@ impl<T: Term> Equality<T> {
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         instantiation::instantiate(&mut self.lhs, instantiation);
         instantiation::instantiate(&mut self.rhs, instantiation);
-    }
-}
-
-/// An enumeration of all predicates that doesn't include equality.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    EnumAsInner,
-    derive_more::From,
-)]
-#[allow(missing_docs)]
-pub enum NonEquality {
-    LifetimeOutlives(Outlives<Lifetime>),
-    TypeOutlives(Outlives<Type>),
-    TupleType(Tuple<Type>),
-    TupleConstant(Tuple<Constant>),
-    Trait(Trait),
-    ConstantType(ConstantType),
-}
-
-impl NonEquality {
-    /// Checks if the predicate contains a `forall` lifetime.
-    #[must_use]
-    pub fn contains_forall_lifetime(&self) -> bool {
-        match self {
-            Self::LifetimeOutlives(outlives) => {
-                outlives.contains_forall_lifetime()
-            }
-            Self::TypeOutlives(outlives) => outlives.contains_forall_lifetime(),
-            Self::TupleType(tuple) => tuple.contains_forall_lifetime(),
-            Self::TupleConstant(tuple) => tuple.contains_forall_lifetime(),
-            Self::Trait(tr) => tr.contains_forall_lifetime(),
-            Self::ConstantType(constant_type) => {
-                constant_type.contains_forall_lifetime()
-            }
-        }
-    }
-
-    /// Applies the instantiation to the predicate.
-    pub fn instantiate(&mut self, substitution: &Instantiation) {
-        match self {
-            Self::LifetimeOutlives(outlives) => {
-                outlives.instantiate(substitution);
-            }
-            Self::TypeOutlives(outlives) => outlives.instantiate(substitution),
-            Self::TupleType(tuple) => tuple.instantiate(substitution),
-            Self::TupleConstant(tuple) => tuple.instantiate(substitution),
-            Self::Trait(tr) => tr.instantiate(substitution),
-            Self::ConstantType(constant_type) => {
-                constant_type.instantiate(substitution);
-            }
-        }
     }
 }

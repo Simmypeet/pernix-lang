@@ -1,11 +1,11 @@
 use super::{contains_forall_lifetime, Satisfiability};
 use crate::{
     semantic::{
-        equality,
+        equality, get_equivalences,
         instantiation::{self, Instantiation},
-        session::{self, ExceedLimitError, Limit, Satisfied, Session},
+        session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        visitor, Premise, Semantic,
+        visitor, Environment, Satisfied,
     },
     table::{self, DisplayObject, State, Table},
 };
@@ -13,39 +13,31 @@ use crate::{
 #[derive(Debug)]
 struct Visitor<
     'a,
-    's,
     'r,
     'l,
     T: State,
-    S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<Lifetime> + Session<Type> + Session<Constant>,
 > {
     constant_type: Result<bool, ExceedLimitError>,
-    premise: &'a Premise,
-    table: &'a Table<T>,
-    semantic: &'s mut S,
-    session: &'l mut Limit<'r, R>,
+    environment: &'a Environment<'a, T>,
+    limit: &'l mut Limit<'r, R>,
 }
 
 impl<
         'a,
-        's,
         'r,
         'l,
         U: Term,
         T: State,
-        S: Semantic<U> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor<U> for Visitor<'a, 's, 'r, 'l, T, S, R>
+    > visitor::Visitor<U> for Visitor<'a, 'r, 'l, T, R>
 {
     fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match satisfies_internal(
             term,
             QuerySource::Normal,
-            self.premise,
-            self.table,
-            self.semantic,
-            self.session,
+            self.environment,
+            self.limit,
         ) {
             result @ (Err(_) | Ok(false)) => {
                 self.constant_type = result;
@@ -99,17 +91,13 @@ impl ConstantType {
     }
 }
 
-fn satisfies_internal<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+fn satisfies_internal<T: Term>(
     term: &T,
     query_source: QuerySource,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<bool, ExceedLimitError> {
     let satisfiability = term.definite_satisfiability();
 
@@ -118,7 +106,7 @@ fn satisfies_internal<
         return Ok(true);
     }
 
-    match session.mark_as_in_progress(Query(term), query_source)? {
+    match limit.mark_as_in_progress(Query(term), query_source)? {
         Some(session::Cached::Done(Satisfied)) => return Ok(true),
         Some(session::Cached::InProgress(source)) => {
             return Ok(match source {
@@ -131,31 +119,23 @@ fn satisfies_internal<
 
     // if the term is congruent, then we need to check the sub-terms
     if satisfiability == Satisfiability::Congruent {
-        let mut visitor = Visitor {
-            constant_type: Ok(true),
-            premise,
-            table,
-            semantic,
-            session,
-        };
+        let mut visitor =
+            Visitor { constant_type: Ok(true), environment, limit };
 
         let _ = term.accept_one_level(&mut visitor);
 
         if visitor.constant_type? {
             let mut result = false;
-            session.mark_as_done(Query(term), Satisfied);
 
             // look for the fields of the term as well (if it's an ADT)
-            match term.get_adt_fields(table) {
+            match term.get_adt_fields(environment.table) {
                 Some(fields) => 'result: {
                     for field in fields {
                         if !satisfies_internal(
                             &field,
                             QuerySource::Normal,
-                            premise,
-                            table,
-                            semantic,
-                            session,
+                            environment,
+                            limit,
                         )? {
                             break 'result;
                         }
@@ -167,63 +147,34 @@ fn satisfies_internal<
             }
 
             if result {
-                session.mark_as_done(Query(term), Satisfied);
+                limit.mark_as_done(Query(term), Satisfied);
                 return Ok(true);
             }
         }
     }
 
     // satisfiable with premises
-    for premise_term in T::constant_type_predicates(premise) {
-        if equality::equals(
-            term,
-            premise_term,
-            premise,
-            table,
-            semantic,
-            session,
-        )? {
-            session.mark_as_done(Query(term), Satisfied);
+    for premise_term in T::constant_type_predicates(environment.premise) {
+        if equality::equals(term, premise_term, environment, limit)? {
+            limit.mark_as_done(Query(term), Satisfied);
             return Ok(true);
         }
     }
 
-    // satisfiable with normalization
-    if let Some(normalized) =
-        semantic.normalize(term, premise, table, session)?
-    {
+    // satisfiable with equivalence
+    for eq in get_equivalences(term, environment, limit)? {
         if satisfies_internal(
-            &normalized,
+            &eq,
             QuerySource::FromEquivalence,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
         )? {
-            session.mark_as_done(Query(term), Satisfied);
+            limit.mark_as_done(Query(term), Satisfied);
             return Ok(true);
         }
     }
 
-    for (key, values) in T::get_mapping(&premise.equalities_mapping) {
-        if equality::equals(term, key, premise, table, semantic, session)? {
-            for value in values {
-                if satisfies_internal(
-                    value,
-                    QuerySource::FromEquivalence,
-                    premise,
-                    table,
-                    semantic,
-                    session,
-                )? {
-                    session.mark_as_done(Query(term), Satisfied);
-                    return Ok(true);
-                }
-            }
-        }
-    }
-
-    session.clear_query(Query(term));
+    limit.clear_query(Query(term));
     Ok(false)
 }
 
@@ -233,23 +184,13 @@ impl ConstantType {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn satisfies<
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
+    pub fn satisfies(
         ty: &Type,
-        premise: &Premise,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<bool, ExceedLimitError> {
-        satisfies_internal(
-            ty,
-            QuerySource::Normal,
-            premise,
-            table,
-            semantic,
-            session,
-        )
+        satisfies_internal(ty, QuerySource::Normal, environment, limit)
     }
 }

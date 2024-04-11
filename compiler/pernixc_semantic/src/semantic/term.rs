@@ -14,7 +14,7 @@ use lifetime::Lifetime;
 use r#type::Type;
 
 use super::{
-    equality,
+    equality, equivalent,
     instantiation::{self, Instantiation},
     mapping::Mapping,
     matching,
@@ -22,7 +22,7 @@ use super::{
     session::{ExceedLimitError, Limit, Session},
     sub_term::{self, AssignSubTermError, SubTupleLocation},
     unification::{self, Unification},
-    visitor, Premise, Semantic,
+    visitor, Environment, Premise,
 };
 use crate::{
     arena::ID,
@@ -251,6 +251,7 @@ where
     Self: Into<T>;
 
 /// Contains the functionality for determining the properties of a term.
+#[allow(private_bounds)]
 pub trait Term:
     Debug
     + Eq
@@ -262,12 +263,47 @@ pub trait Term:
     + unification::Element
     + matching::Match
     + sub_term::SubTerm
+    + equivalent::Get
+    + From<MemberID<ID<Self::GenericParameter>, GenericID>>
+    + From<Self::TraitMember>
 {
     /// The type of generic parameters of this term kind.
     type GenericParameter: GenericParameter + 'static;
 
     /// The type of trait member symbol that stores this term kind.
     type TraitMember: 'static;
+
+    /// Normalizes the term.
+    ///
+    /// Normalization is the process of converting a term into more simpler
+    /// forms.
+    ///
+    /// # Errors
+    ///
+    /// See [`ExceedLimitError`] for more information.
+    fn normalize(
+        &self,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Self>
+                + Session<Lifetime>
+                + Session<Type>
+                + Session<Constant>,
+        >,
+    ) -> Result<Option<Self>, ExceedLimitError>;
+
+    #[doc(hidden)]
+    fn outlives_satisfiability(
+        &self,
+        lifetime: &Lifetime,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Self>
+                + Session<Lifetime>
+                + Session<Type>
+                + Session<Constant>,
+        >,
+    ) -> Result<Satisfiability, ExceedLimitError>;
 
     #[doc(hidden)]
     fn as_generic_parameter(
@@ -285,17 +321,13 @@ pub trait Term:
     ) -> Result<MemberID<ID<Self::GenericParameter>, GenericID>, Self>;
 
     #[doc(hidden)]
-    fn as_trait_member(&self) -> Option<&MemberSymbol<ID<Self::TraitMember>>>;
+    fn as_trait_member(&self) -> Option<&Self::TraitMember>;
 
     #[doc(hidden)]
-    fn as_trait_member_mut(
-        &mut self,
-    ) -> Option<&mut MemberSymbol<ID<Self::TraitMember>>>;
+    fn as_trait_member_mut(&mut self) -> Option<&mut Self::TraitMember>;
 
     #[doc(hidden)]
-    fn into_trait_member(
-        self,
-    ) -> Result<MemberSymbol<ID<Self::TraitMember>>, Self>;
+    fn into_trait_member(self) -> Result<Self::TraitMember, Self>;
 
     #[doc(hidden)]
     fn as_tuple(&self) -> Option<&Tuple<Self>>;
@@ -588,16 +620,13 @@ impl GenericArguments {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn equals<
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
+    pub fn equals(
         &self,
         other: &Self,
-        premise: &Premise,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<bool, ExceedLimitError> {
         if self.lifetimes.len() != other.lifetimes.len()
             || self.types.len() != other.types.len()
@@ -607,19 +636,19 @@ impl GenericArguments {
         }
 
         for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
-            if !equality::equals(lhs, rhs, premise, table, semantic, session)? {
+            if !equality::equals(lhs, rhs, environment, limit)? {
                 return Ok(false);
             }
         }
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
-            if !equality::equals(lhs, rhs, premise, table, semantic, session)? {
+            if !equality::equals(lhs, rhs, environment, limit)? {
                 return Ok(false);
             }
         }
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
-            if !equality::equals(lhs, rhs, premise, table, semantic, session)? {
+            if !equality::equals(lhs, rhs, environment, limit)? {
                 return Ok(false);
             }
         }
@@ -655,17 +684,14 @@ impl GenericArguments {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn unify_as_mapping<
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
+    pub fn unify_as_mapping(
         &self,
         other: &Self,
-        premise: &Premise,
-        table: &Table<impl State>,
         config: &mut impl unification::Config,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<Option<Mapping>, ExceedLimitError> {
         let mut mapping = Mapping::default();
 
@@ -677,9 +703,8 @@ impl GenericArguments {
         }
 
         for (lhs, rhs) in self.lifetimes.iter().zip(&other.lifetimes) {
-            let Some(unification) = unification::unify(
-                lhs, rhs, premise, table, config, semantic, session,
-            )?
+            let Some(unification) =
+                unification::unify(lhs, rhs, config, environment, limit)?
             else {
                 return Ok(None);
             };
@@ -688,9 +713,8 @@ impl GenericArguments {
         }
 
         for (lhs, rhs) in self.types.iter().zip(&other.types) {
-            let Some(unification) = unification::unify(
-                lhs, rhs, premise, table, config, semantic, session,
-            )?
+            let Some(unification) =
+                unification::unify(lhs, rhs, config, environment, limit)?
             else {
                 return Ok(None);
             };
@@ -699,9 +723,8 @@ impl GenericArguments {
         }
 
         for (lhs, rhs) in self.constants.iter().zip(&other.constants) {
-            let Some(unification) = unification::unify(
-                lhs, rhs, premise, table, config, semantic, session,
-            )?
+            let Some(unification) =
+                unification::unify(lhs, rhs, config, environment, limit)?
             else {
                 return Ok(None);
             };
@@ -734,35 +757,27 @@ impl GenericArguments {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn definite<
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
+    pub fn definite(
         &self,
-        premise: &Premise,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<bool, ExceedLimitError> {
         for lifetime in &self.lifetimes {
-            if !predicate::definite(
-                lifetime, premise, table, semantic, session,
-            )? {
+            if !predicate::definite(lifetime, environment, limit)? {
                 return Ok(false);
             }
         }
 
         for r#type in &self.types {
-            if !predicate::definite(r#type, premise, table, semantic, session)?
-            {
+            if !predicate::definite(r#type, environment, limit)? {
                 return Ok(false);
             }
         }
 
         for constant in &self.constants {
-            if !predicate::definite(
-                constant, premise, table, semantic, session,
-            )? {
+            if !predicate::definite(constant, environment, limit)? {
                 return Ok(false);
             }
         }

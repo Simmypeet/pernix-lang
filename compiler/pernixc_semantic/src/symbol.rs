@@ -14,6 +14,7 @@ use pernixc_syntax::syntax_tree::AccessModifier;
 
 use crate::{
     arena::{Arena, Map, ID},
+    pattern::Irrefutable,
     semantic::{
         predicate,
         term::{constant, lifetime, r#type, GenericArguments, Never},
@@ -1129,7 +1130,7 @@ pub struct FunctionTemplate<ParentID: 'static, Data: 'static> {
     pub id: ID<Self>,
 
     /// The parameters of the function.
-    pub parameters: Map<Parameter<ID<Self>>>,
+    pub parameters: Arena<Parameter>,
 
     /// The ID of the parent where the function is declared.
     pub parent_id: ParentID,
@@ -1154,13 +1155,16 @@ pub struct FunctionTemplate<ParentID: 'static, Data: 'static> {
 
 /// Contains the data for the regular function declaration i.e. those that are
 /// declared in the module level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionData {
     /// The accessibility of the function.
     pub accessibility: Accessibility,
 
     /// Indicates whether the function is a constant function.
     pub const_function: bool,
+
+    /// Maps the parameter ID to its matching pattern.
+    pub patterns_by_parameter_id: HashMap<ID<Parameter>, Irrefutable>,
     // TODO: Function IR
 }
 
@@ -1343,11 +1347,13 @@ pub type TraitImplementationFunction =
     FunctionTemplate<ID<TraitImplementation>, TraitImplementationFunctionData>;
 
 /// Contains the implementation data of a trait implementation function symbol
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitImplementationFunctionData {
-    // TODO: Function IR
     /// The trait function ID that is being implemented.
     pub implemented_trait_function_id: ID<TraitFunction>,
+
+    /// Maps the parameter ID to its matching pattern.
+    pub patterns_by_parameter_id: HashMap<ID<Parameter>, Irrefutable>,
 }
 
 /// Represents a type declaration as an implements member, denoted by `type NAME
@@ -1476,15 +1482,9 @@ impl ImplementationData for TraitImplementationData {
 /// Represents a function parameter in the function signature, denoted by `NAME:
 /// TYPE` syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Parameter<ParentID> {
-    /// The pattern binding of the parameter.
-    // pub pattern: Irrefutable,
-
+pub struct Parameter {
     /// The type of the parameter.
     pub r#type: r#type::Type,
-
-    /// The ID of the parent function.
-    pub parent_id: ParentID,
 
     /// Location of where the parameter is declared.
     pub span: Option<Span>,

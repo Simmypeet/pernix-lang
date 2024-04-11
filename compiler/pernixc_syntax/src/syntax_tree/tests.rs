@@ -410,7 +410,7 @@ impl Display for GenericIdentifier {
 #[allow(missing_docs)]
 pub enum Qualifier {
     Mutable,
-    Restrict,
+    Unique,
 }
 
 impl Arbitrary for Qualifier {
@@ -418,7 +418,7 @@ impl Arbitrary for Qualifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![Just(Self::Mutable), Just(Self::Restrict),].boxed()
+        prop_oneof![Just(Self::Mutable), Just(Self::Unique),].boxed()
     }
 }
 
@@ -426,7 +426,7 @@ impl Input<&super::Qualifier> for &Qualifier {
     fn assert(self, output: &super::Qualifier) -> TestCaseResult {
         match (self, output) {
             (Qualifier::Mutable, super::Qualifier::Mutable(..))
-            | (Qualifier::Restrict, super::Qualifier::Restrict(..)) => Ok(()),
+            | (Qualifier::Unique, super::Qualifier::Unique(..)) => Ok(()),
 
             _ => Err(TestCaseError::fail(format!(
                 "Expected {self:?} but got {output:?}",
@@ -439,7 +439,7 @@ impl Display for Qualifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Mutable => f.write_str("mutable"),
-            Self::Restrict => f.write_str("restrict"),
+            Self::Unique => f.write_str("unique"),
         }
     }
 }

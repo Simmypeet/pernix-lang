@@ -1,8 +1,6 @@
 //! Contains all definition of pattern syntax trees.
 
-#![allow(missing_docs)]
-
-use std::fmt::Debug;
+use std::{fmt::Debug, option::Option};
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -17,7 +15,7 @@ use pernixc_lexical::{
 
 use super::{
     expression::{Boolean, Numeric},
-    ConnectedList,
+    ConnectedList, Qualifier,
 };
 use crate::{
     error::{self, Error, SyntaxKind},
@@ -145,44 +143,58 @@ impl<Pattern> SourceElement for Enum<Pattern> {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Unpack:
-///     '...' 'mutable'? Identifier
+/// Wildcard:
+///     '?'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Unpack {
+pub struct Wildcard {
+    #[get = "pub"]
+    question_mark: Punctuation,
+}
+
+impl SourceElement for Wildcard {
+    fn span(&self) -> Span { self.question_mark.span() }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Unpacked:
+///     '...' Pattern
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Unpacked<Pattern> {
     #[get = "pub"]
     ellipsis: (Punctuation, Punctuation, Punctuation),
     #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
-    #[get = "pub"]
-    identifier: Identifier,
+    pattern: Box<Pattern>,
 }
 
-impl SourceElement for Unpack {
+impl<Pattern: SourceElement> SourceElement for Unpacked<Pattern> {
     fn span(&self) -> Span {
-        self.ellipsis.0.span.join(&self.identifier.span()).unwrap()
+        self.ellipsis.0.span.join(&self.pattern.span()).unwrap()
     }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Unpackable:
-///     Unpack
+/// TupleElement:
+///     Unpacked
 ///     | Pattern
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum Unpackable<Pattern> {
-    Unpack(Unpack),
-    Pattern(Box<Pattern>),
+pub enum TupleElement<Pattern> {
+    Unpacked(Unpacked<Pattern>),
+    Regular(Box<Pattern>),
 }
 
-impl<Pattern: SourceElement> SourceElement for Unpackable<Pattern> {
+impl<Pattern: SourceElement> SourceElement for TupleElement<Pattern> {
     fn span(&self) -> Span {
         match self {
-            Self::Unpack(unpack) => unpack.span(),
-            Self::Pattern(pattern) => pattern.span(),
+            Self::Unpacked(unpack) => unpack.span(),
+            Self::Regular(pattern) => pattern.span(),
         }
     }
 }
@@ -190,7 +202,7 @@ impl<Pattern: SourceElement> SourceElement for Unpackable<Pattern> {
 /// Syntax Synopsis:
 /// ``` txt
 /// Tuple:
-///     '(' (Unpackable (',' Unpackable)* ','?)? ')'
+///     '(' (TupleElement (',' TupleElement)* ','?)? ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -198,7 +210,7 @@ pub struct Tuple<Pattern> {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
-    patterns: Option<ConnectedList<Unpackable<Pattern>, Punctuation>>,
+    patterns: Option<ConnectedList<TupleElement<Pattern>, Punctuation>>,
     #[get = "pub"]
     right_paren: Punctuation,
 }
@@ -211,32 +223,76 @@ impl<Pattern> SourceElement for Tuple<Pattern> {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Named:
-///     'mutable'? Identifier
-///     ;
+/// Ref:
+///     `ref` Qualifier?
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Named {
+pub struct Ref {
     #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
+    ref_keyword: Keyword,
     #[get = "pub"]
-    identifier: Identifier,
+    qualifier: Option<Qualifier>,
 }
 
-impl SourceElement for Named {
+impl SourceElement for Ref {
     fn span(&self) -> Span {
-        self.mutable_keyword.as_ref().map_or_else(
-            || self.identifier.span(),
-            |keyword| keyword.span().join(&self.identifier.span()).unwrap(),
+        self.qualifier().as_ref().map_or_else(
+            || self.ref_keyword.span(),
+            |end| self.ref_keyword.span().join(&end.span()).unwrap(),
         )
     }
 }
 
 /// Syntax Synopsis:
 /// ``` txt
+/// NamedKind:
+///     Ref
+///     | 'mutable'?
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum NamedKind {
+    Ref(Ref),
+    Value { mutable_keyword: Option<Keyword> },
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// Named:
+///     'ref'? 'mutable'? Identifier
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Named {
+    #[get = "pub"]
+    kind: NamedKind,
+    #[get = "pub"]
+    identifier: Identifier,
+}
+
+impl SourceElement for Named {
+    fn span(&self) -> Span {
+        match &self.kind {
+            NamedKind::Ref(r) => {
+                r.span().join(&self.identifier.span()).unwrap()
+            }
+            NamedKind::Value { mutable_keyword } => {
+                mutable_keyword.as_ref().map_or_else(
+                    || self.identifier.span(),
+                    |keyword| {
+                        keyword.span().join(&self.identifier.span()).unwrap()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
 /// Refutable:
-///     BooleanLiteral
-///     | NumericLiteral
+///     Boolean
+///     | Numeric
 ///     | Structural
 ///     | Enum
 ///     | Named
@@ -254,23 +310,25 @@ impl SourceElement for Named {
     derive_more::From,
 )]
 pub enum Refutable {
-    BooleanLiteral(Boolean),
-    NumericLiteral(Numeric),
+    Boolean(Boolean),
+    Numeric(Numeric),
     Structural(Structural<Self>),
     Enum(Enum<Self>),
     Named(Named),
     Tuple(Tuple<Self>),
+    Wildcard(Wildcard),
 }
 
 impl SourceElement for Refutable {
     fn span(&self) -> Span {
         match self {
-            Self::BooleanLiteral(boolean_literal) => boolean_literal.span(),
-            Self::NumericLiteral(numeric_literal) => numeric_literal.span(),
+            Self::Boolean(boolean_literal) => boolean_literal.span(),
+            Self::Numeric(numeric_literal) => numeric_literal.span(),
             Self::Structural(structural) => structural.span(),
             Self::Enum(associated_enum) => associated_enum.span(),
             Self::Named(identifier) => identifier.span(),
             Self::Tuple(tuple_pattern) => tuple_pattern.span(),
+            Self::Wildcard(wildcard) => wildcard.span(),
         }
     }
 }
@@ -299,6 +357,7 @@ pub enum Irrefutable {
     Structural(Structural<Self>),
     Named(Named),
     Tuple(Tuple<Self>),
+    Wildcard(Wildcard),
 }
 
 impl SourceElement for Irrefutable {
@@ -307,6 +366,7 @@ impl SourceElement for Irrefutable {
             Self::Structural(structural) => structural.span(),
             Self::Named(identifier) => identifier.span(),
             Self::Tuple(tuple_pattern) => tuple_pattern.span(),
+            Self::Wildcard(wildcard) => wildcard.span(),
         }
     }
 }
@@ -321,6 +381,86 @@ trait Pattern {
 }
 
 impl<'a> Parser<'a> {
+    fn parse_named_pattern(
+        &mut self,
+        handler: &dyn Handler<error::Error>,
+    ) -> Option<Named> {
+        match self.stop_at_significant() {
+            Reading::Unit(Token::Keyword(mutable_keyword))
+                if mutable_keyword.kind == KeywordKind::Mutable =>
+            {
+                // eat the mutable keyword
+                self.forward();
+
+                let identifier = self.parse_identifier(handler)?;
+
+                Some(Named {
+                    kind: NamedKind::Value {
+                        mutable_keyword: Some(mutable_keyword),
+                    },
+                    identifier,
+                })
+            }
+
+            Reading::Unit(Token::Keyword(ref_keyword))
+                if ref_keyword.kind == KeywordKind::Ref =>
+            {
+                // eat ref keyword
+                self.forward();
+
+                // parse qualifier
+                let qualifier = match self.stop_at_significant() {
+                    Reading::Unit(Token::Keyword(mutable_keyword))
+                        if mutable_keyword.kind == KeywordKind::Mutable =>
+                    {
+                        // eat mutable keyword
+                        self.forward();
+
+                        Some(Qualifier::Mutable(mutable_keyword))
+                    }
+
+                    Reading::Unit(Token::Keyword(unique_keyword))
+                        if unique_keyword.kind == KeywordKind::Unique =>
+                    {
+                        // eat unique keyword
+                        self.forward();
+
+                        Some(Qualifier::Unique(unique_keyword))
+                    }
+
+                    _ => None,
+                };
+
+                let identifier = self.parse_identifier(handler)?;
+
+                Some(Named {
+                    kind: NamedKind::Ref(Ref { ref_keyword, qualifier }),
+                    identifier,
+                })
+            }
+
+            Reading::Unit(Token::Identifier(identifier)) => {
+                self.forward();
+                Some(Named {
+                    kind: NamedKind::Value { mutable_keyword: None },
+                    identifier,
+                })
+            }
+
+            found => {
+                handler.receive(Error {
+                    expected: SyntaxKind::Identifier,
+                    alternatives: vec![
+                        SyntaxKind::Keyword(KeywordKind::Mutable),
+                        SyntaxKind::Keyword(KeywordKind::Ref),
+                    ],
+                    found: found.into_token(),
+                });
+                None
+            }
+        }
+    }
+
     fn parse_structural_pattern<T: Pattern + Debug>(
         &mut self,
         handler: &dyn Handler<error::Error>,
@@ -329,39 +469,26 @@ impl<'a> Parser<'a> {
             Delimiter::Brace,
             ',',
             |parser| {
-                let mutable_keyword = match parser.stop_at_significant() {
-                    Reading::Unit(Token::Keyword(keyword))
-                        if keyword.kind == KeywordKind::Mutable =>
-                    {
-                        parser.forward();
-                        Some(keyword)
-                    }
-                    _ => None,
-                };
+                let named_pattern = parser.parse_named_pattern(handler)?;
 
-                let identifier = parser.parse_identifier(handler)?;
-
-                match (mutable_keyword.is_none(), parser.stop_at_significant())
+                // can accept a nested pattern
+                if named_pattern.kind.as_value().map_or(false, Option::is_none)
+                    && matches!(
+                        parser.stop_at_significant(),
+                        Reading::Unit(Token::Punctuation(punc))
+                        if punc.punctuation == ':'
+                    )
                 {
-                    (true, Reading::Unit(Token::Punctuation(colon)))
-                        if colon.punctuation == ':' =>
-                    {
-                        // eat colon
-                        parser.forward();
+                    let colon = parser.parse_punctuation(':', true, handler)?;
+                    let pattern = T::parse(parser, handler)?;
 
-                        let pattern =
-                            T::parse(parser, handler).map(Box::new)?;
-
-                        Some(Field::Association(FieldAssociation {
-                            identifier,
-                            colon,
-                            pattern,
-                        }))
-                    }
-                    _ => Some(Field::Named(Named {
-                        mutable_keyword,
-                        identifier,
-                    })),
+                    Some(Field::Association(FieldAssociation {
+                        identifier: named_pattern.identifier,
+                        colon,
+                        pattern: Box::new(pattern),
+                    }))
+                } else {
+                    Some(Field::Named(named_pattern))
                 }
             },
             handler,
@@ -406,31 +533,17 @@ impl<'a> Parser<'a> {
                         parser.forward();
                         parser.forward();
 
-                        let mutable_keyword = parser
-                            .stop_at_significant()
-                            .into_unit()
-                            .ok()
-                            .and_then(|token| match token {
-                                Token::Keyword(keyword)
-                                    if keyword.kind == KeywordKind::Mutable =>
-                                {
-                                    parser.forward();
-                                    Some(keyword)
-                                }
-                                _ => None,
-                            });
+                        let pattern = Box::new(T::parse(parser, handler)?);
 
-                        let identifier = parser.parse_identifier(handler)?;
-
-                        Some(Unpackable::Unpack(Unpack {
+                        Some(TupleElement::Unpacked(Unpacked {
                             ellipsis,
-                            mutable_keyword,
-                            identifier,
+                            pattern,
                         }))
                     }
 
-                    _ => T::parse(parser, handler)
-                        .map(|pattern| Unpackable::Pattern(Box::new(pattern))),
+                    _ => T::parse(parser, handler).map(|pattern| {
+                        TupleElement::Regular(Box::new(pattern))
+                    }),
                 }
             },
             handler,
@@ -450,28 +563,22 @@ impl Pattern for Irrefutable {
         handler: &dyn Handler<error::Error>,
     ) -> Option<Self> {
         match parser.stop_at_significant() {
-            // parse named pattern
-            Reading::Unit(Token::Keyword(mutable_keyword))
-                if mutable_keyword.kind == KeywordKind::Mutable =>
+            // parse wildcard pattern
+            Reading::Unit(Token::Punctuation(punc))
+                if punc.punctuation == '?' =>
             {
-                // eat the mutable keyword
                 parser.forward();
-
-                let identifier = parser.parse_identifier(handler)?;
-
-                Some(Self::Named(Named {
-                    mutable_keyword: Some(mutable_keyword),
-                    identifier,
-                }))
+                Some(Self::Wildcard(Wildcard { question_mark: punc }))
             }
 
             // parse named pattern
-            Reading::Unit(Token::Identifier(identifier)) => {
-                // eat identifier
-                parser.forward();
-
-                Some(Self::Named(Named { mutable_keyword: None, identifier }))
-            }
+            Reading::Unit(
+                Token::Keyword(Keyword {
+                    kind: KeywordKind::Mutable | KeywordKind::Ref,
+                    ..
+                })
+                | Token::Identifier(_),
+            ) => parser.parse_named_pattern(handler).map(Self::Named),
 
             // parse tuple pattern
             Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
@@ -505,20 +612,22 @@ impl Pattern for Refutable {
         handler: &dyn Handler<error::Error>,
     ) -> Option<Self> {
         match parser.stop_at_significant() {
-            // parse mutable named pattern
-            Reading::Unit(Token::Keyword(mutable_keyword))
-                if mutable_keyword.kind == KeywordKind::Mutable =>
+            // parse wildcard pattern
+            Reading::Unit(Token::Punctuation(punc))
+                if punc.punctuation == '?' =>
             {
-                // eat the mutable keyword
                 parser.forward();
-
-                let identifier = parser.parse_identifier(handler)?;
-
-                Some(Self::Named(Named {
-                    mutable_keyword: Some(mutable_keyword),
-                    identifier,
-                }))
+                Some(Self::Wildcard(Wildcard { question_mark: punc }))
             }
+
+            // parse named pattern
+            Reading::Unit(
+                Token::Keyword(Keyword {
+                    kind: KeywordKind::Mutable | KeywordKind::Ref,
+                    ..
+                })
+                | Token::Identifier(_),
+            ) => parser.parse_named_pattern(handler).map(Self::Named),
 
             Reading::Unit(Token::Keyword(case_keyword))
                 if case_keyword.kind == KeywordKind::Case =>
@@ -550,12 +659,6 @@ impl Pattern for Refutable {
                 Some(Self::Enum(Enum { case_keyword, identifier, association }))
             }
 
-            // parse named pattern
-            Reading::Unit(Token::Identifier(identifier)) => {
-                parser.forward();
-                Some(Self::Named(Named { mutable_keyword: None, identifier }))
-            }
-
             // parse tuple pattern
             Reading::IntoDelimited(Delimiter::Parenthesis, _) => {
                 parser.parse_tuple_pattern(handler).map(Self::Tuple)
@@ -568,7 +671,7 @@ impl Pattern for Refutable {
 
             // parse numeric literal pattern
             Reading::Unit(Token::Numeric(_)) => {
-                Some(Self::NumericLiteral(parser.parse_numeric_literal()?))
+                Some(Self::Numeric(parser.parse_numeric_literal()?))
             }
 
             // parse boolean literal pattern
@@ -584,7 +687,7 @@ impl Pattern for Refutable {
                     KeywordKind::False => Boolean::False,
                     _ => unreachable!(),
                 };
-                Some(Self::BooleanLiteral(constructor(boolean_keyword)))
+                Some(Self::Boolean(constructor(boolean_keyword)))
             }
 
             found => {

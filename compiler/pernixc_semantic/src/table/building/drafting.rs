@@ -1,3 +1,9 @@
+//! Contains the code related to drafting phase of the table.
+//!
+//! The drafting phase is the first phase of the table. It builds all the
+//! so that their names appear in the table. The symbols are not yet built
+//! with full/correct information.
+
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use parking_lot::RwLock;
@@ -12,7 +18,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::finalizing::Finalizer;
 use crate::{
-    arena::{Map, ID},
+    arena::{Arena, Map, ID},
     error::{
         self, AlreadyImplementedTraitMember, InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember,
@@ -65,7 +71,6 @@ impl table::State for Drafter {
         _: GlobalID,
         _: &dyn Handler<Box<dyn error::Error>>,
     ) {
-        todo!()
     }
 }
 
@@ -114,7 +119,7 @@ impl Table<Drafter> {
         let id = table_write.representation.trait_functions.insert_with(|id| {
             RwLock::new(TraitFunction {
                 id,
-                parameters: Map::new(),
+                parameters: Arena::new(),
                 parent_id: parent_trait_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 name: syntax_tree
@@ -275,7 +280,7 @@ impl Table<Drafter> {
         let id = table_write.representation.functions.insert_with(|id| {
             RwLock::new(Function {
                 id,
-                parameters: Map::new(),
+                parameters: Arena::new(),
                 parent_id: parent_module_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 name: syntax_tree
@@ -291,6 +296,7 @@ impl Table<Drafter> {
                         syntax_tree.access_modifier(),
                     ),
                     const_function: syntax_tree.const_keyword().is_some(),
+                    patterns_by_parameter_id: HashMap::new(),
                 },
             })
         });
@@ -598,8 +604,9 @@ impl Table<Finalizer> {
                         .to_owned(),
                     data: TraitImplementationFunctionData {
                         implemented_trait_function_id,
+                        patterns_by_parameter_id: HashMap::new(),
                     },
-                    parameters: Map::default(),
+                    parameters: Arena::default(),
                     return_type: r#type::Type::default(),
                 })
             });
@@ -1055,8 +1062,9 @@ impl Table<Finalizer> {
                             syntax_tree.access_modifier(),
                         ),
                         const_function: syntax_tree.const_keyword().is_some(),
+                        patterns_by_parameter_id: HashMap::new(),
                     },
-                    parameters: Map::default(),
+                    parameters: Arena::default(),
                     return_type: r#type::Type::default(),
                 })
             });

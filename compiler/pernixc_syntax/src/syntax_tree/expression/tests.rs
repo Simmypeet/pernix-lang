@@ -1924,7 +1924,7 @@ pub enum BinaryOperator {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
-    RestrictAssign,
+    UniqueAssign,
     LogicalAnd,
     LogicalOr,
     BitwiseAnd,
@@ -1984,8 +1984,8 @@ impl Input<&super::BinaryOperator> for &BinaryOperator {
                 super::BinaryOperator::GreaterThanOrEqual(..),
             )
             | (
-                BinaryOperator::RestrictAssign,
-                super::BinaryOperator::RestrictAssign(..),
+                BinaryOperator::UniqueAssign,
+                super::BinaryOperator::UniqueAssign(..),
             )
             | (
                 BinaryOperator::LogicalAnd,
@@ -2066,7 +2066,7 @@ impl Arbitrary for BinaryOperator {
             Just(Self::LessThanOrEqual),
             Just(Self::GreaterThan),
             Just(Self::GreaterThanOrEqual),
-            Just(Self::RestrictAssign),
+            Just(Self::UniqueAssign),
             Just(Self::LogicalAnd),
             Just(Self::LogicalOr),
             Just(Self::BitwiseAnd),
@@ -2104,7 +2104,7 @@ impl Display for BinaryOperator {
             Self::LessThanOrEqual => f.write_str("<="),
             Self::GreaterThan => f.write_char('>'),
             Self::GreaterThanOrEqual => f.write_str(">="),
-            Self::RestrictAssign => f.write_str(":="),
+            Self::UniqueAssign => f.write_str(":="),
             Self::LogicalAnd => f.write_str("and"),
             Self::LogicalOr => f.write_str("or"),
             Self::BitwiseAnd => f.write_char('&'),

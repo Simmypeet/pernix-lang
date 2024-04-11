@@ -1,3 +1,6 @@
+//! Contains the code related to resolving the correct [`Variance`] for each
+//! generic parameters defined in the ADTs.
+
 use std::collections::HashSet;
 
 use pernixc_base::diagnostic::Handler;
@@ -5,7 +8,7 @@ use pernixc_base::diagnostic::Handler;
 use crate::{
     error::Error,
     semantic::{
-        self, equality,
+        equality, get_equivalences,
         session::{self, ExceedLimitError, Limit, Session},
         sub_term::Location,
         term::{
@@ -17,7 +20,7 @@ use crate::{
             Term,
         },
         visitor::{self, SubTermLocation},
-        Premise, Semantic,
+        Environment, Premise,
     },
     symbol::{
         AdtID, GenericID, GenericParameterVariances, GenericParameters,
@@ -28,39 +31,29 @@ use crate::{
 
 struct TermCollector<
     'a,
-    't,
-    'p,
-    's,
     'l,
     'r,
     Term,
     T: State,
-    S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<Lifetime> + Session<Type> + Session<Constant>,
 > {
     target: &'a Term,
     locations: Result<Vec<Vec<SubTermLocation>>, ExceedLimitError>,
 
-    table: &'t Table<T>,
-    premise: &'p Premise,
-    semantic: &'s mut S,
-    session: &'l mut Limit<'r, R>,
+    environment: &'a Environment<'a, T>,
+    limit: &'l mut Limit<'r, R>,
 }
 
 macro_rules! implements_visitor {
     ($first_term:ident, $second_term:ident) => {
         impl<
                 'a,
-                't,
-                'p,
-                's,
                 'l,
                 'r,
                 T: State,
-                S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
                 R: Session<Lifetime> + Session<Type> + Session<Constant>,
             > visitor::Recursive<$first_term>
-            for TermCollector<'a, 't, 'p, 's, 'l, 'r, $second_term, T, S, R>
+            for TermCollector<'a, 'l, 'r, $second_term, T, R>
         {
             fn visit(
                 &mut self,
@@ -82,17 +75,12 @@ implements_visitor!(Constant, Type);
 
 impl<
         'a,
-        't,
-        'p,
-        's,
         'l,
         'r,
         U: Term,
         T: State,
-        S: Semantic<U> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Recursive<U>
-    for TermCollector<'a, 't, 'p, 's, 'l, 'r, U, T, S, R>
+    > visitor::Recursive<U> for TermCollector<'a, 'l, 'r, U, T, R>
 {
     fn visit(
         &mut self,
@@ -103,14 +91,8 @@ impl<
             return false;
         };
 
-        match equality::equals(
-            term,
-            self.target,
-            self.premise,
-            self.table,
-            self.semantic,
-            self.session,
-        ) {
+        match equality::equals(term, self.target, self.environment, self.limit)
+        {
             Ok(ok) => {
                 if ok {
                     locations_list.push(locations.collect());
@@ -130,30 +112,24 @@ impl<
 fn get_all_term_locations<
     Term: visitor::Element,
     T: State,
-    S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<Lifetime> + Session<Type> + Session<Constant>,
 >(
     target_term: &Term,
     respect_to_type: &Type,
-    table: &Table<T>,
-    premise: &Premise,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<T>,
+    limit: &mut Limit<R>,
 ) -> Result<Vec<Vec<SubTermLocation>>, ExceedLimitError>
 where
-    for<'a, 't, 'p, 's, 'l, 'r> TermCollector<'a, 't, 'p, 's, 'l, 'r, Term, T, S, R>:
-        visitor::Recursive<Lifetime>
-            + visitor::Recursive<Type>
-            + visitor::Recursive<Constant>,
+    for<'a, 'l, 'r> TermCollector<'a, 'l, 'r, Term, T, R>: visitor::Recursive<Lifetime>
+        + visitor::Recursive<Type>
+        + visitor::Recursive<Constant>,
 {
     let mut collector = TermCollector {
         target: target_term,
         locations: Ok(Vec::new()),
 
-        table,
-        premise,
-        semantic,
-        session,
+        limit,
+        environment,
     };
 
     visitor::accept_recursive(respect_to_type, &mut collector);
@@ -161,44 +137,38 @@ where
     collector.locations
 }
 
-impl<T: State> Table<T> {
-    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-    fn get_variance_for_locations<
-        U: Term,
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
-        &self,
-        term: &U,
-        respect_to_type: &Type,
-        mut locations: Vec<SubTermLocation>,
-        premise: &Premise,
-        semantic: &mut S,
-        session: &mut Limit<R>,
-        visited_terms: &mut HashSet<Type>,
-        is_root: bool,
-    ) -> Result<Variance, ExceedLimitError>
-    where
-        for<'a, 't, 'p, 's, 'l, 'r> TermCollector<'a, 't, 'p, 's, 'l, 'r, U, T, S, R>:
-            visitor::Recursive<Lifetime>
-                + visitor::Recursive<Type>
-                + visitor::Recursive<Constant>,
-    {
-        let this_location = if locations.is_empty() {
-            return Ok(Variance::Bivariant);
-        } else {
-            locations.remove(0)
-        };
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+fn get_variance_for_locations<
+    U: Term,
+    T: State,
+    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+>(
+    term: &U,
+    respect_to_type: &Type,
+    mut locations: Vec<SubTermLocation>,
+    environment: &Environment<T>,
+    limit: &mut Limit<R>,
+    visited_terms: &mut HashSet<Type>,
+    is_root: bool,
+) -> Result<Variance, ExceedLimitError>
+where
+    for<'a, 'l, 'r> TermCollector<'a, 'l, 'r, U, T, R>: visitor::Recursive<Lifetime>
+        + visitor::Recursive<Type>
+        + visitor::Recursive<Constant>,
+{
+    let this_location = if locations.is_empty() {
+        return Ok(Variance::Bivariant);
+    } else {
+        locations.remove(0)
+    };
 
-        let mut result = match this_location {
-            SubTermLocation::Lifetime(
-                visitor::SubLifetimeLocation::FromType(location),
-            ) => match (location, respect_to_type) {
-                // lifetime in the symbol kind
-                (
-                    SubLifetimeLocation::Symbol(location),
-                    Type::Symbol(symbol),
-                ) => match symbol.id {
+    let result = match this_location {
+        SubTermLocation::Lifetime(visitor::SubLifetimeLocation::FromType(
+            location,
+        )) => match (location, respect_to_type) {
+            // lifetime in the symbol kind
+            (SubLifetimeLocation::Symbol(location), Type::Symbol(symbol)) => {
+                match symbol.id {
                     id @ (SymbolID::Struct(_) | SymbolID::Enum(_)) => {
                         let adt_id = match id {
                             SymbolID::Struct(id) => AdtID::Struct(id),
@@ -208,7 +178,7 @@ impl<T: State> Table<T> {
 
                         assert!(locations.is_empty());
 
-                        let adt = self.get_adt(adt_id).unwrap();
+                        let adt = environment.table.get_adt(adt_id).unwrap();
                         // gets the id based on the position
                         let id = adt
                             .generic_declaration()
@@ -226,24 +196,24 @@ impl<T: State> Table<T> {
 
                     // results None, we need to normalize the type
                     SymbolID::Type(_) => None,
-                },
-
-                // lifetime in the reference
-                (SubLifetimeLocation::Reference, Type::Reference(_)) => {
-                    assert!(locations.is_empty());
-
-                    Some(Variance::Covariant)
                 }
+            }
 
-                (location, ty) => unreachable!(
-                    "mismatched location and type: {:?}, {:?}",
-                    location, ty
-                ),
-            },
+            // lifetime in the reference
+            (SubLifetimeLocation::Reference, Type::Reference(_)) => {
+                assert!(locations.is_empty());
 
-            SubTermLocation::Type(visitor::SubTypeLocation::FromType(
-                location,
-            )) => match (location, respect_to_type) {
+                Some(Variance::Covariant)
+            }
+
+            (location, ty) => unreachable!(
+                "mismatched location and type: {:?}, {:?}",
+                location, ty
+            ),
+        },
+
+        SubTermLocation::Type(visitor::SubTypeLocation::FromType(location)) => {
+            match (location, respect_to_type) {
                 (SubTypeLocation::Symbol(location), Type::Symbol(symbol)) => {
                     match symbol.id {
                         id @ (SymbolID::Struct(_) | SymbolID::Enum(_)) => {
@@ -253,30 +223,23 @@ impl<T: State> Table<T> {
                                 SymbolID::Type(_) => unreachable!(),
                             };
 
-                            let adt = self.get_adt(adt_id).unwrap();
+                            let adt =
+                                environment.table.get_adt(adt_id).unwrap();
                             // gets the id based on the position
                             let id = adt
                                 .generic_declaration()
                                 .parameters
                                 .type_order()[location.0];
 
-                            let inner_variance = self
-                                .get_variance_for_locations(
-                                    term,
-                                    &symbol.generic_arguments.types[location.0],
-                                    locations,
-                                    premise,
-                                    semantic,
-                                    session,
-                                    visited_terms,
-                                    false,
-                                )?;
-
-                            dbg!(
-                                inner_variance,
-                                adt.generic_parameter_variances(),
-                                id
-                            );
+                            let inner_variance = get_variance_for_locations(
+                                term,
+                                &symbol.generic_arguments.types[location.0],
+                                locations,
+                                environment,
+                                limit,
+                                visited_terms,
+                                false,
+                            )?;
 
                             Some(
                                 adt.generic_parameter_variances()
@@ -295,18 +258,17 @@ impl<T: State> Table<T> {
 
                 (SubTypeLocation::Pointer, Type::Pointer(pointer)) => {
                     if pointer.qualifier == Qualifier::Mutable
-                        || pointer.qualifier == Qualifier::Restrict
+                        || pointer.qualifier == Qualifier::Unique
                     {
                         Some(Variance::Invariant)
                     } else {
                         Some(
-                            self.get_variance_for_locations(
+                            get_variance_for_locations(
                                 term,
                                 &pointer.pointee,
                                 locations,
-                                premise,
-                                semantic,
-                                session,
+                                environment,
+                                limit,
                                 visited_terms,
                                 false,
                             )?
@@ -317,18 +279,17 @@ impl<T: State> Table<T> {
 
                 (SubTypeLocation::Reference, Type::Reference(reference)) => {
                     if reference.qualifier == Qualifier::Mutable
-                        || reference.qualifier == Qualifier::Restrict
+                        || reference.qualifier == Qualifier::Unique
                     {
                         Some(Variance::Invariant)
                     } else {
                         Some(
-                            self.get_variance_for_locations(
+                            get_variance_for_locations(
                                 term,
                                 &reference.pointee,
                                 locations,
-                                premise,
-                                semantic,
-                                session,
+                                environment,
+                                limit,
                                 visited_terms,
                                 false,
                             )?
@@ -338,13 +299,12 @@ impl<T: State> Table<T> {
                 }
 
                 (SubTypeLocation::Array, Type::Array(array)) => Some(
-                    self.get_variance_for_locations(
+                    get_variance_for_locations(
                         term,
                         &array.r#type,
                         locations,
-                        premise,
-                        semantic,
-                        session,
+                        environment,
+                        limit,
                         visited_terms,
                         false,
                     )?
@@ -358,13 +318,12 @@ impl<T: State> Table<T> {
                     let tuple = location.get_sub_term(tuple).unwrap();
 
                     Some(
-                        self.get_variance_for_locations(
+                        get_variance_for_locations(
                             term,
                             &tuple,
                             locations,
-                            premise,
-                            semantic,
-                            session,
+                            environment,
+                            limit,
                             visited_terms,
                             false,
                         )?
@@ -373,13 +332,12 @@ impl<T: State> Table<T> {
                 }
 
                 (SubTypeLocation::Local, Type::Local(local)) => Some(
-                    self.get_variance_for_locations(
+                    get_variance_for_locations(
                         term,
                         &local.0,
                         locations,
-                        premise,
-                        semantic,
-                        session,
+                        environment,
+                        limit,
                         visited_terms,
                         false,
                     )?
@@ -387,13 +345,12 @@ impl<T: State> Table<T> {
                 ),
 
                 (SubTypeLocation::Phantom, Type::Phantom(phantom)) => Some(
-                    self.get_variance_for_locations(
+                    get_variance_for_locations(
                         term,
                         &phantom.0,
                         locations,
-                        premise,
-                        semantic,
-                        session,
+                        environment,
+                        limit,
                         visited_terms,
                         false,
                     )?
@@ -409,201 +366,127 @@ impl<T: State> Table<T> {
                 }
 
                 _ => unreachable!(),
-            },
+            }
+        }
 
-            SubTermLocation::Constant(
-                visitor::SubConstantLocation::FromConstant(_),
-            ) => Some(Variance::Invariant),
+        SubTermLocation::Constant(
+            visitor::SubConstantLocation::FromConstant(_),
+        ) => Some(Variance::Invariant),
 
-            _ => unreachable!(),
-        };
+        _ => unreachable!(),
+    };
 
-        // if none or invariant, try to normalize the type
-        result = match result {
-            result @ (Some(Variance::Invariant) | None) => {
-                if let Some(normalized_type) = semantic.normalize(
-                    respect_to_type,
-                    premise,
-                    self,
-                    session,
+    // if none or invariant, try to use the equivalences
+    match result {
+        result @ (Some(Variance::Invariant) | None) => {
+            for eq in get_equivalences(respect_to_type, environment, limit)? {
+                match get_variance_for_internal(
+                    term,
+                    &eq,
+                    environment,
+                    limit,
+                    visited_terms,
+                    is_root,
                 )? {
-                    self.get_variance_for_internal(
-                        term,
-                        &normalized_type,
-                        premise,
-                        semantic,
-                        session,
-                        visited_terms,
-                        is_root,
-                    )?
-                } else {
-                    result
+                    Some(
+                        result @ (Variance::Contravariant
+                        | Variance::Bivariant
+                        | Variance::Covariant),
+                    ) => {
+                        return Ok(result);
+                    }
+                    None | Some(Variance::Invariant) => {}
                 }
             }
 
-            Some(result) => {
-                return Ok(result);
-            }
-        };
-
-        // if none or invariant, try to look for equivalences
-        match result {
-            result @ (Some(Variance::Invariant) | None) => {
-                for (key, values) in &premise.equalities_mapping.types {
-                    if !equality::equals(
-                        key,
-                        respect_to_type,
-                        premise,
-                        self,
-                        semantic,
-                        session,
-                    )? {
-                        continue;
-                    }
-
-                    match self.get_variance_for_internal(
-                        term,
-                        respect_to_type,
-                        premise,
-                        semantic,
-                        session,
-                        visited_terms,
-                        is_root,
-                    )? {
-                        Some(
-                            result @ (Variance::Contravariant
-                            | Variance::Bivariant
-                            | Variance::Covariant),
-                        ) => {
-                            return Ok(result);
-                        }
-                        None | Some(Variance::Invariant) => {}
-                    }
-
-                    for value in values {
-                        match self.get_variance_for_internal(
-                            term,
-                            value,
-                            premise,
-                            semantic,
-                            session,
-                            visited_terms,
-                            is_root,
-                        )? {
-                            Some(
-                                result @ (Variance::Contravariant
-                                | Variance::Bivariant
-                                | Variance::Covariant),
-                            ) => {
-                                return Ok(result);
-                            }
-                            None | Some(Variance::Invariant) => {}
-                        }
-                    }
-                }
-
-                Ok(result.unwrap_or(Variance::Bivariant))
-            }
-
-            Some(result) => Ok(result),
+            Ok(result.unwrap_or(Variance::Bivariant))
         }
+
+        Some(result) => Ok(result),
+    }
+}
+
+/// Gets the variance constraint of a particular term with respect to the
+/// given type.
+///
+/// # Errors
+///
+/// See [`ExceedLimitError`] for more information.
+#[allow(private_bounds)]
+pub(super) fn get_variance_for<
+    U: Term,
+    T: State,
+    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+>(
+    term: &U,
+    respect_to_type: &Type,
+    environment: &Environment<T>,
+    session: &mut Limit<R>,
+) -> Result<Variance, ExceedLimitError>
+where
+    for<'a, 'l, 'r> TermCollector<'a, 'l, 'r, U, T, R>: visitor::Recursive<Lifetime>
+        + visitor::Recursive<Type>
+        + visitor::Recursive<Constant>,
+{
+    get_variance_for_internal(
+        term,
+        respect_to_type,
+        environment,
+        session,
+        &mut HashSet::new(),
+        true,
+    )
+    .map(|x| x.unwrap_or(Variance::Bivariant))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn get_variance_for_internal<
+    U: Term,
+    T: State,
+    R: Session<Lifetime> + Session<Type> + Session<Constant>,
+>(
+    term: &U,
+    respect_to_type: &Type,
+    environment: &Environment<T>,
+    limit: &mut Limit<R>,
+    visited_terms: &mut HashSet<Type>,
+    is_root: bool,
+) -> Result<Option<Variance>, ExceedLimitError>
+where
+    for<'a, 'l, 'r> TermCollector<'a, 'l, 'r, U, T, R>: visitor::Recursive<Lifetime>
+        + visitor::Recursive<Type>
+        + visitor::Recursive<Constant>,
+{
+    if !visited_terms.insert(respect_to_type.clone()) {
+        return Ok(None);
     }
 
-    /// Gets the variance constraint of a particular term with respect to the
-    /// given type.
-    ///
-    /// # Errors
-    ///
-    /// See [`ExceedLimitError`] for more information.
-    #[allow(private_bounds)]
-    pub(super) fn get_variance_for<
-        U: Term,
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
-        &self,
-        term: &U,
-        respect_to_type: &Type,
-        premise: &Premise,
-        semantic: &mut S,
-        session: &mut Limit<R>,
-    ) -> Result<Variance, ExceedLimitError>
-    where
-        for<'a, 't, 'p, 's, 'l, 'r> TermCollector<'a, 't, 'p, 's, 'l, 'r, U, T, S, R>:
-            visitor::Recursive<Lifetime>
-                + visitor::Recursive<Type>
-                + visitor::Recursive<Constant>,
-    {
-        self.get_variance_for_internal(
+    let locations =
+        get_all_term_locations(term, respect_to_type, environment, limit)?;
+
+    let mut variance: Variance = Variance::Bivariant;
+    for locations in locations {
+        if locations.is_empty() && is_root {
+            variance = variance.chain(Variance::Covariant);
+            continue;
+        }
+
+        variance = variance.chain(get_variance_for_locations(
             term,
             respect_to_type,
-            premise,
-            semantic,
-            session,
-            &mut HashSet::new(),
-            true,
-        )
-        .map(|x| x.unwrap_or(Variance::Bivariant))
+            locations,
+            environment,
+            limit,
+            visited_terms,
+            is_root,
+        )?);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn get_variance_for_internal<
-        U: Term,
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
-        &self,
-        term: &U,
-        respect_to_type: &Type,
-        premise: &Premise,
-        semantic: &mut S,
-        session: &mut Limit<R>,
-        visited_terms: &mut HashSet<Type>,
-        is_root: bool,
-    ) -> Result<Option<Variance>, ExceedLimitError>
-    where
-        for<'a, 't, 'p, 's, 'l, 'r> TermCollector<'a, 't, 'p, 's, 'l, 'r, U, T, S, R>:
-            visitor::Recursive<Lifetime>
-                + visitor::Recursive<Type>
-                + visitor::Recursive<Constant>,
-    {
-        if !visited_terms.insert(respect_to_type.clone()) {
-            return Ok(None);
-        }
+    assert!(visited_terms.remove(respect_to_type));
+    Ok(Some(variance))
+}
 
-        let locations = get_all_term_locations(
-            term,
-            respect_to_type,
-            self,
-            premise,
-            semantic,
-            session,
-        )?;
-        dbg!(&locations, respect_to_type, term, is_root);
-
-        let mut variance: Variance = Variance::Bivariant;
-        for locations in locations {
-            if locations.is_empty() && is_root {
-                variance = variance.chain(Variance::Covariant);
-                continue;
-            }
-
-            variance = variance.chain(self.get_variance_for_locations(
-                term,
-                respect_to_type,
-                locations,
-                premise,
-                semantic,
-                session,
-                visited_terms,
-                is_root,
-            )?);
-        }
-
-        assert!(visited_terms.remove(respect_to_type));
-        Ok(Some(variance))
-    }
-
+impl<T: State> Table<T> {
     #[allow(clippy::needless_pass_by_value)]
     pub(super) fn build_variance<'a>(
         &self,
@@ -614,7 +497,6 @@ impl<T: State> Table<T> {
         type_usages: impl Iterator<Item = &'a Type> + Clone,
         _: &dyn Handler<Box<dyn Error>>,
     ) {
-        let mut semantic = semantic::Default;
         let mut session = session::Default::default();
 
         for (id, _) in generic_parameters.lifetime_parameters_as_order() {
@@ -624,11 +506,10 @@ impl<T: State> Table<T> {
             });
 
             for ty in type_usages.clone() {
-                match self.get_variance_for(
+                match get_variance_for(
                     &lifetime_term,
                     ty,
-                    active_premise,
-                    &mut semantic,
+                    &Environment { premise: active_premise, table: self },
                     &mut Limit::new(&mut session),
                 ) {
                     Ok(variance) => {
@@ -649,11 +530,10 @@ impl<T: State> Table<T> {
                 Type::Parameter(TypeParameterID { parent: generic_id, id });
 
             for ty in type_usages.clone() {
-                match self.get_variance_for(
+                match get_variance_for(
                     &type_term,
                     ty,
-                    active_premise,
-                    &mut semantic,
+                    &Environment { premise: active_premise, table: self },
                     &mut Limit::new(&mut session),
                 ) {
                     Ok(variance) => {

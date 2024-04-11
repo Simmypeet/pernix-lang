@@ -1,11 +1,11 @@
 use super::contains_forall_lifetime;
 use crate::{
     semantic::{
-        equality,
+        equality, get_equivalences,
         instantiation::{self, Instantiation},
-        session::{Cached, ExceedLimitError, Limit, Satisfied, Session},
+        session::{Cached, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        Premise, Semantic,
+        Environment, Satisfied,
     },
     table::{self, DisplayObject, State, Table},
 };
@@ -47,63 +47,41 @@ impl<T: Term> Tuple<T> {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn satisfies<
-        S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
+    pub fn satisfies(
         term: &T,
-        premise: &Premise,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<bool, ExceedLimitError> {
         // trivially satisfied
         if term.as_tuple().is_some() {
             return Ok(true);
         }
 
-        match session.mark_as_in_progress(Query(term), ())? {
+        match limit.mark_as_in_progress(Query(term), ())? {
             Some(Cached::Done(Satisfied)) => return Ok(true),
             Some(Cached::InProgress(())) => return Ok(false),
             None => {}
         }
 
         // check from predicates
-        for predicate in T::tuple_predicates(premise) {
-            if equality::equals(
-                predicate, term, premise, table, semantic, session,
-            )? {
-                session.mark_as_done(Query(term), Satisfied);
+        for predicate in T::tuple_predicates(environment.premise) {
+            if equality::equals(predicate, term, environment, limit)? {
+                limit.mark_as_done(Query(term), Satisfied);
                 return Ok(true);
             }
         }
 
-        // normalize the term
-        if let Some(normalized) =
-            semantic.normalize(term, premise, table, session)?
-        {
-            if Self::satisfies(&normalized, premise, table, semantic, session)?
-            {
-                session.mark_as_done(Query(term), Satisfied);
+        // get the equivalences
+        for eq in get_equivalences(term, environment, limit)? {
+            if Self::satisfies(&eq, environment, limit)? {
+                limit.mark_as_done(Query(term), Satisfied);
                 return Ok(true);
             }
         }
 
-        // check for equivalence
-        for (key, values) in T::get_mapping(&premise.equalities_mapping) {
-            if equality::equals(term, key, premise, table, semantic, session)? {
-                for value in values {
-                    if Self::satisfies(
-                        value, premise, table, semantic, session,
-                    )? {
-                        session.mark_as_done(Query(term), Satisfied);
-                        return Ok(true);
-                    }
-                }
-            }
-        }
-
-        session.clear_query(Query(term));
+        limit.clear_query(Query(term));
         Ok(false)
     }
 }

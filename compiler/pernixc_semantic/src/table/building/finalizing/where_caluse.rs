@@ -1,3 +1,5 @@
+//! Contains the code for creating where clause predicates for generic symbols.
+
 use std::collections::{hash_map::Entry, HashMap};
 
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};

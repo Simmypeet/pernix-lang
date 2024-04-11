@@ -102,8 +102,8 @@ pub enum KeywordKind {
     Type,
     /// `static` keyword.
     Static,
-    /// `restrict` keyword.
-    Restrict,
+    /// `unique` keyword.
+    Unique,
     /// `where` keyword.
     Where,
     /// `trait` keyword.
@@ -128,6 +128,8 @@ pub enum KeywordKind {
     Case,
     /// `phantom` keyword
     Phantom,
+    /// `ref` keyword
+    Ref,
 }
 
 impl ToString for KeywordKind {
@@ -207,7 +209,7 @@ impl KeywordKind {
             Self::Delete => "delete",
             Self::Type => "type",
             Self::Static => "static",
-            Self::Restrict => "restrict",
+            Self::Unique => "unique",
             Self::Where => "where",
             Self::Trait => "trait",
             Self::Using => "using",
@@ -218,6 +220,7 @@ impl KeywordKind {
             Self::Tuple => "tuple",
             Self::Case => "case",
             Self::Phantom => "phantom",
+            Self::Ref => "ref",
         }
     }
 }

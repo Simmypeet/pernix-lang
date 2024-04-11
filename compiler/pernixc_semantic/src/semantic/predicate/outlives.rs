@@ -1,13 +1,14 @@
 use super::contains_forall_lifetime;
 use crate::{
     semantic::{
+        get_equivalences,
         instantiation::{self, Instantiation},
         mapping::Mapping,
         predicate::Satisfiability,
-        session::{Cached, ExceedLimitError, Limit, Satisfied, Session},
+        session::{Cached, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
         unification::{self, Unification},
-        visitor, Premise, Semantic,
+        visitor, Environment, Satisfied,
     },
     table::{self, DisplayObject, State, Table},
 };
@@ -64,40 +65,32 @@ impl<T: Term> Outlives<T> {
 
 struct Visitor<
     'a,
-    's,
     'r,
     'l,
     T: State,
-    S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<Lifetime> + Session<Type> + Session<Constant>,
 > {
     outlives: Result<bool, ExceedLimitError>,
     bound: &'a Lifetime,
-    premise: &'a Premise,
-    table: &'a Table<T>,
-    semantic: &'s mut S,
-    session: &'l mut Limit<'r, R>,
+    environment: &'a Environment<'a, T>,
+    limit: &'l mut Limit<'r, R>,
 }
 
 impl<
         'a,
-        's,
         'r,
         'l,
         U: Term,
         T: State,
-        S: Semantic<U> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor<U> for Visitor<'a, 's, 'r, 'l, T, S, R>
+    > visitor::Visitor<U> for Visitor<'a, 'r, 'l, T, R>
 {
     fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match Outlives::satisfies(
             term,
             self.bound,
-            self.premise,
-            self.table,
-            self.semantic,
-            self.session,
+            self.environment,
+            self.limit,
         ) {
             result @ (Err(_) | Ok(false)) => {
                 self.outlives = result;
@@ -112,27 +105,38 @@ impl<
 struct OutlivesUnifyingConfig;
 
 impl unification::Config for OutlivesUnifyingConfig {
-    fn lifetime_unifiable(&mut self, _: &Lifetime, _: &Lifetime) -> bool {
-        true
+    fn lifetime_unifiable(
+        &mut self,
+        _: &Lifetime,
+        _: &Lifetime,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(true)
     }
 
-    fn type_unifiable(&mut self, _: &Type, _: &Type) -> bool { false }
+    fn type_unifiable(
+        &mut self,
+        _: &Type,
+        _: &Type,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(false)
+    }
 
-    fn constant_unifiable(&mut self, _: &Constant, _: &Constant) -> bool {
-        false
+    fn constant_unifiable(
+        &mut self,
+        _: &Constant,
+        _: &Constant,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(false)
     }
 }
 
 impl<T: Term> Outlives<T> {
-    fn satisfies_by_lifetime_matching<
-        S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
+    fn satisfies_by_lifetime_matching(
         unification: Unification<T>,
-        premise: &Premise,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<bool, ExceedLimitError> {
         let mapping = Mapping::from_unification(unification);
 
@@ -141,10 +145,7 @@ impl<T: Term> Outlives<T> {
 
         for (bound, operands) in mapping.lifetimes {
             for operand in operands {
-                if semantic.outlives_satisfiability(
-                    &bound, &operand, premise, table, session,
-                )? != Satisfiability::Satisfied
-                {
+                if !Outlives::satisfies(&bound, &operand, environment, limit)? {
                     return Ok(false);
                 }
             }
@@ -158,25 +159,22 @@ impl<T: Term> Outlives<T> {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn satisfies<
-        S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
+    pub fn satisfies(
         operand: &T,
         bound: &Lifetime,
-        premise: &Premise,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<bool, ExceedLimitError> {
-        let satisfiability = semantic
-            .outlives_satisfiability(operand, bound, premise, table, session)?;
+        let satisfiability =
+            operand.outlives_satisfiability(bound, environment, limit)?;
 
         if satisfiability == Satisfiability::Satisfied {
             return Ok(true);
         }
 
-        match session.mark_as_in_progress(Query { operand, bound }, ())? {
+        match limit.mark_as_in_progress(Query { operand, bound }, ())? {
             Some(Cached::Done(Satisfied)) => return Ok(true),
             Some(Cached::InProgress(())) => return Ok(false),
             None => {}
@@ -184,68 +182,42 @@ impl<T: Term> Outlives<T> {
 
         // check if all sub-terms are satisfiable
         if satisfiability == Satisfiability::Congruent {
-            let mut visitor = Visitor {
-                outlives: Ok(true),
-                bound,
-                premise,
-                table,
-                semantic,
-                session,
-            };
+            let mut visitor =
+                Visitor { outlives: Ok(true), bound, environment, limit };
 
             let _ = operand.accept_one_level(&mut visitor);
 
             if visitor.outlives? {
-                session.mark_as_done(Query { operand, bound }, Satisfied);
+                limit.mark_as_done(Query { operand, bound }, Satisfied);
                 return Ok(true);
             }
         }
 
-        // normalize operand
-        if let Some(normalized_operand) =
-            semantic.normalize(operand, premise, table, session)?
-        {
-            if Self::satisfies(
-                &normalized_operand,
-                bound,
-                premise,
-                table,
-                semantic,
-                session,
-            )? {
-                session.mark_as_done(Query { operand, bound }, Satisfied);
+        // look for operand equivalences
+        for operand_eq in get_equivalences(operand, environment, limit)? {
+            if Self::satisfies(&operand_eq, bound, environment, limit)? {
+                limit.mark_as_done(Query { operand, bound }, Satisfied);
                 return Ok(true);
             }
         }
 
-        // normalize bound
-        if let Some(normalized_bound) =
-            semantic.normalize(bound, premise, table, session)?
-        {
-            if Self::satisfies(
-                operand,
-                &normalized_bound,
-                premise,
-                table,
-                semantic,
-                session,
-            )? {
-                session.mark_as_done(Query { operand, bound }, Satisfied);
+        // look for bound equivalences
+        for bound_eq in get_equivalences(bound, environment, limit)? {
+            if Self::satisfies(operand, &bound_eq, environment, limit)? {
+                limit.mark_as_done(Query { operand, bound }, Satisfied);
                 return Ok(true);
             }
         }
 
         for Self { operand: next_operand, bound: next_bound } in
-            T::outlives_predicates(premise)
+            T::outlives_predicates(environment.premise)
         {
             let Some(unification) = unification::unify(
                 operand,
                 next_operand,
-                premise,
-                table,
                 &mut OutlivesUnifyingConfig,
-                semantic,
-                session,
+                environment,
+                limit,
             )?
             else {
                 continue;
@@ -253,23 +225,19 @@ impl<T: Term> Outlives<T> {
 
             if !Self::satisfies_by_lifetime_matching(
                 unification,
-                premise,
-                table,
-                semantic,
-                session,
+                environment,
+                limit,
             )? {
                 continue;
             }
 
-            if Outlives::satisfies(
-                next_bound, bound, premise, table, semantic, session,
-            )? {
-                session.mark_as_done(Query { operand, bound }, Satisfied);
+            if Outlives::satisfies(next_bound, bound, environment, limit)? {
+                limit.mark_as_done(Query { operand, bound }, Satisfied);
                 return Ok(true);
             }
         }
 
-        session.clear_query(Query { operand, bound });
+        limit.clear_query(Query { operand, bound });
         Ok(false)
     }
 }

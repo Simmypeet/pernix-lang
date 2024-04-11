@@ -6,7 +6,7 @@
 
 use std::{
     borrow::Borrow,
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Debug,
     hash::Hash,
     marker::PhantomData,
@@ -94,6 +94,42 @@ impl<T> std::hash::Hash for ID<T> {
     }
 }
 
+/// A helper struct that allows reserving [`ID`]s in an [`Arena`].
+///
+/// These [`ID`]s are guaranteed to be unique to the [`Arena`] and to the ones
+/// reserved by this struct. These [`ID`]s can then be used to insert items into
+/// the [`Arena`] with the [`Arena::insert_with_id`] method.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Reserve<'a, T: 'static> {
+    arena: &'a Arena<T>,
+    reserved: HashSet<ID<T>>,
+}
+
+impl<'a, T: 'static> Reserve<'a, T> {
+    /// Creates a new [`Reserve`] struct that can be used to reserve [`ID`]s in
+    /// the given [`Arena`].
+    #[must_use]
+    pub fn new(arena: &'a Arena<T>) -> Self {
+        Self { arena, reserved: HashSet::new() }
+    }
+
+    /// Reserves a new [`ID`] in the [`Arena`] and returns it.
+    ///
+    /// The [`ID`] is guaranteed to be unique to the [`Arena`] and the ones
+    /// reserved by this struct.
+    pub fn reserve(&mut self) -> ID<T> {
+        let mut id = self.arena.get_available_id().into_index();
+
+        while self.reserved.contains(&ID::from_index(id)) {
+            id += 1;
+        }
+
+        self.reserved.insert(ID::from_index(id));
+
+        ID::from_index(id)
+    }
+}
+
 /// Represents a collection of items of type `T` that can be referenced by an
 /// [`ID`].
 ///
@@ -127,16 +163,27 @@ impl<T, Idx: Key> Arena<T, Idx> {
 
     /// Inserts a new item into the [`Arena`] and returns its `Idx`.
     pub fn insert(&mut self, item: T) -> Idx {
-        self.insert_available(Idx::from_index(self.items.len()), |_| item)
+        let next_id = self.get_available_id();
+
+        assert!(self.items.insert(next_id, item).is_none()); // no prior value
+
+        next_id
     }
 
     /// Inserts a new item into the [`Arena`] by constructing it with the given
     /// function with the ID of the item as the argument.
     pub fn insert_with(&mut self, f: impl FnOnce(Idx) -> T) -> Idx {
-        self.insert_available(Idx::from_index(self.items.len()), f)
+        let id = self.get_available_id();
+
+        assert!(self.items.insert(id, f(id)).is_none()); // no prior value
+
+        id
     }
 
     /// Inserts a new item into the [`Arena`] with explicit `Idx`.
+    ///
+    /// If the `Idx` is already reserved, the arena will remove the given ID
+    /// from the reservation list and insert the item with the given ID.
     ///
     /// # Returns
     ///
@@ -145,37 +192,37 @@ impl<T, Idx: Key> Arena<T, Idx> {
     /// # Errors
     ///
     /// Returns `Err` with the `Idx` of the existing item if the `Idx` already
-    /// exists in the [`Arena`].
+    /// exists in the [`Arena`] or is reserved.
     pub fn insert_with_id(&mut self, id: Idx, item: T) -> Result<(), Idx> {
         match self.items.entry(id) {
+            Entry::Occupied(entry) => {
+                let existing_id = *entry.key();
+                Err(existing_id)
+            }
             Entry::Vacant(entry) => {
                 entry.insert(item);
+
                 Ok(())
             }
-
-            Entry::Occupied(entry) => Err(*entry.key()),
         }
     }
 
-    fn insert_available(&mut self, id: Idx, f: impl FnOnce(Idx) -> T) -> Idx {
-        match self.items.entry(id) {
-            Entry::Vacant(entry) => {
-                entry.insert(f(id));
-                id
-            }
+    /// Gets the [`ID`] that would be assigned to the next item inserted into
+    /// the [`Arena`].
+    #[must_use]
+    pub fn get_available_id(&self) -> Idx {
+        let mut index = self.items.len();
 
-            Entry::Occupied(_) => {
-                let index = id.into_index();
-                let index = Idx::from_index(index + 1);
-                self.insert_available(index, f)
-            }
+        while self.items.contains_key(&Idx::from_index(index)) {
+            index += 1;
         }
+
+        Idx::from_index(index)
     }
 
     /// Returns a reference to the item in the [`Arena`] with the given `Idx`.
     #[must_use]
     pub fn get(&self, id: Idx) -> Option<&T> { self.items.get(&id) }
-
     /// Returns a mutable reference to the item in the [`Arena`] with the given
     /// `Idx`.
     #[must_use]

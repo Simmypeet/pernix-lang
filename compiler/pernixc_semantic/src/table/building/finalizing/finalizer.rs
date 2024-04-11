@@ -1,3 +1,5 @@
+//! Contains the definition of the [`Finalizer`] and its related types.
+
 use std::{
     collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
     sync::{
@@ -46,6 +48,12 @@ pub struct State<S: Finalize> {
     /// when building the symbol.
     dependants_by_flag: HashMap<S::Flag, HashSet<GlobalID>>,
 }
+
+/// Finalizer is the state of the table used for finalizing the symbols.
+///
+/// This instance is used to synchronize the building of the symbols and
+/// dependecies management. This allows the table to build the symbols in
+/// parallel.
 #[derive(Debug, Default, derive_more::Deref, derive_more::DerefMut)]
 pub struct Finalizer(RwLock<Representation>);
 

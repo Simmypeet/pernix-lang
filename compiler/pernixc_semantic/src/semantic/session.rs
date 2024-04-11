@@ -1,4 +1,4 @@
-//! Contains the definition of [`Session`].
+//! Contains the definition of [`Session`].session
 
 use std::collections::{hash_map::Entry, HashMap};
 
@@ -10,12 +10,9 @@ use super::{
         Term,
     },
     unification::{self, Unification},
+    Satisfied,
 };
 use crate::{arena::ID, symbol};
-
-/// Describes a satisfiability of a certain predicate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Satisfied;
 
 /// The result of a query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -27,6 +24,12 @@ pub enum Cached<I, T> {
     Done(T),
 }
 
+/// An error that occurs when the number of queries exceeds the limit.
+///
+/// Due to the fact that the semantic system is partially-decidable, it is
+/// possible that the number of queries can be infinite. To prevent this, a
+/// limit is set to the number of queries that can be made. However, in most
+/// cases, the number of queries should not exceed the limit.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]

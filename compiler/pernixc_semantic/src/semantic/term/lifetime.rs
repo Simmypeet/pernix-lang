@@ -10,18 +10,20 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     constant::Constant, r#type::Type, AssignSubTermError, GenericArguments,
-    MemberSymbol, Never, Term, Tuple,
+    Never, Term, Tuple,
 };
 use crate::{
     arena::{Key, ID},
     semantic::{
+        equality,
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match, Matching},
-        predicate::{NonEquality, Outlives, Satisfiability},
+        predicate::{Outlives, Predicate, Satisfiability},
+        session::{ExceedLimitError, Limit, Session},
         sub_term::{Location, SubTerm},
         unification::{Substructural, Unification},
-        Premise,
+        Environment, Premise,
     },
     symbol::{GenericID, LifetimeParameter, LifetimeParameterID, MemberID},
     table::{self, State, Table},
@@ -149,9 +151,41 @@ impl Match for Lifetime {
     }
 }
 
+impl From<Never> for Lifetime {
+    fn from(value: Never) -> Self { match value {} }
+}
+
 impl Term for Lifetime {
     type GenericParameter = LifetimeParameter;
     type TraitMember = Never;
+
+    fn normalize(
+        &self,
+        _: &Environment<impl State>,
+        _: &mut Limit<impl Session<Self> + Session<Type> + Session<Constant>>,
+    ) -> Result<Option<Self>, ExceedLimitError> {
+        Ok(None)
+    }
+
+    fn outlives_satisfiability(
+        &self,
+        lifetime: &Lifetime,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Self> + Session<Type> + Session<Constant>,
+        >,
+    ) -> Result<Satisfiability, ExceedLimitError> {
+        if self.is_static() {
+            Ok(Satisfiability::Satisfied)
+        } else {
+            // reflexivity
+            if equality::equals(self, lifetime, environment, limit)? {
+                Ok(Satisfiability::Satisfied)
+            } else {
+                Ok(Satisfiability::Unsatisfied)
+            }
+        }
+    }
 
     fn as_generic_parameter(
         &self,
@@ -171,21 +205,11 @@ impl Term for Lifetime {
         self.into_parameter()
     }
 
-    fn as_trait_member(&self) -> Option<&MemberSymbol<ID<Self::TraitMember>>> {
-        None
-    }
+    fn as_trait_member(&self) -> Option<&Never> { None }
 
-    fn as_trait_member_mut(
-        &mut self,
-    ) -> Option<&mut MemberSymbol<ID<Self::TraitMember>>> {
-        None
-    }
+    fn as_trait_member_mut(&mut self) -> Option<&mut Never> { None }
 
-    fn into_trait_member(
-        self,
-    ) -> Result<MemberSymbol<ID<Self::TraitMember>>, Self> {
-        Err(self)
-    }
+    fn into_trait_member(self) -> Result<Never, Self> { Err(self) }
 
     fn as_tuple(&self) -> Option<&Tuple<Self>> { None }
 
@@ -203,10 +227,7 @@ impl Term for Lifetime {
     where
         Self: 'a,
     {
-        premise
-            .non_equality_predicates
-            .iter()
-            .filter_map(NonEquality::as_lifetime_outlives)
+        premise.predicates.iter().filter_map(Predicate::as_lifetime_outlives)
     }
 
     fn constant_type_predicates<'a>(

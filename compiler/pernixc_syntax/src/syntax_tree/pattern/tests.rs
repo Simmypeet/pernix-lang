@@ -12,18 +12,83 @@ use proptest::{
 use crate::syntax_tree::{
     self,
     expression::tests::{Boolean, Numeric},
-    tests::{ConnectedList, ConstantPunctuation, Identifier},
+    tests::{ConnectedList, ConstantPunctuation, Identifier, Qualifier},
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum NamedKind {
+    Value(bool),
+    Ref(Option<Qualifier>),
+}
+
+impl Display for NamedKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Value(mutable) => {
+                if *mutable {
+                    write!(f, "mutable")?;
+                }
+
+                Ok(())
+            }
+            Self::Ref(r) => {
+                write!(f, "ref")?;
+                if let Some(r) = r {
+                    write!(f, " {r}")?;
+                }
+
+                Ok(())
+            }
+        }
+    }
+}
+
+impl Arbitrary for NamedKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            proptest::bool::ANY.prop_map(NamedKind::Value),
+            proptest::option::of(Qualifier::arbitrary())
+                .prop_map(NamedKind::Ref),
+        ]
+        .boxed()
+    }
+}
+
+impl Input<&super::NamedKind> for &NamedKind {
+    fn assert(self, output: &super::NamedKind) -> TestCaseResult {
+        match (self, output) {
+            (
+                NamedKind::Value(input),
+                super::NamedKind::Value { mutable_keyword },
+            ) => {
+                prop_assert_eq!(*input, mutable_keyword.is_some());
+            }
+            (NamedKind::Ref(input), super::NamedKind::Ref(output)) => {
+                input.as_ref().assert(output.qualifier.as_ref())?;
+            }
+            (input, output) => {
+                return Err(TestCaseError::fail(format!(
+                    "Expected {input:?} but got {output:?}",
+                )));
+            }
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
-    pub is_mutable: bool,
     pub identifier: Identifier,
+    pub kind: NamedKind,
 }
 
 impl Input<&super::Named> for &Named {
     fn assert(self, output: &super::Named) -> TestCaseResult {
-        prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
+        self.kind.assert(&output.kind)?;
         self.identifier.assert(&output.identifier)
     }
 }
@@ -33,21 +98,37 @@ impl Arbitrary for Named {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (proptest::bool::ANY, Identifier::arbitrary())
-            .prop_map(|(is_mutable, identifier)| Self {
-                is_mutable,
-                identifier,
-            })
+        (NamedKind::arbitrary(), Identifier::arbitrary())
+            .prop_map(|(kind, identifier)| Self { identifier, kind })
             .boxed()
     }
 }
 
 impl Display for Named {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_mutable {
-            write!(f, "mutable ")?;
-        }
-        write!(f, "{}", self.identifier)
+        write!(f, "{} {}", self.kind, self.identifier)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Wildcard;
+
+impl Input<&super::Wildcard> for &Wildcard {
+    fn assert(self, _: &super::Wildcard) -> TestCaseResult { Ok(()) }
+}
+
+impl Arbitrary for Wildcard {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        proptest::strategy::Just(Self).boxed()
+    }
+}
+
+impl Display for Wildcard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "?")
     }
 }
 
@@ -183,60 +264,57 @@ impl<Pattern: Display> Display for Structural<Pattern> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Unpack {
-    pub is_mutable: bool,
-    pub identifier: Identifier,
+pub struct Unpacked<Pattern> {
+    pub pattern: Box<Pattern>,
 }
 
-impl Input<&super::Unpack> for &Unpack {
-    fn assert(self, output: &super::Unpack) -> TestCaseResult {
-        prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
-        self.identifier.assert(&output.identifier)
+impl<I: Debug, O: Debug> Input<&super::Unpacked<O>> for &Unpacked<I>
+where
+    for<'i, 'o> &'i I: Input<&'o O>,
+{
+    fn assert(self, output: &super::Unpacked<O>) -> TestCaseResult {
+        self.pattern.assert(&output.pattern)
     }
 }
 
-impl Arbitrary for Unpack {
-    type Parameters = ();
+impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
+    for Unpacked<Pattern>
+{
+    type Parameters = Option<BoxedStrategy<Pattern>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (proptest::bool::ANY, Identifier::arbitrary())
-            .prop_map(|(is_mutable, identifier)| Self {
-                is_mutable,
-                identifier,
-            })
-            .boxed()
+    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
+        let pattern = arg.unwrap_or_else(Pattern::arbitrary);
+
+        pattern.prop_map(|pattern| Self { pattern: Box::new(pattern) }).boxed()
     }
 }
 
-impl Display for Unpack {
+impl<Pattern: Display> Display for Unpacked<Pattern> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "...")?;
-        if self.is_mutable {
-            write!(f, "mutable ")?;
-        }
-        write!(f, "{}", self.identifier)
+        write!(f, "...{}", self.pattern)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Unpackable<Pattern> {
-    Unpack(Unpack),
-    Pattern(Box<Pattern>),
+    Unpacked(Unpacked<Pattern>),
+    Regular(Box<Pattern>),
 }
 
-impl<I: Debug, O: Debug> Input<&super::Unpackable<O>> for &Unpackable<I>
+impl<I: Debug, O: Debug> Input<&super::TupleElement<O>> for &Unpackable<I>
 where
     for<'i, 'o> &'i I: Input<&'o O>,
 {
-    fn assert(self, output: &super::Unpackable<O>) -> TestCaseResult {
+    fn assert(self, output: &super::TupleElement<O>) -> TestCaseResult {
         match (self, output) {
-            (Unpackable::Unpack(input), super::Unpackable::Unpack(output)) => {
-                input.assert(output)
-            }
             (
-                Unpackable::Pattern(input),
-                super::Unpackable::Pattern(output),
+                Unpackable::Unpacked(input),
+                super::TupleElement::Unpacked(output),
+            ) => input.assert(output),
+            (
+                Unpackable::Regular(input),
+                super::TupleElement::Regular(output),
             ) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
@@ -255,8 +333,8 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
         let pattern = args.unwrap_or_else(Pattern::arbitrary);
 
         prop_oneof![
-            Unpack::arbitrary().prop_map(Self::Unpack),
-            pattern.prop_map(|x| Self::Pattern(Box::new(x)))
+            Unpacked::arbitrary().prop_map(Self::Unpacked),
+            pattern.prop_map(|x| Self::Regular(Box::new(x)))
         ]
         .boxed()
     }
@@ -265,8 +343,8 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
 impl<Pattern: Display> Display for Unpackable<Pattern> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unpack(unpack) => write!(f, "{unpack}"),
-            Self::Pattern(pattern) => write!(f, "{pattern}"),
+            Self::Unpacked(unpack) => write!(f, "{unpack}"),
+            Self::Regular(pattern) => write!(f, "{pattern}"),
         }
     }
 }
@@ -317,6 +395,7 @@ pub enum Irrefutable {
     Structural(Structural<Self>),
     Tuple(Tuple<Self>),
     Named(Named),
+    Wildcard(Wildcard),
 }
 
 impl Input<&super::Irrefutable> for &Irrefutable {
@@ -332,6 +411,10 @@ impl Input<&super::Irrefutable> for &Irrefutable {
             (Irrefutable::Named(input), super::Irrefutable::Named(output)) => {
                 input.assert(output)
             }
+            (
+                Irrefutable::Wildcard(input),
+                super::Irrefutable::Wildcard(output),
+            ) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -344,7 +427,10 @@ impl Arbitrary for Irrefutable {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        let leaf = Named::arbitrary().prop_map(Self::Named);
+        let leaf = prop_oneof![
+            Named::arbitrary().prop_map(Self::Named),
+            Wildcard::arbitrary().prop_map(Self::Wildcard),
+        ];
 
         leaf.prop_recursive(4, 24, 6, |inner| {
             prop_oneof![
@@ -363,6 +449,7 @@ impl Display for Irrefutable {
             Self::Structural(structural) => write!(f, "{structural}"),
             Self::Tuple(tuple) => write!(f, "{tuple}"),
             Self::Named(named) => write!(f, "{named}"),
+            Self::Wildcard(wildcard) => write!(f, "{wildcard}"),
         }
     }
 }
@@ -424,6 +511,7 @@ pub enum Refutable {
     Tuple(Tuple<Self>),
     Enum(Enum<Self>),
     Named(Named),
+    Wildcard(Wildcard),
 }
 
 impl Input<&super::Refutable> for &Refutable {
@@ -431,11 +519,11 @@ impl Input<&super::Refutable> for &Refutable {
         match (self, output) {
             (
                 Refutable::BooleanLiteral(input),
-                super::Refutable::BooleanLiteral(output),
+                super::Refutable::Boolean(output),
             ) => input.assert(output),
             (
                 Refutable::NumericLiteral(input),
-                super::Refutable::NumericLiteral(output),
+                super::Refutable::Numeric(output),
             ) => input.assert(output),
             (
                 Refutable::Structural(input),
@@ -450,6 +538,10 @@ impl Input<&super::Refutable> for &Refutable {
             (Refutable::Named(input), super::Refutable::Named(output)) => {
                 input.assert(output)
             }
+            (
+                Refutable::Wildcard(input),
+                super::Refutable::Wildcard(output),
+            ) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
                 "Expected {input:?} but got {output:?}",
             ))),
@@ -466,6 +558,7 @@ impl Arbitrary for Refutable {
             Boolean::arbitrary().prop_map(Self::BooleanLiteral),
             Numeric::arbitrary().prop_map(Self::NumericLiteral),
             Named::arbitrary().prop_map(Self::Named),
+            Wildcard::arbitrary().prop_map(Self::Wildcard),
         ];
 
         leaf.prop_recursive(4, 24, 6, |inner| {
@@ -494,6 +587,7 @@ impl Display for Refutable {
             Self::Tuple(tuple) => write!(f, "{tuple}"),
             Self::Enum(enum_) => write!(f, "{enum_}"),
             Self::Named(named) => write!(f, "{named}"),
+            Self::Wildcard(wildcard) => write!(f, "{wildcard}"),
         }
     }
 }

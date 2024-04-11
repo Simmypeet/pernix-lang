@@ -12,7 +12,7 @@ use crate::{
     semantic::{
         self,
         equality::equals,
-        mapping,
+        equivalent::Equivalent,
         session::{self, ExceedLimitError, Limit, Session},
         sub_term::Location,
         term::{
@@ -323,9 +323,7 @@ impl<
 
         let mapped = self.property.generate().1;
 
-        premise
-            .equalities_mapping
-            .insert(T::from(self.mapping.clone()), mapped);
+        premise.equivalent.insert(T::from(self.mapping.clone()), mapped);
 
         Ok(())
     }
@@ -360,7 +358,7 @@ where
 
 fn add_equality_mapping_from_unification<T: Term>(
     unification: &Unification<T>,
-    equality_mapping: &mut mapping::Mapping,
+    equality_mapping: &mut Equivalent,
 ) -> TestCaseResult {
     match &unification.r#match {
         super::Matching::Unifiable(lhs, rhs) => {
@@ -503,7 +501,7 @@ where
         let mut premise_cloned = premise.clone();
         add_equality_mapping_from_unification(
             &unification,
-            &mut premise_cloned.equalities_mapping,
+            &mut premise_cloned.equivalent,
         )?;
 
         prop_assert!(equals(

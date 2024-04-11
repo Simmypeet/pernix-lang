@@ -1,50 +1,38 @@
 use super::Satisfiability;
 use crate::{
     semantic::{
-        equality,
-        session::{self, ExceedLimitError, Limit, Satisfied, Session},
+        get_equivalences,
+        session::{self, ExceedLimitError, Limit, Session},
         term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
-        visitor, Premise, Semantic,
+        visitor, Environment, Satisfied,
     },
-    table::{State, Table},
+    table::State,
 };
 
 #[derive(Debug)]
 struct Visitor<
     'a,
-    's,
     'r,
     'l,
     T: State,
-    S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
     R: Session<Lifetime> + Session<Type> + Session<Constant>,
 > {
     definite: Result<bool, ExceedLimitError>,
-    premise: &'a Premise,
-    table: &'a Table<T>,
-    semantic: &'s mut S,
-    session: &'l mut Limit<'r, R>,
+    environment: &'a Environment<'a, T>,
+    limit: &'l mut Limit<'r, R>,
 }
 
 impl<
         'a,
-        's,
         'r,
         'l,
         U: Term,
         T: State,
-        S: Semantic<U> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
         R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor<U> for Visitor<'a, 's, 'r, 'l, T, S, R>
+    > visitor::Visitor<U> for Visitor<'a, 'r, 'l, T, R>
 {
     fn visit(&mut self, term: &U, _: U::Location) -> bool {
-        match definite(
-            term,
-            self.premise,
-            self.table,
-            self.semantic,
-            self.session,
-        ) {
+        match definite(term, self.environment, self.limit) {
             result @ (Err(_) | Ok(false)) => {
                 self.definite = result;
                 false
@@ -66,26 +54,22 @@ pub struct Query<'a, T>(pub &'a T);
 /// # Errors
 ///
 /// See [`ExceedLimitError`] for more information.
-pub fn definite<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+pub fn definite<T: Term>(
     term: &T,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<bool, ExceedLimitError> {
     let satisfiability = term.definite_satisfiability();
 
     // trivially satisfiable
     if satisfiability == Satisfiability::Satisfied {
-        session.mark_as_done(Query(term), Satisfied);
+        limit.mark_as_done(Query(term), Satisfied);
         return Ok(true);
     }
 
-    match session.mark_as_in_progress(Query(term), ())? {
+    match limit.mark_as_in_progress(Query(term), ())? {
         Some(session::Cached::Done(Satisfied)) => return Ok(true),
         Some(session::Cached::InProgress(())) => {
             return Ok(false);
@@ -95,39 +79,25 @@ pub fn definite<
 
     // satisfiable with congruence
     if satisfiability == Satisfiability::Congruent {
-        let mut visitor =
-            Visitor { definite: Ok(true), premise, table, semantic, session };
+        let mut visitor = Visitor { definite: Ok(true), environment, limit };
 
         let _ = term.accept_one_level(&mut visitor);
 
         if visitor.definite? {
-            session.mark_as_done(Query(term), Satisfied);
+            limit.mark_as_done(Query(term), Satisfied);
             return Ok(true);
         }
     }
 
-    // satisfiable with normalization
-    if let Some(normalized) =
-        semantic.normalize(term, premise, table, session)?
-    {
-        if definite(&normalized, premise, table, semantic, session)? {
-            session.mark_as_done(Query(term), Satisfied);
+    // get the equivalences
+    for eq in get_equivalences(term, environment, limit)? {
+        if definite(&eq, environment, limit)? {
+            limit.mark_as_done(Query(term), Satisfied);
             return Ok(true);
         }
     }
 
-    for (key, values) in T::get_mapping(&premise.equalities_mapping) {
-        if equality::equals(term, key, premise, table, semantic, session)? {
-            for value in values {
-                if definite(value, premise, table, semantic, session)? {
-                    session.mark_as_done(Query(term), Satisfied);
-                    return Ok(true);
-                }
-            }
-        }
-    }
-
-    session.clear_query(Query(term));
+    limit.clear_query(Query(term));
     Ok(false)
 }
 

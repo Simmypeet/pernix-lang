@@ -51,7 +51,7 @@ impl Arbitrary for Qualifier {
         prop_oneof![
             Just(Self::Immutable),
             Just(Self::Mutable),
-            Just(Self::Restrict),
+            Just(Self::Unique),
         ]
         .boxed()
     }

@@ -1105,7 +1105,7 @@ pub enum BinaryOperator {
     LessThanOrEqual(Punctuation, Punctuation),
     GreaterThan(Punctuation),
     GreaterThanOrEqual(Punctuation, Punctuation),
-    RestrictAssign(Punctuation, Punctuation),
+    UniqueAssign(Punctuation, Punctuation),
     LogicalAnd(Keyword),
     LogicalOr(Keyword),
     BitwiseAnd(Punctuation),
@@ -1136,7 +1136,7 @@ impl BinaryOperator {
                 | Self::CompoundMultiply(..)
                 | Self::CompoundDivide(..)
                 | Self::CompoundModulo(..)
-                | Self::RestrictAssign(..)
+                | Self::UniqueAssign(..)
         )
     }
 
@@ -1158,7 +1158,7 @@ impl BinaryOperator {
             | Self::CompoundMultiply(..)
             | Self::CompoundDivide(..)
             | Self::CompoundModulo(..)
-            | Self::RestrictAssign(..) => 0,
+            | Self::UniqueAssign(..) => 0,
 
             Self::LogicalOr(..) => 1,
             Self::LogicalAnd(..) => 2,
@@ -1568,7 +1568,7 @@ impl Parser<'_> {
                     ':' => {
                         let equal =
                             parser.parse_punctuation('=', false, &Dummy)?;
-                        Some(BinaryOperator::RestrictAssign(p, equal))
+                        Some(BinaryOperator::UniqueAssign(p, equal))
                     }
                     '!' => {
                         let equal =
@@ -1853,7 +1853,7 @@ impl Parser<'_> {
                 let qualifier = match self.stop_at_significant() {
                     Reading::Unit(Token::Keyword(
                         keyword @ Keyword {
-                            kind: KeywordKind::Mutable | KeywordKind::Restrict,
+                            kind: KeywordKind::Mutable | KeywordKind::Unique,
                             ..
                         },
                     )) => {
@@ -1862,9 +1862,7 @@ impl Parser<'_> {
 
                         Some(match keyword.kind {
                             KeywordKind::Mutable => Qualifier::Mutable(keyword),
-                            KeywordKind::Restrict => {
-                                Qualifier::Restrict(keyword)
-                            }
+                            KeywordKind::Unique => Qualifier::Unique(keyword),
                             _ => unreachable!(),
                         })
                     }

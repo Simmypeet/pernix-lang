@@ -10,9 +10,9 @@ use super::{
         Term,
     },
     unification::{self, Unification},
-    Premise, Semantic,
+    Environment,
 };
-use crate::table::{State, Table};
+use crate::table::State;
 
 /// The order in terms of specificity of the generic arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -38,31 +38,39 @@ fn constant_predicate(x: &Constant) -> bool {
 struct OrderUnifyingConfig;
 
 impl unification::Config for OrderUnifyingConfig {
-    fn lifetime_unifiable(&mut self, _: &Lifetime, _: &Lifetime) -> bool {
-        true
+    fn lifetime_unifiable(
+        &mut self,
+        _: &Lifetime,
+        _: &Lifetime,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(true)
     }
 
-    fn type_unifiable(&mut self, from: &Type, to: &Type) -> bool {
-        type_predicate(from) || type_predicate(to)
+    fn type_unifiable(
+        &mut self,
+        from: &Type,
+        to: &Type,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(type_predicate(from) || type_predicate(to))
     }
 
-    fn constant_unifiable(&mut self, from: &Constant, to: &Constant) -> bool {
-        constant_predicate(from) || constant_predicate(to)
+    fn constant_unifiable(
+        &mut self,
+        from: &Constant,
+        to: &Constant,
+    ) -> Result<bool, ExceedLimitError> {
+        Ok(constant_predicate(from) || constant_predicate(to))
     }
 }
 
-fn get_arguments_matching_count<
-    T: Term,
-    S: Semantic<T> + Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+fn get_arguments_matching_count<T: Term>(
     this: &[T],
     other: &[T],
     predicate: &impl Fn(&T) -> bool,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    session: &mut Limit<
+        impl Session<T> + Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<Option<usize>, ExceedLimitError> {
     let mut count = 0;
 
@@ -70,10 +78,8 @@ fn get_arguments_matching_count<
         let Some(unification) = unification::unify(
             lifetime,
             other_lifetime,
-            premise,
-            table,
             &mut OrderUnifyingConfig,
-            semantic,
+            environment,
             session,
         )?
         else {
@@ -86,44 +92,35 @@ fn get_arguments_matching_count<
     Ok(Some(count))
 }
 
-fn get_generic_arguments_matching_count<
-    S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-    R: Session<Lifetime> + Session<Type> + Session<Constant>,
->(
+fn get_generic_arguments_matching_count(
     this: &GenericArguments,
     other: &GenericArguments,
-    premise: &Premise,
-    table: &Table<impl State>,
-    semantic: &mut S,
-    session: &mut Limit<R>,
+    environment: &Environment<impl State>,
+    limit: &mut Limit<
+        impl Session<Lifetime> + Session<Type> + Session<Constant>,
+    >,
 ) -> Result<Option<usize>, ExceedLimitError> {
     let (Some(lifetime_count), Some(ty_count), Some(constant_count)) = (
         get_arguments_matching_count(
             &this.lifetimes,
             &other.lifetimes,
             &lifetime_predicate,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
         )?,
         get_arguments_matching_count(
             &this.types,
             &other.types,
             &type_predicate,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
         )?,
         get_arguments_matching_count(
             &this.constants,
             &other.constants,
             &constant_predicate,
-            premise,
-            table,
-            semantic,
-            session,
+            environment,
+            limit,
         )?,
     ) else {
         return Ok(None);
@@ -169,16 +166,13 @@ impl GenericArguments {
     /// # Errors
     ///
     /// See [`ExceedLimitError`] for more information.
-    pub fn order<
-        S: Semantic<Lifetime> + Semantic<Type> + Semantic<Constant>,
-        R: Session<Lifetime> + Session<Type> + Session<Constant>,
-    >(
+    pub fn order(
         &self,
         other: &Self,
-        premise: &Premise,
-        table: &Table<impl State>,
-        semantic: &mut S,
-        session: &mut Limit<R>,
+        environment: &Environment<impl State>,
+        limit: &mut Limit<
+            impl Session<Lifetime> + Session<Type> + Session<Constant>,
+        >,
     ) -> Result<Order, ExceedLimitError> {
         if self.lifetimes.len() != other.lifetimes.len()
             || self.types.len() != other.types.len()
@@ -188,10 +182,16 @@ impl GenericArguments {
         }
 
         let self_to_other = get_generic_arguments_matching_count(
-            self, other, premise, table, semantic, session,
+            self,
+            other,
+            environment,
+            limit,
         )?;
         let other_to_self = get_generic_arguments_matching_count(
-            other, self, premise, table, semantic, session,
+            other,
+            self,
+            environment,
+            limit,
         )?;
 
         match (self_to_other, other_to_self) {
@@ -199,11 +199,11 @@ impl GenericArguments {
             (None, Some(_)) => Ok(Order::MoreSpecific),
             (Some(_), None) => Ok(Order::MoreGeneral),
             (Some(self_to_other), Some(other_to_self)) => {
-                match self_to_other.cmp(&other_to_self) {
-                    std::cmp::Ordering::Less => Ok(Order::MoreSpecific),
-                    std::cmp::Ordering::Equal => Ok(Order::Ambiguous),
-                    std::cmp::Ordering::Greater => Ok(Order::MoreGeneral),
-                }
+                Ok(match self_to_other.cmp(&other_to_self) {
+                    std::cmp::Ordering::Less => Order::MoreSpecific,
+                    std::cmp::Ordering::Equal => Order::Ambiguous,
+                    std::cmp::Ordering::Greater => Order::MoreGeneral,
+                })
             }
         }
     }

@@ -1,3 +1,4 @@
+//! Contains the definition of [`Occurrences`].
 use std::iter::IntoIterator;
 
 use getset::Getters;
@@ -15,6 +16,9 @@ use crate::{
 
 /// A structure containing the list of all resolution resolved so far in the
 /// building process.
+///
+/// This is primarily used for well-formedness checking of all instantiations
+/// made in the program.
 #[derive(Debug, Default, Getters)]
 pub struct Occurrences {
     #[get = "pub"]
