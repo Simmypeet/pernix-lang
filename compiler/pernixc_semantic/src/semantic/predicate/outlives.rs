@@ -209,8 +209,11 @@ impl<T: Term> Outlives<T> {
             }
         }
 
-        for Self { operand: next_operand, bound: next_bound } in
-            T::outlives_predicates(environment.premise)
+        for Self { operand: next_operand, bound: next_bound } in environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(|x| T::as_outlive_predicate(x))
         {
             let Some(unification) = unification::unify(
                 operand,

@@ -19,11 +19,11 @@ use crate::{
         instantiation::Instantiation,
         mapping::Mapping,
         matching::{self, Match, Matching},
-        predicate::{Outlives, Predicate, Satisfiability},
+        predicate::{self, Outlives, Predicate, Satisfiability},
         session::{ExceedLimitError, Limit, Session},
         sub_term::{Location, SubTerm},
         unification::{Substructural, Unification},
-        Environment, Premise,
+        Environment,
     },
     symbol::{GenericID, LifetimeParameter, LifetimeParameterID, MemberID},
     table::{self, State, Table},
@@ -221,29 +221,48 @@ impl Term for Lifetime {
         None
     }
 
-    fn outlives_predicates<'a>(
-        premise: &'a Premise,
-    ) -> impl Iterator<Item = &'a Outlives<Self>>
-    where
-        Self: 'a,
-    {
-        premise.predicates.iter().filter_map(Predicate::as_lifetime_outlives)
+    fn as_outlive_predicate(predicate: &Predicate) -> Option<&Outlives<Self>> {
+        predicate.as_lifetime_outlives()
     }
 
-    fn constant_type_predicates<'a>(
-        _: &'a Premise,
-    ) -> impl Iterator<Item = &'a Self>
-    where
-        Self: 'a,
-    {
-        std::iter::empty()
+    fn as_outlive_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut Outlives<Self>> {
+        predicate.as_lifetime_outlives_mut()
     }
 
-    fn tuple_predicates<'a>(_: &'a Premise) -> impl Iterator<Item = &'a Self>
-    where
-        Self: 'a,
-    {
-        std::iter::empty()
+    fn into_outlive_predicate(
+        predicate: Predicate,
+    ) -> Result<Outlives<Self>, Predicate> {
+        predicate.into_lifetime_outlives()
+    }
+
+    fn as_constant_type_predicate(_: &Predicate) -> Option<&Self> { None }
+
+    fn as_constant_type_predicate_mut(_: &mut Predicate) -> Option<&mut Self> {
+        None
+    }
+
+    fn into_constant_type_predicate(
+        predicate: Predicate,
+    ) -> Result<Self, Predicate> {
+        Err(predicate)
+    }
+
+    fn as_tuple_predicate(_: &Predicate) -> Option<&predicate::Tuple<Self>> {
+        None
+    }
+
+    fn as_tuple_predicate_mut(
+        _: &mut Predicate,
+    ) -> Option<&mut predicate::Tuple<Self>> {
+        None
+    }
+
+    fn into_tuple_predicate(
+        predicate: Predicate,
+    ) -> Result<predicate::Tuple<Self>, Predicate> {
+        Err(predicate)
     }
 
     fn definite_satisfiability(&self) -> Satisfiability {

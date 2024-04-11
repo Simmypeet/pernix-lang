@@ -66,8 +66,13 @@ impl<T: Term> Tuple<T> {
         }
 
         // check from predicates
-        for predicate in T::tuple_predicates(environment.premise) {
-            if equality::equals(predicate, term, environment, limit)? {
+        for predicate in environment
+            .premise
+            .predicates
+            .iter()
+            .filter_map(|x| T::as_tuple_predicate(x))
+        {
+            if equality::equals(&predicate.0, term, environment, limit)? {
                 limit.mark_as_done(Query(term), Satisfied);
                 return Ok(true);
             }

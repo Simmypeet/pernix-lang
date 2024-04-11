@@ -154,7 +154,12 @@ fn satisfies_internal<T: Term>(
     }
 
     // satisfiable with premises
-    for premise_term in T::constant_type_predicates(environment.premise) {
+    for premise_term in environment
+        .premise
+        .predicates
+        .iter()
+        .filter_map(|x| T::as_constant_type_predicate(x))
+    {
         if equality::equals(term, premise_term, environment, limit)? {
             limit.mark_as_done(Query(term), Satisfied);
             return Ok(true);

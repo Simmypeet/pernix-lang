@@ -18,11 +18,11 @@ use super::{
     instantiation::{self, Instantiation},
     mapping::Mapping,
     matching,
-    predicate::{self, Outlives, Satisfiability},
+    predicate::{self, Outlives, Predicate, Satisfiability},
     session::{ExceedLimitError, Limit, Session},
     sub_term::{self, AssignSubTermError, SubTupleLocation},
     unification::{self, Unification},
-    visitor, Environment, Premise,
+    visitor, Environment,
 };
 use crate::{
     arena::ID,
@@ -342,25 +342,45 @@ pub trait Term:
     fn get_adt_fields(&self, table: &Table<impl State>) -> Option<Vec<Self>>;
 
     #[doc(hidden)]
-    fn outlives_predicates<'a>(
-        premise: &'a Premise,
-    ) -> impl Iterator<Item = &'a Outlives<Self>>
-    where
-        Self: 'a;
+    fn as_outlive_predicate(predicate: &Predicate) -> Option<&Outlives<Self>>;
 
     #[doc(hidden)]
-    fn constant_type_predicates<'a>(
-        premise: &'a Premise,
-    ) -> impl Iterator<Item = &'a Self>
-    where
-        Self: 'a;
+    fn as_outlive_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut Outlives<Self>>;
 
     #[doc(hidden)]
-    fn tuple_predicates<'a>(
-        premise: &'a Premise,
-    ) -> impl Iterator<Item = &'a Self>
-    where
-        Self: 'a;
+    fn into_outlive_predicate(
+        predicate: Predicate,
+    ) -> Result<Outlives<Self>, Predicate>;
+
+    #[doc(hidden)]
+    fn as_constant_type_predicate(predicate: &Predicate) -> Option<&Self>;
+
+    #[doc(hidden)]
+    fn as_constant_type_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut Self>;
+
+    #[doc(hidden)]
+    fn into_constant_type_predicate(
+        predicate: Predicate,
+    ) -> Result<Self, Predicate>;
+
+    #[doc(hidden)]
+    fn as_tuple_predicate(
+        predicate: &Predicate,
+    ) -> Option<&predicate::Tuple<Self>>;
+
+    #[doc(hidden)]
+    fn as_tuple_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut predicate::Tuple<Self>>;
+
+    #[doc(hidden)]
+    fn into_tuple_predicate(
+        predicate: Predicate,
+    ) -> Result<predicate::Tuple<Self>, Predicate>;
 
     #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;

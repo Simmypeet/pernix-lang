@@ -26,7 +26,7 @@ use crate::{
             SubTupleLocation,
         },
         unification::{self, Unification},
-        Environment, Premise,
+        Environment,
     },
     symbol::{
         self, Enum, GenericID, GlobalID, MemberID, Struct, TypeParameter,
@@ -1115,37 +1115,54 @@ impl Term for Type {
         }
     }
 
-    fn outlives_predicates<'a>(
-        premise: &'a Premise,
-    ) -> impl Iterator<Item = &'a Outlives<Self>>
-    where
-        Self: 'a,
-    {
-        premise.predicates.iter().filter_map(Predicate::as_type_outlives)
+    fn as_outlive_predicate(predicate: &Predicate) -> Option<&Outlives<Self>> {
+        predicate.as_type_outlives()
     }
 
-    fn constant_type_predicates<'a>(
-        premise: &'a Premise,
-    ) -> impl Iterator<Item = &'a Self>
-    where
-        Self: 'a,
-    {
-        premise
-            .predicates
-            .iter()
-            .filter_map(|x| x.as_constant_type().map(|x| &x.0))
+    fn as_outlive_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut Outlives<Self>> {
+        predicate.as_type_outlives_mut()
     }
 
-    fn tuple_predicates<'a>(
-        premise: &'a Premise,
-    ) -> impl Iterator<Item = &'a Self>
-    where
-        Self: 'a,
-    {
-        premise
-            .predicates
-            .iter()
-            .filter_map(|x| x.as_tuple_type().map(|x| &x.0))
+    fn into_outlive_predicate(
+        predicate: Predicate,
+    ) -> Result<Outlives<Self>, Predicate> {
+        predicate.into_type_outlives()
+    }
+
+    fn as_constant_type_predicate(predicate: &Predicate) -> Option<&Self> {
+        predicate.as_constant_type().map(|x| &x.0)
+    }
+
+    fn as_constant_type_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut Self> {
+        predicate.as_constant_type_mut().map(|x| &mut x.0)
+    }
+
+    fn into_constant_type_predicate(
+        predicate: Predicate,
+    ) -> Result<Self, Predicate> {
+        predicate.into_constant_type().map(|x| x.0)
+    }
+
+    fn as_tuple_predicate(
+        predicate: &Predicate,
+    ) -> Option<&predicate::Tuple<Self>> {
+        predicate.as_tuple_type()
+    }
+
+    fn as_tuple_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut predicate::Tuple<Self>> {
+        predicate.as_tuple_type_mut()
+    }
+
+    fn into_tuple_predicate(
+        predicate: Predicate,
+    ) -> Result<predicate::Tuple<Self>, Predicate> {
+        predicate.into_tuple_type()
     }
 
     fn definite_satisfiability(&self) -> Satisfiability {
