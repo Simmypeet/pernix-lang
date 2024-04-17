@@ -245,13 +245,13 @@ impl SourceElement for Ref {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// NamedKind:
+/// Binding:
 ///     Ref
 ///     | 'mutable'?
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum NamedKind {
+pub enum Binding {
     Ref(Ref),
     Value { mutable_keyword: Option<Keyword> },
 }
@@ -265,18 +265,16 @@ pub enum NamedKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct Named {
     #[get = "pub"]
-    kind: NamedKind,
+    binding: Binding,
     #[get = "pub"]
     identifier: Identifier,
 }
 
 impl SourceElement for Named {
     fn span(&self) -> Span {
-        match &self.kind {
-            NamedKind::Ref(r) => {
-                r.span().join(&self.identifier.span()).unwrap()
-            }
-            NamedKind::Value { mutable_keyword } => {
+        match &self.binding {
+            Binding::Ref(r) => r.span().join(&self.identifier.span()).unwrap(),
+            Binding::Value { mutable_keyword } => {
                 mutable_keyword.as_ref().map_or_else(
                     || self.identifier.span(),
                     |keyword| {
@@ -360,6 +358,36 @@ pub enum Irrefutable {
     Wildcard(Wildcard),
 }
 
+impl Irrefutable {
+    /// Returns `true` if the pattern contains a named pattern.
+    pub fn contains_named(&self) -> bool {
+        match self {
+            Self::Structural(structural) => {
+                structural.fields.iter().flat_map(ConnectedList::elements).any(
+                    |x| match x {
+                        Field::Association(pattern) => {
+                            pattern.pattern.contains_named()
+                        }
+                        Field::Named(_) => true,
+                    },
+                )
+            }
+            Self::Named(_) => true,
+            Self::Tuple(tuple) => tuple
+                .patterns
+                .iter()
+                .flat_map(ConnectedList::elements)
+                .any(|x| match x {
+                    TupleElement::Unpacked(pattern) => {
+                        pattern.pattern.contains_named()
+                    }
+                    TupleElement::Regular(pattern) => pattern.contains_named(),
+                }),
+            Self::Wildcard(_) => false,
+        }
+    }
+}
+
 impl SourceElement for Irrefutable {
     fn span(&self) -> Span {
         match self {
@@ -395,7 +423,7 @@ impl<'a> Parser<'a> {
                 let identifier = self.parse_identifier(handler)?;
 
                 Some(Named {
-                    kind: NamedKind::Value {
+                    binding: Binding::Value {
                         mutable_keyword: Some(mutable_keyword),
                     },
                     identifier,
@@ -434,7 +462,7 @@ impl<'a> Parser<'a> {
                 let identifier = self.parse_identifier(handler)?;
 
                 Some(Named {
-                    kind: NamedKind::Ref(Ref { ref_keyword, qualifier }),
+                    binding: Binding::Ref(Ref { ref_keyword, qualifier }),
                     identifier,
                 })
             }
@@ -442,7 +470,7 @@ impl<'a> Parser<'a> {
             Reading::Unit(Token::Identifier(identifier)) => {
                 self.forward();
                 Some(Named {
-                    kind: NamedKind::Value { mutable_keyword: None },
+                    binding: Binding::Value { mutable_keyword: None },
                     identifier,
                 })
             }
@@ -472,7 +500,10 @@ impl<'a> Parser<'a> {
                 let named_pattern = parser.parse_named_pattern(handler)?;
 
                 // can accept a nested pattern
-                if named_pattern.kind.as_value().map_or(false, Option::is_none)
+                if named_pattern
+                    .binding
+                    .as_value()
+                    .map_or(false, Option::is_none)
                     && matches!(
                         parser.stop_at_significant(),
                         Reading::Unit(Token::Punctuation(punc))

@@ -16,12 +16,12 @@ use crate::syntax_tree::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum NamedKind {
+pub enum Binding {
     Value(bool),
     Ref(Option<Qualifier>),
 }
 
-impl Display for NamedKind {
+impl Display for Binding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(mutable) => {
@@ -43,30 +43,29 @@ impl Display for NamedKind {
     }
 }
 
-impl Arbitrary for NamedKind {
+impl Arbitrary for Binding {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            proptest::bool::ANY.prop_map(NamedKind::Value),
-            proptest::option::of(Qualifier::arbitrary())
-                .prop_map(NamedKind::Ref),
+            proptest::bool::ANY.prop_map(Binding::Value),
+            proptest::option::of(Qualifier::arbitrary()).prop_map(Binding::Ref),
         ]
         .boxed()
     }
 }
 
-impl Input<&super::NamedKind> for &NamedKind {
-    fn assert(self, output: &super::NamedKind) -> TestCaseResult {
+impl Input<&super::Binding> for &Binding {
+    fn assert(self, output: &super::Binding) -> TestCaseResult {
         match (self, output) {
             (
-                NamedKind::Value(input),
-                super::NamedKind::Value { mutable_keyword },
+                Binding::Value(input),
+                super::Binding::Value { mutable_keyword },
             ) => {
                 prop_assert_eq!(*input, mutable_keyword.is_some());
             }
-            (NamedKind::Ref(input), super::NamedKind::Ref(output)) => {
+            (Binding::Ref(input), super::Binding::Ref(output)) => {
                 input.as_ref().assert(output.qualifier.as_ref())?;
             }
             (input, output) => {
@@ -83,12 +82,12 @@ impl Input<&super::NamedKind> for &NamedKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
     pub identifier: Identifier,
-    pub kind: NamedKind,
+    pub kind: Binding,
 }
 
 impl Input<&super::Named> for &Named {
     fn assert(self, output: &super::Named) -> TestCaseResult {
-        self.kind.assert(&output.kind)?;
+        self.kind.assert(&output.binding)?;
         self.identifier.assert(&output.identifier)
     }
 }
@@ -98,7 +97,7 @@ impl Arbitrary for Named {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (NamedKind::arbitrary(), Identifier::arbitrary())
+        (Binding::arbitrary(), Identifier::arbitrary())
             .prop_map(|(kind, identifier)| Self { identifier, kind })
             .boxed()
     }
