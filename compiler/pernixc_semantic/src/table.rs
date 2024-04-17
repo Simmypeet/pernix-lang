@@ -1374,7 +1374,7 @@ fn convert_rw_locked_arena<T: 'static>(
     let mut new_arena = Arena::default();
 
     for (idx, value) in arena {
-        new_arena.insert_with_id(idx, value.into_inner()).unwrap();
+        assert!(new_arena.insert_with_id(idx, value.into_inner()).is_ok());
     }
 
     new_arena

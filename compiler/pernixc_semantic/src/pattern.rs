@@ -2,12 +2,13 @@
 
 use std::collections::HashMap;
 
-use enum_as_inner::EnumAsInner;
-
 use crate::{
     arena::ID,
-    ir::address::Address,
-    semantic::{session::ExceedLimitError, term::r#type::Qualifier},
+    ir::address::{self, Address},
+    semantic::{
+        session::ExceedLimitError,
+        term::{lifetime::Lifetime, r#type::Qualifier},
+    },
     symbol::{Field, Struct},
 };
 
@@ -27,6 +28,9 @@ pub struct ReferenceBinding {
     /// The qualifier of the reference.
     pub qualifier: Qualifier,
 
+    /// The lifetime of the reference.
+    pub lifetime: Lifetime,
+
     /// The address to the value that the reference points to.
     ///
     /// NOTE: This is not the address where the reference is stored but the
@@ -34,74 +38,8 @@ pub struct ReferenceBinding {
     pub address: Address,
 }
 
-/// Specifies how a pattern matches (as a value or as a reference).
-///
-/// # Examples
-///
-/// With the following code:
-///
-/// ``` pnx
-/// public struct Vector2 {
-///     public x: float32,
-///     public y: float32,
-/// }
-///
-/// public function returnVector(): Vector2 {
-///     return Vector2 {
-///         x: 0,
-///         y: 0,
-///     }
-/// }
-/// ```
-///
-/// This is how the value-bound pattern would look like:
-///
-/// ``` pnx
-/// public function main() {
-///     let binding  = returnVector();
-///     let { x, y } = returnVector();
-/// }
-/// ```
-///
-/// The named pattern `binding` is bound as a value where the address is the
-/// pointer to the stack where the value is stored. The named pattern `{ x, y }`
-/// is bound as a value where the address is the pointer to the fields `x` and
-/// `y`, which also are stored on the stack.
-///
-/// This is how the reference-bound pattern would look like:
-///
-/// ``` pnx
-/// public function main['a](
-///     ref first: Vector2,
-///     second:    &'a Vector2
-/// ) {}
-/// ```
-///
-/// Both `first` and `second` are bound as references. The address of `first` is
-/// the pointer pointing to the stack where the `first` parameter is stored. The
-/// address of `second` is directly the address held by the `&'a Vector2` type.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    EnumAsInner,
-    derive_more::From,
-)]
-#[allow(missing_docs)]
-pub enum Binding {
-    Value(ValueBinding),
-    Reference(ReferenceBinding),
-}
-
 /// A trait that is implemented by [`Refutable`] and [`Irrefutable`].
-pub trait Pattern {
-    /// Returns the binding of the pattern.
-    fn binding(&self) -> &Binding;
-}
+pub trait Pattern {}
 
 /// A numeric value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -118,23 +56,17 @@ pub enum NumericValue {
 }
 
 /// A numeric literal pattern
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric {
     /// The value of the numeric literal.
     pub value: NumericValue,
-
-    /// The binding of this pattern.
-    pub binding: Binding,
 }
 
 /// A boolean literal pattern
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Boolean {
     /// The value of the boolean literal.
     pub value: bool,
-
-    /// The binding of this pattern.
-    pub binding: Binding,
 }
 
 /// A pattern where the value is bound to a name
@@ -143,13 +75,9 @@ pub struct Named {
     /// The name of the pattern.
     pub name: String,
 
-    /// The binding of this pattern.
-    pub binding: Binding,
-
-    /// For value-bound patterns, this specifies whether the value is mutable.
-    ///
-    /// This is only relevant for value-bound patterns.
-    pub is_mutable: bool,
+    /// The address to the location where the value is stored with this name
+    /// binding.
+    pub address: address::Stack,
 }
 
 /// An element in a tuple pattern.
@@ -165,9 +93,6 @@ pub enum TupleElement<T: Pattern> {
 pub struct Tuple<T: Pattern> {
     /// The pattern that each element of the tuple must match.
     pub elements: Vec<TupleElement<T>>,
-
-    /// The binding of this pattern.
-    pub binding: Binding,
 }
 
 /// A pattern that matches on a struct with fields.
@@ -178,17 +103,11 @@ pub struct Structural<T: Pattern> {
 
     /// Mapping from each field to the pattern that the field must match.
     pub fields: HashMap<ID<Field>, T>,
-
-    /// The binding of this pattern.
-    pub binding: Binding,
 }
 
 /// A pattern that discards the value
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Discard {
-    /// The binding of this pattern.
-    pub binding: Binding,
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Wildcard;
 
 /// A pattern that cannot be refuted (always matches)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,7 +116,7 @@ pub enum Irrefutable {
     Named(Named),
     Tuple(Tuple<Irrefutable>),
     Structural(Structural<Irrefutable>),
-    Discard(Discard),
+    Wildcard(Wildcard),
 }
 
 /// A pattern that can be refuted (may not always match)
@@ -209,32 +128,12 @@ pub enum Refutable {
     Named(Named),
     Tuple(Tuple<Refutable>),
     Structural(Structural<Refutable>),
-    Discard(Discard),
+    Wildcard(Wildcard),
 }
 
-impl Pattern for Irrefutable {
-    fn binding(&self) -> &Binding {
-        match self {
-            Self::Named(p) => &p.binding,
-            Self::Tuple(p) => &p.binding,
-            Self::Structural(p) => &p.binding,
-            Self::Discard(p) => &p.binding,
-        }
-    }
-}
+impl Pattern for Irrefutable {}
 
-impl Pattern for Refutable {
-    fn binding(&self) -> &Binding {
-        match self {
-            Self::Boolean(p) => &p.binding,
-            Self::Numeric(p) => &p.binding,
-            Self::Named(p) => &p.binding,
-            Self::Tuple(p) => &p.binding,
-            Self::Structural(p) => &p.binding,
-            Self::Discard(p) => &p.binding,
-        }
-    }
-}
+impl Pattern for Refutable {}
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
@@ -242,7 +141,7 @@ impl Pattern for Refutable {
 #[allow(missing_docs)]
 pub enum CreatePatternError {
     #[error(transparent)]
-    ExceedLimitError(ExceedLimitError),
+    ExceedLimitError(#[from] ExceedLimitError),
 
     #[error(
         "The given block is unreachable and cannot be used to create a pattern"

@@ -285,18 +285,22 @@ impl Trait {
                 predicate.instantiate(&forall_lifetime_instantiation);
 
                 if !match predicate {
-                    Predicate::TypeEquality(equality) => equality::equals(
-                        &equality.lhs,
-                        &equality.rhs,
+                    Predicate::TraitTypeEquality(equality) => equality::equals(
+                        &Type::TraitMember(equality.trait_member.clone()),
+                        &equality.equivalent,
                         environment,
                         limit,
                     )?,
-                    Predicate::ConstantEquality(equality) => equality::equals(
-                        &equality.lhs,
-                        &equality.rhs,
-                        environment,
-                        limit,
-                    )?,
+                    Predicate::TraitConstantEquality(equality) => {
+                        equality::equals(
+                            &Constant::TraitMember(
+                                equality.trait_member.clone(),
+                            ),
+                            &equality.equivalent,
+                            environment,
+                            limit,
+                        )?
+                    }
                     Predicate::ConstantType(constant_type) => {
                         ConstantType::satisfies(
                             &constant_type.0,
@@ -666,20 +670,20 @@ fn predicate_satisfies<
         predicate.instantiate(substitution);
 
         match predicate {
-            Predicate::TypeEquality(equality) => {
+            Predicate::TraitTypeEquality(equality) => {
                 if !equality::equals(
-                    &equality.lhs,
-                    &equality.rhs,
+                    &Type::TraitMember(equality.trait_member.clone()),
+                    &equality.equivalent,
                     environment,
                     session,
                 )? {
                     return Ok(None);
                 }
             }
-            Predicate::ConstantEquality(equality) => {
+            Predicate::TraitConstantEquality(equality) => {
                 if !equality::equals(
-                    &equality.lhs,
-                    &equality.rhs,
+                    &Constant::TraitMember(equality.trait_member.clone()),
+                    &equality.equivalent,
                     environment,
                     session,
                 )? {

@@ -22,9 +22,8 @@ use crate::{
     },
     semantic::{
         equality,
-        equivalent::Equivalent,
         instantiation::{self, Instantiation},
-        predicate::{self, ConstantType, Outlives, Predicate, Trait, Tuple},
+        predicate::{self, ConstantType, Outlives, Trait, Tuple},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             self, constant,
@@ -84,18 +83,20 @@ impl Table<Finalizer> {
         let environment = Environment { premise: caller_premise, table: self };
 
         let result = match &predicate {
-            predicate::Predicate::TypeEquality(eq) => equality::equals(
-                &eq.lhs,
-                &eq.rhs,
+            predicate::Predicate::TraitTypeEquality(eq) => equality::equals(
+                &r#type::Type::TraitMember(eq.trait_member.clone()),
+                &eq.equivalent,
                 &environment,
                 &mut Limit::new(session),
             ),
-            predicate::Predicate::ConstantEquality(eq) => equality::equals(
-                &eq.lhs,
-                &eq.rhs,
-                &environment,
-                &mut Limit::new(session),
-            ),
+            predicate::Predicate::TraitConstantEquality(eq) => {
+                equality::equals(
+                    &constant::Constant::TraitMember(eq.trait_member.clone()),
+                    &eq.equivalent,
+                    &environment,
+                    &mut Limit::new(session),
+                )
+            }
             predicate::Predicate::ConstantType(pred) => {
                 ConstantType::satisfies(
                     &pred.0,
@@ -971,19 +972,7 @@ impl Table<Finalizer> {
                     },
                 )),
                 Ok(true) => {}
-                Err(_) => handler.receive(Box::new(UndecidablePredicate {
-                    instantiation_span: implementation_member_sym
-                        .span()
-                        .cloned()
-                        .unwrap(),
-                    predicate: predicate::Predicate::TypeEquality(
-                        predicate::Equality {
-                            lhs: tr_const_ty.clone(),
-                            rhs: im_const_param.r#type.clone(),
-                        },
-                    ),
-                    predicate_declaration_span: None,
-                })),
+                Err(_) => todo!(),
             }
         }
 
@@ -1018,36 +1007,22 @@ impl Table<Finalizer> {
             }
         }
 
-        let mut trait_member_active_premise =
-            self.get_active_premise(trait_member_id.into()).unwrap();
+        let trait_member_active_premise = {
+            let stub = self.get_active_premise(trait_member_id.into()).unwrap();
 
-        // transform the trait member active premise to the implementation
-        trait_member_active_premise.trait_context =
-            implementation_member_active_premise.trait_context;
-        trait_member_active_premise
-            .predicates
-            .iter_mut()
-            .for_each(|x| x.instantiate(&trait_instantiation));
-        trait_member_active_premise.equivalent = {
-            let mut equivalent = Equivalent::default();
+            let mut trait_member_active_premise = Premise::default();
 
-            for eq in trait_member_active_premise
-                .predicates
-                .iter()
-                .filter_map(Predicate::as_constant_equality)
-            {
-                equivalent.insert(eq.lhs.clone(), eq.rhs.clone());
-            }
+            trait_member_active_premise.trait_context =
+                implementation_member_active_premise.trait_context;
+            trait_member_active_premise.append_from_predicates(
+                stub.predicates().iter().map(|x| {
+                    let mut predicate = x.clone();
+                    predicate.instantiate(&trait_instantiation);
+                    predicate
+                }),
+            );
 
-            for eq in trait_member_active_premise
-                .predicates
-                .iter()
-                .filter_map(Predicate::as_type_equality)
-            {
-                equivalent.insert(eq.lhs.clone(), eq.rhs.clone());
-            }
-
-            equivalent
+            trait_member_active_premise
         };
 
         // check for any extraneous predicates defined in the implementation

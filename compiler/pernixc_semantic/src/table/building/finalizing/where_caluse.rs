@@ -23,7 +23,7 @@ use crate::{
     },
     semantic::{
         instantiation::Instantiation,
-        predicate::{self, Equality, Outlives},
+        predicate::{self, Outlives, TraitMemberEquality},
         term::{self, lifetime::Forall},
     },
     symbol::{self, Generic, GenericID, GlobalID, PredicateKind, Trait},
@@ -75,17 +75,15 @@ impl Table<Finalizer> {
                     T::get_arena(self).get(generic_id).unwrap().write();
                 generic_symbol.generic_declaration_mut().predicates.push(
                     symbol::Predicate {
-                        predicate: predicate::Predicate::TypeEquality(
-                            Equality {
-                                lhs: term::r#type::Type::TraitMember(
-                                    term::r#type::TraitMember {
-                                        member_generic_arguments:
-                                            generic_arguments,
-                                        id: trait_ty_id,
-                                        parent_generic_arguments,
-                                    },
-                                ),
-                                rhs: resolve_ty,
+                        predicate: predicate::Predicate::TraitTypeEquality(
+                            TraitMemberEquality {
+                                trait_member: term::r#type::TraitMember {
+                                    member_generic_arguments: generic_arguments,
+                                    id: trait_ty_id,
+                                    parent_generic_arguments,
+                                },
+
+                                equivalent: resolve_ty,
                             },
                         ),
                         kind: PredicateKind::Explicit(Some(syntax_tree.span())),
@@ -114,17 +112,14 @@ impl Table<Finalizer> {
                     T::get_arena(self).get(generic_id).unwrap().write();
                 generic_symbol.generic_declaration_mut().predicates.push(
                     symbol::Predicate {
-                        predicate: predicate::Predicate::ConstantEquality(
-                            Equality {
-                                lhs: term::constant::Constant::TraitMember(
-                                    term::constant::TraitMember {
-                                        id: trait_constant_id,
-                                        member_generic_arguments:
-                                            generic_arguments,
-                                        parent_generic_arguments,
-                                    },
-                                ),
-                                rhs: evaluated_constant,
+                        predicate: predicate::Predicate::TraitConstantEquality(
+                            TraitMemberEquality {
+                                trait_member: term::constant::TraitMember {
+                                    id: trait_constant_id,
+                                    member_generic_arguments: generic_arguments,
+                                    parent_generic_arguments,
+                                },
+                                equivalent: evaluated_constant,
                             },
                         ),
                         kind: PredicateKind::Explicit(Some(syntax_tree.span())),

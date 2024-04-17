@@ -6,7 +6,7 @@
 
 use std::{
     borrow::Borrow,
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     hash::Hash,
     marker::PhantomData,
@@ -99,34 +99,47 @@ impl<T> std::hash::Hash for ID<T> {
 /// These [`ID`]s are guaranteed to be unique to the [`Arena`] and to the ones
 /// reserved by this struct. These [`ID`]s can then be used to insert items into
 /// the [`Arena`] with the [`Arena::insert_with_id`] method.
-#[derive(Debug, PartialEq, Eq)]
-pub struct Reserve<'a, T: 'static> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reserve<'a, T: 'static, I = T> {
     arena: &'a Arena<T>,
-    reserved: HashSet<ID<T>>,
+    reserved: HashMap<ID<T>, I>,
 }
 
-impl<'a, T: 'static> Reserve<'a, T> {
+impl<'a, T: 'static, I> Reserve<'a, T, I> {
     /// Creates a new [`Reserve`] struct that can be used to reserve [`ID`]s in
     /// the given [`Arena`].
     #[must_use]
     pub fn new(arena: &'a Arena<T>) -> Self {
-        Self { arena, reserved: HashSet::new() }
+        Self { arena, reserved: HashMap::new() }
     }
 
     /// Reserves a new [`ID`] in the [`Arena`] and returns it.
     ///
     /// The [`ID`] is guaranteed to be unique to the [`Arena`] and the ones
     /// reserved by this struct.
-    pub fn reserve(&mut self) -> ID<T> {
+    pub fn reserve(&mut self, information: I) -> ID<T> {
         let mut id = self.arena.get_available_id().into_index();
 
-        while self.reserved.contains(&ID::from_index(id)) {
-            id += 1;
-        }
+        let entry = loop {
+            let idx = ID::from_index(id);
+            if let Entry::Vacant(entry) = self.reserved.entry(idx) {
+                if !self.arena.items.contains_key(&idx) {
+                    break entry;
+                }
+            }
 
-        self.reserved.insert(ID::from_index(id));
+            id += 1;
+        };
+
+        entry.insert(information);
 
         ID::from_index(id)
+    }
+
+    /// Gets the information associated with the reserved [`ID`].
+    #[must_use]
+    pub fn get_reserved(&self, id: ID<T>) -> Option<&I> {
+        self.reserved.get(&id)
     }
 }
 
@@ -191,14 +204,10 @@ impl<T, Idx: Key> Arena<T, Idx> {
     ///
     /// # Errors
     ///
-    /// Returns `Err` with the `Idx` of the existing item if the `Idx` already
-    /// exists in the [`Arena`] or is reserved.
-    pub fn insert_with_id(&mut self, id: Idx, item: T) -> Result<(), Idx> {
+    /// Returns `Err` with the item if the ID is already in use.
+    pub fn insert_with_id(&mut self, id: Idx, item: T) -> Result<(), T> {
         match self.items.entry(id) {
-            Entry::Occupied(entry) => {
-                let existing_id = *entry.key();
-                Err(existing_id)
-            }
+            Entry::Occupied(_) => Err(item),
             Entry::Vacant(entry) => {
                 entry.insert(item);
 

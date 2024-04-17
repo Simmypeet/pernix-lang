@@ -1,10 +1,16 @@
 //! Contains the definition of [`Session`].session
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    hash::Hash,
+};
+
+use getset::CopyGetters;
 
 use super::{
     equality,
     predicate::{self, ConstantTypeQuerySource, TraitSatisfiability},
+    simplify,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
@@ -38,10 +44,16 @@ pub enum Cached<I, T> {
 pub struct ExceedLimitError;
 
 /// Used to limit the number of queries that can be made.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, CopyGetters)]
 pub struct Limit<'a, R> {
     session: &'a mut R,
+
+    /// The limit of the number of queries.
+    #[get_copy = "pub"]
     limit: usize,
+
+    /// The number of queries that have been made.
+    #[get_copy = "pub"]
     count: usize,
 }
 
@@ -192,7 +204,7 @@ pub trait Session<T: Term>:
         predicate::TraitQuery<'a>,
         Result = TraitSatisfiability,
         InProgress = (),
-    >
+    > + for<'a> Cache<simplify::Query<'a, T>, Result = T, InProgress = ()>
 {
 }
 
@@ -225,7 +237,7 @@ impl<T: Term, U> Session<T> for U where
             predicate::TraitQuery<'a>,
             Result = TraitSatisfiability,
             InProgress = (),
-        >
+        > + for<'a> Cache<simplify::Query<'a, T>, Result = T, InProgress = ()>
 {
 }
 
@@ -265,6 +277,10 @@ pub struct Default {
         (ID<symbol::Trait>, bool, GenericArguments),
         Cached<(), TraitSatisfiability>,
     >,
+
+    lifetime_simplify: HashMap<Lifetime, Cached<(), Lifetime>>,
+    type_simplify: HashMap<Type, Cached<(), Type>>,
+    constant_simplify: HashMap<Constant, Cached<(), Constant>>,
 }
 
 macro_rules! implements_cache {
@@ -318,6 +334,63 @@ macro_rules! implements_cache {
             }
         }
     };
+}
+
+/// A simple implementation of [`Cache`] using a [`HashMap`].
+#[derive(Debug, Clone, Default)]
+pub struct Storage<Q, Result, InProgress> {
+    field1: HashMap<Q, Cached<InProgress, Result>>,
+}
+
+impl<Q, Result, InProgress> Storage<Q, Result, InProgress> {
+    /// Creates a new storage.
+    #[must_use]
+    pub fn new() -> Self { Self { field1: HashMap::new() } }
+}
+
+impl<Q: Eq + Hash, InProgress: Clone, Result: Clone> Cache<Q>
+    for Storage<Q, Result, InProgress>
+{
+    type Result = Result;
+
+    type InProgress = InProgress;
+
+    fn mark_as_in_progress(
+        &mut self,
+        query: Q,
+        metadata: Self::InProgress,
+    ) -> Option<Cached<Self::InProgress, Self::Result>> {
+        match self.field1.entry(query) {
+            Entry::Vacant(entry) => {
+                entry.insert(Cached::InProgress(metadata));
+                None
+            }
+            Entry::Occupied(entry) => Some(entry.get().clone()),
+        }
+    }
+
+    fn mark_as_done(&mut self, record: Q, result: Self::Result) {
+        self.field1.insert(record, Cached::Done(result));
+    }
+
+    fn clear_query(
+        &mut self,
+        query: Q,
+    ) -> Option<Cached<Self::InProgress, Self::Result>> {
+        self.field1.remove(&query)
+    }
+
+    fn get_result(
+        &self,
+        query: Q,
+    ) -> Option<&Cached<Self::InProgress, Self::Result>> {
+        self.field1.get(&query)
+    }
+
+    fn delete_all_work_in_progress(&mut self) {
+        self.field1
+            .retain(|_, result| !matches!(result, Cached::InProgress(_)));
+    }
 }
 
 implements_cache!(
@@ -508,4 +581,34 @@ implements_cache!(
     trait_satisfiability,
     (record.id, record.is_const, record.generic_arguments.clone()),
     &(record.id, record.is_const, record.generic_arguments.clone())
+);
+
+implements_cache!(
+    simplify::Query<'a, Lifetime>,
+    Lifetime,
+    (),
+    record,
+    lifetime_simplify,
+    *record.0,
+    record.0
+);
+
+implements_cache!(
+    simplify::Query<'a, Type>,
+    Type,
+    (),
+    record,
+    type_simplify,
+    record.0.clone(),
+    record.0
+);
+
+implements_cache!(
+    simplify::Query<'a, Constant>,
+    Constant,
+    (),
+    record,
+    constant_simplify,
+    record.0.clone(),
+    record.0
 );

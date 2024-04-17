@@ -11,18 +11,18 @@ use super::equals;
 use crate::{
     arena::ID,
     semantic::{
-        equivalent::Equivalent,
         instantiation::{self, Instantiation},
+        predicate::{Predicate, TraitMemberEquality},
         session::{self, ExceedLimitError, Limit, Session},
         term::{
             constant::Constant,
             lifetime::Lifetime,
-            r#type::{Primitive, SymbolID, Type},
+            r#type::{Primitive, SymbolID, TraitMember, Type},
             GenericArguments, Local, Symbol, Term,
         },
         tests::State,
         visitor::{self, Recursive, SubTermLocation},
-        Environment, Premise, TraitContext,
+        Environment, Premise,
     },
     symbol::{
         self, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
@@ -33,11 +33,7 @@ use crate::{
 
 #[test]
 fn reflexive() {
-    let premise = Premise {
-        predicates: Vec::new(),
-        trait_context: TraitContext::Normal,
-        equivalent: Equivalent::default(),
-    };
+    let premise = Premise::default();
     let table = Table::<State>::default();
 
     let term = Type::Primitive(Primitive::Bool);
@@ -53,34 +49,33 @@ fn reflexive() {
 
 #[test]
 fn symmetric() {
-    let premise = Premise {
-        predicates: Vec::new(),
-        trait_context: TraitContext::Normal,
-        equivalent: {
-            let mut equivalent = Equivalent::default();
-
-            equivalent.insert(
-                Type::Primitive(Primitive::Bool),
-                Type::Primitive(Primitive::Float32),
-            );
-
-            equivalent
-        },
+    let trait_member = TraitMember {
+        id: ID::new(0),
+        member_generic_arguments: GenericArguments::default(),
+        parent_generic_arguments: GenericArguments::default(),
     };
+    let equivalence = Type::Primitive(Primitive::Bool);
+
+    let mut premise = Premise::default();
+    premise.append_from_predicates(std::iter::once(
+        Predicate::TraitTypeEquality(TraitMemberEquality {
+            trait_member: trait_member.clone(),
+            equivalent: equivalence.clone(),
+        }),
+    ));
+
     let table = Table::<State>::default();
-    let lhs = Type::Primitive(Primitive::Bool);
-    let rhs = Type::Primitive(Primitive::Float32);
 
     assert!(equals(
-        &lhs,
-        &rhs,
+        &Type::TraitMember(trait_member.clone()),
+        &equivalence,
         &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
-        &rhs,
-        &lhs,
+        &Type::TraitMember(trait_member),
+        &equivalence,
         &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
@@ -88,38 +83,45 @@ fn symmetric() {
 }
 #[test]
 fn transitivity() {
-    let premise = Premise {
-        predicates: Vec::new(),
-        trait_context: TraitContext::Normal,
-        equivalent: {
-            let mut equivalent = Equivalent::default();
-
-            equivalent.insert(
-                Type::Primitive(Primitive::Bool),
-                Type::Primitive(Primitive::Float32),
-            );
-            equivalent.insert(
-                Type::Primitive(Primitive::Float32),
-                Type::Primitive(Primitive::Float64),
-            );
-
-            equivalent
-        },
+    let first_trait_member = TraitMember {
+        id: ID::new(0),
+        member_generic_arguments: GenericArguments::default(),
+        parent_generic_arguments: GenericArguments::default(),
     };
+    let second_trait_member = TraitMember {
+        id: ID::new(1),
+        member_generic_arguments: GenericArguments::default(),
+        parent_generic_arguments: GenericArguments::default(),
+    };
+    let equivalence = Type::Primitive(Primitive::Bool);
+
+    let mut premise = Premise::default();
+    premise.append_from_predicates(
+        [
+            Predicate::TraitTypeEquality(TraitMemberEquality {
+                trait_member: first_trait_member.clone(),
+                equivalent: Type::TraitMember(second_trait_member.clone()),
+            }),
+            Predicate::TraitTypeEquality(TraitMemberEquality {
+                trait_member: second_trait_member,
+                equivalent: equivalence.clone(),
+            }),
+        ]
+        .into_iter(),
+    );
+
     let table = Table::<State>::default();
-    let lhs = Type::Primitive(Primitive::Bool);
-    let rhs = Type::Primitive(Primitive::Float64);
 
     assert!(equals(
-        &lhs,
-        &rhs,
+        &Type::TraitMember(first_trait_member.clone()),
+        &equivalence,
         &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
     .unwrap());
     assert!(equals(
-        &rhs,
-        &lhs,
+        &equivalence,
+        &Type::TraitMember(first_trait_member),
         &Environment { premise: &premise, table: &table },
         &mut Limit::new(&mut session::Default::default()),
     )
@@ -128,32 +130,42 @@ fn transitivity() {
 
 #[test]
 fn congruence() {
-    let premise = Premise {
-        predicates: Vec::new(),
-        trait_context: TraitContext::Normal,
-        equivalent: {
-            let mut equivalent = Equivalent::default();
-
-            equivalent.insert(
-                Type::Primitive(Primitive::Int32),
-                Type::Primitive(Primitive::Float32),
-            );
-            equivalent.insert(
-                Type::Primitive(Primitive::Int64),
-                Type::Primitive(Primitive::Float64),
-            );
-
-            equivalent
-        },
+    let first_trait_member = TraitMember {
+        id: ID::new(0),
+        member_generic_arguments: GenericArguments::default(),
+        parent_generic_arguments: GenericArguments::default(),
     };
+    let second_trait_member = TraitMember {
+        id: ID::new(1),
+        member_generic_arguments: GenericArguments::default(),
+        parent_generic_arguments: GenericArguments::default(),
+    };
+    let first_equivalence = Type::Primitive(Primitive::Bool);
+    let second_equivalence = Type::Primitive(Primitive::Int32);
+
+    let mut premise = Premise::default();
+    premise.append_from_predicates(
+        [
+            Predicate::TraitTypeEquality(TraitMemberEquality {
+                trait_member: first_trait_member.clone(),
+                equivalent: first_equivalence.clone(),
+            }),
+            Predicate::TraitTypeEquality(TraitMemberEquality {
+                trait_member: second_trait_member.clone(),
+                equivalent: second_equivalence.clone(),
+            }),
+        ]
+        .into_iter(),
+    );
+
     let table = Table::<State>::default();
     let lhs = Type::Symbol(Symbol {
         id: SymbolID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![
-                Type::Primitive(Primitive::Int32),
-                Type::Primitive(Primitive::Int64),
+                Type::TraitMember(first_trait_member),
+                Type::TraitMember(second_trait_member),
             ],
             constants: Vec::new(),
         },
@@ -162,10 +174,7 @@ fn congruence() {
         id: SymbolID::Struct(ID::new(0)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
-            types: vec![
-                Type::Primitive(Primitive::Float32),
-                Type::Primitive(Primitive::Float64),
-            ],
+            types: vec![first_equivalence, second_equivalence],
             constants: Vec::new(),
         },
     });
@@ -178,127 +187,6 @@ fn congruence() {
     )
     .unwrap());
     assert!(equals(
-        &rhs,
-        &lhs,
-        &Environment { premise: &premise, table: &table },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap());
-}
-
-#[test]
-#[allow(missing_docs, clippy::too_many_lines)]
-fn recursive() {
-    let premise = Premise {
-        predicates: Vec::new(),
-        trait_context: TraitContext::Normal,
-        equivalent: {
-            let mut equivalent = Equivalent::default();
-
-            equivalent.insert(
-                Type::Primitive(Primitive::Int32),
-                Type::Symbol(Symbol {
-                    id: SymbolID::Enum(ID::new(0)),
-                    generic_arguments: GenericArguments {
-                        lifetimes: Vec::new(),
-                        types: vec![Type::Primitive(Primitive::Int32)],
-                        constants: Vec::new(),
-                    },
-                }),
-            );
-
-            equivalent
-        },
-    };
-    let table = Table::<State>::default();
-    let lhs = Type::Primitive(Primitive::Int32);
-    let rhs = Type::Symbol(Symbol {
-        id: SymbolID::Enum(ID::new(0)),
-        generic_arguments: GenericArguments {
-            lifetimes: Vec::new(),
-            types: vec![Type::Symbol(Symbol {
-                id: SymbolID::Enum(ID::new(0)),
-                generic_arguments: GenericArguments {
-                    lifetimes: Vec::new(),
-                    types: vec![Type::Symbol(Symbol {
-                        id: SymbolID::Enum(ID::new(0)),
-                        generic_arguments: GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![Type::Symbol(Symbol {
-                                id: SymbolID::Enum(ID::new(0)),
-                                generic_arguments: GenericArguments {
-                                    lifetimes: Vec::new(),
-                                    types: vec![Type::Primitive(
-                                        Primitive::Int32,
-                                    )],
-                                    constants: Vec::new(),
-                                },
-                            })],
-                            constants: Vec::new(),
-                        },
-                    })],
-                    constants: Vec::new(),
-                },
-            })],
-            constants: Vec::new(),
-        },
-    });
-
-    assert!(equals(
-        &lhs,
-        &rhs,
-        &Environment { premise: &premise, table: &table },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap());
-    assert!(equals(
-        &rhs,
-        &lhs,
-        &Environment { premise: &premise, table: &table },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap());
-
-    let rhs = Type::Symbol(Symbol {
-        id: SymbolID::Enum(ID::new(0)),
-        generic_arguments: GenericArguments {
-            lifetimes: Vec::new(),
-            types: vec![Type::Symbol(Symbol {
-                id: SymbolID::Enum(ID::new(0)),
-                generic_arguments: GenericArguments {
-                    lifetimes: Vec::new(),
-                    types: vec![Type::Symbol(Symbol {
-                        id: SymbolID::Enum(ID::new(0)),
-                        generic_arguments: GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![Type::Symbol(Symbol {
-                                id: SymbolID::Enum(ID::new(0)),
-                                generic_arguments: GenericArguments {
-                                    lifetimes: Vec::new(),
-                                    types: vec![Type::Primitive(
-                                        Primitive::Uint32,
-                                    )],
-                                    constants: Vec::new(),
-                                },
-                            })],
-                            constants: Vec::new(),
-                        },
-                    })],
-                    constants: Vec::new(),
-                },
-            })],
-            constants: Vec::new(),
-        },
-    });
-
-    assert!(!equals(
-        &lhs,
-        &rhs,
-        &Environment { premise: &premise, table: &table },
-        &mut Limit::new(&mut session::Default::default()),
-    )
-    .unwrap());
-    assert!(!equals(
         &rhs,
         &lhs,
         &Environment { premise: &premise, table: &table },
@@ -379,13 +267,7 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
-
-        leaf.prop_recursive(10, 20, 2, |inner| {
-            prop_oneof![Mapping::arbitrary_with(Some(inner))
-                .prop_map(|x| Box::new(x) as _)]
-        })
-        .boxed()
+        Identity::arbitrary().prop_map(|x| Box::new(x) as _).boxed()
     }
 }
 
@@ -455,9 +337,9 @@ impl<T: Term + Debug + 'static> Property<T> for Identity<T> {
 }
 
 #[derive(Debug)]
-pub struct Mapping<T> {
+pub struct Mapping<T: Term> {
     pub property: Box<dyn Property<T>>,
-    pub target: T,
+    pub target_trait_member: T::TraitMember,
     pub target_at_lhs: bool,
 }
 
@@ -466,6 +348,7 @@ impl<T: 'static + Debug + Term + Arbitrary<Strategy = BoxedStrategy<T>>>
 where
     Box<dyn Property<T>>:
         Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+    T::TraitMember: Arbitrary<Strategy = BoxedStrategy<T::TraitMember>>,
     session::Default: Session<T>,
 {
     type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
@@ -474,10 +357,10 @@ where
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let strategy = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
-        (strategy, T::arbitrary(), proptest::bool::ANY)
-            .prop_map(|(property, target, target_at_lhs)| Self {
+        (strategy, T::TraitMember::arbitrary(), proptest::bool::ANY)
+            .prop_map(|(property, target_trait_member, target_at_lhs)| Self {
                 property,
-                target,
+                target_trait_member,
                 target_at_lhs,
             })
             .boxed()
@@ -487,6 +370,7 @@ where
 impl<T: Term + Debug + 'static> Property<T> for Mapping<T>
 where
     session::Default: Session<T>,
+    TraitMemberEquality<T>: Into<Predicate>,
 {
     fn apply(
         &self,
@@ -517,23 +401,35 @@ where
             &mut Limit::new(&mut session::Default::default()),
         )? || equals(
             &to_be_mapped,
-            &self.target,
+            &T::from(self.target_trait_member.clone()),
             &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
         }
 
-        premise.equivalent.insert(to_be_mapped, self.target.clone());
+        premise.append_from_predicates(std::iter::once(
+            TraitMemberEquality {
+                trait_member: self.target_trait_member.clone(),
+                equivalent: to_be_mapped,
+            }
+            .into(),
+        ));
 
         Ok(())
     }
 
     fn generate(&self) -> (T, T) {
         if self.target_at_lhs {
-            (self.target.clone(), self.property.generate().1)
+            (
+                T::from(self.target_trait_member.clone()),
+                self.property.generate().1,
+            )
         } else {
-            (self.property.generate().0, self.target.clone())
+            (
+                self.property.generate().0,
+                T::from(self.target_trait_member.clone()),
+            )
         }
     }
 }

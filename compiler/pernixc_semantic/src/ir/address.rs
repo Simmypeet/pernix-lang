@@ -15,6 +15,16 @@ pub struct Field {
     pub field: ID<Field>,
 }
 
+/// The address points to an element in a tuple.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Tuple {
+    /// The address to the tuple.
+    pub tuple: Box<Address>,
+
+    /// The index of the element in the tuple.
+    pub index: usize,
+}
+
 /// Represents an address to a stack allocated value.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
@@ -31,6 +41,7 @@ pub enum Stack {
 pub enum Address {
     Stack(Stack),
     Field(Field),
+    Tuple(Tuple),
 
     /// The address is stored in a value.
     Value(Value),

@@ -769,6 +769,24 @@ impl Term for Constant {
         Err(predicate)
     }
 
+    fn as_trait_member_equality_predicate(
+        predicate: &Predicate,
+    ) -> Option<&predicate::TraitMemberEquality<Self>> {
+        predicate.as_trait_constant_equality()
+    }
+
+    fn as_trait_member_equality_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut predicate::TraitMemberEquality<Self>> {
+        predicate.as_trait_constant_equality_mut()
+    }
+
+    fn into_trait_member_equality_predicate(
+        predicate: Predicate,
+    ) -> Result<predicate::TraitMemberEquality<Self>, Predicate> {
+        predicate.into_trait_constant_equality()
+    }
+
     fn as_tuple_predicate(
         predicate: &Predicate,
     ) -> Option<&predicate::Tuple<Self>> {

@@ -1,6 +1,7 @@
 //! Contains the semantic logic of the compiler (i.e. type checking/system).
 
 use enum_as_inner::EnumAsInner;
+use getset::{Getters, MutGetters};
 
 use self::{
     equivalent::Equivalent,
@@ -23,6 +24,7 @@ pub mod matching;
 pub mod order;
 pub mod predicate;
 pub mod session;
+pub mod simplify;
 pub mod sub_term;
 pub mod term;
 pub mod unification;
@@ -58,13 +60,15 @@ pub enum TraitContext {
 }
 
 /// The foundation truth used to derive further arguments.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Getters, MutGetters)]
 pub struct Premise {
     /// Contains the equivalent classes for lifetimes, types, and constants.
-    pub equivalent: Equivalent,
+    #[get = "pub"]
+    equivalent: Equivalent,
 
     /// The list of predicates
-    pub predicates: Vec<Predicate>,
+    #[get = "pub"]
+    predicates: Vec<Predicate>,
 
     /// The environment of the premise.
     pub trait_context: TraitContext,
@@ -78,11 +82,17 @@ impl Premise {
     ) {
         for predicate in predicates {
             match &predicate {
-                Predicate::TypeEquality(eq) => {
-                    self.equivalent.insert(eq.lhs.clone(), eq.rhs.clone());
+                Predicate::TraitTypeEquality(eq) => {
+                    self.equivalent.insert(
+                        Type::TraitMember(eq.trait_member.clone()),
+                        eq.equivalent.clone(),
+                    );
                 }
-                Predicate::ConstantEquality(eq) => {
-                    self.equivalent.insert(eq.lhs.clone(), eq.rhs.clone());
+                Predicate::TraitConstantEquality(eq) => {
+                    self.equivalent.insert(
+                        Constant::TraitMember(eq.trait_member.clone()),
+                        eq.equivalent.clone(),
+                    );
                 }
                 _ => {}
             }

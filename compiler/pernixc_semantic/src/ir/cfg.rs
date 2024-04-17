@@ -41,15 +41,37 @@ impl Block {
 /// This is the intermediate representation of the program that is used to
 /// generate the final code.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Getters, CopyGetters, derive_more::Index,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Getters,
+    CopyGetters,
+    derive_more::Index,
+    derive_more::IndexMut,
 )]
 pub struct ControlFlowGraph {
     /// Contains all the blocks in the control flow graph.
     #[get = "pub"]
     #[index]
+    #[index_mut]
     blocks: Arena<Block>,
 
     /// The id of the entry block.
     #[get_copy = "pub"]
     entry_block_id: ID<Block>,
+}
+
+impl ControlFlowGraph {
+    /// Gets the [`Block`] with the given ID.
+    #[must_use]
+    pub fn get_block(&self, id: ID<Block>) -> Option<&Block> {
+        self.blocks.get(id)
+    }
+
+    /// Gets the mutable reference to the [`Block`] with the given ID.
+    #[must_use]
+    pub fn get_block_mut(&mut self, id: ID<Block>) -> Option<&mut Block> {
+        self.blocks.get_mut(id)
+    }
 }

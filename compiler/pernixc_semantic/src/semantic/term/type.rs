@@ -1147,6 +1147,24 @@ impl Term for Type {
         predicate.into_constant_type().map(|x| x.0)
     }
 
+    fn as_trait_member_equality_predicate(
+        predicate: &Predicate,
+    ) -> Option<&predicate::TraitMemberEquality<Self>> {
+        predicate.as_trait_type_equality()
+    }
+
+    fn as_trait_member_equality_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut predicate::TraitMemberEquality<Self>> {
+        predicate.as_trait_type_equality_mut()
+    }
+
+    fn into_trait_member_equality_predicate(
+        predicate: Predicate,
+    ) -> Result<predicate::TraitMemberEquality<Self>, Predicate> {
+        predicate.into_trait_type_equality()
+    }
+
     fn as_tuple_predicate(
         predicate: &Predicate,
     ) -> Option<&predicate::Tuple<Self>> {

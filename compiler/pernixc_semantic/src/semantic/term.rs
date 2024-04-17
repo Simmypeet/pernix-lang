@@ -271,7 +271,7 @@ pub trait Term:
     type GenericParameter: GenericParameter + 'static;
 
     /// The type of trait member symbol that stores this term kind.
-    type TraitMember: 'static;
+    type TraitMember: Debug + Eq + Hash + Sized + Clone + Ord + 'static;
 
     /// Normalizes the term.
     ///
@@ -366,6 +366,21 @@ pub trait Term:
     fn into_constant_type_predicate(
         predicate: Predicate,
     ) -> Result<Self, Predicate>;
+
+    #[doc(hidden)]
+    fn as_trait_member_equality_predicate(
+        predicate: &Predicate,
+    ) -> Option<&predicate::TraitMemberEquality<Self>>;
+
+    #[doc(hidden)]
+    fn as_trait_member_equality_predicate_mut(
+        predicate: &mut Predicate,
+    ) -> Option<&mut predicate::TraitMemberEquality<Self>>;
+
+    #[doc(hidden)]
+    fn into_trait_member_equality_predicate(
+        predicate: Predicate,
+    ) -> Result<predicate::TraitMemberEquality<Self>, Predicate>;
 
     #[doc(hidden)]
     fn as_tuple_predicate(

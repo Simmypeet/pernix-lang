@@ -249,6 +249,24 @@ impl Term for Lifetime {
         Err(predicate)
     }
 
+    fn as_trait_member_equality_predicate(
+        _: &Predicate,
+    ) -> Option<&predicate::TraitMemberEquality<Self>> {
+        None
+    }
+
+    fn as_trait_member_equality_predicate_mut(
+        _: &mut Predicate,
+    ) -> Option<&mut predicate::TraitMemberEquality<Self>> {
+        None
+    }
+
+    fn into_trait_member_equality_predicate(
+        predicate: Predicate,
+    ) -> Result<predicate::TraitMemberEquality<Self>, Predicate> {
+        Err(predicate)
+    }
+
     fn as_tuple_predicate(_: &Predicate) -> Option<&predicate::Tuple<Self>> {
         None
     }

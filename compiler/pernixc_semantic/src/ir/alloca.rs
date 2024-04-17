@@ -12,4 +12,7 @@ pub struct Alloca {
 
     /// The span of the allocation.
     pub span: Option<Span>,
+
+    /// Is the underlying value mutable?
+    pub mutable: bool,
 }

@@ -60,7 +60,7 @@ pub struct Return {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RegisterAssignment {
     /// The register that is being assigned.
-    pub assignment: ID<Register>,
+    pub id: ID<Register>,
 }
 
 /// An enumeration containig all the basic instructions.
