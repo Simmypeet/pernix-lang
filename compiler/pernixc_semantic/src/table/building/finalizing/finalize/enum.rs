@@ -5,6 +5,10 @@ use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error,
+    semantic::{
+        session::{self, Limit},
+        simplify, Environment,
+    },
     symbol::Enum,
     table::{
         building::finalizing::{occurrences::Occurrences, Finalizer},
@@ -30,7 +34,10 @@ impl Finalize for Enum {
     type Flag = Flag;
     type Data = Occurrences;
 
-    #[allow(clippy::significant_drop_in_scrutinee)]
+    #[allow(
+        clippy::significant_drop_in_scrutinee,
+        clippy::significant_drop_tightening
+    )]
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
@@ -81,9 +88,27 @@ impl Finalize for Enum {
                 // build the variance
                 let premise =
                     table.get_active_premise(symbol_id.into()).unwrap();
-                let mut enum_sym_write =
+                let mut enum_sym =
                     table.representation.enums.get(symbol_id).unwrap().write();
-                let enum_sym = &mut *enum_sym_write;
+                let enum_sym = &mut *enum_sym;
+                let mut session = session::Default::default();
+
+                // simplify the type of variants
+                for mut variant in
+                    enum_sym.variant_ids_by_name.values().copied().map(|x| {
+                        table.representation.variants.get(x).unwrap().write()
+                    })
+                {
+                    if let Some(associated_ty) = &mut variant.associated_type {
+                        if let Ok(simplified) = simplify::simplify(
+                            associated_ty,
+                            &Environment { premise: &premise, table },
+                            &mut Limit::new(&mut session),
+                        ) {
+                            *associated_ty = simplified;
+                        }
+                    }
+                }
 
                 #[allow(clippy::needless_collect)]
                 let type_usages = enum_sym
@@ -102,8 +127,6 @@ impl Finalize for Enum {
                     type_usages.iter(),
                     handler,
                 );
-
-                drop(enum_sym_write);
             }
             Flag::Check => {
                 table.check_occurrences(symbol_id.into(), data, handler);

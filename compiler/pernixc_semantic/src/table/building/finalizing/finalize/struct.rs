@@ -5,6 +5,11 @@ use super::{build_flag, Finalize};
 use crate::{
     arena::ID,
     error::{self, DuplicatedField, PrivateEntityLeakedToPublicInterface},
+    semantic::{
+        session::{self, Limit},
+        simplify::simplify,
+        Environment,
+    },
     symbol::{
         Accessibility, Field, GenericParameterVariances, Struct, Variance,
     },
@@ -32,7 +37,11 @@ impl Finalize for Struct {
     type Flag = Flag;
     type Data = Occurrences;
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::significant_drop_tightening,
+        clippy::significant_drop_in_scrutinee
+    )]
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
@@ -64,6 +73,7 @@ impl Finalize for Struct {
                     .unwrap()
                     .write();
 
+                // build default variance infos
                 struct_sym.generic_parameter_variances =
                     GenericParameterVariances {
                         variances_by_lifetime_ids: struct_sym
@@ -164,16 +174,29 @@ impl Finalize for Struct {
                     handler,
                 );
 
-                // build the variance
+                // simply all the types in the struct fields
                 let premise =
                     table.get_active_premise(symbol_id.into()).unwrap();
-                let mut struct_sym_write = table
+                let mut struct_sym = table
                     .representation
                     .structs
                     .get(symbol_id)
                     .unwrap()
                     .write();
-                let struct_sym = &mut *struct_sym_write;
+                let mut session = session::Default::default();
+
+                for fields in struct_sym.fields.values_mut() {
+                    if let Ok(simplified) = simplify(
+                        &fields.r#type,
+                        &Environment { table, premise: &premise },
+                        &mut Limit::new(&mut session),
+                    ) {
+                        fields.r#type = simplified;
+                    }
+                }
+
+                // build the variance
+                let struct_sym = &mut *struct_sym;
 
                 #[allow(clippy::needless_collect)]
                 let type_usages = struct_sym
@@ -190,8 +213,6 @@ impl Finalize for Struct {
                     type_usages.iter().copied(),
                     handler,
                 );
-
-                drop(struct_sym_write);
             }
             Flag::Check => {
                 table.check_occurrences(symbol_id.into(), data, handler);
