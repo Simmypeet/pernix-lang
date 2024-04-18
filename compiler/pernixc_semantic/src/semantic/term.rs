@@ -266,6 +266,7 @@ pub trait Term:
     + equivalent::Get
     + From<MemberID<ID<Self::GenericParameter>, GenericID>>
     + From<Self::TraitMember>
+    + 'static
 {
     /// The type of generic parameters of this term kind.
     type GenericParameter: GenericParameter + 'static;

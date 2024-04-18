@@ -1,3 +1,4 @@
+//! Contains the definition of [`simplify`].
 use super::{
     equality,
     session::{Cached, ExceedLimitError, Limit, Session},

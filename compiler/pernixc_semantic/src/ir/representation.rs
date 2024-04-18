@@ -1,8 +1,6 @@
 use super::{alloca::Alloca, cfg::ControlFlowGraph, value::register::Register};
 use crate::arena::Arena;
 
-mod pattern;
-
 /// An intermediate representation of the program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Representation<T> {

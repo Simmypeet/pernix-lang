@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use proptest::{
     arbitrary::Arbitrary,
-    prop_assert, proptest,
+    prop_assert, prop_oneof, proptest,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
@@ -10,9 +10,14 @@ use proptest::{
 use crate::{
     semantic::{
         equality,
-        predicate::{Outlives, Predicate},
+        predicate::{Outlives, Predicate, TraitMemberEquality},
         session::{self, ExceedLimitError, Limit, Session},
-        term::{constant::Constant, lifetime::Lifetime, r#type::Type, Term},
+        term::{
+            constant::Constant,
+            lifetime::Lifetime,
+            r#type::{self, Type},
+            GenericArguments, Symbol, Term,
+        },
         tests::State,
         Environment, Premise,
     },
@@ -54,6 +59,165 @@ pub trait Property<T>: 'static + Debug {
     /// Generates the term for testing.
     #[must_use]
     fn generate(&self) -> (T, Lifetime);
+}
+
+#[derive(Debug)]
+pub struct ByEquality<T: Term> {
+    pub equality: T::TraitMember,
+    pub property: Box<dyn Property<T>>,
+}
+
+impl<T: Term> Property<T> for ByEquality<T>
+where
+    session::Default: Session<T>,
+    TraitMemberEquality<T>: Into<Predicate>,
+{
+    fn apply(
+        &self,
+        table: &mut Table<State>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
+        if Outlives::satisfies(
+            &T::from(self.equality.clone()),
+            &self.property.generate().1,
+            &Environment { premise, table },
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
+        }
+
+        premise.append_from_predicates(std::iter::once(
+            TraitMemberEquality {
+                trait_member: self.equality.clone(),
+                equivalent: self.property.generate().0,
+            }
+            .into(),
+        ));
+
+        self.property.apply(table, premise)?;
+
+        Ok(())
+    }
+
+    fn generate(&self) -> (T, Lifetime) {
+        let (_, bound) = self.property.generate();
+
+        (T::from(self.equality.clone()), bound)
+    }
+}
+
+impl<T: Term> Arbitrary for ByEquality<T>
+where
+    Box<dyn Property<T>>:
+        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+    T::TraitMember: Arbitrary<Strategy = BoxedStrategy<T::TraitMember>>,
+{
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let args = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
+
+        (T::TraitMember::arbitrary(), args)
+            .prop_map(|(equality, property)| Self { equality, property })
+            .boxed()
+    }
+}
+
+#[derive(Debug)]
+pub struct LifetimeMatching {
+    pub id: r#type::SymbolID,
+    pub lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
+    pub bound: Lifetime,
+}
+
+impl Property<Type> for LifetimeMatching {
+    fn apply(
+        &self,
+        table: &mut Table<State>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
+        let (ty, bound) = self.generate();
+        let mut bound_lifetimes = Vec::new();
+        for lifetime in &self.lifetime_properties {
+            if Outlives::satisfies(
+                &ty,
+                &bound,
+                &Environment { premise, table },
+                &mut Limit::new(&mut session::Default::default()),
+            )? {
+                return Ok(());
+            }
+
+            lifetime.apply(table, premise)?;
+            bound_lifetimes.push(lifetime.generate().1);
+        }
+
+        if !Outlives::satisfies(
+            &ty,
+            &bound,
+            &Environment { premise, table },
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            premise.append_from_predicates(std::iter::once(
+                Predicate::TypeOutlives(Outlives {
+                    operand: Type::Symbol(Symbol {
+                        id: self.id,
+                        generic_arguments: GenericArguments {
+                            lifetimes: bound_lifetimes,
+                            types: Vec::new(),
+                            constants: Vec::new(),
+                        },
+                    }),
+                    bound: self.bound,
+                }),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn generate(&self) -> (Type, Lifetime) {
+        let mut operand_lifetimes = Vec::new();
+
+        for lifetime in &self.lifetime_properties {
+            operand_lifetimes.push(lifetime.generate().0);
+        }
+
+        (
+            Type::Symbol(Symbol {
+                id: self.id,
+                generic_arguments: GenericArguments {
+                    lifetimes: operand_lifetimes,
+                    types: Vec::new(),
+                    constants: Vec::new(),
+                },
+            }),
+            self.bound,
+        )
+    }
+}
+
+impl Arbitrary for LifetimeMatching {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            r#type::SymbolID::arbitrary(),
+            proptest::collection::vec(
+                Box::<dyn Property<Lifetime>>::arbitrary(),
+                1..=8,
+            ),
+            Lifetime::arbitrary(),
+        )
+            .prop_map(|(id, lifetime_properties, bound)| Self {
+                id,
+                lifetime_properties,
+                bound,
+            })
+            .boxed()
+    }
 }
 
 #[derive(Debug)]
@@ -99,79 +263,150 @@ impl Arbitrary for Reflexive {
     }
 }
 
-#[derive(Debug)]
-pub struct Transitive {
-    pub inner_property: Box<dyn Property<Lifetime>>,
-    pub term: Lifetime,
-    pub at_lhs: bool,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ByPremise<T> {
+    pub term: T,
+    pub bound: Lifetime,
 }
 
-impl Property<Lifetime> for Transitive {
+impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary
+    for ByPremise<T>
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (T::arbitrary(), Lifetime::arbitrary())
+            .prop_map(|(term, bound)| Self { term, bound })
+            .boxed()
+    }
+}
+
+impl<T: Term> Property<T> for ByPremise<T>
+where
+    session::Default: Session<T>,
+    Outlives<T>: Into<Predicate>,
+{
     fn apply(
         &self,
         table: &mut Table<State>,
         premise: &mut Premise,
     ) -> Result<(), ApplyPropertyError> {
-        let (lhs, rhs) = self.generate();
-        let (inner_lhs, inner_rhs) = self.inner_property.generate();
-
         if Outlives::satisfies(
-            &lhs,
-            &rhs,
+            &self.term,
+            &self.bound,
             &Environment { premise, table },
             &mut Limit::new(&mut session::Default::default()),
         )? {
             return Ok(());
         }
 
-        let outlives_premise = if self.at_lhs {
-            Outlives { operand: self.term, bound: inner_lhs }
-        } else {
-            Outlives { operand: inner_rhs, bound: self.term }
-        };
-
-        premise.predicates.push(Predicate::LifetimeOutlives(outlives_premise));
-
-        if Outlives::satisfies(
-            &lhs,
-            &rhs,
-            &Environment { premise, table },
-            &mut Limit::new(&mut session::Default::default()),
-        )? {
-            return Ok(());
-        }
-
-        self.inner_property.apply(table, premise)?;
+        premise.append_from_predicates(std::iter::once(
+            Outlives { operand: self.term.clone(), bound: self.bound }.into(),
+        ));
 
         Ok(())
     }
 
-    fn generate(&self) -> (Lifetime, Lifetime) {
-        let (lhs, rhs) = self.inner_property.generate();
+    fn generate(&self) -> (T, Lifetime) { (self.term.clone(), self.bound) }
+}
 
-        if self.at_lhs {
-            (self.term, rhs)
-        } else {
-            (lhs, self.term)
+#[derive(Debug)]
+pub struct Transitive<T> {
+    pub inner_property: Box<dyn Property<T>>,
+    pub bound: Lifetime,
+}
+
+impl<T: Term> Property<T> for Transitive<T>
+where
+    session::Default: Session<T>,
+{
+    fn apply(
+        &self,
+        table: &mut Table<State>,
+        premise: &mut Premise,
+    ) -> Result<(), ApplyPropertyError> {
+        let (operand, bound) = self.generate();
+        let (inner_operand, inner_bound) = self.inner_property.generate();
+
+        if Outlives::satisfies(
+            &operand,
+            &bound,
+            &Environment { premise, table },
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            return Ok(());
         }
+
+        if !Outlives::satisfies(
+            &inner_bound,
+            &self.bound,
+            &Environment { premise, table },
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            premise.append_from_predicates(std::iter::once(
+                Predicate::LifetimeOutlives(Outlives {
+                    operand: inner_bound,
+                    bound: self.bound,
+                }),
+            ));
+        }
+
+        if !Outlives::satisfies(
+            &inner_operand,
+            &inner_bound,
+            &Environment { premise, table },
+            &mut Limit::new(&mut session::Default::default()),
+        )? {
+            self.inner_property.apply(table, premise)?;
+        }
+
+        println!("pass!");
+        Ok(())
+    }
+
+    fn generate(&self) -> (T, Lifetime) {
+        let (operand, _) = self.inner_property.generate();
+
+        (operand, self.bound)
     }
 }
 
-impl Arbitrary for Transitive {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>;
+impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + 'static> Arbitrary
+    for Transitive<T>
+where
+    Box<dyn Property<T>>:
+        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
+{
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let args =
-            args.unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary);
+        let args = args.unwrap_or_else(Box::<dyn Property<T>>::arbitrary);
 
-        (args, Lifetime::arbitrary(), proptest::bool::ANY)
-            .prop_map(|(inner_property, term, at_lhs)| Self {
-                inner_property,
-                term,
-                at_lhs,
-            })
+        (args, Lifetime::arbitrary())
+            .prop_map(|(inner_property, bound)| Self { inner_property, bound })
             .boxed()
+    }
+}
+
+impl Arbitrary for Box<dyn Property<Type>> {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        let leaf = ByPremise::arbitrary().prop_map(|x| Box::new(x) as _);
+
+        leaf.prop_recursive(4, 4, 1, |inner| {
+            prop_oneof![
+                Transitive::arbitrary_with(Some(inner.clone()))
+                    .prop_map(|x| Box::new(x) as _),
+                ByEquality::arbitrary_with(Some(inner.clone()))
+                    .prop_map(|x| Box::new(x) as _),
+                LifetimeMatching::arbitrary().prop_map(|x| Box::new(x) as _),
+            ]
+        })
+        .boxed()
     }
 }
 
@@ -180,10 +415,13 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let leaf = Reflexive::arbitrary().prop_map(|x| Box::new(x) as _);
+        let leaf = prop_oneof![
+            Reflexive::arbitrary().prop_map(|x| Box::new(x) as _),
+            ByPremise::arbitrary().prop_map(|x| Box::new(x) as _),
+        ];
 
-        leaf.prop_recursive(4, 4, 1, |inner| {
-            Transitive::arbitrary_with(Some(inner))
+        leaf.prop_recursive(4, 8, 2, |inner| {
+            Transitive::arbitrary_with(Some(inner.clone()))
                 .prop_map(|x| Box::new(x) as _)
         })
         .boxed()
@@ -196,6 +434,7 @@ fn property_based_testing<T: Term + 'static>(
 where
     session::Default: Session<T>,
 {
+    dbg!(property);
     let (term1, term2) = property.generate();
     let mut premise = Premise::default();
     let mut table = Table::<State>::default();
@@ -244,13 +483,19 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config {
         max_shrink_iters: 100_000,
         max_global_rejects: 8192,
-        cases: 8192,
         ..Default::default()
     })]
 
     #[test]
     fn property_based_testing_lifetime(
         property in Box::<dyn Property<Lifetime>>::arbitrary()
+    ) {
+        property_based_testing(&*property)?;
+    }
+
+    #[test]
+    fn property_based_testing_type(
+        property in Box::<dyn Property<Type>>::arbitrary()
     ) {
         property_based_testing(&*property)?;
     }
