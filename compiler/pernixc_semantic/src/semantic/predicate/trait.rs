@@ -291,16 +291,6 @@ impl Trait {
                         environment,
                         limit,
                     )?,
-                    Predicate::TraitConstantEquality(equality) => {
-                        equality::equals(
-                            &Constant::TraitMember(
-                                equality.trait_member.clone(),
-                            ),
-                            &equality.equivalent,
-                            environment,
-                            limit,
-                        )?
-                    }
                     Predicate::ConstantType(constant_type) => {
                         ConstantType::satisfies(
                             &constant_type.0,
@@ -680,16 +670,6 @@ fn predicate_satisfies<
                     return Ok(None);
                 }
             }
-            Predicate::TraitConstantEquality(equality) => {
-                if !equality::equals(
-                    &Constant::TraitMember(equality.trait_member.clone()),
-                    &equality.equivalent,
-                    environment,
-                    session,
-                )? {
-                    return Ok(None);
-                }
-            }
             Predicate::ConstantType(constant_type) => {
                 if !ConstantType::satisfies(
                     &constant_type.0,
@@ -785,3 +765,6 @@ fn is_in_active_trait_implementation(
         TraitContext::Normal => Ok(false),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -294,7 +294,16 @@ pub trait Global {
 
 /// An ID to all kinds of symbols that can be defined in a module.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum ModuleMemberID {

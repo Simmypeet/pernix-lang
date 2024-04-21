@@ -751,35 +751,40 @@ impl Display for TraitMemberBound {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitMemberPredicate {
+pub struct TraitMemberEqualityPredicate {
     pub qualified_identifier: QualifiedIdentifier,
-    pub bound: TraitMemberBound,
+    pub r#type: r#type::tests::Type,
 }
 
-impl Input<&super::TraitMemberPredicate> for &TraitMemberPredicate {
-    fn assert(self, output: &super::TraitMemberPredicate) -> TestCaseResult {
+impl Input<&super::TraitMemberEqualityPredicate>
+    for &TraitMemberEqualityPredicate
+{
+    fn assert(
+        self,
+        output: &super::TraitMemberEqualityPredicate,
+    ) -> TestCaseResult {
         self.qualified_identifier.assert(output.qualified_identifier())?;
-        self.bound.assert(output.bound())
+        self.r#type.assert(output.r#type())
     }
 }
 
-impl Arbitrary for TraitMemberPredicate {
+impl Arbitrary for TraitMemberEqualityPredicate {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (QualifiedIdentifier::arbitrary(), TraitMemberBound::arbitrary())
-            .prop_map(|(qualified_identifier, argument)| Self {
+        (QualifiedIdentifier::arbitrary(), r#type::tests::Type::arbitrary())
+            .prop_map(|(qualified_identifier, r#type)| Self {
                 qualified_identifier,
-                bound: argument,
+                r#type,
             })
             .boxed()
     }
 }
 
-impl Display for TraitMemberPredicate {
+impl Display for TraitMemberEqualityPredicate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} = {}", self.qualified_identifier, self.bound)
+        write!(f, "{} = {}", self.qualified_identifier, self.r#type)
     }
 }
 
@@ -889,7 +894,7 @@ impl Display for TuplePredicate {
 pub enum Predicate {
     Trait(TraitPredicate),
     Lifetime(LifetimePredicate),
-    TraitMember(TraitMemberPredicate),
+    TraitMember(TraitMemberEqualityPredicate),
     ConstantType(ConstantTypePredicate),
     Tuple(TuplePredicate),
 }
@@ -924,7 +929,8 @@ impl Arbitrary for Predicate {
         prop_oneof![
             TraitPredicate::arbitrary().prop_map(Self::Trait),
             LifetimePredicate::arbitrary().prop_map(Self::Lifetime),
-            TraitMemberPredicate::arbitrary().prop_map(Self::TraitMember),
+            TraitMemberEqualityPredicate::arbitrary()
+                .prop_map(Self::TraitMember),
             ConstantTypePredicate::arbitrary().prop_map(Self::ConstantType),
             TuplePredicate::arbitrary().prop_map(Self::Tuple),
         ]

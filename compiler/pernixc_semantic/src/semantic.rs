@@ -81,20 +81,11 @@ impl Premise {
         predicates: impl Iterator<Item = Predicate>,
     ) {
         for predicate in predicates {
-            match &predicate {
-                Predicate::TraitTypeEquality(eq) => {
-                    self.equivalent.insert(
-                        Type::TraitMember(eq.trait_member.clone()),
-                        eq.equivalent.clone(),
-                    );
-                }
-                Predicate::TraitConstantEquality(eq) => {
-                    self.equivalent.insert(
-                        Constant::TraitMember(eq.trait_member.clone()),
-                        eq.equivalent.clone(),
-                    );
-                }
-                _ => {}
+            if let Predicate::TraitTypeEquality(eq) = &predicate {
+                self.equivalent.insert(
+                    Type::TraitMember(eq.trait_member.clone()),
+                    eq.equivalent.clone(),
+                );
             }
 
             self.predicates.push(predicate);

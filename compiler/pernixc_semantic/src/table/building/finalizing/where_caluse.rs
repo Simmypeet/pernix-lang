@@ -5,7 +5,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{
     self,
-    item::{LifetimePredicateOperand, TraitMemberBound, TuplePredicateOperand},
+    item::{LifetimePredicateOperand, TuplePredicateOperand},
     ConnectedList,
 };
 
@@ -18,8 +18,7 @@ use super::{
 use crate::{
     arena::ID,
     error::{
-        self, ExpectTrait, MisMatchedTraitMemberBoundArgument,
-        RedefinedHigherRankedLifetime, TraitMemberExpected,
+        self, ExpectTrait, RedefinedHigherRankedLifetime, TraitMemberExpected,
     },
     semantic::{
         instantiation::Instantiation,
@@ -40,7 +39,7 @@ impl Table<Finalizer> {
     fn create_trait_member_predicate<T: Generic + Element>(
         &self,
         generic_id: ID<T>,
-        syntax_tree: &syntax_tree::item::TraitMemberPredicate,
+        syntax_tree: &syntax_tree::item::TraitMemberEqualityPredicate,
         mut config: resolution::Config,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) where
@@ -55,19 +54,19 @@ impl Table<Finalizer> {
             return;
         };
 
-        match (resolution, syntax_tree.bound()) {
+        match resolution {
             // trait type
-            (
-                Resolution::MemberGeneric(MemberGeneric {
-                    id: MemberGenericID::TraitType(trait_ty_id),
-                    parent_generic_arguments,
-                    generic_arguments,
-                }),
-                TraitMemberBound::Type(ty),
-            ) => {
-                let Ok(resolve_ty) =
-                    self.resolve_type(ty, generic_id.into(), config, handler)
-                else {
+            Resolution::MemberGeneric(MemberGeneric {
+                id: MemberGenericID::TraitType(trait_ty_id),
+                parent_generic_arguments,
+                generic_arguments,
+            }) => {
+                let Ok(resolve_ty) = self.resolve_type(
+                    syntax_tree.r#type(),
+                    generic_id.into(),
+                    config,
+                    handler,
+                ) else {
                     return;
                 };
 
@@ -89,57 +88,6 @@ impl Table<Finalizer> {
                         kind: PredicateKind::Explicit(Some(syntax_tree.span())),
                     },
                 );
-            }
-
-            // trait constant
-            (
-                Resolution::MemberGeneric(MemberGeneric {
-                    id: MemberGenericID::TraitConstant(trait_constant_id),
-                    parent_generic_arguments,
-                    generic_arguments,
-                }),
-                TraitMemberBound::Constant(constant),
-            ) => {
-                let Ok(evaluated_constant) = self.evaluate(
-                    constant.expression(),
-                    generic_id.into(),
-                    handler,
-                ) else {
-                    return;
-                };
-
-                let mut generic_symbol =
-                    T::get_arena(self).get(generic_id).unwrap().write();
-                generic_symbol.generic_declaration_mut().predicates.push(
-                    symbol::Predicate {
-                        predicate: predicate::Predicate::TraitConstantEquality(
-                            TraitMemberEquality {
-                                trait_member: term::constant::TraitMember {
-                                    id: trait_constant_id,
-                                    member_generic_arguments: generic_arguments,
-                                    parent_generic_arguments,
-                                },
-                                equivalent: evaluated_constant,
-                            },
-                        ),
-                        kind: PredicateKind::Explicit(Some(syntax_tree.span())),
-                    },
-                );
-            }
-
-            // mismatched type
-            (
-                Resolution::MemberGeneric(MemberGeneric {
-                    id:
-                        MemberGenericID::TraitType(_)
-                        | MemberGenericID::TraitConstant(_),
-                    ..
-                }),
-                mismatched,
-            ) => {
-                handler.receive(Box::new(MisMatchedTraitMemberBoundArgument {
-                    trait_member_bound_argument_span: mismatched.span(),
-                }));
             }
 
             _ => {

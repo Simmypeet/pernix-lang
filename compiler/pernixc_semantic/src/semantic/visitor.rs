@@ -35,9 +35,6 @@ use crate::semantic::sub_term::{
 pub enum SubLifetimeLocation {
     /// The location points to a lifetime that is a part of a type.
     FromType(r#type::SubLifetimeLocation),
-
-    /// The location points to a lifetime that is a part of a constant.
-    FromConstant(constant::SubLifetimeLocation),
 }
 
 /// An enumeration of locations where a type can be located.
@@ -56,9 +53,6 @@ pub enum SubLifetimeLocation {
 pub enum SubTypeLocation {
     /// The location points to a type that is a part of a type.
     FromType(r#type::SubTypeLocation),
-
-    /// The location points to a type that is a part of a constant.
-    FromConstant(constant::SubTypeLocation),
 }
 
 /// An enumeration of locations where a constant can be located.
@@ -828,49 +822,6 @@ macro_rules! implements_constant {
                     constant::SubConstantLocation::Local
                 )
             )),
-
-            Self::TraitMember(trait_member) => {
-                Ok(trait_member
-                    .parent_generic_arguments
-                    .$accept_one_level::<Self, _, _>($visitor, |id|
-                        SubTraitMemberLocation(SubMemberSymbolLocation {
-                            index: id,
-                            from_parent: true,
-                        }))
-                    && trait_member
-                        .member_generic_arguments
-                        .$accept_one_level::<Self, _, _>($visitor, |id|
-                            SubTraitMemberLocation(SubMemberSymbolLocation {
-                                index: id,
-                                from_parent: false,
-                            })
-                        ),
-                    )
-            }
-
-            Self::Symbol(symbol) => {
-                Ok(symbol.generic_arguments.$accept_one_level::<Self, _, _>(
-                    $visitor,
-                    |id| SubSymbolLocation(id),
-                ))
-            }
-            Self::MemberSymbol(term) => {
-                Ok(term.member_generic_arguments.$accept_one_level::<Self, _, _>(
-                    $visitor,
-                    |id| SubMemberSymbolLocation {
-                        index: id,
-                        from_parent: false,
-                    })
-                    && term
-                        .parent_generic_arguments
-                        .$accept_one_level::<Self, _, _>($visitor,
-                        |id| SubMemberSymbolLocation {
-                            index: id,
-                            from_parent: true,
-                        }
-                    )
-                )
-            }
         }
     };
 }

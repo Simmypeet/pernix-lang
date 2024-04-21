@@ -220,28 +220,15 @@ pub trait Property<T>: 'static + Debug {
 }
 
 impl Arbitrary for Box<dyn Property<Type>> {
-    type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
-    );
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(strategy: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
         leaf.prop_recursive(10, 60, 6, move |inner| {
-            let constant_strategy = strategy.1.clone().unwrap_or_else(|| {
-                Box::<dyn Property<Constant>>::arbitrary_with((
-                    strategy.0.clone(),
-                    Some(inner.clone()),
-                ))
-            });
-            let lifetime_strategy = strategy.0.clone().unwrap_or_else(|| {
-                Box::<dyn Property<Lifetime>>::arbitrary_with((
-                    Some(inner.clone()),
-                    strategy.1.clone(),
-                ))
-            });
+            let constant_strategy = Box::<dyn Property<Constant>>::arbitrary();
+            let lifetime_strategy = Box::<dyn Property<Lifetime>>::arbitrary();
 
             prop_oneof![
                 2 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
@@ -260,46 +247,23 @@ impl Arbitrary for Box<dyn Property<Type>> {
 }
 
 impl Arbitrary for Box<dyn Property<Lifetime>> {
-    type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
-    );
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         Identity::arbitrary().prop_map(|x| Box::new(x) as _).boxed()
     }
 }
 
 impl Arbitrary for Box<dyn Property<Constant>> {
-    type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
-    );
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(strategy: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
         leaf.prop_recursive(10, 60, 6, move |inner| {
-            let type_strategy = strategy.1.clone().unwrap_or_else(|| {
-                Box::<dyn Property<Type>>::arbitrary_with((strategy.0.clone(), Some(inner.clone())))
-            });
-            let lifetime_strategy = strategy.0.clone().unwrap_or_else(|| {
-                Box::<dyn Property<Lifetime>>::arbitrary_with((
-                    strategy.1.clone(),
-                    Some(inner.clone()),
-                ))
-            });
-
             prop_oneof![
-                2 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
-                6 => SymbolCongruence::arbitrary_with((
-                    Some(lifetime_strategy),
-                    Some(type_strategy),
-                    Some(inner.clone())
-                ))
-                .prop_map(|x| Box::new(x) as _),
                 1 => LocalCongruence::arbitrary_with(Some(inner)).prop_map(|x| Box::new(x) as _),
             ]
         })

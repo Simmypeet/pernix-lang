@@ -152,9 +152,7 @@ impl Arbitrary for Type {
             let lt_strat = param.0.clone().unwrap_or_else(|| {
                 Lifetime::arbitrary_with((Some(inner.clone()), param.1.clone()))
             });
-            let const_strat = param.1.clone().unwrap_or_else(|| {
-                Constant::arbitrary_with((param.0.clone(), Some(inner.clone())))
-            });
+            let const_strat = param.1.clone().unwrap_or_else(Constant::arbitrary);
 
             prop_oneof![
                 6 => MemberSymbol::arbitrary_with((

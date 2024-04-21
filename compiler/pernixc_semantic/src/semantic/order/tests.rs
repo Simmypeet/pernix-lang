@@ -12,7 +12,7 @@ use crate::{
     semantic::{
         session::{self, Limit, Session},
         term::{
-            constant::{self, Constant},
+            constant::Constant,
             lifetime::Lifetime,
             r#type::{self, Type},
             GenericArguments, Symbol, Term,
@@ -20,7 +20,7 @@ use crate::{
         tests::State,
         unification, Environment, Premise,
     },
-    symbol::{ConstantParameterID, TypeParameterID},
+    symbol::TypeParameterID,
     table::Table,
 };
 
@@ -251,10 +251,10 @@ impl<
 }
 
 impl Arbitrary for Box<dyn Property<Type>> {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Constant>>>>;
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             4 => Matching::<Type>::arbitrary().prop_map(|x| Box::new(x) as _),
             1 => Incompatible::<Type>::arbitrary().prop_map(|x| Box::new(x) as _),
@@ -262,32 +262,21 @@ impl Arbitrary for Box<dyn Property<Type>> {
                 .prop_map(|x| Box::new(x) as _),
             4 => Ambiguous::<TypeParameterID, r#type::TraitMember>::arbitrary().prop_map(|x| Box::new(x) as _),
         ].prop_recursive(3, 12, 4, move |inner| {
-            let constants = args.clone().unwrap_or_else(|| Box::<dyn Property<Constant>>::arbitrary_with(Some(inner.clone())));
-
-            Congruent::arbitrary_with((Some(inner), Some(constants))).prop_map(|x| Box::new(x) as _)
+            Congruent::arbitrary_with((Some(inner), Some(Box::<dyn Property<Constant>>::arbitrary()))).prop_map(|x| Box::new(x) as _)
         })
         .boxed()
     }
 }
 
 impl Arbitrary for Box<dyn Property<Constant>> {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
             4 => Matching::<Constant>::arbitrary().prop_map(|x| Box::new(x) as _),
             1 => Incompatible::<Constant>::arbitrary().prop_map(|x| Box::new(x) as _),
-            4 => Unified::<Constant, ConstantParameterID, constant::TraitMember>::arbitrary()
-                .prop_map(|x| Box::new(x) as _),
-            4 => Ambiguous::<ConstantParameterID, constant::TraitMember>::arbitrary()
-                .prop_map(|x| Box::new(x) as _),
         ]
-        .prop_recursive(3, 12, 4, move |inner| {
-            let types = args.clone().unwrap_or_else(|| Box::<dyn Property<Type>>::arbitrary_with(Some(inner.clone())));
-
-            Congruent::arbitrary_with((Some(types), Some(inner))).prop_map(|x| Box::new(x) as _)
-        })
         .boxed()
     }
 }

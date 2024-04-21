@@ -43,7 +43,7 @@ impl unification::Config for DeductionUnifyingConfig {
         from: &Constant,
         _: &Constant,
     ) -> Result<bool, ExceedLimitError> {
-        Ok(matches!(from, Constant::Parameter(_) | Constant::TraitMember(_)))
+        Ok(matches!(from, Constant::Parameter(_)))
     }
 }
 

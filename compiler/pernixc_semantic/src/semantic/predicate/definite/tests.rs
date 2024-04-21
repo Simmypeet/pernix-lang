@@ -21,8 +21,8 @@ use crate::{
         Environment, Premise,
     },
     symbol::{
-        self, ConstantParameterID, GenericDeclaration, GenericID,
-        GenericParameters, TypeParameter, TypeParameterID,
+        self, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
+        TypeParameterID,
     },
     table::Table,
 };
@@ -84,70 +84,6 @@ impl<T: Into<U> + Clone + Debug + 'static, U> Property<U>
     }
 
     fn generate(&self) -> U { self.0.clone().into() }
-}
-
-#[derive(Debug)]
-pub struct Mapping<Param, T> {
-    generic_parameter: Param,
-    property: Box<dyn Property<T>>,
-}
-
-impl<Param: Debug + Arbitrary, T: Debug + 'static> Arbitrary
-    for Mapping<Param, T>
-where
-    Box<dyn Property<T>>:
-        Arbitrary<Strategy = BoxedStrategy<Box<dyn Property<T>>>>,
-    Param::Strategy: 'static,
-{
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<T>>>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let args = args.unwrap_or_else(Box::arbitrary);
-
-        (Param::arbitrary(), args)
-            .prop_map(|(generic_parameter, property)| Self {
-                generic_parameter,
-                property,
-            })
-            .boxed()
-    }
-}
-
-impl<Param: Debug + Into<T> + Clone + 'static, T: Term + Debug + 'static>
-    Property<T> for Mapping<Param, T>
-where
-    session::Default: Session<T>,
-{
-    fn apply(
-        &self,
-        table: &mut Table<State>,
-        premise: &mut Premise,
-    ) -> Result<(), ApplyPropertyError> {
-        if definite(
-            &self.generate(),
-            &Environment { premise, table },
-            &mut Limit::new(&mut session::Default::default()),
-        )? {
-            return Ok(());
-        }
-
-        self.property.apply(table, premise)?;
-
-        if definite(
-            &self.generate(),
-            &Environment { premise, table },
-            &mut Limit::new(&mut session::Default::default()),
-        )? {
-            return Ok(());
-        }
-
-        premise.equivalent.insert(self.generate(), self.property.generate());
-
-        Ok(())
-    }
-
-    fn generate(&self) -> T { self.generic_parameter.clone().into() }
 }
 
 #[derive(Debug)]
@@ -240,13 +176,11 @@ impl Arbitrary for Box<dyn Property<Type>> {
                 .prop_map(|x| Box::new(x) as _),];
 
         leaf.prop_recursive(16, 64, 4, move |inner| {
-            let const_strat = args.clone().unwrap_or_else(|| {
-                Box::<dyn Property<Constant>>::arbitrary_with(Some(inner.clone()))
-            });
+            let const_strat = args.clone().unwrap_or_else(
+                Box::<dyn Property<Constant>>::arbitrary
+            );
 
             prop_oneof![
-                1 => Mapping::<TypeParameterID, Type>::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Box::new(x) as _),
                 4 => SymbolCongruence::<SymbolID>::arbitrary_with((
                     Some(inner.clone()),
                     Some(const_strat.clone())
@@ -259,29 +193,12 @@ impl Arbitrary for Box<dyn Property<Type>> {
 }
 
 impl Arbitrary for Box<dyn Property<Constant>> {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let leaf = prop_oneof![
-            TriviallySatisfiable::<constant::Primitive>::arbitrary()
-                .prop_map(|x| Box::new(x) as _),
-        ];
-
-        leaf.prop_recursive(16, 64, 4, move |inner| {
-            let ty_strat = args
-                .clone()
-                .unwrap_or_else(|| Box::<dyn Property<Type>>::arbitrary_with(Some(inner.clone())));
-
-            prop_oneof![
-                1 => Mapping::<ConstantParameterID, Constant>::arbitrary_with(Some(inner.clone()))
-                    .prop_map(|x| Box::new(x) as _),
-                4 => SymbolCongruence::<ID<symbol::Constant>>::arbitrary_with((
-                    Some(ty_strat),
-                    Some(inner.clone()),
-                )).prop_map(|x| Box::new(x) as _)
-            ]
-        })
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![TriviallySatisfiable::<constant::Primitive>::arbitrary()
+            .prop_map(|x| Box::new(x) as _),]
         .boxed()
     }
 }

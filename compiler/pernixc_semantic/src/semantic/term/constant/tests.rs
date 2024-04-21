@@ -7,9 +7,7 @@ use proptest::{
 use super::{Array, Constant, Enum, MemberSymbolID, Primitive, Struct};
 use crate::{
     arena::ID,
-    semantic::term::{
-        lifetime::Lifetime, r#type::Type, Local, MemberSymbol, Symbol, Tuple,
-    },
+    semantic::term::{Local, Tuple},
     symbol::ConstantParameterID,
 };
 
@@ -97,39 +95,17 @@ impl Arbitrary for Array {
 }
 
 impl Arbitrary for Constant {
-    type Parameters =
-        (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Type>>);
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(param: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let leaf = prop_oneof![
             Primitive::arbitrary().prop_map(Self::Primitive),
             ConstantParameterID::arbitrary().prop_map(Self::Parameter)
         ];
 
         leaf.prop_recursive(8, 48, 6, move |inner| {
-            let lt_strat = param.0.clone().unwrap_or_else(|| {
-                Lifetime::arbitrary_with((param.1.clone(), Some(inner.clone())))
-            });
-            let ty_strat = param.1.clone().unwrap_or_else(|| {
-                Type::arbitrary_with((Some(lt_strat.clone()), Some(inner.clone())))
-            });
-
             prop_oneof![
-                6 => MemberSymbol::arbitrary_with((
-                    Some(lt_strat.clone()),
-                    Some(ty_strat.clone()),
-                    Some(inner.clone())
-                ))
-                .prop_map(Self::MemberSymbol),
-                6 => MemberSymbol::arbitrary_with((
-                    Some(lt_strat.clone()),
-                    Some(ty_strat.clone()),
-                    Some(inner.clone())
-                ))
-                .prop_map(Self::TraitMember),
-                6 => Symbol::arbitrary_with((Some(lt_strat), Some(ty_strat), Some(inner.clone())))
-                    .prop_map(Self::Symbol),
                 2 => Struct::arbitrary_with(Some(inner.clone())).prop_map(Self::Struct),
                 1 => Enum::arbitrary_with(Some(inner.clone())).prop_map(Self::Enum),
                 1 => inner.clone().prop_map(|x| Self::Local(Local(Box::new(x)))),

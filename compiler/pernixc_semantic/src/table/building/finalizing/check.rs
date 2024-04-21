@@ -89,14 +89,6 @@ impl Table<Finalizer> {
                 &environment,
                 &mut Limit::new(session),
             ),
-            predicate::Predicate::TraitConstantEquality(eq) => {
-                equality::equals(
-                    &constant::Constant::TraitMember(eq.trait_member.clone()),
-                    &eq.equivalent,
-                    &environment,
-                    &mut Limit::new(session),
-                )
-            }
             predicate::Predicate::ConstantType(pred) => {
                 ConstantType::satisfies(
                     &pred.0,
@@ -732,7 +724,6 @@ impl UnusedGenericParameters {
 
             constant::Constant::Phantom(_)
             | constant::Constant::Primitive(_)
-            | constant::Constant::TraitMember(_)
             | constant::Constant::Inference(_) => {}
 
             constant::Constant::Struct(val) => {
@@ -761,19 +752,6 @@ impl UnusedGenericParameters {
                 for element in &tuple.elements {
                     self.check_in_constant(element.as_term());
                 }
-            }
-
-            constant::Constant::Symbol(symbol) => {
-                self.check_in_generic_arguments(&symbol.generic_arguments);
-            }
-
-            constant::Constant::MemberSymbol(member_symbol) => {
-                self.check_in_generic_arguments(
-                    &member_symbol.member_generic_arguments,
-                );
-                self.check_in_generic_arguments(
-                    &member_symbol.parent_generic_arguments,
-                );
             }
         }
     }

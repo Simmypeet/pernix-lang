@@ -588,7 +588,7 @@ impl TuplePredicate {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]
 pub enum Predicate {
-    TraitMember(TraitMemberPredicate),
+    TraitMember(TraitMemberEqualityPredicate),
     Trait(TraitPredicate),
     Lifetime(LifetimePredicate),
     ConstantType(ConstantTypePredicate),
@@ -636,28 +636,26 @@ impl SourceElement for TraitMemberBound {
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct TraitMemberPredicate {
+pub struct TraitMemberEqualityPredicate {
     #[get = "pub"]
     qualified_identifier: QualifiedIdentifier,
     #[get = "pub"]
     equals: Punctuation,
     #[get = "pub"]
-    bound: TraitMemberBound,
+    r#type: r#type::Type,
 }
 
-impl TraitMemberPredicate {
+impl TraitMemberEqualityPredicate {
     /// Dissolves the [`TraitMemberBound`] into a tuple of its fields.
     #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (QualifiedIdentifier, Punctuation, TraitMemberBound) {
-        (self.qualified_identifier, self.equals, self.bound)
+    pub fn dissolve(self) -> (QualifiedIdentifier, Punctuation, r#type::Type) {
+        (self.qualified_identifier, self.equals, self.r#type)
     }
 }
 
-impl SourceElement for TraitMemberPredicate {
+impl SourceElement for TraitMemberEqualityPredicate {
     fn span(&self) -> Span {
-        self.qualified_identifier.span().join(&self.bound.span()).unwrap()
+        self.qualified_identifier.span().join(&self.r#type.span()).unwrap()
     }
 }
 
@@ -2301,31 +2299,15 @@ impl<'a> Parser<'a> {
                     ) if equals.punctuation == '=' => {
                         // eat equals
                         self.forward();
+                        let ty = self.parse_type(handler)?;
 
-                        let bound = match self.stop_at_significant() {
-                            Reading::IntoDelimited(Delimiter::Brace, _) => {
-                                let expr = self.step_into(
-                                    Delimiter::Brace,
-                                    |parser| parser.parse_expression(handler),
-                                    handler,
-                                )?;
-
-                                TraitMemberBound::Constant(ConstantArgument {
-                                    left_brace: expr.open,
-                                    expression: Box::new(expr.tree?),
-                                    right_brace: expr.close,
-                                })
-                            }
-                            _ => TraitMemberBound::Type(
-                                self.parse_type(handler)?,
-                            ),
-                        };
-
-                        Some(Predicate::TraitMember(TraitMemberPredicate {
-                            qualified_identifier,
-                            equals,
-                            bound,
-                        }))
+                        Some(Predicate::TraitMember(
+                            TraitMemberEqualityPredicate {
+                                qualified_identifier,
+                                equals,
+                                r#type: ty,
+                            },
+                        ))
                     }
 
                     (first_ty, _) => {

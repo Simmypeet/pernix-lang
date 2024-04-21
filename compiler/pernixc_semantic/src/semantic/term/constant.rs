@@ -10,8 +10,7 @@ use std::{
 use enum_as_inner::EnumAsInner;
 
 use super::{
-    lifetime::Lifetime, r#type::Type, GenericArguments, Local, MemberSymbol,
-    Never, Symbol, Term,
+    lifetime::Lifetime, r#type::Type, GenericArguments, Local, Never, Term,
 };
 use crate::{
     arena::ID,
@@ -21,11 +20,7 @@ use crate::{
         matching::{self, Match},
         predicate::{self, Outlives, Predicate, Satisfiability},
         session::{ExceedLimitError, Limit, Session},
-        sub_term::{
-            AssignSubTermError, Location, SubMemberSymbolLocation,
-            SubSymbolLocation, SubTerm, SubTraitMemberLocation,
-            SubTupleLocation,
-        },
+        sub_term::{AssignSubTermError, Location, SubTerm, SubTupleLocation},
         unification::{self, Unification},
         Environment,
     },
@@ -137,10 +132,6 @@ pub type Tuple = super::Tuple<Constant>;
 /// Represents a constant inference variable in hindley-milner type inference.
 pub type Inference = Never; /* will be changed */
 
-/// Represents a trait-member constant, denoted by `TRAIT[ARGS]::CONSTANT[`
-/// syntax.
-pub type TraitMember = MemberSymbol<ID<symbol::TraitConstant>>;
-
 /// Represents a constant value denoted by a `phantom` syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Phantom;
@@ -163,20 +154,8 @@ pub enum SubConstantLocation {
     /// The index of the element in an [`Array`] constant.
     Array(usize),
 
-    /// The index of the constant argument in a [`Symbol`] constant.
-    #[from]
-    Symbol(SubSymbolLocation),
-
-    /// A constant argument in a [`MemberSymbol`] constant.
-    #[from]
-    MemberSymbol(SubMemberSymbolLocation),
-
     /// The inner constant of a [`Local`] constant.
     Local,
-
-    /// The constant argument in a [`Constant::TraitMember`] constant.
-    #[from]
-    TraitMember(SubTraitMemberLocation),
 }
 
 impl Location<Constant, Constant> for SubConstantLocation {
@@ -207,23 +186,7 @@ impl Location<Constant, Constant> for SubConstantLocation {
                 .get_mut(location)
                 .ok_or(AssignSubTermError::InvalidLocation)?,
 
-            (Self::Symbol(location), Constant::Symbol(symbol)) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-
-            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
-                symbol
-                    .get_term_mut(location)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-
             (Self::Local, Constant::Local(local)) => &mut local.0,
-
-            (Self::TraitMember(location), Constant::TraitMember(symbol)) => {
-                symbol
-                    .get_term_mut(location.0)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
 
             _ => return Err(AssignSubTermError::InvalidLocation),
         };
@@ -260,156 +223,8 @@ impl Location<Constant, Constant> for SubConstantLocation {
                 constant.elements.get(location).cloned()
             }
 
-            (Self::Symbol(location), Constant::Symbol(symbol)) => {
-                symbol.get_term(location).cloned()
-            }
-
-            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
-                symbol.get_term(location).cloned()
-            }
-
             (Self::Local, Constant::Local(local)) => {
                 Some(local.0.deref().clone())
-            }
-
-            (Self::TraitMember(location), Constant::TraitMember(symbol)) => {
-                symbol.get_term(location.0).cloned()
-            }
-
-            _ => None,
-        }
-    }
-}
-
-/// The location pointing to a sub-type term in a constant.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
-)]
-pub enum SubTypeLocation {
-    /// The index of the element in a [`Symbol`] constant.
-    #[from]
-    Symbol(SubSymbolLocation),
-
-    /// A constant argument in a [`MemberSymbol`] constant.
-    #[from]
-    MemberSymbol(SubMemberSymbolLocation),
-
-    /// The constant argument in a [`Constant::TraitMember`] constant.
-    #[from]
-    TraitMember(SubTraitMemberLocation),
-}
-
-impl Location<Constant, Type> for SubTypeLocation {
-    fn assign_sub_term(
-        self,
-        term: &mut Constant,
-        sub_term: Type,
-    ) -> Result<(), AssignSubTermError> {
-        let reference = match (self, term) {
-            (Self::Symbol(location), Constant::Symbol(symbol)) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-
-            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
-                symbol
-                    .get_term_mut(location)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-
-            (Self::TraitMember(location), Constant::TraitMember(symbol)) => {
-                symbol
-                    .get_term_mut(location.0)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-
-            _ => return Err(AssignSubTermError::InvalidLocation),
-        };
-
-        *reference = sub_term;
-
-        Ok(())
-    }
-
-    fn get_sub_term(self, term: &Constant) -> Option<Type> {
-        match (self, term) {
-            (Self::Symbol(location), Constant::Symbol(symbol)) => {
-                symbol.get_term(location).cloned()
-            }
-
-            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
-                symbol.get_term(location).cloned()
-            }
-
-            (Self::TraitMember(location), Constant::TraitMember(symbol)) => {
-                symbol.get_term(location.0).cloned()
-            }
-
-            _ => None,
-        }
-    }
-}
-
-/// The location pointing to a sub-lifetime term in a constant.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
-)]
-pub enum SubLifetimeLocation {
-    /// The index of the element in a [`Symbol`] constant.
-    #[from]
-    Symbol(SubSymbolLocation),
-
-    /// A constant argument in a [`MemberSymbol`] constant.
-    #[from]
-    MemberSymbol(SubMemberSymbolLocation),
-
-    /// The constant argument in a [`Constant::TraitMember`] constant.
-    #[from]
-    TraitMember(SubTraitMemberLocation),
-}
-
-impl Location<Constant, Lifetime> for SubLifetimeLocation {
-    fn assign_sub_term(
-        self,
-        term: &mut Constant,
-        sub_term: Lifetime,
-    ) -> Result<(), AssignSubTermError> {
-        let reference = match (self, term) {
-            (Self::Symbol(location), Constant::Symbol(symbol)) => symbol
-                .get_term_mut(location)
-                .ok_or(AssignSubTermError::InvalidLocation)?,
-
-            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
-                symbol
-                    .get_term_mut(location)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-
-            (Self::TraitMember(location), Constant::TraitMember(symbol)) => {
-                symbol
-                    .get_term_mut(location.0)
-                    .ok_or(AssignSubTermError::InvalidLocation)?
-            }
-
-            _ => return Err(AssignSubTermError::InvalidLocation),
-        };
-
-        *reference = sub_term;
-
-        Ok(())
-    }
-
-    fn get_sub_term(self, term: &Constant) -> Option<Lifetime> {
-        match (self, term) {
-            (Self::Symbol(location), Constant::Symbol(symbol)) => {
-                symbol.get_term(location).copied()
-            }
-
-            (Self::MemberSymbol(location), Constant::MemberSymbol(symbol)) => {
-                symbol.get_term(location).copied()
-            }
-
-            (Self::TraitMember(location), Constant::TraitMember(symbol)) => {
-                symbol.get_term(location.0).copied()
             }
 
             _ => None,
@@ -440,20 +255,7 @@ pub enum Constant {
     Parameter(ConstantParameterID),
     Local(Local<Self>),
     Tuple(Tuple),
-    Symbol(Symbol<ID<symbol::Constant>>),
     Phantom(Phantom),
-
-    /// Please notice the differences
-    ///
-    /// In the **AdtImplementation** case, the `parent_generic_arguments` field
-    /// is **not** deduced from the implementation directly, bur rather
-    /// from the ADT that the implementation is for.
-    ///
-    /// In the **TraitImplementation** case, the `parent_generic_arguments`
-    /// field **is** deduced from the implementation.
-    MemberSymbol(MemberSymbol<MemberSymbolID>),
-
-    TraitMember(TraitMember),
 }
 
 impl TryFrom<Constant> for Tuple {
@@ -477,10 +279,34 @@ impl Default for Constant {
 }
 
 impl SubTerm for Constant {
-    type SubTypeLocation = SubTypeLocation;
+    type SubTypeLocation = Never;
     type SubConstantLocation = SubConstantLocation;
-    type SubLifetimeLocation = SubLifetimeLocation;
+    type SubLifetimeLocation = Never;
     type ThisSubTermLocation = SubConstantLocation;
+}
+
+impl Location<Constant, Type> for Never {
+    fn assign_sub_term(
+        self,
+        _: &mut Constant,
+        _: Type,
+    ) -> Result<(), AssignSubTermError> {
+        match self {}
+    }
+
+    fn get_sub_term(self, _: &Constant) -> Option<Type> { match self {} }
+}
+
+impl Location<Constant, Lifetime> for Never {
+    fn assign_sub_term(
+        self,
+        _: &mut Constant,
+        _: Lifetime,
+    ) -> Result<(), AssignSubTermError> {
+        match self {}
+    }
+
+    fn get_sub_term(self, _: &Constant) -> Option<Lifetime> { match self {} }
 }
 
 impl Match for Constant {
@@ -575,68 +401,6 @@ impl Match for Constant {
                 lhs.substructural_match(rhs)
             }
 
-            (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => {
-                lhs.generic_arguments.substructural_match(
-                    &rhs.generic_arguments,
-                    matching::Substructural::default(),
-                    SubSymbolLocation,
-                )
-            }
-
-            (Self::TraitMember(lhs), Self::TraitMember(rhs))
-                if lhs.id == rhs.id =>
-            {
-                lhs.parent_generic_arguments
-                    .substructural_match(
-                        &rhs.parent_generic_arguments,
-                        matching::Substructural::default(),
-                        |index| {
-                            SubTraitMemberLocation(SubMemberSymbolLocation {
-                                index,
-                                from_parent: true,
-                            })
-                        },
-                    )
-                    .and_then(|x| {
-                        lhs.member_generic_arguments.substructural_match(
-                            &rhs.member_generic_arguments,
-                            x,
-                            |index| {
-                                SubTraitMemberLocation(
-                                    SubMemberSymbolLocation {
-                                        index,
-                                        from_parent: false,
-                                    },
-                                )
-                            },
-                        )
-                    })
-            }
-
-            (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
-                if lhs.id == rhs.id =>
-            {
-                lhs.parent_generic_arguments
-                    .substructural_match(
-                        &rhs.parent_generic_arguments,
-                        matching::Substructural::default(),
-                        |index| SubMemberSymbolLocation {
-                            index,
-                            from_parent: true,
-                        },
-                    )
-                    .and_then(|x| {
-                        lhs.member_generic_arguments.substructural_match(
-                            &rhs.member_generic_arguments,
-                            x,
-                            |index| SubMemberSymbolLocation {
-                                index,
-                                from_parent: false,
-                            },
-                        )
-                    })
-            }
-
             _ => None,
         }
     }
@@ -664,7 +428,7 @@ impl Match for Constant {
 
 impl Term for Constant {
     type GenericParameter = ConstantParameter;
-    type TraitMember = TraitMember;
+    type TraitMember = Never;
 
     fn normalize(
         &self,
@@ -697,26 +461,11 @@ impl Term for Constant {
         self.into_parameter()
     }
 
-    fn as_trait_member(&self) -> Option<&TraitMember> {
-        match self {
-            Self::TraitMember(id) => Some(id),
-            _ => None,
-        }
-    }
+    fn as_trait_member(&self) -> Option<&Never> { None }
 
-    fn as_trait_member_mut(&mut self) -> Option<&mut TraitMember> {
-        match self {
-            Self::TraitMember(id) => Some(id),
-            _ => None,
-        }
-    }
+    fn as_trait_member_mut(&mut self) -> Option<&mut Never> { None }
 
-    fn into_trait_member(self) -> Result<TraitMember, Self> {
-        match self {
-            Self::TraitMember(id) => Ok(id),
-            x => Err(x),
-        }
-    }
+    fn into_trait_member(self) -> Result<Never, Self> { Err(self) }
 
     fn as_tuple(&self) -> Option<&Tuple> {
         match self {
@@ -770,21 +519,21 @@ impl Term for Constant {
     }
 
     fn as_trait_member_equality_predicate(
-        predicate: &Predicate,
+        _: &Predicate,
     ) -> Option<&predicate::TraitMemberEquality<Self>> {
-        predicate.as_trait_constant_equality()
+        None
     }
 
     fn as_trait_member_equality_predicate_mut(
-        predicate: &mut Predicate,
+        _: &mut Predicate,
     ) -> Option<&mut predicate::TraitMemberEquality<Self>> {
-        predicate.as_trait_constant_equality_mut()
+        None
     }
 
     fn into_trait_member_equality_predicate(
         predicate: Predicate,
     ) -> Result<predicate::TraitMemberEquality<Self>, Predicate> {
-        predicate.into_trait_constant_equality()
+        Err(predicate)
     }
 
     fn as_tuple_predicate(
@@ -815,14 +564,11 @@ impl Term for Constant {
                 Satisfiability::Satisfied
             }
 
-            Self::TraitMember(_)
-            | Self::Struct(_)
+            Self::Struct(_)
             | Self::Enum(_)
             | Self::Array(_)
             | Self::Local(_)
-            | Self::Tuple(_)
-            | Self::Symbol(_)
-            | Self::MemberSymbol(_) => Satisfiability::Congruent,
+            | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
 
@@ -936,66 +682,6 @@ impl Constant {
 
                 occurrences
             }
-            Self::Symbol(symbol) => {
-                let mut occurrences = symbol
-                    .generic_arguments
-                    .get_global_id_dependencies(table)?;
-                occurrences.push(symbol.id.into());
-
-                occurrences
-            }
-            Self::MemberSymbol(member_symbol) => {
-                let mut occurrences = member_symbol
-                    .parent_generic_arguments
-                    .get_global_id_dependencies(table)?;
-                occurrences.extend(
-                    member_symbol
-                        .member_generic_arguments
-                        .get_global_id_dependencies(table)?,
-                );
-
-                occurrences.push(member_symbol.id.into());
-
-                match member_symbol.id {
-                    MemberSymbolID::TraitImplementation(id) => {
-                        let implementation_id = table.get(id)?.parent_id;
-                        let trait_id = table
-                            .get(implementation_id)?
-                            .signature
-                            .implemented_id;
-
-                        occurrences.push(implementation_id.into());
-                        occurrences.push(trait_id.into());
-                    }
-                    MemberSymbolID::AdtImplementation(id) => {
-                        let implementation_id = table.get(id)?.parent_id;
-                        let adt_kind_id = table
-                            .get(implementation_id)?
-                            .signature
-                            .implemented_id;
-
-                        occurrences.push(implementation_id.into());
-                        occurrences.push(adt_kind_id.into());
-                    }
-                }
-
-                occurrences
-            }
-            Self::TraitMember(member_symbol) => {
-                let mut occurrences = member_symbol
-                    .parent_generic_arguments
-                    .get_global_id_dependencies(table)?;
-                occurrences.extend(
-                    member_symbol
-                        .member_generic_arguments
-                        .get_global_id_dependencies(table)?,
-                );
-
-                occurrences.push(member_symbol.id.into());
-                occurrences.push(table.get(member_symbol.id)?.parent_id.into());
-
-                occurrences
-            }
         };
 
         occurrences.sort_unstable();
@@ -1090,15 +776,6 @@ impl<T: State> table::Display<T> for Constant {
             }
             Self::Tuple(tuple) => {
                 write!(f, "{}", DisplayObject { display: tuple, table })
-            }
-            Self::Symbol(symol) => {
-                write!(f, "{}", DisplayObject { display: symol, table })
-            }
-            Self::MemberSymbol(symbol) => {
-                write!(f, "{}", DisplayObject { display: symbol, table })
-            }
-            Self::TraitMember(symbol) => {
-                write!(f, "{}", DisplayObject { display: symbol, table })
             }
         }
     }

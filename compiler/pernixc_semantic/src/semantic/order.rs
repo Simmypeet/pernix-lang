@@ -30,9 +30,7 @@ fn type_predicate(x: &Type) -> bool {
     x.is_parameter() || matches!(x, Type::TraitMember(_))
 }
 
-fn constant_predicate(x: &Constant) -> bool {
-    x.is_parameter() || matches!(x, Constant::TraitMember(_))
-}
+fn constant_predicate(x: &Constant) -> bool { x.is_parameter() }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct OrderUnifyingConfig;

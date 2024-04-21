@@ -114,7 +114,6 @@ pub use tuple::{Query as TupleQuery, Tuple};
 #[allow(missing_docs)]
 pub enum Predicate {
     TraitTypeEquality(TraitMemberEquality<Type>),
-    TraitConstantEquality(TraitMemberEquality<Constant>),
     ConstantType(ConstantType),
     LifetimeOutlives(Outlives<Lifetime>),
     TypeOutlives(Outlives<Type>),
@@ -131,7 +130,6 @@ impl<T: State> table::Display<T> for Predicate {
     ) -> std::fmt::Result {
         match self {
             Self::TraitTypeEquality(equality) => equality.fmt(table, f),
-            Self::TraitConstantEquality(equality) => equality.fmt(table, f),
             Self::ConstantType(constant_type) => constant_type.fmt(table, f),
             Self::LifetimeOutlives(outlives) => outlives.fmt(table, f),
             Self::TypeOutlives(outlives) => outlives.fmt(table, f),
@@ -148,9 +146,6 @@ impl Predicate {
     pub fn contains_forall_lifetime(&self) -> bool {
         match self {
             Self::TraitTypeEquality(equality) => {
-                equality.contains_forall_lifetime()
-            }
-            Self::TraitConstantEquality(equality) => {
                 equality.contains_forall_lifetime()
             }
             Self::ConstantType(constant_type) => {
@@ -170,9 +165,6 @@ impl Predicate {
     pub fn instantiate(&mut self, substitution: &Instantiation) {
         match self {
             Self::TraitTypeEquality(equality) => {
-                equality.instantiate(substitution);
-            }
-            Self::TraitConstantEquality(equality) => {
                 equality.instantiate(substitution);
             }
             Self::ConstantType(constant_type) => {
@@ -229,16 +221,6 @@ impl<T: Term> TraitMemberEquality<T> {
 }
 
 impl TraitMemberEquality<Type> {
-    /// Applies the instantiation to both [`TraitMemberEquality::trait_member`]
-    /// and [`TraitMemberEquality::equivalence`].
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
-        self.trait_member.member_generic_arguments.instantiate(instantiation);
-        self.trait_member.parent_generic_arguments.instantiate(instantiation);
-        instantiation::instantiate(&mut self.equivalent, instantiation);
-    }
-}
-
-impl TraitMemberEquality<Constant> {
     /// Applies the instantiation to both [`TraitMemberEquality::trait_member`]
     /// and [`TraitMemberEquality::equivalence`].
     pub fn instantiate(&mut self, instantiation: &Instantiation) {

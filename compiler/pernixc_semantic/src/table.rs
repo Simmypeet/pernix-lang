@@ -288,53 +288,54 @@ pub trait State: Debug + Sized + 'static + Send + Sync {
 /// The representation of the table without any state information.
 #[derive(Debug)]
 pub struct Representation<T: Container> {
-    modules: Arena<T::Wrap<Module>, ID<Module>>,
-    structs: Arena<T::Wrap<Struct>, ID<Struct>>,
-    enums: Arena<T::Wrap<Enum>, ID<Enum>>,
-    variants: Arena<T::Wrap<Variant>, ID<Variant>>,
+    pub(crate) modules: Arena<T::Wrap<Module>, ID<Module>>,
+    pub(crate) structs: Arena<T::Wrap<Struct>, ID<Struct>>,
+    pub(crate) enums: Arena<T::Wrap<Enum>, ID<Enum>>,
+    pub(crate) variants: Arena<T::Wrap<Variant>, ID<Variant>>,
     pub(crate) types: Arena<T::Wrap<Type>, ID<Type>>,
-    functions: Arena<T::Wrap<Function>, ID<Function>>,
-    constants: Arena<T::Wrap<Constant>, ID<Constant>>,
+    pub(crate) functions: Arena<T::Wrap<Function>, ID<Function>>,
+    pub(crate) constants: Arena<T::Wrap<Constant>, ID<Constant>>,
 
-    traits: Arena<T::Wrap<Trait>, ID<Trait>>,
-    trait_types: Arena<T::Wrap<TraitType>, ID<TraitType>>,
-    trait_functions: Arena<T::Wrap<TraitFunction>, ID<TraitFunction>>,
-    trait_constants: Arena<T::Wrap<TraitConstant>, ID<TraitConstant>>,
+    pub(crate) traits: Arena<T::Wrap<Trait>, ID<Trait>>,
+    pub(crate) trait_types: Arena<T::Wrap<TraitType>, ID<TraitType>>,
+    pub(crate) trait_functions:
+        Arena<T::Wrap<TraitFunction>, ID<TraitFunction>>,
+    pub(crate) trait_constants:
+        Arena<T::Wrap<TraitConstant>, ID<TraitConstant>>,
 
-    trait_implementations:
+    pub(crate) trait_implementations:
         Arena<T::Wrap<TraitImplementation>, ID<TraitImplementation>>,
-    negative_trait_implementations: Arena<
+    pub(crate) negative_trait_implementations: Arena<
         T::Wrap<NegativeTraitImplementation>,
         ID<NegativeTraitImplementation>,
     >,
 
-    trait_implementation_types:
+    pub(crate) trait_implementation_types:
         Arena<T::Wrap<TraitImplementationType>, ID<TraitImplementationType>>,
-    trait_implementation_functions: Arena<
+    pub(crate) trait_implementation_functions: Arena<
         T::Wrap<TraitImplementationFunction>,
         ID<TraitImplementationFunction>,
     >,
-    trait_implementation_constants: Arena<
+    pub(crate) trait_implementation_constants: Arena<
         T::Wrap<TraitImplementationConstant>,
         ID<TraitImplementationConstant>,
     >,
 
-    adt_implementations:
+    pub(crate) adt_implementations:
         Arena<T::Wrap<AdtImplementation>, ID<AdtImplementation>>,
 
-    adt_implementation_types:
+    pub(crate) adt_implementation_types:
         Arena<T::Wrap<AdtImplementationType>, ID<AdtImplementationType>>,
-    adt_implementation_functions: Arena<
+    pub(crate) adt_implementation_functions: Arena<
         T::Wrap<AdtImplementationFunction>,
         ID<AdtImplementationFunction>,
     >,
-    adt_implementation_constants: Arena<
+    pub(crate) adt_implementation_constants: Arena<
         T::Wrap<AdtImplementationConstant>,
         ID<AdtImplementationConstant>,
     >,
 
-    #[allow(unused)]
-    root_module_ids_by_name: HashMap<String, ID<Module>>,
+    pub(crate) root_module_ids_by_name: HashMap<String, ID<Module>>,
 }
 
 impl<T: Container> Default for Representation<T> {
@@ -955,18 +956,6 @@ impl<T: Container> Representation<T> {
             constant::Constant::Local(local) => {
                 self.get_constant_overall_accessibility(&local.0)
             }
-            constant::Constant::TraitMember(trait_member) => Some(
-                self.get_accessibility(trait_member.id.into())?.min(
-                    self.get_generic_arguments_overall_accessibility(
-                        &trait_member.parent_generic_arguments,
-                    )?
-                    .min(
-                        self.get_generic_arguments_overall_accessibility(
-                            &trait_member.member_generic_arguments,
-                        )?,
-                    ),
-                ),
-            ),
             constant::Constant::Inference(never) => match *never {},
 
             constant::Constant::Struct(constant) => {
@@ -991,16 +980,6 @@ impl<T: Container> Representation<T> {
             | constant::Constant::Parameter(_)
             | constant::Constant::Primitive(_) => Some(Accessibility::Public),
 
-            constant::Constant::MemberSymbol(member_symbol) => Some(
-                self.get_accessibility(member_symbol.id.into())?
-                    .min(self.get_generic_arguments_overall_accessibility(
-                        &member_symbol.parent_generic_arguments,
-                    )?)
-                    .min(self.get_generic_arguments_overall_accessibility(
-                        &member_symbol.member_generic_arguments,
-                    )?),
-            ),
-
             constant::Constant::Enum(constant) => {
                 let mut current_min =
                     self.get_accessibility(constant.variant_id.into())?;
@@ -1014,14 +993,6 @@ impl<T: Container> Representation<T> {
                 }
 
                 Some(current_min)
-            }
-
-            constant::Constant::Symbol(symbol) => {
-                Some(self.get_accessibility(symbol.id.into())?.min(
-                    self.get_generic_arguments_overall_accessibility(
-                        &symbol.generic_arguments,
-                    )?,
-                ))
             }
 
             constant::Constant::Tuple(tuple) => {
