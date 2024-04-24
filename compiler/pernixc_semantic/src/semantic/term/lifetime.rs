@@ -83,6 +83,14 @@ impl Location<Lifetime, Lifetime> for Never {
     }
 
     fn get_sub_term(self, _: &Lifetime) -> Option<Lifetime> { match self {} }
+
+    fn get_sub_term_ref(self, _: &Lifetime) -> Option<&Lifetime> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Lifetime) -> Option<&mut Lifetime> {
+        match self {}
+    }
 }
 
 impl Location<Lifetime, Type> for Never {
@@ -95,6 +103,12 @@ impl Location<Lifetime, Type> for Never {
     }
 
     fn get_sub_term(self, _: &Lifetime) -> Option<Type> { match self {} }
+
+    fn get_sub_term_ref(self, _: &Lifetime) -> Option<&Type> { match self {} }
+
+    fn get_sub_term_mut(self, _: &mut Lifetime) -> Option<&mut Type> {
+        match self {}
+    }
 }
 
 impl Location<Lifetime, Constant> for Never {
@@ -107,6 +121,14 @@ impl Location<Lifetime, Constant> for Never {
     }
 
     fn get_sub_term(self, _: &Lifetime) -> Option<Constant> { match self {} }
+
+    fn get_sub_term_ref(self, _: &Lifetime) -> Option<&Constant> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Lifetime) -> Option<&mut Constant> {
+        match self {}
+    }
 }
 
 impl SubTerm for Lifetime {

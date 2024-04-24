@@ -6,11 +6,12 @@ use std::{
 };
 
 use super::{
+    sub_term::TermLocation,
     term::{
         constant::Constant, lifetime::Lifetime, r#type::Type, GenericArguments,
         Term,
     },
-    visitor::{self, MutableRecursive, SubTermLocation},
+    visitor::{self, MutableRecursive},
 };
 use crate::{
     arena::ID,
@@ -37,7 +38,7 @@ impl<'a, T: Term> MutableRecursive<T> for Instantiater<'a> {
     fn visit(
         &mut self,
         term: &mut T,
-        _: impl Iterator<Item = SubTermLocation>,
+        _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         if let Some(substitution) =
             T::get_instantiation(self.substitution).get(term)

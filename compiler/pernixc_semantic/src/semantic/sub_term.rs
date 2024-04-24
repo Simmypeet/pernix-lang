@@ -5,8 +5,10 @@ use std::{fmt::Debug, hash::Hash};
 use enum_as_inner::EnumAsInner;
 
 use super::term::{
-    constant::Constant, lifetime::Lifetime, r#type::Type, MemberSymbol, Symbol,
-    Term, Tuple, TupleElement,
+    constant::{self, Constant},
+    lifetime::Lifetime,
+    r#type::{self, Type},
+    MemberSymbol, Symbol, Term, Tuple, TupleElement,
 };
 
 /// An error that occurs when assigning a sub-term to a term.
@@ -67,6 +69,20 @@ pub trait Location<Term, SubTerm>:
     /// Returns the sub-term at this location.
     #[must_use]
     fn get_sub_term(self, term: &Term) -> Option<SubTerm>;
+
+    /// Returns the reference to the sub-term at this location.
+    ///
+    /// Returns [`None`] if the given location is invalid and the location
+    /// refers to the range of tuple elements.
+    #[must_use]
+    fn get_sub_term_ref(self, term: &Term) -> Option<&SubTerm>;
+
+    /// Returns the mutable reference to the sub-term at this location.
+    ///
+    /// Returns [`None`] if the given location is invalid and the location
+    /// refers to the range of tuple elements.
+    #[must_use]
+    fn get_sub_term_mut(self, term: &mut Term) -> Option<&mut SubTerm>;
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic
@@ -228,3 +244,84 @@ impl<ID> Symbol<ID> {
 /// in trait member symbols.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubTraitMemberLocation(pub SubMemberSymbolLocation);
+
+/// An enumeration of locations where a lifetime can be located.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+pub enum SubLifetimeLocation {
+    /// The location points to a lifetime that is a part of a type.
+    FromType(r#type::SubLifetimeLocation),
+}
+
+/// An enumeration of locations where a type can be located.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+pub enum SubTypeLocation {
+    /// The location points to a type that is a part of a type.
+    FromType(r#type::SubTypeLocation),
+}
+
+/// An enumeration of locations where a constant can be located.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+pub enum SubConstantLocation {
+    /// The location points to a constant that is a part of a type.
+    FromType(r#type::SubConstantLocation),
+
+    /// The location points to a constant that is a part of a constant.
+    FromConstant(constant::SubConstantLocation),
+}
+
+/// Enumeration of all sub-location of all kinds of terms.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+pub enum TermLocation {
+    /// The location points to a lifetime.
+    Lifetime(SubLifetimeLocation),
+
+    /// The location points to a type.
+    Type(SubTypeLocation),
+
+    /// The location points to a constant.
+    Constant(SubConstantLocation),
+}

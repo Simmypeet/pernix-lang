@@ -14,6 +14,7 @@ use crate::{
         instantiation::{self, Instantiation},
         predicate::{Predicate, TraitMemberEquality},
         session::{self, ExceedLimitError, Limit, Session},
+        sub_term::TermLocation,
         term::{
             constant::Constant,
             lifetime::Lifetime,
@@ -21,7 +22,7 @@ use crate::{
             GenericArguments, Local, Symbol, Term,
         },
         tests::State,
-        visitor::{self, Recursive, SubTermLocation},
+        visitor::{self, Recursive},
         Environment, Premise,
     },
     symbol::{
@@ -582,32 +583,32 @@ struct TermCollector {
     terms: Vec<Type>,
 }
 
-impl Recursive<Lifetime> for TermCollector {
+impl<'v> Recursive<'v, Lifetime> for TermCollector {
     fn visit(
         &mut self,
-        _: &Lifetime,
-        _: impl Iterator<Item = SubTermLocation>,
+        _: &'v Lifetime,
+        _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
     }
 }
 
-impl Recursive<Type> for TermCollector {
+impl<'v> Recursive<'v, Type> for TermCollector {
     fn visit(
         &mut self,
-        term: &Type,
-        _: impl Iterator<Item = SubTermLocation>,
+        term: &'v Type,
+        _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         self.terms.push(term.clone());
         true
     }
 }
 
-impl Recursive<Constant> for TermCollector {
+impl<'v> Recursive<'v, Constant> for TermCollector {
     fn visit(
         &mut self,
-        _: &Constant,
-        _: impl Iterator<Item = SubTermLocation>,
+        _: &'v Constant,
+        _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
     }

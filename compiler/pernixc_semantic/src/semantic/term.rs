@@ -889,5 +889,38 @@ impl GenericArguments {
     }
 }
 
+/// An enumeration of references to all three kinds of terms: [`Lifetime`],
+/// [`Type`], and [`Constant`].
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum Kind<'a> {
+    Lifetime(&'a Lifetime),
+    Type(&'a Type),
+    Constant(&'a Constant),
+}
+
+/// An enumeration of mutable references to all three kinds of terms:
+/// [`Lifetime`], [`Type`], and [`Constant`].
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum KindMut<'a> {
+    Lifetime(&'a mut Lifetime),
+    Type(&'a mut Type),
+    Constant(&'a mut Constant),
+}
+
 #[cfg(test)]
 mod tests;

@@ -11,6 +11,7 @@ use enum_as_inner::EnumAsInner;
 
 use super::{
     lifetime::Lifetime, r#type::Type, GenericArguments, Local, Never, Term,
+    TupleElement,
 };
 use crate::{
     arena::ID,
@@ -230,6 +231,67 @@ impl Location<Constant, Constant> for SubConstantLocation {
             _ => None,
         }
     }
+
+    fn get_sub_term_ref(self, term: &Constant) -> Option<&Constant> {
+        match (self, term) {
+            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
+                SubTupleLocation::Single(single) => {
+                    tuple.elements.get(single).map(TupleElement::as_term)
+                }
+                SubTupleLocation::Range { .. } => None,
+            },
+
+            (Self::Struct(location), Constant::Struct(constant)) => {
+                constant.fields.get(location)
+            }
+
+            (
+                Self::Enum,
+                Constant::Enum(Enum {
+                    associated_value: Some(constant), ..
+                }),
+            ) => Some(&**constant),
+
+            (Self::Array(location), Constant::Array(constant)) => {
+                constant.elements.get(location)
+            }
+
+            (Self::Local, Constant::Local(local)) => Some(&*local.0),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Constant) -> Option<&mut Constant> {
+        match (self, term) {
+            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
+                SubTupleLocation::Single(single) => tuple
+                    .elements
+                    .get_mut(single)
+                    .map(TupleElement::as_term_mut),
+                SubTupleLocation::Range { .. } => None,
+            },
+
+            (Self::Struct(location), Constant::Struct(constant)) => {
+                constant.fields.get_mut(location)
+            }
+
+            (
+                Self::Enum,
+                Constant::Enum(Enum {
+                    associated_value: Some(constant), ..
+                }),
+            ) => Some(&mut *constant),
+
+            (Self::Array(location), Constant::Array(constant)) => {
+                constant.elements.get_mut(location)
+            }
+
+            (Self::Local, Constant::Local(local)) => Some(&mut *local.0),
+
+            _ => None,
+        }
+    }
 }
 
 /// Represents a compile-time constant term.
@@ -295,6 +357,12 @@ impl Location<Constant, Type> for Never {
     }
 
     fn get_sub_term(self, _: &Constant) -> Option<Type> { match self {} }
+
+    fn get_sub_term_ref(self, _: &Constant) -> Option<&Type> { match self {} }
+
+    fn get_sub_term_mut(self, _: &mut Constant) -> Option<&mut Type> {
+        match self {}
+    }
 }
 
 impl Location<Constant, Lifetime> for Never {
@@ -307,6 +375,14 @@ impl Location<Constant, Lifetime> for Never {
     }
 
     fn get_sub_term(self, _: &Constant) -> Option<Lifetime> { match self {} }
+
+    fn get_sub_term_ref(self, _: &Constant) -> Option<&Lifetime> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Constant) -> Option<&mut Lifetime> {
+        match self {}
+    }
 }
 
 impl Match for Constant {

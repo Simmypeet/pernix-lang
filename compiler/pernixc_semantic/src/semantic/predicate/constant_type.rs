@@ -27,10 +27,11 @@ impl<
         'a,
         'r,
         'l,
+        'v,
         U: Term,
         T: State,
         R: Session<U> + Session<Lifetime> + Session<Type> + Session<Constant>,
-    > visitor::Visitor<U> for Visitor<'a, 'r, 'l, T, R>
+    > visitor::Visitor<'v, U> for Visitor<'a, 'r, 'l, T, R>
 {
     fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match satisfies_internal(
