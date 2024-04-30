@@ -133,8 +133,7 @@ impl SingleImplementation {
 
         // the module where the trait is defined
         let module_id = {
-            let id = table.representation.modules.insert_with(|id| Module {
-                id,
+            let id = table.representation.modules.insert_with(|_| Module {
                 name: "testModule".to_string(),
                 accessibility: Accessibility::Public,
                 parent_module_id: None,
@@ -153,8 +152,7 @@ impl SingleImplementation {
 
         // the trait has the same size as the generic arguments
         let trait_id = {
-            let id = table.representation.traits.insert_with(|id| Trait {
-                id,
+            let id = table.representation.traits.insert_with(|_| Trait {
                 name: "Test".to_string(),
                 accessibility: Accessibility::Public,
                 parent_module_id: module_id,
@@ -167,28 +165,25 @@ impl SingleImplementation {
                             generic_parameters
                                 .add_lifetime_parameter(LifetimeParameter {
                                     name: None,
-                                    parent_generic_id: id.into(),
                                     span: None,
                                 })
                                 .unwrap();
                         }
 
-                        for i in 0..generic_arguments.types.len() {
+                        for _ in 0..generic_arguments.types.len() {
                             generic_parameters
                                 .add_type_parameter(TypeParameter {
-                                    name: format!("T{i}"),
-                                    parent_generic_id: id.into(),
+                                    name: None,
                                     span: None,
                                 })
                                 .unwrap();
                         }
 
-                        for i in 0..generic_arguments.constants.len() {
+                        for _ in 0..generic_arguments.constants.len() {
                             generic_parameters
                                 .add_constant_parameter(
                                     symbol::ConstantParameter {
-                                        name: format!("C{i}"),
-                                        parent_generic_id: id.into(),
+                                        name: None,
                                         r#type: Type::default(),
                                         span: None,
                                     },
@@ -231,9 +226,8 @@ impl SingleImplementation {
     ) -> (ID<TraitImplementation>, Instantiation) {
         // the trait implementation id which will be resolved to
         let implementation_id = {
-            table.representation.trait_implementations.insert_with(|id| {
+            table.representation.trait_implementations.insert_with(|_| {
                 TraitImplementation {
-                    id,
                     span: None,
                     signature: ImplementationSignature {
                         generic_declaration: GenericDeclaration::default(),
@@ -273,7 +267,7 @@ impl SingleImplementation {
         let mut expected_instantiation = Instantiation::default();
 
         // replace the choosen types with the type parameter
-        for (idx, ty) in to_be_substituted_type.into_iter().enumerate() {
+        for ty in to_be_substituted_type {
             let mut all_types = generic_arguments
                 .types
                 .iter()
@@ -289,11 +283,7 @@ impl SingleImplementation {
                 .signature
                 .generic_declaration
                 .parameters
-                .add_type_parameter(TypeParameter {
-                    name: format!("T{idx}"),
-                    parent_generic_id: implementation_id.into(),
-                    span: None,
-                })
+                .add_type_parameter(TypeParameter { name: None, span: None })
                 .unwrap();
 
             let pair = (
@@ -316,9 +306,7 @@ impl SingleImplementation {
         }
 
         // replace the choosen constants with the constant parameter
-        for (idx, constant) in
-            to_be_substituted_constant.into_iter().enumerate()
-        {
+        for constant in to_be_substituted_constant {
             let mut all_constants = generic_arguments
                 .constants
                 .iter()
@@ -341,8 +329,7 @@ impl SingleImplementation {
                 .generic_declaration
                 .parameters
                 .add_constant_parameter(symbol::ConstantParameter {
-                    name: format!("C{idx}"),
-                    parent_generic_id: implementation_id.into(),
+                    name: None,
                     r#type: Type::default(),
                     span: None,
                 })
@@ -391,7 +378,6 @@ impl SingleImplementation {
                 .parameters
                 .add_lifetime_parameter(LifetimeParameter {
                     name: None,
-                    parent_generic_id: implementation_id.into(),
                     span: None,
                 })
                 .unwrap();
@@ -575,9 +561,8 @@ impl SpecializedImplementation {
 
         // the trait implementation id which will is more general
         let general_implementation_id = {
-            table.representation.trait_implementations.insert_with(|id| {
+            table.representation.trait_implementations.insert_with(|_| {
                 TraitImplementation {
-                    id,
                     span: None,
                     signature: ImplementationSignature {
                         generic_declaration: GenericDeclaration::default(),
@@ -636,10 +621,7 @@ impl SpecializedImplementation {
             .cloned()
             .collect::<HashSet<_>>();
 
-        for (idx, ty) in to_be_substituted_type
-            .into_iter()
-            .chain(all_type_parameters)
-            .enumerate()
+        for ty in to_be_substituted_type.into_iter().chain(all_type_parameters)
         {
             let mut all_types = generic_arguments
                 .types
@@ -656,11 +638,7 @@ impl SpecializedImplementation {
                 .signature
                 .generic_declaration
                 .parameters
-                .add_type_parameter(TypeParameter {
-                    name: format!("T{idx}"),
-                    parent_generic_id: general_implementation_id.into(),
-                    span: None,
-                })
+                .add_type_parameter(TypeParameter { name: None, span: None })
                 .unwrap();
 
             let mut pair = (
@@ -686,10 +664,9 @@ impl SpecializedImplementation {
             });
         }
 
-        for (idx, constant) in to_be_substituted_constant
+        for constant in to_be_substituted_constant
             .into_iter()
             .chain(all_constant_parameters)
-            .enumerate()
         {
             let mut all_constants = generic_arguments
                 .constants
@@ -713,8 +690,7 @@ impl SpecializedImplementation {
                 .generic_declaration
                 .parameters
                 .add_constant_parameter(symbol::ConstantParameter {
-                    name: format!("C{idx}"),
-                    parent_generic_id: general_implementation_id.into(),
+                    name: None,
                     r#type: Type::default(),
                     span: None,
                 })
@@ -767,7 +743,6 @@ impl SpecializedImplementation {
                 .parameters
                 .add_lifetime_parameter(LifetimeParameter {
                     name: None,
-                    parent_generic_id: general_implementation_id.into(),
                     span: None,
                 })
                 .unwrap();
@@ -968,8 +943,7 @@ impl Arbitrary for FallbackToGeneralImplementation {
         SpecializedImplementation::arbitrary()
             .prop_map(|mut prop| {
                 let constraint_trait_id = {
-                    prop.table.representation.traits.insert_with(|id| Trait {
-                        id,
+                    prop.table.representation.traits.insert_with(|_| Trait {
                         name: "Constraint".to_string(),
                         accessibility: Accessibility::Public,
                         parent_module_id: prop.defined_in_module_id,
@@ -1106,8 +1080,7 @@ impl Arbitrary for NegativeImplementation {
                         .table
                         .representation
                         .negative_trait_implementations
-                        .insert_with(|id| NegativeTraitImplementation {
-                            id,
+                        .insert_with(|_| NegativeTraitImplementation {
                             span: None,
                             signature: ImplementationSignature {
                                 generic_declaration: GenericDeclaration {
@@ -1156,17 +1129,13 @@ impl Arbitrary for NegativeImplementation {
 
                 let mut instantiation = Instantiation::default();
 
-                for (idx, lt_parameter) in
-                    all_lt_parameters.into_iter().enumerate()
-                {
+                for lt_parameter in all_lt_parameters {
                     let new_lt_parameter = negative_implementation
                         .signature
                         .generic_declaration
                         .parameters
                         .add_lifetime_parameter(LifetimeParameter {
-                            name: Some(format!("L{idx}")),
-                            parent_generic_id: negative_implementation_id
-                                .into(),
+                            name: None,
                             span: None,
                         })
                         .unwrap();
@@ -1180,17 +1149,13 @@ impl Arbitrary for NegativeImplementation {
                     );
                 }
 
-                for (idx, ty_parameter) in
-                    all_ty_parameters.into_iter().enumerate()
-                {
+                for ty_parameter in all_ty_parameters {
                     let new_ty_parameter = negative_implementation
                         .signature
                         .generic_declaration
                         .parameters
                         .add_type_parameter(TypeParameter {
-                            name: format!("T{idx}"),
-                            parent_generic_id: negative_implementation_id
-                                .into(),
+                            name: None,
                             span: None,
                         })
                         .unwrap();
@@ -1204,17 +1169,13 @@ impl Arbitrary for NegativeImplementation {
                     );
                 }
 
-                for (idx, const_parameter) in
-                    all_const_parameters.into_iter().enumerate()
-                {
+                for const_parameter in all_const_parameters {
                     let new_const_parameter = negative_implementation
                         .signature
                         .generic_declaration
                         .parameters
                         .add_constant_parameter(symbol::ConstantParameter {
-                            name: format!("C{idx}"),
-                            parent_generic_id: negative_implementation_id
-                                .into(),
+                            name: None,
                             r#type: Type::default(),
                             span: None,
                         })

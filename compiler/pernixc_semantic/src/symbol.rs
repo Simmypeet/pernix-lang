@@ -218,9 +218,6 @@ try_from_ids!(
 
 /// Represents a kind of symbol that accepts generic arguments.
 pub trait Generic: Global {
-    /// The ID representing the symbol itself.
-    fn generic_id(&self) -> GenericID;
-
     /// Gets the [`GenericParameters`] of the symbol.
     fn generic_declaration(&self) -> &GenericDeclaration;
 
@@ -282,9 +279,6 @@ pub trait Global {
     /// The name of the symbol.
     fn name(&self) -> &str;
 
-    /// The ID representing the symbol itself.
-    fn global_id(&self) -> GlobalID;
-
     /// The ID of the parent symbol.
     fn parent_global_id(&self) -> Option<GlobalID>;
 
@@ -331,9 +325,6 @@ from_ids!(
 /// Represents a module declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
-    /// The ID of the module declaration.
-    pub id: ID<Module>,
-
     /// The name of the module declaration.
     pub name: String,
 
@@ -357,8 +348,6 @@ pub struct Module {
 
 impl Global for Module {
     fn name(&self) -> &str { &self.name }
-
-    fn global_id(&self) -> GlobalID { GlobalID::Module(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         self.parent_module_id.map(GlobalID::Module)
@@ -483,9 +472,6 @@ pub struct LifetimeParameter {
     /// lifetime parameter )
     pub name: Option<String>,
 
-    /// The ID where the lifetime parameter is declared.
-    pub parent_generic_id: GenericID,
-
     /// Location of where the lifetime parameter is declared.
     pub span: Option<Span>,
 }
@@ -527,17 +513,14 @@ impl GenericParameter for LifetimeParameter {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeParameter {
     /// The name of the type parameter.
-    pub name: String,
-
-    /// The ID where the type parameter is declared.
-    pub parent_generic_id: GenericID,
+    pub name: Option<String>,
 
     /// The kind of the type parameter.
     pub span: Option<Span>,
 }
 
 impl GenericParameter for TypeParameter {
-    fn name(&self) -> Option<&str> { Some(&self.name) }
+    fn name(&self) -> Option<&str> { self.name.as_ref().map(AsRef::as_ref) }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 
@@ -573,10 +556,7 @@ impl GenericParameter for TypeParameter {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantParameter {
     /// The name of the constant parameter.
-    pub name: String,
-
-    /// The ID where the constant parameter is declared.
-    pub parent_generic_id: GenericID,
+    pub name: Option<String>,
 
     /// The type of the constant parameter.
     pub r#type: r#type::Type,
@@ -586,7 +566,7 @@ pub struct ConstantParameter {
 }
 
 impl GenericParameter for ConstantParameter {
-    fn name(&self) -> Option<&str> { Some(&self.name) }
+    fn name(&self) -> Option<&str> { self.name.as_ref().map(AsRef::as_ref) }
 
     fn span(&self) -> Option<&Span> { self.span.as_ref() }
 
@@ -830,9 +810,6 @@ pub struct Field {
 /// Represents a struct declaration, denoted by `struct NAME { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
-    /// The ID of the struct.
-    pub id: ID<Struct>,
-
     /// The name of the struct.
     pub name: String,
 
@@ -859,8 +836,6 @@ pub struct Struct {
 }
 
 impl Generic for Struct {
-    fn generic_id(&self) -> GenericID { GenericID::Struct(self.id) }
-
     fn generic_declaration(&self) -> &GenericDeclaration {
         &self.generic_declaration
     }
@@ -872,8 +847,6 @@ impl Generic for Struct {
 
 impl Global for Struct {
     fn name(&self) -> &str { &self.name }
-
-    fn global_id(&self) -> GlobalID { GlobalID::Struct(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(GlobalID::Module(self.parent_module_id))
@@ -892,9 +865,6 @@ impl Adt for Struct {
 /// syntax.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Variant {
-    /// The ID of the variant.
-    pub id: ID<Variant>,
-
     /// The name of the variant.
     pub name: String,
 
@@ -911,8 +881,6 @@ pub struct Variant {
 impl Global for Variant {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { GlobalID::Variant(self.id) }
-
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(GlobalID::Enum(self.parent_enum_id))
     }
@@ -923,9 +891,6 @@ impl Global for Variant {
 /// Represents an enum declaration, denoted by `enum NAME { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
-    /// The ID of the enum.
-    pub id: ID<Enum>,
-
     /// The name of the enum.
     pub name: String,
 
@@ -952,8 +917,6 @@ pub struct Enum {
 }
 
 impl Generic for Enum {
-    fn generic_id(&self) -> GenericID { GenericID::Enum(self.id) }
-
     fn generic_declaration(&self) -> &GenericDeclaration {
         &self.generic_declaration
     }
@@ -965,8 +928,6 @@ impl Generic for Enum {
 
 impl Global for Enum {
     fn name(&self) -> &str { &self.name }
-
-    fn global_id(&self) -> GlobalID { GlobalID::Enum(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(GlobalID::Module(self.parent_module_id))
@@ -984,9 +945,6 @@ impl Adt for Enum {
 /// A template struct representing all kinds of type alias declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut)]
 pub struct TypeTemplate<ParentID: 'static, Data: 'static> {
-    /// The ID of the type.
-    pub id: ID<Self>,
-
     /// The generic declaration of the type.
     pub generic_declaration: GenericDeclaration,
 
@@ -1030,8 +988,6 @@ where
 {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { self.id.into() }
-
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(self.parent_id.into())
     }
@@ -1044,8 +1000,6 @@ where
     Self: Global,
     ID<Self>: Into<GenericID>,
 {
-    fn generic_id(&self) -> GenericID { self.id.into() }
-
     fn generic_declaration(&self) -> &GenericDeclaration {
         &self.generic_declaration
     }
@@ -1058,9 +1012,6 @@ where
 /// A template struct representing all kinds of constant declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut)]
 pub struct ConstantTemplate<ParentID: 'static, Data: 'static> {
-    /// The ID of the constant.
-    pub id: ID<Self>,
-
     /// The name of the constant.
     pub name: String,
 
@@ -1089,8 +1040,6 @@ where
 {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { self.id.into() }
-
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(self.parent_id.into())
     }
@@ -1103,8 +1052,6 @@ where
     Self: Global,
     ID<Self>: Into<GenericID>,
 {
-    fn generic_id(&self) -> GenericID { self.id.into() }
-
     fn generic_declaration(&self) -> &GenericDeclaration {
         &self.generic_declaration
     }
@@ -1135,9 +1082,6 @@ pub type AdtImplementationConstant =
 /// A template struct representing all kinds of function declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut)]
 pub struct FunctionTemplate<ParentID: 'static, Data: 'static> {
-    /// The ID of the function.
-    pub id: ID<Self>,
-
     /// The parameters of the function.
     pub parameters: Arena<Parameter>,
 
@@ -1188,8 +1132,6 @@ where
 {
     fn name(&self) -> &str { &self.name }
 
-    fn global_id(&self) -> GlobalID { self.id.into() }
-
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(self.parent_id.into())
     }
@@ -1202,8 +1144,6 @@ where
     Self: Global,
     ID<Self>: Into<GenericID>,
 {
-    fn generic_id(&self) -> GenericID { self.id.into() }
-
     fn generic_declaration(&self) -> &GenericDeclaration {
         &self.generic_declaration
     }
@@ -1241,9 +1181,6 @@ pub struct ImplementationSignature<ImplementedID> {
 /// A template struct representing all kinds of implementation declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut)]
 pub struct ImplementationTemplate<ImplementedID, Data: 'static> {
-    /// The ID of the implementation.
-    pub id: ID<Self>,
-
     /// Location of where the implements is declared.
     pub span: Option<Span>,
 
@@ -1324,8 +1261,6 @@ where
 {
     fn name(&self) -> &str { &self.implementation_name }
 
-    fn global_id(&self) -> GlobalID { self.id.into() }
-
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(self.declared_in.into())
     }
@@ -1339,8 +1274,6 @@ where
     Self: Global,
     ID<Self>: Into<GenericID>,
 {
-    fn generic_id(&self) -> GenericID { self.id.into() }
-
     fn generic_declaration(&self) -> &GenericDeclaration {
         &self.signature.generic_declaration
     }
@@ -1563,9 +1496,6 @@ from_ids!(
 /// Represents a trait declaration, denoted by `trait NAME { ... }` syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trait {
-    /// The ID of the trait.
-    pub id: ID<Trait>,
-
     /// The name of the trait.
     pub name: String,
 
@@ -1592,8 +1522,6 @@ pub struct Trait {
 }
 
 impl Generic for Trait {
-    fn generic_id(&self) -> GenericID { GenericID::Trait(self.id) }
-
     fn generic_declaration(&self) -> &GenericDeclaration {
         &self.generic_declaration
     }
@@ -1605,8 +1533,6 @@ impl Generic for Trait {
 
 impl Global for Trait {
     fn name(&self) -> &str { &self.name }
-
-    fn global_id(&self) -> GlobalID { GlobalID::Trait(self.id) }
 
     fn parent_global_id(&self) -> Option<GlobalID> {
         Some(GlobalID::Module(self.parent_module_id))

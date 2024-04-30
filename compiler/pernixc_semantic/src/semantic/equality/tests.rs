@@ -683,14 +683,12 @@ impl Property<Type> for TypeAlias {
             &mut Limit::new(&mut session::Default::default()),
         )? {
             let type_symbol = symbol::Type {
-                id: self.type_id,
                 generic_declaration: GenericDeclaration {
                     parameters: {
                         let mut parameters = GenericParameters::default();
 
                         let _ = parameters.add_type_parameter(TypeParameter {
-                            name: "T".to_string(),
-                            parent_generic_id: GenericID::Type(self.type_id),
+                            name: Some("T".to_string()),
                             span: None,
                         });
 
@@ -838,7 +836,7 @@ where
 
     // remove the type alias symbol should make the terms not equal.
     {
-        let id = table.representation.types.ids().next().copied();
+        let id = table.representation.types.ids().next();
         if let Some(id) = id {
             let removed = table.representation.types.remove(id).unwrap();
             let environment = &Environment { premise: &premise, table: &table };

@@ -159,19 +159,19 @@ impl SourceElement for Wildcard {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// Unpacked:
+/// Packed:
 ///     '...' Pattern
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Unpacked<Pattern> {
+pub struct Packed<Pattern> {
     #[get = "pub"]
     ellipsis: (Punctuation, Punctuation, Punctuation),
     #[get = "pub"]
     pattern: Box<Pattern>,
 }
 
-impl<Pattern: SourceElement> SourceElement for Unpacked<Pattern> {
+impl<Pattern: SourceElement> SourceElement for Packed<Pattern> {
     fn span(&self) -> Span {
         self.ellipsis.0.span.join(&self.pattern.span()).unwrap()
     }
@@ -180,20 +180,20 @@ impl<Pattern: SourceElement> SourceElement for Unpacked<Pattern> {
 /// Syntax Synopsis:
 /// ``` txt
 /// TupleElement:
-///     Unpacked
+///     Packed
 ///     | Pattern
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum TupleElement<Pattern> {
-    Unpacked(Unpacked<Pattern>),
+    Packed(Packed<Pattern>),
     Regular(Box<Pattern>),
 }
 
 impl<Pattern: SourceElement> SourceElement for TupleElement<Pattern> {
     fn span(&self) -> Span {
         match self {
-            Self::Unpacked(unpack) => unpack.span(),
+            Self::Packed(unpack) => unpack.span(),
             Self::Regular(pattern) => pattern.span(),
         }
     }
@@ -378,7 +378,7 @@ impl Irrefutable {
                 .iter()
                 .flat_map(ConnectedList::elements)
                 .any(|x| match x {
-                    TupleElement::Unpacked(pattern) => {
+                    TupleElement::Packed(pattern) => {
                         pattern.pattern.contains_named()
                     }
                     TupleElement::Regular(pattern) => pattern.contains_named(),
@@ -566,10 +566,7 @@ impl<'a> Parser<'a> {
 
                         let pattern = Box::new(T::parse(parser, handler)?);
 
-                        Some(TupleElement::Unpacked(Unpacked {
-                            ellipsis,
-                            pattern,
-                        }))
+                        Some(TupleElement::Packed(Packed { ellipsis, pattern }))
                     }
 
                     _ => T::parse(parser, handler).map(|pattern| {

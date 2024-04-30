@@ -21,7 +21,7 @@ use crate::{
         Environment, Premise,
     },
     symbol::{
-        self, GenericDeclaration, GenericID, GenericParameters, TypeParameter,
+        self, GenericDeclaration, GenericParameters, TypeParameter,
         TypeParameterID,
     },
     table::Table,
@@ -238,15 +238,13 @@ impl Property<Type> for TypeAlias {
         self.property.apply(table, premise)?;
 
         let type_symbol = symbol::Type {
-            id: self.type_id,
             generic_declaration: GenericDeclaration {
                 parameters: {
                     let mut generic_parameters = GenericParameters::default();
 
                     assert!(generic_parameters
                         .add_type_parameter(TypeParameter {
-                            name: "T".to_string(),
-                            parent_generic_id: GenericID::Type(self.type_id),
+                            name: Some("T".to_string()),
                             span: None,
                         })
                         .is_ok());

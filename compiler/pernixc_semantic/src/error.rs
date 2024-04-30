@@ -13,7 +13,7 @@ use pernixc_base::{
 
 use crate::{
     arena::ID,
-    semantic::predicate::Predicate,
+    semantic::{predicate::Predicate, term::r#type::Type},
     symbol::{
         Accessibility, AdtID, ConstantParameterID, Field, GenericID,
         GenericKind, GenericParameter, GlobalID, LocalGenericParameterID,
@@ -833,6 +833,30 @@ impl<T: State> Display<T> for UndecidablePredicate {
     }
 }
 
+/// The tuple pattern contains more than one unpacked pattern.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MoreThanOneUnpackedInTuplePattern {
+    /// The span where the illegal tuple pattern was found.
+    pub illegal_tuple_pattern_span: Span,
+}
+
+impl<T: State> Display<T> for MoreThanOneUnpackedInTuplePattern {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the tuple pattern contains more than one unpacked \
+                      pattern",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.illegal_tuple_pattern_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// The tuple type contains more than one unpacked type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MoreThanOneUnpackedInTupleType {
@@ -1130,7 +1154,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
 
                     (
                         type_param.span.as_ref(),
-                        type_param.name.as_str(),
+                        type_param.name.as_deref().unwrap_or("{unknown}"),
                         "type parameter",
                     )
                 }
@@ -1144,7 +1168,7 @@ impl<T: State, ID: Copy + Into<GenericID>> Display<T>
 
                     (
                         constant_param.span.as_ref(),
-                        constant_param.name.as_str(),
+                        constant_param.name.as_deref().unwrap_or("{unknown}"),
                         "constant parameter",
                     )
                 }
@@ -1776,6 +1800,185 @@ impl<T: State> Display<T> for ExtraneousTraitMemberPredicate {
                 help_display: Some("extraneous predicate declared here"),
             })?;
         }
+
+        Ok(())
+    }
+}
+
+/// The kind of the pattern binding.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
+#[allow(missing_docs)]
+pub enum PatternBindingType {
+    #[display(fmt = "struct")]
+    Struct,
+    #[display(fmt = "tuple")]
+    Tuple,
+}
+
+/// Pattern expects a different kind of binding.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedPatternBindingType {
+    /// The expected binding type of the pattern.
+    pub expected_bindnig_type: PatternBindingType,
+
+    /// The found type of the pattern.
+    pub found_type: Type,
+
+    /// The span of the pattern.
+    pub pattern_span: Span,
+}
+
+impl<T: State> Display<T> for MismatchedPatternBindingType {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the pattern expects a {} type but found {} ",
+                self.expected_bindnig_type,
+                DisplayObject { table, display: &self.found_type }
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.pattern_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Field with given name was not found in the struct.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FieldNotFound {
+    /// The span to the identifier that refers to non-existent field.
+    pub identifier_span: Span,
+
+    /// The struct ID where the field is not found.
+    pub struct_id: ID<Struct>,
+}
+
+impl<T: State> Display<T> for FieldNotFound {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let struct_qualified_name = table
+            .get_qualified_name(self.struct_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the field `{}` is not found in the struct \
+                 `{struct_qualified_name}`",
+                self.identifier_span.str(),
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.identifier_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The field is already bound in the pattern.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AlreadyBoundFieldPattern {
+    /// The span of the pattern.
+    pub pattern_span: Span,
+
+    /// The ID of the struct where the field is already bound.
+    pub struct_id: ID<Struct>,
+
+    /// The ID of the field that is already bound.
+    pub field_id: ID<Field>,
+}
+
+impl<T: State> Display<T> for AlreadyBoundFieldPattern {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
+        let field_sym =
+            struct_sym.fields.get(self.field_id).ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the field `{}` is already bound in the pattern",
+                field_sym.name
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.pattern_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// The pattern contains mismatched element length.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MismatchedTuplePatternLength {
+    /// The span of the pattern.
+    pub pattern_span: Span,
+
+    /// The number of elements in the pattern.
+    pub pattern_element_count: usize,
+
+    /// The number of elements in the type.
+    pub type_element_count: usize,
+}
+
+impl<T: State> Display<T> for MismatchedTuplePatternLength {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the pattern contains mismatched element length: expected {} \
+                 elements but found {}",
+                self.type_element_count, self.pattern_element_count
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.pattern_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Expect an unpacked tuple pattern.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectPackedTuplePattern {
+    /// The span of the pattern.
+    pub regular_tuple_pattern_span: Span,
+}
+
+impl<T: State> Display<T> for ExpectPackedTuplePattern {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: "the pattern expects an unpacked tuple pattern",
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.regular_tuple_pattern_span,
+            help_display: Option::<i32>::None,
+        })?;
 
         Ok(())
     }

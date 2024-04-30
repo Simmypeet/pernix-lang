@@ -4,39 +4,10 @@ use std::collections::HashMap;
 
 use crate::{
     arena::ID,
-    ir::address::{self, Address},
-    semantic::{
-        session::ExceedLimitError,
-        term::{lifetime::Lifetime, r#type::Qualifier},
-    },
+    ir::address::Address,
+    semantic::session::ExceedLimitError,
     symbol::{Field, Struct},
 };
-
-/// A pattern that matches as a value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ValueBinding {
-    /// The address to the value that the pattern has matched.
-    ///
-    /// NOTE: This is the address where the value is stored. The value can be
-    /// accessed by loading the value from this address.
-    pub address: Address,
-}
-
-/// A pattern that matches as a reference.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReferenceBinding {
-    /// The qualifier of the reference.
-    pub qualifier: Qualifier,
-
-    /// The lifetime of the reference.
-    pub lifetime: Lifetime,
-
-    /// The address to the value that the reference points to.
-    ///
-    /// NOTE: This is not the address where the reference is stored but the
-    /// address of the value that the reference points to!
-    pub address: Address,
-}
 
 /// A trait that is implemented by [`Refutable`] and [`Irrefutable`].
 pub trait Pattern {}
@@ -77,22 +48,40 @@ pub struct Named {
 
     /// The address to the location where the value is stored with this name
     /// binding.
-    pub address: address::Stack,
+    pub load_address: Address,
+
+    /// Determined if the underlying value is mutable or not.
+    pub mutable: bool,
 }
 
-/// An element in a tuple pattern.
+/// A tuple binding where alll of the patterns are regular.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RegularTupleBinding<T: Pattern> {
+    /// The pattern binding for each element in the tuple.
+    pub elements: Vec<T>,
+}
+
+/// A tuple binding with at least one packed element.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PackedTupleBinding<T: Pattern> {
+    /// The pattern binding for each element in the tuple up to the packed
+    /// element.
+    pub before_packed_elements: Vec<T>,
+
+    /// The pattern binding for each element in the tuple after the packed
+    /// element to the end of the tuple.
+    pub after_packed_elements: Vec<T>,
+
+    /// The tuple pattern for the packed element.
+    pub packed_element: Box<T>,
+}
+
+/// A pattern bound to a tuple type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum TupleElement<T: Pattern> {
-    Unpacked(T),
-    Regular(T),
-}
-
-/// A tuple pattern.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple<T: Pattern> {
-    /// The pattern that each element of the tuple must match.
-    pub elements: Vec<TupleElement<T>>,
+pub enum Tuple<T: Pattern> {
+    Regular(RegularTupleBinding<T>),
+    Packed(PackedTupleBinding<T>),
 }
 
 /// A pattern that matches on a struct with fields.
@@ -102,7 +91,7 @@ pub struct Structural<T: Pattern> {
     pub struct_id: ID<Struct>,
 
     /// Mapping from each field to the pattern that the field must match.
-    pub fields: HashMap<ID<Field>, T>,
+    pub patterns_by_field_id: HashMap<ID<Field>, T>,
 }
 
 /// A pattern that discards the value

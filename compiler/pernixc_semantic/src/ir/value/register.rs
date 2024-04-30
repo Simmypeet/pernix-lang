@@ -39,10 +39,10 @@ pub struct Load {
     pub kind: LoadKind,
 }
 
-/// Obtains a reference from the given address.
+/// Obtains a reference at the given address.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AddressOfReference {
-    /// The address to obtain a reference from.
+pub struct ReferenceOf {
+    /// The address to the value.
     pub address: Address,
 }
 
@@ -50,7 +50,7 @@ pub struct AddressOfReference {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Register {
-    AddressOfReference(AddressOfReference),
     Tuple(Tuple),
     Load(Load),
+    ReferenceOf(ReferenceOf),
 }

@@ -1027,7 +1027,7 @@ impl<T: Container> Representation<T> {
             }
 
             Lifetime::Inference(never) => match never.0 {},
-            Lifetime::Local(local) => match local.0 {},
+            Lifetime::Local(_) => Some(Accessibility::Public),
 
             Lifetime::Forall(_) | Lifetime::Static => {
                 Some(Accessibility::Public)

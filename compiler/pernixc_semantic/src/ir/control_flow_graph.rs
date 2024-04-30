@@ -4,11 +4,26 @@ use std::collections::HashSet;
 
 use getset::{CopyGetters, Getters};
 
-use super::instruction::Instruction;
+use super::instruction::{self, Instruction};
 use crate::arena::{Arena, ID};
 
+/// Represents a scope hierarchy that is used to determine the
+/// visibility/lifetime of each variable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scope {
+    /// The ID to the parent scope. If this is `None`, then this is the
+    /// top-most scope.
+    pub parent: Option<ID<Scope>>,
+
+    /// The depth of the scope. The top-most scope has a depth of 0.
+    pub scope_depth: usize,
+
+    /// List of child scopes that are under this scope.
+    pub child_scopes: HashSet<ID<Scope>>,
+}
+
 /// Represents a list of instructions executed in sequence.
-#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
 pub struct Block {
     /// List of instructions that are executed in sequence.
     #[get = "pub"]
@@ -22,6 +37,9 @@ pub struct Block {
     /// List of blocks that are predecessors of this block.
     #[get = "pub"]
     predecessors: HashSet<ID<Block>>,
+    /// The scope in which this block is in.
+    #[get_copy = "pub"]
+    in_scope_id: ID<Scope>,
 }
 
 impl Block {
@@ -33,6 +51,15 @@ impl Block {
             Instruction::Jump(_) | Instruction::Return(_) => true,
             Instruction::Basic(_) => false,
         })
+    }
+
+    /// Adds a basic instruction to the block.
+    pub fn insert_basic(&mut self, instruction: instruction::Basic) {
+        if self.is_unreachable() {
+            self.unreachables.push(Instruction::Basic(instruction));
+        } else {
+            self.instructions.push(Instruction::Basic(instruction));
+        }
     }
 }
 
@@ -60,6 +87,14 @@ pub struct ControlFlowGraph {
     /// The id of the entry block.
     #[get_copy = "pub"]
     entry_block_id: ID<Block>,
+
+    /// List of all the scopes in the control flow graph.
+    #[get = "pub"]
+    scopes: Arena<Scope>,
+
+    /// The id of the top-most scope.
+    #[get_copy = "pub"]
+    starting_scope_id: ID<Scope>,
 }
 
 impl ControlFlowGraph {
@@ -73,5 +108,29 @@ impl ControlFlowGraph {
     #[must_use]
     pub fn get_block_mut(&mut self, id: ID<Block>) -> Option<&mut Block> {
         self.blocks.get_mut(id)
+    }
+}
+
+impl Default for ControlFlowGraph {
+    fn default() -> Self {
+        let mut scopes = Arena::new();
+        let starting_scope_id = scopes.insert(Scope {
+            parent: None,
+            scope_depth: 0,
+            child_scopes: HashSet::new(),
+        });
+
+        let mut blocks = Arena::new();
+
+        // create an entry block
+        let entry_block_id = blocks.insert(Block {
+            instructions: Vec::new(),
+            unreachables: Vec::new(),
+            successors: HashSet::new(),
+            predecessors: HashSet::new(),
+            in_scope_id: starting_scope_id,
+        });
+
+        Self { blocks, entry_block_id, scopes, starting_scope_id }
     }
 }

@@ -123,7 +123,6 @@ impl Table<Finalizer> {
                             .str()
                             .to_owned(),
                     ),
-                    parent_generic_id: generic_id.into(),
                     span: Some(
                         lifetime_parameter_syn.identifier().span.clone(),
                     ),
@@ -150,8 +149,7 @@ impl Table<Finalizer> {
                 .generic_declaration_mut()
                 .parameters
                 .add_type_parameter(TypeParameter {
-                    name: type_parameter_syn.span.str().to_owned(),
-                    parent_generic_id: generic_id.into(),
+                    name: Some(type_parameter_syn.span.str().to_owned()),
                     span: Some(type_parameter_syn.span.clone()),
                 })
             {
@@ -211,8 +209,7 @@ impl Table<Finalizer> {
                 );
 
                 ConstantParameter {
-                    name: constant_parameter_syn.0.span.str().to_string(),
-                    parent_generic_id: generic_id.into(),
+                    name: Some(constant_parameter_syn.0.span.str().to_string()),
                     r#type: constant_type,
                     span: Some(constant_parameter_syn.0.span.clone()),
                 }

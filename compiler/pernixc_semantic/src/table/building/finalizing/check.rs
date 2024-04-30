@@ -838,11 +838,11 @@ impl Table<Finalizer> {
                 .map(|(im, tr)| {
                     (
                         Lifetime::Parameter(LifetimeParameterID {
-                            parent: trait_member_sym.generic_id(),
+                            parent: trait_member_id.into(),
                             id: tr,
                         }),
                         Lifetime::Parameter(LifetimeParameterID {
-                            parent: implementation_member_sym.generic_id(),
+                            parent: trait_member_id.into(),
                             id: im,
                         }),
                     )
@@ -866,11 +866,11 @@ impl Table<Finalizer> {
                 .map(|(im, tr)| {
                     (
                         r#type::Type::Parameter(TypeParameterID {
-                            parent: trait_member_sym.generic_id(),
+                            parent: trait_member_id.into(),
                             id: tr,
                         }),
                         r#type::Type::Parameter(TypeParameterID {
-                            parent: implementation_member_sym.generic_id(),
+                            parent: trait_member_id.into(),
                             id: im,
                         }),
                     )
@@ -894,11 +894,11 @@ impl Table<Finalizer> {
                 .map(|(im, tr)| {
                     (
                         constant::Constant::Parameter(ConstantParameterID {
-                            parent: trait_member_sym.generic_id(),
+                            parent: trait_member_id.into(),
                             id: tr,
                         }),
                         constant::Constant::Parameter(ConstantParameterID {
-                            parent: implementation_member_sym.generic_id(),
+                            parent: trait_member_id.into(),
                             id: im,
                         }),
                     )
@@ -939,12 +939,12 @@ impl Table<Finalizer> {
                     MismatchedImplementationConstantTypeParameter {
                         implementation_member_constant_parameter_id:
                             ConstantParameterID {
-                                parent: implementation_member_sym.generic_id(),
+                                parent: trait_member_id.into(),
                                 id: im_const_id,
                             },
                         trait_member_constant_parameter_id:
                             ConstantParameterID {
-                                parent: trait_member_sym.generic_id(),
+                                parent: trait_member_id.into(),
                                 id: tr_const_id,
                             },
                     },

@@ -116,9 +116,8 @@ impl Table<Drafter> {
         parent_trait_id: ID<Trait>,
     ) -> ID<TraitFunction> {
         let mut table_write = table.write();
-        let id = table_write.representation.trait_functions.insert_with(|id| {
+        let id = table_write.representation.trait_functions.insert_with(|_| {
             RwLock::new(TraitFunction {
-                id,
                 parameters: Arena::new(),
                 parent_id: parent_trait_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
@@ -149,9 +148,8 @@ impl Table<Drafter> {
         parent_trait_id: ID<Trait>,
     ) -> ID<TraitType> {
         let mut table_write = table.write();
-        let id = table_write.representation.trait_types.insert_with(|id| {
+        let id = table_write.representation.trait_types.insert_with(|_| {
             RwLock::new(TraitType {
-                id,
                 parent_id: parent_trait_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 name: syntax_tree
@@ -180,9 +178,8 @@ impl Table<Drafter> {
         parent_trait_id: ID<Trait>,
     ) -> ID<TraitConstant> {
         let mut table_write = table.write();
-        let id = table_write.representation.trait_constants.insert_with(|id| {
+        let id = table_write.representation.trait_constants.insert_with(|_| {
             RwLock::new(TraitConstant {
-                id,
                 parent_id: parent_trait_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
                 name: syntax_tree
@@ -218,9 +215,8 @@ impl Table<Drafter> {
         let mut table_write = table.write();
         let trait_accessibility =
             Accessibility::from_syntax_tree(&access_modifier);
-        let id = table_write.representation.traits.insert_with(|id| {
+        let id = table_write.representation.traits.insert_with(|_| {
             RwLock::new(Trait {
-                id,
                 name: signature.identifier().span.str().to_owned(),
                 accessibility: trait_accessibility,
                 parent_module_id,
@@ -277,9 +273,8 @@ impl Table<Drafter> {
         parent_module_id: ID<Module>,
     ) -> ID<Function> {
         let mut table_write = table.write();
-        let id = table_write.representation.functions.insert_with(|id| {
+        let id = table_write.representation.functions.insert_with(|_| {
             RwLock::new(Function {
-                id,
                 parameters: Arena::new(),
                 parent_id: parent_module_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
@@ -312,9 +307,8 @@ impl Table<Drafter> {
         parent_module_id: ID<Module>,
     ) -> ID<Type> {
         let mut table_write = table.write();
-        let id = table_write.representation.types.insert_with(|id| {
+        let id = table_write.representation.types.insert_with(|_| {
             RwLock::new(Type {
-                id,
                 generic_declaration: GenericDeclaration::default(),
                 parent_id: parent_module_id,
                 span: Some(syntax_tree.signature().identifier().span.clone()),
@@ -344,9 +338,8 @@ impl Table<Drafter> {
         parent_module_id: ID<Module>,
     ) -> ID<Struct> {
         let mut table_write = table.write();
-        let id = table_write.representation.structs.insert_with(|id| {
+        let id = table_write.representation.structs.insert_with(|_| {
             RwLock::new(Struct {
-                id,
                 name: syntax_tree
                     .signature()
                     .identifier()
@@ -380,9 +373,8 @@ impl Table<Drafter> {
         let (access_modifier, signature, body) = syntax_tree.dissolve();
         let mut table_write = table.write();
 
-        let id = table_write.representation.enums.insert_with(|id| {
+        let id = table_write.representation.enums.insert_with(|_| {
             RwLock::new(Enum {
-                id,
                 name: signature.identifier().span.str().to_owned(),
                 accessibility: Accessibility::from_syntax_tree(
                     &access_modifier,
@@ -421,9 +413,8 @@ impl Table<Drafter> {
         parent_enum_id: ID<Enum>,
     ) -> ID<Variant> {
         let mut table_write = table.write();
-        let id = table_write.representation.variants.insert_with(|id| {
+        let id = table_write.representation.variants.insert_with(|_| {
             RwLock::new(Variant {
-                id,
                 name: syntax_tree.identifier().span.str().to_owned(),
                 span: Some(syntax_tree.identifier().span.clone()),
                 associated_type: None,
@@ -442,9 +433,8 @@ impl Table<Drafter> {
         parent_module_id: ID<Module>,
     ) -> ID<Constant> {
         let mut table_write = table.write();
-        let id = table_write.representation.constants.insert_with(|id| {
+        let id = table_write.representation.constants.insert_with(|_| {
             RwLock::new(Constant {
-                id,
                 name: syntax_tree
                     .signature()
                     .identifier()
@@ -476,9 +466,8 @@ impl Table<Drafter> {
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> ID<Module> {
         let module_id = {
-            table.write().representation.modules.insert_with(|id| {
+            table.write().representation.modules.insert_with(|_| {
                 RwLock::new(Module {
-                    id,
                     name,
                     accessibility: syntax_tree
                         .signature()
@@ -588,9 +577,8 @@ impl Table<Finalizer> {
             .write()
             .representation
             .trait_implementation_functions
-            .insert_with(|id| {
+            .insert_with(|_| {
                 RwLock::new(TraitImplementationFunction {
-                    id,
                     generic_declaration: GenericDeclaration::default(),
                     parent_id,
                     span: Some(
@@ -647,9 +635,8 @@ impl Table<Finalizer> {
             .write()
             .representation
             .trait_implementation_types
-            .insert_with(|id| {
+            .insert_with(|_| {
                 RwLock::new(TraitImplementationType {
-                    id,
                     generic_declaration: GenericDeclaration::default(),
                     parent_id,
                     span: Some(
@@ -706,9 +693,8 @@ impl Table<Finalizer> {
             .write()
             .representation
             .trait_implementation_constants
-            .insert_with(|id| {
+            .insert_with(|_| {
                 RwLock::new(TraitImplementationConstant {
-                    id,
                     generic_declaration: GenericDeclaration::default(),
                     parent_id,
                     span: Some(
@@ -770,9 +756,8 @@ impl Table<Finalizer> {
             .write()
             .representation
             .trait_implementations
-            .insert_with(|id| {
+            .insert_with(|_| {
                 TraitImplementation {
-                    id,
                     span: Some(
                         implementation_signature.qualified_identifier().span(),
                     ),
@@ -1002,9 +987,8 @@ impl Table<Finalizer> {
     ) -> ID<AdtImplementationType> {
         let implementation_type_id =
             table.write().representation.adt_implementation_types.insert_with(
-                |id| {
+                |_| {
                     RwLock::new(AdtImplementationType {
-                        id,
                         generic_declaration: GenericDeclaration::default(),
                         parent_id: adt_implementations_id,
                         span: Some(
@@ -1043,9 +1027,8 @@ impl Table<Finalizer> {
             .write()
             .representation
             .adt_implementation_functions
-            .insert_with(|id| {
+            .insert_with(|_| {
                 RwLock::new(AdtImplementationFunction {
-                    id,
                     generic_declaration: GenericDeclaration::default(),
                     parent_id: adt_implementations_id,
                     span: Some(
@@ -1086,9 +1069,8 @@ impl Table<Finalizer> {
             .write()
             .representation
             .adt_implementation_constants
-            .insert_with(|id| {
+            .insert_with(|_| {
                 RwLock::new(AdtImplementationConstant {
-                    id,
                     generic_declaration: GenericDeclaration::default(),
                     parent_id: adt_implementations_id,
                     span: Some(
@@ -1148,9 +1130,8 @@ impl Table<Finalizer> {
 
         let adt_implementation_id =
             table.write().representation.adt_implementations.insert_with(
-                |id| {
+                |_| {
                     RwLock::new(AdtImplementation {
-                        id,
                         span: Some(signature.qualified_identifier().span()),
                         signature: ImplementationSignature {
                             generic_declaration: GenericDeclaration::default(),
@@ -1267,9 +1248,8 @@ impl Table<Finalizer> {
                     .write()
                     .representation
                     .negative_trait_implementations
-                    .insert_with(|id| {
+                    .insert_with(|_| {
                         RwLock::new(NegativeTraitImplementation {
-                            id,
                             span: Some(signature.qualified_identifier().span()),
                             signature: ImplementationSignature {
                                 generic_declaration:

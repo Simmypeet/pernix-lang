@@ -107,11 +107,11 @@ impl Finalize for TraitImplementationType {
                     let trait_implementation_sym = table
                         .get(trait_implementation_type_sym.parent_id)
                         .unwrap();
-                    let trait_sym = table
-                        .get(trait_implementation_sym.signature.implemented_id)
-                        .unwrap();
 
-                    (trait_implementation_sym.id, trait_sym.id)
+                    (
+                        trait_implementation_type_sym.parent_id,
+                        trait_implementation_sym.signature.implemented_id,
+                    )
                 };
 
                 // make sure that the trait implementation's generic arguments
@@ -141,7 +141,7 @@ impl Finalize for TraitImplementationType {
                     .implementation_type_ids_by_trait_type_id
                     .iter()
                     .find_map(|(key, val)| {
-                        if *val == trait_implementation_type_sym.id {
+                        if *val == symbol_id {
                             Some(*key)
                         } else {
                             None

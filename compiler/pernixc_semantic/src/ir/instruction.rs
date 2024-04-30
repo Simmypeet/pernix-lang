@@ -2,7 +2,11 @@
 
 use pernixc_syntax::syntax_tree::expression::Block;
 
-use super::value::{register::Register, Value};
+use super::{
+    address::Address,
+    alloca::Alloca,
+    value::{register::Register, Value},
+};
 use crate::arena::ID;
 
 /// An enumeration containing all the possible sources of an unconditional jump.
@@ -63,19 +67,62 @@ pub struct RegisterAssignment {
     pub id: ID<Register>,
 }
 
+/// An instruction that stores a value to the given memory address.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Store {
+    /// The address where the value will be stored.
+    pub address: Address,
+
+    /// The value to store.
+    pub value: Value,
+}
+
+/// An instruction that allocates a new `alloca` memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AllocaAllocation {
+    /// The ID of the `alloca` that is being allocated.
+    pub id: ID<Alloca>,
+}
+
+/// An instructions that packs the unpacked elements of a tuple into a packed
+/// element.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TuplePack {
+    /// The address where the unpacked tuple elements will be stored.
+    pub store_address: Address,
+
+    /// The address to the tuple where the unpacked elements are stored.
+    pub tuple_address: Address,
+
+    /// The number of elements in the tuple before the packed element.
+    ///
+    /// This is used for calculating which elements are packed and which are
+    /// not.
+    pub before_packed_element_count: usize,
+
+    /// The number of elements in the tuple after the packed element.
+    ///
+    /// This is used for calculating which elements are packed and which are
+    /// not.
+    pub after_packed_element_count: usize,
+}
+
 /// An enumeration containig all the basic instructions.
 ///
 /// The basic instructions are the instructions that have no effect on the
 /// control flow of the program -- return instructions and jumps do change the
 /// flow of the program, so they are not considered basic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Basic {
+    Store(Store),
     RegisterAssignment(RegisterAssignment),
+    AllocaAllocation(AllocaAllocation),
+    TuplePack(TuplePack),
 }
 
 /// Represents an instruction that will be executed in the IR.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum Instruction {
     Jump(Jump),

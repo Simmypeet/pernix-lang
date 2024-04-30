@@ -4,9 +4,9 @@ use self::representation::Representation;
 
 pub mod address;
 pub mod alloca;
-pub mod cfg;
+pub mod control_flow_graph;
 pub mod instruction;
-mod representation;
+pub mod representation;
 pub mod value;
 
 /// A tag type representing a successfully generated IR.

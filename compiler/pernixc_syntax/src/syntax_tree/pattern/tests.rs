@@ -263,21 +263,21 @@ impl<Pattern: Display> Display for Structural<Pattern> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Unpacked<Pattern> {
+pub struct Packed<Pattern> {
     pub pattern: Box<Pattern>,
 }
 
-impl<I: Debug, O: Debug> Input<&super::Unpacked<O>> for &Unpacked<I>
+impl<I: Debug, O: Debug> Input<&super::Packed<O>> for &Packed<I>
 where
     for<'i, 'o> &'i I: Input<&'o O>,
 {
-    fn assert(self, output: &super::Unpacked<O>) -> TestCaseResult {
+    fn assert(self, output: &super::Packed<O>) -> TestCaseResult {
         self.pattern.assert(&output.pattern)
     }
 }
 
 impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
-    for Unpacked<Pattern>
+    for Packed<Pattern>
 {
     type Parameters = Option<BoxedStrategy<Pattern>>;
     type Strategy = BoxedStrategy<Self>;
@@ -289,30 +289,30 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
     }
 }
 
-impl<Pattern: Display> Display for Unpacked<Pattern> {
+impl<Pattern: Display> Display for Packed<Pattern> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "...{}", self.pattern)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Unpackable<Pattern> {
-    Unpacked(Unpacked<Pattern>),
+pub enum TupleElement<Pattern> {
+    Packed(Packed<Pattern>),
     Regular(Box<Pattern>),
 }
 
-impl<I: Debug, O: Debug> Input<&super::TupleElement<O>> for &Unpackable<I>
+impl<I: Debug, O: Debug> Input<&super::TupleElement<O>> for &TupleElement<I>
 where
     for<'i, 'o> &'i I: Input<&'o O>,
 {
     fn assert(self, output: &super::TupleElement<O>) -> TestCaseResult {
         match (self, output) {
             (
-                Unpackable::Unpacked(input),
-                super::TupleElement::Unpacked(output),
+                TupleElement::Packed(input),
+                super::TupleElement::Packed(output),
             ) => input.assert(output),
             (
-                Unpackable::Regular(input),
+                TupleElement::Regular(input),
                 super::TupleElement::Regular(output),
             ) => input.assert(output),
             (input, output) => Err(TestCaseError::fail(format!(
@@ -323,7 +323,7 @@ where
 }
 
 impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
-    for Unpackable<Pattern>
+    for TupleElement<Pattern>
 {
     type Parameters = Option<BoxedStrategy<Pattern>>;
     type Strategy = BoxedStrategy<Self>;
@@ -332,17 +332,17 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
         let pattern = args.unwrap_or_else(Pattern::arbitrary);
 
         prop_oneof![
-            Unpacked::arbitrary().prop_map(Self::Unpacked),
+            Packed::arbitrary().prop_map(Self::Packed),
             pattern.prop_map(|x| Self::Regular(Box::new(x)))
         ]
         .boxed()
     }
 }
 
-impl<Pattern: Display> Display for Unpackable<Pattern> {
+impl<Pattern: Display> Display for TupleElement<Pattern> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unpacked(unpack) => write!(f, "{unpack}"),
+            Self::Packed(unpack) => write!(f, "{unpack}"),
             Self::Regular(pattern) => write!(f, "{pattern}"),
         }
     }
@@ -351,7 +351,7 @@ impl<Pattern: Display> Display for Unpackable<Pattern> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple<Pattern> {
     pub patterns:
-        Option<ConnectedList<Unpackable<Pattern>, ConstantPunctuation<','>>>,
+        Option<ConnectedList<TupleElement<Pattern>, ConstantPunctuation<','>>>,
 }
 
 impl<I: Debug, O: Debug> Input<&super::Tuple<O>> for &Tuple<I>
@@ -371,7 +371,7 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         proptest::option::of(ConnectedList::arbitrary_with(
-            Unpackable::arbitrary_with(args),
+            TupleElement::arbitrary_with(args),
             ConstantPunctuation::<','>::arbitrary(),
         ))
         .prop_map(|patterns| Self { patterns })

@@ -141,6 +141,10 @@ impl<'a, T: 'static, I> Reserve<'a, T, I> {
     pub fn get_reserved(&self, id: ID<T>) -> Option<&I> {
         self.reserved.get(&id)
     }
+
+    /// Returns the map of reserved [`ID`]s and their associated information.
+    #[must_use]
+    pub fn into_reserved(self) -> HashMap<ID<T>, I> { self.reserved }
 }
 
 /// Represents a collection of items of type `T` that can be referenced by an
@@ -241,19 +245,31 @@ impl<T, Idx: Key> Arena<T, Idx> {
 
     /// Returns an iterator over the items in the [`Arena`].
     #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &T> {
+    pub fn items(&self) -> impl ExactSizeIterator<Item = &T> {
         self.items.values()
     }
 
     /// Returns an mutable iterator over the items in the [`Arena`].
-    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> {
+    pub fn items_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> {
         self.items.values_mut()
+    }
+
+    /// Returns an iterator over the items in the [`Arena`] with their `Idx`s.
+    #[must_use]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (Idx, &T)> {
+        self.items.iter().map(|(idx, i)| (*idx, i))
+    }
+
+    /// Returns an mutable iterator over the items in the [`Arena`] with their
+    #[must_use]
+    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = (Idx, &mut T)> {
+        self.items.iter_mut().map(|(idx, i)| (*idx, i))
     }
 
     /// Returns an iterator over the `Idx`s of the items in the [`Arena`].
     #[must_use]
-    pub fn ids(&self) -> impl ExactSizeIterator<Item = &Idx> {
-        self.items.keys()
+    pub fn ids(&self) -> impl ExactSizeIterator<Item = Idx> + '_ {
+        self.items.keys().copied()
     }
 
     /// Removes the item in the [`Arena`] with the given `Idx` and returns it.
@@ -397,14 +413,14 @@ impl<T, Secondary: Hash + Eq, Primary: Key> Map<T, Secondary, Primary> {
     /// The order of the values is maintained.
     #[must_use]
     pub fn values(&self) -> impl ExactSizeIterator<Item = &T> {
-        self.arena.iter()
+        self.arena.items()
     }
 
     /// Returns an mutable iterator over the items in the [`Map`].
     ///
     /// The order of the values is not maintained.
     pub fn values_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> {
-        self.arena.iter_mut()
+        self.arena.items_mut()
     }
 }
 

@@ -904,15 +904,12 @@ impl Term for Type {
                     return Ok(None);
                 };
 
-                let Some(implementation_type_symbol) = environment
-                    .table
-                    .get(result.id)
-                    .and_then(|x| {
+                let Some(implementation_type_id) =
+                    environment.table.get(result.id).and_then(|x| {
                         x.implementation_type_ids_by_trait_type_id
                             .get(&trait_member.id)
                             .copied()
                     })
-                    .and_then(|x| environment.table.get(x))
                 else {
                     return Ok(None);
                 };
@@ -973,7 +970,7 @@ impl Term for Type {
                 };
 
                 let result_ty = Self::MemberSymbol(MemberSymbol {
-                    id: implementation_type_symbol.id.into(),
+                    id: implementation_type_id.into(),
                     member_generic_arguments: trait_member
                         .member_generic_arguments
                         .clone(),
@@ -1023,7 +1020,7 @@ impl Term for Type {
                 if instantiation
                     .append_from_generic_arguments(
                         member_generic_arguments.clone(),
-                        implementation_type_symbol.id.into(),
+                        (*id).into(),
                         &implementation_type_symbol
                             .generic_declaration
                             .parameters,
@@ -1068,7 +1065,7 @@ impl Term for Type {
                 if deduction
                     .append_from_generic_arguments(
                         member_generic_arguments.clone(),
-                        implementation_type_symbol.id.into(),
+                        (*id).into(),
                         &implementation_type_symbol
                             .generic_declaration
                             .parameters,
@@ -1469,6 +1466,8 @@ impl<T: State> table::Display<T> for Type {
                         .get(type_parameter.id)
                         .ok_or(fmt::Error)?
                         .name
+                        .as_deref()
+                        .unwrap_or("{unknown}")
                 )
             }
             Self::Inference(_) => write!(f, "?"),
