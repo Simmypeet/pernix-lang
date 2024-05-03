@@ -486,18 +486,21 @@ pub enum GetMemberError {
 }
 
 impl<T: Container> Representation<T> {
-    /// Checks if the `referred` is accessible from the `referring_site`.
+    /// Determines whether the given `referred` is accessible from the
+    /// `referring_site` as if the `referred` has the given
+    /// `referred_accessibility`.
     ///
     /// # Returns
     ///
     /// Returns `None` if `referred` or `referring_site` is not a valid ID.
     #[must_use]
-    pub fn symbol_accessible(
+    pub fn is_accessible_from(
         &self,
         referring_site: GlobalID,
         referred: GlobalID,
+        referred_accessibility: Accessibility,
     ) -> Option<bool> {
-        match self.get_accessibility(referred)? {
+        match referred_accessibility {
             Accessibility::Public => {
                 // PEDANTIC: check if the referring site is a valid ID.
                 drop(self.get_global(referring_site)?);
@@ -532,6 +535,26 @@ impl<T: Container> Representation<T> {
                     == self.get_root_module_id(referring_site)?,
             ),
         }
+    }
+
+    /// Checks if the `referred` is accessible from the `referring_site`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if `referred` or `referring_site` is not a valid ID.
+    #[must_use]
+    pub fn symbol_accessible(
+        &self,
+        referring_site: GlobalID,
+        referred: GlobalID,
+    ) -> Option<bool> {
+        let referred_accessibility = self.get_accessibility(referred)?;
+
+        self.is_accessible_from(
+            referring_site,
+            referred,
+            referred_accessibility,
+        )
     }
 
     /// Returns the root [`Module`] ID that contains the given [`GlobalID`]

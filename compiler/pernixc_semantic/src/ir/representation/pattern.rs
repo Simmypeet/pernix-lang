@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use pernixc_base::{
-    diagnostic::Handler,
+    diagnostic::{Handler, Storage},
     source_file::{SourceElement, Span},
 };
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
@@ -10,9 +10,9 @@ use super::Representation;
 use crate::{
     arena::{Reserve, ID},
     error::{
-        AlreadyBoundFieldPattern, Error, ExpectPackedTuplePattern,
-        FieldNotFound, MismatchedPatternBindingType,
-        MismatchedTuplePatternLength, MoreThanOneUnpackedInTuplePattern,
+        AlreadyBoundFieldPattern, Error, FieldIsNotAccessible, FieldNotFound,
+        FoundUnpackedElementInReferenceBoundTupleType,
+        MismatchedPatternBindingType, MismatchedTuplePatternLength,
         PatternBindingType,
     },
     ir::{
@@ -32,12 +32,11 @@ use crate::{
         Wildcard,
     },
     semantic::{
-        self,
         instantiation::{self, Instantiation, MismatchedGenericParameterCount},
         term::{
             self,
             lifetime::{Lifetime, Local},
-            r#type::{Qualifier, Reference, SymbolID, Type},
+            r#type::{self, Qualifier, Reference, SymbolID, Type},
             Symbol, TupleElement,
         },
     },
@@ -53,7 +52,7 @@ enum TypeBinding<'a> {
 
 /// The error that can occur when creating a pattern.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 pub enum CreatePatternError {
     #[error("the given `block_id` is invalid")]
@@ -75,6 +74,16 @@ pub enum CreatePatternError {
          match the generic parameters of the instantiated symbol"
     )]
     MismatchedGenericParameterCount(#[from] MismatchedGenericParameterCount),
+
+    /// The type of the pattern binding contains an ill-formed tuple type. This
+    /// is considered as a compiler's error.
+    #[error(
+        "the type contains a tuple type having more than one unpacked element"
+    )]
+    MoreThanOneUnpackedInTupleType(term::Tuple<r#type::Type>),
+
+    #[error("the given `referring_site` id is invalid to the symbol table")]
+    InvalidReferringSiteID,
 }
 
 struct SideEffect<'a> {
@@ -294,7 +303,29 @@ impl<'a> SideEffect<'a> {
                             ),
                     }?;
 
-                    // TODO: check if the field is accessible
+                    if !table
+                        .is_accessible_from(
+                            referring_site,
+                            struct_id.into(),
+                            field_sym.accessibility,
+                        )
+                        .ok_or(CreatePatternError::InvalidReferringSiteID)?
+                    {
+                        // soft error, no need to stop the process
+                        handler.receive(Box::new(FieldIsNotAccessible {
+                            field_id,
+                            struct_id,
+                            referring_site,
+                            referring_identifier_span: match field {
+                                syntax_tree::pattern::Field::Association(
+                                    pat,
+                                ) => pat.identifier().span.clone(),
+                                syntax_tree::pattern::Field::Named(pat) => {
+                                    pat.identifier().span.clone()
+                                }
+                            },
+                        }));
+                    }
 
                     entry.insert(pattern);
                 }
@@ -392,43 +423,41 @@ impl<'a> SideEffect<'a> {
                     return Ok(Irrefutable::Wildcard(Wildcard));
                 };
 
-                // if the tuple has unpacking, then the it must not be bound as
-                // a reference
-                let tuple_element_patterns = tuple_pat
-                    .patterns()
-                    .iter()
-                    .flat_map(ConnectedList::elements)
-                    .collect::<Vec<_>>();
-
+                // find the position of the unpacked element
                 let unpacked_position = {
-                    let unpacked_count = tuple_element_patterns
+                    let unpacked_count = tuple_ty
+                        .elements
                         .iter()
-                        .filter(|x| x.is_packed())
+                        .filter(|x| x.is_unpacked())
                         .count();
 
                     match unpacked_count {
                         0 => None,
                         1 => Some(
-                            tuple_element_patterns
+                            tuple_ty
+                                .elements
                                 .iter()
-                                .position(|x| x.is_packed())
+                                .position(TupleElement::is_unpacked)
                                 .unwrap(),
                         ),
 
-                        _ => {
-                            handler.receive(Box::new(
-                                MoreThanOneUnpackedInTuplePattern {
-                                    illegal_tuple_pattern_span: tuple_pat
-                                        .span(),
-                                },
-                            ));
-                            return Ok(Irrefutable::Wildcard(Wildcard));
-                        }
+                        _ => return Err(
+                            CreatePatternError::MoreThanOneUnpackedInTupleType(
+                                tuple_ty.clone(),
+                            ),
+                        ),
                     }
                 };
 
                 // normal tuple pattern, the number of pattern must exactly
                 // match
+                let tuple_element_patterns = tuple_pat
+                    .patterns()
+                    .iter()
+                    .flat_map(ConnectedList::elements)
+                    .map(|x| &**x)
+                    .collect::<Vec<_>>();
+
                 if tuple_element_patterns.len() != tuple_ty.elements.len() {
                     handler.receive(Box::new(MismatchedTuplePatternLength {
                         pattern_span: tuple_pat.span(),
@@ -443,10 +472,12 @@ impl<'a> SideEffect<'a> {
 
                     // move the matched tuple elements in the unpacked range to
                     // a new tuple value and bind it to the unpacked pattern
-
                     if reference_binding_info.is_some() {
-                        // TODO: pattern with unpacked tuple element must not be
-                        // bound as a reference
+                        handler.receive(Box::new(
+                            FoundUnpackedElementInReferenceBoundTupleType {
+                                pattern_span: tuple_pat.span(),
+                            },
+                        ));
                         return Ok(Irrefutable::Wildcard(Wildcard));
                     }
 
@@ -455,24 +486,14 @@ impl<'a> SideEffect<'a> {
 
                         tuple_ty.elements[before_packed.clone()]
                             .iter()
+                            .map(|x| x.as_regular().unwrap())
                             .zip(
                                 tuple_element_patterns[before_packed]
                                     .iter()
-                                    .copied()
-                                    .map(|x| x.as_regular().unwrap()),
+                                    .copied(),
                             )
                             .enumerate()
                             .map(|(idx, (ty, pat))| {
-                                let TupleElement::Regular(ty) = ty else {
-                                    handler.receive(Box::new(
-                                        ExpectPackedTuplePattern {
-                                            regular_tuple_pattern_span: pat
-                                                .span(),
-                                        },
-                                    ));
-                                    return Ok(Irrefutable::Wildcard(Wildcard));
-                                };
-
                                 let element_address =
                                     Address::Tuple(crate::ir::address::Tuple {
                                         tuple_address: Box::new(
@@ -483,7 +504,7 @@ impl<'a> SideEffect<'a> {
 
                                 self.create_irrefutable_interanl(
                                     table,
-                                    syntax_tree,
+                                    pat,
                                     TypeBinding::Value(ty), // can only be value binding
                                     &element_address,
                                     referring_site,
@@ -497,39 +518,31 @@ impl<'a> SideEffect<'a> {
                         let after_packed = (unpacked_position + 1)
                             ..tuple_element_patterns.len();
 
+                        let after_packed_count = after_packed.clone().count();
+
                         tuple_ty.elements[after_packed.clone()]
                             .iter()
+                            .map(|x| x.as_regular().unwrap())
                             .zip(
                                 tuple_element_patterns[after_packed]
                                     .iter()
-                                    .copied()
-                                    .map(|x| x.as_regular().unwrap()),
+                                    .copied(),
                             )
                             .enumerate()
                             .map(|(idx, (ty, pat))| {
-                                let TupleElement::Regular(ty) = ty else {
-                                    handler.receive(Box::new(
-                                        ExpectPackedTuplePattern {
-                                            regular_tuple_pattern_span: pat
-                                                .span(),
-                                        },
-                                    ));
-                                    return Ok(Irrefutable::Wildcard(Wildcard));
-                                };
-
                                 let element_address =
                                     Address::Tuple(crate::ir::address::Tuple {
                                         tuple_address: Box::new(
                                             address.clone(),
                                         ),
-                                        offset: address::Offset::FromStart(
-                                            idx + unpacked_position,
+                                        offset: address::Offset::FromEnd(
+                                            after_packed_count - idx - 1,
                                         ),
                                     });
 
                                 self.create_irrefutable_interanl(
                                     table,
-                                    syntax_tree,
+                                    pat,
                                     TypeBinding::Value(ty), // can only be value binding
                                     &element_address,
                                     referring_site,
@@ -539,15 +552,13 @@ impl<'a> SideEffect<'a> {
                             .collect::<Result<Vec<_>, _>>()
                     }?;
 
-                    let packed_element = 'packed_element: {
-                        let term::TupleElement::Unpacked(ty) =
-                            tuple_ty.elements.get(unpacked_position).unwrap()
-                        else {
-                            // TODO: report mismatched error
-                            break 'packed_element Irrefutable::Wildcard(
-                                Wildcard,
-                            );
-                        };
+                    let packed_element = {
+                        let ty = tuple_ty
+                            .elements
+                            .get(unpacked_position)
+                            .unwrap()
+                            .as_unpacked()
+                            .unwrap();
 
                         // create a new alloca where all the unpacked elements
                         // will be stoered.
@@ -580,10 +591,7 @@ impl<'a> SideEffect<'a> {
                             table,
                             tuple_element_patterns
                                 .get(unpacked_position)
-                                .unwrap()
-                                .as_packed()
-                                .unwrap()
-                                .pattern(),
+                                .unwrap(),
                             TypeBinding::Value(ty),
                             &Address::Alloca(alloca_id),
                             referring_site,
@@ -599,26 +607,12 @@ impl<'a> SideEffect<'a> {
                         },
                     ))
                 } else {
-                    // check if every tuple_ty elements are regular
-                    if tuple_ty
-                        .elements
-                        .iter()
-                        .any(semantic::term::TupleElement::is_unpacked)
-                    {
-                        // TODO: report unpacked tuple element exists
-                        return Ok(Irrefutable::Wildcard(Wildcard));
-                    }
-
                     let mut elements = Vec::new();
                     for (index, (tuple_ty, tuple_pat)) in tuple_ty
                         .elements
                         .iter()
                         .map(|x| x.as_regular().unwrap())
-                        .zip(
-                            tuple_element_patterns
-                                .iter()
-                                .map(|x| x.as_regular().unwrap()),
-                        )
+                        .zip(tuple_element_patterns.iter().copied())
                         .enumerate()
                     {
                         let element_address =
@@ -626,6 +620,7 @@ impl<'a> SideEffect<'a> {
                                 tuple_address: Box::new(address.clone()),
                                 offset: address::Offset::FromStart(index),
                             });
+
                         let pattern = self.create_irrefutable_interanl(
                             table,
                             tuple_pat,
@@ -688,6 +683,7 @@ impl<T> Representation<T> {
             return Err(CreatePatternError::UnreachableBlock);
         }
 
+        let storage = Storage::<Box<dyn Error>>::default();
         let mut side_effect = SideEffect {
             new_instructions: Vec::new(),
             register_reserved: Reserve::new(&self.registers),
@@ -701,8 +697,11 @@ impl<T> Representation<T> {
             TypeBinding::Value(simplified_type),
             address,
             referring_site,
-            handler,
+            &storage,
         )?;
+
+        // have no ICEs, propagate the diagnostic
+        storage.propagate(handler);
 
         // insert new allocas
         let SideEffect {

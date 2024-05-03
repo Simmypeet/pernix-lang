@@ -31,6 +31,17 @@ impl<T: Send + Sync> Storage<T> {
 
     /// Returns a mutable reference to the underlying vector of errors.
     pub fn as_vec_mut(&self) -> RwLockWriteGuard<Vec<T>> { self.errors.write() }
+
+    /// Propagates all diagnostics to the given handler.
+    ///
+    /// The diagnostics within the storage are cleared and moved to the handler.
+    pub fn propagate<U: From<T>, H: ?Sized + Handler<U>>(&self, handler: &H) {
+        let errors = std::mem::take(&mut *self.as_vec_mut());
+
+        for error in errors {
+            handler.receive(error.into());
+        }
+    }
 }
 
 impl<T: Send + Sync> Default for Storage<T> {

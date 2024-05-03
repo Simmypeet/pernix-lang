@@ -179,30 +179,8 @@ impl<Pattern: SourceElement> SourceElement for Packed<Pattern> {
 
 /// Syntax Synopsis:
 /// ``` txt
-/// TupleElement:
-///     Packed
-///     | Pattern
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum TupleElement<Pattern> {
-    Packed(Packed<Pattern>),
-    Regular(Box<Pattern>),
-}
-
-impl<Pattern: SourceElement> SourceElement for TupleElement<Pattern> {
-    fn span(&self) -> Span {
-        match self {
-            Self::Packed(unpack) => unpack.span(),
-            Self::Regular(pattern) => pattern.span(),
-        }
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
 /// Tuple:
-///     '(' (TupleElement (',' TupleElement)* ','?)? ')'
+///     '(' (Pattern (',' Pattern)* ','?)? ')'
 ///     ;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -210,7 +188,7 @@ pub struct Tuple<Pattern> {
     #[get = "pub"]
     left_paren: Punctuation,
     #[get = "pub"]
-    patterns: Option<ConnectedList<TupleElement<Pattern>, Punctuation>>,
+    patterns: Option<ConnectedList<Box<Pattern>, Punctuation>>,
     #[get = "pub"]
     right_paren: Punctuation,
 }
@@ -377,12 +355,7 @@ impl Irrefutable {
                 .patterns
                 .iter()
                 .flat_map(ConnectedList::elements)
-                .any(|x| match x {
-                    TupleElement::Packed(pattern) => {
-                        pattern.pattern.contains_named()
-                    }
-                    TupleElement::Regular(pattern) => pattern.contains_named(),
-                }),
+                .any(|x| x.contains_named()),
             Self::Wildcard(_) => false,
         }
     }
@@ -539,41 +512,7 @@ impl<'a> Parser<'a> {
         let enclosed_tree = self.parse_enclosed_list(
             Delimiter::Parenthesis,
             ',',
-            |parser| {
-                parser.stop_at_significant();
-
-                match (
-                    parser.peek(),
-                    parser.peek_offset(1),
-                    parser.peek_offset(2),
-                ) {
-                    (
-                        Reading::Unit(Token::Punctuation(
-                            p1 @ Punctuation { punctuation: '.', .. },
-                        )),
-                        Some(Reading::Unit(Token::Punctuation(
-                            p2 @ Punctuation { punctuation: '.', .. },
-                        ))),
-                        Some(Reading::Unit(Token::Punctuation(
-                            p3 @ Punctuation { punctuation: '.', .. },
-                        ))),
-                    ) => {
-                        let ellipsis = (p1, p2, p3);
-
-                        parser.forward();
-                        parser.forward();
-                        parser.forward();
-
-                        let pattern = Box::new(T::parse(parser, handler)?);
-
-                        Some(TupleElement::Packed(Packed { ellipsis, pattern }))
-                    }
-
-                    _ => T::parse(parser, handler).map(|pattern| {
-                        TupleElement::Regular(Box::new(pattern))
-                    }),
-                }
-            },
+            |parser| T::parse(parser, handler).map(Box::new),
             handler,
         )?;
 

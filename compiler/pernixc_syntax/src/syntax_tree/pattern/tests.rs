@@ -296,62 +296,8 @@ impl<Pattern: Display> Display for Packed<Pattern> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TupleElement<Pattern> {
-    Packed(Packed<Pattern>),
-    Regular(Box<Pattern>),
-}
-
-impl<I: Debug, O: Debug> Input<&super::TupleElement<O>> for &TupleElement<I>
-where
-    for<'i, 'o> &'i I: Input<&'o O>,
-{
-    fn assert(self, output: &super::TupleElement<O>) -> TestCaseResult {
-        match (self, output) {
-            (
-                TupleElement::Packed(input),
-                super::TupleElement::Packed(output),
-            ) => input.assert(output),
-            (
-                TupleElement::Regular(input),
-                super::TupleElement::Regular(output),
-            ) => input.assert(output),
-            (input, output) => Err(TestCaseError::fail(format!(
-                "Expected {input:?} but got {output:?}",
-            ))),
-        }
-    }
-}
-
-impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
-    for TupleElement<Pattern>
-{
-    type Parameters = Option<BoxedStrategy<Pattern>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let pattern = args.unwrap_or_else(Pattern::arbitrary);
-
-        prop_oneof![
-            Packed::arbitrary().prop_map(Self::Packed),
-            pattern.prop_map(|x| Self::Regular(Box::new(x)))
-        ]
-        .boxed()
-    }
-}
-
-impl<Pattern: Display> Display for TupleElement<Pattern> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Packed(unpack) => write!(f, "{unpack}"),
-            Self::Regular(pattern) => write!(f, "{pattern}"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple<Pattern> {
-    pub patterns:
-        Option<ConnectedList<TupleElement<Pattern>, ConstantPunctuation<','>>>,
+    pub patterns: Option<ConnectedList<Box<Pattern>, ConstantPunctuation<','>>>,
 }
 
 impl<I: Debug, O: Debug> Input<&super::Tuple<O>> for &Tuple<I>
@@ -370,8 +316,9 @@ impl<Pattern: Arbitrary<Strategy = BoxedStrategy<Pattern>> + 'static> Arbitrary
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let pattern = args.unwrap_or_else(Pattern::arbitrary);
         proptest::option::of(ConnectedList::arbitrary_with(
-            TupleElement::arbitrary_with(args),
+            pattern.prop_map(Box::new),
             ConstantPunctuation::<','>::arbitrary(),
         ))
         .prop_map(|patterns| Self { patterns })

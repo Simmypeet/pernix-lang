@@ -833,30 +833,6 @@ impl<T: State> Display<T> for UndecidablePredicate {
     }
 }
 
-/// The tuple pattern contains more than one unpacked pattern.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MoreThanOneUnpackedInTuplePattern {
-    /// The span where the illegal tuple pattern was found.
-    pub illegal_tuple_pattern_span: Span,
-}
-
-impl<T: State> Display<T> for MoreThanOneUnpackedInTuplePattern {
-    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Message {
-            severity: Severity::Error,
-            display: "the tuple pattern contains more than one unpacked \
-                      pattern",
-        })?;
-
-        write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.illegal_tuple_pattern_span,
-            help_display: Option::<i32>::None,
-        })?;
-
-        Ok(())
-    }
-}
-
 /// The tuple type contains more than one unpacked type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MoreThanOneUnpackedInTupleType {
@@ -1422,6 +1398,51 @@ impl<T: State> Display<T> for AlreadyImplementedTraitMember {
     }
 }
 
+/// The field is not accessible in the given scope.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FieldIsNotAccessible {
+    /// The ID of the field that is not accessible.
+    pub field_id: ID<Field>,
+
+    /// The struct in which the field is not accessible.
+    pub struct_id: ID<Struct>,
+
+    /// The ID to the scope where the field is not accessible.
+    pub referring_site: GlobalID,
+
+    /// The span where the field is referred from.
+    pub referring_identifier_span: Span,
+}
+
+impl<T: State> Display<T> for FieldIsNotAccessible {
+    fn fmt(&self, table: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let struct_sym = table.get(self.struct_id).ok_or(fmt::Error)?;
+        let field_sym =
+            struct_sym.fields.get(self.field_id).ok_or(fmt::Error)?;
+        let referring_site_qualified_name =
+            table.get_qualified_name(self.referring_site).ok_or(fmt::Error)?;
+        let struct_qualified_name = table
+            .get_qualified_name(self.struct_id.into())
+            .ok_or(fmt::Error)?;
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the field `{}` of `{struct_qualified_name}` is not \
+                 accessible in the scope `{referring_site_qualified_name}`",
+                field_sym.name
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.referring_identifier_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        Ok(())
+    }
+}
+
 /// The trait member is implemented with different accessibility in the
 /// implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1961,22 +1982,24 @@ impl<T: State> Display<T> for MismatchedTuplePatternLength {
     }
 }
 
-/// Expect an unpacked tuple pattern.
+/// Can't bind a tuple pattern to a reference bound tuple type with unpacked
+/// element.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectPackedTuplePattern {
+pub struct FoundUnpackedElementInReferenceBoundTupleType {
     /// The span of the pattern.
-    pub regular_tuple_pattern_span: Span,
+    pub pattern_span: Span,
 }
 
-impl<T: State> Display<T> for ExpectPackedTuplePattern {
+impl<T: State> Display<T> for FoundUnpackedElementInReferenceBoundTupleType {
     fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Message {
             severity: Severity::Error,
-            display: "the pattern expects an unpacked tuple pattern",
+            display: "can't bind a tuple pattern to a reference bound tuple \
+                      type with unpacked element",
         })?;
 
         write!(f, "\n{}", SourceCodeDisplay {
-            span: &self.regular_tuple_pattern_span,
+            span: &self.pattern_span,
             help_display: Option::<i32>::None,
         })?;
 
