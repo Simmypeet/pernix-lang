@@ -705,14 +705,68 @@ impl<T> Representation<T> {
 
         // insert new allocas
         let SideEffect {
-            new_instructions,
+            mut new_instructions,
             register_reserved,
             alloca_reserved,
             ..
         } = side_effect;
 
-        let register_reserved = register_reserved.into_reserved();
-        let alloca_reserved = alloca_reserved.into_reserved();
+        let mut register_reserved = register_reserved.into_reserved();
+        let mut alloca_reserved = alloca_reserved.into_reserved();
+
+        // these are allocas ids that will be removed
+        let to_be_removed_alloca_ids = {
+            let mut ids = alloca_reserved.keys().copied().collect::<Vec<_>>();
+            pattern.remove_occurred_alloca_id(&mut ids);
+
+            ids
+        };
+
+        // remove the registers that are involved in the removed allocas
+        let removed_registers = to_be_removed_alloca_ids
+            .iter()
+            .copied()
+            .flat_map(|id| {
+                remove_reigster_with_alloca_id(&mut register_reserved, id)
+            })
+            .collect::<Vec<_>>();
+
+        // remove the instructions that are involved in the removed allocas and
+        // registers
+        new_instructions.retain(|inst| match inst {
+            Basic::Store(store) => {
+                !to_be_removed_alloca_ids
+                    .iter()
+                    .any(|x| store.address.contains_alloca_id(*x))
+                    && !removed_registers.iter().any(|x| {
+                        store.value.as_register().map_or(false, |y| x == y)
+                    })
+            }
+            Basic::RegisterAssignment(assignment) => {
+                !removed_registers.contains(&assignment.id)
+            }
+            Basic::AllocaAllocation(alloca) => {
+                !to_be_removed_alloca_ids.contains(&alloca.id)
+            }
+            Basic::TuplePack(pack) => {
+                !to_be_removed_alloca_ids
+                    .iter()
+                    .any(|x| pack.store_address.contains_alloca_id(*x))
+                    && !to_be_removed_alloca_ids
+                        .iter()
+                        .any(|x| pack.tuple_address.contains_alloca_id(*x))
+            }
+        });
+
+        // remove the unused allocas
+        for id in &to_be_removed_alloca_ids {
+            assert!(alloca_reserved.remove(id).is_some());
+        }
+
+        // remove the unused registers
+        for id in &removed_registers {
+            assert!(register_reserved.remove(id).is_some());
+        }
 
         // TODO: eliminate the unused instructions, allocas, and registers
 
@@ -732,6 +786,158 @@ impl<T> Representation<T> {
         }
 
         Ok(pattern)
+    }
+}
+
+impl Address {
+    fn contains_register(&self, id: ID<Register>) -> bool {
+        match self {
+            Self::Parameter(_) | Self::Alloca(_) => false,
+
+            Self::Field(field) => field.struct_address.contains_register(id),
+            Self::Tuple(tuple) => tuple.tuple_address.contains_register(id),
+            Self::Value(value) => {
+                if let Value::Register(register) = value {
+                    *register == id
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+impl Register {
+    fn contains_register(&self, child: ID<Self>) -> bool {
+        match self {
+            Self::Tuple(tuple) => tuple.elements.iter().any(|x| {
+                let Value::Register(register) = x.as_value() else {
+                    return false;
+                };
+
+                *register == child
+            }),
+            Self::Load(load) => load.address.contains_register(child),
+            Self::ReferenceOf(ref_of) => {
+                ref_of.address.contains_register(child)
+            }
+        }
+    }
+}
+
+fn remove_register_with_register_id(
+    registers: &mut HashMap<ID<Register>, Register>,
+    register_id: ID<Register>,
+) -> Vec<ID<Register>> {
+    registers.remove(&register_id);
+
+    let ids = registers.keys().copied().collect::<Vec<_>>();
+    let mut removed = vec![register_id];
+
+    // remove all the registers involving the register_id
+    for id in ids {
+        let Some(register) = registers.get(&id) else {
+            continue;
+        };
+
+        if register.contains_register(register_id) {
+            removed.extend(remove_register_with_register_id(registers, id));
+        }
+    }
+
+    removed
+}
+
+fn remove_reigster_with_alloca_id(
+    registers: &mut HashMap<ID<Register>, Register>,
+    alloca_id: ID<Alloca>,
+) -> Vec<ID<Register>> {
+    let mut register_to_remove = Vec::new();
+    for (id, register) in registers.iter() {
+        match register {
+            Register::Tuple(_) => {}
+            Register::Load(load) => {
+                let Address::Alloca(load_alloca_id) = &load.address else {
+                    continue;
+                };
+
+                // remove the register involved in the alloca
+                if *load_alloca_id == alloca_id {
+                    register_to_remove.push(*id);
+                }
+            }
+            Register::ReferenceOf(reference_of) => {
+                let Address::Alloca(reference_alloca_id) =
+                    &reference_of.address
+                else {
+                    continue;
+                };
+
+                // remove the register involved in the alloca
+                if *reference_alloca_id == alloca_id {
+                    register_to_remove.push(*id);
+                }
+            }
+        }
+    }
+
+    let mut result = Vec::new();
+    for id in register_to_remove {
+        result.extend(remove_register_with_register_id(registers, id));
+    }
+
+    result
+}
+
+impl Irrefutable {
+    fn remove_occurred_alloca_id(&self, to_be_removed: &mut Vec<ID<Alloca>>) {
+        match self {
+            Self::Named(named) => to_be_removed
+                .retain(|x| !named.load_address.contains_alloca_id(*x)),
+
+            Self::Tuple(tuple) => match tuple {
+                Tuple::Regular(tuple) => {
+                    for element in &tuple.elements {
+                        element.remove_occurred_alloca_id(to_be_removed);
+                    }
+                }
+                Tuple::Packed(tuple) => {
+                    tuple
+                        .packed_element
+                        .remove_occurred_alloca_id(to_be_removed);
+
+                    for element in &tuple.before_packed_elements {
+                        element.remove_occurred_alloca_id(to_be_removed);
+                    }
+
+                    for element in &tuple.after_packed_elements {
+                        element.remove_occurred_alloca_id(to_be_removed);
+                    }
+                }
+            },
+            Self::Structural(pat) => {
+                for pattern in pat.patterns_by_field_id.values() {
+                    pattern.remove_occurred_alloca_id(to_be_removed);
+                }
+            }
+            Self::Wildcard(_) => {}
+        }
+    }
+}
+
+impl Address {
+    fn contains_alloca_id(&self, alloca_id: ID<Alloca>) -> bool {
+        match self {
+            Self::Alloca(compare) => *compare == alloca_id,
+            Self::Field(fields) => {
+                fields.struct_address.contains_alloca_id(alloca_id)
+            }
+            Self::Tuple(tuple) => {
+                tuple.tuple_address.contains_alloca_id(alloca_id)
+            }
+
+            Self::Value(_) | Self::Parameter(_) => false,
+        }
     }
 }
 

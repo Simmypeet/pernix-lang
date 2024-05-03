@@ -11,6 +11,32 @@ pub enum TupleElement {
     Unpacked(Value),
 }
 
+impl TupleElement {
+    /// Returns a reference to the value.
+    #[must_use]
+    pub const fn as_value(&self) -> &Value {
+        match self {
+            Self::Regular(value) | Self::Unpacked(value) => value,
+        }
+    }
+
+    /// Returns a mutable reference to the value.
+    #[must_use]
+    pub fn as_value_mut(&mut self) -> &mut Value {
+        match self {
+            Self::Regular(value) | Self::Unpacked(value) => value,
+        }
+    }
+
+    /// Consumes the element and returns the value.
+    #[must_use]
+    pub const fn into_value(self) -> Value {
+        match self {
+            Self::Regular(value) | Self::Unpacked(value) => value,
+        }
+    }
+}
+
 /// Represents a tuple of values.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tuple {

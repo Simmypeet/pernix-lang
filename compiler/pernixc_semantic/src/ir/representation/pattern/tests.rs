@@ -907,3 +907,113 @@ fn packed_tuple() {
         );
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn optimize_unused_pack_tuple() {
+    const PACKED_TUPLE: &str = "(ref a, ?, mutable c)";
+
+    let mut representation = Representation::<()>::default();
+    let (table, referring_site) = create_table();
+
+    let pattern = create_pattern(PACKED_TUPLE);
+    let tuple_ty = Type::Tuple(Tuple {
+        elements: vec![
+            TupleElement::Regular(Type::Primitive(Primitive::Bool)),
+            TupleElement::Unpacked(Type::Parameter(MemberID {
+                parent: GenericID::Struct(ID::new(0)),
+                id: ID::new(0),
+            })),
+            TupleElement::Regular(Type::Primitive(Primitive::Int32)),
+        ],
+    });
+
+    let tuple_alloca_id = representation
+        .allocas
+        .insert(Alloca { r#type: tuple_ty.clone(), span: None });
+
+    let counter = Counter::default();
+
+    let pattern = representation
+        .create_irrefutable(
+            &table,
+            &pattern,
+            &tuple_ty,
+            &Address::Alloca(tuple_alloca_id),
+            representation.control_flow_graph.entry_block_id(),
+            referring_site.into(),
+            &counter,
+        )
+        .unwrap();
+
+    // no error
+    assert_eq!(counter.count(), 0);
+
+    let Irrefutable::Tuple(pattern::Tuple::Packed(pattern)) = pattern else {
+        panic!("Expected a named pattern")
+    };
+
+    // ref a tuple check
+    {
+        let Some(Irrefutable::Named(pattern)) =
+            pattern.before_packed_elements.first()
+        else {
+            panic!("Expected a named pattern")
+        };
+
+        representation.check_reference_bound_named_pattern(
+            pattern,
+            "a",
+            &Address::Tuple(address::Tuple {
+                tuple_address: Box::new(Address::Alloca(tuple_alloca_id)),
+                offset: address::Offset::FromStart(0),
+            }),
+            Qualifier::Immutable,
+            Lifetime::Local(Local(
+                representation.control_flow_graph.starting_scope_id(),
+            )),
+            &Type::Primitive(Primitive::Bool),
+        );
+    }
+
+    // mutable c check field
+    {
+        let Some(Irrefutable::Named(pattern)) =
+            pattern.after_packed_elements.first()
+        else {
+            panic!("Expected a named pattern")
+        };
+
+        assert_eq!(pattern.name, "c");
+        assert!(pattern.mutable);
+
+        // should store the address at some alloca
+        let Address::Tuple(tuple_address) = &pattern.load_address else {
+            panic!("Expected a tuple address")
+        };
+
+        assert_eq!(tuple_address.offset, address::Offset::FromEnd(0));
+        assert_eq!(
+            &*tuple_address.tuple_address,
+            &Address::Alloca(tuple_alloca_id)
+        );
+    }
+
+    {
+        let block = representation
+            .control_flow_graph
+            .get_block(representation.control_flow_graph.entry_block_id())
+            .unwrap();
+
+        // no need to pack the tuple since it's not used (wildcard)
+        assert!(!block.instructions().iter().any(|inst| {
+            let Instruction::Basic(Basic::TuplePack(pack)) = inst else {
+                return false;
+            };
+
+            pack.before_packed_element_count == 1
+                && pack.after_packed_element_count == 1
+                && pack.tuple_address == Address::Alloca(tuple_alloca_id)
+        }));
+    }
+}

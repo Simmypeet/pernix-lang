@@ -1,5 +1,7 @@
 //! Contains the definition of [`Value`] and its variants.
 
+use enum_as_inner::EnumAsInner;
+
 use self::{literal::Literal, register::Register};
 use crate::arena::ID;
 
@@ -16,7 +18,9 @@ pub mod register;
 ///
 /// For example, the expression `32` is a literal, while the expression
 /// `a + 32` is a register.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 #[allow(missing_docs)]
 pub enum Value {
     Literal(Literal),
