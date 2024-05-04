@@ -378,7 +378,7 @@ pub trait EliidedTermProvider<T>: Debug {
 
 /// A trait for observing the resolution process.
 ///
-/// The trait will notified when a type, lifetime, or constant is resolved
+/// The trait will be notified when a type, lifetime, or constant is resolved
 /// during the resolution process.
 pub trait Observer: Debug {
     /// Notifies the observer when a type is resolved.

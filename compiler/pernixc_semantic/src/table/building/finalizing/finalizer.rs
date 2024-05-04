@@ -407,12 +407,12 @@ impl Table<Finalizer> {
                 handler,
             );
 
-            // update the state of the symbol
-            synchronization.state_flag.lock().replace(next_flag);
-
             // notify all waiting threads
             let mut builder_write = self.state.write();
             let states = T::get_states_mut(&mut builder_write);
+
+            // update the state of the symbol
+            synchronization.state_flag.lock().replace(next_flag);
 
             let dependencies = states
                 .get_mut(&id)
@@ -487,8 +487,10 @@ impl Table<Finalizer> {
                     });
                 }
 
-                if flag_some >= to_flag {
-                    return Ok(());
+                if let Some(flag_some) = *flag {
+                    if flag_some >= to_flag {
+                        return Ok(());
+                    }
                 }
             }
 
@@ -542,8 +544,8 @@ impl Table<Finalizer> {
         }
 
         // cyclic dependency detection
-        if let Some(referring_site) = required_from {
-            if referring_site == id.into() {
+        if let Some(required_from) = required_from {
+            if required_from == id.into() {
                 if report_cyclic_dependency_to_handler
                     && builder_write
                         .reported_cyclic_dependencies
@@ -567,7 +569,7 @@ impl Table<Finalizer> {
                 .copied()
             {
                 // cyclic dependency found
-                if dependency == referring_site {
+                if dependency == required_from {
                     let dependency_stack_set = dependency_stack
                         .iter()
                         .copied()
@@ -597,14 +599,14 @@ impl Table<Finalizer> {
             // to the builder
             builder_write
                 .dependencies_by_dependant
-                .insert(referring_site, id.into());
+                .insert(required_from, id.into());
             T::get_states_mut(&mut builder_write)
                 .get_mut(&id)
                 .unwrap()
                 .dependants_by_flag
                 .entry(to_flag)
                 .or_default()
-                .insert(referring_site);
+                .insert(required_from);
         }
 
         // drop the builder write

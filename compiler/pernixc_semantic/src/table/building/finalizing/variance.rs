@@ -462,3 +462,6 @@ where
 
     collector.locations
 }
+
+#[cfg(test)]
+mod tests;

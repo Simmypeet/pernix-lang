@@ -984,13 +984,13 @@ impl Display for WhereClause {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameter {
     pub irrefutable_pattern: Irrefutable,
-    pub ty: r#type::tests::Type,
+    pub r#type: r#type::tests::Type,
 }
 
 impl Input<&super::Parameter> for &Parameter {
     fn assert(self, output: &super::Parameter) -> TestCaseResult {
         self.irrefutable_pattern.assert(output.irrefutable_pattern())?;
-        self.ty.assert(output.ty())
+        self.r#type.assert(output.r#type())
     }
 }
 
@@ -1002,7 +1002,7 @@ impl Arbitrary for Parameter {
         (Irrefutable::arbitrary(), r#type::tests::Type::arbitrary())
             .prop_map(|(irrefutable_pattern, ty)| Self {
                 irrefutable_pattern,
-                ty,
+                r#type: ty,
             })
             .boxed()
     }
@@ -1010,7 +1010,7 @@ impl Arbitrary for Parameter {
 
 impl Display for Parameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.irrefutable_pattern, self.ty)
+        write!(f, "{}: {}", self.irrefutable_pattern, self.r#type)
     }
 }
 
@@ -1052,12 +1052,12 @@ impl Display for Parameters {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReturnType {
-    pub ty: r#type::tests::Type,
+    pub r#type: r#type::tests::Type,
 }
 
 impl Input<&super::ReturnType> for &ReturnType {
     fn assert(self, output: &super::ReturnType) -> TestCaseResult {
-        self.ty.assert(output.ty())
+        self.r#type.assert(output.r#type())
     }
 }
 
@@ -1066,13 +1066,15 @@ impl Arbitrary for ReturnType {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        r#type::tests::Type::arbitrary().prop_map(|ty| Self { ty }).boxed()
+        r#type::tests::Type::arbitrary()
+            .prop_map(|ty| Self { r#type: ty })
+            .boxed()
     }
 }
 
 impl Display for ReturnType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.ty, f)
+        Display::fmt(&self.r#type, f)
     }
 }
 

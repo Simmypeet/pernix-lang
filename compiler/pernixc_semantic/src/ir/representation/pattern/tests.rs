@@ -76,7 +76,7 @@ fn create_pattern(source: impl Display) -> syntax_tree::pattern::Irrefutable {
     pattern
 }
 
-impl<T> Representation<T> {
+impl Representation {
     /// Check for the named pattern that bound as `ref QUALIFIER IDENTIFIER`
     fn check_reference_bound_named_pattern(
         &self,
@@ -211,7 +211,7 @@ fn create_table_with_struct(
 fn value_bound_named() {
     const VALUE_BOUND_NAMED: &str = "mutable helloWorld";
 
-    let mut representation = Representation::<()>::default();
+    let mut representation = Representation::default();
     let (table, referring_site) = create_table();
     let pattern = create_pattern(VALUE_BOUND_NAMED);
 
@@ -249,7 +249,7 @@ fn value_bound_named() {
 fn reference_bound_named() {
     const SIMPLE_NAMED_VALUE_BOUND: &str = "ref unique helloWorld";
 
-    let mut representation = Representation::<()>::default();
+    let mut representation = Representation::default();
     let (table, referring_site) = create_table();
     let pattern = create_pattern(SIMPLE_NAMED_VALUE_BOUND);
 
@@ -295,7 +295,7 @@ fn reference_bound_named() {
 fn value_bound_struct() {
     const VALUE_BOUND_STRUCT: &str = "{ ref unique a, mutable b }";
 
-    let mut representation = Representation::<()>::default();
+    let mut representation = Representation::default();
     let (table, referring_site, struct_id) =
         create_table_with_struct(|_, parent_module_id| Struct {
             name: "Test".to_string(),
@@ -429,7 +429,7 @@ fn reference_bound_struct() {
     // both a and b are bound by reference
     const REFERENCE_BOUND_STRUCT: &str = "{ ref a, mutable b }";
 
-    let mut representation = Representation::<()>::default();
+    let mut representation = Representation::default();
     let (table, referring_site, struct_id) =
         create_table_with_struct(|_, parent_module_id| Struct {
             name: "Test".to_string(),
@@ -582,7 +582,7 @@ fn reference_bound_struct() {
 fn value_bound_tuple() {
     const VALUE_BOUND_TUPLE: &str = "(ref a, mutable b)";
 
-    let mut representation = Representation::<()>::default();
+    let mut representation = Representation::default();
     let (table, referring_site) = create_table();
 
     let pattern = create_pattern(VALUE_BOUND_TUPLE);
@@ -665,7 +665,7 @@ fn value_bound_tuple() {
 fn reference_bound_tuple() {
     const REFERENCE_BOUND_TUPLE: &str = "(ref a, mutable b)";
 
-    let mut representation = Representation::<()>::default();
+    let mut representation = Representation::default();
     let (table, referring_site) = create_table();
 
     let pattern = create_pattern(REFERENCE_BOUND_TUPLE);
@@ -769,7 +769,7 @@ fn reference_bound_tuple() {
 fn packed_tuple() {
     const PACKED_TUPLE: &str = "(ref a, b, mutable c)";
 
-    let mut representation = Representation::<()>::default();
+    let mut representation = Representation::default();
     let (table, referring_site) = create_table();
 
     let pattern = create_pattern(PACKED_TUPLE);
@@ -913,7 +913,7 @@ fn packed_tuple() {
 fn optimize_unused_pack_tuple() {
     const PACKED_TUPLE: &str = "(ref a, ?, mutable c)";
 
-    let mut representation = Representation::<()>::default();
+    let mut representation = Representation::default();
     let (table, referring_site) = create_table();
 
     let pattern = create_pattern(PACKED_TUPLE);

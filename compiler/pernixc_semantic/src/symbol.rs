@@ -14,7 +14,8 @@ use pernixc_syntax::syntax_tree::AccessModifier;
 
 use crate::{
     arena::{Arena, Map, ID},
-    pattern::Irrefutable,
+    ir::{self, Suboptimal, Success},
+    pattern::{Irrefutable, NameBindingPoint},
     semantic::{
         predicate,
         term::{constant, lifetime, r#type, GenericArguments, Never},
@@ -1106,6 +1107,22 @@ pub struct FunctionTemplate<ParentID: 'static, Data: 'static> {
     pub data: Data,
 }
 
+/// Represents an intermediate representation of the function.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionIR {
+    /// The intermediate representation contains the fully/correctly
+    /// representation of the function.
+    Success(ir::IR<Success>),
+
+    /// The function contains a semantic error, which causes the function may
+    /// not be able to be compiled to its correct meaning.
+    Suboptimal(ir::IR<Suboptimal>),
+}
+
+impl Default for FunctionIR {
+    fn default() -> Self { Self::Suboptimal(ir::IR::default()) }
+}
+
 /// Contains the data for the regular function declaration i.e. those that are
 /// declared in the module level.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1118,7 +1135,12 @@ pub struct FunctionData {
 
     /// Maps the parameter ID to its matching pattern.
     pub patterns_by_parameter_id: HashMap<ID<Parameter>, Irrefutable>,
-    // TODO: Function IR
+
+    /// The named bindings occurred in the parameters of the function.
+    pub parameters_name_binding_point: NameBindingPoint,
+
+    /// The intermediate representation of the function.
+    pub ir: FunctionIR,
 }
 
 /// Represents a regular function declaration i.e. those that are declared in

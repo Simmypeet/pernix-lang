@@ -14,12 +14,13 @@ pub mod value;
 pub struct Success(() /* Prevent arbitrary instantiation */);
 
 /// A tag type representing an IR that is suboptimal (contains an error).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Suboptimal(() /* Prevent arbitrary instantitation */);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Suboptimal(pub ());
 
 /// An intermediate representation of the program.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct IR<T> {
-    representation: Representation<T>,
+    representation: Representation,
+
     state: T,
 }

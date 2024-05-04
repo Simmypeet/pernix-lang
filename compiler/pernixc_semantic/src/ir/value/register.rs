@@ -1,7 +1,9 @@
 //! Contains the definition of [`Register`] and its variants.
 
+use pernixc_base::source_file::Span;
+
 use super::Value;
-use crate::ir::address::Address;
+use crate::{ir::address::Address, semantic::term::r#type::Qualifier};
 
 /// Represents an element of a [`Tuple`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -42,6 +44,9 @@ impl TupleElement {
 pub struct Tuple {
     /// The elements of the tuple.
     pub elements: Vec<TupleElement>,
+
+    /// The span where the tuple is created.
+    pub span: Option<Span>,
 }
 
 /// An enumeration of either moving or copying loads.
@@ -63,6 +68,9 @@ pub struct Load {
 
     /// The kind of load.
     pub kind: LoadKind,
+
+    /// The span where the load is created.
+    pub span: Option<Span>,
 }
 
 /// Obtains a reference at the given address.
@@ -70,6 +78,12 @@ pub struct Load {
 pub struct ReferenceOf {
     /// The address to the value.
     pub address: Address,
+
+    /// The qualfier of the reference.
+    pub qualifier: Qualifier,
+
+    /// The span where the reference is created.
+    pub span: Option<Span>,
 }
 
 /// An enumeration of the different kinds of registers.

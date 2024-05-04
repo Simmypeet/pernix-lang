@@ -23,7 +23,7 @@ pub enum GetSubValuesError {
     InvalidRegisterID(ID<Register>),
 }
 
-impl<T> Representation<T> {
+impl Representation {
     /// Gets all the sub-values of the given address recursively.
     ///
     /// # Errors

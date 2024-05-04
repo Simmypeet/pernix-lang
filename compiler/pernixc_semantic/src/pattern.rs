@@ -1,11 +1,13 @@
 //! Contains the definition of patterns
 
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
+
+use pernixc_base::{diagnostic::Handler, source_file::Span};
 
 use crate::{
     arena::ID,
+    error::{AlreadyBoundName, Error},
     ir::address::Address,
-    semantic::session::ExceedLimitError,
     symbol::{Field, Struct},
 };
 
@@ -52,6 +54,9 @@ pub struct Named {
 
     /// Determined if the underlying value is mutable or not.
     pub mutable: bool,
+
+    /// The span to the identifier of the name binding.
+    pub span: Option<Span>,
 }
 
 /// A tuple binding where alll of the patterns are regular.
@@ -124,16 +129,66 @@ impl Pattern for Irrefutable {}
 
 impl Pattern for Refutable {}
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum CreatePatternError {
-    #[error(transparent)]
-    ExceedLimitError(#[from] ExceedLimitError),
+/// Contains all the named bindings in the patterns.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NameBindingPoint {
+    /// Mapping from the name of the binding to the named pattern.
+    pub named_patterns_by_name: HashMap<String, Named>,
+}
 
-    #[error(
-        "The given block is unreachable and cannot be used to create a pattern"
-    )]
-    UnreachableBlock,
+impl NameBindingPoint {
+    /// Adds all the named binding occurrences in the pattern to this binding
+    /// point.
+    pub fn add_irrefutable_binding(
+        &mut self,
+        irrefutable: &Irrefutable,
+        handler: &dyn Handler<Box<dyn Error>>,
+    ) {
+        match irrefutable {
+            Irrefutable::Named(named) => {
+                match self.named_patterns_by_name.entry(named.name.clone()) {
+                    Entry::Occupied(entry) => {
+                        if let (Some(first), Some(later)) =
+                            (&entry.get().span, &named.span)
+                        {
+                            handler.receive(Box::new(AlreadyBoundName {
+                                already_bound_identifier_span: first.clone(),
+                                new_binding_span: later.clone(),
+                            }));
+                        }
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(named.clone());
+                    }
+                }
+            }
+            Irrefutable::Tuple(tuple) => match tuple {
+                Tuple::Regular(tuple) => {
+                    for element in &tuple.elements {
+                        self.add_irrefutable_binding(element, handler);
+                    }
+                }
+                Tuple::Packed(tuple) => {
+                    for element in &tuple.before_packed_elements {
+                        self.add_irrefutable_binding(element, handler);
+                    }
+
+                    self.add_irrefutable_binding(
+                        &tuple.packed_element,
+                        handler,
+                    );
+
+                    for element in &tuple.after_packed_elements {
+                        self.add_irrefutable_binding(element, handler);
+                    }
+                }
+            },
+            Irrefutable::Structural(structural) => {
+                for pattern in structural.patterns_by_field_id.values() {
+                    self.add_irrefutable_binding(pattern, handler);
+                }
+            }
+            Irrefutable::Wildcard(_) => {}
+        }
+    }
 }

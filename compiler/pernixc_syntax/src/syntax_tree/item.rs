@@ -1001,12 +1001,12 @@ pub struct Parameter {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    ty: r#type::Type,
+    r#type: r#type::Type,
 }
 
 impl SourceElement for Parameter {
     fn span(&self) -> Span {
-        self.irrefutable_pattern.span().join(&self.ty.span()).unwrap()
+        self.irrefutable_pattern.span().join(&self.r#type.span()).unwrap()
     }
 }
 
@@ -1061,11 +1061,13 @@ pub struct ReturnType {
     #[get = "pub"]
     colon: Punctuation,
     #[get = "pub"]
-    ty: r#type::Type,
+    r#type: r#type::Type,
 }
 
 impl SourceElement for ReturnType {
-    fn span(&self) -> Span { self.colon.span.join(&self.ty.span()).unwrap() }
+    fn span(&self) -> Span {
+        self.colon.span.join(&self.r#type.span()).unwrap()
+    }
 }
 
 /// Syntax Synopsis:
@@ -2456,7 +2458,7 @@ impl<'a> Parser<'a> {
                 let colon = parser.parse_punctuation(':', true, handler)?;
                 let ty = parser.parse_type(handler)?;
 
-                Some(Parameter { irrefutable_pattern, colon, ty })
+                Some(Parameter { irrefutable_pattern, colon, r#type: ty })
             },
             handler,
         )?;
@@ -2471,7 +2473,7 @@ impl<'a> Parser<'a> {
             Reading::Unit(Token::Punctuation(p)) if p.punctuation == ':' => {
                 Some(ReturnType {
                     colon: self.parse_punctuation(':', true, handler)?,
-                    ty: self.parse_type(handler)?,
+                    r#type: self.parse_type(handler)?,
                 })
             }
             _ => None,

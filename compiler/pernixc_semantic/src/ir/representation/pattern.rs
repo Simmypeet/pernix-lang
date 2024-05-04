@@ -4,6 +4,7 @@ use pernixc_base::{
     diagnostic::{Handler, Storage},
     source_file::{SourceElement, Span},
 };
+use pernixc_lexical::token::Identifier;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::Representation;
@@ -99,7 +100,8 @@ impl<'a> SideEffect<'a> {
         reference_ty: Reference,
         span: Span,
         address: &Address,
-        name: String,
+        qualifier: Qualifier,
+        identifier: &Identifier,
         mutable: bool,
     ) -> Named {
         let alloca_id = self.alloca_reserved.reserve(Alloca {
@@ -109,9 +111,10 @@ impl<'a> SideEffect<'a> {
 
         // create a register that holds the reference of the
         // value
-        let register_id = self.register_reserved.reserve(
-            Register::ReferenceOf(ReferenceOf { address: address.clone() }),
-        );
+        let register_id =
+            self.register_reserved.reserve(Register::ReferenceOf(
+                ReferenceOf { address: address.clone(), qualifier, span: None },
+            ));
 
         self.new_instructions.push(instruction::Basic::AllocaAllocation(
             AllocaAllocation { id: alloca_id },
@@ -124,7 +127,12 @@ impl<'a> SideEffect<'a> {
             value: Value::Register(register_id),
         }));
 
-        Named { name, load_address: Address::Alloca(alloca_id), mutable }
+        Named {
+            name: identifier.span.str().to_owned(),
+            load_address: Address::Alloca(alloca_id),
+            mutable,
+            span: Some(identifier.span.clone()),
+        }
     }
 
     fn reduce_reference<'b>(
@@ -146,6 +154,7 @@ impl<'a> SideEffect<'a> {
                         self.register_reserved.reserve(Register::Load(Load {
                             address: address.clone(),
                             kind: LoadKind::Copy,
+                            span: None,
                         }));
                     self.new_instructions.push(Basic::RegisterAssignment(
                         RegisterAssignment { id: register },
@@ -342,37 +351,38 @@ impl<'a> SideEffect<'a> {
                     (
                         syntax_tree::pattern::Binding::Ref(ref_binding),
                         TypeBinding::Value(ty),
-                    ) => Irrefutable::Named(
-                        self.create_reference_bound_named_pattern(
-                            Reference {
-                                qualifier: ref_binding
-                                    .qualifier()
-                                    .as_ref()
-                                    .map_or(
-                                        Qualifier::Immutable,
-                                        |q| match q {
-                                            syntax_tree::Qualifier::Mutable(
-                                                _,
-                                            ) => Qualifier::Mutable,
-                                            syntax_tree::Qualifier::Unique(
-                                                _,
-                                            ) => Qualifier::Unique,
-                                        },
-                                    ),
+                    ) => {
+                        let qualifier = ref_binding
+                            .qualifier()
+                            .as_ref()
+                            .map_or(Qualifier::Immutable, |q| match q {
+                                syntax_tree::Qualifier::Mutable(_) => {
+                                    Qualifier::Mutable
+                                }
+                                syntax_tree::Qualifier::Unique(_) => {
+                                    Qualifier::Unique
+                                }
+                            });
 
-                                lifetime: Lifetime::Local(Local(
-                                    self.current_scope_id,
-                                )),
+                        Irrefutable::Named(
+                            self.create_reference_bound_named_pattern(
+                                Reference {
+                                    qualifier,
+                                    lifetime: Lifetime::Local(Local(
+                                        self.current_scope_id,
+                                    )),
 
-                                #[allow(unreachable_code)]
-                                pointee: Box::new(ty.clone()),
-                            },
-                            named.span(),
-                            address,
-                            named.identifier().span.str().to_owned(),
-                            false,
-                        ),
-                    ),
+                                    #[allow(unreachable_code)]
+                                    pointee: Box::new(ty.clone()),
+                                },
+                                named.span(),
+                                address,
+                                qualifier,
+                                named.identifier(),
+                                false,
+                            ),
+                        )
+                    }
 
                     // normal value binding
                     (
@@ -384,6 +394,7 @@ impl<'a> SideEffect<'a> {
                         name: named.identifier().span.str().to_owned(),
                         load_address: address.clone(),
                         mutable: mutable_keyword.is_some(),
+                        span: Some(named.identifier().span.clone()),
                     }),
 
                     (
@@ -398,7 +409,8 @@ impl<'a> SideEffect<'a> {
                             },
                             named.span(),
                             address,
-                            named.identifier().span.str().to_owned(),
+                            qualifier,
+                            named.identifier(),
                             match binding {
                                 syntax_tree::pattern::Binding::Ref(_) => false,
                                 syntax_tree::pattern::Binding::Value {
@@ -655,7 +667,7 @@ impl<'a> SideEffect<'a> {
     }
 }
 
-impl<T> Representation<T> {
+impl Representation {
     /// Creates an irrefutable pattern from the given syntax tree.
     ///
     /// # Errors

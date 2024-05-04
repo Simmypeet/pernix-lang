@@ -2007,6 +2007,41 @@ impl<T: State> Display<T> for FoundUnpackedElementInReferenceBoundTupleType {
     }
 }
 
+/// A particular name has already been bound in the given scope.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AlreadyBoundName {
+    /// The span of the already bound identifier.
+    pub already_bound_identifier_span: Span,
+
+    /// The span of the rebinding.
+    pub new_binding_span: Span,
+}
+
+impl<T: State> Display<T> for AlreadyBoundName {
+    fn fmt(&self, _: &Table<T>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = self.already_bound_identifier_span.str();
+
+        write!(f, "{}", Message {
+            severity: Severity::Error,
+            display: format!(
+                "the name `{name}` has already been bound in the scope"
+            ),
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.new_binding_span,
+            help_display: Option::<i32>::None,
+        })?;
+
+        write!(f, "\n{}", SourceCodeDisplay {
+            span: &self.already_bound_identifier_span,
+            help_display: Some("the name is already bound here"),
+        })?;
+
+        Ok(())
+    }
+}
+
 /// Implemented by all semantic errors.
 pub trait Error: Debug + Display<Suboptimal> + Send + Sync + 'static {
     #[allow(missing_docs, clippy::missing_errors_doc)]

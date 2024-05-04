@@ -8,10 +8,8 @@ pub mod sub_value;
 
 /// An intermediate representation of the program.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Representation<T> {
+pub struct Representation {
     control_flow_graph: ControlFlowGraph,
     registers: Arena<Register>,
     allocas: Arena<Alloca>,
-
-    _marker: std::marker::PhantomData<T>,
 }
