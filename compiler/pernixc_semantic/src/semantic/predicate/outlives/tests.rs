@@ -434,7 +434,6 @@ fn property_based_testing<T: Term + 'static>(
 where
     session::Default: Session<T>,
 {
-    dbg!(property);
     let (term1, term2) = property.generate();
     let mut premise = Premise::default();
     let mut table = Table::<State>::default();

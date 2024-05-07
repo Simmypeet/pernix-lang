@@ -2,7 +2,7 @@ use parking_lot::RwLockReadGuard;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{build_flag, Finalize};
+use super::Finalize;
 use crate::{
     arena::ID,
     error::{self, AmbiguousImplementation},
@@ -13,42 +13,44 @@ use crate::{
     },
     symbol::{GlobalID, Trait, TraitImplementationKindID},
     table::{
-        building::finalizing::{occurrences::Occurrences, Finalizer},
+        building::finalizing::{
+            finalizer::build_preset, occurrences::Occurrences, Finalizer,
+        },
         Index, Table,
     },
 };
 
-build_flag! {
-    pub enum Flag {
-        /// Generic parameters are built
-        GenericParameter,
-        /// Where clause predicates are built
-        WhereClause,
-        /// Thet trait members are built to completion
-        Members,
-        /// All the implementations are built to completion
-        Complete,
-        /// Bounds check are performed
-        Check,
-    }
-}
+/// Generic parameters are built
+pub const GENERIC_PARAMETER_STATE: usize = 0;
+
+/// Where cluase predicates are built
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
+/// All the trait members are built to completion.
+pub const MEMBERS_STATE: usize = 2;
+
+/// All the trait implementations are built to completion.
+pub const IMPLEMENTATIONS_STATE: usize = 3;
+
+/// Bounds check are performed
+pub const CHECK_STATE: usize = 4;
 
 impl Finalize for Trait {
     type SyntaxTree = syntax_tree::item::TraitSignature;
-    type Flag = Flag;
+    const FINAL_STATE: usize = CHECK_STATE;
     type Data = Occurrences;
 
     #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
-        state_flag: Self::Flag,
+        state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
         data: &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match state_flag {
-            Flag::GenericParameter => {
+            GENERIC_PARAMETER_STATE => {
                 table.create_generic_parameters(
                     symbol_id,
                     syntax_tree.generic_parameters().as_ref(),
@@ -56,7 +58,7 @@ impl Finalize for Trait {
                     handler,
                 );
             }
-            Flag::WhereClause => {
+            WHERE_CLAUSE_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
                     syntax_tree.where_clause().as_ref(),
@@ -64,7 +66,7 @@ impl Finalize for Trait {
                     handler,
                 );
             }
-            Flag::Members => {
+            MEMBERS_STATE => {
                 let trait_members = table
                     .get(symbol_id)
                     .unwrap()
@@ -74,15 +76,15 @@ impl Finalize for Trait {
                     .collect::<Vec<_>>();
 
                 for member_id in trait_members {
-                    let _ = table.build_to_completion(
+                    let _ = table.build_preset::<build_preset::Complete>(
                         member_id.into(),
-                        symbol_id.into(),
+                        Some(symbol_id.into()),
                         false,
                         handler,
                     );
                 }
             }
-            Flag::Complete => {
+            IMPLEMENTATIONS_STATE => {
                 let implementations = table
                     .get(symbol_id)
                     .unwrap()
@@ -102,22 +104,22 @@ impl Finalize for Trait {
                     .collect::<Vec<_>>();
 
                 for implementation_id in implementations {
-                    let _ = table.build_to_completion(
+                    let _ = table.build_preset::<build_preset::Complete>(
                         implementation_id,
-                        symbol_id.into(),
+                        Some(symbol_id.into()),
                         false,
                         handler,
                     );
                 }
 
-                data.build_all_occurrences_to_completion(
+                data.build_all_occurrences_to::<build_preset::Complete>(
                     table,
                     symbol_id.into(),
                     false,
                     handler,
                 );
             }
-            Flag::Check => {
+            CHECK_STATE => {
                 table.check_occurrences(symbol_id.into(), data, handler);
 
                 // check for the ambiguous implementations
@@ -240,6 +242,7 @@ impl Finalize for Trait {
                     }
                 }
             }
+            _ => panic!("invalid state flag"),
         }
     }
 }

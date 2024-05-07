@@ -118,7 +118,7 @@ impl<S: State> Table<S> {
         &self,
         respect_to_type: &Type,
         mut locations: Vec<TermLocation>,
-    ) -> Result<Variance, ExceedLimitError>
+    ) -> Result<Option<Variance>, ExceedLimitError>
     where
         for<'a, 'l, 'r, 'v> TermCollector<'a, 'l, 'r, U, T, R>:
             visitor::Recursive<'v, Lifetime>
@@ -126,7 +126,7 @@ impl<S: State> Table<S> {
                 + visitor::Recursive<'v, Constant>,
     {
         let this_location = if locations.is_empty() {
-            return Ok(Variance::Bivariant);
+            return Ok(Some(Variance::Bivariant));
         } else {
             locations.remove(0)
         };
@@ -161,12 +161,11 @@ impl<S: State> Table<S> {
                                 .generic_parameter_variances()
                                 .variances_by_lifetime_ids
                                 .get(&id)
-                                .copied()
-                                .unwrap())
+                                .copied())
                         }
 
                         // results None, we need to normalize the type
-                        SymbolID::Type(_) => Ok(Variance::Bivariant),
+                        SymbolID::Type(_) => Ok(None),
                     }
                 }
 
@@ -174,7 +173,7 @@ impl<S: State> Table<S> {
                 (SubLifetimeLocation::Reference, Type::Reference(_)) => {
                     assert!(locations.is_empty());
 
-                    Ok(Variance::Covariant)
+                    Ok(Some(Variance::Covariant))
                 }
 
                 (location, ty) => unreachable!(
@@ -213,16 +212,29 @@ impl<S: State> Table<S> {
                                         locations,
                                     )?;
 
-                                Ok(adt
-                                    .generic_parameter_variances()
-                                    .variances_by_type_ids
-                                    .get(&id)
-                                    .copied()
-                                    .unwrap()
-                                    .chain(inner_variance))
+                                Ok(
+                                    match (
+                                        inner_variance,
+                                        adt.generic_parameter_variances()
+                                            .variances_by_type_ids
+                                            .get(&id)
+                                            .copied(),
+                                    ) {
+                                        (Some(first), Some(second)) => {
+                                            Some(first.chain(second))
+                                        }
+
+                                        (Some(variance), None)
+                                        | (None, Some(variance)) => {
+                                            Some(variance)
+                                        }
+
+                                        (None, None) => None,
+                                    },
+                                )
                             }
 
-                            SymbolID::Type(_) => Ok(Variance::Bivariant),
+                            SymbolID::Type(_) => Ok(None),
                         }
                     }
 
@@ -230,14 +242,20 @@ impl<S: State> Table<S> {
                         if pointer.qualifier == Qualifier::Mutable
                             || pointer.qualifier == Qualifier::Unique
                         {
-                            Ok(Variance::Invariant)
+                            Ok(Some(Variance::Invariant))
                         } else {
-                            Ok(self
-                                .get_variance_for_locations(
+                            Ok(Some(
+                                self.get_variance_for_locations(
                                     &pointer.pointee,
                                     locations,
                                 )?
-                                .chain(Variance::Covariant))
+                                .map_or(
+                                    Variance::Covariant,
+                                    |variance| {
+                                        variance.chain(Variance::Covariant)
+                                    },
+                                ),
+                            ))
                         }
                     }
 
@@ -248,20 +266,32 @@ impl<S: State> Table<S> {
                         if reference.qualifier == Qualifier::Mutable
                             || reference.qualifier == Qualifier::Unique
                         {
-                            Ok(Variance::Invariant)
+                            Ok(Some(Variance::Invariant))
                         } else {
-                            Ok(self
-                                .get_variance_for_locations(
+                            Ok(Some(
+                                self.get_variance_for_locations(
                                     &reference.pointee,
                                     locations,
                                 )?
-                                .chain(Variance::Covariant))
+                                .map_or(
+                                    Variance::Covariant,
+                                    |variance| {
+                                        variance.chain(Variance::Covariant)
+                                    },
+                                ),
+                            ))
                         }
                     }
 
-                    (SubTypeLocation::Array, Type::Array(array)) => Ok(self
-                        .get_variance_for_locations(&array.r#type, locations)?
-                        .chain(Variance::Covariant)),
+                    (SubTypeLocation::Array, Type::Array(array)) => Ok(Some(
+                        self.get_variance_for_locations(
+                            &array.r#type,
+                            locations,
+                        )?
+                        .map_or(Variance::Covariant, |variance| {
+                            variance.chain(Variance::Covariant)
+                        }),
+                    )),
 
                     (
                         location @ SubTypeLocation::Tuple(_),
@@ -269,28 +299,39 @@ impl<S: State> Table<S> {
                     ) => {
                         let tuple = location.get_sub_term(tuple).unwrap();
 
-                        Ok(self
-                            .get_variance_for_locations(&tuple, locations)?
-                            .chain(Variance::Covariant))
+                        Ok(Some(
+                            self.get_variance_for_locations(&tuple, locations)?
+                                .map_or(Variance::Covariant, |variance| {
+                                    variance.chain(Variance::Covariant)
+                                }),
+                        ))
                     }
 
-                    (SubTypeLocation::Local, Type::Local(local)) => Ok(self
-                        .get_variance_for_locations(&local.0, locations)?
-                        .chain(Variance::Covariant)),
+                    (SubTypeLocation::Local, Type::Local(local)) => Ok(Some(
+                        self.get_variance_for_locations(&local.0, locations)?
+                            .map_or(Variance::Covariant, |variance| {
+                                variance.chain(Variance::Covariant)
+                            }),
+                    )),
 
                     (SubTypeLocation::Phantom, Type::Phantom(phantom)) => {
-                        Ok(self
-                            .get_variance_for_locations(&phantom.0, locations)?
-                            .chain(Variance::Covariant))
+                        Ok(Some(
+                            self.get_variance_for_locations(
+                                &phantom.0, locations,
+                            )?
+                            .map_or(Variance::Covariant, |variance| {
+                                variance.chain(Variance::Covariant)
+                            }),
+                        ))
                     }
 
                     (
                         SubTypeLocation::MemberSymbol(_),
                         Type::MemberSymbol(_),
-                    ) => Ok(Variance::Bivariant),
+                    ) => Ok(None),
 
                     (SubTypeLocation::TraitMember(_), Type::TraitMember(_)) => {
-                        Ok(Variance::Invariant)
+                        Ok(Some(Variance::Invariant))
                     }
 
                     _ => unreachable!(),
@@ -299,7 +340,7 @@ impl<S: State> Table<S> {
 
             TermLocation::Constant(
                 sub_term::SubConstantLocation::FromConstant(_),
-            ) => Ok(Variance::Invariant),
+            ) => Ok(Some(Variance::Invariant)),
 
             _ => unreachable!(),
         }
@@ -322,14 +363,13 @@ pub(super) fn get_variance_for<
     respect_to_type: &Type,
     environment: &Environment<T>,
     session: &mut Limit<R>,
-) -> Result<Variance, ExceedLimitError>
+) -> Result<Option<Variance>, ExceedLimitError>
 where
     for<'a, 'l, 'r, 'v> TermCollector<'a, 'l, 'r, U, T, R>: visitor::Recursive<'v, Lifetime>
         + visitor::Recursive<'v, Type>
         + visitor::Recursive<'v, Constant>,
 {
     get_variance_for_internal(term, respect_to_type, true, environment, session)
-        .map(|x| x.unwrap_or(Variance::Bivariant))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -352,25 +392,35 @@ where
     let locations =
         get_all_term_locations(term, respect_to_type, environment, limit)?;
 
-    let mut variance: Variance = Variance::Bivariant;
+    let mut variance: Option<Variance> = None;
+
     for locations in locations {
         if locations.is_empty() && is_root {
-            variance = variance.chain(Variance::Covariant);
+            match &mut variance {
+                Some(variance) => {
+                    *variance = variance.chain(Variance::Covariant);
+                }
+                None => variance = Some(Variance::Covariant),
+            }
             continue;
         }
 
-        variance = variance.chain(
-            environment
-                .table
-                .get_variance_for_locations(respect_to_type, locations)?,
-        );
+        let new_variance = environment
+            .table
+            .get_variance_for_locations(respect_to_type, locations)?;
+
+        variance = match (variance, new_variance) {
+            (None, Some(variance)) | (Some(variance), None) => Some(variance),
+            (Some(first), Some(second)) => Some(first.chain(second)),
+            (None, None) => None,
+        };
     }
 
-    Ok(Some(variance))
+    Ok(variance)
 }
 
 impl<T: State> Table<T> {
-    #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
     pub(super) fn build_variance<'a>(
         &self,
         generic_parameters: &GenericParameters,
@@ -378,6 +428,7 @@ impl<T: State> Table<T> {
         active_premise: &Premise,
         generic_id: GenericID,
         type_usages: impl Iterator<Item = &'a Type> + Clone,
+        partial_variance: bool,
         _: &dyn Handler<Box<dyn Error>>,
     ) {
         let mut session = session::Default::default();
@@ -396,12 +447,36 @@ impl<T: State> Table<T> {
                     &mut Limit::new(&mut session),
                 ) {
                     Ok(variance) => {
-                        let current_variance = generic_parameter_variances
-                            .variances_by_lifetime_ids
-                            .get_mut(&id)
-                            .unwrap();
-
-                        *current_variance = current_variance.chain(variance);
+                        match (
+                            generic_parameter_variances
+                                .variances_by_lifetime_ids
+                                .get_mut(&id),
+                            variance,
+                        ) {
+                            (None, None) => {
+                                if !partial_variance {
+                                    assert!(generic_parameter_variances
+                                        .variances_by_lifetime_ids
+                                        .insert(id, Variance::Bivariant)
+                                        .is_none());
+                                }
+                            }
+                            (None, Some(variance)) => {
+                                assert!(generic_parameter_variances
+                                    .variances_by_lifetime_ids
+                                    .insert(id, variance)
+                                    .is_none());
+                            }
+                            (Some(current), None) => {
+                                if !partial_variance {
+                                    *current =
+                                        current.chain(Variance::Bivariant);
+                                }
+                            }
+                            (Some(current), Some(variance)) => {
+                                *current = current.chain(variance);
+                            }
+                        }
                     }
                     Err(_) => todo!("report undecdiable variance"),
                 }
@@ -420,12 +495,36 @@ impl<T: State> Table<T> {
                     &mut Limit::new(&mut session),
                 ) {
                     Ok(variance) => {
-                        let current_variance = generic_parameter_variances
-                            .variances_by_type_ids
-                            .get_mut(&id)
-                            .unwrap();
-
-                        *current_variance = current_variance.chain(variance);
+                        match (
+                            generic_parameter_variances
+                                .variances_by_type_ids
+                                .get_mut(&id),
+                            variance,
+                        ) {
+                            (None, None) => {
+                                if !partial_variance {
+                                    assert!(generic_parameter_variances
+                                        .variances_by_type_ids
+                                        .insert(id, Variance::Bivariant)
+                                        .is_none());
+                                }
+                            }
+                            (None, Some(variance)) => {
+                                assert!(generic_parameter_variances
+                                    .variances_by_type_ids
+                                    .insert(id, variance)
+                                    .is_none());
+                            }
+                            (Some(current), None) => {
+                                if !partial_variance {
+                                    *current =
+                                        current.chain(Variance::Bivariant);
+                                }
+                            }
+                            (Some(current), Some(variance)) => {
+                                *current = current.chain(variance);
+                            }
+                        }
                     }
                     Err(_) => todo!("report undecdiable variance"),
                 }

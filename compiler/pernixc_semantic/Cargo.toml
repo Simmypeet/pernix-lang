@@ -24,6 +24,7 @@ rayon = { workspace = true }
 bitflags = { workspace = true }
 typestate = { workspace = true }
 enum_dispatch = { workspace = true }
+static_assertions = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

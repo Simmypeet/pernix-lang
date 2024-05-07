@@ -1,51 +1,52 @@
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree;
 
-use super::{build_flag, Finalize};
+use super::Finalize;
 use crate::{
     arena::ID,
     error::{self, PrivateEntityLeakedToPublicInterface},
     symbol::Type,
     table::{
-        building::finalizing::{occurrences::Occurrences, Finalizer},
+        building::finalizing::{
+            finalizer::build_preset, occurrences::Occurrences, Finalizer,
+        },
         resolution, Table,
     },
 };
 
-build_flag! {
-    pub enum Flag {
-        /// Generic parameters are built
-        GenericParameter,
-        /// Where clause predicates are built
-        WhereClause,
-        /// The type alias is built
-        Complete,
-        /// Bounds check are performed
-        Check,
-    }
-}
+/// Generic parameters are built
+pub const GENERIC_PARAMETER_STATE: usize = 0;
+
+/// Where cluase predicates are built
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
+/// The complete information of the type alias is built.
+pub const COMPLETE_STATE: usize = 2;
+
+/// All the bounds are checked.
+pub const CHECK_STATE: usize = 3;
 
 impl Finalize for Type {
     type SyntaxTree = syntax_tree::item::Type;
-    type Flag = Flag;
+    const FINAL_STATE: usize = CHECK_STATE;
     type Data = Occurrences;
 
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
-        state_flag: Self::Flag,
+        state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
         data: &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match state_flag {
-            Flag::GenericParameter => table.create_generic_parameters(
+            GENERIC_PARAMETER_STATE => table.create_generic_parameters(
                 symbol_id,
                 syntax_tree.signature().generic_parameters().as_ref(),
                 data,
                 handler,
             ),
-            Flag::WhereClause => {
+            WHERE_CLAUSE_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
                     syntax_tree.definition().where_clause().as_ref(),
@@ -53,7 +54,7 @@ impl Finalize for Type {
                     handler,
                 );
             }
-            Flag::Complete => {
+            COMPLETE_STATE => {
                 let ty = table
                     .resolve_type(
                         syntax_tree.definition().ty(),
@@ -87,16 +88,17 @@ impl Finalize for Type {
                 }
 
                 table.types.get(symbol_id).unwrap().write().r#type = ty;
-                data.build_all_occurrences_to_completion(
+                data.build_all_occurrences_to::<build_preset::Complete>(
                     table,
                     symbol_id.into(),
                     false,
                     handler,
                 );
             }
-            Flag::Check => {
+            CHECK_STATE => {
                 table.check_occurrences(symbol_id.into(), data, handler);
             }
+            _ => panic!("invalid state flag"),
         }
     }
 }

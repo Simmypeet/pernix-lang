@@ -1,6 +1,6 @@
 //! Contains the finalization logic for each kinds of symbols.
 
-use std::{fmt::Debug, hash::Hash};
+use std::fmt::Debug;
 
 use pernixc_base::diagnostic::Handler;
 
@@ -27,90 +27,21 @@ pub(in crate::table::building) mod trait_type;
 pub(in crate::table::building) mod r#type;
 pub(in crate::table::building) mod variant;
 
-/// Trait that all flags must implement.
-pub trait Flag:
-    Debug
-    + Copy
-    + Clone
-    + PartialEq
-    + Eq
-    + PartialOrd
-    + Ord
-    + Send
-    + Sync
-    + Hash
-    + 'static
-{
-    /// The first state of the flag.
-    fn first() -> Self;
-
-    /// The last state of the flag.
-    fn last() -> Self;
-
-    /// Increments the flag to the next state.
-    fn increment(&mut self);
-}
+/// The type used to determine the state of the finalization.
+pub type StateFlag = usize;
 
 /// A trait for finalizing a symbol.
 pub trait Finalize {
     type SyntaxTree: Debug;
-    type Flag: Flag;
+    const FINAL_STATE: usize;
     type Data: Debug + Send + Sync + Default;
 
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
-        state_flag: Self::Flag,
+        state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
         data: &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     );
 }
-
-macro_rules! count {
-    () => (0u8);
-    ( $x:ident $(, $xs:ident)* $(,)? ) => (1u8 + $crate::table::building::finalizing::finalize::count!($($xs, )*));
-}
-
-macro_rules! build_flag {
-    (
-        $vis:vis enum $name:ident {
-            $(
-                $(#[$meta:meta])?
-                $variant:ident,
-            )*
-        }
-    ) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        #[repr(u8)]
-        $vis enum $name {
-            $(
-                $(#[$meta])?
-                $variant,
-            )*
-        }
-
-        impl $crate::table::building::finalizing::finalize::Flag for $name {
-            fn first() -> Self {
-                unsafe { std::mem::transmute(0u8) }
-            }
-
-            fn last() -> Self {
-                unsafe { std::mem::transmute($crate::table::building::finalizing::finalize::count!($($variant),*) - 1) }
-            }
-
-            fn increment(&mut self) {
-                let last = $crate::table::building::finalizing::finalize::Flag::last();
-
-                if *self == last {
-                    return
-                }
-
-                *self = unsafe { std::mem::transmute(std::mem::transmute::<Self, u8>(*self) + 1) };
-            }
-        }
-    };
-}
-
-use build_flag;
-use count;

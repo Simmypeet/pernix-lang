@@ -1,7 +1,7 @@
 use pernixc_base::{diagnostic::Handler, source_file::SourceElement};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{build_flag, Finalize};
+use super::Finalize;
 use crate::{
     arena::ID,
     error::{self, DuplicatedField, PrivateEntityLeakedToPublicInterface},
@@ -10,31 +10,34 @@ use crate::{
         simplify::simplify,
         Environment,
     },
-    symbol::{
-        Accessibility, Field, GenericParameterVariances, Struct, Variance,
-    },
+    symbol::{Accessibility, Field, GenericParameterVariances, Struct},
     table::{
-        building::finalizing::{occurrences::Occurrences, Finalizer},
-        resolution, Table,
+        building::finalizing::{
+            finalizer::build_preset, occurrences::Occurrences, Finalizer,
+        },
+        resolution, Index, Table,
     },
 };
 
-build_flag! {
-    pub enum Flag {
-        /// Generic parameters are built
-        GenericParameter,
-        /// Where clause predicates are built
-        WhereClause,
-        /// All structs are field are built
-        Complete,
-        /// Bounds check are performed
-        Check,
-    }
-}
+/// Generic parameters are built
+pub const GENERIC_PARAMETER_STATE: usize = 0;
+
+/// Where cluase predicates are built
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
+/// The fields of the struct are built and some of the variance information is
+/// built
+pub const STRUCTURAL_AND_PARTIAL_VARIANCE_STATE: usize = 2;
+
+/// The complete information of the struct is built.
+pub const COMPLETE_STATE: usize = 3;
+
+/// Bounds check are performed
+pub const CHECK_STATE: usize = 4;
 
 impl Finalize for Struct {
     type SyntaxTree = syntax_tree::item::Struct;
-    type Flag = Flag;
+    const FINAL_STATE: usize = CHECK_STATE;
     type Data = Occurrences;
 
     #[allow(
@@ -45,19 +48,20 @@ impl Finalize for Struct {
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
-        state_flag: Self::Flag,
+        state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
         data: &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match state_flag {
-            Flag::GenericParameter => table.create_generic_parameters(
+            GENERIC_PARAMETER_STATE => table.create_generic_parameters(
                 symbol_id,
                 syntax_tree.signature().generic_parameters().as_ref(),
                 data,
                 handler,
             ),
-            Flag::WhereClause => {
+
+            WHERE_CLAUSE_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
                     syntax_tree.signature().where_clause().as_ref(),
@@ -65,33 +69,8 @@ impl Finalize for Struct {
                     handler,
                 );
             }
-            Flag::Complete => {
-                let mut struct_sym = table
-                    .representation
-                    .structs
-                    .get(symbol_id)
-                    .unwrap()
-                    .write();
 
-                // build default variance infos
-                struct_sym.generic_parameter_variances =
-                    GenericParameterVariances {
-                        variances_by_lifetime_ids: struct_sym
-                            .generic_declaration
-                            .parameters
-                            .lifetime_parameters_as_order()
-                            .map(|(id, _)| (id, Variance::Bivariant))
-                            .collect(),
-                        variances_by_type_ids: struct_sym
-                            .generic_declaration
-                            .parameters
-                            .type_parameters_as_order()
-                            .map(|(id, _)| (id, Variance::Bivariant))
-                            .collect(),
-                    };
-
-                drop(struct_sym);
-
+            STRUCTURAL_AND_PARTIAL_VARIANCE_STATE => {
                 for field_syn in syntax_tree
                     .body()
                     .field_list()
@@ -167,56 +146,143 @@ impl Finalize for Struct {
                     }
                 }
 
-                data.build_all_occurrences_to_completion(
+                // build all the occurrences to partial
+                data.build_all_occurrences_to::<build_preset::PartialComplete>(
                     table,
                     symbol_id.into(),
                     false,
                     handler,
                 );
 
-                // simply all the types in the struct fields
                 let premise =
                     table.get_active_premise(symbol_id.into()).unwrap();
+                let mut session = session::Default::default();
+
+                // simplify all the field types
+                {
+                    let fields_to_simplify = {
+                        let struct_sym = table.get(symbol_id).unwrap();
+
+                        struct_sym
+                            .fields
+                            .iter_primary()
+                            .map(|(id, field)| (id, field.r#type.clone()))
+                            .collect::<Vec<_>>()
+                    };
+
+                    for (id, field_type) in fields_to_simplify {
+                        if let Ok(simplified) = simplify(
+                            &field_type,
+                            &Environment { table, premise: &premise },
+                            &mut Limit::new(&mut session),
+                        ) {
+                            let mut struct_sym = table
+                                .representation
+                                .structs
+                                .get(symbol_id)
+                                .unwrap()
+                                .write();
+
+                            struct_sym.fields.get_mut(id).unwrap().r#type =
+                                simplified;
+                        }
+                    }
+                }
+
+                // partial variance information
+                {
+                    let mut generic_parameter_variances =
+                        GenericParameterVariances::default();
+                    let struct_sym = table.get(symbol_id).unwrap();
+
+                    #[allow(clippy::needless_collect)]
+                    let type_usages = struct_sym
+                        .fields
+                        .values()
+                        .map(|f| f.r#type.clone())
+                        .collect::<Vec<_>>();
+
+                    table.build_variance(
+                        &struct_sym.generic_declaration.parameters,
+                        &mut generic_parameter_variances,
+                        &premise,
+                        symbol_id.into(),
+                        type_usages.iter(),
+                        true,
+                        handler,
+                    );
+
+                    // drop the read
+                    drop(struct_sym);
+
+                    // write the variances
+                    let mut struct_sym = table
+                        .representation
+                        .structs
+                        .get(symbol_id)
+                        .unwrap()
+                        .write();
+
+                    struct_sym.generic_parameter_variances =
+                        generic_parameter_variances;
+                }
+            }
+
+            COMPLETE_STATE => {
+                // build all the occurrences to complete
+                data.build_all_occurrences_to::<build_preset::Complete>(
+                    table,
+                    symbol_id.into(),
+                    false,
+                    handler,
+                );
+
+                // simplify all the types in the struct fields and build partial
+                // variance
+                let premise =
+                    table.get_active_premise(symbol_id.into()).unwrap();
+
+                let struct_sym = table.get(symbol_id).unwrap();
+                let mut generic_parameter_variances =
+                    struct_sym.generic_parameter_variances.clone();
+
+                #[allow(clippy::needless_collect)]
+                let type_usages = struct_sym
+                    .fields
+                    .values()
+                    .map(|f| f.r#type.clone())
+                    .collect::<Vec<_>>();
+
+                table.build_variance(
+                    &struct_sym.generic_declaration.parameters,
+                    &mut generic_parameter_variances,
+                    &premise,
+                    symbol_id.into(),
+                    type_usages.iter(),
+                    false,
+                    handler,
+                );
+
+                // drop the read
+                drop(struct_sym);
+
+                // write the variances
                 let mut struct_sym = table
                     .representation
                     .structs
                     .get(symbol_id)
                     .unwrap()
                     .write();
-                let mut session = session::Default::default();
 
-                for fields in struct_sym.fields.values_mut() {
-                    if let Ok(simplified) = simplify(
-                        &fields.r#type,
-                        &Environment { table, premise: &premise },
-                        &mut Limit::new(&mut session),
-                    ) {
-                        fields.r#type = simplified;
-                    }
-                }
-
-                // build the variance
-                let struct_sym = &mut *struct_sym;
-
-                #[allow(clippy::needless_collect)]
-                let type_usages = struct_sym
-                    .fields
-                    .values()
-                    .map(|f| &f.r#type)
-                    .collect::<Vec<_>>();
-
-                table.build_variance(
-                    &struct_sym.generic_declaration.parameters,
-                    &mut struct_sym.generic_parameter_variances,
-                    &premise,
-                    symbol_id.into(),
-                    type_usages.iter().copied(),
-                    handler,
-                );
+                struct_sym.generic_parameter_variances =
+                    generic_parameter_variances;
             }
-            Flag::Check => {
+
+            CHECK_STATE => {
                 table.check_occurrences(symbol_id.into(), data, handler);
             }
+
+            _ => panic!("invalid state flag"),
         }
     }
 }

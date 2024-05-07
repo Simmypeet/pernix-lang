@@ -1,47 +1,48 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
-use super::{build_flag, Finalize};
+use super::{trait_implementation, trait_type, Finalize};
 use crate::{
     arena::ID,
     error,
     semantic::instantiation::Instantiation,
     symbol::TraitImplementationType,
     table::{
-        building::finalizing::{occurrences::Occurrences, Finalizer},
+        building::finalizing::{
+            finalizer::build_preset, occurrences::Occurrences, Finalizer,
+        },
         resolution, Index, Table,
     },
 };
 
-build_flag! {
-    pub enum Flag {
-        /// Generic parameters are built
-        GenericParameter,
-        /// Where clause predicates are built
-        WhereClause,
-        /// The type alias is built
-        Complete,
-        /// Bounds check are performed
-        Check,
-    }
-}
+/// Generic parameters are built
+pub const GENERIC_PARAMETER_STATE: usize = 0;
+
+/// Where cluase predicates are built
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
+/// The complete information of the trait implementation type is built.
+pub const COMPLETE_STATE: usize = 2;
+
+/// Bounds check are performed
+pub const CHECK_STATE: usize = 3;
 
 impl Finalize for TraitImplementationType {
     type SyntaxTree = syntax_tree::item::Type;
-    type Flag = Flag;
+    const FINAL_STATE: usize = CHECK_STATE;
     type Data = Occurrences;
 
     #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
-        state_flag: Self::Flag,
+        state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
         data: &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match state_flag {
-            Flag::GenericParameter => {
+            GENERIC_PARAMETER_STATE => {
                 let parent_implementation_id = table
                     .trait_implementation_types
                     .get(symbol_id)
@@ -52,7 +53,7 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     parent_implementation_id,
                     Some(symbol_id.into()),
-                    super::trait_implementation::Flag::GenericParameter,
+                    trait_implementation::GENERIC_PARAMETER_STATE,
                     true,
                     handler,
                 );
@@ -64,7 +65,7 @@ impl Finalize for TraitImplementationType {
                     handler,
                 );
             }
-            Flag::WhereClause => {
+            WHERE_CLAUSE_STATE => {
                 table.create_where_clause_predicates(
                     symbol_id,
                     syntax_tree.definition().where_clause().as_ref(),
@@ -72,7 +73,7 @@ impl Finalize for TraitImplementationType {
                     handler,
                 );
             }
-            Flag::Complete => {
+            COMPLETE_STATE => {
                 table
                     .trait_implementation_types
                     .get(symbol_id)
@@ -93,14 +94,14 @@ impl Finalize for TraitImplementationType {
                     )
                     .unwrap_or_default();
 
-                data.build_all_occurrences_to_completion(
+                data.build_all_occurrences_to::<build_preset::Complete>(
                     table,
                     symbol_id.into(),
                     false,
                     handler,
                 );
             }
-            Flag::Check => {
+            CHECK_STATE => {
                 let (trait_implementation_id, trait_id) = {
                     let trait_implementation_type_sym =
                         table.get(symbol_id).unwrap();
@@ -119,7 +120,7 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     trait_implementation_id,
                     Some(symbol_id.into()),
-                    super::trait_implementation::Flag::WhereClause,
+                    trait_implementation::WHERE_CLAUSE_STATE,
                     true,
                     handler,
                 );
@@ -155,7 +156,7 @@ impl Finalize for TraitImplementationType {
                 let _ = table.build_to(
                     trait_type_id,
                     Some(symbol_id.into()),
-                    super::trait_type::Flag::WhereClause,
+                    trait_type::WHERE_CLAUSE_STATE,
                     true,
                     handler,
                 );
@@ -175,6 +176,8 @@ impl Finalize for TraitImplementationType {
                     handler,
                 );
             }
+
+            _ => panic!("invalid state flag"),
         }
     }
 }

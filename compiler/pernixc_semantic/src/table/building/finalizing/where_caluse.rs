@@ -10,10 +10,7 @@ use pernixc_syntax::syntax_tree::{
 };
 
 use super::{
-    finalize,
-    finalizer::{self, BuildSymbolError},
-    occurrences::Occurrences,
-    Finalizer,
+    finalize::r#trait, finalizer, occurrences::Occurrences, Finalizer,
 };
 use crate::{
     arena::ID,
@@ -205,15 +202,12 @@ impl Table<Finalizer> {
                     match self.build_to::<Trait>(
                         trait_id,
                         Some(generic_id.into()),
-                        finalize::r#trait::Flag::WhereClause,
+                        r#trait::WHERE_CLAUSE_STATE,
                         true,
                         handler,
                     ) {
                         Ok(()) => {}
-                        Err(
-                            BuildSymbolError::EntryNotFound(_)
-                            | BuildSymbolError::CyclicDependency,
-                        ) => {
+                        Err(_) => {
                             continue;
                         }
                     }

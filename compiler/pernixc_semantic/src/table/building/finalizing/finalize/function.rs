@@ -1,7 +1,7 @@
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
-use super::{build_flag, Finalize};
+use super::Finalize;
 use crate::{
     arena::ID,
     error,
@@ -13,34 +13,34 @@ use crate::{
     },
 };
 
-build_flag! {
-    pub enum Flag {
-        /// Generic parameters are built
-        GenericParameter,
-        /// Where clause predicates are built
-        WhereClause,
-        /// The parameters and return type are built
-        Complete,
-        /// Bounds check are performed and the full function body is built
-        Check,
-    }
-}
+/// Generic parameters are built
+pub const GENERIC_PARAMETER_STATE: usize = 0;
+
+/// Where cluase predicates are built
+pub const WHERE_CLAUSE_STATE: usize = 1;
+
+/// The function signature information is built, including parameters and return
+/// type.
+pub const SIGNATURE_STATE: usize = 2;
+
+/// The intermediate representation of the function is built.
+pub const DEFINITION_AND_CHECK_STATE: usize = 3;
 
 impl Finalize for Function {
     type SyntaxTree = syntax_tree::item::Function;
-    type Flag = Flag;
+    const FINAL_STATE: usize = DEFINITION_AND_CHECK_STATE;
     type Data = Occurrences;
 
     fn finalize(
         table: &Table<Finalizer>,
         symbol_id: ID<Self>,
-        state_flag: Self::Flag,
+        state_flag: usize,
         syntax_tree: &Self::SyntaxTree,
         data: &mut Self::Data,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) {
         match state_flag {
-            Flag::GenericParameter => {
+            GENERIC_PARAMETER_STATE => {
                 // Create the generic parameters
                 table.create_generic_parameters(
                     symbol_id,
@@ -50,14 +50,14 @@ impl Finalize for Function {
                 );
             }
 
-            Flag::WhereClause => table.create_where_clause_predicates(
+            WHERE_CLAUSE_STATE => table.create_where_clause_predicates(
                 symbol_id,
                 syntax_tree.signature().where_clause().as_ref(),
                 data,
                 handler,
             ),
 
-            Flag::Complete => {
+            DEFINITION_AND_CHECK_STATE => {
                 // build the parameters and return type
                 let parameters = syntax_tree
                     .signature()
@@ -107,7 +107,8 @@ impl Finalize for Function {
                             .unwrap_or_default()
                     });
             }
-            Flag::Check => {}
+
+            _ => panic!("invalid state flag"),
         }
     }
 }

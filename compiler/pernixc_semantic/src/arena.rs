@@ -392,7 +392,15 @@ impl<T, Secondary: Hash + Eq, Primary: Key> Map<T, Secondary, Primary> {
         self.arena.get_mut(id)
     }
 
-    /// Returns an iterator over the items in the [`Map`].
+    /// Returns an iteartor over the items and their primary keys in the
+    /// [`Map`].
+    #[must_use]
+    pub fn iter_primary(&self) -> impl ExactSizeIterator<Item = (Primary, &T)> {
+        self.arena.iter()
+    }
+
+    /// Returns an iterator over the items and their secondary keys in the
+    /// [`Map`].
     ///
     /// The order of the items is **not** maintained.
     #[must_use]

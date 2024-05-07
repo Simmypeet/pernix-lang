@@ -5,6 +5,7 @@ use getset::Getters;
 use pernixc_base::diagnostic::Handler;
 use pernixc_syntax::syntax_tree;
 
+use super::finalizer::build_preset::BuildPreset;
 use crate::{
     error,
     semantic::{predicate, term},
@@ -44,7 +45,7 @@ pub struct Occurrences {
 
 impl Occurrences {
     /// Builds all the occurrences (dependencies) to completion.
-    pub fn build_all_occurrences_to_completion(
+    pub fn build_all_occurrences_to<B: BuildPreset>(
         &self,
         table: &Table<Finalizer>,
         dependant: GlobalID,
@@ -54,9 +55,9 @@ impl Occurrences {
         for id in
             self.get_all_global_id_occurrences(table).into_iter().flatten()
         {
-            let _ = table.build_to_completion(
+            let _ = table.build_preset::<B>(
                 id,
-                dependant,
+                Some(dependant),
                 cyclic_dependency_as_error,
                 handler,
             );

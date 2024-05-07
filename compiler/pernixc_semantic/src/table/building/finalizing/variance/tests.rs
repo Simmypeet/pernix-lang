@@ -40,13 +40,87 @@ fn build_table_from_source(source: impl Display) -> Table<Success> {
     table.unwrap()
 }
 
+const BASIC_VARIANCES: &str = r"
+public struct A[B, C, I]
+where
+    I: 'static
+{
+    public covariant: local C,
+    public invariant: &'static mutable I
+}
+";
+
+#[allow(clippy::similar_names)]
+#[test]
+fn basic_variances() {
+    for _ in 0..1000 {
+        let table = build_table_from_source(BASIC_VARIANCES);
+
+        let struct_a_sym = table
+            .get_by_qualified_name(["test", "A"].into_iter())
+            .ok()
+            .and_then(|x| table.get(x.into_struct().unwrap()))
+            .unwrap();
+
+        let struct_a_b_param = struct_a_sym
+            .generic_declaration
+            .parameters
+            .type_parameter_ids_by_name()
+            .get("B")
+            .copied()
+            .unwrap();
+        let struct_a_c_param = struct_a_sym
+            .generic_declaration
+            .parameters
+            .type_parameter_ids_by_name()
+            .get("C")
+            .copied()
+            .unwrap();
+        let struct_a_i_param = struct_a_sym
+            .generic_declaration
+            .parameters
+            .type_parameter_ids_by_name()
+            .get("I")
+            .copied()
+            .unwrap();
+
+        assert_eq!(
+            struct_a_sym
+                .generic_parameter_variances
+                .variances_by_type_ids
+                .get(&struct_a_b_param)
+                .copied()
+                .unwrap(),
+            Variance::Bivariant
+        );
+        assert_eq!(
+            struct_a_sym
+                .generic_parameter_variances
+                .variances_by_type_ids
+                .get(&struct_a_c_param)
+                .copied()
+                .unwrap(),
+            Variance::Covariant
+        );
+        assert_eq!(
+            struct_a_sym
+                .generic_parameter_variances
+                .variances_by_type_ids
+                .get(&struct_a_i_param)
+                .copied()
+                .unwrap(),
+            Variance::Invariant
+        );
+    }
+}
+
 const RECURSIVE_INVARIANT: &str = r"
-public struct A[T]
+public enum A[T] 
 where
     T: 'static
 {
-    public b: B[T],
-    public invariant: &'static mutable T,
+    Invariant(&'static mutable T),
+    Covariant(B[T]),
 }
 
 public struct B[T]
@@ -55,21 +129,19 @@ where
 {
     public a: A[T],
 }
-
 ";
 
 #[test]
 #[allow(clippy::similar_names)]
 fn recurisve_invariant() {
     // 1000 cases
-    for i in 0..1000 {
-        println!("attempt: {i}");
+    for _ in 0..1000 {
         let table = build_table_from_source(RECURSIVE_INVARIANT);
 
-        let struct_a_sym = table
+        let enum_a_sym = table
             .get_by_qualified_name(["test", "A"].into_iter())
             .ok()
-            .and_then(|x| table.get(x.into_struct().unwrap()))
+            .and_then(|x| table.get(x.into_enum().unwrap()))
             .unwrap();
 
         let struct_b_sym = table
@@ -78,7 +150,7 @@ fn recurisve_invariant() {
             .and_then(|x| table.get(x.into_struct().unwrap()))
             .unwrap();
 
-        let struct_a_t_param = struct_a_sym
+        let struct_a_t_param = enum_a_sym
             .generic_declaration
             .parameters
             .type_parameter_ids_by_name()
@@ -93,9 +165,8 @@ fn recurisve_invariant() {
             .copied()
             .unwrap();
 
-        /*
         assert_eq!(
-            struct_a_sym
+            enum_a_sym
                 .generic_parameter_variances
                 .variances_by_type_ids
                 .get(&struct_a_t_param)
@@ -112,11 +183,48 @@ fn recurisve_invariant() {
                 .unwrap(),
             Variance::Invariant
         );
-        */
     }
 }
 
-const RECURSIVE_BIVARIANT: &str = r"
+const SINGLE_STRUCT_RECURSIVE_BIVARIANT: &str = r"
+public struct A[T] {
+    public a: A[T]
+}
+";
+
+#[test]
+#[allow(clippy::similar_names)]
+fn single_struct_recursive_bivariant() {
+    for _ in 0..1000 {
+        let table = build_table_from_source(SINGLE_STRUCT_RECURSIVE_BIVARIANT);
+
+        let struct_a_sym = table
+            .get_by_qualified_name(["test", "A"].into_iter())
+            .ok()
+            .and_then(|x| table.get(x.into_struct().unwrap()))
+            .unwrap();
+
+        let struct_a_t_param = struct_a_sym
+            .generic_declaration
+            .parameters
+            .type_parameter_ids_by_name()
+            .get("T")
+            .copied()
+            .unwrap();
+
+        assert_eq!(
+            struct_a_sym
+                .generic_parameter_variances
+                .variances_by_type_ids
+                .get(&struct_a_t_param)
+                .copied()
+                .unwrap(),
+            Variance::Bivariant
+        );
+    }
+}
+
+const MULTIPLE_STRUCT_RECURSIVE_BIVARIANT: &str = r"
 public struct A[T] {
     public b: B[T],
 }
@@ -128,11 +236,10 @@ public struct B[T] {
 
 #[test]
 #[allow(clippy::similar_names)]
-fn recursive_bivariant() {
-    // 1000 cases
-    for i in 0..1000 {
-        println!("attempt: {i}");
-        let table = build_table_from_source(RECURSIVE_BIVARIANT);
+fn multiple_struct_recursive_bivariant() {
+    for _ in 0..1000 {
+        let table =
+            build_table_from_source(MULTIPLE_STRUCT_RECURSIVE_BIVARIANT);
 
         let struct_a_sym = table
             .get_by_qualified_name(["test", "A"].into_iter())
